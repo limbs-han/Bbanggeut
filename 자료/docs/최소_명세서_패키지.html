@@ -132,10 +132,22 @@
   .apicard .apibody { padding: 16px 18px; }
   .apicard h4 { margin: 18px 0 6px; font-size: 14px; color: var(--accent-deep); }
   .apicard h4:first-child { margin-top: 0; }
-  .erdgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .erdgrid { display: grid; grid-template-columns: 1fr; gap: 16px; }
   .erdtable { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
   .erdtable .tname { background: #2d333b; color: #fff; padding: 8px 12px; font-weight: 700; font-size: 14px; }
   .erdtable .tname small { color: #adbac7; font-weight: 400; margin-left: 8px; }
+  .erdtable table { width: 100%; table-layout: fixed; }
+  .erdtable th, .erdtable td { padding: 7px 12px; font-size: 13px; word-break: break-word; }
+  .erdtable td.mono, .erdtable .mono { font-size: 12px; }
+  .erdtable th:nth-child(1), .erdtable td:nth-child(1) { width: 23%; }
+  .erdtable th:nth-child(2), .erdtable td:nth-child(2) { width: 47%; }
+  .erdtable th:nth-child(3), .erdtable td:nth-child(3) { width: 22%; }
+  .erdtable th:nth-child(4), .erdtable td:nth-child(4) { width: 8%; text-align: center; }
+  .erdtable .badge { white-space: nowrap; }
+  @media (max-width: 640px) {
+    .erdtable { overflow-x: auto; }
+    .erdtable table { table-layout: auto; min-width: 460px; }
+  }
   .flowgroup { border-left: 3px solid var(--line); margin: 10px 0 10px 8px; padding: 4px 0 4px 16px; }
   .flowgroup .gtitle { font-size: 13px; font-weight: 700; color: var(--sub); margin-bottom: 6px; }
   .flowrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
