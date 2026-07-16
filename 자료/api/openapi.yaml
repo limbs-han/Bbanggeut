@@ -1,0 +1,1590 @@
+openapi: 3.0.3
+info:
+  title: William James API
+  version: 1.2.0
+  description: |
+    웃음·호출어·터치 이벤트로 생성된 영상을 관리하는 모바일·IoT API다.
+
+    권한의 기준은 기기다. 사용자와 기기는 `DeviceMembership`으로 다대다 연결되며,
+    사용자는 여러 기기에 서로 다른 역할로 참여할 수 있고 한 기기도 여러 사용자가 공유할 수 있다.
+
+    - Flutter 앱은 `UserBearerAuth` JWT를 사용한다.
+    - IoT 기기는 사용자 JWT와 분리된 `DeviceBearerAuth` 자격 증명을 사용한다.
+    - 대상 기기의 활성 멤버십이 없으면 정보 은닉을 위해 404로 응답한다.
+    - 같은 기기의 활성 구성원이지만 OWNER 전용 작업을 수행할 역할이 부족하면 403으로 응답한다.
+    - 객체 저장소는 비공개이며 권한 확인 후 단기 서명 URL만 발급한다.
+    - IoT 영상 업로드는 MVP에서 단일 PUT, 파일당 최대 500 MiB다.
+servers:
+  - url: /
+    description: 현재 문서 호스트와 동일한 서버. 실제 API 배포 후 운영 URL로 교체한다.
+tags:
+  - name: Auth
+    description: 사용자 가입·로그인·토큰 회전·로그아웃
+  - name: Devices
+    description: 사용자가 접근 가능한 기기, 기기 등록과 기기별 구성원 관리
+  - name: Streaming
+    description: 활성 시청자가 있을 때만 동작하는 실시간 보기 세션
+  - name: Invitations
+    description: 특정 기기에 사용자를 초대하고 수락·취소하는 기능
+  - name: Videos
+    description: 기기별 영상 조회·재생·편집·다운로드·삭제
+  - name: IoT
+    description: 기기 자격 증명을 사용하는 영상 직접 업로드 계약
+  - name: Audit
+    description: OWNER가 확인하는 기기별 접근 감사 기록
+
+security:
+  - UserBearerAuth: []
+
+paths:
+  /api/auth/signup:
+    post:
+      tags: [Auth]
+      operationId: signUp
+      summary: 회원 가입
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '201':
+          description: 가입 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: 로그인
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshToken
+      summary: 토큰 재발급
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: 재발급 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: 현재 세션 로그아웃
+      responses:
+        '204':
+          description: 로그아웃 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/devices:
+    get:
+      tags: [Devices]
+      operationId: listMyDevices
+      summary: 내가 접근할 수 있는 기기 목록
+      description: 로그인 사용자의 `ACTIVE DeviceMembership`이 있는 기기만 반환한다.
+      responses:
+        '200':
+          description: 기기 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/devices/claim:
+    post:
+      tags: [Devices]
+      operationId: claimDevice
+      summary: 최초 기기 등록
+      description: |
+        제품 코드, 기기의 120초 물리적 등록 모드, 미등록 상태와 시도 횟수를 확인한다.
+        성공하면 제품 코드를 폐기하고 요청 사용자를 해당 기기의 유일한 활성 OWNER로 등록한 뒤
+        운영용 기기 자격 증명을 교체한다. 이 과정은 한 트랜잭션이다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimDeviceRequest'
+      responses:
+        '201':
+          description: 등록 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/devices/{deviceId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: getDevice
+      summary: 기기 상세 조회
+      responses:
+        '200':
+          description: 기기 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    patch:
+      tags: [Devices]
+      operationId: updateDevice
+      summary: 기기 설정 수정
+      description: 해당 기기의 활성 OWNER만 수행할 수 있다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeviceRequest'
+      responses:
+        '200':
+          description: 수정 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Devices]
+      operationId: revokeDevice
+      summary: 기기 등록 해제
+      description: 해당 기기의 활성 OWNER만 수행할 수 있다. 영상을 즉시 물리 삭제하지 않고 보존 정책에 따라 처리한다.
+      responses:
+        '204':
+          description: 등록 해제 요청 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/devices/{deviceId}/status:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: getDeviceStatus
+      summary: 기기 상태 조회
+      responses:
+        '200':
+          description: 최신 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/devices/{deviceId}/stream-sessions:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      tags: [Streaming]
+      operationId: createStreamSession
+      summary: 온디맨드 실시간 보기 세션 시작
+      description: |
+        OWNER 또는 MEMBER의 활성 기기 멤버십을 확인한 뒤 시청자 세션을 만든다.
+        이미 같은 기기의 송출이 있으면 하나의 edge 송출을 여러 시청자가 공유하고 MQTT START를 다시 보내지 않는다.
+        최초 시청자는 MQTT START 후 HLS 세그먼트가 준비될 때까지 수초간 `PENDING`일 수 있다.
+
+        앱은 응답의 주기(권장 15초)로 heartbeat를 보내야 한다. 마지막 시청 활동 시각
+        (유효 heartbeat 또는 정상 종료)을 기준으로 60초 동안 새 시청자가 없으면 서버가 MQTT STOP을 보낸다.
+        생성 직후 첫 heartbeat 전에는 `createdAt`을 초기 `lastActivityAt`으로 사용해
+        `viewerExpiresAt=createdAt+45초`, STOP deadline=`createdAt+60초`로 계산한다.
+        heartbeat가 45초 끊긴 세션을 먼저 만료시키되 idle 시간을 추가로 60초 더하지 않는다. 세션 상태 저장소는
+        인메모리·DB 등 구현 선택이며 Redis를 필수로 요구하지 않는다. edge 송출은 기본 120초의
+        hard timeout을 가지며 활성 시청자가 있으면 서버가 `hardExpiresAt`을 만료 전에 연장한다.
+      responses:
+        '202':
+          description: 시청자 세션 생성. `PENDING`이면 상태 API를 폴링한다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/stream-sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/StreamSessionId'
+    get:
+      tags: [Streaming]
+      operationId: getStreamSession
+      summary: 실시간 보기 세션 상태 조회
+      description: |
+        JWT 사용자가 이 세션을 만든 사용자와 같은지, 세션이 속한 기기의 활성 멤버십이 유지되는지를
+        매 요청마다 모두 확인한다. 다른 사용자의 sessionId 또는 회수된 멤버십은 404로 숨긴다.
+        준비되면 해당 시청자에게만 단기 HLS URL을 반환한다.
+      responses:
+        '200':
+          description: 세션 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    delete:
+      tags: [Streaming]
+      operationId: closeStreamSession
+      summary: 실시간 보기 정상 종료
+      description: |
+        JWT 사용자가 만든 세션이고 대상 기기의 활성 멤버십도 유지될 때만 세션을 `CLOSED`로 바꾼다.
+        다른 사용자의 sessionId 또는 회수된 멤버십은 404로 숨긴다. 다른 시청자가 있으면 기기 송출은 유지한다.
+        마지막 시청자라면 정상 종료 시각을 기준으로 60초 idle timeout을 시작하고,
+        그 안에 새 세션이 없을 때 MQTT STOP을 보낸다.
+      responses:
+        '204':
+          description: 시청자 세션 종료 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/stream-sessions/{sessionId}/heartbeat:
+    parameters:
+      - $ref: '#/components/parameters/StreamSessionId'
+    post:
+      tags: [Streaming]
+      operationId: heartbeatStreamSession
+      summary: 실시간 보기 시청자 heartbeat
+      description: |
+        앱은 15초마다 호출한다. 서버는 시청자 TTL을 갱신하며, heartbeat가 약 45초 동안 없으면
+        비정상 종료된 세션을 `EXPIRED`로 회수한다. 마지막 시청자의 경우 마지막 유효 heartbeat부터
+        총 60초가 되는 시점에 STOP하도록 예약하며, 45초 만료 뒤 60초를 추가하지 않는다.
+        JWT 사용자가 이 세션을 만든 사용자와 같은지와 세션 기기의 활성 멤버십을 모두 다시 확인한다.
+        다른 사용자의 sessionId 또는 회수된 멤버십은 404로 숨긴다.
+      responses:
+        '204':
+          description: heartbeat 반영 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/devices/{deviceId}/members:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: listDeviceMembers
+      summary: 기기 구성원 목록
+      responses:
+        '200':
+          description: 활성 구성원 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/devices/{deviceId}/members/{membershipId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/MembershipId'
+    delete:
+      tags: [Devices]
+      operationId: revokeDeviceMember
+      summary: 구성원 접근 권한 회수
+      description: 활성 OWNER만 MEMBER를 회수할 수 있다. 다른 기기의 멤버십 ID도 404로 응답한다.
+      responses:
+        '204':
+          description: 권한 회수 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/devices/{deviceId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Invitations]
+      operationId: listDeviceInvitations
+      summary: 기기 초대 목록
+      description: 활성 OWNER만 조회할 수 있다.
+      responses:
+        '200':
+          description: 초대 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    post:
+      tags: [Invitations]
+      operationId: createDeviceInvitation
+      summary: 기기 구성원 초대
+      description: 활성 OWNER만 MEMBER 초대를 발급할 수 있다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationRequest'
+      responses:
+        '201':
+          description: 초대 발급 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCreated'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/devices/{deviceId}/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      tags: [Invitations]
+      operationId: revokeDeviceInvitation
+      summary: 대기 초대 철회
+      description: 활성 OWNER만 수행할 수 있다. 다른 기기의 초대 ID도 404로 응답한다.
+      responses:
+        '204':
+          description: 초대 철회 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/invitations/accept:
+    post:
+      tags: [Invitations]
+      operationId: acceptInvitation
+      summary: 기기 초대 수락
+      description: 로그인 이메일과 초대 대상 이메일이 일치해야 하며, 해당 기기의 MEMBER 멤버십을 생성하거나 재활성화한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationRequest'
+      responses:
+        '200':
+          description: 초대 수락 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/videos:
+    get:
+      tags: [Videos]
+      operationId: listVideos
+      summary: 기기 영상 목록
+      description: "`deviceId`에 대한 활성 멤버십을 검사한 뒤 영상 목록을 반환한다."
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdQuery'
+        - $ref: '#/components/parameters/TriggerTypeQuery'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 영상 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    get:
+      tags: [Videos]
+      operationId: getVideo
+      summary: 영상 상세 조회
+      responses:
+        '200':
+          description: 영상 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    patch:
+      tags: [Videos]
+      operationId: updateVideo
+      summary: 영상 제목·설명·즐겨찾기 수정
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVideoRequest'
+      responses:
+        '200':
+          description: 수정 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteVideo
+      summary: 영상 삭제 요청
+      description: 기본 정책에서는 해당 기기의 활성 OWNER만 수행한다.
+      responses:
+        '202':
+          description: 비동기 삭제 요청 수락
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}/play-url:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    post:
+      tags: [Videos]
+      operationId: createVideoPlayUrl
+      summary: 단기 재생 URL 발급
+      responses:
+        '200':
+          description: 단기 재생 URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/videos/{videoId}/download-url:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    post:
+      tags: [Videos]
+      operationId: createVideoDownloadUrl
+      summary: 단기 다운로드 URL 발급
+      responses:
+        '200':
+          description: 단기 다운로드 URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/videos/{videoId}/edits:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    post:
+      tags: [Videos]
+      operationId: createVideoEdit
+      summary: 영상 구간 편집 요청
+      description: 서버가 원본 영상의 `deviceId`를 찾고 해당 기기의 활성 멤버십과 작업 권한을 확인한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVideoEditRequest'
+      responses:
+        '202':
+          description: 편집 작업 수락
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoEdit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/video-edits/{editId}:
+    parameters:
+      - $ref: '#/components/parameters/EditId'
+    get:
+      tags: [Videos]
+      operationId: getVideoEdit
+      summary: 편집 작업 상태 조회
+      description: 편집 원본 영상의 기기 멤버십을 기준으로 접근을 확인한다.
+      responses:
+        '200':
+          description: 편집 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoEdit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/iot/videos/upload-url:
+    post:
+      tags: [IoT]
+      operationId: createIotVideoUploadUrl
+      summary: IoT 영상 단기 업로드 URL 발급
+      description: |
+        `DeviceBearerAuth`로 인증한 기기 ID를 서버가 결정한다. 요청 본문에서 deviceId를 받지 않는다.
+        같은 `(deviceId, sourceEventId)` 재시도에는 같은 videoId를 반환한다.
+
+        MVP는 최대 500 MiB의 단일 PUT만 지원한다. 응답의 `requiredHeaders`를 PUT 요청에 그대로
+        포함해야 한다. 저장소가 체크섬 헤더를 지원하면 `x-amz-checksum-sha256`을 사용하고,
+        그렇지 않으면 서명된 `x-amz-meta-sha256` 메타데이터를 사용한다.
+      security:
+        - DeviceBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IotUploadUrlRequest'
+      responses:
+        '200':
+          description: 기존 멱등 결과 또는 새 단기 업로드 URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IotUploadUrlResponse'
+        '401':
+          $ref: '#/components/responses/DeviceUnauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/iot/videos/complete:
+    post:
+      tags: [IoT]
+      operationId: completeIotVideoUpload
+      summary: IoT 영상 업로드 완료 통지
+      description: |
+        서버는 `DeviceBearerAuth`의 기기와 videoId의 소유 기기가 같은지 확인한다. 그 뒤 객체 저장소
+        `HEAD`를 호출해 Content-Length와 업로드 URL 발급 시 저장한 예상 크기를 비교하고,
+        `x-amz-checksum-sha256` 또는 `x-amz-meta-sha256` 값을 예상 SHA-256과 비교한다.
+        S3 ETag는 멀티파트 여부 등에 따라 파일 SHA-256이 아닐 수 있으므로 무결성 판정에 사용하지 않는다.
+      security:
+        - DeviceBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IotUploadCompleteRequest'
+      responses:
+        '200':
+          description: 검증 완료 또는 기존 멱등 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '401':
+          $ref: '#/components/responses/DeviceUnauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/devices/{deviceId}/access-logs:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Audit]
+      operationId: listDeviceAccessLogs
+      summary: 기기 접근 감사 로그
+      description: 해당 기기의 활성 OWNER만 조회할 수 있다.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 감사 로그
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessLogPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+components:
+  securitySchemes:
+    UserBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Flutter 앱 사용자의 짧은 수명 JWT access token
+    DeviceBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: DeviceCredential
+      description: IoT 기기 전용 운영 자격 증명. 사용자 JWT와 상호 대체할 수 없다.
+
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DeviceIdQuery:
+      name: deviceId
+      in: query
+      required: true
+      description: 로그인 사용자의 활성 멤버십이 있는 기기 ID
+      schema:
+        type: string
+        format: uuid
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VideoId:
+      name: videoId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EditId:
+      name: editId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    StreamSessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TriggerTypeQuery:
+      name: triggerType
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/VideoTriggerType'
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: 서버가 반환한 불투명 키셋 커서
+      schema:
+        type: string
+        maxLength: 500
+    PageSize:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 요청의 sourceEventId와 같은 기기별 멱등 키
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+
+  responses:
+    Unauthorized:
+      description: 사용자 인증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: AUTHENTICATION_REQUIRED
+            message: 로그인이 필요합니다.
+            requestId: req-01
+    DeviceUnauthorized:
+      description: 기기 인증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: DEVICE_AUTHENTICATION_FAILED
+            message: 기기 인증에 실패했습니다.
+            requestId: req-01
+    ForbiddenRole:
+      description: 대상 기기의 활성 구성원이지만 요청 작업에 필요한 OWNER 역할이 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: OWNER_ROLE_REQUIRED
+            message: 기기 소유자 권한이 필요합니다.
+            requestId: req-01
+    HiddenNotFound:
+      description: 리소스가 없거나 현재 인증 주체가 접근할 수 없음. 두 경우를 구분하지 않는다.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: RESOURCE_NOT_FOUND
+            message: 리소스를 찾을 수 없습니다.
+            requestId: req-01
+    Conflict:
+      description: 현재 상태와 요청이 충돌함
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: 요청 형식 또는 값 검증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: MVP 단일 업로드 한도 500 MiB 초과
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: VIDEO_TOO_LARGE
+            message: 영상은 500 MiB 이하여야 합니다.
+            requestId: req-01
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+          maxLength: 80
+        message:
+          type: string
+          maxLength: 500
+        requestId:
+          type: string
+          maxLength: 100
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: string
+
+    UserSummary:
+      type: object
+      required: [id, email, displayName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          maxLength: 60
+
+    SignUpRequest:
+      type: object
+      required: [email, password, displayName]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          format: password
+          minLength: 10
+          maxLength: 72
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 60
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 72
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      additionalProperties: false
+      properties:
+        refreshToken:
+          type: string
+          minLength: 32
+          maxLength: 2048
+
+    AuthTokenResponse:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresIn:
+          type: integer
+          format: int64
+          minimum: 1
+        user:
+          $ref: '#/components/schemas/UserSummary'
+
+    DeviceRole:
+      type: string
+      enum: [OWNER, MEMBER]
+
+    MembershipStatus:
+      type: string
+      enum: [ACTIVE, REVOKED]
+
+    DeviceLifecycleStatus:
+      type: string
+      enum: [UNCLAIMED, ONLINE, OFFLINE, REVOKED]
+
+    DeviceSummary:
+      type: object
+      required: [id, name, model, status, myRole, retentionDays]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 80
+        model:
+          type: string
+          maxLength: 80
+        status:
+          $ref: '#/components/schemas/DeviceLifecycleStatus'
+        myRole:
+          $ref: '#/components/schemas/DeviceRole'
+        retentionDays:
+          type: integer
+          minimum: 1
+          maximum: 3650
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Device:
+      allOf:
+        - $ref: '#/components/schemas/DeviceSummary'
+        - type: object
+          required: [serialNumber, claimedAt]
+          properties:
+            serialNumber:
+              type: string
+              maxLength: 80
+            firmwareVersion:
+              type: string
+              maxLength: 40
+              nullable: true
+            claimedAt:
+              type: string
+              format: date-time
+
+    ClaimDeviceRequest:
+      type: object
+      required: [serialNumber, productCode]
+      additionalProperties: false
+      properties:
+        serialNumber:
+          type: string
+          minLength: 1
+          maxLength: 80
+        productCode:
+          type: string
+          minLength: 8
+          maxLength: 100
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    UpdateDeviceRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        retentionDays:
+          type: integer
+          minimum: 1
+          maximum: 3650
+
+    DeviceStatus:
+      type: object
+      required: [deviceId, status, recording, uploadQueueDepth, checkedAt]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/DeviceLifecycleStatus'
+        recording:
+          type: boolean
+        uploadQueueDepth:
+          type: integer
+          minimum: 0
+        bufferSeconds:
+          type: integer
+          minimum: 0
+          nullable: true
+        checkedAt:
+          type: string
+          format: date-time
+
+    StreamSession:
+      type: object
+      required:
+        - sessionId
+        - streamId
+        - deviceId
+        - status
+        - heartbeatIntervalSeconds
+        - viewerExpiresAt
+        - edgeHardExpiresAt
+        - createdAt
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: 앱 시청자 한 명의 세션 ID
+        streamId:
+          type: string
+          format: uuid
+          description: 같은 기기의 여러 시청자 세션이 공유하는 edge 송출 ID
+        deviceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, READY, FAILED, CLOSED, EXPIRED]
+        playUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: READY일 때만 제공하는 시청자 세션 종속 단기 HLS URL. 미디어 계층은 playlist·segment 요청마다 세션 소유자와 ACTIVE 멤버십을 확인하거나 매우 짧은 토큰을 introspection해 CLOSED/EXPIRED/권한 회수 뒤의 새 요청을 차단한다. 이미 내려받은 바이트는 회수할 수 없다. underlying edge 송출은 공유하지만 URL은 앱 로그·분석 이벤트·DB에 저장하지 않는다.
+        heartbeatIntervalSeconds:
+          type: integer
+          enum: [15]
+          description: 앱 heartbeat 권장 주기
+        viewerExpiresAt:
+          type: string
+          format: date-time
+          description: heartbeat로 연장되는 시청자 세션 TTL. 생성 시 createdAt+45초이며 약 45초 미수신 시 만료 처리한다.
+        edgeHardExpiresAt:
+          type: string
+          format: date-time
+          description: STOP 유실에 대비해 edge가 송출을 강제 종료하는 시각. 기본 lease는 120초이며 활성 시청자가 있으면 서버가 만료 전에 연장 명령을 보낸다.
+        failureCode:
+          type: string
+          maxLength: 80
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    DeviceMember:
+      type: object
+      required: [id, deviceId, user, role, status, joinedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        role:
+          $ref: '#/components/schemas/DeviceRole'
+        status:
+          $ref: '#/components/schemas/MembershipStatus'
+        joinedAt:
+          type: string
+          format: date-time
+
+    InvitationStatus:
+      type: string
+      enum: [PENDING, ACCEPTED, EXPIRED, REVOKED]
+
+    CreateInvitationRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+
+    Invitation:
+      type: object
+      required: [id, deviceId, inviteeEmail, role, status, expiresAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        inviteeEmail:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/DeviceRole'
+        status:
+          $ref: '#/components/schemas/InvitationStatus'
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    InvitationCreated:
+      allOf:
+        - $ref: '#/components/schemas/Invitation'
+        - type: object
+          required: [invitationToken]
+          properties:
+            invitationToken:
+              type: string
+              description: 이메일 또는 딥링크 전달용 원문. 응답 후 서버는 해시만 저장한다.
+
+    AcceptInvitationRequest:
+      type: object
+      required: [invitationToken]
+      additionalProperties: false
+      properties:
+        invitationToken:
+          type: string
+          minLength: 32
+          maxLength: 2048
+
+    VideoSourceType:
+      type: string
+      enum: [IOT_CAPTURE, USER_UPLOAD, EDIT_OUTPUT]
+
+    VideoTriggerType:
+      type: string
+      enum: [LAUGHTER, WAKE_WORD, TOUCH, MANUAL, USER_UPLOAD, EDIT]
+
+    VideoStatus:
+      type: string
+      enum: [UPLOADING, PROCESSING, READY, FAILED, DELETING, DELETED]
+
+    Video:
+      type: object
+      required:
+        - id
+        - deviceId
+        - sourceType
+        - triggerType
+        - title
+        - contentType
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        sourceType:
+          $ref: '#/components/schemas/VideoSourceType'
+        triggerType:
+          $ref: '#/components/schemas/VideoTriggerType'
+        sourceEventId:
+          type: string
+          maxLength: 100
+          nullable: true
+        title:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+        contentType:
+          type: string
+          example: video/mp4
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 524288000
+          nullable: true
+        checksumSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          nullable: true
+        durationMs:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+        capturedStartAt:
+          type: string
+          format: date-time
+          nullable: true
+        capturedEndAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          $ref: '#/components/schemas/VideoStatus'
+        isFavorite:
+          type: boolean
+          default: false
+        thumbnailUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: 권한 확인 후 생성한 단기 썸네일 URL
+        createdAt:
+          type: string
+          format: date-time
+
+    VideoPage:
+      type: object
+      required: [items, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Video'
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean
+
+    UpdateVideoRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+        isFavorite:
+          type: boolean
+
+    SignedUrlResponse:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: 짧은 유효시간의 서명 URL. 만료 전 재사용될 수 있으므로 로그·DB에 저장하지 않는다.
+        expiresAt:
+          type: string
+          format: date-time
+
+    CreateVideoEditRequest:
+      type: object
+      required: [startMs, endMs, title]
+      additionalProperties: false
+      properties:
+        startMs:
+          type: integer
+          format: int64
+          minimum: 0
+        endMs:
+          type: integer
+          format: int64
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+
+    VideoEdit:
+      type: object
+      required: [id, deviceId, sourceVideoId, requestedBy, startMs, endMs, status, requestedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        sourceVideoId:
+          type: string
+          format: uuid
+        resultVideoId:
+          type: string
+          format: uuid
+          nullable: true
+        requestedBy:
+          type: string
+          format: uuid
+        startMs:
+          type: integer
+          format: int64
+        endMs:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
+        errorCode:
+          type: string
+          maxLength: 80
+          nullable: true
+        requestedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    IotUploadUrlRequest:
+      type: object
+      required:
+        - sourceEventId
+        - triggerType
+        - title
+        - capturedStartAt
+        - capturedEndAt
+        - durationMs
+        - contentType
+        - sizeBytes
+        - checksumSha256
+      additionalProperties: false
+      properties:
+        sourceEventId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: MQTT eventId와 같은 기기별 멱등 키
+        triggerType:
+          type: string
+          enum: [LAUGHTER, WAKE_WORD, TOUCH, MANUAL]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        capturedStartAt:
+          type: string
+          format: date-time
+        capturedEndAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          format: int64
+          minimum: 1
+        contentType:
+          type: string
+          enum: [video/mp4]
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 524288000
+          description: MVP 단일 PUT 최대 500 MiB
+        checksumSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: 로컬 MP4 전체 파일의 SHA-256 lowercase hex digest
+
+    IotUploadUrlResponse:
+      type: object
+      required: [videoId, alreadyCompleted]
+      properties:
+        videoId:
+          type: string
+          format: uuid
+        alreadyCompleted:
+          type: boolean
+        uploadUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: 최대 15분 유효한 단기 서명 URL. 만료 전 재사용될 수 있다.
+        method:
+          type: string
+          enum: [PUT]
+          nullable: true
+        requiredHeaders:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+          description: Content-Type과 저장소별 체크섬 헤더 또는 서명된 메타데이터를 포함한다.
+          example:
+            Content-Type: video/mp4
+            x-amz-checksum-sha256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+      description: 기존 완료 영상이면 `alreadyCompleted=true`이고 업로드 관련 필드는 null이다.
+
+    IotUploadCompleteRequest:
+      type: object
+      required: [videoId]
+      additionalProperties: false
+      properties:
+        videoId:
+          type: string
+          format: uuid
+        objectETag:
+          type: string
+          maxLength: 200
+          nullable: true
+          description: 진단·조건부 요청 보조값. 파일 SHA-256 무결성 판정에는 사용하지 않는다.
+
+    AccessLog:
+      type: object
+      required: [id, deviceId, action, targetType, outcome, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        deviceId:
+          type: string
+          format: uuid
+        actorUserId:
+          type: string
+          format: uuid
+          nullable: true
+        actorDeviceId:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+          enum:
+            - MEMBER_INVITE
+            - MEMBER_REVOKE
+            - DEVICE_CLAIM
+            - DEVICE_UPDATE
+            - DEVICE_REVOKE
+            - VIDEO_LIST
+            - VIDEO_VIEW
+            - VIDEO_PLAY
+            - VIDEO_DOWNLOAD
+            - VIDEO_EDIT
+            - VIDEO_DELETE
+            - STREAM_OPEN
+            - STREAM_HEARTBEAT
+            - STREAM_CLOSE
+        targetType:
+          type: string
+          maxLength: 40
+        targetId:
+          type: string
+          format: uuid
+          nullable: true
+        outcome:
+          type: string
+          enum: [SUCCESS, DENIED, FAILED]
+        reasonCode:
+          type: string
+          maxLength: 80
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AccessLogPage:
+      type: object
+      required: [items, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessLog'
+        nextCursor:
+          type: string
+          nullable: true
+        hasNext:
+          type: boolean

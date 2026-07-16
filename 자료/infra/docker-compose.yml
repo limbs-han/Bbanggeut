@@ -1,0 +1,93 @@
+name: ${COMPOSE_PROJECT_NAME:-william-james}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-william_james}
+      POSTGRES_USER: ${POSTGRES_USER:-william}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/.env}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:latest}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-william-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in infra/.env}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    networks: [backend]
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-quay.io/minio/mc:latest}
+    depends_on:
+      - minio
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-william-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in infra/.env}
+      MINIO_VIDEO_BUCKET: ${MINIO_VIDEO_BUCKET:-william-james-videos}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 2; done
+        mc mb --ignore-existing "local/$${MINIO_VIDEO_BUCKET}"
+        mc anonymous set none "local/$${MINIO_VIDEO_BUCKET}"
+    networks: [backend]
+
+  mosquitto:
+    image: ${MOSQUITTO_IMAGE:-eclipse-mosquitto:2}
+    restart: unless-stopped
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME:-william-device}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?Set MQTT_PASSWORD in infra/.env}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        mosquitto_passwd -b -c /mosquitto/data/password_file "$${MQTT_USERNAME}" "$${MQTT_PASSWORD}"
+        exec mosquitto -c /mosquitto/config/mosquitto.conf
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    networks: [backend]
+
+  swagger-ui:
+    image: ${SWAGGER_UI_IMAGE:-swaggerapi/swagger-ui:latest}
+    restart: unless-stopped
+    environment:
+      SWAGGER_JSON: /usr/share/nginx/html/openapi.yaml
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${SWAGGER_UI_PORT:-8081}:8080"
+    volumes:
+      - ../api/openapi.yaml:/usr/share/nginx/html/openapi.yaml:ro
+    networks: [backend]
+
+volumes:
+  postgres-data:
+  minio-data:
+  mosquitto-data:
+
+networks:
+  backend:
+    driver: bridge
+

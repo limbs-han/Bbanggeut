@@ -1,0 +1,176 @@
+@baseUrl = http://localhost:8080
+@accessToken = REPLACE_WITH_USER_JWT
+@deviceToken = REPLACE_WITH_DEVICE_CREDENTIAL
+@deviceId = 00000000-0000-0000-0000-000000000002
+@membershipId = 00000000-0000-0000-0000-000000000005
+@invitationId = 00000000-0000-0000-0000-000000000006
+@invitationToken = REPLACE_WITH_INVITATION_TOKEN
+@videoId = 00000000-0000-0000-0000-000000000003
+@eventId = 00000000-0000-0000-0000-000000000004
+@streamSessionId = 00000000-0000-0000-0000-000000000007
+@uploadUrl = REPLACE_WITH_UPLOAD_URL_FROM_RESPONSE
+@checksumHex = 0000000000000000000000000000000000000000000000000000000000000000
+@checksumBase64 = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+
+### 회원 가입
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "owner@example.com",
+  "password": "REPLACE_WITH_TEST_PASSWORD",
+  "displayName": "테스트 소유자"
+}
+
+### 로그인
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "owner@example.com",
+  "password": "REPLACE_WITH_TEST_PASSWORD"
+}
+
+### 최초 기기 등록 — 성공한 사용자가 이 기기의 OWNER가 됨
+POST {{baseUrl}}/api/devices/claim
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "serialNumber": "WJ-DEVICE-0001",
+  "productCode": "REPLACE_WITH_ONE_TIME_PRODUCT_CODE",
+  "name": "거실 추억 카메라"
+}
+
+### 내가 접근할 수 있는 기기 목록
+GET {{baseUrl}}/api/devices
+Authorization: Bearer {{accessToken}}
+
+### 기기 상세 조회
+GET {{baseUrl}}/api/devices/{{deviceId}}
+Authorization: Bearer {{accessToken}}
+
+### 기기 설정 수정 — OWNER 전용
+PATCH {{baseUrl}}/api/devices/{{deviceId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "거실 추억 카메라",
+  "retentionDays": 30
+}
+
+### 기기 구성원 목록
+GET {{baseUrl}}/api/devices/{{deviceId}}/members
+Authorization: Bearer {{accessToken}}
+
+### 기기 구성원 초대 — OWNER 전용
+POST {{baseUrl}}/api/devices/{{deviceId}}/invitations
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "email": "member@example.com"
+}
+
+### 초대 수락 — 로그인 이메일과 초대 이메일이 일치해야 함
+POST {{baseUrl}}/api/invitations/accept
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "invitationToken": "{{invitationToken}}"
+}
+
+### 대기 초대 철회 — OWNER 전용
+DELETE {{baseUrl}}/api/devices/{{deviceId}}/invitations/{{invitationId}}
+Authorization: Bearer {{accessToken}}
+
+### 구성원 접근 회수 — OWNER 전용
+DELETE {{baseUrl}}/api/devices/{{deviceId}}/members/{{membershipId}}
+Authorization: Bearer {{accessToken}}
+
+### 기기 상태 조회
+GET {{baseUrl}}/api/devices/{{deviceId}}/status
+Authorization: Bearer {{accessToken}}
+
+### 기기별 영상 목록
+GET {{baseUrl}}/api/videos?deviceId={{deviceId}}&triggerType=LAUGHTER&size=20
+Authorization: Bearer {{accessToken}}
+
+### 영상 재생 단기 URL 발급
+POST {{baseUrl}}/api/videos/{{videoId}}/play-url
+Authorization: Bearer {{accessToken}}
+
+### 영상 편집 요청 — 서버가 원본 영상의 기기 멤버십을 검사
+POST {{baseUrl}}/api/videos/{{videoId}}/edits
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "startMs": 12000,
+  "endMs": 96000,
+  "title": "우리 가족 웃음 편집본"
+}
+
+### 온디맨드 HLS 시청자 세션 시작
+# 최초 연결은 수초간 PENDING일 수 있고, 여러 시청자는 기기의 송출 하나를 공유한다.
+POST {{baseUrl}}/api/devices/{{deviceId}}/stream-sessions
+Authorization: Bearer {{accessToken}}
+
+### 시청자 세션 상태 조회 — READY가 되면 playUrl 사용
+GET {{baseUrl}}/api/stream-sessions/{{streamSessionId}}
+Authorization: Bearer {{accessToken}}
+
+### 시청자 heartbeat — 앱에서 15초마다 호출
+POST {{baseUrl}}/api/stream-sessions/{{streamSessionId}}/heartbeat
+Authorization: Bearer {{accessToken}}
+
+### 시청자 정상 종료
+# 마지막 시청 활동(heartbeat 또는 정상 종료) 후 총 60초 동안 새 시청자가 없으면 서버가 MQTT STOP을 보낸다.
+DELETE {{baseUrl}}/api/stream-sessions/{{streamSessionId}}
+Authorization: Bearer {{accessToken}}
+
+### 기기별 접근 감사 로그 — OWNER 전용
+GET {{baseUrl}}/api/devices/{{deviceId}}/access-logs?size=20
+Authorization: Bearer {{accessToken}}
+
+### IoT 단기 업로드 URL 요청 — 사용자 JWT가 아닌 기기 자격 증명 사용
+POST {{baseUrl}}/api/iot/videos/upload-url
+Authorization: Bearer {{deviceToken}}
+Content-Type: application/json
+Idempotency-Key: {{eventId}}
+
+{
+  "sourceEventId": "{{eventId}}",
+  "triggerType": "LAUGHTER",
+  "title": "우리 가족 웃음",
+  "capturedStartAt": "2026-07-25T10:29:00Z",
+  "capturedEndAt": "2026-07-25T10:31:00Z",
+  "durationMs": 120000,
+  "contentType": "video/mp4",
+  "sizeBytes": 12345678,
+  "checksumSha256": "{{checksumHex}}"
+}
+
+### 객체 저장소 직접 업로드
+# 아래 체크섬 헤더 이름과 값은 업로드 URL 응답의 requiredHeaders를 그대로 사용한다.
+# 저장소 설정에 따라 x-amz-checksum-sha256 대신 x-amz-meta-sha256이 올 수 있다.
+PUT {{uploadUrl}}
+Content-Type: video/mp4
+x-amz-checksum-sha256: {{checksumBase64}}
+
+< ./sample.mp4
+
+### IoT 업로드 완료 통지
+# 서버가 객체 HEAD로 크기와 체크섬 헤더/메타데이터를 직접 검증한다.
+# objectETag는 진단 보조값이며 파일 SHA-256으로 사용하지 않는다.
+POST {{baseUrl}}/api/iot/videos/complete
+Authorization: Bearer {{deviceToken}}
+Content-Type: application/json
+Idempotency-Key: {{eventId}}
+
+{
+  "videoId": "{{videoId}}",
+  "objectETag": "REPLACE_WITH_OBJECT_ETAG"
+}

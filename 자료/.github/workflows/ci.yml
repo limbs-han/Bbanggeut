@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  specifications:
+    name: Specifications and infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required deliverables
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            "docs/01_요구사항_명세서.md"
+            "docs/03_ERD_데이터사전.md"
+            "docs/08_테스트_계획서.md"
+            "api/openapi.yaml"
+            "database/schema.sql"
+            "infra/docker-compose.yml"
+          )
+          for file in "${required[@]}"; do
+            test -s "$file" || { echo "Missing or empty: $file"; exit 1; }
+          done
+
+      - name: Lint OpenAPI
+        run: npx --yes @redocly/cli@2.39.0 lint api/openapi.yaml
+
+      - name: Validate Docker Compose
+        shell: bash
+        run: |
+          cp infra/.env.example infra/.env
+          sed -i 's/CHANGE_ME_[A-Z_]*/ci-only-secret/g' infra/.env
+          docker compose --env-file infra/.env -f infra/docker-compose.yml config --quiet
+
+      - name: Check Markdown code fences
+        shell: ruby {0}
+        run: |
+          invalid = []
+          Dir.glob("**/*.md").each do |path|
+            fences = File.readlines(path, encoding: "UTF-8").count { |line| line.start_with?("```") }
+            invalid << path if fences.odd?
+          end
+          abort "Unbalanced code fences: #{invalid.join(', ')}" unless invalid.empty?
+
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        shell: bash
+        run: |
+          if [[ -f backend/gradlew || -f backend/pom.xml ]]; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-java@v4
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: ${{ hashFiles('backend/gradlew') != '' && 'gradle' || 'maven' }}
+      - name: Run Gradle tests
+        if: steps.detect.outputs.exists == 'true' && hashFiles('backend/gradlew') != ''
+        working-directory: backend
+        run: chmod +x gradlew && ./gradlew test
+      - name: Run Maven tests
+        if: steps.detect.outputs.exists == 'true' && hashFiles('backend/pom.xml') != ''
+        working-directory: backend
+        run: mvn --batch-mode verify
+      - name: Await backend scaffold
+        if: steps.detect.outputs.exists != 'true'
+        run: echo "backend scaffold not present yet"
+
+  mobile:
+    name: Flutter tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        shell: bash
+        run: |
+          if [[ -f mobile/pubspec.yaml ]]; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: subosito/flutter-action@v2
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          channel: stable
+          cache: true
+      - name: Analyze and test
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: mobile
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Await mobile scaffold
+        if: steps.detect.outputs.exists != 'true'
+        run: echo "mobile scaffold not present yet"
+
+  edge-ai:
+    name: IoT and AI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install available dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in iot/requirements.txt ai/requirements.txt; do
+            if [[ -f "$file" ]]; then pip install -r "$file"; fi
+          done
+          pip install pytest
+      - name: Run available tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=()
+          [[ -d iot/tests ]] && paths+=(iot/tests)
+          [[ -d ai/tests ]] && paths+=(ai/tests)
+          if (( ${#paths[@]} )); then pytest "${paths[@]}"; else echo "IoT/AI tests not present yet"; fi
