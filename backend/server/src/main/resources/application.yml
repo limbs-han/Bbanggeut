@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: wj-server
+  datasource:
+    url: jdbc:postgresql://localhost:5432/wj
+    username: wj
+    password: wj-dev-only
+  sql:
+    init:
+      mode: always   # schema.sql은 IF NOT EXISTS라 재기동 안전
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+  mapper-locations: classpath:mappers/**/*.xml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+# 로컬 개발 기본값. 배포 시 환경변수로 재정의:
+# SPRING_DATASOURCE_URL / USERNAME / PASSWORD
