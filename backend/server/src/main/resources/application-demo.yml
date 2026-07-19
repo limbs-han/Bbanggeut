@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+app:
+  auth:
+    jwt-secret: ${JWT_SIGNING_KEY}
+  storage:
+    endpoint: ${S3_ENDPOINT}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+    bucket: ${S3_BUCKET}
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL}
+    client-id: ${MQTT_CLIENT_ID}
+    username: ${MQTT_USERNAME}
+    password: ${MQTT_PASSWORD}
+    environment: ${MQTT_ENV:prod}
+  stream:
+    media-base-url: ${MEDIA_BASE_URL}
+  video-edit:
+    ffmpeg-path: ${FFMPEG_PATH:/usr/bin/ffmpeg}

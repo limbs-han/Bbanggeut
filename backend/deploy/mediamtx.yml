@@ -1,0 +1,21 @@
+logLevel: info
+
+rtsp: true
+rtspAddress: :8554
+rtmp: false
+hls: true
+hlsAddress: :8888
+hlsAllowOrigins: ["https://i15e201.p.ssafy.io"]
+hlsVariant: fmp4
+hlsSegmentDuration: 2s
+webrtc: false
+srt: false
+playback: false
+api: false
+metrics: false
+pprof: false
+
+# Both ports are bound to loopback by Docker Compose. External publish/read
+# remains disabled until device-specific TLS credentials and edge auth are wired.
+paths:
+  all_others:

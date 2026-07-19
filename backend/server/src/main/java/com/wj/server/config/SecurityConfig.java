@@ -1,31 +1,90 @@
 package com.wj.server.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wj.server.common.api.ErrorResponse;
+import com.wj.server.common.web.RequestIdFilter;
+import com.wj.server.iot.auth.DeviceAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
+@EnableConfigurationProperties({
+    AuthProperties.class, DeviceClaimProperties.class, StorageProperties.class,
+    InvitationProperties.class, VideoEditProperties.class, MqttProperties.class, StreamProperties.class
+})
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    @Order(1)
+    public SecurityFilterChain deviceFilterChain(
+        HttpSecurity http,
+        ObjectMapper objectMapper,
+        DeviceAuthenticationFilter deviceAuthenticationFilter
+    ) throws Exception {
+        http
+            .securityMatcher("/api/iot/**")
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .addFilterBefore(deviceAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+            .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) ->
+                writeError(response, objectMapper, HttpServletResponse.SC_UNAUTHORIZED,
+                    "DEVICE_AUTHENTICATION_FAILED", "기기 인증에 실패했습니다.",
+                    request.getAttribute(RequestIdFilter.ATTRIBUTE))));
+        return http.build();
+    }
+
+    @Bean
+    @Order(2)
+    public SecurityFilterChain userFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/auth/signup", "/api/auth/login", "/api/auth/refresh").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
-                .anyRequest().authenticated());
-        // TODO: 사용자 JWT 필터 + 기기 자격 증명 필터 (docs/06_보안 설계 기준)
+                .requestMatchers("/api/live/introspect").permitAll()
+                .anyRequest().authenticated())
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> {})
+                .authenticationEntryPoint((request, response, exception) -> writeError(
+                    response, objectMapper, HttpServletResponse.SC_UNAUTHORIZED,
+                    "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.",
+                    request.getAttribute(RequestIdFilter.ATTRIBUTE))))
+            .exceptionHandling(errors -> errors
+                .accessDeniedHandler((request, response, exception) -> writeError(
+                    response, objectMapper, HttpServletResponse.SC_FORBIDDEN,
+                    "ACCESS_DENIED", "접근 권한이 없습니다.",
+                    request.getAttribute(RequestIdFilter.ATTRIBUTE))));
         return http.build();
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    private void writeError(
+        HttpServletResponse response,
+        ObjectMapper objectMapper,
+        int status,
+        String code,
+        String message,
+        Object requestId
+    ) throws java.io.IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getOutputStream(),
+            new ErrorResponse(code, message, String.valueOf(requestId), null));
     }
 }
