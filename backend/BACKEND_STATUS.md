@@ -1,6 +1,6 @@
 # 백엔드 구현·배포 현황
 
-> 작성 기준: 2026-07-19
+> 작성 기준: 2026-07-20
 >
 > 작업 브랜치: `feat/backend-skeleton`
 > 공개 도메인: `https://i15e201.p.ssafy.io`
@@ -11,8 +11,8 @@
 
 | 구분 | 상태 | 비고 |
 | --- | --- | --- |
-| Spring Boot API | 구현·배포 완료 | Java 17, `127.0.0.1:8080` |
-| PostgreSQL | 배포 완료 | Docker, Flyway V10 적용 |
+| Spring Boot API | 구현·배포 완료 | Java 17, `127.0.0.1:8080`. 2026-07-20 등록 코드·양도 변경분은 로컬 구현 완료, EC2 재배포 필요 |
+| PostgreSQL | 배포 완료 | Docker, EC2는 Flyway V10까지 적용. V11(등록 코드)은 다음 배포 시 자동 적용 |
 | MinIO | 배포 완료 | 비공개 영상 버킷 생성, loopback 전용 |
 | Mosquitto MQTT | 배포 완료 | 백엔드 연결 정상, loopback 전용 |
 | MediaMTX | 기본 설치 완료 | RTSP/HLS loopback 전용 |
@@ -43,12 +43,16 @@
 
 위치: [`server/src/main/java/com/wj/server/device`](./server/src/main/java/com/wj/server/device)
 
-- 제품 코드 기반 기기 claim
+- 화면 표시 1회용 등록 코드 기반 기기 claim (2026-07-20, 인쇄식 제품 코드 폐지)
+  - 기기가 `POST /api/iot/registration-codes`로 코드를 발급받아 7" LCD에 `XXXX-XXXX` 표시
+  - Crockford 32자셋 8자리, 120초 TTL, 1회용, DB에는 SHA-256 해시만 저장
+  - 앱은 코드만 제출하고 서버가 해시 역조회로 대상 기기를 특정
+  - 입력 정규화: 대문자화·하이픈 제거·혼동 문자 보정(O→0, I/L→1)
 - claim 성공 시 OWNER 멤버십 생성
-- claim 실패 횟수 제한
+- claim 실패 계정·IP당 5회/10분 제한 (코드는 기기에 귀속되지 않으므로 추측 주체 기준)
 - 사용자 기기 목록·상세·상태 조회
 - 기기 이름·영상 보존 일수 변경
-- 기기와 credential 회수
+- 기기 해제·양도: 기존 행 REVOKED 종결 + credential·초대·멤버십 회수 + 영상 삭제 작업 등록 + 같은 시리얼의 새 UNCLAIMED 행 생성
 - heartbeat가 오래된 기기의 OFFLINE 판정
 
 ### 2.3 초대와 구성원
@@ -139,6 +143,7 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 | V8 | 감사 로그 |
 | V9 | 영상 편집 |
 | V10 | 라이브 stream/session |
+| V11 | 1회용 등록 코드 테이블, devices 제품 코드 컬럼 제거, 시리얼 부분 유니크(양도 대비) |
 
 기존 단일 `schema.sql` 방식은 제거하고 Flyway로 통일했다.
 
@@ -146,7 +151,7 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 
 - OpenAPI: [`../자료/api/openapi.yaml`](../자료/api/openapi.yaml)
 - 테스트 위치: [`server/src/test/java`](./server/src/test/java)
-- 테스트 클래스: 17개
+- 테스트 클래스: 18개 (2026-07-20 등록 코드 발급·해시·claim·양도 테스트 포함)
 - 로컬 검증 명령: `./gradlew test`
 
 PostgreSQL과 Mosquitto를 사용한 수동 통합 검증에서 다음 흐름을 확인했다.
@@ -259,12 +264,12 @@ GitLab에 코드를 push해도 EC2가 자동으로 갱신되지는 않는다. CI
 
 #### 4.1 실제 기기 provisioning
 
-- 출고 기기의 `deviceId`, serial number, product code를 안전하게 생성하는 도구 필요
-- product code 원문은 기기에만 전달하고 서버에는 hash만 저장
-- 기기별 REST credential 발급·교체·회수 절차 필요
-- 초기 기기 데이터를 운영 DB에 등록하는 관리자 도구 또는 제한된 배치 필요
+- 출고 기기의 `deviceId`, serial number를 운영 DB에 등록하는 관리자 도구 또는 제한된 배치 필요
+- 기기별 REST credential 발급·교체·회수 절차 필요 (등록 코드 발급 API가 기기 credential 인증을 전제로 함)
+- 인쇄식 product code는 폐지됨 — 등록 코드는 기기가 등록 모드 진입 시 서버에서 실시간 발급받아 화면에 표시하므로 출고 시 코드 생성·인쇄 절차가 필요 없음
+- 양도로 생성된 새 device 행도 최초 출고와 동일하게 credential 재프로비저닝 필요
 
-현재 claim API는 이미 DB에 안전하게 등록된 미소유 기기가 존재한다는 전제로 동작한다.
+현재 claim API는 이미 DB에 등록된 미소유(UNCLAIMED) 기기와 그 기기의 credential이 존재한다는 전제로 동작한다.
 
 #### 4.2 외부 기기 통신 보안
 
@@ -415,7 +420,7 @@ sudo ufw status numbered
 - MinIO access/secret key
 - JWT signing key
 - MQTT 비밀번호
-- 실제 product code 원문
+- 등록 코드 원문 (로그·문서 기록 금지, 화면 표시와 발급 응답에만 존재)
 - 사용자 access/refresh token
 
 저장소의 `.gitignore`에 해당 기본 패턴을 추가해 두었다.
