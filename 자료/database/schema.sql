@@ -93,33 +93,54 @@ CREATE INDEX ix_auth_sessions_user_active
 CREATE TABLE devices (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     serial_number varchar(80) NOT NULL,
-    product_code_hash char(64) NOT NULL,
     name varchar(80) NOT NULL DEFAULT 'William James Camera',
     model varchar(80) NOT NULL DEFAULT 'WJ-DEV-01',
     firmware_version varchar(40),
     status device_status NOT NULL DEFAULT 'UNCLAIMED',
     retention_days integer NOT NULL DEFAULT 30 CHECK (retention_days BETWEEN 1 AND 3650),
     registration_mode_expires_at timestamptz,
-    product_code_retired_at timestamptz,
     claimed_at timestamptz,
     claimed_by uuid REFERENCES users(id) ON DELETE SET NULL,
     last_seen_at timestamptz,
     revoked_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT uq_devices_serial_number UNIQUE (serial_number),
-    CONSTRAINT uq_devices_product_code_hash UNIQUE (product_code_hash),
-    CONSTRAINT ck_devices_product_code_hash CHECK (product_code_hash ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_devices_name CHECK (char_length(btrim(name)) BETWEEN 1 AND 80),
     CONSTRAINT ck_devices_claim_state CHECK (
-        (status = 'UNCLAIMED' AND claimed_at IS NULL AND claimed_by IS NULL AND revoked_at IS NULL AND product_code_retired_at IS NULL)
-        OR (status IN ('ONLINE', 'OFFLINE') AND claimed_at IS NOT NULL AND claimed_by IS NOT NULL AND revoked_at IS NULL AND product_code_retired_at IS NOT NULL)
-        OR (status = 'REVOKED' AND claimed_at IS NOT NULL AND revoked_at IS NOT NULL AND product_code_retired_at IS NOT NULL)
+        (status = 'UNCLAIMED' AND claimed_at IS NULL AND claimed_by IS NULL AND revoked_at IS NULL)
+        OR (status IN ('ONLINE', 'OFFLINE') AND claimed_at IS NOT NULL AND claimed_by IS NOT NULL AND revoked_at IS NULL)
+        OR (status = 'REVOKED' AND claimed_at IS NOT NULL AND revoked_at IS NOT NULL)
     )
 );
 
+-- Ownership transfer creates a fresh UNCLAIMED row for the same physical device
+-- (the released row stays REVOKED), so serial uniqueness applies to live rows only.
+CREATE UNIQUE INDEX ux_devices_serial_number_live
+    ON devices (serial_number)
+    WHERE status <> 'REVOKED';
+
 CREATE INDEX ix_devices_status ON devices (status);
 CREATE INDEX ix_devices_last_seen ON devices (last_seen_at DESC) WHERE status IN ('ONLINE', 'OFFLINE');
+
+-- Screen-displayed one-time registration codes replace the printed product code.
+-- The device requests a code when it enters registration mode; the server generates
+-- a CSPRNG code (8 chars, confusion-free uppercase+digit alphabet), stores only the
+-- hash, and the app submits the code to claim the device. The plaintext code must be
+-- unique among live codes so that a submitted code identifies exactly one device.
+CREATE TABLE registration_codes (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    code_hash char(64) NOT NULL,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz,
+    used_by uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_registration_codes_code_hash UNIQUE (code_hash),
+    CONSTRAINT ck_registration_codes_code_hash CHECK (code_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_registration_codes_usage CHECK (used_at IS NULL OR used_by IS NOT NULL)
+);
+
+CREATE INDEX ix_registration_codes_device ON registration_codes (device_id, created_at DESC);
 
 CREATE TABLE device_memberships (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -444,8 +465,8 @@ BEFORE UPDATE ON video_edits FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMENT ON COLUMN users.password_hash IS 'Argon2id or BCrypt hash only; never plaintext.';
 COMMENT ON TABLE auth_sessions IS 'Refresh-token sessions. Only SHA-256 token hashes are stored.';
-COMMENT ON COLUMN devices.product_code_hash IS 'SHA-256 hash of the normalized one-time product code.';
-COMMENT ON COLUMN devices.product_code_retired_at IS 'Set atomically on first successful claim; a non-null value makes the static product code unusable.';
+COMMENT ON TABLE registration_codes IS 'Screen-displayed one-time claim codes. 120s TTL, single use, hash only; brute-force is limited per account/IP in the application layer.';
+COMMENT ON COLUMN registration_codes.code_hash IS 'SHA-256 hash of the normalized (uppercased, hyphen-stripped) 8-char code. Plaintext exists only on the device screen.';
 COMMENT ON TABLE device_memberships IS 'Per-device authorization. A user may join many devices and a device may have many users.';
 COMMENT ON COLUMN device_credentials.secret_hash IS 'Hash only. A certificate private key or raw token is never stored here.';
 COMMENT ON COLUMN invitations.token_hash IS 'SHA-256 hash of the single-use invitation token.';

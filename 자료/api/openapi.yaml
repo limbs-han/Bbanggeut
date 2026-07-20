@@ -142,9 +142,11 @@ paths:
       operationId: claimDevice
       summary: 최초 기기 등록
       description: |
-        제품 코드, 기기의 120초 물리적 등록 모드, 미등록 상태와 시도 횟수를 확인한다.
-        성공하면 제품 코드를 폐기하고 요청 사용자를 해당 기기의 유일한 활성 OWNER로 등록한 뒤
+        기기 화면(7" LCD)에 표시된 1회용 등록 코드를 제출한다. 서버는 코드 해시 역조회로
+        대상 기기를 특정한 뒤 코드의 120초 TTL·미사용 여부, 기기의 미등록 상태와 시도 횟수를 확인한다.
+        성공하면 코드를 사용 처리하고 요청 사용자를 해당 기기의 유일한 활성 OWNER로 등록한 뒤
         운영용 기기 자격 증명을 교체한다. 이 과정은 한 트랜잭션이다.
+        실패는 계정·IP당 5회/10분으로 제한하며 초과 시 429를 반환한다.
       requestBody:
         required: true
         content:
@@ -163,7 +165,7 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '429':
-          description: 계정·접속 주소·기기 식별자 기준 등록 시도 제한 초과
+          description: 계정·접속 주소 기준 등록 실패 5회/10분 제한 초과
           content:
             application/json:
               schema:
@@ -654,6 +656,35 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/iot/registration-codes:
+    post:
+      tags: [IoT]
+      operationId: issueRegistrationCode
+      summary: IoT 1회용 등록 코드 발급
+      description: |
+        기기가 물리 버튼으로 등록 모드에 진입할 때 호출한다. `DeviceBearerAuth`로 인증한 기기가
+        `UNCLAIMED` 상태일 때만 허용한다. 서버는 CSPRNG로 8자리 등록 코드를 생성해
+        (혼동 문자를 제외한 대문자·숫자 32자 문자셋, 활성 코드 간 유일성 보장) 해시만 저장하고
+        평문은 이 응답에만 담는다. 기기는 코드를 7" LCD에 `XXXX-XXXX` 형식으로 표시한다.
+        코드와 등록 모드는 120초 후 만료되며, 재진입 시 항상 새 코드가 발급되고 이전 코드는 무효가 된다.
+      security:
+        - DeviceBearerAuth: []
+      responses:
+        '200':
+          description: 새 등록 코드
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationCodeResponse'
+        '401':
+          $ref: '#/components/responses/DeviceUnauthorized'
+        '409':
+          description: 이미 등록된 기기(UNCLAIMED가 아님)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/iot/videos/upload-url:
     post:
       tags: [IoT]
@@ -1062,19 +1093,30 @@ components:
               type: string
               format: date-time
 
-    ClaimDeviceRequest:
+    RegistrationCodeResponse:
       type: object
-      required: [serialNumber, productCode]
+      required: [registrationCode, expiresAt]
       additionalProperties: false
       properties:
-        serialNumber:
+        registrationCode:
           type: string
-          minLength: 1
-          maxLength: 80
-        productCode:
-          type: string
+          description: 표시용 평문 코드. 로그·DB에 저장하지 않는다.
           minLength: 8
-          maxLength: 100
+          maxLength: 9
+        expiresAt:
+          type: string
+          format: date-time
+
+    ClaimDeviceRequest:
+      type: object
+      required: [registrationCode]
+      additionalProperties: false
+      properties:
+        registrationCode:
+          type: string
+          description: 기기 화면에 표시된 8자리 1회용 코드. 하이픈·소문자는 서버가 정규화한다.
+          minLength: 8
+          maxLength: 9
         name:
           type: string
           minLength: 1

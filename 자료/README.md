@@ -55,4 +55,4 @@ API 문서 페이지는 `http://127.0.0.1:8081`에서 확인할 수 있다. 실�
 
 ## 협업
 
-브랜치, 커밋, Pull Request 완료 기준은 [CONTRIBUTING.md](CONTRIBUTING.md)를 따른다. 실제 비밀번호, 제품 코드, 토큰, 기기 인증서와 사용자 영상은 Git에 커밋하지 않는다.
+브랜치, 커밋, Pull Request 완료 기준은 [CONTRIBUTING.md](CONTRIBUTING.md)를 따른다. 실제 비밀번호, 등록 코드, 토큰, 기기 인증서와 사용자 영상은 Git에 커밋하지 않는다.
