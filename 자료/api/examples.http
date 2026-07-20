@@ -37,8 +37,7 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "serialNumber": "WJ-DEVICE-0001",
-  "productCode": "REPLACE_WITH_ONE_TIME_PRODUCT_CODE",
+  "registrationCode": "REPLACE_WITH_CODE_ON_DEVICE_LCD",
   "name": "거실 추억 카메라"
 }
 
@@ -134,6 +133,11 @@ Authorization: Bearer {{accessToken}}
 ### 기기별 접근 감사 로그 — OWNER 전용
 GET {{baseUrl}}/api/devices/{{deviceId}}/access-logs?size=20
 Authorization: Bearer {{accessToken}}
+
+### IoT 1회용 등록 코드 발급 — 물리 버튼으로 등록 모드 진입 시 기기가 호출
+# 응답의 registrationCode를 기기 7" LCD에 XXXX-XXXX로 표시한다. 120초 만료, 1회용.
+POST {{baseUrl}}/api/iot/registration-codes
+Authorization: Bearer {{deviceToken}}
 
 ### IoT 단기 업로드 URL 요청 — 사용자 JWT가 아닌 기기 자격 증명 사용
 POST {{baseUrl}}/api/iot/videos/upload-url

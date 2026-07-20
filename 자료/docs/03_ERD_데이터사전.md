@@ -24,6 +24,7 @@ erDiagram
     USER ||--o{ DEVICE_MEMBERSHIP : "기기별 권한"
     DEVICE ||--o{ DEVICE_MEMBERSHIP : "여러 사용자와 공유"
     DEVICE ||--o{ DEVICE_CREDENTIAL : "운영 인증"
+    DEVICE ||--o{ REGISTRATION_CODE : "1회용 등록 코드"
     DEVICE ||--o{ INVITATION : "구성원 초대"
     USER ||--o{ INVITATION : "발급 또는 수락"
     DEVICE ||--o{ VIDEO : "영상을 생성·보관"
@@ -44,9 +45,7 @@ erDiagram
 
     DEVICE {
         uuid id PK
-        varchar serial_number UK
-        char product_code_hash UK
-        timestamptz product_code_retired_at
+        varchar serial_number "UK(REVOKED 제외)"
         varchar name
         varchar model
         device_status status
@@ -55,6 +54,15 @@ erDiagram
         timestamptz claimed_at
         uuid claimed_by FK
         timestamptz last_seen_at
+    }
+
+    REGISTRATION_CODE {
+        uuid id PK
+        uuid device_id FK
+        char code_hash UK
+        timestamptz expires_at
+        timestamptz used_at
+        uuid used_by FK
     }
 
     DEVICE_MEMBERSHIP {
@@ -215,9 +223,7 @@ JWT 사용자 식별
 | 컬럼 | 타입 | NULL | 설명 |
 | --- | --- | :---: | --- |
 | `id` | `uuid` | N | 서버 발급 기기 ID |
-| `serial_number` | `varchar(80)` | N | 제조 시 부여, 유일 |
-| `product_code_hash` | `char(64)` | N | 최초 등록용 제품 코드의 SHA-256 해시 |
-| `product_code_retired_at` | `timestamptz` | Y | 최초 등록 성공 시 같은 트랜잭션에서 기록. 값이 있으면 정적 제품 코드는 재사용 불가 |
+| `serial_number` | `varchar(80)` | N | 제조 시 부여. `REVOKED`가 아닌 행 간에만 유일(부분 유니크 인덱스) — 양도 시 같은 시리얼의 새 `UNCLAIMED` 행 생성을 허용 |
 | `name` | `varchar(80)` | N | 앱 표시 이름 |
 | `model` | `varchar(80)` | N | 기기 모델 |
 | `firmware_version` | `varchar(40)` | Y | 보고된 펌웨어 버전 |
@@ -227,6 +233,18 @@ JWT 사용자 식별
 | `claimed_at`, `claimed_by` | 시각·`uuid` | Y | 최초 등록 시각과 최초 OWNER |
 | `last_seen_at` | `timestamptz` | Y | heartbeat 기준 마지막 접속 |
 | `revoked_at` | `timestamptz` | Y | 등록 해제 시각 |
+
+### 5.3-1 `registration_codes` — 화면 표시 1회용 등록 코드
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | :---: | --- |
+| `id` | `uuid` | N | 코드 ID |
+| `device_id` | `uuid` | N | 코드를 표시한 기기 FK |
+| `code_hash` | `char(64)` | N | 정규화(대문자화·하이픈 제거)한 8자리 코드의 SHA-256 해시, 유일. 원문은 저장하지 않는다 |
+| `expires_at` | `timestamptz` | N | 발급 후 120초 |
+| `used_at`, `used_by` | 시각·`uuid` | Y | 등록 성공 시 같은 트랜잭션에서 기록, 1회용 보장 |
+
+코드 원문은 혼동 문자를 제외한 대문자·숫자 32자 문자셋 8자리이며 활성(미사용·미만료) 코드 간 유일성을 서버가 보장한다. 앱이 제출한 코드의 해시 역조회가 곧 대상 기기 특정이다. 실패 시도 제한(계정·IP당 5회/10분)은 애플리케이션 계층에서 적용한다.
 
 ### 5.4 `device_memberships` — 기기별 사용자 권한
 
@@ -351,11 +369,11 @@ JWT 사용자 식별
 
 ### 7.1 최초 기기 등록
 
-1. `devices` 행을 `FOR UPDATE`로 잠근다.
-2. 기기 상태가 `UNCLAIMED`인지, 제품 코드 해시가 일치하는지, 물리적 등록 모드가 만료되지 않았는지 확인한다.
+1. 제출된 코드의 해시로 `registration_codes`를 역조회해 대상 기기를 특정하고 해당 `devices` 행을 `FOR UPDATE`로 잠근다.
+2. 코드가 미사용·미만료인지, 기기 상태가 `UNCLAIMED`인지 확인한다. 실패는 계정·IP당 5회/10분으로 제한한다.
 3. 기기 상태·`claimed_at`·`claimed_by`를 갱신한다.
 4. 요청 사용자의 `OWNER / ACTIVE device_memberships`를 생성한다.
-5. `product_code_retired_at`을 기록해 정적 제품 코드를 논리적으로 폐기하고 운영용 기기 자격 증명을 발급한다.
+5. `registration_codes.used_at/used_by`를 기록해 코드를 1회용으로 소진하고 운영용 기기 자격 증명을 발급한다.
 6. 같은 트랜잭션을 커밋한다. 지연 제약 트리거가 활성 OWNER가 정확히 한 명인지 확인한다.
 
 ### 7.2 초대 수락
@@ -381,6 +399,14 @@ JWT 사용자 식별
 3. MEMBER를 `REVOKED`로 전환하고 refresh token의 기기별 권한 캐시를 즉시 무효화한다.
 4. 이미 발급된 재생 URL은 만료 전까지 유효할 수 있으므로 만료 시간을 짧게 유지한다.
 
+### 7.5 기기 해제·양도
+
+1. 요청자가 해당 기기의 활성 OWNER인지 확인한다. 앱은 사전에 영상 전체 삭제를 경고하고 다운로드를 안내한다.
+2. `devices` 행을 잠그고 `REVOKED`·`revoked_at`으로 종결한다.
+3. 그 기기의 활성 자격 증명·대기 초대·모든 멤버십을 회수하고, 영상은 삭제 작업으로 등록한다.
+4. 같은 `serial_number`의 새 `UNCLAIMED` `devices` 행을 같은 트랜잭션에서 생성한다(부분 유니크 인덱스가 이를 허용).
+5. 새 소유자는 새 행에 대해 7.1 최초 기기 등록 절차를 그대로 밟는다. 이전 행과 영상에는 어떤 사용자도 접근할 수 없다.
+
 ## 8. 보안·개인정보 체크리스트
 
 - [ ] 모든 기기·영상 repository 조회에 로그인 사용자의 `ACTIVE device_memberships` 조건을 결합한다.
@@ -388,7 +414,7 @@ JWT 사용자 식별
 - [ ] 대상 기기의 활성 멤버십이 없는 기기·영상·멤버십·초대 ID는 동일한 `404 RESOURCE_NOT_FOUND`로 응답한다.
 - [ ] 같은 기기의 활성 구성원이 OWNER 전용 작업을 요청하면 `403 OWNER_ROLE_REQUIRED`로 응답한다.
 - [ ] 사용자 JWT와 `DeviceBearer` 자격 증명을 서로 대체해 사용할 수 없게 한다.
-- [ ] 제품 코드·초대 토큰·refresh token·기기 토큰은 원문으로 저장하거나 로그에 남기지 않는다.
+- [ ] 등록 코드·초대 토큰·refresh token·기기 토큰은 원문으로 저장하거나 로그에 남기지 않는다.
 - [ ] 객체 저장소 버킷은 비공개이며 DB에는 객체 키만 저장한다.
 - [ ] 재생·다운로드·업로드 URL은 단기 URL로 발급하고 로그·분석 도구에 기록하지 않는다.
 - [ ] 업로드 완료 시 `HEAD` 크기와 SHA-256 체크섬 헤더/메타데이터를 검증한다.

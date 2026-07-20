@@ -174,11 +174,11 @@
 <header class="hero">
   <div class="eyebrow">WILLIAM JAMES · SPEC PACKAGE</div>
   <h1>개발을 위한 최소한의 명세서 5종</h1>
-  <p>꼭 완벽하게가 아니라, 팀원들이 흩어져서 서로 안 기다리고 동시에 출발할 수 있을 만큼만.</p>
+  <p>IoT 기기 관리 앱 · 꼭 완벽하게가 아니라, 팀원들이 흩어져서 서로 안 기다리고 동시에 출발할 수 있을 만큼만.</p>
   <div class="stats">
     <div class="stat"><div class="v">5<small> +1</small></div><div class="k">명세서 (＋온디바이스 계약)</div></div>
     <div class="stat"><div class="v">26<small>건</small></div><div class="k">요구사항 · 상14 중4 하8</div></div>
-    <div class="stat"><div class="v">31<small>개</small></div><div class="k">REST API + MQTT 3종</div></div>
+    <div class="stat"><div class="v">33<small>개</small></div><div class="k">REST API (＋대시보드 2 신규) + MQTT 3종</div></div>
     <div class="stat"><div class="v">6<small> +3</small></div><div class="k">필수 테이블 (＋운영 3)</div></div>
     <div class="stat"><div class="v">8<small>화면</small></div><div class="k">목업 · 상태 정의 포함</div></div>
   </div>
@@ -203,6 +203,16 @@
 </div>
 
 <section data-role="all">
+  <div class="card accent" style="margin-top:28px">
+    <b>서비스 방향성 (팀 회의 확정)</b>
+    <ol style="margin:8px 0 0; padding-left:20px">
+      <li>앱의 성격은 <b>IoT 기기 관리 앱</b> — 공개 영상 피드·영상 플랫폼이 아니다.</li>
+      <li><b>편집된 영상은 서버(비공개 저장소)에 저장</b>한다.</li>
+      <li>저장된 영상은 <b>같은 기기의 구성원(가족)만</b> 조회한다. (사용자↔기기 N:N <code>DeviceMembership</code>)</li>
+      <li>영상은 <b>보관 기간 후 자동 삭제</b>하며, 이 보관 정책을 보관 연장 등 <b>부가 서비스·BM의 근거</b>로 활용한다.</li>
+      <li>대시보드는 저장 영상을 <b>갤러리·캘린더·통계</b>로 제공한다.</li>
+    </ol>
+  </div>
   <h3 style="margin-top:32px">이 문서와 저장소 산출물의 관계</h3>
   <div class="tablewrap"><table>
     <tr><th>명세서</th><th>이 페이지의 역할</th><th>원본 산출물</th></tr>
@@ -255,7 +265,7 @@
     <tr data-role="fe be"><td>REQ-09</td><td>구간 편집</td><td>[사용자]는 [원하는 순간만 남기기] 위하여 [시작·종료 시각을 선택해 새 편집본을 생성]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 편집</td><td><code>FR-B-008</code> · <b>시연 피날레</b></td></tr>
     <tr data-role="fe be"><td>REQ-10</td><td>영상 관리</td><td>[사용자]는 [영상을 정리]하기 위하여 [이름 변경·즐겨찾기·삭제·정렬·필터]를 할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>영상 목록</td><td><code>FR-B-009</code></td></tr>
     <tr data-role="fe be"><td>REQ-11</td><td>다운로드</td><td>[사용자]는 [추억을 소장]하기 위하여 [권한 검사 후 단기 URL로 영상을 다운로드]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 목록</td><td><code>FR-B-010</code> · <b>시연 피날레</b></td></tr>
-    <tr data-role="fe be"><td>REQ-12</td><td>홈 대시보드</td><td>[사용자]는 [기기·영상 현황을 한눈에 파악]하기 위하여 [기기 상태·최근 영상·저장 수를 대시보드에서 확인]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>홈 대시보드</td><td><code>FR-B-011</code></td></tr>
+    <tr data-role="fe be"><td>REQ-12</td><td>대시보드 (갤러리·캘린더·통계)</td><td>[사용자]는 [기기·추억 현황을 한눈에 파악]하기 위하여 [기기 상태와 저장 영상을 갤러리·캘린더·통계 관점으로 대시보드에서 확인]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>홈 대시보드</td><td><code>FR-B-011</code> · 갤러리·캘린더·통계</td></tr>
     <tr data-role="fe be iot"><td>REQ-13</td><td>실시간 보기</td><td>[사용자]는 [지금 잘 녹화되고 있는지 확인]하기 위하여 [접근 권한이 있는 기기의 HLS 스트림을 요청 시에만 시작·종료]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>실시간 보기</td><td><code>FR-B-012</code> · 시연 도입 장면 · 화면을 띄운 시청자에게만 송출</td></tr>
     <tr data-role="fe be iot"><td>REQ-14</td><td>기기 최초 등록</td><td>[사용자]는 [기기 소유자가 되기] 위하여 [제품 코드와 물리적 등록 모드를 함께 확인받아 최초 OWNER로 등록]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>기기 등록</td><td><code>FR-B-013</code> · 코드 재사용 불가</td></tr>
     <tr data-role="fe be"><td>REQ-15</td><td>구성원 초대</td><td>[OWNER]는 [가족·지인과 영상을 공유]하기 위하여 [만료되는 1회용 초대로 기기 MEMBER를 추가]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>구성원 관리</td><td><code>FR-B-014</code></td></tr>
@@ -450,6 +460,10 @@
     <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/videos/{videoId}/edits</td><td>영상 구간 편집 요청 (비동기)</td></tr>
     <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/video-edits/{editId}</td><td>편집 작업 상태 조회</td></tr>
     </tbody>
+    <tbody data-role="fe be">
+    <tr><td rowspan="2">대시보드 <span class="r r-fe">FE</span><span class="r r-be">BE</span> <span class="note">신규</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/videos/calendar?from=&to=</td><td>캘린더 — 일자별 영상 유무·개수 집계</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/stats?period=</td><td>통계 — 감지 유형별·기간별·요일/시간대 집계</td></tr>
+    </tbody>
     <tbody data-role="fe be iot">
     <tr><td rowspan="4">라이브 <span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/devices/{deviceId}/stream-sessions</td><td>온디맨드 실시간 보기 세션 시작</td></tr>
     <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/stream-sessions/{sessionId}</td><td>세션 상태 조회 (READY면 playUrl)</td></tr>
@@ -620,7 +634,7 @@ Authorization: Bearer {accessToken}</pre>
   <div class="tablewrap"><table>
     <tr><th>화면</th><th>핵심 확인 사항</th><th>미리 정의한 화면 상태</th></tr>
     <tr><td><b>로그인</b></td><td>이메일 로그인, 회원가입 진입</td><td>입력 오류 · 자격 증명 오류 · 시도 제한</td></tr>
-    <tr><td><b>홈 대시보드</b></td><td>내 기기 목록·선택, 기기별 역할·상태, 최근 영상, 저장 수, 라이브 진입</td><td>로딩 · 기기 없음(빈 상태) · 기기 오프라인</td></tr>
+    <tr><td><b>홈 대시보드</b></td><td>내 기기 목록·선택, 기기별 역할·상태, 라이브 진입, 저장 영상 <b>갤러리·캘린더·통계</b> 뷰</td><td>로딩 · 기기 없음(빈 상태) · 기기 오프라인 · 빈 갤러리·빈 달</td></tr>
     <tr><td><b>기기 등록</b></td><td>물리적 등록 모드 안내, 제품 코드·QR, 최초 소유자 등록</td><td>등록 모드 꺼짐 · 코드 오류·재사용 · 이미 등록됨</td></tr>
     <tr><td><b>영상 목록</b></td><td>감지 유형 필터, 썸네일, 촬영 시각, 길이</td><td>로딩 · 빈 목록 · 처리 중 · 권한 없음(404)</td></tr>
     <tr><td><b>영상 편집</b></td><td>재생, 시작·종료 선택, 선택 길이, 편집본 생성</td><td>PENDING · PROCESSING · COMPLETED · FAILED</td></tr>

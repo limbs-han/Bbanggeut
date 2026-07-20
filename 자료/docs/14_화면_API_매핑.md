@@ -9,9 +9,12 @@
 | 로그인 | 회원가입 | `POST /api/auth/signup` | 계정 생성 | 이메일 중복, 입력 오류 | 김수원·박찬형 |
 | 로그인 | 로그인 | `POST /api/auth/login` | 토큰 발급 | 자격 증명 오류, 시도 제한 | 김수원·박찬형 |
 | 공통 | 토큰 재발급·로그아웃 | `POST /api/auth/refresh`, `POST /api/auth/logout` | 세션 유지·종료 | 만료·폐기 토큰 | 김수원·박찬형 |
-| 기기 등록 | 제품 코드 등록 | `POST /api/devices/claim` | `OWNER` 등록 | 등록 모드 꺼짐, 코드 오류·재사용, 이미 등록됨 | 김수원·박찬형·유지호 |
+| 기기 등록 | 화면 등록 코드 입력 | `POST /api/devices/claim` | `OWNER` 등록 | 등록 모드 꺼짐, 코드 오류·만료·재사용, 이미 등록됨, 실패 5회/10분 초과 | 김수원·박찬형·유지호 |
 | 홈 | 내 기기 조회 | `GET /api/devices` | 등록·공유받은 기기와 기기별 역할 목록 | 내 기기 없음, 권한 없음 | 김수원·박찬형 |
 | 홈 | 기기 상태 조회 | `GET /api/devices/{deviceId}/status` | 온라인·최근 접속 | 오프라인, 기기 없음 | 김수원·박찬형·유지호 |
+| 대시보드·갤러리 | 저장 영상 그리드 | `GET /api/videos?deviceId={deviceId}` | 썸네일 그리드, 기간·감지 유형 필터 | 빈 목록, 멤버십 없음 | 서유정·박찬형 |
+| 대시보드·캘린더 | 일자별 영상 조회 | `GET /api/videos?deviceId={deviceId}&from=&to=` (또는 `.../videos/calendar`) | 일자별 영상 유무·개수, 날짜 선택 시 해당일 목록 | 빈 달, 멤버십 없음 | 서유정·박찬형 |
+| 대시보드·통계 | 저장 영상 집계 | `GET /api/devices/{deviceId}/stats` | 감지 유형별 건수·기간별 추이·요일/시간대 집계 | 데이터 없음, 멤버십 없음 | 김수원·박찬형 |
 | 영상 목록 | 목록·기기 필터 | `GET /api/videos?deviceId={deviceId}` | 해당 기기의 페이지 목록 | 빈 목록, 기기 멤버십 없음, 네트워크 오류 | 서유정·박찬형 |
 | 영상 상세 | 영상 상세 | `GET /api/videos/{videoId}` | 메타데이터 | 처리 중, 삭제됨, `DeviceMembership` 없음 | 서유정·박찬형 |
 | 영상 상세 | 재생 URL | `POST /api/videos/{videoId}/play-url` | 짧은 서명 URL | URL 만료, 권한 회수 | 서유정·박찬형 |

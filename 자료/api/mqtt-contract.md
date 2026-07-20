@@ -7,7 +7,7 @@
 
 ## 1. 목적과 책임 경계
 
-MQTT는 Jetson/Raspberry Pi와 백엔드 사이의 작은 상태·이벤트·명령 메시지에만 사용한다. MP4, 썸네일, 오디오 원본, 얼굴 이미지, 제품 코드, 토큰, 서명 URL은 MQTT payload에 넣지 않는다.
+MQTT는 Jetson/Raspberry Pi와 백엔드 사이의 작은 상태·이벤트·명령 메시지에만 사용한다. MP4, 썸네일, 오디오 원본, 얼굴 이미지, 등록 코드, 토큰, 서명 URL은 MQTT payload에 넣지 않는다.
 
 가장 중요한 원칙은 **로컬 영상 보존이 클라우드 MQTT보다 먼저이며 독립적**이라는 것이다.
 
@@ -40,7 +40,7 @@ Jetson과 Raspberry Pi가 하나의 카메라 시스템을 이룰 때 서버 권
 | 중복 처리 | `eventId` 또는 `requestId`를 기기 범위 멱등 키로 사용 |
 | 순서 | 서로 다른 토픽 사이의 전역 순서를 가정하지 않음 |
 | 최대 payload | 64 KiB 이하. 영상·이미지·대용량 로그 금지 |
-| 민감정보 | 제품 코드, 사용자 JWT, 기기 토큰, 초대 토큰, 서명 URL 금지 |
+| 민감정보 | 등록 코드, 사용자 JWT, 기기 토큰, 초대 토큰, 서명 URL 금지 |
 
 알 수 없는 선택 필드는 무시한다. 알 수 없는 major 버전이나 필수 필드 누락은 처리하지 않고 구조화된 오류로 기록한다.
 
@@ -164,7 +164,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 
 ### 5.3 등록 모드 `/registration`
 
-사용자가 기기의 물리 버튼을 길게 누르면 발행한다. 제품 코드는 payload에 넣지 않는다.
+사용자가 기기의 물리 버튼을 길게 누르면 발행한다. 등록 코드 평문은 payload에 넣지 않는다 — 코드는 HTTPS `POST /api/iot/registration-codes`로 발급받아 기기 LCD에만 표시한다.
 
 ```json
 {
@@ -183,7 +183,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 | `mode` | `ENABLED` 또는 `DISABLED` |
 | Retain | Y. 만료 후 기기가 `DISABLED`를 다시 발행 |
 | 서버 처리 | 인증된 기기의 `registration_mode_expires_at`만 갱신 |
-| Claim 검사 | 제품 코드 해시, `UNCLAIMED`, 등록 모드 미만료와 시도 횟수 제한을 모두 확인하고 성공 시 제품 코드를 폐기 |
+| Claim 검사 | 등록 코드 해시 역조회로 기기 특정, 코드 120초 TTL·미사용, `UNCLAIMED`, 계정·IP당 실패 5회/10분 제한을 모두 확인하고 성공 시 코드를 사용 처리 |
 
 MQTT 5에서는 retained `ENABLED` 메시지에 Message Expiry Interval을 설정한다. 서버는 브로커 상태를 신뢰하지 않고 payload의 `expiresAt`을 다시 확인한다.
 
@@ -429,7 +429,7 @@ Retain 허용 토픽은 `/status`, `/registration`뿐이다. `/events`, `/stream
 
 - 서버와 기기 로그는 `eventId`, `requestId`, `deviceId`, `schemaVersion`으로 연결한다.
 - payload 전체를 INFO 로그에 남기지 않고 식별자와 상태 코드 중심으로 구조화한다.
-- 제품 코드, 사용자 JWT, 기기 토큰, 초대 토큰, 서명 URL, 원본 오디오·영상 경로는 로그에서 마스킹하거나 제외한다.
+- 등록 코드, 사용자 JWT, 기기 토큰, 초대 토큰, 서명 URL, 원본 오디오·영상 경로는 로그에서 마스킹하거나 제외한다.
 - 인증 실패, ACL 거부, 반복적인 스키마 오류를 보안 이벤트로 집계한다.
 - 처리할 수 없는 기기 이벤트는 허용 필드만 격리 로그에 기록하고 DLQ 또는 로컬 실패 큐로 이동한다.
 - 핵심 지표는 온라인 기기 수, heartbeat 지연, 로컬 업로드 큐 깊이, 업로드 성공률, 업로드 소요 시간, 체크섬 불일치 수, 이벤트 중복률이다.
@@ -447,7 +447,7 @@ Retain 허용 토픽은 `/status`, `/registration`뿐이다. `/events`, `/stream
 - [ ] 만료된 명령은 `EXPIRED` ACK를 주고 실행하지 않는다.
 - [ ] `/events`, `/stream/events`, `/commands`가 retained로 발행되지 않는다.
 - [ ] heartbeat 미수신 90초 뒤 기기가 오프라인으로 표시된다.
-- [ ] MQTT payload와 로그에 제품 코드·토큰·서명 URL이 없다.
+- [ ] MQTT payload와 로그에 등록 코드·토큰·서명 URL이 없다.
 - [ ] 500 MiB 초과 단일 업로드 URL 요청이 413으로 거부된다.
 - [ ] PUT 요청이 응답의 체크섬 헤더 또는 메타데이터를 그대로 포함한다.
 - [ ] 완료 API가 객체 `HEAD`의 크기·SHA-256 불일치를 거부한다.
