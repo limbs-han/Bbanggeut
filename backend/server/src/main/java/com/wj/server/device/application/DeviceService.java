@@ -10,8 +10,10 @@ import com.wj.server.device.api.ClaimDeviceRequest;
 import com.wj.server.device.api.DeviceResponse;
 import com.wj.server.device.api.DeviceSummaryResponse;
 import com.wj.server.device.api.DeviceStatusResponse;
+import com.wj.server.device.api.TransferOwnershipRequest;
 import com.wj.server.device.api.UpdateDeviceRequest;
 import com.wj.server.device.domain.DeviceViewRow;
+import com.wj.server.device.domain.MembershipStateRow;
 import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
@@ -140,6 +142,33 @@ public class DeviceService {
         return new DeviceStatusResponse(
             status.deviceId(), status.status(), status.recording(), status.uploadQueueDepth(),
             status.bufferSeconds(), clock.instant());
+    }
+
+    /**
+     * Transfers ownership to an existing active MEMBER of the same device.
+     * Videos, members, settings and the device subscription all stay — only the
+     * roles swap. The deferred one-active-OWNER trigger re-validates at commit.
+     */
+    @Transactional
+    public void transferOwnership(UUID userId, UUID deviceId, TransferOwnershipRequest request) {
+        DeviceViewRow device = deviceMapper.lockAccessibleDevice(userId, deviceId)
+            .orElseThrow(this::notFound);
+        requireOwner(device.myRole(), userId, deviceId, "DEVICE_UPDATE");
+        MembershipStateRow target = deviceMapper.lockMembership(deviceId, request.newOwnerMembershipId())
+            .orElseThrow(this::notFound);
+        if (target.userId().equals(userId)) {
+            throw new ApiException(
+                HttpStatus.CONFLICT, "ALREADY_OWNER", "이미 본인이 OWNER인 기기입니다.");
+        }
+        if (!"MEMBER".equals(target.role()) || !"ACTIVE".equals(target.status())
+            || deviceMapper.demoteOwnerToMember(deviceId, userId) != 1
+            || deviceMapper.promoteMemberToOwner(deviceId, target.id()) != 1) {
+            throw new ApiException(
+                HttpStatus.CONFLICT,
+                "TRANSFER_TARGET_NOT_ACTIVE_MEMBER",
+                "해당 기기의 활성 MEMBER에게만 소유권을 넘길 수 있습니다.");
+        }
+        auditService.success(deviceId, userId, "DEVICE_UPDATE", "MEMBERSHIP", target.id());
     }
 
     /**

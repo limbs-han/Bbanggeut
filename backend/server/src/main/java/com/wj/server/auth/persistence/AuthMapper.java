@@ -88,4 +88,39 @@ public interface AuthMapper {
            AND revoked_at IS NULL
         """)
     int revokeOwnedSession(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    // --- account withdrawal ---
+
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1
+              FROM device_memberships m
+              JOIN devices d ON d.id = m.device_id
+             WHERE m.user_id = #{userId} AND m.role = 'OWNER' AND m.status = 'ACTIVE'
+               AND d.status != 'REVOKED'
+        )
+        """)
+    boolean hasActiveOwnerMembership(@Param("userId") UUID userId);
+
+    @Update("""
+        UPDATE device_memberships
+           SET status = 'REVOKED', revoked_at = now(), revoked_by = #{userId}, updated_at = now()
+         WHERE user_id = #{userId} AND status = 'ACTIVE'
+        """)
+    int revokeAllMembershipsForUser(@Param("userId") UUID userId);
+
+    @Update("""
+        UPDATE auth_sessions
+           SET revoked_at = now()
+         WHERE user_id = #{userId} AND revoked_at IS NULL
+        """)
+    int revokeAllSessionsForUser(@Param("userId") UUID userId);
+
+    @Update("""
+        UPDATE users
+           SET status = 'WITHDRAWN', deleted_at = now(),
+               token_version = token_version + 1, updated_at = now()
+         WHERE id = #{userId} AND deleted_at IS NULL
+        """)
+    int markUserWithdrawn(@Param("userId") UUID userId);
 }

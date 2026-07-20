@@ -101,6 +101,27 @@ public class AuthService {
         authMapper.revokeOwnedSession(sessionId, userId);
     }
 
+    /**
+     * Account withdrawal. A user who still owns a device must release or
+     * transfer it first — otherwise the device would end up ownerless, which
+     * the one-active-OWNER constraint forbids.
+     */
+    @Transactional
+    public void withdraw(UUID userId) {
+        if (authMapper.hasActiveOwnerMembership(userId)) {
+            throw new ApiException(
+                HttpStatus.CONFLICT,
+                "OWNER_MEMBERSHIP_EXISTS",
+                "소유 중인 기기가 있습니다. 먼저 기기를 해제하거나 소유권을 넘긴 뒤 탈퇴할 수 있습니다.");
+        }
+        if (authMapper.markUserWithdrawn(userId) != 1) {
+            throw new ApiException(
+                HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다.");
+        }
+        authMapper.revokeAllMembershipsForUser(userId);
+        authMapper.revokeAllSessionsForUser(userId);
+    }
+
     private AuthTokenResponse issueTokens(UserRow user, ClientContext context) {
         UUID sessionId = UUID.randomUUID();
         String refreshToken = newRefreshToken();

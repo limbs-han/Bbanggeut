@@ -213,6 +213,49 @@ class DeviceServiceTest {
     }
 
     @Test
+    void ownershipTransferSwapsRolesWithoutTouchingVideos() {
+        UUID ownerId = UUID.randomUUID();
+        UUID memberId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID membershipId = UUID.randomUUID();
+        when(deviceMapper.lockAccessibleDevice(ownerId, deviceId))
+            .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
+        when(deviceMapper.lockMembership(deviceId, membershipId))
+            .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
+                membershipId, memberId, "MEMBER", "ACTIVE")));
+        when(deviceMapper.demoteOwnerToMember(deviceId, ownerId)).thenReturn(1);
+        when(deviceMapper.promoteMemberToOwner(deviceId, membershipId)).thenReturn(1);
+
+        deviceService.transferOwnership(
+            ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId));
+
+        verify(deviceMapper).demoteOwnerToMember(deviceId, ownerId);
+        verify(deviceMapper).promoteMemberToOwner(deviceId, membershipId);
+        verify(deviceMapper, never()).markAllVideosDeleting(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void ownershipTransferRejectsRevokedMembershipTarget() {
+        UUID ownerId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID membershipId = UUID.randomUUID();
+        when(deviceMapper.lockAccessibleDevice(ownerId, deviceId))
+            .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
+        when(deviceMapper.lockMembership(deviceId, membershipId))
+            .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
+                membershipId, UUID.randomUUID(), "MEMBER", "REVOKED")));
+
+        assertThatThrownBy(() -> deviceService.transferOwnership(
+            ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId)))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("TRANSFER_TARGET_NOT_ACTIVE_MEMBER");
+        verify(deviceMapper, never()).demoteOwnerToMember(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void emptyDevicePatchIsRejected() {
         assertThatThrownBy(() -> deviceService.update(
             UUID.randomUUID(), UUID.randomUUID(), new UpdateDeviceRequest()))

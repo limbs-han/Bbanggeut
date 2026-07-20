@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.wj.server.device.domain.DeviceViewRow;
 import com.wj.server.device.domain.DeviceStatusRow;
+import com.wj.server.device.domain.MembershipStateRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -166,6 +167,33 @@ public interface DeviceMapper {
         ON CONFLICT (video_id) DO NOTHING
         """)
     int enqueueDeletionJobsForDevice(@Param("deviceId") UUID deviceId);
+
+    @Select("""
+        SELECT id, user_id, role::text, status::text
+          FROM device_memberships
+         WHERE id = #{membershipId} AND device_id = #{deviceId}
+         FOR UPDATE
+        """)
+    Optional<MembershipStateRow> lockMembership(
+        @Param("deviceId") UUID deviceId,
+        @Param("membershipId") UUID membershipId
+    );
+
+    @Update("""
+        UPDATE device_memberships
+           SET role = 'MEMBER', updated_at = now()
+         WHERE device_id = #{deviceId} AND user_id = #{userId}
+           AND role = 'OWNER' AND status = 'ACTIVE'
+        """)
+    int demoteOwnerToMember(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
+
+    @Update("""
+        UPDATE device_memberships
+           SET role = 'OWNER', updated_at = now()
+         WHERE id = #{membershipId} AND device_id = #{deviceId}
+           AND role = 'MEMBER' AND status = 'ACTIVE'
+        """)
+    int promoteMemberToOwner(@Param("deviceId") UUID deviceId, @Param("membershipId") UUID membershipId);
 
     /**
      * Ownership transfer: the revoked row keeps the history while the same

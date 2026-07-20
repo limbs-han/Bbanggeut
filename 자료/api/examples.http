@@ -59,6 +59,19 @@ Content-Type: application/json
   "retentionDays": 30
 }
 
+### 회원 탈퇴 — 활성 OWNER 멤버십이 있으면 409 (기기 해제 또는 소유권 이전 선행)
+DELETE {{baseUrl}}/api/auth/me
+Authorization: Bearer {{accessToken}}
+
+### 기기 소유권 이전 — 현 OWNER 전용, 대상은 같은 기기의 활성 MEMBER
+POST {{baseUrl}}/api/devices/{{deviceId}}/transfer-ownership
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "newOwnerMembershipId": "{{membershipId}}"
+}
+
 ### 기기 구성원 목록
 GET {{baseUrl}}/api/devices/{{deviceId}}/members
 Authorization: Bearer {{accessToken}}

@@ -118,6 +118,27 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/me:
+    delete:
+      tags: [Auth]
+      operationId: withdrawAccount
+      summary: 회원 탈퇴
+      description: |
+        활성 `OWNER` 멤버십이 하나라도 있으면 409로 거부한다 — 먼저 기기를 해제하거나
+        소유권을 넘겨야 한다. 성공 시 모든 MEMBER 멤버십과 로그인 세션을 회수하고
+        계정을 `WITHDRAWN` 처리한다.
+      responses:
+        '204':
+          description: 탈퇴 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 소유 중인 기기가 있어 탈퇴 불가 (OWNER_MEMBERSHIP_EXISTS)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/devices:
     get:
       tags: [Devices]
@@ -231,6 +252,42 @@ paths:
           $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
+
+  /api/devices/{deviceId}/transfer-ownership:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      tags: [Devices]
+      operationId: transferOwnership
+      summary: 기기 소유권 이전
+      description: |
+        현재 OWNER가 같은 기기의 활성 MEMBER에게 소유권을 넘긴다. 한 트랜잭션에서
+        기존 OWNER는 MEMBER로 강등되고 대상이 OWNER로 승격된다. 영상·구성원·설정·구독은
+        모두 유지된다(기기 행 불변). 외부인에게 넘기려면 먼저 초대·승인으로 MEMBER로
+        만들거나, 영상을 삭제하는 기기 해제(양도) 절차를 사용한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequest'
+      responses:
+        '204':
+          description: 소유권 이전 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 대상이 활성 MEMBER가 아니거나 본인임
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/devices/{deviceId}/status:
     parameters:
@@ -1335,6 +1392,16 @@ components:
         joinedAt:
           type: string
           format: date-time
+
+    TransferOwnershipRequest:
+      type: object
+      required: [newOwnerMembershipId]
+      additionalProperties: false
+      properties:
+        newOwnerMembershipId:
+          type: string
+          format: uuid
+          description: 같은 기기의 활성 MEMBER 멤버십 ID
 
     InviteLink:
       type: object

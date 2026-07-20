@@ -68,6 +68,16 @@ public class DeviceController {
         return deviceService.status(userId(jwt), deviceId);
     }
 
+    @PostMapping("/{deviceId}/transfer-ownership")
+    public ResponseEntity<Void> transferOwnership(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID deviceId,
+        @Valid @RequestBody TransferOwnershipRequest request
+    ) {
+        deviceService.transferOwnership(userId(jwt), deviceId, request);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{deviceId}")
     public ResponseEntity<Void> revoke(
         @AuthenticationPrincipal Jwt jwt,

@@ -124,4 +124,28 @@ class AuthServiceTest {
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("INVALID_REFRESH_TOKEN");
     }
+
+    @Test
+    void withdrawalIsBlockedWhileUserOwnsADevice() {
+        UUID userId = UUID.randomUUID();
+        when(authMapper.hasActiveOwnerMembership(userId)).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.withdraw(userId))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("OWNER_MEMBERSHIP_EXISTS");
+        verify(authMapper, never()).markUserWithdrawn(any());
+    }
+
+    @Test
+    void withdrawalRevokesMembershipsAndSessions() {
+        UUID userId = UUID.randomUUID();
+        when(authMapper.hasActiveOwnerMembership(userId)).thenReturn(false);
+        when(authMapper.markUserWithdrawn(userId)).thenReturn(1);
+
+        authService.withdraw(userId);
+
+        verify(authMapper).revokeAllMembershipsForUser(userId);
+        verify(authMapper).revokeAllSessionsForUser(userId);
+    }
 }
