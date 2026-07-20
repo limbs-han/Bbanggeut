@@ -3,8 +3,8 @@
 @deviceToken = REPLACE_WITH_DEVICE_CREDENTIAL
 @deviceId = 00000000-0000-0000-0000-000000000002
 @membershipId = 00000000-0000-0000-0000-000000000005
-@invitationId = 00000000-0000-0000-0000-000000000006
-@invitationToken = REPLACE_WITH_INVITATION_TOKEN
+@joinRequestId = 00000000-0000-0000-0000-000000000006
+@inviteToken = REPLACE_WITH_INVITE_LINK_TOKEN
 @videoId = 00000000-0000-0000-0000-000000000003
 @eventId = 00000000-0000-0000-0000-000000000004
 @streamSessionId = 00000000-0000-0000-0000-000000000007
@@ -63,26 +63,45 @@ Content-Type: application/json
 GET {{baseUrl}}/api/devices/{{deviceId}}/members
 Authorization: Bearer {{accessToken}}
 
-### 기기 구성원 초대 — OWNER 전용
-POST {{baseUrl}}/api/devices/{{deviceId}}/invitations
+### 초대 링크 생성·회전 — OWNER 전용, 응답의 inviteToken을 메신저로 공유
+POST {{baseUrl}}/api/devices/{{deviceId}}/invite-link
+Authorization: Bearer {{accessToken}}
+
+### 초대 링크 무효화 — OWNER 전용
+DELETE {{baseUrl}}/api/devices/{{deviceId}}/invite-link
+Authorization: Bearer {{accessToken}}
+
+### 가입 요청 — 링크를 받은 사용자가 로그인 후 제출
+POST {{baseUrl}}/api/join-requests
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "email": "member@example.com"
+  "inviteToken": "{{inviteToken}}"
 }
 
-### 초대 수락 — 로그인 이메일과 초대 이메일이 일치해야 함
-POST {{baseUrl}}/api/invitations/accept
+### 대기 중인 가입 요청 목록 — OWNER 전용
+GET {{baseUrl}}/api/devices/{{deviceId}}/join-requests
 Authorization: Bearer {{accessToken}}
-Content-Type: application/json
 
-{
-  "invitationToken": "{{invitationToken}}"
-}
+### 가입 요청 승인 — OWNER 전용, MEMBER 멤버십 생성
+POST {{baseUrl}}/api/devices/{{deviceId}}/join-requests/{{joinRequestId}}/approve
+Authorization: Bearer {{accessToken}}
 
-### 대기 초대 철회 — OWNER 전용
-DELETE {{baseUrl}}/api/devices/{{deviceId}}/invitations/{{invitationId}}
+### 가입 요청 거절 — OWNER 전용
+POST {{baseUrl}}/api/devices/{{deviceId}}/join-requests/{{joinRequestId}}/reject
+Authorization: Bearer {{accessToken}}
+
+### 기기 구독(멤버십) 상태 조회
+GET {{baseUrl}}/api/devices/{{deviceId}}/subscription
+Authorization: Bearer {{accessToken}}
+
+### 기기 구독 시작 — OWNER 전용, 보관 기간 365일로 연장 (결제는 MVP 범위 밖)
+PUT {{baseUrl}}/api/devices/{{deviceId}}/subscription
+Authorization: Bearer {{accessToken}}
+
+### 기기 구독 해지 — OWNER 전용, 즉시 삭제 없이 30일 유예 후 기본 30일 기준 초과분 삭제
+DELETE {{baseUrl}}/api/devices/{{deviceId}}/subscription
 Authorization: Bearer {{accessToken}}
 
 ### 구성원 접근 회수 — OWNER 전용
