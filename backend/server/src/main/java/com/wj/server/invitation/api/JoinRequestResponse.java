@@ -3,13 +3,13 @@ package com.wj.server.invitation.api;
 import java.time.Instant;
 import java.util.UUID;
 
-public record InvitationResponse(
+import com.wj.server.auth.api.UserSummary;
+
+public record JoinRequestResponse(
     UUID id,
     UUID deviceId,
-    String inviteeEmail,
-    String role,
+    UserSummary requester,
     String status,
-    Instant expiresAt,
-    Instant createdAt
+    Instant requestedAt
 ) {
 }

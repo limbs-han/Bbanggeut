@@ -32,6 +32,11 @@ app:
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
   invitation:
     ttl: ${INVITATION_TTL:7d}
+  subscription:
+    premium-retention-days: ${SUBSCRIPTION_PREMIUM_RETENTION_DAYS:365}
+    grace: ${SUBSCRIPTION_GRACE:30d}
+  retention:
+    sweep-delay: ${RETENTION_SWEEP_DELAY:60000}
   video-edit:
     ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
     process-timeout: ${FFMPEG_PROCESS_TIMEOUT:10m}

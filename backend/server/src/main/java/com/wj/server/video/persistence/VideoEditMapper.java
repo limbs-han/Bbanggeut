@@ -82,7 +82,8 @@ public interface VideoEditMapper {
         SELECT #{resultVideoId}, #{deviceId}, #{requestedBy}, 'EDIT_OUTPUT', 'EDIT', #{title},
                #{storageKey}, 'video/mp4', #{sizeBytes}, #{checksumSha256}, #{durationMs},
                #{capturedStartAt}, #{capturedEndAt}, 'READY', now(),
-               now() + make_interval(days => d.retention_days)
+               now() + make_interval(days =>
+                   CASE WHEN d.subscription_active THEN #{premiumRetentionDays} ELSE d.retention_days END)
           FROM devices d WHERE d.id = #{deviceId}
         """)
     int insertResultVideo(
@@ -95,7 +96,8 @@ public interface VideoEditMapper {
         @Param("checksumSha256") String checksumSha256,
         @Param("durationMs") long durationMs,
         @Param("capturedStartAt") Instant capturedStartAt,
-        @Param("capturedEndAt") Instant capturedEndAt
+        @Param("capturedEndAt") Instant capturedEndAt,
+        @Param("premiumRetentionDays") int premiumRetentionDays
     );
 
     @Update("""

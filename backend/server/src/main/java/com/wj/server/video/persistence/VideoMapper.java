@@ -1,6 +1,7 @@
 package com.wj.server.video.persistence;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -68,11 +69,41 @@ public interface VideoMapper {
     );
 
     @Update("""
-        UPDATE videos
-           SET status = 'READY', uploaded_at = now(), updated_at = now()
-         WHERE id = #{videoId} AND device_id = #{deviceId} AND status = 'UPLOADING'
+        UPDATE videos v
+           SET status = 'READY', uploaded_at = now(),
+               retention_until = now() + make_interval(days =>
+                   CASE WHEN d.subscription_active THEN #{premiumRetentionDays} ELSE d.retention_days END),
+               updated_at = now()
+          FROM devices d
+         WHERE v.id = #{videoId} AND v.device_id = #{deviceId}
+           AND d.id = v.device_id AND v.status = 'UPLOADING'
         """)
-    int markReady(@Param("deviceId") UUID deviceId, @Param("videoId") UUID videoId);
+    int markReady(
+        @Param("deviceId") UUID deviceId,
+        @Param("videoId") UUID videoId,
+        @Param("premiumRetentionDays") int premiumRetentionDays
+    );
+
+    /**
+     * Retention sweep: flips expired videos to DELETING and returns their ids so
+     * the caller can enqueue deletion jobs in the same transaction.
+     */
+    @Select("""
+        WITH due AS (
+            SELECT id FROM videos
+             WHERE retention_until IS NOT NULL AND retention_until <= now()
+               AND status IN ('READY', 'FAILED')
+             ORDER BY retention_until
+             LIMIT #{limit}
+             FOR UPDATE SKIP LOCKED
+        )
+        UPDATE videos v
+           SET status = 'DELETING', delete_requested_at = now(), updated_at = now()
+          FROM due
+         WHERE v.id = due.id
+        RETURNING v.id
+        """)
+    List<UUID> markRetentionExpiredDeleting(@Param("limit") int limit);
 
     @Select("""
         SELECT EXISTS (

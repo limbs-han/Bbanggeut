@@ -20,7 +20,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableConfigurationProperties({
     AuthProperties.class, DeviceClaimProperties.class, StorageProperties.class,
-    InvitationProperties.class, VideoEditProperties.class, MqttProperties.class, StreamProperties.class
+    InvitationProperties.class, VideoEditProperties.class, MqttProperties.class, StreamProperties.class,
+    SubscriptionProperties.class
 })
 public class SecurityConfig {
 

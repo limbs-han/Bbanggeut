@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
+import com.wj.server.config.SubscriptionProperties;
 import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.IotUploadCompleteRequest;
 import com.wj.server.video.api.IotUploadUrlRequest;
@@ -21,10 +22,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class IotVideoService {
     private final VideoMapper videoMapper;
     private final ObjectStorageService objectStorageService;
+    private final SubscriptionProperties subscriptionProperties;
 
-    public IotVideoService(VideoMapper videoMapper, ObjectStorageService objectStorageService) {
+    public IotVideoService(
+        VideoMapper videoMapper,
+        ObjectStorageService objectStorageService,
+        SubscriptionProperties subscriptionProperties
+    ) {
         this.videoMapper = videoMapper;
         this.objectStorageService = objectStorageService;
+        this.subscriptionProperties = subscriptionProperties;
     }
 
     @Transactional
@@ -89,7 +96,7 @@ public class IotVideoService {
                 "업로드된 객체의 크기 또는 체크섬이 일치하지 않습니다.");
         }
 
-        videoMapper.markReady(deviceId, video.id());
+        videoMapper.markReady(deviceId, video.id(), subscriptionProperties.premiumRetentionDays());
         return videoMapper.findOwnedVideo(deviceId, video.id())
             .map(this::toResponse)
             .orElseThrow(() -> new IllegalStateException("Completed video disappeared"));

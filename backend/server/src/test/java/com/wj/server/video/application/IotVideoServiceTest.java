@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
+import com.wj.server.config.SubscriptionProperties;
 import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.IotUploadCompleteRequest;
 import com.wj.server.video.api.IotUploadUrlRequest;
@@ -38,7 +39,9 @@ class IotVideoServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new IotVideoService(videoMapper, objectStorageService);
+        service = new IotVideoService(
+            videoMapper, objectStorageService,
+            new SubscriptionProperties(365, java.time.Duration.ofDays(30)));
     }
 
     @Test
@@ -67,7 +70,7 @@ class IotVideoServiceTest {
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("UPLOAD_INTEGRITY_MISMATCH");
-        verify(videoMapper, never()).markReady(DEVICE_ID, VIDEO_ID);
+        verify(videoMapper, never()).markReady(DEVICE_ID, VIDEO_ID, 365);
     }
 
     @Test
