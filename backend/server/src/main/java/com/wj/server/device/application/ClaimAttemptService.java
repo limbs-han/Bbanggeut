@@ -17,6 +17,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Rate limits claim attempts per account and per IP. A wrong registration code
+ * does not belong to any device, so the limit is applied to the guessing party
+ * (account/IP), never to a code or device.
+ */
 @Service
 public class ClaimAttemptService {
     private final ClaimAttemptMapper mapper;
@@ -35,10 +40,9 @@ public class ClaimAttemptService {
     }
 
     @Transactional(readOnly = true)
-    public void ensureAllowed(UUID userId, String serialNumber, String ipAddress) {
+    public void ensureAllowed(UUID userId, String ipAddress) {
         if (mapper.isRateLimited(
             userId,
-            fingerprint(serialNumber),
             fingerprint(ipAddress),
             clock.instant().minus(properties.failureWindow()),
             properties.maxFailures())) {
@@ -50,13 +54,13 @@ public class ClaimAttemptService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordFailure(UUID userId, String serialNumber, String ipAddress) {
-        mapper.insertAttempt(userId, fingerprint(serialNumber), fingerprint(ipAddress), false);
+    public void recordFailure(UUID userId, String ipAddress) {
+        mapper.insertAttempt(userId, fingerprint(ipAddress), false);
     }
 
     @Transactional
-    public void recordSuccess(UUID userId, String serialNumber, String ipAddress) {
-        mapper.insertAttempt(userId, fingerprint(serialNumber), fingerprint(ipAddress), true);
+    public void recordSuccess(UUID userId, String ipAddress) {
+        mapper.insertAttempt(userId, fingerprint(ipAddress), true);
     }
 
     private String fingerprint(String value) {

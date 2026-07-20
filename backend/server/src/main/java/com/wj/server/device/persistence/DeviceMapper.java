@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.wj.server.device.domain.DeviceRow;
 import com.wj.server.device.domain.DeviceViewRow;
 import com.wj.server.device.domain.DeviceStatusRow;
 import org.apache.ibatis.annotations.Insert;
@@ -16,28 +15,16 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface DeviceMapper {
 
-    @Select("""
-        SELECT id, serial_number, product_code_hash, name, model, firmware_version,
-               status, retention_days, registration_mode_expires_at,
-               product_code_retired_at, claimed_at, claimed_by, last_seen_at
-          FROM devices
-         WHERE serial_number = #{serialNumber}
-         FOR UPDATE
-        """)
-    Optional<DeviceRow> findClaimCandidateForUpdate(@Param("serialNumber") String serialNumber);
-
     @Update("""
         UPDATE devices
            SET status = 'OFFLINE',
                claimed_at = now(),
                claimed_by = #{userId},
-               product_code_retired_at = now(),
                registration_mode_expires_at = NULL,
                name = COALESCE(#{name}, name),
                updated_at = now()
          WHERE id = #{deviceId}
            AND status = 'UNCLAIMED'
-           AND product_code_retired_at IS NULL
         """)
     int markClaimed(
         @Param("deviceId") UUID deviceId,
@@ -158,4 +145,31 @@ public interface DeviceMapper {
          WHERE device_id = #{deviceId} AND status = 'PENDING'
         """)
     int revokePendingInvitations(@Param("deviceId") UUID deviceId);
+
+    @Update("""
+        UPDATE videos
+           SET status = 'DELETING', delete_requested_at = now(), deleted_by = #{userId}, updated_at = now()
+         WHERE device_id = #{deviceId} AND status NOT IN ('DELETING', 'DELETED')
+        """)
+    int markAllVideosDeleting(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
+
+    @Insert("""
+        INSERT INTO video_deletion_jobs (video_id)
+        SELECT id FROM videos WHERE device_id = #{deviceId} AND status = 'DELETING'
+        ON CONFLICT (video_id) DO NOTHING
+        """)
+    int enqueueDeletionJobsForDevice(@Param("deviceId") UUID deviceId);
+
+    /**
+     * Ownership transfer: the revoked row keeps the history while the same
+     * physical serial gets a fresh UNCLAIMED row for the next owner.
+     */
+    @Select("""
+        INSERT INTO devices (serial_number, model, firmware_version, status)
+        SELECT serial_number, model, firmware_version, 'UNCLAIMED'
+          FROM devices
+         WHERE id = #{deviceId}
+        RETURNING id
+        """)
+    UUID insertSuccessorDevice(@Param("deviceId") UUID deviceId);
 }

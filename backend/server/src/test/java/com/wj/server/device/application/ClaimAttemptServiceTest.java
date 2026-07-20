@@ -1,7 +1,6 @@
 package com.wj.server.device.application;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -40,26 +39,25 @@ class ClaimAttemptServiceTest {
     }
 
     @Test
-    void rejectsWhenAnyRateLimitKeyReachedMaximumFailures() {
+    void rejectsWhenAccountOrIpReachedMaximumFailures() {
         UUID userId = UUID.randomUUID();
         when(mapper.isRateLimited(
-            eq(userId), anyString(), anyString(), eq(NOW.minus(Duration.ofMinutes(10))), eq(5)))
+            eq(userId), anyString(), eq(NOW.minus(Duration.ofMinutes(10))), eq(5)))
             .thenReturn(true);
 
-        assertThatThrownBy(() -> service.ensureAllowed(userId, "WJ-0001", "127.0.0.1"))
+        assertThatThrownBy(() -> service.ensureAllowed(userId, "127.0.0.1"))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("CLAIM_RATE_LIMITED");
     }
 
     @Test
-    void storesOnlyFingerprintsForFailedAttempt() {
+    void storesOnlyFingerprintForFailedAttempt() {
         UUID userId = UUID.randomUUID();
 
-        service.recordFailure(userId, "WJ-0001", "127.0.0.1");
+        service.recordFailure(userId, "127.0.0.1");
 
         verify(mapper).insertAttempt(eq(userId),
-            org.mockito.ArgumentMatchers.matches("[0-9a-f]{64}"),
             org.mockito.ArgumentMatchers.matches("[0-9a-f]{64}"), eq(false));
     }
 }

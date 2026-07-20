@@ -16,10 +16,11 @@ import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.device.api.ClaimDeviceRequest;
 import com.wj.server.device.api.UpdateDeviceRequest;
-import com.wj.server.device.domain.DeviceRow;
 import com.wj.server.device.domain.DeviceStatusRow;
 import com.wj.server.device.domain.DeviceViewRow;
+import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
+import com.wj.server.device.persistence.RegistrationCodeMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,55 +34,63 @@ class DeviceServiceTest {
     @Mock
     private DeviceMapper deviceMapper;
     @Mock
+    private RegistrationCodeMapper registrationCodeMapper;
+    @Mock
     private ClaimAttemptService claimAttemptService;
     @Mock
     private AuditService auditService;
 
-    private ProductCodeHasher productCodeHasher;
+    private RegistrationCodeHasher registrationCodeHasher;
     private DeviceService deviceService;
 
     @BeforeEach
     void setUp() {
-        productCodeHasher = new ProductCodeHasher();
+        registrationCodeHasher = new RegistrationCodeHasher();
         deviceService = new DeviceService(
-            deviceMapper, productCodeHasher, claimAttemptService, auditService,
-            Clock.fixed(NOW, ZoneOffset.UTC));
+            deviceMapper, registrationCodeMapper, registrationCodeHasher,
+            claimAttemptService, auditService, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
-    void claimCreatesOwnerAndReturnsOfflineDevice() {
+    void claimResolvesDeviceFromCodeAndCreatesOwner() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        String productCode = "ABCD-1234";
-        DeviceRow candidate = candidate(deviceId, productCode, NOW.plusSeconds(30));
+        UUID codeId = UUID.randomUUID();
+        RegistrationCodeRow code = new RegistrationCodeRow(
+            codeId, deviceId, NOW.plusSeconds(30), null, "UNCLAIMED");
         DeviceViewRow claimed = new DeviceViewRow(
             deviceId, "거실", "WJ-DEV-01", "OFFLINE", "OWNER", 30,
             null, "WJ-0001", null, NOW);
-        when(deviceMapper.findClaimCandidateForUpdate("WJ-0001")).thenReturn(Optional.of(candidate));
+        when(registrationCodeMapper.findByHashForUpdate(registrationCodeHasher.hash("7F3K9XQM")))
+            .thenReturn(Optional.of(code));
         when(deviceMapper.markClaimed(deviceId, userId, "거실")).thenReturn(1);
+        when(registrationCodeMapper.markUsed(codeId, userId)).thenReturn(1);
         when(deviceMapper.insertOwnerMembership(deviceId, userId)).thenReturn(1);
         when(deviceMapper.findAccessibleDevice(userId, deviceId)).thenReturn(Optional.of(claimed));
 
         var response = deviceService.claim(
-            userId, new ClaimDeviceRequest(" WJ-0001 ", "abcd-1234", " 거실 "), "127.0.0.1");
+            userId, new ClaimDeviceRequest(" 7f3k-9xqm ", " 거실 "), "127.0.0.1");
 
         verify(deviceMapper).markClaimed(deviceId, userId, "거실");
+        verify(registrationCodeMapper).markUsed(codeId, userId);
         verify(deviceMapper).insertOwnerMembership(deviceId, userId);
-        verify(claimAttemptService).recordSuccess(userId, " WJ-0001 ", "127.0.0.1");
+        verify(claimAttemptService).recordSuccess(userId, "127.0.0.1");
         assertThat(response.status()).isEqualTo("OFFLINE");
         assertThat(response.myRole()).isEqualTo("OWNER");
         assertThat(response.name()).isEqualTo("거실");
     }
 
     @Test
-    void claimRejectsExpiredRegistrationModeWithoutChangingDevice() {
+    void claimRejectsExpiredCodeWithoutChangingDevice() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        when(deviceMapper.findClaimCandidateForUpdate("WJ-0001"))
-            .thenReturn(Optional.of(candidate(deviceId, "ABCD-1234", NOW)));
+        RegistrationCodeRow expired = new RegistrationCodeRow(
+            UUID.randomUUID(), deviceId, NOW, null, "UNCLAIMED");
+        when(registrationCodeMapper.findByHashForUpdate(registrationCodeHasher.hash("7F3K9XQM")))
+            .thenReturn(Optional.of(expired));
 
         assertThatThrownBy(() -> deviceService.claim(
-            userId, new ClaimDeviceRequest("WJ-0001", "ABCD-1234", null), "127.0.0.1"))
+            userId, new ClaimDeviceRequest("7F3K9XQM", null), "127.0.0.1"))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("DEVICE_CLAIM_REJECTED");
@@ -89,9 +98,28 @@ class DeviceServiceTest {
         verify(deviceMapper, never()).markClaimed(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any());
-        verify(deviceMapper, never()).insertOwnerMembership(
-            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
-        verify(claimAttemptService).recordFailure(userId, "WJ-0001", "127.0.0.1");
+        verify(claimAttemptService).recordFailure(userId, "127.0.0.1");
+    }
+
+    @Test
+    void claimRejectsUsedCodeAndUnknownCode() {
+        UUID userId = UUID.randomUUID();
+        RegistrationCodeRow used = new RegistrationCodeRow(
+            UUID.randomUUID(), UUID.randomUUID(), NOW.plusSeconds(30), NOW.minusSeconds(5), "UNCLAIMED");
+        when(registrationCodeMapper.findByHashForUpdate(registrationCodeHasher.hash("7F3K9XQM")))
+            .thenReturn(Optional.of(used));
+        when(registrationCodeMapper.findByHashForUpdate(registrationCodeHasher.hash("AAAA2222")))
+            .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> deviceService.claim(
+            userId, new ClaimDeviceRequest("7F3K9XQM", null), "127.0.0.1"))
+            .isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> deviceService.claim(
+            userId, new ClaimDeviceRequest("AAAA2222", null), "127.0.0.1"))
+            .isInstanceOf(ApiException.class);
+
+        verify(claimAttemptService, org.mockito.Mockito.times(2))
+            .recordFailure(userId, "127.0.0.1");
     }
 
     @Test
@@ -166,7 +194,7 @@ class DeviceServiceTest {
     }
 
     @Test
-    void ownerRevocationDisablesDeviceCredentialsInvitationsAndMemberships() {
+    void ownerRevocationClosesOldRowDeletesVideosAndCreatesSuccessor() {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.lockAccessibleDevice(ownerId, deviceId))
@@ -178,6 +206,9 @@ class DeviceServiceTest {
         verify(deviceMapper).revokeActiveCredentials(deviceId);
         verify(deviceMapper).revokePendingInvitations(deviceId);
         verify(deviceMapper).revokeAllMemberships(deviceId, ownerId);
+        verify(deviceMapper).markAllVideosDeleting(deviceId, ownerId);
+        verify(deviceMapper).enqueueDeletionJobsForDevice(deviceId);
+        verify(deviceMapper).insertSuccessorDevice(deviceId);
     }
 
     @Test
@@ -187,13 +218,6 @@ class DeviceServiceTest {
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("VALIDATION_FAILED");
-    }
-
-    private DeviceRow candidate(UUID deviceId, String productCode, Instant registrationExpiresAt) {
-        return new DeviceRow(
-            deviceId, "WJ-0001", productCodeHasher.hash(productCode),
-            "William James Camera", "WJ-DEV-01", null, "UNCLAIMED", 30,
-            registrationExpiresAt, null, null, null, null);
     }
 
     private DeviceViewRow view(UUID deviceId, String name, String status, String role) {

@@ -11,9 +11,10 @@ import com.wj.server.device.api.DeviceResponse;
 import com.wj.server.device.api.DeviceSummaryResponse;
 import com.wj.server.device.api.DeviceStatusResponse;
 import com.wj.server.device.api.UpdateDeviceRequest;
-import com.wj.server.device.domain.DeviceRow;
 import com.wj.server.device.domain.DeviceViewRow;
+import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
+import com.wj.server.device.persistence.RegistrationCodeMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,7 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DeviceService {
     private final DeviceMapper deviceMapper;
-    private final ProductCodeHasher productCodeHasher;
+    private final RegistrationCodeMapper registrationCodeMapper;
+    private final RegistrationCodeHasher registrationCodeHasher;
     private final ClaimAttemptService claimAttemptService;
     private final AuditService auditService;
     private final Clock clock;
@@ -30,22 +32,26 @@ public class DeviceService {
     @Autowired
     public DeviceService(
         DeviceMapper deviceMapper,
-        ProductCodeHasher productCodeHasher,
+        RegistrationCodeMapper registrationCodeMapper,
+        RegistrationCodeHasher registrationCodeHasher,
         ClaimAttemptService claimAttemptService,
         AuditService auditService
     ) {
-        this(deviceMapper, productCodeHasher, claimAttemptService, auditService, Clock.systemUTC());
+        this(deviceMapper, registrationCodeMapper, registrationCodeHasher,
+            claimAttemptService, auditService, Clock.systemUTC());
     }
 
     DeviceService(
         DeviceMapper deviceMapper,
-        ProductCodeHasher productCodeHasher,
+        RegistrationCodeMapper registrationCodeMapper,
+        RegistrationCodeHasher registrationCodeHasher,
         ClaimAttemptService claimAttemptService,
         AuditService auditService,
         Clock clock
     ) {
         this.deviceMapper = deviceMapper;
-        this.productCodeHasher = productCodeHasher;
+        this.registrationCodeMapper = registrationCodeMapper;
+        this.registrationCodeHasher = registrationCodeHasher;
         this.claimAttemptService = claimAttemptService;
         this.auditService = auditService;
         this.clock = clock;
@@ -53,35 +59,37 @@ public class DeviceService {
 
     @Transactional
     public DeviceResponse claim(UUID userId, ClaimDeviceRequest request, String ipAddress) {
-        claimAttemptService.ensureAllowed(userId, request.serialNumber(), ipAddress);
+        claimAttemptService.ensureAllowed(userId, ipAddress);
         UUID attemptedDeviceId = null;
         try {
-            DeviceRow device = deviceMapper.findClaimCandidateForUpdate(request.serialNumber().trim())
+            // The submitted code identifies the device: the hash lookup is the
+            // only way from an app request to a claim candidate.
+            RegistrationCodeRow code = registrationCodeMapper
+                .findByHashForUpdate(registrationCodeHasher.hash(request.registrationCode()))
                 .orElseThrow(this::claimRejected);
-            attemptedDeviceId = device.id();
+            attemptedDeviceId = code.deviceId();
 
-            if (!"UNCLAIMED".equals(device.status())
-                || device.productCodeRetiredAt() != null
-                || device.registrationModeExpiresAt() == null
-                || !device.registrationModeExpiresAt().isAfter(clock.instant())
-                || !productCodeHasher.matches(request.productCode(), device.productCodeHash())) {
+            if (code.usedAt() != null
+                || !code.expiresAt().isAfter(clock.instant())
+                || !"UNCLAIMED".equals(code.deviceStatus())) {
                 throw claimRejected();
             }
 
             String requestedName = request.name() == null ? null : request.name().trim();
-            if (deviceMapper.markClaimed(device.id(), userId, requestedName) != 1) {
+            if (deviceMapper.markClaimed(code.deviceId(), userId, requestedName) != 1
+                || registrationCodeMapper.markUsed(code.id(), userId) != 1) {
                 throw claimRejected();
             }
-            deviceMapper.insertOwnerMembership(device.id(), userId);
-            DeviceResponse response = deviceMapper.findAccessibleDevice(userId, device.id())
+            deviceMapper.insertOwnerMembership(code.deviceId(), userId);
+            DeviceResponse response = deviceMapper.findAccessibleDevice(userId, code.deviceId())
                 .map(this::toDeviceResponse)
                 .orElseThrow(() -> new IllegalStateException("Claimed device is not accessible to its owner"));
-            claimAttemptService.recordSuccess(userId, request.serialNumber(), ipAddress);
-            auditService.success(device.id(), userId, "DEVICE_CLAIM", "DEVICE", device.id());
+            claimAttemptService.recordSuccess(userId, ipAddress);
+            auditService.success(code.deviceId(), userId, "DEVICE_CLAIM", "DEVICE", code.deviceId());
             return response;
         } catch (ApiException exception) {
             if ("DEVICE_CLAIM_REJECTED".equals(exception.code())) {
-                claimAttemptService.recordFailure(userId, request.serialNumber(), ipAddress);
+                claimAttemptService.recordFailure(userId, ipAddress);
                 if (attemptedDeviceId != null) {
                     auditService.denied(
                         attemptedDeviceId, userId, "DEVICE_CLAIM", "DEVICE", attemptedDeviceId,
@@ -134,6 +142,12 @@ public class DeviceService {
             status.bufferSeconds(), clock.instant());
     }
 
+    /**
+     * Releases (revokes) a device for handover. The old row is closed with its
+     * memberships, credentials, invitations and videos, and a fresh UNCLAIMED
+     * row is created for the same serial so the next owner registers as if it
+     * were a new device — nobody can reach the previous owner's videos.
+     */
     @Transactional
     public void revoke(UUID userId, UUID deviceId) {
         DeviceViewRow device = deviceMapper.lockAccessibleDevice(userId, deviceId)
@@ -145,6 +159,9 @@ public class DeviceService {
         deviceMapper.revokeActiveCredentials(deviceId);
         deviceMapper.revokePendingInvitations(deviceId);
         deviceMapper.revokeAllMemberships(deviceId, userId);
+        deviceMapper.markAllVideosDeleting(deviceId, userId);
+        deviceMapper.enqueueDeletionJobsForDevice(deviceId);
+        deviceMapper.insertSuccessorDevice(deviceId);
         auditService.success(deviceId, userId, "DEVICE_REVOKE", "DEVICE", deviceId);
     }
 
