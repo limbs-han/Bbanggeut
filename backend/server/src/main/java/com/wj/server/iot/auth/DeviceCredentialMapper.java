@@ -18,7 +18,7 @@ public interface DeviceCredentialMapper {
            AND c.credential_type = 'TOKEN_HASH'
            AND c.status = 'ACTIVE'
            AND (c.expires_at IS NULL OR c.expires_at > now())
-           AND d.status IN ('ONLINE', 'OFFLINE')
+           AND d.status IN ('UNCLAIMED', 'ONLINE', 'OFFLINE')
         """)
     Optional<DeviceCredentialRow> findActiveToken(@Param("keyId") String keyId);
 }

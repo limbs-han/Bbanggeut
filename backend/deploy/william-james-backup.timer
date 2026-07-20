@@ -1,0 +1,10 @@
+[Unit]
+Description=Run William James backup every day
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Seoul
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

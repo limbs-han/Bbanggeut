@@ -194,7 +194,7 @@
   <div class="wj-stage">
     <div class="wj-map" aria-label="핵심 사용자 흐름">
       <div class="wj-map-row is-active" data-map="login"><span class="wj-step">1</span><span>계정 로그인</span></div>
-      <div class="wj-map-row" data-map="register"><span class="wj-step">2</span><span>제품 코드로 최초 등록</span></div>
+      <div class="wj-map-row" data-map="register"><span class="wj-step">2</span><span>화면 1회용 코드로 최초 등록</span></div>
       <div class="wj-map-row" data-map="dashboard"><span class="wj-step">3</span><span>기기와 최근 추억 확인</span></div>
       <div class="wj-map-row" data-map="videos"><span class="wj-step">4</span><span>저장 영상 탐색</span></div>
       <div class="wj-map-row" data-map="edit"><span class="wj-step">5</span><span>원하는 구간 편집</span></div>
@@ -255,7 +255,7 @@
           <div class="wj-note"><span class="wj-step">2</span><span>제품 포장의 QR을 스캔하거나 코드를 입력합니다.</span></div>
           <div class="wj-note"><span class="wj-step">3</span><span>등록 후 이 계정이 최초 소유자가 됩니다.</span></div>
         </div>
-        <label class="form-label" for="wj-device-code">제품 코드</label>
+        <label class="form-label" for="wj-device-code">기기 화면 등록 코드</label>
         <input class="form-control" id="wj-device-code" value="WJ-8K4M-27QX">
         <div class="wj-split">
           <button class="btn" type="button"><i data-lucide="scan-line" aria-hidden="true"></i> QR 스캔</button>
@@ -315,7 +315,7 @@
         <div class="wj-member"><span class="wj-avatar">나</span><span><strong>김제임스</strong><span class="text-small text-muted">owner@example.com</span></span><span class="viz-badge" id="wj-current-device-role">OWNER</span></div>
         <div class="wj-member"><span class="wj-avatar">공</span><span><strong id="wj-other-member-name">공유 사용자 A</strong><span class="text-small text-muted">member-a@example.com</span></span><span class="viz-badge" id="wj-other-member-role">MEMBER</span></div>
         <div class="wj-member"><span class="wj-avatar">공</span><span><strong>공유 사용자 B</strong><span class="text-small text-muted">member-b@example.com</span></span><button class="btn btn-ghost" data-owner-only type="button">권한 회수</button></div>
-        <div class="wj-note"><i data-lucide="info" aria-hidden="true"></i><span>제품 코드는 최초 등록에만 사용합니다. 이후 사용자는 기기 소유자의 기기 초대로 참여합니다.</span></div>
+        <div class="wj-note"><i data-lucide="info" aria-hidden="true"></i><span>화면 코드는 120초 동안 한 번만 사용합니다. 이후 사용자는 기기 소유자의 초대 링크와 승인을 거쳐 참여합니다.</span></div>
       </div>
 
       <div class="wj-screen" data-screen="settings">

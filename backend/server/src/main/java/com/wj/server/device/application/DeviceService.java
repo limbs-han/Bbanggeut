@@ -234,7 +234,7 @@ public class DeviceService {
         return new ApiException(
             HttpStatus.CONFLICT,
             "DEVICE_CLAIM_REJECTED",
-            "기기를 등록할 수 없습니다. 제품 코드와 기기의 등록 모드를 확인해 주세요.");
+            "기기를 등록할 수 없습니다. 화면 등록 코드와 기기의 등록 모드를 확인해 주세요.");
     }
 
     private ApiException notFound() {

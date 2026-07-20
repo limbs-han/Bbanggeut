@@ -20,5 +20,3 @@ app:
     environment: ${MQTT_ENV:prod}
   stream:
     media-base-url: ${MEDIA_BASE_URL}
-  video-edit:
-    ffmpeg-path: ${FFMPEG_PATH:/usr/bin/ffmpeg}

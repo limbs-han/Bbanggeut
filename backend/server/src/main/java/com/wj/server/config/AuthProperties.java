@@ -8,6 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AuthProperties(
     Duration accessTokenTtl,
     Duration refreshTokenTtl,
-    String jwtSecret
+    String jwtSecret,
+    int loginMaxFailures,
+    Duration loginFailureWindow
 ) {
 }

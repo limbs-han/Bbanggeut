@@ -11,17 +11,18 @@
 
 | 구분 | 상태 | 비고 |
 | --- | --- | --- |
-| Spring Boot API | 구현·배포 완료 | Java 17, `127.0.0.1:8080`. 2026-07-20 등록 코드·양도 변경분은 로컬 구현 완료, EC2 재배포 필요 |
-| PostgreSQL | 배포 완료 | Docker, EC2는 Flyway V10까지 적용. V11(등록 코드)은 다음 배포 시 자동 적용 |
+| Spring Boot API | 구현·배포 완료 | Java 17, `127.0.0.1:8081`(호스트 8080은 Jenkins 사용). 2026-07-20 V14 포함 재배포 완료 |
+| PostgreSQL | 배포 완료 | Docker, EC2 Flyway V14 적용 확인 |
 | MinIO | 배포 완료 | 비공개 영상 버킷 생성, loopback 전용 |
 | Mosquitto MQTT | 배포 완료 | 백엔드 연결 정상, loopback 전용 |
 | MediaMTX | 기본 설치 완료 | RTSP/HLS loopback 전용 |
 | Nginx·HTTPS | 배포 완료 | HTTP→HTTPS, API reverse proxy |
 | 실제 Jetson/Raspberry Pi 연결 | 미완료 | MQTTS·미디어 publish 인증 필요 |
 | 프론트엔드 연동 | 미완료 | API와 라이브 heartbeat 연동 필요 |
-| CI/CD | 미완료 | 현재 JAR 수동 배포 방식 |
+| 백업·모니터링 | 배포 완료 | 일일 백업과 5분 상태 점검 timer 활성화, 최초 백업 checksum 검증 성공 |
+| CI/CD | 구성 완료 | test→package→수동 production deploy; protected CI 변수 설정 필요 |
 
-2026-07-19 확인 결과 공개 health endpoint는 HTTP 200이며, Spring Boot·Nginx·Docker·기존 Gerrit 서비스는 모두 `active` 상태다.
+2026-07-20 확인 결과 공개 health endpoint는 HTTP 200이며 Spring Boot·Nginx·PostgreSQL·MinIO·Mosquitto·MediaMTX가 동작한다. 호스트 8080의 Jenkins와 충돌을 피하기 위해 Spring Boot는 loopback 8081을 사용한다. provisioning 내부 API는 외부 404, 내부 무키 요청도 404로 확인했다.
 
 ## 2. 로컬에 구현된 백엔드 코드
 
@@ -93,10 +94,9 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 - 영상 목록·상세·재생·다운로드
 - 제목·설명·즐겨찾기 변경
 - 비동기 영상 삭제 worker
-- **보관 만료 스케줄러** (2026-07-20): `retention_until`이 지난 영상을 주기적으로(기본 60초) DELETING 전환 + 삭제 작업 등록. 업로드·편집 완료 시 `retention_until`을 기기 보관 일수(기본 30일, 구독 활성 시 365일) 기준으로 기록
+- **보관 만료 스케줄러** (2026-07-20): `retention_until`이 지난 원본 영상을 주기적으로(기본 60초) DELETING 전환 + 삭제 작업 등록. 업로드 완료 시 `retention_until`을 기기 보관 일수(기본 30일, 구독 활성 시 365일) 기준으로 기록
 - **기기 구독(멤버십)** (2026-07-20): OWNER가 시작·해지, 결제는 MVP 범위 밖. 활성 시 보관 365일로 연장, 해지 시 즉시 삭제 없이 `max(기본 기준, 해지일+유예 30일)`로 재계산 — 유예 중 재구독하면 복구
-- FFmpeg 구간 편집 worker
-- 편집 결과를 별도 영상 객체로 생성하고 원본 보존
+- **서버 영상 편집 제거** (2026-07-20): 편집 API·FFmpeg worker·결과 객체 생성을 제거. 앱이 원본 다운로드 URL로 로컬 편집·내보내기 수행
 
 서버에는 FFmpeg 6.1.1이 설치되어 있다.
 
@@ -147,10 +147,12 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 | V6 | 초대 |
 | V7 | 기기 관리 상태 |
 | V8 | 감사 로그 |
-| V9 | 영상 편집 |
+| V9 | 영상 편집(레거시, V13 이후 신규 사용 안 함) |
 | V10 | 라이브 stream/session |
 | V11 | 1회용 등록 코드 테이블, devices 제품 코드 컬럼 제거, 시리얼 부분 유니크(양도 대비) |
 | V12 | 초대 링크·가입 요청 테이블(이메일 초대 테이블 제거), 기기 구독 컬럼, retention_until 백필·만료 인덱스 |
+| V13 | 서버 편집 작업 중단(미완료 레거시 작업 취소), 영상 메타데이터 감사 이벤트 정리 |
+| V14 | 이메일·IP 해시 기반 로그인 실패 제한 테이블과 인덱스 |
 
 기존 단일 `schema.sql` 방식은 제거하고 Flyway로 통일했다.
 
@@ -158,14 +160,14 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 
 - OpenAPI: [`../자료/api/openapi.yaml`](../자료/api/openapi.yaml)
 - 테스트 위치: [`server/src/test/java`](./server/src/test/java)
-- 테스트 클래스: 20개 (2026-07-20 등록 코드·양도·초대 링크·가입 승인·구독·보관 만료 테스트 포함)
+- 테스트 클래스: 18개 (2026-07-20 등록 코드·양도·초대 링크·가입 승인·구독·보관 만료 테스트 포함)
 - 로컬 검증 명령: `./gradlew test`
 
 PostgreSQL과 Mosquitto를 사용한 수동 통합 검증에서 다음 흐름을 확인했다.
 
 - Flyway V10 적용
 - 회원가입과 JWT 인증
-- 영상 편집 요청 생성·조회
+- 로컬 편집용 원본 다운로드 URL 발급(서버 편집 요청 없음)
 - MQTT heartbeat의 기기 상태 반영
 - 두 시청자의 동일 stream ID 공유
 - MQTT 이벤트에 의한 `PENDING → READY`
@@ -235,7 +237,7 @@ UFW에서 허용된 포트는 다음과 같다.
 
 | 포트 | 용도 |
 | ---: | --- |
-| 8080 | Spring Boot |
+| 8081 | Spring Boot(loopback 전용, 호스트 8080은 Jenkins) |
 | 5432 | PostgreSQL |
 | 9000·9001 | MinIO API·console |
 | 1883 | Mosquitto MQTT |
@@ -263,7 +265,7 @@ UFW에서 허용된 포트는 다음과 같다.
 → systemctl restart william-james
 ```
 
-GitLab에 코드를 push해도 EC2가 자동으로 갱신되지는 않는다. CI/CD 구축 전에는 코드 push와 서버 배포를 별도 작업으로 취급해야 한다.
+GitLab CI는 test·bootJar와 기본 브랜치의 수동 승인형 production 배포를 제공한다. protected CI 변수가 설정되기 전까지는 기존 SCP+systemctl 배포 절차를 사용한다.
 
 ## 4. 남은 작업
 
@@ -271,12 +273,7 @@ GitLab에 코드를 push해도 EC2가 자동으로 갱신되지는 않는다. CI
 
 #### 4.1 실제 기기 provisioning
 
-- 출고 기기의 `deviceId`, serial number를 운영 DB에 등록하는 관리자 도구 또는 제한된 배치 필요
-- 기기별 REST credential 발급·교체·회수 절차 필요 (등록 코드 발급 API가 기기 credential 인증을 전제로 함)
-- 인쇄식 product code는 폐지됨 — 등록 코드는 기기가 등록 모드 진입 시 서버에서 실시간 발급받아 화면에 표시하므로 출고 시 코드 생성·인쇄 절차가 필요 없음
-- 양도로 생성된 새 device 행도 최초 출고와 동일하게 credential 재프로비저닝 필요
-
-현재 claim API는 이미 DB에 등록된 미소유(UNCLAIMED) 기기와 그 기기의 credential이 존재한다는 전제로 동작한다.
+2026-07-20 구현 완료. loopback+관리자 키로 보호된 `/internal/admin/devices`에서 미소유 기기 생성, TOKEN_HASH credential 최초 발급·교체·회수를 수행한다. 평문 토큰은 발급 응답에서만 반환하고 DB에는 secret SHA-256 해시만 저장한다. 운영 절차는 `자료/docs/16_백엔드_잔여작업_구현_운영.md`를 따른다.
 
 #### 4.2 외부 기기 통신 보안
 
@@ -297,16 +294,17 @@ GitLab에 코드를 push해도 EC2가 자동으로 갱신되지는 않는다. CI
 - 로컬 MP4 생성과 재시도 큐
 - HTTPS 업로드 URL 요청과 MinIO PUT
 - MQTT heartbeat/status/registration 발행
+- 사람 부재 시 안전 범위 스캔, 사람 검출 시 전체 인원 중심 자동 추적(모두 AIoT/edge 내부 처리, 서버 heartbeat에는 추적 상태를 싣지 않음)
 - START·EXTEND·STOP 명령과 ACK 처리
 - MediaMTX로 live stream publish
 
-백엔드는 메시지와 API 계약을 구현했지만 실제 하드웨어 프로그램은 별도 구현 대상이다.
+백엔드는 일반 기기 상태와 스트리밍용 메시지·API 계약만 담당한다. 인물 탐지·중심 계산·팬틸트·안전 정지의 상태 머신과 실시간 값은 AIoT/edge 구현 대상이며 현재 서버 계약에 포함하지 않는다.
 
 #### 4.4 프론트엔드 연동
 
 - 회원가입·로그인·refresh rotation
 - 기기 claim과 멤버 관리
-- 영상 목록·상세·편집·삭제
+- 영상 목록·상세·원본 다운로드·삭제, 앱 로컬 편집·내보내기
 - live session 생성 후 `PENDING` polling
 - 15초 heartbeat
 - 30초 단기 live token 갱신
@@ -319,7 +317,7 @@ GitLab에 코드를 push해도 EC2가 자동으로 갱신되지는 않는다. CI
 
 #### 4.5 자동 보존 정책
 
-2026-07-20 구현 완료: 만료 스케줄러(60초 주기), 업로드·편집 시 `retention_until` 기록, 구독 연동 재계산.
+2026-07-20 구현 완료: 만료 스케줄러(60초 주기), 원본 업로드 시 `retention_until` 기록, 구독 연동 재계산.
 남은 결정: 사용자 즐겨찾기·법적 보존 예외 정책(MVP는 예외 없이 일괄 적용).
 
 #### 4.6 초대 전달 방식
@@ -328,41 +326,28 @@ GitLab에 코드를 push해도 EC2가 자동으로 갱신되지는 않는다. CI
 
 #### 4.7 백업과 복구
 
-- PostgreSQL 정기 dump와 복구 훈련
-- MinIO 객체 백업 또는 외부 S3 전환
-- Docker volume 장애 복구 절차
-- 서버 초기화에 대비한 off-instance 백업
+2026-07-20 구현 완료: PostgreSQL custom dump, MinIO 데이터 압축, SHA-256 검증값과 14일 보존 systemd timer. 남은 운영 작업은 off-instance 복제와 월 1회 별도 환경 복구 훈련이다.
 
 #### 4.8 배포 자동화
 
-- GitLab CI에서 test와 bootJar 실행
-- 실패 시 배포 차단
-- JAR 또는 Docker image 버전 관리
-- 무중단 또는 최소 중단 배포
-- rollback 절차
-- `latest` image 대신 검증된 image version 고정
+2026-07-20 `.gitlab-ci.yml` 구현 완료: test 실패 시 package/deploy 차단, JAR artifact 보존, 기본 브랜치 수동 승인형 production 배포. 남은 개선은 버전별 서버 보관·자동 rollback과 무중단 배포다.
 
 #### 4.9 모니터링
 
-- Spring Actuator metrics 수집
-- CPU·메모리·디스크·DB·MinIO·MQTT 상태 알림
-- 업로드 실패율과 처리 지연 추적
-- FFmpeg 실패와 orphan object 알림
-- 인증 실패·claim 제한·MQTT schema 오류 보안 모니터링
-- 로그 보존과 rotation
+2026-07-20 구현 완료: 5분마다 Spring health, Nginx·백엔드, PostgreSQL·MinIO·MQTT·MediaMTX, 디스크 85% 기준을 검사하고 실패를 journal에 기록한다. 남은 개선은 외부 알림 채널, 애플리케이션 실패율·지연 metrics와 중앙 로그 보존이다.
 
 #### 4.10 운영 보안 보완
 
-- Nginx의 `X-Forwarded-For`를 Spring에서 신뢰하도록 설정해 실제 사용자 IP 기록
+- Nginx의 `X-Forwarded-For`를 loopback 바인딩 Spring에서 해석하도록 설정 완료
 - secret 정기 rotation
-- 기기 credential rotation
+- 기기 credential rotation 내부 운영 API 구현 완료
 - 관리자용 MinIO console 접근 방법을 SSH tunnel 등으로 제한
 - 의존성·Docker image 취약점 검사
 
 ### P2: 품질 개선
 
-- Testcontainers 기반 PostgreSQL·MinIO·Mosquitto 자동 통합 테스트
-- 실제 FFmpeg 파일을 사용하는 편집 통합 테스트
+- PostgreSQL 16 Testcontainers 기반 Flyway V1~V14 통합 테스트 완료; MinIO·Mosquitto 통합 테스트는 후속
+- 기준 Android 실기기의 로컬 편집·캐시 삭제·내보내기 통합 테스트
 - MediaMTX까지 포함한 live end-to-end 테스트
 - OpenAPI와 실제 응답 schema 자동 비교
 - 내부 `/api/live/introspect` 계약 문서화
@@ -372,18 +357,16 @@ GitLab에 코드를 push해도 EC2가 자동으로 갱신되지는 않는다. CI
 ## 5. 다음 작업 권장 순서
 
 ```text
-1. 기기 provisioning 방식 확정·구현
-2. MQTTS 기기별 인증/ACL 구성
-3. MediaMTX 외부 publish 방식과 인증 구성
-4. Jetson/Raspberry Pi heartbeat·명령 처리 연결
-5. 실제 카메라 live end-to-end 검증
-6. 영상 업로드 end-to-end 검증
-7. 프론트엔드 API·HLS 연동
-8. 자동 보존 scheduler
-9. 백업·모니터링·GitLab CI/CD
+1. MQTTS 기기별 인증/ACL 방식 합의·구성
+2. MediaMTX 외부 publish 방식과 인증 구성
+3. Jetson/Raspberry Pi heartbeat·명령 처리 연결(자동 인물 추적 제어는 IoT/AI 범위)
+4. 실제 카메라 live end-to-end 검증
+5. 영상 업로드 end-to-end 검증
+6. 프론트엔드 API·HLS·로컬 편집 연동
+7. off-instance 백업·외부 알림·자동 rollback 보강
 ```
 
-지금 당장 백엔드에서 이어서 구현할 첫 작업은 **기기 provisioning 도구와 운영 등록 절차**다. 이 작업이 완료되어야 실제 기기가 claim, REST 인증, MQTT, live publish 흐름에 진입할 수 있다.
+현재 남은 P0는 백엔드 단독 구현이 아니라 AIoT/인프라와 접속 프로토콜·인증서 배포 방식을 합의해야 하는 연결 작업이다.
 
 ## 6. 자주 사용하는 확인 명령
 

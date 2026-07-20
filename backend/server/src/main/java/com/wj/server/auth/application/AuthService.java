@@ -32,6 +32,7 @@ public class AuthService {
     private final AuthMapper authMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
+    private final LoginAttemptService loginAttemptService;
     private final AuthProperties properties;
     private final Clock clock;
 
@@ -40,21 +41,24 @@ public class AuthService {
         AuthMapper authMapper,
         PasswordEncoder passwordEncoder,
         JwtTokenService jwtTokenService,
+        LoginAttemptService loginAttemptService,
         AuthProperties properties
     ) {
-        this(authMapper, passwordEncoder, jwtTokenService, properties, Clock.systemUTC());
+        this(authMapper, passwordEncoder, jwtTokenService, loginAttemptService, properties, Clock.systemUTC());
     }
 
     AuthService(
         AuthMapper authMapper,
         PasswordEncoder passwordEncoder,
         JwtTokenService jwtTokenService,
+        LoginAttemptService loginAttemptService,
         AuthProperties properties,
         Clock clock
     ) {
         this.authMapper = authMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
+        this.loginAttemptService = loginAttemptService;
         this.properties = properties;
         this.clock = clock;
     }
@@ -75,10 +79,14 @@ public class AuthService {
 
     @Transactional
     public AuthTokenResponse login(LoginRequest request, ClientContext context) {
-        UserRow user = authMapper.findUserByEmail(normalizeEmail(request.email()))
-            .filter(this::isActive)
-            .filter(found -> passwordEncoder.matches(request.password(), found.passwordHash()))
-            .orElseThrow(this::invalidCredentials);
+        String email = normalizeEmail(request.email());
+        loginAttemptService.ensureAllowed(email, context.ipAddress());
+        UserRow user = authMapper.findUserByEmail(email).filter(this::isActive).orElse(null);
+        if (user == null || !passwordEncoder.matches(request.password(), user.passwordHash())) {
+            loginAttemptService.recordFailure(email, context.ipAddress());
+            throw invalidCredentials();
+        }
+        loginAttemptService.recordSuccess(email, context.ipAddress());
         authMapper.updateLastLogin(user.id());
         return issueTokens(user, context);
     }

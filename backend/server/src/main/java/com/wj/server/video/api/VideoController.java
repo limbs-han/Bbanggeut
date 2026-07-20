@@ -1,6 +1,7 @@
 package com.wj.server.video.api;
 
 import java.util.UUID;
+import java.time.Instant;
 
 import com.wj.server.video.application.VideoQueryService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,23 +18,19 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.ResponseEntity;
 import jakarta.validation.Valid;
 import com.wj.server.video.application.VideoCommandService;
-import com.wj.server.video.application.VideoEditService;
 
 @RestController
 @RequestMapping("/api/videos")
 public class VideoController {
     private final VideoQueryService videoQueryService;
     private final VideoCommandService videoCommandService;
-    private final VideoEditService videoEditService;
 
     public VideoController(
         VideoQueryService videoQueryService,
-        VideoCommandService videoCommandService,
-        VideoEditService videoEditService
+        VideoCommandService videoCommandService
     ) {
         this.videoQueryService = videoQueryService;
         this.videoCommandService = videoCommandService;
-        this.videoEditService = videoEditService;
     }
 
     @GetMapping
@@ -41,10 +38,12 @@ public class VideoController {
         @AuthenticationPrincipal Jwt jwt,
         @RequestParam UUID deviceId,
         @RequestParam(required = false) String triggerType,
+        @RequestParam(required = false) Instant from,
+        @RequestParam(required = false) Instant to,
         @RequestParam(required = false) String cursor,
         @RequestParam(defaultValue = "20") int size
     ) {
-        return videoQueryService.list(userId(jwt), deviceId, triggerType, cursor, size);
+        return videoQueryService.list(userId(jwt), deviceId, triggerType, from, to, cursor, size);
     }
 
     @GetMapping("/{videoId}")
@@ -75,15 +74,6 @@ public class VideoController {
     @PostMapping("/{videoId}/download-url")
     public SignedUrlResponse downloadUrl(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID videoId) {
         return videoQueryService.createReadUrl(userId(jwt), videoId, true);
-    }
-
-    @PostMapping("/{videoId}/edits")
-    public ResponseEntity<VideoEditResponse> createEdit(
-        @AuthenticationPrincipal Jwt jwt,
-        @PathVariable UUID videoId,
-        @Valid @RequestBody CreateVideoEditRequest request
-    ) {
-        return ResponseEntity.accepted().body(videoEditService.create(userId(jwt), videoId, request));
     }
 
     private UUID userId(Jwt jwt) {

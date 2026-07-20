@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wj.server.common.api.ErrorResponse;
 import com.wj.server.common.web.RequestIdFilter;
 import com.wj.server.iot.auth.DeviceAuthenticationFilter;
+import com.wj.server.provisioning.api.ProvisioningAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -16,17 +17,33 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 @Configuration
 @EnableConfigurationProperties({
     AuthProperties.class, DeviceClaimProperties.class, StorageProperties.class,
-    InvitationProperties.class, VideoEditProperties.class, MqttProperties.class, StreamProperties.class,
-    SubscriptionProperties.class
+    InvitationProperties.class, MqttProperties.class, StreamProperties.class,
+    SubscriptionProperties.class, ProvisioningProperties.class
 })
 public class SecurityConfig {
 
     @Bean
     @Order(1)
+    public SecurityFilterChain provisioningFilterChain(
+        HttpSecurity http,
+        ProvisioningAuthenticationFilter provisioningAuthenticationFilter
+    ) throws Exception {
+        http
+            .securityMatcher("/internal/admin/**")
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .addFilterBefore(provisioningAuthenticationFilter, AnonymousAuthenticationFilter.class)
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        return http.build();
+    }
+
+    @Bean
+    @Order(2)
     public SecurityFilterChain deviceFilterChain(
         HttpSecurity http,
         ObjectMapper objectMapper,
@@ -46,7 +63,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    @Order(2)
+    @Order(3)
     public SecurityFilterChain userFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         http
             .csrf(csrf -> csrf.disable())

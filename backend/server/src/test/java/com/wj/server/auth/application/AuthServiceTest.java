@@ -42,6 +42,8 @@ class AuthServiceTest {
     private AuthMapper authMapper;
     @Mock
     private JwtTokenService jwtTokenService;
+    @Mock
+    private LoginAttemptService loginAttemptService;
 
     private PasswordEncoder passwordEncoder;
     private AuthService authService;
@@ -50,11 +52,13 @@ class AuthServiceTest {
     void setUp() {
         passwordEncoder = new BCryptPasswordEncoder(4);
         AuthProperties properties = new AuthProperties(
-            Duration.ofMinutes(15), Duration.ofDays(14), "test-signing-key-at-least-thirty-two-bytes");
+            Duration.ofMinutes(15), Duration.ofDays(14), "test-signing-key-at-least-thirty-two-bytes",
+            5, Duration.ofMinutes(10));
         authService = new AuthService(
             authMapper,
             passwordEncoder,
             jwtTokenService,
+            loginAttemptService,
             properties,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }

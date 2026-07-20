@@ -32,7 +32,7 @@ public class VideoCommandService {
             request.favoritePresent(), request.favorite());
         VideoResponse response = toResponse(
             videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(this::notFound));
-        auditService.success(video.deviceId(), userId, "VIDEO_EDIT", "VIDEO", videoId);
+        auditService.success(video.deviceId(), userId, "VIDEO_UPDATE", "VIDEO", videoId);
         return response;
     }
 

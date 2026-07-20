@@ -46,6 +46,7 @@ class IotVideoServiceTest {
 
     @Test
     void completedUploadIsReturnedIdempotentlyWithoutNewUrl() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
         when(videoMapper.findByDeviceEvent(DEVICE_ID, EVENT_ID))
             .thenReturn(Optional.of(video("READY")));
 

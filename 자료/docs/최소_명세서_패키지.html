@@ -207,7 +207,7 @@
     <b>서비스 방향성 (팀 회의 확정)</b>
     <ol style="margin:8px 0 0; padding-left:20px">
       <li>앱의 성격은 <b>IoT 기기 관리 앱</b> — 공개 영상 피드·영상 플랫폼이 아니다.</li>
-      <li><b>편집된 영상은 서버(비공개 저장소)에 저장</b>한다.</li>
+      <li><b>일반 편집은 앱에서 로컬 처리·내보내기</b>하며 서버에는 편집 작업이나 편집본을 저장하지 않는다.</li>
       <li>저장된 영상은 <b>같은 기기의 구성원(가족)만</b> 조회한다. (사용자↔기기 N:N <code>DeviceMembership</code>)</li>
       <li>영상은 <b>보관 기간 후 자동 삭제</b>하며, 이 보관 정책을 보관 연장 등 <b>부가 서비스·BM의 근거</b>로 활용한다.</li>
       <li>대시보드는 저장 영상을 <b>갤러리·캘린더·통계</b>로 제공한다.</li>
@@ -258,16 +258,16 @@
     <tr data-role="iot"><td>REQ-02</td><td>순환 버퍼 녹화</td><td>[기기]는 [이미 지나간 순간을 복원]하기 위하여 [최근 2분 이상 영상을 순환 버퍼로 유지]할 수 있다.</td><td><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-002</code></td></tr>
     <tr data-role="ai iot"><td>REQ-03</td><td>웃음 감지 자동 저장</td><td>[기기]는 [놓친 웃음 순간을 보존]하기 위하여 [웃음 확정 시 T−60초~T+60초 영상을 생성]할 수 있다.</td><td><span class="r r-ai">AI</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-003</code> · YAMNet</td></tr>
     <tr data-role="ai iot"><td>REQ-04</td><td>호출어·터치 저장</td><td>[사용자]는 [방금 지나간 장면을 저장]하기 위하여 ["헤이 제임스" 호출 또는 터치로 T−120초~T 영상을 생성]할 수 있다.</td><td><span class="r r-ai">AI</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-004</code> · 터치는 호출어와 독립 동작</td></tr>
-    <tr data-role="iot be"><td>REQ-05</td><td>반복 웃음 병합</td><td>[기기]는 [중복 영상 생성을 방지]하기 위하여 [병합 구간 안의 반복 웃음을 하나의 이벤트로 묶을] 수 있다.</td><td><span class="r r-iot">IoT</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>— (기기)</td><td><code>FR-B-005</code></td></tr>
+    <tr data-role="iot"><td>REQ-05</td><td>반복 웃음 병합</td><td>[기기]는 [중복 영상 생성을 방지]하기 위하여 [병합 구간 안의 반복 웃음을 하나의 이벤트로 묶을] 수 있다.</td><td><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>— (기기)</td><td><code>FR-B-005</code></td></tr>
     <tr data-role="be iot"><td>REQ-06</td><td>서명 URL 업로드</td><td>[기기]는 [영상을 안전하게 보관]하기 위하여 [서명 URL로 비공개 저장소에 직접 업로드하고 완료를 통지]할 수 있다.</td><td><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-006</code> · 멱등 처리</td></tr>
     <tr data-role="fe be"><td>REQ-07</td><td>영상 목록·상세</td><td>[사용자]는 [보존된 추억을 찾기] 위하여 [권한 있는 영상의 목록과 상세를 조회]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 목록</td><td><code>FR-B-007</code> · 기간·유형 필터</td></tr>
     <tr data-role="fe be"><td>REQ-08</td><td>영상 재생</td><td>[사용자]는 [추억을 확인]하기 위하여 [권한 검사 후 발급된 단기 URL로 영상을 재생]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 목록</td><td><code>play-url</code> API</td></tr>
-    <tr data-role="fe be"><td>REQ-09</td><td>구간 편집</td><td>[사용자]는 [원하는 순간만 남기기] 위하여 [시작·종료 시각을 선택해 새 편집본을 생성]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 편집</td><td><code>FR-B-008</code> · <b>시연 피날레</b></td></tr>
+    <tr data-role="fe"><td>REQ-09</td><td>구간 편집</td><td>[사용자]는 [원하는 순간만 남기기] 위하여 [원본을 임시 다운로드하고 앱에서 구간을 선택해 로컬 결과물을 내보낼] 수 있다.</td><td><span class="r r-fe">FE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 편집</td><td><code>FR-B-008</code> · 서버 미저장</td></tr>
     <tr data-role="fe be"><td>REQ-10</td><td>영상 관리</td><td>[사용자]는 [영상을 정리]하기 위하여 [이름 변경·즐겨찾기·삭제·정렬·필터]를 할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>영상 목록</td><td><code>FR-B-009</code></td></tr>
     <tr data-role="fe be"><td>REQ-11</td><td>다운로드</td><td>[사용자]는 [추억을 소장]하기 위하여 [권한 검사 후 단기 URL로 영상을 다운로드]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 목록</td><td><code>FR-B-010</code> · <b>시연 피날레</b></td></tr>
     <tr data-role="fe be"><td>REQ-12</td><td>대시보드 (갤러리·캘린더·통계)</td><td>[사용자]는 [기기·추억 현황을 한눈에 파악]하기 위하여 [기기 상태와 저장 영상을 갤러리·캘린더·통계 관점으로 대시보드에서 확인]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>홈 대시보드</td><td><code>FR-B-011</code> · 갤러리·캘린더·통계</td></tr>
     <tr data-role="fe be iot"><td>REQ-13</td><td>실시간 보기</td><td>[사용자]는 [지금 잘 녹화되고 있는지 확인]하기 위하여 [접근 권한이 있는 기기의 HLS 스트림을 요청 시에만 시작·종료]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>실시간 보기</td><td><code>FR-B-012</code> · 시연 도입 장면 · 화면을 띄운 시청자에게만 송출</td></tr>
-    <tr data-role="fe be iot"><td>REQ-14</td><td>기기 최초 등록</td><td>[사용자]는 [기기 소유자가 되기] 위하여 [제품 코드와 물리적 등록 모드를 함께 확인받아 최초 OWNER로 등록]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>기기 등록</td><td><code>FR-B-013</code> · 코드 재사용 불가</td></tr>
+    <tr data-role="fe be iot"><td>REQ-14</td><td>기기 최초 등록</td><td>[사용자]는 [기기 소유자가 되기] 위하여 [기기 화면의 120초 1회용 등록 코드를 입력해 최초 OWNER로 등록]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>기기 등록</td><td><code>FR-B-013</code> · 코드 재사용 불가</td></tr>
     <tr data-role="fe be"><td>REQ-15</td><td>구성원 초대</td><td>[OWNER]는 [가족·지인과 영상을 공유]하기 위하여 [만료되는 1회용 초대로 기기 MEMBER를 추가]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>구성원 관리</td><td><code>FR-B-014</code></td></tr>
     <tr data-role="be"><td>REQ-16</td><td>역할 기반 인가</td><td>[서버]는 [민감한 영상을 보호]하기 위하여 [기기별 OWNER/MEMBER 역할로 모든 보호 기능을 인가]할 수 있다.</td><td><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (공통)</td><td><code>FR-B-015</code> · 사람↔기기 N:N</td></tr>
     <tr data-role="fe be"><td>REQ-17</td><td>권한 회수</td><td>[OWNER]는 [접근을 통제]하기 위하여 [구성원 권한을 즉시 회수]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>구성원 관리</td><td><code>FR-B-016</code></td></tr>
@@ -306,9 +306,8 @@
     <tr><td>users</td><td class="center">1 : N</td><td>device_memberships</td><td><code>user_id</code></td><td>한 사용자가 여러 기기에 참여</td></tr>
     <tr><td>devices</td><td class="center">1 : N</td><td>device_memberships</td><td><code>device_id</code></td><td>한 기기를 여러 사용자가 공유 (합쳐서 사용자↔기기 N:N)</td></tr>
     <tr><td>devices</td><td class="center">1 : N</td><td>videos</td><td><code>device_id</code></td><td>영상은 반드시 한 기기에 속함 (접근 경계)</td></tr>
-    <tr><td>videos</td><td class="center">1 : N</td><td>video_edits</td><td><code>source_video_id</code></td><td>원본 하나에 여러 편집 작업</td></tr>
-    <tr><td>devices</td><td class="center">1 : N</td><td>invitations</td><td><code>device_id</code></td><td>기기 단위 구성원 초대</td></tr>
-    <tr><td>users</td><td class="center">1 : N</td><td>invitations</td><td><code>inviter_id</code></td><td>OWNER가 초대를 발급</td></tr>
+    <tr><td>devices</td><td class="center">1 : N</td><td>invite_links</td><td><code>device_id</code></td><td>기기 단위 초대 링크</td></tr>
+    <tr><td>invite_links</td><td class="center">1 : N</td><td>join_requests</td><td><code>invite_link_id</code></td><td>링크를 받은 사용자의 가입 요청</td></tr>
     <tr><td>users</td><td class="center">1 : N</td><td>auth_sessions</td><td><code>user_id</code></td><td>Refresh Token 세션</td></tr>
     <tr><td>devices</td><td class="center">1 : N</td><td>device_credentials</td><td><code>device_id</code></td><td>IoT 운영 인증 (사용자 JWT와 분리)</td></tr>
     <tr><td>devices</td><td class="center">1 : N</td><td>access_logs</td><td><code>device_id</code></td><td>기기별 감사 범위</td></tr>
@@ -336,8 +335,6 @@
         <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
         <tr><td>id <span class="badge b-pk">PK</span></td><td>기기 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
         <tr><td>serial_number</td><td>제조 시 부여, 유일</td><td class="mono">varchar(80)</td><td class="center">N</td></tr>
-        <tr><td>product_code_hash</td><td>최초 등록 코드의 SHA-256</td><td class="mono">char(64)</td><td class="center">N</td></tr>
-        <tr><td>product_code_retired_at</td><td>등록 성공 시 기록 → 코드 재사용 불가</td><td class="mono">timestamptz</td><td class="center">Y</td></tr>
         <tr><td>name / model</td><td>앱 표시 이름·모델</td><td class="mono">varchar(80)</td><td class="center">N</td></tr>
         <tr><td>status</td><td>UNCLAIMED·ONLINE·OFFLINE·REVOKED</td><td class="mono">enum</td><td class="center">N</td></tr>
         <tr><td>retention_days</td><td>영상 기본 보관 일수 (1~3650)</td><td class="mono">integer</td><td class="center">N</td></tr>
@@ -361,17 +358,16 @@
       <div style="padding:8px 12px" class="note"><code>UNIQUE(device_id, user_id)</code> · 기기당 활성 OWNER 1명은 부분 유일 인덱스로 보장</div>
     </div>
     <div class="erdtable">
-      <div class="tname">invitations <small>기기 구성원 초대</small></div>
+      <div class="tname">invite_links / join_requests <small>초대 링크·가입 승인</small></div>
       <table>
         <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
-        <tr><td>id <span class="badge b-pk">PK</span></td><td>초대 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>id <span class="badge b-pk">PK</span></td><td>링크·요청 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
         <tr><td>device_id <span class="badge b-fk">FK</span></td><td>공유할 기기</td><td class="mono">uuid</td><td class="center">N</td></tr>
-        <tr><td>inviter_id <span class="badge b-fk">FK</span></td><td>초대를 발급한 OWNER</td><td class="mono">uuid</td><td class="center">N</td></tr>
-        <tr><td>invitee_email</td><td>초대 대상 이메일</td><td class="mono">varchar(320)</td><td class="center">N</td></tr>
-        <tr><td>role</td><td>MVP는 MEMBER만 허용 (CHECK)</td><td class="mono">enum</td><td class="center">N</td></tr>
-        <tr><td>token_hash</td><td>초대 토큰 SHA-256 (원문 저장 금지)</td><td class="mono">char(64)</td><td class="center">N</td></tr>
-        <tr><td>status</td><td>PENDING·ACCEPTED·EXPIRED·REVOKED</td><td class="mono">enum</td><td class="center">N</td></tr>
-        <tr><td>expires_at</td><td>만료 시각 (1회용)</td><td class="mono">timestamptz</td><td class="center">N</td></tr>
+        <tr><td>created_by <span class="badge b-fk">FK</span></td><td>링크를 발급한 OWNER</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>token_hash</td><td>링크 토큰 SHA-256 (원문 저장 금지)</td><td class="mono">char(64)</td><td class="center">N</td></tr>
+        <tr><td>requested_by <span class="badge b-fk">FK</span></td><td>가입을 요청한 사용자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>status</td><td>PENDING·APPROVED·REJECTED</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>expires_at / revoked_at</td><td>링크 만료·회수 시각</td><td class="mono">timestamptz</td><td class="center">조건부</td></tr>
       </table>
     </div>
     <div class="erdtable">
@@ -381,8 +377,8 @@
         <tr><td>id <span class="badge b-pk">PK</span></td><td>영상 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
         <tr><td>device_id <span class="badge b-fk">FK</span></td><td>접근 경계이자 생성 기기</td><td class="mono">uuid</td><td class="center">N</td></tr>
         <tr><td>created_by <span class="badge b-fk">FK</span></td><td>업로드·작업 주체 (users)</td><td class="mono">uuid</td><td class="center">Y</td></tr>
-        <tr><td>source_type</td><td>IOT_CAPTURE·USER_UPLOAD·EDIT_OUTPUT</td><td class="mono">enum</td><td class="center">N</td></tr>
-        <tr><td>trigger_type</td><td>LAUGHTER·WAKE_WORD·TOUCH·MANUAL·EDIT…</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>source_type</td><td>IOT_CAPTURE·USER_UPLOAD (EDIT_OUTPUT은 레거시)</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>trigger_type</td><td>LAUGHTER·WAKE_WORD·TOUCH·MANUAL·USER_UPLOAD</td><td class="mono">enum</td><td class="center">N</td></tr>
         <tr><td>source_event_id</td><td>IoT 이벤트 멱등 키</td><td class="mono">varchar(100)</td><td class="center">Y</td></tr>
         <tr><td>storage_key</td><td>비공개 객체 키 (URL 저장 금지)</td><td class="mono">varchar(1024)</td><td class="center">N</td></tr>
         <tr><td>size_bytes / checksum_sha256</td><td>최대 500 MiB · 무결성 검증</td><td class="mono">bigint·char(64)</td><td class="center">Y</td></tr>
@@ -392,21 +388,6 @@
         <tr><td>retention_until</td><td>자동 삭제 기준</td><td class="mono">timestamptz</td><td class="center">Y</td></tr>
       </table>
       <div style="padding:8px 12px" class="note"><code>UNIQUE(device_id, source_event_id)</code> — IoT 재시도에도 중복 영상 금지</div>
-    </div>
-    <div class="erdtable">
-      <div class="tname">video_edits <small>구간 편집 작업</small></div>
-      <table>
-        <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
-        <tr><td>id <span class="badge b-pk">PK</span></td><td>작업 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
-        <tr><td>device_id <span class="badge b-fk">FK</span></td><td>원본 영상에서 확정한 기기</td><td class="mono">uuid</td><td class="center">N</td></tr>
-        <tr><td>source_video_id <span class="badge b-fk">FK</span></td><td>원본 영상</td><td class="mono">uuid</td><td class="center">N</td></tr>
-        <tr><td>result_video_id <span class="badge b-fk">FK</span></td><td>완료된 결과 영상</td><td class="mono">uuid</td><td class="center">Y</td></tr>
-        <tr><td>requested_by <span class="badge b-fk">FK</span></td><td>요청 사용자</td><td class="mono">uuid</td><td class="center">N</td></tr>
-        <tr><td>start_ms / end_ms</td><td>편집 구간</td><td class="mono">bigint</td><td class="center">N</td></tr>
-        <tr><td>status</td><td>PENDING·PROCESSING·COMPLETED·FAILED·CANCELLED</td><td class="mono">enum</td><td class="center">N</td></tr>
-        <tr><td>error_code</td><td>실패 사유 코드</td><td class="mono">varchar(80)</td><td class="center">Y</td></tr>
-      </table>
-      <div style="padding:8px 12px" class="note">복합 FK <code>(video_id, device_id)</code> — 편집 결과는 원본과 같은 기기 보장</div>
     </div>
   </div>
 
@@ -445,24 +426,22 @@
     <tbody data-role="fe be">
     <tr><td rowspan="6">구성원·초대 <span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/members</td><td>기기 구성원 목록</td></tr>
     <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/devices/{deviceId}/members/{membershipId}</td><td>구성원 접근 권한 회수 (OWNER)</td></tr>
-    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/invitations</td><td>기기 초대 목록</td></tr>
-    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/devices/{deviceId}/invitations</td><td>기기 구성원 초대 (OWNER, 1회용·만료)</td></tr>
-    <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/devices/{deviceId}/invitations/{invitationId}</td><td>대기 초대 철회 (OWNER)</td></tr>
-    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/invitations/accept</td><td>기기 초대 수락 → MEMBER</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/devices/{deviceId}/invite-link</td><td>초대 링크 생성·회전 (OWNER)</td></tr>
+    <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/devices/{deviceId}/invite-link</td><td>초대 링크 회수 (OWNER)</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/join-requests</td><td>초대 링크로 가입 요청</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/join-requests</td><td>대기 요청 조회 후 approve/reject</td></tr>
     </tbody>
     <tbody data-role="fe be">
-    <tr><td rowspan="8">영상 <span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/videos?deviceId=…</td><td>기기 영상 목록 (필터·키셋 페이지)</td></tr>
+    <tr><td rowspan="6">영상 <span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/videos?deviceId=…</td><td>기기 영상 목록 (필터·키셋 페이지)</td></tr>
     <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/videos/{videoId}</td><td>영상 상세 조회</td></tr>
     <tr><td class="center"><span class="badge b-patch">PATCH</span></td><td class="mono">/api/videos/{videoId}</td><td>제목·설명·즐겨찾기 수정</td></tr>
     <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/videos/{videoId}</td><td>영상 삭제 요청</td></tr>
     <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/videos/{videoId}/play-url</td><td>단기 재생 URL 발급</td></tr>
     <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/videos/{videoId}/download-url</td><td>단기 다운로드 URL 발급</td></tr>
-    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/videos/{videoId}/edits</td><td>영상 구간 편집 요청 (비동기)</td></tr>
-    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/video-edits/{editId}</td><td>편집 작업 상태 조회</td></tr>
     </tbody>
     <tbody data-role="fe be">
-    <tr><td rowspan="2">대시보드 <span class="r r-fe">FE</span><span class="r r-be">BE</span> <span class="note">신규</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/videos/calendar?from=&to=</td><td>캘린더 — 일자별 영상 유무·개수 집계</td></tr>
-    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/stats?period=</td><td>통계 — 감지 유형별·기간별·요일/시간대 집계</td></tr>
+    <tr><td rowspan="2">대시보드 <span class="r r-fe">FE</span><span class="r r-be">BE</span> <span class="note">신규</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/videos?deviceId=…&amp;from=&amp;to=</td><td>캘린더 — 촬영 시각 기간 필터</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/stats?from=&amp;to=&amp;timeZone=</td><td>통계 — 감지 유형별·기간별·요일/시간대 집계</td></tr>
     </tbody>
     <tbody data-role="fe be iot">
     <tr><td rowspan="4">라이브 <span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/devices/{deviceId}/stream-sessions</td><td>온디맨드 실시간 보기 세션 시작</td></tr>
@@ -507,7 +486,7 @@
         <tr><td class="mono">accessToken</td><td>보호 API 호출용 JWT</td><td>String</td><td>Bearer 헤더에 사용</td><td class="center">✕</td><td class="mono">eyJhbGciOi…</td></tr>
         <tr><td class="mono">refreshToken</td><td>재발급용 토큰</td><td>String</td><td>32~2048자</td><td class="center">✕</td><td class="mono">d41d8cd98f…</td></tr>
         <tr><td class="mono">tokenType</td><td>토큰 타입</td><td>String</td><td>enum: Bearer</td><td class="center">✕</td><td class="mono">Bearer</td></tr>
-        <tr><td class="mono">expiresIn</td><td>access 토큰 만료(초)</td><td>Integer(int64)</td><td>1 이상</td><td class="center">✕</td><td class="mono">3600</td></tr>
+        <tr><td class="mono">expiresIn</td><td>access 토큰 만료(초)</td><td>Integer(int64)</td><td>기본 900초</td><td class="center">✕</td><td class="mono">900</td></tr>
         <tr><td class="mono">user</td><td>사용자 요약 (id·email·displayName)</td><td>Object</td><td>UserSummary</td><td class="center">✕</td><td>—</td></tr>
       </table></div>
       <h4>5. Response 예시 — 복사 → 붙여넣기</h4>
@@ -515,7 +494,7 @@
   "accessToken": "eyJhbGciOiJIUzI1NiJ9.…",
   "refreshToken": "3f9c1c1e5a2b4d…",
   "tokenType": "Bearer",
-  "expiresIn": 3600,
+  "expiresIn": 900,
   "user": {
     "id": "00000000-0000-0000-0000-000000000001",
     "email": "owner@example.com",
@@ -570,53 +549,33 @@ Authorization: Bearer {accessToken}</pre>
     </div>
   </div>
 
-  <!-- 상세 3: 편집 -->
+  <!-- 상세 3: 로컬 편집 준비 -->
   <div class="apicard" data-role="fe be">
-    <div class="apihead">상세 ③ 영상 구간 편집 요청 — 시연 피날레 <span class="r r-fe">FE</span><span class="r r-be">BE</span></div>
+    <div class="apihead">상세 ③ 로컬 영상 편집 준비 — 원본 다운로드 <span class="r r-fe">FE</span><span class="r r-be">BE</span></div>
     <div class="apibody">
       <h4>1. URL · Method</h4>
       <div class="tablewrap"><table>
-        <tr><th style="width:130px">HTTP URL</th><td class="mono">/api/videos/{videoId}/edits</td></tr>
+        <tr><th style="width:130px">HTTP URL</th><td class="mono">/api/videos/{videoId}/download-url</td></tr>
         <tr><th>HTTP Method</th><td class="mono">POST</td></tr>
-        <tr><th>상세 설명</th><td>시작·종료 구간으로 새 편집본 생성을 요청한다. 서버는 원본 영상의 <code>device_id</code> 멤버십을 검사한 뒤 작업 ID를 2초 이내 반환하고, 실제 처리는 비동기(<code>PENDING→PROCESSING→COMPLETED/FAILED</code>)로 진행한다.</td></tr>
+        <tr><th>상세 설명</th><td>서버는 원본 영상의 <code>device_id</code> 멤버십을 검사해 짧은 다운로드 URL만 발급한다. 앱은 원본을 임시 다운로드해 구간 선택·효과·인코딩·내보내기를 로컬에서 수행하며 편집 결과를 서버에 저장하지 않는다.</td></tr>
       </table></div>
-      <h4>2. Request — 프론트가 보낼 것 (CreateVideoEditRequest)</h4>
+      <h4>2. Request — 프론트가 보낼 것</h4>
       <div class="tablewrap"><table>
-        <tr><th>key</th><th>설명</th><th>value 타입</th><th>옵션</th><th class="center">Nullable</th><th>예시</th></tr>
-        <tr><td class="mono">startMs</td><td>편집 시작 (밀리초)</td><td>Integer(int64)</td><td>0 이상, endMs 미만</td><td class="center">✕</td><td class="mono">12000</td></tr>
-        <tr><td class="mono">endMs</td><td>편집 종료 (밀리초)</td><td>Integer(int64)</td><td>1 이상, 원본 길이 이하</td><td class="center">✕</td><td class="mono">96000</td></tr>
-        <tr><td class="mono">title</td><td>편집본 제목</td><td>String</td><td>1~120자</td><td class="center">✕</td><td class="mono">우리 가족 웃음 편집본</td></tr>
+        <tr><td colspan="6" class="note">본문 없음 — Path의 <code>videoId</code>와 Authorization 헤더(JWT)만 사용</td></tr>
       </table></div>
       <h4>3. Request 예시</h4>
-      <pre class="codeblock">{
-  "startMs": 12000,
-  "endMs": 96000,
-  "title": "우리 가족 웃음 편집본"
-}</pre>
-      <h4>4. Response — 백엔드가 줄 것 (VideoEdit)</h4>
+      <pre class="codeblock">POST /api/videos/00000000-0000-0000-0000-000000000003/download-url
+Authorization: Bearer {accessToken}</pre>
+      <h4>4. Response — 백엔드가 줄 것 (SignedUrlResponse)</h4>
       <div class="tablewrap"><table>
         <tr><th>key</th><th>설명</th><th>value 타입</th><th>옵션</th><th class="center">Nullable</th><th>예시</th></tr>
-        <tr><td class="mono">id</td><td>편집 작업 ID</td><td>String(uuid)</td><td>상태 조회에 사용</td><td class="center">✕</td><td class="mono">…-0008</td></tr>
-        <tr><td class="mono">deviceId</td><td>원본에서 확정한 기기 ID</td><td>String(uuid)</td><td></td><td class="center">✕</td><td class="mono">…-0002</td></tr>
-        <tr><td class="mono">sourceVideoId</td><td>원본 영상 ID</td><td>String(uuid)</td><td></td><td class="center">✕</td><td class="mono">…-0003</td></tr>
-        <tr><td class="mono">resultVideoId</td><td>완료 시 결과 영상 ID</td><td>String(uuid)</td><td>완료 전 null</td><td class="center">◯</td><td class="mono">null</td></tr>
-        <tr><td class="mono">startMs / endMs</td><td>요청 구간</td><td>Integer(int64)</td><td></td><td class="center">✕</td><td class="mono">12000 / 96000</td></tr>
-        <tr><td class="mono">status</td><td>작업 상태</td><td>String</td><td>PENDING·PROCESSING·COMPLETED·FAILED·CANCELLED</td><td class="center">✕</td><td class="mono">PENDING</td></tr>
-        <tr><td class="mono">requestedAt</td><td>요청 시각</td><td>LocalDateTime</td><td>ISO-8601</td><td class="center">✕</td><td class="mono">2026-07-25T10:35:00Z</td></tr>
+        <tr><td class="mono">url</td><td>원본 영상의 짧은 서명 URL</td><td>String(uri)</td><td>로그·DB 저장 금지</td><td class="center">✕</td><td class="mono">https://…</td></tr>
+        <tr><td class="mono">expiresAt</td><td>URL 만료 시각</td><td>LocalDateTime</td><td>ISO-8601</td><td class="center">✕</td><td class="mono">2026-07-25T10:40:00Z</td></tr>
       </table></div>
       <h4>5. Response 예시 — 복사 → 붙여넣기</h4>
       <pre class="codeblock">{
-  "id": "00000000-0000-0000-0000-000000000008",
-  "deviceId": "00000000-0000-0000-0000-000000000002",
-  "sourceVideoId": "00000000-0000-0000-0000-000000000003",
-  "resultVideoId": null,
-  "requestedBy": "00000000-0000-0000-0000-000000000001",
-  "startMs": 12000,
-  "endMs": 96000,
-  "status": "PENDING",
-  "errorCode": null,
-  "requestedAt": "2026-07-25T10:35:00Z",
-  "completedAt": null
+  "url": "https://storage.example/private/…",
+  "expiresAt": "2026-07-25T10:40:00Z"
 }</pre>
     </div>
   </div>
@@ -635,9 +594,9 @@ Authorization: Bearer {accessToken}</pre>
     <tr><th>화면</th><th>핵심 확인 사항</th><th>미리 정의한 화면 상태</th></tr>
     <tr><td><b>로그인</b></td><td>이메일 로그인, 회원가입 진입</td><td>입력 오류 · 자격 증명 오류 · 시도 제한</td></tr>
     <tr><td><b>홈 대시보드</b></td><td>내 기기 목록·선택, 기기별 역할·상태, 라이브 진입, 저장 영상 <b>갤러리·캘린더·통계</b> 뷰</td><td>로딩 · 기기 없음(빈 상태) · 기기 오프라인 · 빈 갤러리·빈 달</td></tr>
-    <tr><td><b>기기 등록</b></td><td>물리적 등록 모드 안내, 제품 코드·QR, 최초 소유자 등록</td><td>등록 모드 꺼짐 · 코드 오류·재사용 · 이미 등록됨</td></tr>
+    <tr><td><b>기기 등록</b></td><td>물리적 등록 모드 안내, 화면 1회용 코드, 최초 소유자 등록</td><td>등록 모드 꺼짐 · 코드 오류·재사용 · 이미 등록됨</td></tr>
     <tr><td><b>영상 목록</b></td><td>감지 유형 필터, 썸네일, 촬영 시각, 길이</td><td>로딩 · 빈 목록 · 처리 중 · 권한 없음(404)</td></tr>
-    <tr><td><b>영상 편집</b></td><td>재생, 시작·종료 선택, 선택 길이, 편집본 생성</td><td>PENDING · PROCESSING · COMPLETED · FAILED</td></tr>
+    <tr><td><b>영상 편집</b></td><td>재생, 시작·종료·효과 선택, 단말 내보내기, 서버 미저장 안내</td><td>원본 다운로드 · 로컬 처리 · 저장공간 부족 · 내보내기 실패</td></tr>
     <tr><td><b>실시간 보기</b></td><td>온디맨드 시작(수초 대기), HLS 재생, 15초 heartbeat, 정상 종료</td><td>PENDING · READY · CLOSED/EXPIRED(종료 화면) · FAILED(재시도)</td></tr>
     <tr><td><b>기기 구성원 관리</b></td><td>선택 기기의 OWNER/MEMBER, 기기 초대, 권한 회수</td><td>MEMBER 제한 안내 · 초대 만료 · 회수 확인</td></tr>
     <tr><td><b>설정</b></td><td>녹화 LED, 보관 기간, 접근 기록, 기기 등록 해제</td><td>OWNER 전용 항목 잠금 · 오프라인 작업 불가</td></tr>
@@ -666,7 +625,7 @@ Authorization: Bearer {accessToken}</pre>
       <span class="node hl">홈 대시보드</span><span class="arrow">→</span>
       <span class="node">기기 등록</span><span class="arrow">→</span>
       <span class="node state">기기에서 물리적 등록 모드 켜기</span><span class="arrow">→</span>
-      <span class="node state">제품 코드 입력</span><span class="arrow">→</span>
+      <span class="node state">기기 화면의 1회용 등록 코드 입력</span><span class="arrow">→</span>
       <span class="node">OWNER 등록 완료</span><span class="arrow">→</span>
       <span class="node hl">홈 대시보드</span>
     </div>
@@ -697,9 +656,8 @@ Authorization: Bearer {accessToken}</pre>
     <div class="flowrow">
       <span class="flowlabel" style="margin-left:24px">└</span>
       <span class="node">구간 편집 (시작·종료 선택)</span><span class="arrow">→</span>
-      <span class="node state">편집 상태 PENDING→COMPLETED</span><span class="arrow">→</span>
-      <span class="node hl">편집본 재생 · 다운로드 ★피날레</span><span class="arrow">→</span>
-      <span class="node">영상 목록</span>
+      <span class="node state">앱 로컬 편집·인코딩</span><span class="arrow">→</span>
+      <span class="node hl">단말 저장 · 공유 ★피날레</span>
     </div>
     <div class="flowrow"><span class="flowlabel">보조 분기: 이름 변경·즐겨찾기·삭제는 영상 목록/상세에서 바로. 권한 없는 영상은 존재를 숨기고 404 화면.</span></div>
   </div>

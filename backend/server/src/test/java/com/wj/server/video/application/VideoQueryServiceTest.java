@@ -48,10 +48,10 @@ class VideoQueryServiceTest {
         VideoRow first = video(deviceId, Instant.parse("2026-07-17T10:00:02Z"), "READY");
         VideoRow second = video(deviceId, Instant.parse("2026-07-17T10:00:01Z"), "READY");
         when(videoMapper.hasActiveMembership(userId, deviceId)).thenReturn(true);
-        when(videoMapper.findAccessibleVideos(userId, deviceId, "TOUCH", null, null, 2))
+        when(videoMapper.findAccessibleVideos(userId, deviceId, "TOUCH", null, null, null, null, 2))
             .thenReturn(List.of(first, second));
 
-        var page = service.list(userId, deviceId, "TOUCH", null, 1);
+        var page = service.list(userId, deviceId, "TOUCH", null, null, null, 1);
 
         assertThat(page.items()).hasSize(1);
         assertThat(page.hasNext()).isTrue();
@@ -64,11 +64,12 @@ class VideoQueryServiceTest {
         UUID deviceId = UUID.randomUUID();
         when(videoMapper.hasActiveMembership(userId, deviceId)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.list(userId, deviceId, null, null, 20))
+        assertThatThrownBy(() -> service.list(userId, deviceId, null, null, null, null, 20))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("RESOURCE_NOT_FOUND");
-        verify(videoMapper, never()).findAccessibleVideos(any(), any(), any(), any(), any(), any(Integer.class));
+        verify(videoMapper, never()).findAccessibleVideos(
+            any(), any(), any(), any(), any(), any(), any(), any(Integer.class));
     }
 
     @Test

@@ -48,6 +48,9 @@ public class IotVideoService {
         if (!request.capturedEndAt().isAfter(request.capturedStartAt())) {
             throw validation("capturedEndAt은 capturedStartAt보다 뒤여야 합니다.");
         }
+        if (!videoMapper.isClaimedDevice(deviceId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "DEVICE_NOT_CLAIMED", "등록이 완료된 기기만 영상을 업로드할 수 있습니다.");
+        }
 
         VideoRow video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
             .orElseGet(() -> createVideo(deviceId, request));

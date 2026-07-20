@@ -12,6 +12,9 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+server:
+  forward-headers-strategy: native
+
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
@@ -27,6 +30,11 @@ app:
     access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:14d}
     jwt-secret: ${JWT_SIGNING_KEY:local-development-signing-key-change-me-2026}
+    login-max-failures: ${LOGIN_MAX_FAILURES:5}
+    login-failure-window: ${LOGIN_FAILURE_WINDOW:10m}
+  provisioning:
+    enabled: ${DEVICE_PROVISIONING_ENABLED:false}
+    admin-key: ${DEVICE_PROVISIONING_ADMIN_KEY:}
   device-claim:
     max-failures: ${DEVICE_CLAIM_MAX_FAILURES:5}
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
@@ -37,10 +45,6 @@ app:
     grace: ${SUBSCRIPTION_GRACE:30d}
   retention:
     sweep-delay: ${RETENTION_SWEEP_DELAY:60000}
-  video-edit:
-    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
-    process-timeout: ${FFMPEG_PROCESS_TIMEOUT:10m}
-    worker-delay: ${VIDEO_EDIT_WORKER_DELAY:5s}
   mqtt:
     broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
     client-id: ${MQTT_CLIENT_ID:wj-backend-local}

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -36,4 +37,7 @@ public interface ClaimAttemptMapper {
         @Param("ipHash") String ipHash,
         @Param("succeeded") boolean succeeded
     );
+
+    @Delete("DELETE FROM device_claim_attempts WHERE attempted_at < #{before}")
+    int deleteOlderThan(@Param("before") Instant before);
 }

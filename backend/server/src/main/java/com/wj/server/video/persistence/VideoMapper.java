@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.wj.server.video.domain.VideoRow;
+import com.wj.server.video.domain.VideoCountRow;
+import com.wj.server.video.domain.DailyVideoCountRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -14,6 +16,9 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface VideoMapper {
+
+    @Select("SELECT status IN ('ONLINE', 'OFFLINE') FROM devices WHERE id = #{deviceId}")
+    boolean isClaimedDevice(@Param("deviceId") UUID deviceId);
 
     @Insert("""
         INSERT INTO videos (
@@ -128,6 +133,12 @@ public interface VideoMapper {
         <if test="triggerType != null">
            AND v.trigger_type = CAST(#{triggerType} AS video_trigger_type)
         </if>
+        <if test="from != null">
+           AND v.captured_start_at &gt;= #{from}
+        </if>
+        <if test="to != null">
+           AND v.captured_start_at &lt; #{to}
+        </if>
         <if test="cursorCreatedAt != null">
            AND (v.created_at, v.id) &lt; (#{cursorCreatedAt}, #{cursorId})
         </if>
@@ -139,9 +150,84 @@ public interface VideoMapper {
         @Param("userId") UUID userId,
         @Param("deviceId") UUID deviceId,
         @Param("triggerType") String triggerType,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
         @Param("cursorCreatedAt") Instant cursorCreatedAt,
         @Param("cursorId") UUID cursorId,
         @Param("limit") int limit
+    );
+
+    @Select("""
+        SELECT count(*)
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+        """)
+    long countReadyVideos(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT trigger_type::text AS label, count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY trigger_type
+         ORDER BY count DESC, label
+        """)
+    List<VideoCountRow> countReadyVideosByTrigger(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT (captured_start_at AT TIME ZONE #{zoneId})::date AS date, count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY date
+         ORDER BY date
+        """)
+    List<DailyVideoCountRow> countReadyVideosByDay(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("zoneId") String zoneId
+    );
+
+    @Select("""
+        SELECT extract(isodow FROM captured_start_at AT TIME ZONE #{zoneId})::int::text AS label,
+               count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY label
+         ORDER BY count DESC, label
+        """)
+    List<VideoCountRow> countReadyVideosByWeekday(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("zoneId") String zoneId
+    );
+
+    @Select("""
+        SELECT extract(hour FROM captured_start_at AT TIME ZONE #{zoneId})::int::text AS label,
+               count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY label
+         ORDER BY count DESC, label
+        """)
+    List<VideoCountRow> countReadyVideosByHour(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("zoneId") String zoneId
     );
 
     @Select("""

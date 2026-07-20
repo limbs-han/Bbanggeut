@@ -3,6 +3,7 @@ package com.wj.server.video.application;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.time.Instant;
 
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
@@ -43,6 +44,8 @@ public class VideoQueryService {
         UUID userId,
         UUID deviceId,
         String triggerType,
+        Instant from,
+        Instant to,
         String cursor,
         int size
     ) {
@@ -52,13 +55,16 @@ public class VideoQueryService {
         if (triggerType != null && !TRIGGER_TYPES.contains(triggerType)) {
             throw validation("지원하지 않는 triggerType입니다.");
         }
+        if (from != null && to != null && !from.isBefore(to)) {
+            throw validation("from은 to보다 이전이어야 합니다.");
+        }
         if (!videoMapper.hasActiveMembership(userId, deviceId)) {
             throw notFound();
         }
 
         VideoCursorCodec.Cursor decoded = cursorCodec.decode(cursor);
         List<VideoRow> rows = videoMapper.findAccessibleVideos(
-            userId, deviceId, triggerType, decoded.createdAt(), decoded.id(), size + 1);
+            userId, deviceId, triggerType, from, to, decoded.createdAt(), decoded.id(), size + 1);
         boolean hasNext = rows.size() > size;
         List<VideoRow> pageRows = hasNext ? rows.subList(0, size) : rows;
         String nextCursor = hasNext

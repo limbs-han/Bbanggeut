@@ -268,7 +268,7 @@ MQTT 발행 실패 시에도 클립은 로컬 업로드 큐에 남는다. 재연
 | `STOP_STREAM` | `streamId`, `reason` | `[기본]` | 마지막 유효 heartbeat 또는 정상 종료부터 총 60초가 되면 송출 종료 |
 | `UPDATE_CONFIG` | `configVersion`, 허용 설정 | `[기본]` | 감지 임계값·병합 창 갱신 |
 | `PING` | 빈 객체 | `[기본]` | 명령 경로 진단 |
-| `SET_PAN_TILT` | `panDegrees`, `tiltDegrees` | `[심화]` | 카메라 각도 조절 |
+| `SET_PAN_TILT` | `panDegrees`, `tiltDegrees` | `[심화]` | 수동 카메라 각도 조절. 자동 추적과 동시에 실행하지 않음 |
 
 - 기기는 payload의 `deviceId`가 인증 기기와 같은지, `expiresAt`이 지나지 않았는지 확인한다.
 - 알 수 없는 명령은 실행하지 않고 `UNSUPPORTED_COMMAND` ACK를 보낸다.

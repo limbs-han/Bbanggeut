@@ -27,7 +27,7 @@ tags:
   - name: Invitations
     description: 기기별 초대 링크 공유, 가입 요청과 OWNER 승인·거절, 구성원 관리
   - name: Videos
-    description: 기기별 영상 조회·재생·편집·다운로드·삭제
+    description: 기기별 영상 조회·재생·원본 다운로드·삭제. 일반 편집은 앱 로컬 처리
   - name: IoT
     description: 기기 자격 증명을 사용하는 영상 직접 업로드 계약
   - name: Audit
@@ -82,6 +82,12 @@ paths:
                 $ref: '#/components/schemas/AuthTokenResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 이메일 또는 접속 주소 기준 로그인 실패 5회/10분 제한 초과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -307,6 +313,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
+
+  /api/devices/{deviceId}/stats:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: getDeviceVideoStats
+      summary: 저장 영상 통계 조회
+      description: 활성 멤버십 기기의 READY 영상만 집계한다. 기본 기간은 Asia/Seoul 기준 최근 30일이다.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: timeZone
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Asia/Seoul
+      responses:
+        '200':
+          description: 감지 유형·일자별 집계와 최다 요일·시간대
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/devices/{deviceId}/stream-sessions:
     parameters:
@@ -658,6 +705,20 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DeviceIdQuery'
         - $ref: '#/components/parameters/TriggerTypeQuery'
+        - name: from
+          in: query
+          required: false
+          description: 촬영 시작 시각 하한(포함)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: 촬영 시작 시각 상한(미포함)
+          schema:
+            type: string
+            format: date-time
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -769,56 +830,6 @@ paths:
           $ref: '#/components/responses/HiddenNotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
-  /api/videos/{videoId}/edits:
-    parameters:
-      - $ref: '#/components/parameters/VideoId'
-    post:
-      tags: [Videos]
-      operationId: createVideoEdit
-      summary: 영상 구간 편집 요청
-      description: 서버가 원본 영상의 `deviceId`를 찾고 해당 기기의 활성 멤버십과 작업 권한을 확인한다.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateVideoEditRequest'
-      responses:
-        '202':
-          description: 편집 작업 수락
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VideoEdit'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/HiddenNotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
-  /api/video-edits/{editId}:
-    parameters:
-      - $ref: '#/components/parameters/EditId'
-    get:
-      tags: [Videos]
-      operationId: getVideoEdit
-      summary: 편집 작업 상태 조회
-      description: 편집 원본 영상의 기기 멤버십을 기준으로 접근을 확인한다.
-      responses:
-        '200':
-          description: 편집 상태
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VideoEdit'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/HiddenNotFound'
 
   /api/iot/registration-codes:
     post:
@@ -991,13 +1002,6 @@ components:
         format: uuid
     VideoId:
       name: videoId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    EditId:
-      name: editId
       in: path
       required: true
       schema:
@@ -1470,6 +1474,7 @@ components:
     VideoSourceType:
       type: string
       enum: [IOT_CAPTURE, USER_UPLOAD, EDIT_OUTPUT]
+      description: "EDIT_OUTPUT은 V13 이전 레거시 조회 호환 값이며 신규 편집본에는 사용하지 않는다."
 
     VideoTriggerType:
       type: string
@@ -1566,6 +1571,65 @@ components:
         hasNext:
           type: boolean
 
+    VideoStats:
+      type: object
+      required: [deviceId, from, to, timeZone, totalCount, byTriggerType, dailyCounts]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timeZone:
+          type: string
+          example: Asia/Seoul
+        totalCount:
+          type: integer
+          format: int64
+        byTriggerType:
+          type: array
+          items:
+            $ref: '#/components/schemas/NamedCount'
+        dailyCounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyCount'
+        peakWeekday:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/NamedCount'
+          nullable: true
+        peakHour:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/NamedCount'
+          nullable: true
+
+    NamedCount:
+      type: object
+      required: [name, count]
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+          format: int64
+
+    DailyCount:
+      type: object
+      required: [date, count]
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+          format: int64
+
     UpdateVideoRequest:
       type: object
       minProperties: 1
@@ -1593,65 +1657,6 @@ components:
         expiresAt:
           type: string
           format: date-time
-
-    CreateVideoEditRequest:
-      type: object
-      required: [startMs, endMs, title]
-      additionalProperties: false
-      properties:
-        startMs:
-          type: integer
-          format: int64
-          minimum: 0
-        endMs:
-          type: integer
-          format: int64
-          minimum: 1
-        title:
-          type: string
-          minLength: 1
-          maxLength: 120
-
-    VideoEdit:
-      type: object
-      required: [id, deviceId, sourceVideoId, requestedBy, startMs, endMs, status, requestedAt]
-      properties:
-        id:
-          type: string
-          format: uuid
-        deviceId:
-          type: string
-          format: uuid
-        sourceVideoId:
-          type: string
-          format: uuid
-        resultVideoId:
-          type: string
-          format: uuid
-          nullable: true
-        requestedBy:
-          type: string
-          format: uuid
-        startMs:
-          type: integer
-          format: int64
-        endMs:
-          type: integer
-          format: int64
-        status:
-          type: string
-          enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
-        errorCode:
-          type: string
-          maxLength: 80
-          nullable: true
-        requestedAt:
-          type: string
-          format: date-time
-        completedAt:
-          type: string
-          format: date-time
-          nullable: true
 
     IotUploadUrlRequest:
       type: object
@@ -1770,6 +1775,7 @@ components:
           nullable: true
         action:
           type: string
+          description: "`VIDEO_EDIT`는 V13 이전 레거시 감사 로그에만 존재하며 신규 메타데이터 수정은 `VIDEO_UPDATE`로 기록한다."
           enum:
             - MEMBER_INVITE
             - MEMBER_REVOKE
@@ -1780,6 +1786,7 @@ components:
             - VIDEO_VIEW
             - VIDEO_PLAY
             - VIDEO_DOWNLOAD
+            - VIDEO_UPDATE
             - VIDEO_EDIT
             - VIDEO_DELETE
             - STREAM_OPEN
