@@ -183,13 +183,14 @@ class DeviceServiceTest {
         when(deviceMapper.findAccessibleDevice(userId, deviceId))
             .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "MEMBER")));
         when(deviceMapper.findAccessibleStatus(userId, deviceId))
-            .thenReturn(Optional.of(new DeviceStatusRow(deviceId, "OFFLINE", false, 2, 120)));
+            .thenReturn(Optional.of(new DeviceStatusRow(deviceId, "OFFLINE", false, 2, 120, null)));
 
         var response = deviceService.status(userId, deviceId);
 
         verify(deviceMapper).markOfflineIfStale(deviceId);
         assertThat(response.status()).isEqualTo("OFFLINE");
         assertThat(response.uploadQueueDepth()).isEqualTo(2);
+        assertThat(response.personCount()).isNull();
         assertThat(response.checkedAt()).isEqualTo(NOW);
     }
 

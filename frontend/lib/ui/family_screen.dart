@@ -225,7 +225,7 @@ class _MemberTile extends StatelessWidget {
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     leading: CircleAvatar(
       backgroundColor: member.role == 'OWNER'
-          ? const Color(0xFFF7D3B7)
+          ? AppColors.peach
           : AppColors.mint,
       child: Text(
         member.user.displayName.characters.firstOrNull ?? '?',

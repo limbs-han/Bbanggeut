@@ -1,0 +1,12 @@
+# PC-side notebook reproduction environment (2026-07-21)
+# Jetson must use NVIDIA/JetPack-compatible PyTorch and TensorRT builds instead.
+ultralytics==8.4.102
+tensorflow-cpu==2.21.0
+librosa==0.11.0
+scikit-learn==1.9.0
+pandas>=2.0
+numpy>=1.26
+matplotlib>=3.8
+nbformat==5.10.4
+nbconvert>=7.16
+ipykernel>=6.29

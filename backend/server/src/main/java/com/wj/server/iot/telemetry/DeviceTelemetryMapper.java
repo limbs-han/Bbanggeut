@@ -14,6 +14,7 @@ public interface DeviceTelemetryMapper {
            SET status = CASE WHEN claimed_at IS NOT NULL THEN 'ONLINE'::device_status ELSE status END,
                last_seen_at = now(), recording = #{recording},
                upload_queue_depth = #{uploadQueueDepth}, buffer_seconds = #{bufferSeconds},
+               person_count = #{personCount},
                firmware_version = COALESCE(#{firmwareVersion}, firmware_version), updated_at = now()
          WHERE id = #{deviceId} AND status != 'REVOKED'
         """)
@@ -22,6 +23,7 @@ public interface DeviceTelemetryMapper {
         @Param("recording") boolean recording,
         @Param("uploadQueueDepth") int uploadQueueDepth,
         @Param("bufferSeconds") Integer bufferSeconds,
+        @Param("personCount") Integer personCount,
         @Param("firmwareVersion") String firmwareVersion
     );
 
@@ -41,6 +43,7 @@ public interface DeviceTelemetryMapper {
                END,
                last_seen_at = CASE WHEN #{online} THEN now() ELSE last_seen_at END,
                recording = CASE WHEN #{online} THEN recording ELSE false END,
+               person_count = CASE WHEN #{online} THEN person_count ELSE NULL END,
                firmware_version = COALESCE(#{firmwareVersion}, firmware_version), updated_at = now()
          WHERE id = #{deviceId} AND status != 'REVOKED'
         """)

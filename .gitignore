@@ -17,3 +17,8 @@ out/
 data/
 logs/
 runtime/
+
+# Local AI benchmark environment and generated caches
+.benchmark-venv/
+ai/model_benchmark/cache/
+ai/model_benchmark/data/

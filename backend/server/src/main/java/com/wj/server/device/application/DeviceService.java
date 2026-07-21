@@ -141,7 +141,7 @@ public class DeviceService {
         var status = deviceMapper.findAccessibleStatus(userId, deviceId).orElseThrow(this::notFound);
         return new DeviceStatusResponse(
             status.deviceId(), status.status(), status.recording(), status.uploadQueueDepth(),
-            status.bufferSeconds(), clock.instant());
+            status.bufferSeconds(), status.personCount(), clock.instant());
     }
 
     /**

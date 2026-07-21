@@ -7,6 +7,7 @@ public record DeviceStatusRow(
     String status,
     boolean recording,
     int uploadQueueDepth,
-    Integer bufferSeconds
+    Integer bufferSeconds,
+    Integer personCount
 ) {
 }

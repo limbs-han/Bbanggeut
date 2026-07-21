@@ -33,6 +33,10 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
 
   Future<void> _start() async {
     try {
+      if (devHomeCam && devHlsUrl.isNotEmpty) {
+        await _openPlayer(devHlsUrl);
+        return;
+      }
       session = await widget.controller.api.createStream(widget.device.id);
       if (!mounted) return;
       setState(() {});
@@ -48,6 +52,17 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     } catch (failure) {
       if (mounted) setState(() => error = '$failure');
     }
+  }
+
+  Future<void> _openPlayer(String url) async {
+    final next = VideoPlayerController.networkUrl(Uri.parse(url));
+    await next.initialize();
+    await next.play();
+    if (!mounted) {
+      await next.dispose();
+      return;
+    }
+    setState(() => player = next);
   }
 
   Future<void> _heartbeat() async {
@@ -71,16 +86,7 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
       setState(() => session = updated);
       if (updated.isReady && player == null) {
         pollTimer?.cancel();
-        final next = VideoPlayerController.networkUrl(
-          Uri.parse(updated.playUrl!),
-        );
-        await next.initialize();
-        await next.play();
-        if (!mounted) {
-          await next.dispose();
-          return;
-        }
-        setState(() => player = next);
+        await _openPlayer(updated.playUrl!);
       } else if (const {
         'FAILED',
         'CLOSED',

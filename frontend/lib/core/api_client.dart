@@ -146,10 +146,15 @@ class ApiClient {
       DeviceStatus.fromJson(await _get('/api/devices/$id/status'));
   Future<VideoStats> getVideoStats(String id) async =>
       VideoStats.fromJson(await _get('/api/devices/$id/stats'));
+  Future<HomeSummary> getHomeSummary(String id) async =>
+      HomeSummary.fromJson(await _get('/api/devices/$id/home-summary'));
   Future<VideoPage> listVideos(
     String deviceId, {
     String? triggerType,
     String? cursor,
+    DateTime? from,
+    DateTime? to,
+    int size = 30,
   }) async => VideoPage.fromJson(
     await _get(
       '/api/videos',
@@ -157,7 +162,9 @@ class ApiClient {
         'deviceId': deviceId,
         'triggerType': ?triggerType,
         'cursor': ?cursor,
-        'size': 30,
+        'from': ?from?.toUtc().toIso8601String(),
+        'to': ?to?.toUtc().toIso8601String(),
+        'size': size,
       },
     ),
   );

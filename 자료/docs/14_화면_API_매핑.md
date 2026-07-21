@@ -2,6 +2,8 @@
 
 > 기준: `docs/wireframes/index.html`, `api/openapi.yaml`. 실제 Flutter 구현에서 경로·상태·오류 처리를 변경하면 두 파일을 함께 갱신한다.
 
+> **주제 전환(2026-07-21): 웃음 다이어리 → 홈캠.** 실시간 보기가 서비스의 주축 기능이며 홈(주요 탭)의 히어로로 배치한다. 웃음·호출·터치 등 이벤트 자동 저장은 부가 기능이다. 앱 하단 탭은 `홈 / 캘린더 / 추억 / 가족 / 설정` 5개다. 라이브 세션·영상·통계 API 계약 자체는 이전과 동일하며, 홈 요약(`home-summary`)과 감지 인원(`personCount`)만 추가됐다.
+
 ## 1. 기본 화면 매핑
 
 | 화면 | 사용자 동작 | API | 주요 성공 상태 | 필수 오류 상태 | 주 담당 |
@@ -11,7 +13,8 @@
 | 공통 | 토큰 재발급·로그아웃 | `POST /api/auth/refresh`, `POST /api/auth/logout` | 세션 유지·종료 | 만료·폐기 토큰 | 김수원·박찬형 |
 | 기기 등록 | 화면 등록 코드 입력 | `POST /api/devices/claim` | `OWNER` 등록 | 등록 모드 꺼짐, 코드 오류·만료·재사용, 이미 등록됨, 실패 5회/10분 초과 | 김수원·박찬형·유지호 |
 | 홈 | 내 기기 조회 | `GET /api/devices` | 등록·공유받은 기기와 기기별 역할 목록 | 내 기기 없음, 권한 없음 | 김수원·박찬형 |
-| 홈 | 기기 상태 조회 | `GET /api/devices/{deviceId}/status` | 온라인·최근 접속 | 오프라인, 기기 없음 | 김수원·박찬형·유지호 |
+| 홈 | 기기 상태 조회 | `GET /api/devices/{deviceId}/status` | 온라인·최근 접속·감지 인원(`personCount`) | 오프라인, 기기 없음 | 김수원·박찬형·유지호 |
+| 홈 | 오늘 요약 조회 | `GET /api/devices/{deviceId}/home-summary?timeZone=` | 오늘의 포착·저장·메모 수, 대표 하이라이트 | 데이터 없음, 멤버십 없음 | 김수원·박찬형 |
 | 대시보드·갤러리 | 저장 영상 그리드 | `GET /api/videos?deviceId={deviceId}` | 썸네일 그리드, 기간·감지 유형 필터 | 빈 목록, 멤버십 없음 | 서유정·박찬형 |
 | 대시보드·캘린더 | 일자별 영상 조회 | `GET /api/videos?deviceId={deviceId}&from={inclusive}&to={exclusive}` | 일자별 영상 유무·개수, 날짜 선택 시 해당일 목록 | 빈 달, 잘못된 기간, 멤버십 없음 | 서유정·박찬형 |
 | 대시보드·통계 | 저장 영상 집계 | `GET /api/devices/{deviceId}/stats?from=&to=&timeZone=` | READY 영상의 감지 유형별 건수·기간별 추이·최다 요일/시간대 | 데이터 없음, 366일 초과, 멤버십 없음 | 김수원·박찬형 |

@@ -35,10 +35,10 @@ class MqttInboundHandlerTest {
         UUID deviceId = UUID.randomUUID();
         handle(deviceId, "heartbeat", """
             {"schemaVersion":"1.0","deviceId":"%s","recording":true,
-             "uploadQueueDepth":2,"bufferSeconds":120,"firmwareVersion":"0.4.0"}
+             "uploadQueueDepth":2,"bufferSeconds":120,"personCount":3,"firmwareVersion":"0.4.0"}
             """.formatted(deviceId));
 
-        verify(telemetryMapper).recordHeartbeat(deviceId, true, 2, 120, "0.4.0");
+        verify(telemetryMapper).recordHeartbeat(deviceId, true, 2, 120, 3, "0.4.0");
     }
 
     @Test
@@ -51,7 +51,7 @@ class MqttInboundHandlerTest {
         verify(telemetryMapper, never()).recordHeartbeat(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean(),
             org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any(),
-            org.mockito.ArgumentMatchers.any());
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test

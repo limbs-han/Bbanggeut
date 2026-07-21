@@ -9,6 +9,7 @@ public record DeviceStatusResponse(
     boolean recording,
     int uploadQueueDepth,
     Integer bufferSeconds,
+    Integer personCount,
     Instant checkedAt
 ) {
 }

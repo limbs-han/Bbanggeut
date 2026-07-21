@@ -7,6 +7,8 @@
 
 이 문서는 현재 백엔드에 작성된 코드, EC2에 실제로 배포된 범위, 아직 남은 작업을 구분하기 위한 인수인계 문서다.
 
+> **주제 전환(2026-07-21): 웃음 다이어리 → 홈캠.** 실시간 보기가 서비스의 주축이 되고, 웃음·호출·터치 이벤트 자동 저장은 부가 기능으로 재배치됐다. 백엔드 도메인(인증·기기·영상·라이브·구독)은 그대로 재사용하며, 홈 대시보드용으로 두 가지만 추가했다: (1) 기기 상태의 감지 인원 `personCount`(edge heartbeat→`GET /api/devices/{deviceId}/status`), (2) 홈 오늘 요약 `GET /api/devices/{deviceId}/home-summary`. 인물 탐지·중심 계산·자동 추적은 이전과 동일하게 AIoT/edge 범위이며 서버 계약에 포함하지 않는다.
+
 ## 1. 한눈에 보는 현재 상태
 
 | 구분 | 상태 | 비고 |
@@ -79,6 +81,7 @@
 - MQTT broker 연결과 자동 재접속
 - 기기 status·heartbeat·registration 메시지 수신
 - recording, buffer, upload queue, firmware 상태 반영
+- heartbeat의 `personCount`(감지 인원) 반영, 오프라인 전환 시 presence 비움
 - 라이브 START·EXTEND·STOP 명령 발행
 - 라이브 준비·오류·종료 이벤트 수신
 
@@ -112,6 +115,14 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 - edge hard lease와 EXTEND 명령
 - 시청 세션과 stream ID에 귀속된 단기 HLS 토큰
 - Nginx 내부 introspection을 통한 HLS 접근 제어
+
+### 2.6.1 홈 대시보드 요약 (2026-07-21 추가)
+
+위치: [`server/src/main/java/com/wj/server/home`](./server/src/main/java/com/wj/server/home)
+
+- `GET /api/devices/{deviceId}/home-summary?timeZone=` — timeZone(기본 Asia/Seoul) 기준 오늘의 포착·저장·메모 수와 대표 하이라이트를 한 번에 반환
+- 홈캠 첫 화면의 "오늘의 순간 요약" 카드와 라이브 히어로를 한 호출로 채우기 위한 읽기 전용 집계이며, 기존 `videos`/`stats` 쿼리를 재사용한다
+- 현재 데이터 모델에서는 `captureCount`와 `savedCount`가 동일하고, edge가 원시 이벤트 수를 별도로 보고하면 분리된다
 
 기본 시간은 다음과 같다.
 
@@ -153,6 +164,7 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 | V12 | 초대 링크·가입 요청 테이블(이메일 초대 테이블 제거), 기기 구독 컬럼, retention_until 백필·만료 인덱스 |
 | V13 | 서버 편집 작업 중단(미완료 레거시 작업 취소), 영상 메타데이터 감사 이벤트 정리 |
 | V14 | 이메일·IP 해시 기반 로그인 실패 제한 테이블과 인덱스 |
+| V15 | 홈캠 감지 인원 `person_count` 컬럼(nullable, heartbeat 반영, 오프라인 시 비움) |
 
 기존 단일 `schema.sql` 방식은 제거하고 Flyway로 통일했다.
 

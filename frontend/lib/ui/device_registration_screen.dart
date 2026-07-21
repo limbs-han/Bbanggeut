@@ -92,7 +92,7 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                           Text(
                             '코드는 2분 동안 한 번만 사용할 수 있어요.',
                             style: TextStyle(
-                              color: Color(0xFFDDF1EC),
+                              color: AppColors.mint,
                               height: 1.4,
                             ),
                           ),

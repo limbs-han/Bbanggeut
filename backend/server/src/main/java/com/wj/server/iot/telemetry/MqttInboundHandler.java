@@ -72,9 +72,11 @@ public class MqttInboundHandler {
         int queueDepth = nonNegativeInt(body, "uploadQueueDepth", 0);
         Integer bufferSeconds = body.hasNonNull("bufferSeconds")
             ? nonNegativeInt(body, "bufferSeconds", 0) : null;
+        Integer personCount = body.hasNonNull("personCount")
+            ? nonNegativeInt(body, "personCount", 0) : null;
         String firmware = boundedText(body, "firmwareVersion", 40);
         telemetryMapper.recordHeartbeat(deviceId, body.path("recording").asBoolean(false),
-            queueDepth, bufferSeconds, firmware);
+            queueDepth, bufferSeconds, personCount, firmware);
     }
 
     private void registration(UUID deviceId, JsonNode body) {

@@ -170,6 +170,38 @@ public interface VideoMapper {
     );
 
     @Select("""
+        SELECT count(*)
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND description IS NOT NULL AND btrim(description) <> ''
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+        """)
+    long countReadyVideosWithMemo(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+               v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
+               v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
+               v.is_favorite AS favorite, v.created_at
+          FROM videos v
+          JOIN device_memberships m ON m.device_id = v.device_id
+         WHERE v.device_id = #{deviceId}
+           AND m.user_id = #{userId}
+           AND m.status = 'ACTIVE'
+           AND v.status = 'READY'
+         ORDER BY v.is_favorite DESC, v.captured_start_at DESC NULLS LAST, v.created_at DESC
+         LIMIT 1
+        """)
+    Optional<VideoRow> findLatestHighlight(
+        @Param("userId") UUID userId,
+        @Param("deviceId") UUID deviceId
+    );
+
+    @Select("""
         SELECT trigger_type::text AS label, count(*) AS count
           FROM videos
          WHERE device_id = #{deviceId} AND status = 'READY'

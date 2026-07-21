@@ -72,16 +72,46 @@ class DeviceStatus {
     required this.recording,
     required this.uploadQueueDepth,
     this.bufferSeconds,
+    this.personCount,
   });
   final String status;
   final bool recording;
   final int uploadQueueDepth;
   final int? bufferSeconds;
+
+  /// Number of people the edge last detected in frame. Null when the device
+  /// has not reported presence (e.g. detection off or never seen online).
+  final int? personCount;
+  bool get isOnline => status == 'ONLINE';
   factory DeviceStatus.fromJson(Map<String, dynamic> json) => DeviceStatus(
     status: json['status'] as String? ?? 'OFFLINE',
     recording: json['recording'] as bool? ?? false,
     uploadQueueDepth: (json['uploadQueueDepth'] as num?)?.toInt() ?? 0,
     bufferSeconds: (json['bufferSeconds'] as num?)?.toInt(),
+    personCount: (json['personCount'] as num?)?.toInt(),
+  );
+}
+
+/// One-call aggregate for the home dashboard: today's counts plus the latest
+/// highlight. Backed by `GET /api/devices/{deviceId}/home-summary`.
+class HomeSummary {
+  const HomeSummary({
+    required this.captureCount,
+    required this.savedCount,
+    required this.memoCount,
+    this.latestHighlight,
+  });
+  final int captureCount;
+  final int savedCount;
+  final int memoCount;
+  final VideoMemory? latestHighlight;
+  factory HomeSummary.fromJson(Map<String, dynamic> json) => HomeSummary(
+    captureCount: (json['captureCount'] as num?)?.toInt() ?? 0,
+    savedCount: (json['savedCount'] as num?)?.toInt() ?? 0,
+    memoCount: (json['memoCount'] as num?)?.toInt() ?? 0,
+    latestHighlight: json['latestHighlight'] == null
+        ? null
+        : VideoMemory.fromJson(json['latestHighlight'] as Map<String, dynamic>),
   );
 }
 

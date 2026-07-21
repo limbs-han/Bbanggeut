@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
+import 'calendar_screen.dart';
 import 'device_registration_screen.dart';
 import 'family_screen.dart';
 import 'home_screen.dart';
@@ -27,8 +28,9 @@ class _MainShellState extends State<MainShell> {
     final pages = [
       HomeScreen(
         controller: widget.controller,
-        openVideos: () => setState(() => index = 1),
+        openVideos: () => setState(() => index = 2),
       ),
+      CalendarScreen(controller: widget.controller),
       VideosScreen(controller: widget.controller),
       FamilyScreen(controller: widget.controller),
       SettingsScreen(controller: widget.controller),
@@ -48,8 +50,13 @@ class _MainShellState extends State<MainShell> {
             label: '홈',
           ),
           NavigationDestination(
-            icon: Icon(Icons.video_library_outlined),
-            selectedIcon: Icon(Icons.video_library_rounded),
+            icon: Icon(Icons.calendar_today_outlined),
+            selectedIcon: Icon(Icons.calendar_today_rounded),
+            label: '캘린더',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.bookmark_border_rounded),
+            selectedIcon: Icon(Icons.bookmark_rounded),
             label: '추억',
           ),
           NavigationDestination(

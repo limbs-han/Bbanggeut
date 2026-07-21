@@ -100,7 +100,7 @@ public interface DeviceMapper {
 
     @Update("""
         UPDATE devices
-           SET status = 'OFFLINE', recording = false, updated_at = now()
+           SET status = 'OFFLINE', recording = false, person_count = NULL, updated_at = now()
          WHERE id = #{deviceId} AND status = 'ONLINE'
            AND (last_seen_at IS NULL OR last_seen_at <= now() - interval '90 seconds')
         """)
@@ -108,7 +108,7 @@ public interface DeviceMapper {
 
     @Select("""
         SELECT d.id AS device_id, d.status, d.recording,
-               d.upload_queue_depth, d.buffer_seconds
+               d.upload_queue_depth, d.buffer_seconds, d.person_count
           FROM devices d
           JOIN device_memberships m ON m.device_id = d.id
          WHERE d.id = #{deviceId} AND m.user_id = #{userId}

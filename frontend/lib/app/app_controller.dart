@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart';
 import '../core/api_client.dart';
 import '../core/models.dart';
 
+const devHlsUrl = String.fromEnvironment('DEV_HLS_URL');
+const devHomeCam = bool.fromEnvironment('DEV_HOME_CAM');
+
 class AppController extends ChangeNotifier {
   AppController({ApiClient? api}) : api = api ?? ApiClient();
   final ApiClient api;
@@ -16,11 +19,46 @@ class AppController extends ChangeNotifier {
   DeviceSummary? selectedDevice;
   DeviceStatus? deviceStatus;
   VideoStats? videoStats;
+  HomeSummary? homeSummary;
   List<VideoMemory> videos = const [];
   List<DeviceMember> members = const [];
   List<JoinRequestInfo> joinRequests = const [];
 
   Future<void> initialize() async {
+    if (devHomeCam && devHlsUrl.isNotEmpty) {
+      const demoDevice = DeviceSummary(
+        id: 'local-raspberry-pi',
+        name: '거실 홈캠 (개발용)',
+        model: 'Raspberry Pi 5 + Logitech Brio 100',
+        status: 'ONLINE',
+        myRole: 'OWNER',
+        retentionDays: 7,
+      );
+      authenticated = true;
+      user = const UserProfile(
+        id: 'local-demo-user',
+        email: 'local@homecam.dev',
+        displayName: '테스트 사용자',
+      );
+      devices = const [demoDevice];
+      selectedDevice = demoDevice;
+      deviceStatus = const DeviceStatus(
+        status: 'ONLINE',
+        recording: true,
+        uploadQueueDepth: 0,
+        bufferSeconds: 30,
+        personCount: 0,
+      );
+      videoStats = const VideoStats(totalCount: 0, byTriggerType: {});
+      homeSummary = const HomeSummary(
+        captureCount: 0,
+        savedCount: 0,
+        memoCount: 0,
+      );
+      initialized = true;
+      notifyListeners();
+      return;
+    }
     authenticated = await api.hasSession;
     if (authenticated) {
       try {
@@ -77,6 +115,7 @@ class AppController extends ChangeNotifier {
       joinRequests = const [];
       deviceStatus = null;
       videoStats = null;
+      homeSummary = null;
       notifyListeners();
       return;
     }
@@ -88,6 +127,14 @@ class AppController extends ChangeNotifier {
     await refreshDeviceData();
   }
 
+  Future<HomeSummary?> _loadHomeSummary(String deviceId) async {
+    try {
+      return await api.getHomeSummary(deviceId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> selectDevice(DeviceSummary device) async {
     selectedDevice = device;
     notifyListeners();
@@ -95,6 +142,10 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshDeviceData() async {
+    if (devHomeCam && devHlsUrl.isNotEmpty) {
+      notifyListeners();
+      return;
+    }
     final device = selectedDevice;
     if (device == null) return;
     final results = await Future.wait<Object?>([
@@ -106,12 +157,15 @@ class AppController extends ChangeNotifier {
         api.listJoinRequests(device.id)
       else
         Future.value(<JoinRequestInfo>[]),
+      // Home summary is best-effort so a summary hiccup never blanks the tab.
+      _loadHomeSummary(device.id),
     ]);
     deviceStatus = results[0] as DeviceStatus;
     videoStats = results[1] as VideoStats;
     videos = (results[2] as VideoPage).items;
     members = results[3] as List<DeviceMember>;
     joinRequests = results[4] as List<JoinRequestInfo>;
+    homeSummary = results[5] as HomeSummary?;
     notifyListeners();
   }
 
@@ -200,5 +254,6 @@ class AppController extends ChangeNotifier {
     joinRequests = const [];
     deviceStatus = null;
     videoStats = null;
+    homeSummary = null;
   }
 }

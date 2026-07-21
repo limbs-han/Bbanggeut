@@ -29,7 +29,7 @@ class FlywayMigrationIntegrationTest {
         var result = flyway.migrate();
 
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("14");
+        assertThat(result.targetSchemaVersion).isEqualTo("15");
         try (var connection = DriverManager.getConnection(
             POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var statement = connection.prepareStatement(
