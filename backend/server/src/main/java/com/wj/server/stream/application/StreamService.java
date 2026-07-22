@@ -149,10 +149,16 @@ public class StreamService {
         String playUrl = null;
         if ("READY".equals(row.status()) && row.viewerExpiresAt().isAfter(clock.instant())) {
             String token = liveTokenService.issue(row.id(), row.userId(), row.deviceId(), row.streamId());
-            playUrl = demoProperties.enabled()
-                ? demoProperties.liveHlsUrl() + (demoProperties.liveHlsUrl().contains("?") ? "&" : "?") + "token=" + token
-                : properties.mediaBaseUrl().replaceAll("/$", "") + "/" + row.streamId()
-                    + "/index.m3u8?token=" + token;
+            String configuredDemoUrl = demoProperties.liveHlsUrl();
+            boolean explicitDemoUrl = demoProperties.enabled()
+                && configuredDemoUrl != null && !configuredDemoUrl.isBlank();
+            String baseUrl = explicitDemoUrl
+                ? configuredDemoUrl
+                : properties.mediaBaseUrl().replaceAll("/$", "") + "/" + row.streamId() + "/index.m3u8";
+            if (explicitDemoUrl) {
+                baseUrl += (baseUrl.contains("?") ? "&" : "?") + "streamId=" + row.streamId();
+            }
+            playUrl = baseUrl + (baseUrl.contains("?") ? "&" : "?") + "token=" + token;
         }
         return new StreamSessionResponse(
             row.id(), row.streamId(), row.deviceId(), row.status(), playUrl,

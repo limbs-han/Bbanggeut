@@ -87,6 +87,30 @@ class StreamServiceTest {
     }
 
     @Test
+    void demoWithoutExplicitHlsUrlUsesTheTokenProtectedStreamPath() {
+        StreamProperties properties = new StreamProperties(
+            Duration.ofSeconds(45), Duration.ofSeconds(60), Duration.ofSeconds(120),
+            Duration.ofSeconds(15), "https://media.example/live/", Duration.ofSeconds(30));
+        service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
+            new DemoProperties(true, ""), Clock.fixed(NOW, ZoneOffset.UTC));
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.findAccessibleDeviceStatus(userId, deviceId)).thenReturn(Optional.of("ONLINE"));
+        when(mapper.findReusableStream(deviceId)).thenReturn(Optional.of(
+            new DeviceStreamRow(streamId, deviceId, "RUNNING", NOW.plusSeconds(80), null, null)));
+        when(mapper.findAccessibleSession(eq(userId), any())).thenAnswer(invocation -> Optional.of(
+            row(invocation.getArgument(1), streamId, deviceId, userId, "READY")));
+        when(liveTokenService.issue(any(), eq(userId), eq(deviceId), eq(streamId))).thenReturn("live-token");
+
+        var response = service.create(userId, deviceId);
+
+        assertThat(response.playUrl())
+            .isEqualTo("https://media.example/live/" + streamId + "/index.m3u8?token=live-token");
+    }
+
+    @Test
     void rejectsOfflineDevice() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
