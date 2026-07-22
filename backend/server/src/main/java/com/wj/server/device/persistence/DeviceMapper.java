@@ -18,7 +18,12 @@ public interface DeviceMapper {
 
     @Update("""
         UPDATE devices
-           SET status = 'OFFLINE',
+           SET status = CASE
+                 WHEN last_seen_at IS NOT NULL
+                  AND last_seen_at > now() - interval '90 seconds'
+                 THEN 'ONLINE'::device_status
+                 ELSE 'OFFLINE'::device_status
+               END,
                claimed_at = now(),
                claimed_by = #{userId},
                registration_mode_expires_at = NULL,

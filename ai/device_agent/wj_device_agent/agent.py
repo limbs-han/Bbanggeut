@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import queue
+import re
 import signal
 import ssl
 import threading
@@ -30,7 +31,14 @@ def isoformat(value: datetime | None = None) -> str:
 
 
 def parse_time(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    # Java Instant uses up to nanosecond precision, while the Python version
+    # bundled with this JetPack accepts at most six fractional digits.
+    normalized = re.sub(
+        r"(\.\d{6})\d+(?=Z$|[+-]\d{2}:\d{2}$)",
+        r"\1",
+        value,
+    )
+    parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise ValueError("timestamp must include a timezone")
     return parsed.astimezone(timezone.utc)

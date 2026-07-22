@@ -136,6 +136,41 @@ class StreamServiceTest {
         assertThat(service.introspect("token", UUID.randomUUID())).isFalse();
     }
 
+    @Test
+    void heartbeatRetriesStartWhileSessionIsPending() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "PENDING")));
+        when(mapper.heartbeatSession(
+            sessionId, userId, NOW, NOW.plusSeconds(45))).thenReturn(1);
+
+        service.heartbeat(userId, sessionId);
+
+        verify(publisher).start(
+            deviceId, sessionId, streamId, NOW.plusSeconds(120));
+        verify(publisher, never()).extend(any(), any(), any());
+    }
+
+    @Test
+    void heartbeatExtendsAnAlreadyReadyStream() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.heartbeatSession(
+            sessionId, userId, NOW, NOW.plusSeconds(45))).thenReturn(1);
+
+        service.heartbeat(userId, sessionId);
+
+        verify(publisher).extend(deviceId, streamId, NOW.plusSeconds(120));
+        verify(publisher, never()).start(any(), any(), any(), any());
+    }
+
     private StreamSessionRow row(
         UUID sessionId, UUID streamId, UUID deviceId, UUID userId, String status
     ) {

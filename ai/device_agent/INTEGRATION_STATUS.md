@@ -41,11 +41,12 @@
 
 ## Deployment blockers and order
 
-1. Configure authenticated external ingest on EC2 MediaMTX (prefer RTSPS or
-   SRT). The current loopback-only RTSP port still requires an SSH tunnel and
-   is not a production device path.
-2. Put the operating credential and broker CA on the chosen streaming device,
-   configure its camera/encoder arguments, and enable `wj-device-agent.service`.
+1. For the current single-Jetson deployment, install `wj-media-tunnel.service`;
+   it reaches the loopback-only MediaMTX port without exposing RTSP publicly.
+   Before scaling to multiple devices, replace this with authenticated external
+   ingest (prefer RTSPS or SRT) and per-device media credentials.
+2. Put the operating credential and broker CA on the Jetson, configure its
+   camera/encoder arguments, and enable `wj-device-agent.service`.
 3. Re-provision the test device so its MQTT role contains the new event/ACK
    ACLs.
 4. Verify the complete path: Flutter create -> MQTT START -> dynamic RTSP

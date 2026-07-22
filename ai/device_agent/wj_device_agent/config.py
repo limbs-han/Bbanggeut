@@ -45,6 +45,8 @@ class AgentConfig:
     ffmpeg_path: str
     ffmpeg_input_args: tuple[str, ...]
     ffmpeg_video_args: tuple[str, ...]
+    ffmpeg_audio_input_args: tuple[str, ...]
+    ffmpeg_audio_args: tuple[str, ...]
     ready_delay_seconds: int
 
     @property
@@ -81,6 +83,12 @@ class AgentConfig:
             "-bf", "0",
             "-b:v", os.environ.get("VIDEO_BITRATE", "2500k"),
         )
+        audio_input_args = _json_args("FFMPEG_AUDIO_INPUT_ARGS") or ()
+        audio_args = _json_args("FFMPEG_AUDIO_ARGS") or ()
+        if bool(audio_input_args) != bool(audio_args):
+            raise ValueError(
+                "FFMPEG_AUDIO_INPUT_ARGS and FFMPEG_AUDIO_ARGS must be set together"
+            )
         ca_cert = Path(_required("MQTT_CA_CERT"))
         if not ca_cert.is_file():
             raise ValueError(f"MQTT_CA_CERT does not exist: {ca_cert}")
@@ -97,5 +105,7 @@ class AgentConfig:
             ffmpeg_path=os.environ.get("FFMPEG_PATH", "/usr/bin/ffmpeg"),
             ffmpeg_input_args=input_args,
             ffmpeg_video_args=video_args,
+            ffmpeg_audio_input_args=audio_input_args,
+            ffmpeg_audio_args=audio_args,
             ready_delay_seconds=_positive_int("READY_DELAY_SECONDS", 3),
         )

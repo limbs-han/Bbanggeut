@@ -44,6 +44,8 @@ def config() -> AgentConfig:
         ffmpeg_path="ffmpeg",
         ffmpeg_input_args=("-f", "lavfi", "-i", "testsrc"),
         ffmpeg_video_args=("-c:v", "libx264"),
+        ffmpeg_audio_input_args=(),
+        ffmpeg_audio_args=(),
         ready_delay_seconds=1,
     )
 
@@ -63,6 +65,7 @@ class StreamManagerTest(unittest.TestCase):
 
         self.assertTrue(manager.start(stream_id, expiry))
         self.assertIn(f"rtsp://localhost/live/{stream_id}", calls[0])
+        self.assertIn("-an", calls[0])
         self.assertTrue(manager.snapshot().running)
         self.assertTrue(manager.stop(stream_id))
         self.assertTrue(process.terminated)
@@ -77,6 +80,31 @@ class StreamManagerTest(unittest.TestCase):
         self.assertFalse(manager.start(first, expiry))
         with self.assertRaisesRegex(RuntimeError, "DEVICE_BUSY"):
             manager.start(other, expiry)
+
+    def test_audio_input_is_mapped_and_encoded(self):
+        calls = []
+        audio_config = AgentConfig(
+            **{
+                **config().__dict__,
+                "ffmpeg_audio_input_args": ("-f", "alsa", "-i", "plughw:CARD=B100,DEV=0"),
+                "ffmpeg_audio_args": ("-c:a", "aac", "-b:a", "128k"),
+            }
+        )
+
+        manager = StreamManager(
+            audio_config,
+            lambda command, **kwargs: calls.append(command) or FakeProcess(),
+        )
+        manager.start(
+            "55555555-5555-4555-8555-555555555555",
+            datetime(2030, 1, 1, tzinfo=timezone.utc),
+        )
+
+        command = calls[0]
+        self.assertNotIn("-an", command)
+        self.assertIn("plughw:CARD=B100,DEV=0", command)
+        self.assertIn("1:a:0", command)
+        self.assertIn("aac", command)
 
 
 if __name__ == "__main__":

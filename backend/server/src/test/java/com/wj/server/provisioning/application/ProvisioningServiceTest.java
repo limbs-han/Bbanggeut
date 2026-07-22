@@ -40,7 +40,8 @@ class ProvisioningServiceTest {
     @Test
     void provisionsDeviceAndReturnsPlaintextCredentialOnlyOnce() {
         UUID deviceId = UUID.randomUUID();
-        when(mapper.insertDevice("SERIAL-001", "카메라", "WJ-01", null)).thenReturn(deviceId);
+        when(mapper.insertDevice("SERIAL-001", "카메라", "WJ-01", null))
+            .thenReturn(deviceId.toString());
 
         var response = service.provision(new ProvisionDeviceRequest("SERIAL-001", "카메라", "WJ-01", null));
 

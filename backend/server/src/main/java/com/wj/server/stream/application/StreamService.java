@@ -119,7 +119,15 @@ public class StreamService {
         }
         Instant hardExpiresAt = now.plus(properties.edgeLease());
         mapper.extendStream(session.streamId(), hardExpiresAt);
-        publisher.extend(session.deviceId(), session.streamId(), hardExpiresAt);
+        if ("PENDING".equals(session.status())) {
+            // START_STREAM is an at-least-once command. If its first MQTT
+            // delivery was missed, keep the session recoverable instead of
+            // sending EXTEND_STREAM to an edge process that never started.
+            publisher.start(
+                session.deviceId(), session.id(), session.streamId(), hardExpiresAt);
+        } else {
+            publisher.extend(session.deviceId(), session.streamId(), hardExpiresAt);
+        }
         auditService.success(session.deviceId(), userId, "STREAM_HEARTBEAT", "STREAM_SESSION", sessionId);
     }
 

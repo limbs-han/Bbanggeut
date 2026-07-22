@@ -1,0 +1,22 @@
+[Unit]
+Description=William James IoT streaming device agent (Jetson)
+Wants=network-online.target wj-media-tunnel.service
+After=network-online.target wj-media-tunnel.service
+
+[Service]
+Type=simple
+User=williamjames
+Group=williamjames
+SupplementaryGroups=video audio
+EnvironmentFile=/etc/william-james/device-agent.env
+WorkingDirectory=/opt/william-james/device-agent
+ExecStart=/opt/william-james/device-agent/venv/bin/python -m wj_device_agent
+Restart=always
+RestartSec=5
+TimeoutStopSec=12
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

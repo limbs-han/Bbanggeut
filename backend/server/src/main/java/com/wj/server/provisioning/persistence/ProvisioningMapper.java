@@ -15,9 +15,9 @@ public interface ProvisioningMapper {
     @Select("""
         INSERT INTO devices (serial_number, name, model, firmware_version, status)
         VALUES (#{serialNumber}, #{name}, #{model}, #{firmwareVersion}, 'UNCLAIMED')
-        RETURNING id
+        RETURNING id::text
         """)
-    UUID insertDevice(
+    String insertDevice(
         @Param("serialNumber") String serialNumber,
         @Param("name") String name,
         @Param("model") String model,

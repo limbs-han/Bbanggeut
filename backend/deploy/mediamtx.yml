@@ -6,6 +6,9 @@ rtmp: false
 hls: true
 hlsAddress: :8888
 hlsAllowOrigins: ["https://i15e201.p.ssafy.io"]
+# Build HLS as soon as the Jetson starts publishing. Native players treat the
+# first on-demand muxer 404 as a fatal source error instead of retrying it.
+hlsAlwaysRemux: true
 hlsVariant: fmp4
 hlsSegmentDuration: 2s
 webrtc: false

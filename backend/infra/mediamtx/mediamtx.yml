@@ -6,6 +6,9 @@ rtmp: false
 hls: true
 hlsAddress: :8888
 hlsAllowOrigins: ["*"]
+# Build HLS as soon as a source starts publishing. This avoids a cold-start
+# 404 for native HLS players such as Android ExoPlayer.
+hlsAlwaysRemux: true
 hlsVariant: fmp4
 hlsSegmentDuration: 2s
 webrtc: false

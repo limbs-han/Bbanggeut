@@ -1,0 +1,18 @@
+[Unit]
+Description=William James secure MediaMTX tunnel
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=williamjames
+Group=williamjames
+EnvironmentFile=/etc/william-james/device-agent.env
+ExecStart=/opt/william-james/device-agent/media-tunnel.sh
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

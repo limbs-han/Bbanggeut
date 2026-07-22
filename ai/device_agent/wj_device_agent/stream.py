@@ -46,8 +46,15 @@ class StreamManager:
                 self._config.ffmpeg_path,
                 "-hide_banner", "-nostdin", "-loglevel", "warning",
                 *self._config.ffmpeg_input_args,
-                "-an",
+                *self._config.ffmpeg_audio_input_args,
+                "-map", "0:v:0",
+                *(["-map", "1:a:0"] if self._config.ffmpeg_audio_input_args else []),
                 *self._config.ffmpeg_video_args,
+                *(
+                    self._config.ffmpeg_audio_args
+                    if self._config.ffmpeg_audio_input_args
+                    else ("-an",)
+                ),
                 "-f", "rtsp", "-rtsp_transport", "tcp", publish_url,
             ]
             self._process = self._process_factory(

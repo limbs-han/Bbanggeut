@@ -57,9 +57,9 @@ public class ProvisioningService {
     public ProvisionedDeviceResponse provision(ProvisionDeviceRequest request) {
         UUID deviceId;
         try {
-            deviceId = mapper.insertDevice(
+            deviceId = UUID.fromString(mapper.insertDevice(
                 request.serialNumber().trim(), request.name().trim(), request.model().trim(),
-                trimToNull(request.firmwareVersion()));
+                trimToNull(request.firmwareVersion())));
         } catch (DuplicateKeyException exception) {
             throw new ApiException(
                 HttpStatus.CONFLICT, "DEVICE_SERIAL_ALREADY_ACTIVE", "사용 중인 기기 시리얼입니다.");
