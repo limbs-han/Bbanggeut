@@ -11,6 +11,24 @@ video, starts PostgreSQL/MinIO/MediaMTX and the Spring backend, uploads the clip
 seeds frontend fixtures, and publishes the source video as an endless RTSP/HLS
 stream.
 
+## Publish the Windows laptop webcam to production
+
+For a real live-camera test, the PowerShell helper replaces the looping
+`demo-live` publisher with the laptop webcam. It uses an SSH tunnel, so the
+production RTSP port remains bound to loopback and is never exposed publicly.
+
+```powershell
+.\backend\demo\start-webcam-live.ps1
+```
+
+The default camera is `Camera Sensor OV02C10` at 1280x720/30fps. Override it
+with `-CameraName`, `-VideoSize`, or `-FrameRate` when needed. Restore the
+looping server video after the test with:
+
+```powershell
+.\backend\demo\stop-webcam-live.ps1
+```
+
 Demo credentials:
 
 - Owner/admin: `admin@wj.local` / `WjDemo!2026`
