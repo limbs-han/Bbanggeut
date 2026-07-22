@@ -126,8 +126,8 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
             String base = baseTopic() + "/devices/+/";
             client.subscribe(new String[] {
                 base + "status", base + "heartbeat", base + "registration", base + "stream/events",
-                DYNSEC_RESPONSE_TOPIC
-            }, new int[] {1, 0, 1, 1, 1});
+                base + "events", base + "commands/ack", DYNSEC_RESPONSE_TOPIC
+            }, new int[] {1, 0, 1, 1, 1, 1, 1});
             log.info("MQTT subscriptions active ({})", reconnect ? "reconnected" : "connected");
         } catch (MqttException exception) {
             log.warn("MQTT subscription failed: {}", exception.getReasonCode());
@@ -182,7 +182,9 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
         commands.add(command("createClient")
             .put("username", username).put("password", password).put("clientid", username));
         commands.add(command("createRole").put("rolename", role));
-        for (String suffix : List.of("status", "heartbeat", "registration", "stream/events")) {
+        for (String suffix : List.of(
+            "status", "heartbeat", "registration", "events", "stream/events", "commands/ack"
+        )) {
             commands.add(acl(role, "publishClientSend", deviceTopic(deviceId, suffix)));
         }
         commands.add(acl(role, "subscribeLiteral", deviceTopic(deviceId, "commands")));

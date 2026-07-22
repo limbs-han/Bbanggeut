@@ -61,6 +61,8 @@ public class MqttInboundHandler {
                 case "registration" -> registration(topicDeviceId, body);
                 case "status" -> status(topicDeviceId, body);
                 case "stream/events" -> streamEvent(topicDeviceId, body);
+                case "events" -> detectionEvent(topicDeviceId, body);
+                case "commands/ack" -> commandAck(topicDeviceId, body);
                 default -> { }
             }
         } catch (RuntimeException | java.io.IOException exception) {
@@ -113,6 +115,33 @@ public class MqttInboundHandler {
             case "STREAM_STOPPED" -> streamEventService.stopped(deviceId, streamId);
             default -> { }
         }
+    }
+
+    private void detectionEvent(UUID deviceId, JsonNode body) {
+        UUID eventId = UUID.fromString(text(body, "eventId"));
+        String type = text(body, "type");
+        if (!java.util.Set.of("LAUGHTER", "WAKE_WORD", "TOUCH", "MANUAL").contains(type)) {
+            throw new IllegalArgumentException("Unsupported event type");
+        }
+        Instant.parse(text(body, "occurredAt"));
+        JsonNode confidence = body.get("confidence");
+        if (confidence != null && (!confidence.isNumber()
+            || confidence.doubleValue() < 0.0 || confidence.doubleValue() > 1.0)) {
+            throw new IllegalArgumentException("Invalid confidence");
+        }
+        // Detection events announce edge work. The video upload API remains the
+        // durable source of truth for the generated clip.
+        log.info("Accepted device event {} ({}) from {}", eventId, type, deviceId);
+    }
+
+    private void commandAck(UUID deviceId, JsonNode body) {
+        UUID requestId = UUID.fromString(text(body, "requestId"));
+        String status = text(body, "status");
+        if (!java.util.Set.of("ACCEPTED", "SUCCEEDED", "FAILED", "REJECTED", "EXPIRED")
+            .contains(status)) {
+            throw new IllegalArgumentException("Invalid command status");
+        }
+        log.debug("Device {} acknowledged command {} as {}", deviceId, requestId, status);
     }
 
     private String text(JsonNode body, String field) {
