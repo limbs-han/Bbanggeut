@@ -28,7 +28,7 @@ public class DeviceCredentialAuthenticator {
         }
         return mapper.findActiveToken(keyId)
             .filter(row -> constantTimeEquals(hash(secret), row.secretHash()))
-            .map(row -> new DevicePrincipal(row.deviceId(), row.keyId()));
+            .map(row -> new DevicePrincipal(row.deviceId(), row.keyId(), row.purpose()));
     }
 
     private String hash(String value) {

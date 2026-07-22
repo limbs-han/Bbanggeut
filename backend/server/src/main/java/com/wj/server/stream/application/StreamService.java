@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.StreamProperties;
+import com.wj.server.config.DemoProperties;
 import com.wj.server.stream.api.StreamSessionResponse;
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
@@ -24,6 +25,7 @@ public class StreamService {
     private final StreamProperties properties;
     private final AuditService auditService;
     private final Clock clock;
+    private final DemoProperties demoProperties;
 
     @Autowired
     public StreamService(
@@ -31,9 +33,10 @@ public class StreamService {
         StreamCommandPublisher publisher,
         LiveTokenService liveTokenService,
         StreamProperties properties,
-        AuditService auditService
+        AuditService auditService,
+        DemoProperties demoProperties
     ) {
-        this(mapper, publisher, liveTokenService, properties, auditService, Clock.systemUTC());
+        this(mapper, publisher, liveTokenService, properties, auditService, demoProperties, Clock.systemUTC());
     }
 
     StreamService(
@@ -42,6 +45,7 @@ public class StreamService {
         LiveTokenService liveTokenService,
         StreamProperties properties,
         AuditService auditService,
+        DemoProperties demoProperties,
         Clock clock
     ) {
         this.mapper = mapper;
@@ -49,6 +53,7 @@ public class StreamService {
         this.liveTokenService = liveTokenService;
         this.properties = properties;
         this.auditService = auditService;
+        this.demoProperties = demoProperties;
         this.clock = clock;
     }
 
@@ -84,9 +89,14 @@ public class StreamService {
         mapper.insertSession(
             sessionId, streamId, deviceId, userId, sessionStatus,
             now, now.plus(properties.viewerTtl()));
-        if (newStream && !publisher.start(deviceId, sessionId, streamId, hardExpiresAt)) {
-            mapper.markStreamFailed(deviceId, streamId, "MQTT_PUBLISH_FAILED");
-            mapper.markSessionsFailed(streamId, "MQTT_PUBLISH_FAILED");
+        if (newStream) {
+            if (demoProperties.enabled()) {
+                mapper.markStreamReady(deviceId, streamId, hardExpiresAt);
+                mapper.markSessionsReady(streamId);
+            } else if (!publisher.start(deviceId, sessionId, streamId, hardExpiresAt)) {
+                mapper.markStreamFailed(deviceId, streamId, "MQTT_PUBLISH_FAILED");
+                mapper.markSessionsFailed(streamId, "MQTT_PUBLISH_FAILED");
+            }
         }
         StreamSessionRow row = mapper.findAccessibleSession(userId, sessionId).orElseThrow(this::notFound);
         auditService.success(deviceId, userId, "STREAM_OPEN", "STREAM_SESSION", sessionId);
@@ -139,8 +149,10 @@ public class StreamService {
         String playUrl = null;
         if ("READY".equals(row.status()) && row.viewerExpiresAt().isAfter(clock.instant())) {
             String token = liveTokenService.issue(row.id(), row.userId(), row.deviceId(), row.streamId());
-            playUrl = properties.mediaBaseUrl().replaceAll("/$", "") + "/" + row.streamId()
-                + "/index.m3u8?token=" + token;
+            playUrl = demoProperties.enabled()
+                ? demoProperties.liveHlsUrl() + (demoProperties.liveHlsUrl().contains("?") ? "&" : "?") + "token=" + token
+                : properties.mediaBaseUrl().replaceAll("/$", "") + "/" + row.streamId()
+                    + "/index.m3u8?token=" + token;
         }
         return new StreamSessionResponse(
             row.id(), row.streamId(), row.deviceId(), row.status(), playUrl,

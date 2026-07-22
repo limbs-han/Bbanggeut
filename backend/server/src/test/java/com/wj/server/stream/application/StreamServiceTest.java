@@ -18,6 +18,7 @@ import java.util.UUID;
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.StreamProperties;
+import com.wj.server.config.DemoProperties;
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
 import com.wj.server.stream.persistence.StreamMapper;
@@ -42,6 +43,7 @@ class StreamServiceTest {
             Duration.ofSeconds(45), Duration.ofSeconds(60), Duration.ofSeconds(120),
             Duration.ofSeconds(15), "https://media.example/live/", Duration.ofSeconds(30));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
+            new DemoProperties(false, null),
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 

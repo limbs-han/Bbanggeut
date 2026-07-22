@@ -25,11 +25,16 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_KMS_KES_ENDPOINT: ${MINIO_KMS_KES_ENDPOINT:?Set MINIO_KMS_KES_ENDPOINT}
+      MINIO_KMS_KES_API_KEY: ${MINIO_KMS_KES_API_KEY:?Set MINIO_KMS_KES_API_KEY}
+      MINIO_KMS_KES_CAPATH: /opt/kes/certs
+      MINIO_KMS_KES_KEY_NAME: ${MINIO_KMS_KES_KEY_NAME:?Set MINIO_KMS_KES_KEY_NAME}
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
+      - ${MINIO_KES_CA_DIR:?Set MINIO_KES_CA_DIR}:/opt/kes/certs:ro
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -46,6 +51,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_VIDEO_BUCKET: ${MINIO_VIDEO_BUCKET}
+      MINIO_KMS_KES_KEY_NAME: ${MINIO_KMS_KES_KEY_NAME}
     entrypoint:
       - /bin/sh
       - -ec
@@ -53,6 +59,7 @@ services:
         mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         mc mb --ignore-existing "local/$${MINIO_VIDEO_BUCKET}"
         mc anonymous set none "local/$${MINIO_VIDEO_BUCKET}"
+        mc encrypt set sse-kms "$${MINIO_KMS_KES_KEY_NAME}" "local/$${MINIO_VIDEO_BUCKET}"
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -64,18 +71,26 @@ services:
       - /bin/sh
       - -ec
       - |
-        if [ -s /mosquitto/data/password_file ]; then
-          mosquitto_passwd -b /mosquitto/data/password_file "$${MQTT_USERNAME}" "$${MQTT_PASSWORD}"
-        else
-          mosquitto_passwd -b -c /mosquitto/data/password_file "$${MQTT_USERNAME}" "$${MQTT_PASSWORD}"
+        if [ ! -s /mosquitto/data/dynamic-security.json ]; then
+          mosquitto_ctrl dynsec init /mosquitto/data/dynamic-security.json "$${MQTT_USERNAME}" "$${MQTT_PASSWORD}"
         fi
-        chown mosquitto:mosquitto /mosquitto/data/password_file
-        chmod 600 /mosquitto/data/password_file
+        chown mosquitto:mosquitto /mosquitto/data/dynamic-security.json
+        chmod 600 /mosquitto/data/dynamic-security.json
+        mosquitto -c /mosquitto/config/mosquitto.conf & broker_pid=$$!
+        until mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec listClients >/dev/null 2>&1; do sleep 1; done
+        if ! mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec getRole wj-backend >/dev/null 2>&1; then
+          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec createRole wj-backend
+          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addRoleACL wj-backend publishClientSend '+/wj/v1/devices/+/commands' allow 100
+          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addClientRole "$${MQTT_USERNAME}" wj-backend 100
+        fi
+        kill "$$broker_pid"
+        wait "$$broker_pid" || true
         exec mosquitto -c /mosquitto/config/mosquitto.conf
     ports:
-      - "127.0.0.1:1883:1883"
+      - "8883:8883"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ${MQTT_TLS_CERT_DIR:?Set MQTT_TLS_CERT_DIR}:/mosquitto/certs:ro
       - mosquitto-data:/mosquitto/data
 
   mediamtx:

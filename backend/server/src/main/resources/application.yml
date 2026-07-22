@@ -26,6 +26,9 @@ management:
         include: health,info,metrics
 
 app:
+  demo:
+    enabled: ${DEMO_MODE_ENABLED:false}
+    live-hls-url: ${DEMO_LIVE_HLS_URL:}
   auth:
     access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:14d}
@@ -35,6 +38,9 @@ app:
   provisioning:
     enabled: ${DEVICE_PROVISIONING_ENABLED:false}
     admin-key: ${DEVICE_PROVISIONING_ADMIN_KEY:}
+  device-credential:
+    bootstrap-ttl: ${DEVICE_BOOTSTRAP_TTL:15m}
+    operating-ttl: ${DEVICE_CREDENTIAL_TTL:30d}
   device-claim:
     max-failures: ${DEVICE_CLAIM_MAX_FAILURES:5}
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
@@ -46,11 +52,12 @@ app:
   retention:
     sweep-delay: ${RETENTION_SWEEP_DELAY:60000}
   mqtt:
-    broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
+    broker-url: ${MQTT_BROKER_URL:ssl://localhost:8883}
     client-id: ${MQTT_CLIENT_ID:wj-backend-local}
     username: ${MQTT_USERNAME:}
     password: ${MQTT_PASSWORD:}
     environment: ${MQTT_ENV:local}
+    tls-ca-path: ${MQTT_TLS_CA_PATH:}
   stream:
     viewer-ttl: ${STREAM_VIEWER_TTL:45s}
     idle-timeout: ${STREAM_IDLE_TIMEOUT:60s}

@@ -9,6 +9,7 @@ public record DeviceCredentialRow(
     String secretHash,
     String status,
     Instant expiresAt,
-    String deviceStatus
+    String deviceStatus,
+    String purpose
 ) {
 }

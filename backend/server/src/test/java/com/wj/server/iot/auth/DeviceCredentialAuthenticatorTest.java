@@ -26,11 +26,12 @@ class DeviceCredentialAuthenticatorTest {
         String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
             .digest(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         when(mapper.findActiveToken("device-key")).thenReturn(Optional.of(
-            new DeviceCredentialRow(deviceId, "device-key", hash, "ACTIVE", Instant.now().plusSeconds(60), "OFFLINE")));
+            new DeviceCredentialRow(
+                deviceId, "device-key", hash, "ACTIVE", Instant.now().plusSeconds(60), "OFFLINE", "OPERATING")));
         DeviceCredentialAuthenticator authenticator = new DeviceCredentialAuthenticator(mapper);
 
         assertThat(authenticator.authenticate("device-key." + secret))
-            .contains(new DevicePrincipal(deviceId, "device-key"));
+            .contains(new DevicePrincipal(deviceId, "device-key", "OPERATING"));
         assertThat(authenticator.authenticate("device-key." + "x".repeat(40))).isEmpty();
     }
 }

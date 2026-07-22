@@ -18,5 +18,6 @@ app:
     username: ${MQTT_USERNAME}
     password: ${MQTT_PASSWORD}
     environment: ${MQTT_ENV:prod}
+    tls-ca-path: ${MQTT_TLS_CA_PATH}
   stream:
     media-base-url: ${MEDIA_BASE_URL}

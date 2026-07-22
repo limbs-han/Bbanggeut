@@ -8,6 +8,7 @@ public record MqttProperties(
     String clientId,
     String username,
     String password,
-    String environment
+    String environment,
+    String tlsCaPath
 ) {
 }

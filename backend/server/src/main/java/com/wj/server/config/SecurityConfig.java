@@ -23,7 +23,8 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 @EnableConfigurationProperties({
     AuthProperties.class, DeviceClaimProperties.class, StorageProperties.class,
     InvitationProperties.class, MqttProperties.class, StreamProperties.class,
-    SubscriptionProperties.class, ProvisioningProperties.class
+    SubscriptionProperties.class, ProvisioningProperties.class, DeviceCredentialProperties.class,
+    DemoProperties.class
 })
 public class SecurityConfig {
 
@@ -54,7 +55,9 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .addFilterBefore(deviceAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/iot/enrollment").hasRole("DEVICE_BOOTSTRAP")
+                .anyRequest().hasRole("DEVICE_OPERATING"))
             .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) ->
                 writeError(response, objectMapper, HttpServletResponse.SC_UNAUTHORIZED,
                     "DEVICE_AUTHENTICATION_FAILED", "기기 인증에 실패했습니다.",

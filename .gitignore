@@ -17,6 +17,7 @@ out/
 data/
 logs/
 runtime/
+backend/demo/generated-clips/
 
 # Local AI benchmark environment and generated caches
 .benchmark-venv/
