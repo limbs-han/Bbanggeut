@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import 'media_player_surface.dart';
 import 'widgets.dart';
 
 class LiveScreen extends StatefulWidget {
@@ -144,99 +145,78 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
         ],
       ),
       body: SafeArea(
-        child: PagePadding(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.videocam_rounded, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    widget.device.name,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const Spacer(),
-                  Text(
-                    session?.status ?? '연결 중',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              AspectRatio(
-                aspectRatio: 16 / 10,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(26),
-                  child: ColoredBox(color: AppColors.ink, child: _videoBody()),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (player != null)
+        child: SingleChildScrollView(
+          child: PagePadding(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => setState(() {
-                          player!.setVolume(player!.value.volume == 0 ? 1 : 0);
-                        }),
-                        icon: Icon(
-                          player!.value.volume == 0
-                              ? Icons.volume_off_rounded
-                              : Icons.volume_up_rounded,
-                        ),
-                        label: Text(
-                          player!.value.volume == 0 ? '소리 켜기' : '소리 끄기',
-                        ),
-                      ),
+                    const Icon(
+                      Icons.videocam_rounded,
+                      color: AppColors.primary,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.fullscreen_rounded),
-                        label: const Text('전체 화면'),
-                      ),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.device.name,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const Spacer(),
+                    Text(
+                      session?.status ?? '연결 중',
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                 ),
-              const SizedBox(height: 18),
-              Card(
-                color: AppColors.mint,
-                child: const Padding(
-                  padding: EdgeInsets.all(18),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.lock_rounded, color: AppColors.primaryDark),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '가족에게만 안전하게 연결돼요',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primaryDark,
-                              ),
-                            ),
-                            SizedBox(height: 5),
-                            Text(
-                              '화면을 나가면 시청 세션이 종료되고 기기 송출도 자동으로 정리됩니다.',
-                              style: TextStyle(
-                                height: 1.4,
-                                color: AppColors.primaryDark,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 16),
+                AspectRatio(
+                  aspectRatio: 16 / 10,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(26),
+                    child: ColoredBox(
+                      color: AppColors.ink,
+                      child: _videoBody(),
+                    ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 18),
+                Card(
+                  color: AppColors.mint,
+                  child: const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.lock_rounded, color: AppColors.primaryDark),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '가족에게만 안전하게 연결돼요',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
+                              SizedBox(height: 5),
+                              Text(
+                                '화면을 나가면 시청 세션이 종료되고 기기 송출도 자동으로 정리됩니다.',
+                                style: TextStyle(
+                                  height: 1.4,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -269,11 +249,6 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
         ],
       );
     }
-    return Center(
-      child: AspectRatio(
-        aspectRatio: player!.value.aspectRatio,
-        child: VideoPlayer(player!),
-      ),
-    );
+    return MediaPlayerSurface(controller: player!, isLive: true);
   }
 }

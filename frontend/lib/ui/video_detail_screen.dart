@@ -6,6 +6,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import 'local_edit_screen.dart';
+import 'media_player_surface.dart';
 import 'widgets.dart';
 
 class VideoDetailScreen extends StatefulWidget {
@@ -214,54 +215,6 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
         ),
       );
     }
-    final current = player!;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Center(
-          child: AspectRatio(
-            aspectRatio: current.value.aspectRatio,
-            child: VideoPlayer(current),
-          ),
-        ),
-        GestureDetector(
-          onTap: () {
-            setState(
-              () => current.value.isPlaying ? current.pause() : current.play(),
-            );
-          },
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: .45),
-              shape: BoxShape.circle,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Icon(
-                current.value.isPlaying
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
-                size: 34,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          left: 12,
-          right: 12,
-          bottom: 4,
-          child: VideoProgressIndicator(
-            current,
-            allowScrubbing: true,
-            colors: const VideoProgressColors(
-              playedColor: AppColors.peach,
-              bufferedColor: Colors.white38,
-              backgroundColor: Colors.white24,
-            ),
-          ),
-        ),
-      ],
-    );
+    return MediaPlayerSurface(controller: player!);
   }
 }
