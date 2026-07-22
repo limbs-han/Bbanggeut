@@ -59,6 +59,19 @@ Content-Type: application/json
   "retentionDays": 30
 }
 
+### 회원 탈퇴 — 활성 OWNER 멤버십이 있으면 409 (기기 해제 또는 소유권 이전 선행)
+DELETE {{baseUrl}}/api/auth/me
+Authorization: Bearer {{accessToken}}
+
+### 기기 소유권 이전 — 현 OWNER 전용, 대상은 같은 기기의 활성 MEMBER
+POST {{baseUrl}}/api/devices/{{deviceId}}/transfer-ownership
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "newOwnerMembershipId": "{{membershipId}}"
+}
+
 ### 기기 구성원 목록
 GET {{baseUrl}}/api/devices/{{deviceId}}/members
 Authorization: Bearer {{accessToken}}
@@ -116,20 +129,22 @@ Authorization: Bearer {{accessToken}}
 GET {{baseUrl}}/api/videos?deviceId={{deviceId}}&triggerType=LAUGHTER&size=20
 Authorization: Bearer {{accessToken}}
 
+### 캘린더용 촬영 기간 조회 — from 포함, to 미포함
+GET {{baseUrl}}/api/videos?deviceId={{deviceId}}&from=2026-07-01T00:00:00%2B09:00&to=2026-08-01T00:00:00%2B09:00&size=100
+Authorization: Bearer {{accessToken}}
+
+### 기기별 저장 영상 통계 — 최대 366일
+GET {{baseUrl}}/api/devices/{{deviceId}}/stats?from=2026-07-01&to=2026-07-31&timeZone=Asia%2FSeoul
+Authorization: Bearer {{accessToken}}
+
 ### 영상 재생 단기 URL 발급
 POST {{baseUrl}}/api/videos/{{videoId}}/play-url
 Authorization: Bearer {{accessToken}}
 
-### 영상 편집 요청 — 서버가 원본 영상의 기기 멤버십을 검사
-POST {{baseUrl}}/api/videos/{{videoId}}/edits
+### 로컬 편집용 원본 다운로드 URL 발급
+# 앱은 내려받은 원본을 로컬에서 편집·내보내며 결과를 서버에 재업로드하지 않는다.
+POST {{baseUrl}}/api/videos/{{videoId}}/download-url
 Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "startMs": 12000,
-  "endMs": 96000,
-  "title": "우리 가족 웃음 편집본"
-}
 
 ### 온디맨드 HLS 시청자 세션 시작
 # 최초 연결은 수초간 PENDING일 수 있고, 여러 시청자는 기기의 송출 하나를 공유한다.

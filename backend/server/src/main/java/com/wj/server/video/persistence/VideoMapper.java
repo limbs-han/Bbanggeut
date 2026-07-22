@@ -1,0 +1,342 @@
+package com.wj.server.video.persistence;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import com.wj.server.video.domain.VideoRow;
+import com.wj.server.video.domain.VideoCountRow;
+import com.wj.server.video.domain.DailyVideoCountRow;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+@Mapper
+public interface VideoMapper {
+
+    @Select("SELECT status IN ('ONLINE', 'OFFLINE') FROM devices WHERE id = #{deviceId}")
+    boolean isClaimedDevice(@Param("deviceId") UUID deviceId);
+
+    @Insert("""
+        INSERT INTO videos (
+            id, device_id, source_type, trigger_type, source_event_id, title,
+            storage_key, content_type, size_bytes, checksum_sha256, duration_ms,
+            captured_start_at, captured_end_at, status
+        ) VALUES (
+            #{id}, #{deviceId}, 'IOT_CAPTURE', CAST(#{triggerType} AS video_trigger_type), #{sourceEventId}, #{title},
+            #{storageKey}, #{contentType}, #{sizeBytes}, #{checksumSha256}, #{durationMs},
+            #{capturedStartAt}, #{capturedEndAt}, 'UPLOADING'
+        )
+        ON CONFLICT (device_id, source_event_id) WHERE source_event_id IS NOT NULL DO NOTHING
+        """)
+    int insertIotVideo(
+        @Param("id") UUID id,
+        @Param("deviceId") UUID deviceId,
+        @Param("triggerType") String triggerType,
+        @Param("sourceEventId") String sourceEventId,
+        @Param("title") String title,
+        @Param("storageKey") String storageKey,
+        @Param("contentType") String contentType,
+        @Param("sizeBytes") long sizeBytes,
+        @Param("checksumSha256") String checksumSha256,
+        @Param("durationMs") long durationMs,
+        @Param("capturedStartAt") Instant capturedStartAt,
+        @Param("capturedEndAt") Instant capturedEndAt
+    );
+
+    @Select("""
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+               content_type, size_bytes, checksum_sha256, duration_ms,
+               captured_start_at, captured_end_at, storage_key, status,
+               is_favorite AS favorite, created_at
+          FROM videos
+         WHERE device_id = #{deviceId} AND source_event_id = #{sourceEventId}
+        """)
+    Optional<VideoRow> findByDeviceEvent(
+        @Param("deviceId") UUID deviceId,
+        @Param("sourceEventId") String sourceEventId
+    );
+
+    @Select("""
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+               content_type, size_bytes, checksum_sha256, duration_ms,
+               captured_start_at, captured_end_at, storage_key, status,
+               is_favorite AS favorite, created_at
+          FROM videos
+         WHERE id = #{videoId} AND device_id = #{deviceId}
+        """)
+    Optional<VideoRow> findOwnedVideo(
+        @Param("deviceId") UUID deviceId,
+        @Param("videoId") UUID videoId
+    );
+
+    @Update("""
+        UPDATE videos v
+           SET status = 'READY', uploaded_at = now(),
+               retention_until = now() + make_interval(days =>
+                   CASE WHEN d.subscription_active THEN #{premiumRetentionDays} ELSE d.retention_days END),
+               updated_at = now()
+          FROM devices d
+         WHERE v.id = #{videoId} AND v.device_id = #{deviceId}
+           AND d.id = v.device_id AND v.status = 'UPLOADING'
+        """)
+    int markReady(
+        @Param("deviceId") UUID deviceId,
+        @Param("videoId") UUID videoId,
+        @Param("premiumRetentionDays") int premiumRetentionDays
+    );
+
+    /**
+     * Retention sweep: flips expired videos to DELETING and returns their ids so
+     * the caller can enqueue deletion jobs in the same transaction.
+     */
+    @Select("""
+        WITH due AS (
+            SELECT id FROM videos
+             WHERE retention_until IS NOT NULL AND retention_until <= now()
+               AND status IN ('READY', 'FAILED')
+             ORDER BY retention_until
+             LIMIT #{limit}
+             FOR UPDATE SKIP LOCKED
+        )
+        UPDATE videos v
+           SET status = 'DELETING', delete_requested_at = now(), updated_at = now()
+          FROM due
+         WHERE v.id = due.id
+        RETURNING v.id
+        """)
+    List<UUID> markRetentionExpiredDeleting(@Param("limit") int limit);
+
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1 FROM device_memberships
+             WHERE user_id = #{userId} AND device_id = #{deviceId} AND status = 'ACTIVE'
+        )
+        """)
+    boolean hasActiveMembership(@Param("userId") UUID userId, @Param("deviceId") UUID deviceId);
+
+    @Select("""
+        <script>
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+               v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
+               v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
+               v.is_favorite AS favorite, v.created_at
+          FROM videos v
+          JOIN device_memberships m ON m.device_id = v.device_id
+         WHERE v.device_id = #{deviceId}
+           AND m.user_id = #{userId}
+           AND m.status = 'ACTIVE'
+           AND v.status NOT IN ('DELETING', 'DELETED')
+        <if test="triggerType != null">
+           AND v.trigger_type = CAST(#{triggerType} AS video_trigger_type)
+        </if>
+        <if test="from != null">
+           AND v.captured_start_at &gt;= #{from}
+        </if>
+        <if test="to != null">
+           AND v.captured_start_at &lt; #{to}
+        </if>
+        <if test="cursorCreatedAt != null">
+           AND (v.created_at, v.id) &lt; (#{cursorCreatedAt}, #{cursorId})
+        </if>
+         ORDER BY v.created_at DESC, v.id DESC
+         LIMIT #{limit}
+        </script>
+        """)
+    java.util.List<VideoRow> findAccessibleVideos(
+        @Param("userId") UUID userId,
+        @Param("deviceId") UUID deviceId,
+        @Param("triggerType") String triggerType,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("cursorCreatedAt") Instant cursorCreatedAt,
+        @Param("cursorId") UUID cursorId,
+        @Param("limit") int limit
+    );
+
+    @Select("""
+        SELECT count(*)
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+        """)
+    long countReadyVideos(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT count(*)
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND description IS NOT NULL AND btrim(description) <> ''
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+        """)
+    long countReadyVideosWithMemo(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+               v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
+               v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
+               v.is_favorite AS favorite, v.created_at
+          FROM videos v
+          JOIN device_memberships m ON m.device_id = v.device_id
+         WHERE v.device_id = #{deviceId}
+           AND m.user_id = #{userId}
+           AND m.status = 'ACTIVE'
+           AND v.status = 'READY'
+         ORDER BY v.is_favorite DESC, v.captured_start_at DESC NULLS LAST, v.created_at DESC
+         LIMIT 1
+        """)
+    Optional<VideoRow> findLatestHighlight(
+        @Param("userId") UUID userId,
+        @Param("deviceId") UUID deviceId
+    );
+
+    @Select("""
+        SELECT trigger_type::text AS label, count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY trigger_type
+         ORDER BY count DESC, label
+        """)
+    List<VideoCountRow> countReadyVideosByTrigger(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT (captured_start_at AT TIME ZONE #{zoneId})::date AS date, count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY date
+         ORDER BY date
+        """)
+    List<DailyVideoCountRow> countReadyVideosByDay(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("zoneId") String zoneId
+    );
+
+    @Select("""
+        SELECT extract(isodow FROM captured_start_at AT TIME ZONE #{zoneId})::int::text AS label,
+               count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY label
+         ORDER BY count DESC, label
+        """)
+    List<VideoCountRow> countReadyVideosByWeekday(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("zoneId") String zoneId
+    );
+
+    @Select("""
+        SELECT extract(hour FROM captured_start_at AT TIME ZONE #{zoneId})::int::text AS label,
+               count(*) AS count
+          FROM videos
+         WHERE device_id = #{deviceId} AND status = 'READY'
+           AND captured_start_at >= #{from} AND captured_start_at < #{to}
+         GROUP BY label
+         ORDER BY count DESC, label
+        """)
+    List<VideoCountRow> countReadyVideosByHour(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("zoneId") String zoneId
+    );
+
+    @Select("""
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+               v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
+               v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
+               v.is_favorite AS favorite, v.created_at
+          FROM videos v
+          JOIN device_memberships m ON m.device_id = v.device_id
+         WHERE v.id = #{videoId}
+           AND m.user_id = #{userId}
+           AND m.status = 'ACTIVE'
+           AND v.status NOT IN ('DELETING', 'DELETED')
+        """)
+    Optional<VideoRow> findAccessibleVideo(
+        @Param("userId") UUID userId,
+        @Param("videoId") UUID videoId
+    );
+
+    @Select("""
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+               v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
+               v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
+               v.is_favorite AS favorite, v.created_at
+          FROM videos v
+          JOIN device_memberships m ON m.device_id = v.device_id
+         WHERE v.id = #{videoId}
+           AND m.user_id = #{userId}
+           AND m.status = 'ACTIVE'
+           AND v.status NOT IN ('DELETING', 'DELETED')
+         FOR UPDATE OF v
+        """)
+    Optional<VideoRow> lockAccessibleVideo(
+        @Param("userId") UUID userId,
+        @Param("videoId") UUID videoId
+    );
+
+    @Select("""
+        SELECT m.role::text
+          FROM videos v
+          JOIN device_memberships m ON m.device_id = v.device_id
+         WHERE v.id = #{videoId} AND m.user_id = #{userId} AND m.status = 'ACTIVE'
+        """)
+    Optional<String> findActiveRole(
+        @Param("userId") UUID userId,
+        @Param("videoId") UUID videoId
+    );
+
+    @Update("""
+        UPDATE videos
+           SET title = CASE WHEN #{titlePresent} THEN #{title} ELSE title END,
+               description = CASE WHEN #{descriptionPresent} THEN #{description} ELSE description END,
+               is_favorite = CASE WHEN #{favoritePresent} THEN #{favorite} ELSE is_favorite END,
+               updated_at = now()
+         WHERE id = #{videoId}
+        """)
+    int updateMetadata(
+        @Param("videoId") UUID videoId,
+        @Param("titlePresent") boolean titlePresent,
+        @Param("title") String title,
+        @Param("descriptionPresent") boolean descriptionPresent,
+        @Param("description") String description,
+        @Param("favoritePresent") boolean favoritePresent,
+        @Param("favorite") Boolean favorite
+    );
+
+    @Update("""
+        UPDATE videos
+           SET status = 'DELETING', delete_requested_at = now(), deleted_by = #{userId}, updated_at = now()
+         WHERE id = #{videoId} AND status NOT IN ('DELETING', 'DELETED')
+        """)
+    int markDeleting(@Param("videoId") UUID videoId, @Param("userId") UUID userId);
+
+    @Insert("""
+        INSERT INTO video_deletion_jobs (video_id)
+        VALUES (#{videoId})
+        ON CONFLICT (video_id) DO NOTHING
+        """)
+    int insertDeletionJob(@Param("videoId") UUID videoId);
+}

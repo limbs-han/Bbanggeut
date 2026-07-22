@@ -1,0 +1,25 @@
+# Secrets and local environment
+.env
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+
+# Build and IDE output
+.gradle/
+build/
+.idea/
+.vscode/
+out/
+
+# Runtime data
+data/
+logs/
+runtime/
+backend/demo/generated-clips/
+
+# Local AI benchmark environment and generated caches
+.benchmark-venv/
+ai/model_benchmark/cache/
+ai/model_benchmark/data/

@@ -29,7 +29,6 @@ erDiagram
     USER ||--o{ INVITATION : "발급 또는 수락"
     DEVICE ||--o{ VIDEO : "영상을 생성·보관"
     USER ||--o{ VIDEO : "직접 업로드 또는 삭제"
-    VIDEO ||--o{ VIDEO_EDIT : "편집 원본"
     DEVICE ||--o{ ACCESS_LOG : "기기별 감사 범위"
 
     USER {
@@ -41,6 +40,14 @@ erDiagram
         int token_version
         timestamptz created_at
         timestamptz deleted_at
+    }
+
+    AUTH_LOGIN_ATTEMPT {
+        bigint id PK
+        char email_hash
+        char ip_hash
+        boolean succeeded
+        timestamptz attempted_at
     }
 
     DEVICE {
@@ -109,17 +116,6 @@ erDiagram
         timestamptz captured_start_at
     }
 
-    VIDEO_EDIT {
-        uuid id PK
-        uuid device_id FK
-        uuid source_video_id FK
-        uuid result_video_id FK
-        uuid requested_by FK
-        bigint start_ms
-        bigint end_ms
-        video_edit_status status
-    }
-
     ACCESS_LOG {
         bigint id PK
         uuid device_id FK
@@ -152,7 +148,7 @@ erDiagram
 | 기기 목록·상태 조회 | O | O |
 | 영상 조회·재생 | O | O |
 | 영상 다운로드 | O | O `[정책으로 제한 가능]` |
-| 영상 구간 편집 | O | O `[정책으로 제한 가능]` |
+| 영상 로컬 편집용 원본 다운로드 | O | O `[정책으로 제한 가능]` |
 | 영상 삭제 | O | X `[기본값]` |
 | 구성원 목록 조회 | O | O |
 | 구성원 초대·권한 회수 | O | X |
@@ -161,18 +157,18 @@ erDiagram
 
 ### 3.3 서버의 리소스 권한 검사
 
-영상 조회·편집·삭제 요청은 URL이나 요청 본문의 `deviceId`만 믿지 않는다.
+영상 조회·다운로드·삭제 요청은 URL이나 요청 본문의 `deviceId`만 믿지 않는다.
 
 ```text
 JWT 사용자 식별
   → 대상 video.id 조회
   → video.device_id 확인
   → device_memberships에서 (device_id, user_id, ACTIVE) 확인
-  → 작업별 role 확인
+  → 조회·다운로드·삭제별 role 확인
   → 멤버십 없음은 404, 같은 기기의 역할 부족은 403, 허용 시 처리
 ```
 
-영상 편집 권한도 편집 요청 행의 값이 아니라 **원본 영상의 `device_id`**를 기준으로 검사한다. 편집 결과 영상은 원본과 같은 기기에 속해야 하며, 복합 외래 키가 이를 보장한다.
+앱 로컬 편집도 먼저 원본 다운로드 URL을 발급받아야 하므로 **원본 영상의 `device_id`**를 기준으로 활성 멤버십을 검사한다. 편집 구간과 결과 파일은 서버에 전송하지 않는다.
 
 ## 4. 무결성 규칙
 
@@ -185,7 +181,7 @@ JWT 사용자 식별
 | 같은 기기·이메일의 대기 초대는 1개 | 부분 유일 인덱스 | 만료 상태를 먼저 정리한 뒤 재초대 |
 | IoT 이벤트 재시도 시 영상 중복 금지 | `UNIQUE(device_id, source_event_id)` | 기존 video ID를 멱등 응답으로 반환 |
 | 영상 파일은 MVP 최대 500 MiB | CHECK 제약 | 서명 URL 발급 전 `sizeBytes` 검증 |
-| 편집 결과는 원본과 같은 기기 | 복합 FK `(video_id, device_id)` | 작업 시작 전 원본 멤버십·역할 재검사 |
+| 로컬 편집 원본 접근 통제 | 영상의 `device_id` FK | 다운로드 URL 발급 전 원본 멤버십 재검사 |
 | 타 기기 리소스 존재 은닉 | 직접 보장 불가 | 모든 조회에 멤버십 조건을 결합하고 실패 시 404 |
 
 ## 5. 데이터 사전
@@ -215,6 +211,15 @@ JWT 사용자 식별
 | `user_agent`, `ip_address` | 텍스트·`inet` | Y | 보안 감사 보조 정보 |
 | `expires_at` | `timestamptz` | N | 만료 시각 |
 | `last_used_at`, `revoked_at` | `timestamptz` | Y | 회전·폐기 추적 |
+
+### 5.2-1 `auth_login_attempts` — 로그인 시도 제한
+
+| 컬럼 | 타입 | NULL | 설명 |
+| --- | --- | :---: | --- |
+| `email_hash` | `char(64)` | N | 정규화 이메일 SHA-256; 이메일 원문 미저장 |
+| `ip_hash` | `char(64)` | N | 접속 IP SHA-256; IP 원문 미저장 |
+| `succeeded` | `boolean` | N | 성공·실패 구분, 제한 계산은 실패만 사용 |
+| `attempted_at` | `timestamptz` | N | 시도 시각, 기본 10분 창 계산 기준 |
 
 ### 5.3 `devices` — IoT 기기
 
@@ -300,8 +305,8 @@ JWT 사용자 식별
 | `id` | `uuid` | N | 영상 ID |
 | `device_id` | `uuid` | N | 영상 접근 경계이자 생성 기기 |
 | `created_by` | `uuid` | Y | 사용자 업로드·작업 주체 |
-| `source_type` | enum | N | `IOT_CAPTURE`, `USER_UPLOAD`, `EDIT_OUTPUT` |
-| `trigger_type` | enum | N | `LAUGHTER`, `WAKE_WORD`, `TOUCH`, `MANUAL`, `USER_UPLOAD`, `EDIT` |
+| `source_type` | enum | N | `IOT_CAPTURE`, `USER_UPLOAD`; 로컬 편집본은 서버에 등록하지 않음 |
+| `trigger_type` | enum | N | `LAUGHTER`, `WAKE_WORD`, `TOUCH`, `MANUAL`, `USER_UPLOAD` |
 | `source_event_id` | `varchar(100)` | Y | IoT 이벤트 멱등 키 |
 | `title`, `description` | 문자열 | 조건부 | 제목과 설명 |
 | `storage_key` | `varchar(1024)` | N | 비공개 객체 키; URL 저장 금지 |
@@ -319,21 +324,9 @@ JWT 사용자 식별
 
 영상 최신 목록은 `(device_id, captured_start_at DESC, id DESC)` 키셋 커서를 사용한다.
 
-### 5.8 `video_edits` — 영상 구간 편집 작업
+일반 편집은 앱 로컬 처리이므로 `video_edits` 테이블과 편집 결과 `videos` 행을 만들지 않는다. 배포 이력상 V9 테이블은 레거시 DB에 남을 수 있으나 V13 이후 신규 작업은 생성되지 않는다.
 
-| 컬럼 | 타입 | NULL | 설명 |
-| --- | --- | :---: | --- |
-| `device_id` | `uuid` | N | 원본 영상에서 확정한 기기 ID |
-| `source_video_id` | `uuid` | N | 원본 영상 |
-| `result_video_id` | `uuid` | Y | 완료된 결과 영상 |
-| `requested_by` | `uuid` | N | 요청 사용자 |
-| `start_ms`, `end_ms` | `bigint` | N | 편집 구간 |
-| `status` | enum | N | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `CANCELLED` |
-| `error_code` | `varchar(80)` | Y | 실패 사유 코드 |
-
-요청 시 `source_video_id`로 원본을 먼저 찾고 그 영상의 `device_id`에 대한 활성 멤버십을 확인한다. 요청 본문에서 `deviceId`를 받지 않는다.
-
-### 5.9 `access_logs` — 기기별 접근 감사 로그
+### 5.8 `access_logs` — 기기별 접근 감사 로그
 
 | 컬럼 | 타입 | NULL | 설명 |
 | --- | --- | :---: | --- |
@@ -361,7 +354,6 @@ JWT 사용자 식별
 | 최신 영상 피드 | `videos(device_id, captured_start_at DESC, id DESC) WHERE status<>'DELETED'` |
 | 트리거별 영상 필터 | `videos(device_id, trigger_type, status, captured_start_at DESC, id DESC)` |
 | IoT 업로드 멱등성 | `videos(device_id, source_event_id)` 유일 인덱스 |
-| 편집 작업 큐 | `video_edits(status, requested_at) WHERE PENDING/PROCESSING` |
 | 보관 만료 삭제 | `videos(retention_until) WHERE status='READY'` |
 | 기기 감사 로그 | `access_logs(device_id, created_at DESC, id DESC)` |
 

@@ -27,7 +27,7 @@ tags:
   - name: Invitations
     description: 기기별 초대 링크 공유, 가입 요청과 OWNER 승인·거절, 구성원 관리
   - name: Videos
-    description: 기기별 영상 조회·재생·편집·다운로드·삭제
+    description: 기기별 영상 조회·재생·원본 다운로드·삭제. 일반 편집은 앱 로컬 처리
   - name: IoT
     description: 기기 자격 증명을 사용하는 영상 직접 업로드 계약
   - name: Audit
@@ -82,6 +82,12 @@ paths:
                 $ref: '#/components/schemas/AuthTokenResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 이메일 또는 접속 주소 기준 로그인 실패 5회/10분 제한 초과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -117,6 +123,27 @@ paths:
           description: 로그아웃 완료
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/me:
+    delete:
+      tags: [Auth]
+      operationId: withdrawAccount
+      summary: 회원 탈퇴
+      description: |
+        활성 `OWNER` 멤버십이 하나라도 있으면 409로 거부한다 — 먼저 기기를 해제하거나
+        소유권을 넘겨야 한다. 성공 시 모든 MEMBER 멤버십과 로그인 세션을 회수하고
+        계정을 `WITHDRAWN` 처리한다.
+      responses:
+        '204':
+          description: 탈퇴 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 소유 중인 기기가 있어 탈퇴 불가 (OWNER_MEMBERSHIP_EXISTS)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/devices:
     get:
@@ -232,6 +259,42 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/devices/{deviceId}/transfer-ownership:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      tags: [Devices]
+      operationId: transferOwnership
+      summary: 기기 소유권 이전
+      description: |
+        현재 OWNER가 같은 기기의 활성 MEMBER에게 소유권을 넘긴다. 한 트랜잭션에서
+        기존 OWNER는 MEMBER로 강등되고 대상이 OWNER로 승격된다. 영상·구성원·설정·구독은
+        모두 유지된다(기기 행 불변). 외부인에게 넘기려면 먼저 초대·승인으로 MEMBER로
+        만들거나, 영상을 삭제하는 기기 해제(양도) 절차를 사용한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequest'
+      responses:
+        '204':
+          description: 소유권 이전 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 대상이 활성 MEMBER가 아니거나 본인임
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /api/devices/{deviceId}/status:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
@@ -250,6 +313,76 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
+
+  /api/devices/{deviceId}/home-summary:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: getHomeSummary
+      summary: 홈 대시보드 오늘 요약 조회
+      description: 홈캠 대시보드 상단의 "오늘의 순간 요약" 카드를 한 번의 호출로 채운다. timeZone 기준 오늘의 포착·저장·메모 수와 대표 하이라이트를 반환한다.
+      parameters:
+        - name: timeZone
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Asia/Seoul
+      responses:
+        '200':
+          description: 오늘 요약
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/devices/{deviceId}/stats:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: getDeviceVideoStats
+      summary: 저장 영상 통계 조회
+      description: 활성 멤버십 기기의 READY 영상만 집계한다. 기본 기간은 Asia/Seoul 기준 최근 30일이다.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: timeZone
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Asia/Seoul
+      responses:
+        '200':
+          description: 감지 유형·일자별 집계와 최다 요일·시간대
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/devices/{deviceId}/stream-sessions:
     parameters:
@@ -601,6 +734,20 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DeviceIdQuery'
         - $ref: '#/components/parameters/TriggerTypeQuery'
+        - name: from
+          in: query
+          required: false
+          description: 촬영 시작 시각 하한(포함)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: 촬영 시작 시각 상한(미포함)
+          schema:
+            type: string
+            format: date-time
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
       responses:
@@ -713,55 +860,34 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /api/videos/{videoId}/edits:
-    parameters:
-      - $ref: '#/components/parameters/VideoId'
+  /api/iot/registration-codes:
     post:
-      tags: [Videos]
-      operationId: createVideoEdit
-      summary: 영상 구간 편집 요청
-      description: 서버가 원본 영상의 `deviceId`를 찾고 해당 기기의 활성 멤버십과 작업 권한을 확인한다.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateVideoEditRequest'
-      responses:
-        '202':
-          description: 편집 작업 수락
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VideoEdit'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/HiddenNotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-
-  /api/video-edits/{editId}:
-    parameters:
-      - $ref: '#/components/parameters/EditId'
-    get:
-      tags: [Videos]
-      operationId: getVideoEdit
-      summary: 편집 작업 상태 조회
-      description: 편집 원본 영상의 기기 멤버십을 기준으로 접근을 확인한다.
+      tags: [IoT]
+      operationId: issueRegistrationCode
+      summary: IoT 1회용 등록 코드 발급
+      description: |
+        기기가 물리 버튼으로 등록 모드에 진입할 때 호출한다. `DeviceBearerAuth`로 인증한 기기가
+        `UNCLAIMED` 상태일 때만 허용한다. 서버는 CSPRNG로 8자리 등록 코드를 생성해
+        (혼동 문자를 제외한 대문자·숫자 32자 문자셋, 활성 코드 간 유일성 보장) 해시만 저장하고
+        평문은 이 응답에만 담는다. 기기는 코드를 7" LCD에 `XXXX-XXXX` 형식으로 표시한다.
+        코드와 등록 모드는 120초 후 만료되며, 재진입 시 항상 새 코드가 발급되고 이전 코드는 무효가 된다.
+      security:
+        - DeviceBearerAuth: []
       responses:
         '200':
-          description: 편집 상태
+          description: 새 등록 코드
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VideoEdit'
+                $ref: '#/components/schemas/RegistrationCodeResponse'
         '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/HiddenNotFound'
+          $ref: '#/components/responses/DeviceUnauthorized'
+        '409':
+          description: 이미 등록된 기기(UNCLAIMED가 아님)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/iot/registration-codes:
     post:
@@ -934,13 +1060,6 @@ components:
         format: uuid
     VideoId:
       name: videoId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    EditId:
-      name: editId
       in: path
       required: true
       schema:
@@ -1261,9 +1380,47 @@ components:
           type: integer
           minimum: 0
           nullable: true
+        personCount:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: 홈캠 edge가 마지막 heartbeat에서 보고한 화면 내 감지 인원 수. 감지 미보고·프리즌스 비활성·오프라인이면 null. 인물 탐지·중심 계산은 edge에서만 수행하며 서버는 집계값만 전달한다.
         checkedAt:
           type: string
           format: date-time
+
+    HomeSummary:
+      type: object
+      required: [deviceId, date, timeZone, captureCount, savedCount, memoCount]
+      description: 홈 대시보드용 오늘 요약 집계. 현재 데이터 모델에서는 captureCount와 savedCount가 같은 값이며, edge가 원시 이벤트 수를 별도로 보고하면 분리된다.
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+          description: timeZone 기준 오늘 날짜
+        timeZone:
+          type: string
+          default: Asia/Seoul
+        captureCount:
+          type: integer
+          minimum: 0
+          description: 오늘 포착된 순간(READY 영상) 수
+        savedCount:
+          type: integer
+          minimum: 0
+          description: 오늘 저장된 영상 수
+        memoCount:
+          type: integer
+          minimum: 0
+          description: 오늘 저장된 영상 중 메모(설명)가 작성된 수
+        latestHighlight:
+          allOf:
+            - $ref: '#/components/schemas/Video'
+          nullable: true
+          description: 즐겨찾기·최신 순서로 고른 대표 하이라이트. READY 영상이 없으면 null.
 
     StreamSession:
       type: object
@@ -1336,6 +1493,16 @@ components:
           type: string
           format: date-time
 
+    TransferOwnershipRequest:
+      type: object
+      required: [newOwnerMembershipId]
+      additionalProperties: false
+      properties:
+        newOwnerMembershipId:
+          type: string
+          format: uuid
+          description: 같은 기기의 활성 MEMBER 멤버십 ID
+
     InviteLink:
       type: object
       required: [deviceId, inviteToken, expiresAt]
@@ -1403,6 +1570,7 @@ components:
     VideoSourceType:
       type: string
       enum: [IOT_CAPTURE, USER_UPLOAD, EDIT_OUTPUT]
+      description: "EDIT_OUTPUT은 V13 이전 레거시 조회 호환 값이며 신규 편집본에는 사용하지 않는다."
 
     VideoTriggerType:
       type: string
@@ -1499,6 +1667,65 @@ components:
         hasNext:
           type: boolean
 
+    VideoStats:
+      type: object
+      required: [deviceId, from, to, timeZone, totalCount, byTriggerType, dailyCounts]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timeZone:
+          type: string
+          example: Asia/Seoul
+        totalCount:
+          type: integer
+          format: int64
+        byTriggerType:
+          type: array
+          items:
+            $ref: '#/components/schemas/NamedCount'
+        dailyCounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyCount'
+        peakWeekday:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/NamedCount'
+          nullable: true
+        peakHour:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/NamedCount'
+          nullable: true
+
+    NamedCount:
+      type: object
+      required: [name, count]
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+          format: int64
+
+    DailyCount:
+      type: object
+      required: [date, count]
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+          format: int64
+
     UpdateVideoRequest:
       type: object
       minProperties: 1
@@ -1526,65 +1753,6 @@ components:
         expiresAt:
           type: string
           format: date-time
-
-    CreateVideoEditRequest:
-      type: object
-      required: [startMs, endMs, title]
-      additionalProperties: false
-      properties:
-        startMs:
-          type: integer
-          format: int64
-          minimum: 0
-        endMs:
-          type: integer
-          format: int64
-          minimum: 1
-        title:
-          type: string
-          minLength: 1
-          maxLength: 120
-
-    VideoEdit:
-      type: object
-      required: [id, deviceId, sourceVideoId, requestedBy, startMs, endMs, status, requestedAt]
-      properties:
-        id:
-          type: string
-          format: uuid
-        deviceId:
-          type: string
-          format: uuid
-        sourceVideoId:
-          type: string
-          format: uuid
-        resultVideoId:
-          type: string
-          format: uuid
-          nullable: true
-        requestedBy:
-          type: string
-          format: uuid
-        startMs:
-          type: integer
-          format: int64
-        endMs:
-          type: integer
-          format: int64
-        status:
-          type: string
-          enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
-        errorCode:
-          type: string
-          maxLength: 80
-          nullable: true
-        requestedAt:
-          type: string
-          format: date-time
-        completedAt:
-          type: string
-          format: date-time
-          nullable: true
 
     IotUploadUrlRequest:
       type: object
@@ -1703,6 +1871,7 @@ components:
           nullable: true
         action:
           type: string
+          description: "`VIDEO_EDIT`는 V13 이전 레거시 감사 로그에만 존재하며 신규 메타데이터 수정은 `VIDEO_UPDATE`로 기록한다."
           enum:
             - MEMBER_INVITE
             - MEMBER_REVOKE
@@ -1713,6 +1882,7 @@ components:
             - VIDEO_VIEW
             - VIDEO_PLAY
             - VIDEO_DOWNLOAD
+            - VIDEO_UPDATE
             - VIDEO_EDIT
             - VIDEO_DELETE
             - STREAM_OPEN

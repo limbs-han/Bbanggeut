@@ -149,6 +149,7 @@ subscribe: {env}/wj/v1/devices/D/commands
   "bufferSeconds": 138,
   "recording": true,
   "uploadQueueDepth": 1,
+  "personCount": 3,
   "clockUnsynced": false,
   "nodes": [
     {"nodeId": "jetson-main", "online": true},
@@ -160,6 +161,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 - 백분율은 `0.0~100.0`, byte·second·count 값은 0 이상의 정수다.
 - `recording`은 순환 버퍼가 정상적으로 동작하는지를 의미하며 녹화 표시 LED 상태와 일치해야 한다.
 - `uploadQueueDepth`에는 MQTT 성공 여부와 상관없이 로컬에 대기 중인 영상 작업 수가 포함된다.
+- `personCount`(선택)는 홈캠 edge가 마지막으로 감지한 화면 내 인원 수(0 이상 정수)다. 인물 탐지·중심 계산은 모두 edge에서 수행하고 서버는 집계값만 저장·전달한다. 필드를 생략하거나 오프라인이 되면 서버는 presence를 `null`로 비운다. 홈 화면의 "가족 N명 감지" 표시에 사용한다.
 - 서버는 heartbeat 원문 전체보다 `last_seen_at`과 필요한 최소 상태만 저장해도 된다.
 
 ### 5.3 등록 모드 `/registration`
@@ -268,7 +270,7 @@ MQTT 발행 실패 시에도 클립은 로컬 업로드 큐에 남는다. 재연
 | `STOP_STREAM` | `streamId`, `reason` | `[기본]` | 마지막 유효 heartbeat 또는 정상 종료부터 총 60초가 되면 송출 종료 |
 | `UPDATE_CONFIG` | `configVersion`, 허용 설정 | `[기본]` | 감지 임계값·병합 창 갱신 |
 | `PING` | 빈 객체 | `[기본]` | 명령 경로 진단 |
-| `SET_PAN_TILT` | `panDegrees`, `tiltDegrees` | `[심화]` | 카메라 각도 조절 |
+| `SET_PAN_TILT` | `panDegrees`, `tiltDegrees` | `[심화]` | 수동 카메라 각도 조절. 자동 추적과 동시에 실행하지 않음 |
 
 - 기기는 payload의 `deviceId`가 인증 기기와 같은지, `expiresAt`이 지나지 않았는지 확인한다.
 - 알 수 없는 명령은 실행하지 않고 `UNSUPPORTED_COMMAND` ACK를 보낸다.

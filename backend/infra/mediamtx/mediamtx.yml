@@ -1,0 +1,20 @@
+logLevel: info
+
+rtsp: true
+rtspAddress: :8554
+rtmp: false
+hls: true
+hlsAddress: :8888
+hlsAllowOrigins: ["*"]
+hlsVariant: fmp4
+hlsSegmentDuration: 2s
+webrtc: false
+srt: false
+playback: false
+api: false
+metrics: false
+pprof: false
+
+paths:
+  demo-live:
+    source: publisher

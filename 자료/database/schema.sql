@@ -15,10 +15,9 @@ CREATE TYPE device_status AS ENUM ('UNCLAIMED', 'ONLINE', 'OFFLINE', 'REVOKED');
 CREATE TYPE credential_type AS ENUM ('CERTIFICATE', 'TOKEN_HASH');
 CREATE TYPE credential_status AS ENUM ('ACTIVE', 'REVOKED', 'EXPIRED');
 CREATE TYPE invitation_status AS ENUM ('PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED');
-CREATE TYPE video_source_type AS ENUM ('IOT_CAPTURE', 'USER_UPLOAD', 'EDIT_OUTPUT');
-CREATE TYPE video_trigger_type AS ENUM ('LAUGHTER', 'WAKE_WORD', 'TOUCH', 'MANUAL', 'USER_UPLOAD', 'EDIT');
+CREATE TYPE video_source_type AS ENUM ('IOT_CAPTURE', 'USER_UPLOAD');
+CREATE TYPE video_trigger_type AS ENUM ('LAUGHTER', 'WAKE_WORD', 'TOUCH', 'MANUAL', 'USER_UPLOAD');
 CREATE TYPE video_status AS ENUM ('UPLOADING', 'PROCESSING', 'READY', 'FAILED', 'DELETING', 'DELETED');
-CREATE TYPE video_edit_status AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED');
 CREATE TYPE audit_outcome AS ENUM ('SUCCESS', 'DENIED', 'FAILED');
 CREATE TYPE audit_action AS ENUM (
     'MEMBER_INVITE',
@@ -30,7 +29,7 @@ CREATE TYPE audit_action AS ENUM (
     'VIDEO_VIEW',
     'VIDEO_PLAY',
     'VIDEO_DOWNLOAD',
-    'VIDEO_EDIT',
+    'VIDEO_UPDATE',
     'VIDEO_DELETE',
     'STREAM_OPEN',
     'STREAM_HEARTBEAT',
@@ -89,6 +88,21 @@ CREATE UNIQUE INDEX ux_auth_sessions_refresh_hash ON auth_sessions (refresh_toke
 CREATE INDEX ix_auth_sessions_user_active
     ON auth_sessions (user_id, expires_at DESC)
     WHERE revoked_at IS NULL;
+
+CREATE TABLE auth_login_attempts (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email_hash char(64) NOT NULL,
+    ip_hash char(64) NOT NULL,
+    succeeded boolean NOT NULL DEFAULT false,
+    attempted_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_auth_login_attempt_email_hash CHECK (email_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_auth_login_attempt_ip_hash CHECK (ip_hash ~ '^[0-9a-f]{64}$')
+);
+
+CREATE INDEX ix_auth_login_attempt_email_failure
+    ON auth_login_attempts (email_hash, attempted_at DESC) WHERE succeeded = false;
+CREATE INDEX ix_auth_login_attempt_ip_failure
+    ON auth_login_attempts (ip_hash, attempted_at DESC) WHERE succeeded = false;
 
 CREATE TABLE devices (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -345,11 +359,9 @@ CREATE TABLE videos (
     CONSTRAINT ck_videos_source_actor CHECK (
         (source_type = 'IOT_CAPTURE' AND created_by IS NULL)
         OR (source_type = 'USER_UPLOAD' AND created_by IS NOT NULL)
-        OR (source_type = 'EDIT_OUTPUT')
     ),
     CONSTRAINT ck_videos_trigger_source CHECK (
         (source_type = 'USER_UPLOAD' AND trigger_type = 'USER_UPLOAD')
-        OR (source_type = 'EDIT_OUTPUT' AND trigger_type = 'EDIT')
         OR (source_type = 'IOT_CAPTURE' AND trigger_type IN ('LAUGHTER', 'WAKE_WORD', 'TOUCH', 'MANUAL'))
     ),
     CONSTRAINT ck_videos_ready_metadata CHECK (
@@ -381,39 +393,6 @@ CREATE INDEX ix_videos_retention
 CREATE INDEX ix_videos_delete_queue
     ON videos (delete_requested_at)
     WHERE status = 'DELETING';
-
-CREATE TABLE video_edits (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    device_id uuid NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
-    source_video_id uuid NOT NULL,
-    result_video_id uuid UNIQUE,
-    requested_by uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    start_ms bigint NOT NULL CHECK (start_ms >= 0),
-    end_ms bigint NOT NULL CHECK (end_ms > 0),
-    status video_edit_status NOT NULL DEFAULT 'PENDING',
-    error_code varchar(80),
-    requested_at timestamptz NOT NULL DEFAULT now(),
-    started_at timestamptz,
-    completed_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT fk_video_edits_source_device FOREIGN KEY (source_video_id, device_id)
-        REFERENCES videos(id, device_id) ON DELETE RESTRICT,
-    CONSTRAINT fk_video_edits_result_device FOREIGN KEY (result_video_id, device_id)
-        REFERENCES videos(id, device_id) ON DELETE RESTRICT,
-    CONSTRAINT ck_video_edits_range CHECK (end_ms > start_ms),
-    CONSTRAINT ck_video_edits_result CHECK (
-        (status = 'COMPLETED' AND result_video_id IS NOT NULL AND completed_at IS NOT NULL AND error_code IS NULL)
-        OR (status = 'FAILED' AND result_video_id IS NULL AND completed_at IS NOT NULL AND error_code IS NOT NULL)
-        OR (status = 'CANCELLED' AND result_video_id IS NULL AND completed_at IS NOT NULL)
-        OR (status IN ('PENDING', 'PROCESSING') AND result_video_id IS NULL AND completed_at IS NULL)
-    )
-);
-
-CREATE INDEX ix_video_edits_source ON video_edits (source_video_id, requested_at DESC);
-CREATE INDEX ix_video_edits_device ON video_edits (device_id, requested_at DESC);
-CREATE INDEX ix_video_edits_worker_queue ON video_edits (status, requested_at) WHERE status IN ('PENDING', 'PROCESSING');
-CREATE INDEX ix_video_edits_requester ON video_edits (requested_by, requested_at DESC);
 
 CREATE TABLE access_logs (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -459,9 +438,6 @@ BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_videos_updated_at
 BEFORE UPDATE ON videos FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER trg_video_edits_updated_at
-BEFORE UPDATE ON video_edits FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMENT ON COLUMN users.password_hash IS 'Argon2id or BCrypt hash only; never plaintext.';
 COMMENT ON TABLE auth_sessions IS 'Refresh-token sessions. Only SHA-256 token hashes are stored.';

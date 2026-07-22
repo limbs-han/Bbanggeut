@@ -1,0 +1,22 @@
+[Unit]
+Description=William James IoT streaming device agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=video
+SupplementaryGroups=audio
+EnvironmentFile=/etc/william-james/device-agent.env
+WorkingDirectory=/opt/william-james/device-agent
+ExecStart=/opt/william-james/device-agent/venv/bin/python -m wj_device_agent
+Restart=always
+RestartSec=5
+TimeoutStopSec=12
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
