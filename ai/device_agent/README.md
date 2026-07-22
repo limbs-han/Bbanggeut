@@ -16,9 +16,12 @@ Flutter POST stream session
   -> STOP_STREAM or hardExpiresAt terminates FFmpeg
 ```
 
-The agent does not run YOLO/YAMNet and does not create event clips. Those
-components use the same device identity and publish `/events`; integration rules
-are documented in `INTEGRATION_STATUS.md`.
+The agent itself remains focused on MQTT control and on-demand live relay.
+`wj-edge-ai-mvp.service` runs YOLO, YAMNet, and the clip uploader beside it,
+using loopback media and local event files instead of opening a second MQTT
+connection with the same device identity. Current deployment and validation
+details are documented in `INTEGRATION_STATUS.md` and
+`JETSON_HANDOFF_2026-07-23.md`.
 
 ## Install on Jetson (current production server)
 

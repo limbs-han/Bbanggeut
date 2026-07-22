@@ -21,5 +21,7 @@ backend/demo/generated-clips/
 
 # Local AI benchmark environment and generated caches
 .benchmark-venv/
+__pycache__/
+*.py[cod]
 ai/model_benchmark/cache/
 ai/model_benchmark/data/

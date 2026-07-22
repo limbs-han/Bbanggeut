@@ -1,80 +1,31 @@
-# IoT / live streaming integration status
+# IoT / live / edge AI integration status
 
-## Implemented in this repository
+상세 작업 기록과 재현 절차는 [`JETSON_HANDOFF_2026-07-23.md`](JETSON_HANDOFF_2026-07-23.md)를 참고한다.
 
-- Spring creates a per-viewing-session `streamId` and publishes
-  `START_STREAM`, `EXTEND_STREAM`, and `STOP_STREAM` commands over MQTT.
-- The device agent subscribes to its command topic over MQTTS and starts one
-  FFmpeg process at `MEDIA_PUBLISH_URL_TEMPLATE`, replacing `{stream_id}` at
-  runtime. Duplicate commands are idempotent and another simultaneous stream
-  is rejected with `DEVICE_BUSY`.
-- The agent publishes command acknowledgements and
-  `STREAM_STARTING/READY/ERROR/STOPPED/HARD_EXPIRED` events. The edge lease is
-  enforced even if the backend disappears.
-- MediaMTX converts the dynamic RTSP path to HLS. Nginx protects the HLS URL
-  through Spring introspection and Flutter creates, heartbeats, plays, and
-  closes the stream session.
-- Provisioning grants device ACLs for status, heartbeat, detection events,
-  stream events, command acknowledgements, and the command subscription.
-- The backend now subscribes to and validates detection events and command
-  acknowledgements. Detection events are logged only; the uploaded video API
-  is still the durable record.
+## 완료 및 실기 확인
 
-## Not integrated yet
+- 기기 bootstrap/enrollment, 가상 등록 버튼, 앱의 코드 claim
+- MQTTS 상태/명령 연결과 앱 ONLINE 표시
+- 앱 시청 세션별 `START_STREAM`/`READY`/heartbeat/STOP 흐름
+- SSH 로컬 포워드를 통한 동적 RTSP publish와 MediaMTX HLS 재생
+- Brio 100 영상/음성 동시 라이브 재생
+- 물리 카메라를 한 번만 점유하는 상시 공유 미디어 소스
+- Live View와 무관하게 항상 실행되는 YOLO/ByteTrack 및 YAMNet
+- 사람 중심 맞춤 방향 명령 로그 (`LEFT/RIGHT/UP/DOWN/HOLD/HOME`)
+- 웃음 감지와 앞 5초 + 뒤 5초 영상/음성 파일 생성
 
-- The laughter detector is not part of this device-agent process. Its current
-  MQTT output must not run concurrently with the agent using the same
-  credential: provisioning pins the MQTT client ID to `deviceId`, so a second
-  connection will disconnect or reject the first one.
-- The recommended first integration is one cloud MQTT owner per device. Run
-  inference inside the agent process, or send detections to it over a local
-  IPC queue/socket and let the agent publish `/events`. Do not copy the device
-  bearer token into multiple model processes.
-- Event recording is not wired to detection yet. On `LAUGHTER`, the edge must
-  lock a pre/post-roll clip, obtain an upload URL from Spring, upload the file,
-  and complete the video metadata request. MQTT is notification/control, not
-  the video transport.
-- `STREAM_READY` currently means that FFmpeg stayed alive for a short startup
-  delay. It does not yet probe MediaMTX/HLS readiness.
-- Existing provisioned devices do not receive newly added ACL entries
-  automatically. Re-enroll/rotate them or add a Dynamic Security ACL migration.
+## 진행 중
 
-## Deployment blockers and order
+- 웃음 영상 mux 및 서버 업로드 완료 확인
+- 업로드 후 앱 최근 영상 목록 반영 확인
+- 실제 팬/틸트 모터 연결 및 PWM 제어
+- 환경별 YAMNet 임계값 검증과 오탐 억제
 
-1. For the current single-Jetson deployment, install `wj-media-tunnel.service`;
-   it reaches the loopback-only MediaMTX port without exposing RTSP publicly.
-   Before scaling to multiple devices, replace this with authenticated external
-   ingest (prefer RTSPS or SRT) and per-device media credentials.
-2. Put the operating credential and broker CA on the Jetson, configure its
-   camera/encoder arguments, and enable `wj-device-agent.service`.
-3. Re-provision the test device so its MQTT role contains the new event/ACK
-   ACLs.
-4. Verify the complete path: Flutter create -> MQTT START -> dynamic RTSP
-   publish -> MQTT READY -> protected HLS playback -> heartbeat/STOP.
-5. Replace the startup-delay READY check with a MediaMTX API or HLS playlist
-   health probe, and confirm that the HLS viewer token remains valid for a long
-   viewing session.
-6. Merge laughter inference through local IPC or the same process, then add the
-   pre-roll buffer, clip lifecycle, retryable upload queue, and backend event
-   persistence/idempotency.
-7. Add service metrics, disk quota/retention, credential rotation, and
-   reconnect/reboot integration tests before unattended deployment.
+## 운영 원칙
 
-## Detection event shape
-
-The integrated publisher should send this through the single device-agent MQTT
-connection:
-
-```json
-{
-  "schemaVersion": "1.0",
-  "eventId": "<uuid>",
-  "deviceId": "<uuid>",
-  "type": "LAUGHTER",
-  "occurredAt": "2026-07-22T12:34:56.789Z",
-  "confidence": 0.92
-}
-```
-
-Topic: `prod/wj/v1/devices/{deviceId}/events`, QoS 1. Use `eventId` as the
-idempotency key when persistence is added.
+- `wj-media-source`, `wj-edge-ai-mvp`, `wj-media-tunnel`, `wj-device-agent`는 부팅 시 시작한다.
+- YOLO와 YAMNet은 항상 실행한다.
+- 서버로 보내는 라이브 RTSP 릴레이는 앱에 활성 시청자가 있을 때만 실행한다.
+- MQTT operating credential의 client ID는 `deviceId`에 고정되므로 AI 프로세스가 별도의 동일 MQTT 연결을 만들지 않는다.
+- 이벤트 영상은 MQTT가 아니라 IoT upload URL API와 object storage로 전송한다.
+- 토큰, CA 개인키, SSH 개인키는 Git에 커밋하지 않는다.

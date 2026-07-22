@@ -31,6 +31,8 @@ fi
 : "${API_BASE_URL:=https://i15e201.p.ssafy.io}"
 : "${YOLO_SOURCE_URL:=udp://127.0.0.1:23000?fifo_size=1000000&overrun_nonfatal=1}"
 : "${YAMNET_SOURCE_URL:=udp://127.0.0.1:23001?fifo_size=1000000&overrun_nonfatal=1}"
+: "${YAMNET_THRESHOLD:=0.05}"
+: "${YAMNET_CONSECUTIVE:=2}"
 
 for required in \
     "$YOLO_PYTHON" \
@@ -75,8 +77,8 @@ YAMNET_COMMAND=(
     "$YAMNET_PYTHON" -u "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py"
     --device-id "$DEVICE_ID"
     --stream-url "$YAMNET_SOURCE_URL"
-    --threshold 0.20
-    --consecutive 1
+    --threshold "$YAMNET_THRESHOLD"
+    --consecutive "$YAMNET_CONSECUTIVE"
     --cooldown 12
     --gain 1.5
     --event-dir "$EVENT_DIR"
