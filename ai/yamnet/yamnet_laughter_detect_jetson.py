@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import deque
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import json
 import os
 import queue
+import subprocess
 import sys
+import threading
 import time
+import uuid
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +122,22 @@ def parse_args() -> argparse.Namespace:
         "--mqtt-topic",
         help="웃음 이벤트를 발행할 토픽입니다. 생략하면 장치 ID로 생성합니다.",
     )
+    parser.add_argument(
+        "--event-dir",
+        type=Path,
+        help="Write local laughter triggers and audio clips for edge upload.",
+    )
+    parser.add_argument(
+        "--stream-url",
+        default=os.getenv("YAMNET_SOURCE_URL"),
+        help="Local shared media URL. When set, the microphone is decoded by FFmpeg.",
+    )
+    parser.add_argument(
+        "--clip-seconds",
+        type=float,
+        default=5.0,
+        help="Seconds to retain before and after laughter (default: 5).",
+    )
     return parser.parse_args()
 
 
@@ -136,6 +160,94 @@ def normalize_device_argument(value: str | None) -> int | str | None:
         return int(value)
     except ValueError:
         return value
+
+
+@contextmanager
+def open_audio_input(
+    args: argparse.Namespace,
+    np: Any,
+    sd: Any,
+    device: int | str | None,
+    capture_rate: int,
+    block_size: int,
+    audio_callback: Any,
+) -> Any:
+    if not args.stream_url:
+        with sd.InputStream(
+            device=device,
+            samplerate=capture_rate,
+            channels=1,
+            dtype="float32",
+            blocksize=block_size,
+            callback=audio_callback,
+        ):
+            yield
+        return
+
+    command = [
+        os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg"),
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-fflags",
+        "nobuffer",
+        "-i",
+        args.stream_url,
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(capture_rate),
+        "-f",
+        "f32le",
+        "pipe:1",
+    ]
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if process.stdout is None:
+        process.kill()
+        raise RuntimeError("FFmpeg audio pipe was not created")
+    stopped = threading.Event()
+
+    def read_audio() -> None:
+        block_bytes = block_size * 4
+        buffered = bytearray()
+        while not stopped.is_set():
+            data = process.stdout.read(block_bytes - len(buffered))
+            if not data:
+                if not stopped.is_set():
+                    print(
+                        f"Shared audio decoder stopped with status {process.poll()}",
+                        file=sys.stderr,
+                    )
+                return
+            buffered.extend(data)
+            if len(buffered) < block_bytes:
+                continue
+            chunk = np.frombuffer(buffered, dtype="<f4").copy().reshape(-1, 1)
+            buffered.clear()
+            audio_callback(chunk, len(chunk), None, None)
+
+    reader = threading.Thread(target=read_audio, name="shared-audio-reader", daemon=True)
+    reader.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        process.terminate()
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=1)
+        reader.join(timeout=1)
 
 
 def load_yamnet(model_source: str, cache_dir: str) -> tuple[Any, Any, list[str]]:
@@ -205,18 +317,60 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--device-id는 비어 있을 수 없습니다.")
 
 
+def write_wav(path: Path, samples: Any, sample_rate: int, np: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with wave.open(str(temporary), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(sample_rate)
+        output.writeframes(pcm.tobytes())
+    temporary.replace(path)
+
+
+def write_trigger(
+    event_dir: Path,
+    event_id: str,
+    occurred_at: datetime,
+    score: float,
+    class_name: str,
+    clip_seconds: float,
+) -> None:
+    event_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schemaVersion": "1.0",
+        "eventId": event_id,
+        "type": "LAUGHTER",
+        "occurredAt": occurred_at.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "confidence": round(score, 6),
+        "className": class_name,
+        "preSeconds": clip_seconds,
+        "postSeconds": clip_seconds,
+    }
+    destination = event_dir / f"{event_id}.trigger.json"
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(destination)
+
+
 def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     validate_args(args)
+    if args.clip_seconds <= 0:
+        raise SystemExit("--clip-seconds must be positive")
     device = normalize_device_argument(args.device)
-    try:
-        device_info = sd.query_devices(device, "input")
-    except Exception as exc:
-        raise SystemExit(
-            f"입력 장치를 열 수 없습니다: {exc}\n"
-            "먼저 --list-devices로 마이크 번호를 확인하세요."
-        ) from exc
-
-    capture_rate = args.sample_rate or int(round(device_info["default_samplerate"]))
+    if args.stream_url:
+        device_info = {"name": f"shared stream {args.stream_url}"}
+        capture_rate = args.sample_rate or YAMNET_SAMPLE_RATE
+    else:
+        try:
+            device_info = sd.query_devices(device, "input")
+        except Exception as exc:
+            raise SystemExit(
+                f"입력 장치를 열 수 없습니다: {exc}\n"
+                "먼저 --list-devices로 마이크 번호를 확인하세요."
+            ) from exc
+        capture_rate = args.sample_rate or int(round(device_info["default_samplerate"]))
     block_size = max(1, int(round(capture_rate * BLOCK_SECONDS)))
     window_size = max(block_size, int(round(capture_rate * WINDOW_SECONDS)))
 
@@ -261,21 +415,49 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     print("마이크에 대고 웃어보세요. 종료하려면 Ctrl+C를 누르세요.\n")
 
     buffer = np.empty(0, dtype=np.float32)
+    history_samples = max(1, int(round(capture_rate * args.clip_seconds)))
+    audio_history: deque[Any] = deque()
+    audio_history_size = 0
+    pending_clips: dict[str, dict[str, Any]] = {}
     positive_streak = 0
     last_alert_at = float("-inf")
     started_at = time.monotonic()
 
     try:
-        with sd.InputStream(
-            device=device,
-            samplerate=capture_rate,
-            channels=1,
-            dtype="float32",
-            blocksize=block_size,
-            callback=audio_callback,
+        with open_audio_input(
+            args,
+            np,
+            sd,
+            device,
+            capture_rate,
+            block_size,
+            audio_callback,
         ):
             while True:
                 chunk = audio_queue.get()
+                audio_history.append(chunk.copy())
+                audio_history_size += len(chunk)
+                while audio_history and audio_history_size - len(audio_history[0]) >= history_samples:
+                    removed = audio_history.popleft()
+                    audio_history_size -= len(removed)
+
+                if args.event_dir is not None:
+                    for event_id, pending in tuple(pending_clips.items()):
+                        pending["parts"].append(chunk.copy())
+                        pending["post_samples"] += len(chunk)
+                        if pending["post_samples"] >= history_samples:
+                            samples = np.concatenate(pending["parts"])
+                            expected = history_samples * 2
+                            if len(samples) > expected:
+                                samples = samples[-expected:]
+                            write_wav(
+                                args.event_dir / f"{event_id}.audio.wav",
+                                samples,
+                                capture_rate,
+                                np,
+                            )
+                            print(f"\nSaved laughter audio clip: {event_id}.audio.wav")
+                            del pending_clips[event_id]
                 buffer = np.concatenate((buffer, chunk))
                 if len(buffer) < window_size:
                     continue
@@ -322,6 +504,25 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                     )
                     positive_streak = 0
                     last_alert_at = now
+                    if args.event_dir is not None:
+                        event_id = str(uuid.uuid4())
+                        occurred_at = datetime.now(timezone.utc)
+                        pre_audio = np.concatenate(tuple(audio_history))
+                        if len(pre_audio) > history_samples:
+                            pre_audio = pre_audio[-history_samples:]
+                        pending_clips[event_id] = {
+                            "parts": [pre_audio.copy()],
+                            "post_samples": 0,
+                        }
+                        write_trigger(
+                            args.event_dir,
+                            event_id,
+                            occurred_at,
+                            laugh_score,
+                            best_laugh_name,
+                            args.clip_seconds,
+                        )
+                        print(f"Local laughter event: {event_id}")
                     if mqtt_publisher is not None:
                         try:
                             mqtt_publisher.publish_laughter(

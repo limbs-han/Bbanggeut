@@ -31,6 +31,18 @@ def _json_args(name: str) -> tuple[str, ...] | None:
     return tuple(value)
 
 
+def _boolean(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true or false")
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     device_id: str
@@ -47,6 +59,7 @@ class AgentConfig:
     ffmpeg_video_args: tuple[str, ...]
     ffmpeg_audio_input_args: tuple[str, ...]
     ffmpeg_audio_args: tuple[str, ...]
+    ffmpeg_audio_from_primary_input: bool
     ready_delay_seconds: int
 
     @property
@@ -85,7 +98,16 @@ class AgentConfig:
         )
         audio_input_args = _json_args("FFMPEG_AUDIO_INPUT_ARGS") or ()
         audio_args = _json_args("FFMPEG_AUDIO_ARGS") or ()
-        if bool(audio_input_args) != bool(audio_args):
+        audio_from_primary = _boolean("FFMPEG_AUDIO_FROM_PRIMARY_INPUT")
+        if audio_from_primary and audio_input_args:
+            raise ValueError(
+                "FFMPEG_AUDIO_INPUT_ARGS must be empty when audio comes from the primary input"
+            )
+        if audio_from_primary and not audio_args:
+            raise ValueError(
+                "FFMPEG_AUDIO_ARGS is required when audio comes from the primary input"
+            )
+        if not audio_from_primary and bool(audio_input_args) != bool(audio_args):
             raise ValueError(
                 "FFMPEG_AUDIO_INPUT_ARGS and FFMPEG_AUDIO_ARGS must be set together"
             )
@@ -107,5 +129,6 @@ class AgentConfig:
             ffmpeg_video_args=video_args,
             ffmpeg_audio_input_args=audio_input_args,
             ffmpeg_audio_args=audio_args,
+            ffmpeg_audio_from_primary_input=audio_from_primary,
             ready_delay_seconds=_positive_int("READY_DELAY_SECONDS", 3),
         )

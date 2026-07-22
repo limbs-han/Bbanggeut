@@ -42,10 +42,12 @@ def main() -> int:
         "-map",
         "0:v:0",
     ]
-    if config.ffmpeg_audio_input_args:
+    if config.ffmpeg_audio_from_primary_input:
+        command.extend(["-map", "0:a:0"])
+    elif config.ffmpeg_audio_input_args:
         command.extend(["-map", "1:a:0"])
     command.extend(config.ffmpeg_video_args)
-    if config.ffmpeg_audio_input_args:
+    if config.ffmpeg_audio_from_primary_input or config.ffmpeg_audio_input_args:
         command.extend(config.ffmpeg_audio_args)
     else:
         command.append("-an")

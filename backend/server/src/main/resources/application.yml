@@ -67,6 +67,7 @@ app:
     live-token-ttl: ${LIVE_TOKEN_TTL:30s}
   storage:
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${S3_PUBLIC_ENDPOINT:${S3_ENDPOINT:http://localhost:9000}}
     access-key: ${S3_ACCESS_KEY:minioadmin}
     secret-key: ${S3_SECRET_KEY:minioadmin}
     bucket: ${S3_BUCKET:wj-videos}

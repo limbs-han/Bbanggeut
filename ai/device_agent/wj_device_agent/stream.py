@@ -48,11 +48,18 @@ class StreamManager:
                 *self._config.ffmpeg_input_args,
                 *self._config.ffmpeg_audio_input_args,
                 "-map", "0:v:0",
-                *(["-map", "1:a:0"] if self._config.ffmpeg_audio_input_args else []),
+                *(
+                    ["-map", "0:a:0"]
+                    if self._config.ffmpeg_audio_from_primary_input
+                    else (["-map", "1:a:0"] if self._config.ffmpeg_audio_input_args else [])
+                ),
                 *self._config.ffmpeg_video_args,
                 *(
                     self._config.ffmpeg_audio_args
-                    if self._config.ffmpeg_audio_input_args
+                    if (
+                        self._config.ffmpeg_audio_from_primary_input
+                        or self._config.ffmpeg_audio_input_args
+                    )
                     else ("-an",)
                 ),
                 "-f", "rtsp", "-rtsp_transport", "tcp", publish_url,

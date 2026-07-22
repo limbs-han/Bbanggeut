@@ -46,6 +46,7 @@ def config() -> AgentConfig:
         ffmpeg_video_args=("-c:v", "libx264"),
         ffmpeg_audio_input_args=(),
         ffmpeg_audio_args=(),
+        ffmpeg_audio_from_primary_input=False,
         ready_delay_seconds=1,
     )
 
@@ -105,6 +106,30 @@ class StreamManagerTest(unittest.TestCase):
         self.assertIn("plughw:CARD=B100,DEV=0", command)
         self.assertIn("1:a:0", command)
         self.assertIn("aac", command)
+
+    def test_primary_input_audio_can_be_relayed(self):
+        calls = []
+        shared_config = AgentConfig(
+            **{
+                **config().__dict__,
+                "ffmpeg_audio_args": ("-c:a", "copy"),
+                "ffmpeg_audio_from_primary_input": True,
+            }
+        )
+
+        manager = StreamManager(
+            shared_config,
+            lambda command, **kwargs: calls.append(command) or FakeProcess(),
+        )
+        manager.start(
+            "66666666-6666-4666-8666-666666666666",
+            datetime(2030, 1, 1, tzinfo=timezone.utc),
+        )
+
+        command = calls[0]
+        self.assertIn("0:a:0", command)
+        self.assertIn("copy", command)
+        self.assertNotIn("-an", command)
 
 
 if __name__ == "__main__":

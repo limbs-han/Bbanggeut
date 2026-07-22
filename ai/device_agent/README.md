@@ -24,14 +24,17 @@ are documented in `INTEGRATION_STATUS.md`.
 
 The production RTSP port is intentionally bound to server loopback. The Jetson
 therefore uses an authenticated SSH local-forward, just like
-`backend/demo/start-webcam-live.ps1`. The SSH connection can remain idle, but
-FFmpeg and camera traffic exist only between `START_STREAM` and `STOP_STREAM`.
+`backend/demo/start-webcam-live.ps1`. One always-on FFmpeg process opens the
+physical webcam and microphone and fans an encoded stream to three loopback UDP
+ports. YOLO, YAMNet, and the on-demand live relay each consume a separate local
+port, so they never compete for the hardware. Only the live relay crosses the
+SSH tunnel, and it exists only between `START_STREAM` and `STOP_STREAM`.
 
 On the Jetson, from the repository checkout:
 
 ```bash
 cd ai/device_agent
-chmod +x install-jetson.sh media-tunnel.sh check-jetson.sh
+chmod +x install-jetson.sh media-source.sh media-tunnel.sh check-jetson.sh
 sudo ./install-jetson.sh
 sudoedit /etc/william-james/device-agent.env
 ```
@@ -68,10 +71,10 @@ the `ssh-keyscan` result. Then test the tunnel, camera, and broker and start the
 services:
 
 ```bash
-sudo systemctl start wj-media-tunnel
+sudo systemctl start wj-media-source wj-media-tunnel
 sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
 sudo systemctl start wj-device-agent
-sudo systemctl status wj-media-tunnel wj-device-agent --no-pager
+sudo systemctl status wj-media-source wj-media-tunnel wj-device-agent --no-pager
 ```
 
 The camera must be provisioned, claimed by the owner/admin account, and ONLINE.
@@ -99,8 +102,10 @@ sudo journalctl -u wj-device-agent -f
 pgrep -a ffmpeg
 ```
 
-There should be no FFmpeg process before Live View opens, one while it is being
-watched, and none after the session's idle timeout.
+There is always one FFmpeg process for the loopback-only shared media source.
+Opening Live View adds one relay process; leaving the view removes only that
+relay after the session's idle timeout. YOLO and YAMNet keep consuming their
+local copies throughout.
 
 ## Install on Raspberry Pi
 

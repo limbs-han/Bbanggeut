@@ -1,0 +1,20 @@
+[Unit]
+Description=William James shared webcam and microphone source
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=williamjames
+Group=williamjames
+SupplementaryGroups=video audio
+EnvironmentFile=/etc/william-james/device-agent.env
+ExecStart=/opt/william-james/device-agent/media-source.sh
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

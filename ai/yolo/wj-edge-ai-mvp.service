@@ -1,0 +1,25 @@
+[Unit]
+Description=William James always-on YOLO and YAMNet MVP
+Requires=wj-media-source.service
+After=network-online.target wj-media-source.service
+
+[Service]
+Type=simple
+User=ssafy
+Group=ssafy
+Environment=HOME=/home/ssafy
+Environment=YOLO_PYTHON=/home/ssafy/venvs/yolo/bin/python
+Environment=YAMNET_PYTHON=/home/ssafy/venvs/yamnet/bin/python
+Environment=EVENT_DIR=/home/ssafy/ai_events
+EnvironmentFile=/etc/william-james/device-agent.env
+WorkingDirectory=/home/ssafy/ai/yolo
+ExecStart=/bin/bash /home/ssafy/ai/yolo/run_edge_ai_mvp.sh
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

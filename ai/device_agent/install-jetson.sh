@@ -32,6 +32,7 @@ install -d -m 0755 "$INSTALL_DIR/wj_device_agent"
 cp -a "$SCRIPT_DIR/wj_device_agent/." "$INSTALL_DIR/wj_device_agent/"
 install -m 0644 "$SCRIPT_DIR/requirements.txt" "$INSTALL_DIR/requirements.txt"
 install -m 0755 "$SCRIPT_DIR/media-tunnel.sh" "$INSTALL_DIR/media-tunnel.sh"
+install -m 0755 "$SCRIPT_DIR/media-source.sh" "$INSTALL_DIR/media-source.sh"
 install -m 0755 "$SCRIPT_DIR/check-jetson.sh" "$INSTALL_DIR/check-jetson.sh"
 install -m 0755 "$SCRIPT_DIR/registration-button.sh" "$INSTALL_DIR/registration-button.sh"
 install -m 0644 "$SCRIPT_DIR/registration_button.py" "$INSTALL_DIR/registration_button.py"
@@ -45,6 +46,8 @@ install -m 0644 "$SCRIPT_DIR/wj-device-agent-jetson.service" \
     /etc/systemd/system/wj-device-agent.service
 install -m 0644 "$SCRIPT_DIR/wj-media-tunnel.service" \
     /etc/systemd/system/wj-media-tunnel.service
+install -m 0644 "$SCRIPT_DIR/wj-media-source.service" \
+    /etc/systemd/system/wj-media-source.service
 
 if [[ ! -e "$CONFIG_DIR/device-agent.env" ]]; then
     install -m 0640 -o root -g "$SERVICE_USER" \
@@ -53,7 +56,7 @@ if [[ ! -e "$CONFIG_DIR/device-agent.env" ]]; then
 fi
 
 systemctl daemon-reload
-systemctl enable wj-media-tunnel.service wj-device-agent.service
+systemctl enable wj-media-source.service wj-media-tunnel.service wj-device-agent.service
 
 cat <<'EOF'
 Installed, but services were not started because credentials must be supplied.
@@ -61,5 +64,5 @@ Installed, but services were not started because credentials must be supplied.
 1. Edit /etc/william-james/device-agent.env.
 2. Copy the MQTT CA, SSH key, and a verified known_hosts entry to the paths there.
 3. Run: sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
-4. Run: sudo systemctl start wj-media-tunnel wj-device-agent
+4. Run: sudo systemctl start wj-media-source wj-media-tunnel wj-device-agent
 EOF

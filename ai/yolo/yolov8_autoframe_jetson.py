@@ -8,6 +8,7 @@ write normalized control commands as JSON Lines for later IoT integration.
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import json
 import math
 import os
@@ -102,6 +103,11 @@ def parse_args() -> argparse.Namespace:
         help="Path to a YOLO .pt or TensorRT .engine model.",
     )
     parser.add_argument("--camera", type=int, default=0, help="V4L2 camera index.")
+    parser.add_argument(
+        "--stream-url",
+        default=os.getenv("YOLO_SOURCE_URL"),
+        help="Local shared stream URL. When set, --camera is ignored.",
+    )
     parser.add_argument(
         "--video",
         type=Path,
@@ -223,6 +229,17 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Stop after this many frames; 0 means run until Ctrl+C or video end.",
     )
+    parser.add_argument(
+        "--event-dir",
+        type=Path,
+        help="Watch local laughter triggers and save matching camera clips.",
+    )
+    parser.add_argument(
+        "--clip-seconds",
+        type=float,
+        default=5.0,
+        help="Seconds to retain before and after an event (default: 5).",
+    )
     args = parser.parse_args()
 
     if args.width < 1 or args.height < 1 or args.fps < 1 or args.imgsz < 1:
@@ -249,6 +266,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--device-id cannot be empty")
     if args.max_frames < 0:
         parser.error("--max-frames cannot be negative")
+    if args.clip_seconds <= 0:
+        parser.error("--clip-seconds must be positive")
     return args
 
 
@@ -619,6 +638,16 @@ def open_source(args: argparse.Namespace) -> tuple[Any, bool, str]:
             raise SystemExit(f"Could not open input video: {video_path}")
         return capture, True, str(video_path)
 
+    if args.stream_url:
+        capture = cv2.VideoCapture(args.stream_url, cv2.CAP_FFMPEG)
+        if not capture.isOpened():
+            capture.release()
+            capture = cv2.VideoCapture(args.stream_url)
+        if not capture.isOpened():
+            raise SystemExit(f"Could not open shared stream: {args.stream_url}")
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return capture, False, args.stream_url
+
     capture = cv2.VideoCapture(args.camera, cv2.CAP_V4L2)
     if not capture.isOpened():
         capture.release()
@@ -756,6 +785,44 @@ def draw_overlay(
     return frame
 
 
+def trigger_epoch(payload: dict[str, Any]) -> float:
+    value = str(payload["occurredAt"])
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+
+
+def write_event_video(
+    event_dir: Path,
+    event_id: str,
+    frames: list[tuple[float, Any]],
+    fps: float,
+) -> None:
+    if not frames:
+        print(f"Event video skipped (no frames): {event_id}")
+        return
+    event_dir.mkdir(parents=True, exist_ok=True)
+    destination = event_dir / f"{event_id}.video.mp4"
+    temporary = event_dir / f"{event_id}.video.tmp.mp4"
+    height, width = frames[0][1].shape[:2]
+    elapsed = frames[-1][0] - frames[0][0] if len(frames) > 1 else 0.0
+    output_fps = min(fps, (len(frames) - 1) / elapsed) if elapsed > 0 else fps
+    output_fps = max(1.0, output_fps)
+    writer = cv2.VideoWriter(
+        str(temporary),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        output_fps,
+        (width, height),
+    )
+    if not writer.isOpened():
+        raise RuntimeError(f"Could not create event video: {temporary}")
+    try:
+        for _, frame in frames:
+            writer.write(frame)
+    finally:
+        writer.release()
+    temporary.replace(destination)
+    print(f"Saved laughter video clip: {destination.name}")
+
+
 def run(args: argparse.Namespace) -> None:
     model_path = args.model.expanduser().resolve()
     if not model_path.is_file():
@@ -801,6 +868,10 @@ def run(args: argparse.Namespace) -> None:
     actual_fps = capture.get(cv2.CAP_PROP_FPS)
     if actual_fps <= 0:
         actual_fps = float(args.fps)
+    frame_history: deque[tuple[float, Any]] = deque()
+    pending_video_clips: dict[str, dict[str, Any]] = {}
+    seen_event_ids: set[str] = set()
+    last_trigger_scan_at = float("-inf")
 
     print(f"Model: {model_path}")
     print(f"Device: {device}")
@@ -819,6 +890,57 @@ def run(args: argparse.Namespace) -> None:
                     print("Input video ended.")
                     break
                 raise SystemExit("The camera opened, but a frame could not be read.")
+
+            frame_epoch = time.time()
+            if args.event_dir is not None:
+                frame_history.append((frame_epoch, frame.copy()))
+                history_cutoff = frame_epoch - args.clip_seconds - 1.0
+                while frame_history and frame_history[0][0] < history_cutoff:
+                    frame_history.popleft()
+
+                for pending in pending_video_clips.values():
+                    if frame_epoch > pending["last_frame_at"]:
+                        pending["frames"].append((frame_epoch, frame.copy()))
+                        pending["last_frame_at"] = frame_epoch
+
+                if frame_epoch - last_trigger_scan_at >= 0.25:
+                    args.event_dir.mkdir(parents=True, exist_ok=True)
+                    for trigger_path in args.event_dir.glob("*.trigger.json"):
+                        event_id = trigger_path.name.removesuffix(".trigger.json")
+                        if event_id in seen_event_ids:
+                            continue
+                        try:
+                            payload = json.loads(trigger_path.read_text(encoding="utf-8"))
+                            occurred_at = trigger_epoch(payload)
+                        except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
+                            print(f"Invalid local event trigger {trigger_path.name}: {error}")
+                            seen_event_ids.add(event_id)
+                            continue
+                        clip_seconds = float(payload.get("postSeconds", args.clip_seconds))
+                        pre_seconds = float(payload.get("preSeconds", args.clip_seconds))
+                        selected = [
+                            item
+                            for item in frame_history
+                            if occurred_at - pre_seconds <= item[0] <= frame_epoch
+                        ]
+                        pending_video_clips[event_id] = {
+                            "frames": selected,
+                            "last_frame_at": selected[-1][0] if selected else float("-inf"),
+                            "deadline": occurred_at + clip_seconds,
+                        }
+                        seen_event_ids.add(event_id)
+                        print(f"Capturing laughter video event: {event_id}")
+                    last_trigger_scan_at = frame_epoch
+
+                for event_id, pending in tuple(pending_video_clips.items()):
+                    if frame_epoch >= pending["deadline"]:
+                        write_event_video(
+                            args.event_dir,
+                            event_id,
+                            pending["frames"],
+                            actual_fps,
+                        )
+                        del pending_video_clips[event_id]
 
             frame_count += 1
             track_options: dict[str, Any] = {

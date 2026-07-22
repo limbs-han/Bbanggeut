@@ -81,7 +81,12 @@ public class StreamService {
         } else {
             streamId = stream.id();
             mapper.reuseStream(streamId, hardExpiresAt);
-            sessionStatus = "RUNNING".equals(stream.status()) || "STOP_PENDING".equals(stream.status())
+            boolean reusableSourceWasReady = "RUNNING".equals(stream.status())
+                || "STOP_PENDING".equals(stream.status());
+            // A RUNNING database row does not prove that the edge publisher
+            // survived a reboot or network loss. Production viewers wait for
+            // a fresh idempotent START/READY handshake before receiving HLS.
+            sessionStatus = demoProperties.enabled() && reusableSourceWasReady
                 ? "READY" : "PENDING";
         }
 
@@ -89,14 +94,14 @@ public class StreamService {
         mapper.insertSession(
             sessionId, streamId, deviceId, userId, sessionStatus,
             now, now.plus(properties.viewerTtl()));
-        if (newStream) {
-            if (demoProperties.enabled()) {
+        if (demoProperties.enabled()) {
+            if (newStream) {
                 mapper.markStreamReady(deviceId, streamId, hardExpiresAt);
                 mapper.markSessionsReady(streamId);
-            } else if (!publisher.start(deviceId, sessionId, streamId, hardExpiresAt)) {
-                mapper.markStreamFailed(deviceId, streamId, "MQTT_PUBLISH_FAILED");
-                mapper.markSessionsFailed(streamId, "MQTT_PUBLISH_FAILED");
             }
+        } else if (!publisher.start(deviceId, sessionId, streamId, hardExpiresAt)) {
+            mapper.markStreamFailed(deviceId, streamId, "MQTT_PUBLISH_FAILED");
+            mapper.markSessionsFailed(streamId, "MQTT_PUBLISH_FAILED");
         }
         StreamSessionRow row = mapper.findAccessibleSession(userId, sessionId).orElseThrow(this::notFound);
         auditService.success(deviceId, userId, "STREAM_OPEN", "STREAM_SESSION", sessionId);

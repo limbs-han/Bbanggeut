@@ -67,7 +67,7 @@ class StreamServiceTest {
     }
 
     @Test
-    void reusesRunningDeviceStreamWithoutPublishingAnotherStart() {
+    void reusesRunningDeviceStreamOnlyAfterFreshEdgeHandshake() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UUID streamId = UUID.randomUUID();
@@ -75,15 +75,17 @@ class StreamServiceTest {
         when(mapper.findAccessibleDeviceStatus(userId, deviceId)).thenReturn(Optional.of("ONLINE"));
         when(mapper.findReusableStream(deviceId)).thenReturn(Optional.of(
             new DeviceStreamRow(streamId, deviceId, "RUNNING", NOW.plusSeconds(80), null, null)));
+        when(publisher.start(eq(deviceId), any(), eq(streamId), eq(NOW.plusSeconds(120))))
+            .thenReturn(true);
         when(mapper.findAccessibleSession(eq(userId), any())).thenAnswer(invocation -> Optional.of(
-            row(invocation.getArgument(1), streamId, deviceId, userId, "READY")));
-        when(liveTokenService.issue(any(), eq(userId), eq(deviceId), eq(streamId))).thenReturn("live-token");
+            row(invocation.getArgument(1), streamId, deviceId, userId, "PENDING")));
 
         var response = service.create(userId, deviceId);
 
         assertThat(response.streamId()).isEqualTo(streamId);
-        assertThat(response.playUrl()).contains(streamId.toString()).endsWith("token=live-token");
-        verify(publisher, never()).start(any(), any(), any(), any());
+        assertThat(response.status()).isEqualTo("PENDING");
+        assertThat(response.playUrl()).isNull();
+        verify(publisher).start(deviceId, response.sessionId(), streamId, NOW.plusSeconds(120));
     }
 
     @Test

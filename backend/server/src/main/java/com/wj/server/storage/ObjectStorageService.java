@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ObjectStorageService {
     private final MinioClient minioClient;
+    private final MinioClient presignClient;
     private final StorageProperties properties;
     private final Clock clock;
 
@@ -34,6 +35,10 @@ public class ObjectStorageService {
 
     ObjectStorageService(MinioClient minioClient, StorageProperties properties, Clock clock) {
         this.minioClient = minioClient;
+        this.presignClient = MinioClient.builder()
+            .endpoint(properties.publicEndpoint())
+            .credentials(properties.accessKey(), properties.secretKey())
+            .build();
         this.properties = properties;
         this.clock = clock;
     }
@@ -43,7 +48,7 @@ public class ObjectStorageService {
         headers.put("Content-Type", contentType);
         headers.put("x-amz-meta-sha256", checksumSha256);
         try {
-            String url = minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            String url = presignClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                 .method(Http.Method.PUT)
                 .bucket(properties.bucket())
                 .object(storageKey)
@@ -90,7 +95,7 @@ public class ObjectStorageService {
             if (download) {
                 builder.extraQueryParams(Map.of("response-content-disposition", "attachment"));
             }
-            String url = minioClient.getPresignedObjectUrl(builder.build());
+            String url = presignClient.getPresignedObjectUrl(builder.build());
             return new SignedObjectUrl(url, clock.instant().plus(properties.readUrlTtl()));
         } catch (Exception exception) {
             throw unavailable();
