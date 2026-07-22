@@ -13,95 +13,204 @@ class FamilyScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final device = controller.selectedDevice!;
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          floating: true,
-          title: const Text('함께 보는 가족'),
-          actions: [
-            if (device.isOwner)
-              IconButton(
-                onPressed: () => _invite(context),
-                icon: const Icon(Icons.person_add_alt_1_rounded),
-              ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        SliverToBoxAdapter(
-          child: PagePadding(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '${device.name} · ${controller.members.length}명',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 18),
-                if (device.isOwner)
-                  FilledButton.icon(
-                    onPressed: () => _invite(context),
-                    icon: const Icon(Icons.ios_share_rounded),
-                    label: const Text('안전한 초대 링크 만들기'),
-                  ),
-                if (controller.joinRequests.isNotEmpty) ...[
-                  const SizedBox(height: 28),
-                  const SectionHeader('가입 요청'),
-                  const SizedBox(height: 8),
-                  ...controller.joinRequests.map(
-                    (request) => _JoinRequestCard(
-                      controller: controller,
-                      request: request,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 28),
-                const SectionHeader('구성원'),
-                const SizedBox(height: 8),
-                Card(
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < controller.members.length; i++) ...[
-                        _MemberTile(
-                          controller: controller,
-                          member: controller.members[i],
-                        ),
-                        if (i != controller.members.length - 1)
-                          const Divider(height: 1, indent: 72),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Card(
-                  color: AppColors.mint,
-                  child: const Padding(
-                    padding: EdgeInsets.all(18),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    return AppBackdrop(
+      child: CustomScrollView(
+        key: const PageStorageKey('family-scroll'),
+        slivers: [
+          SliverSafeArea(
+            bottom: false,
+            sliver: SliverToBoxAdapter(
+              child: PagePadding(
+                top: 18,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
                       children: [
-                        Icon(
-                          Icons.info_outline_rounded,
-                          color: AppColors.primaryDark,
-                        ),
-                        SizedBox(width: 12),
+                        const Spacer(),
                         Expanded(
+                          flex: 4,
                           child: Text(
-                            '초대 링크만으로 바로 가족이 되지 않아요. 소유자가 가입 요청을 확인하고 승인해야 영상과 라이브에 접근할 수 있습니다.',
-                            style: TextStyle(
-                              height: 1.5,
-                              color: AppColors.primaryDark,
-                            ),
+                            '우리 가족',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleLarge,
                           ),
                         ),
+                        if (device.isOwner)
+                          TextButton(
+                            onPressed: () => _invite(context),
+                            child: const Text('초대하기'),
+                          )
+                        else
+                          const SizedBox(width: 70),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 15),
+                    SoftCard(
+                      color: AppColors.sage,
+                      borderColor: AppColors.sage,
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 62,
+                            height: 62,
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Icon(
+                              Icons.videocam_rounded,
+                              size: 34,
+                              color: AppColors.sageDark,
+                            ),
+                          ),
+                          const SizedBox(width: 13),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'HOME CAMERA',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: AppColors.inkSoft,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                                Text(
+                                  device.name,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                Text(
+                                  '● ${controller.deviceStatus?.isOnline == true ? '온라인' : '오프라인'} · ${device.model}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.inkSoft,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const StatusPill(
+                            label: '우리',
+                            color: AppColors.surface,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      '가족 구성원 ${controller.members.length}명',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.inkSoft,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SoftCard(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
+                      child: Column(
+                        children: controller.members.indexed.map((entry) {
+                          final member = entry.$2;
+                          return Column(
+                            children: [
+                              _MemberTile(
+                                controller: controller,
+                                member: member,
+                              ),
+                              if (entry.$1 != controller.members.length - 1)
+                                const Divider(height: 1),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    if (controller.joinRequests.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      const Text(
+                        '가입 요청',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.inkSoft,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...controller.joinRequests.map(
+                        (request) => _JoinRequestCard(
+                          controller: controller,
+                          request: request,
+                        ),
+                      ),
+                    ],
+                    if (device.isOwner) ...[
+                      const SizedBox(height: 18),
+                      SoftCard(
+                        color: AppColors.greenCard,
+                        borderColor: AppColors.greenCard,
+                        child: Column(
+                          children: [
+                            const Row(
+                              children: [
+                                _OverlappingDots(),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    '함께할 가족을 초대해요',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: () => _invite(context),
+                                    icon: const Icon(Icons.link_rounded),
+                                    label: const Text('초대 링크 복사'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _invite(context),
+                                    icon: const Icon(Icons.qr_code_rounded),
+                                    label: const Text('QR 코드 보기'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    const Center(
+                      child: Text(
+                        '● 가족과 기기를 연결하면 모든 추억을 함께 볼 수 있어요.',
+                        style: TextStyle(fontSize: 11, color: AppColors.muted),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -129,19 +238,17 @@ class FamilyScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '이 링크는 ${expires == null ? '정해진 시간 동안' : memoryDate(expires)}까지 유효하며, 가입 요청은 다시 승인해야 합니다.',
+                  '${expires == null ? '정해진 시간 동안' : memoryDate(expires)}까지 유효하며, 가입 요청은 소유자가 다시 승인해야 합니다.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 18),
                 FilledButton.icon(
-                  onPressed: () async {
-                    await SharePlus.instance.share(
-                      ShareParams(
-                        text:
-                            'William James 가족 초대\nwilliamjames://join?token=$token',
-                      ),
-                    );
-                  },
+                  onPressed: () => SharePlus.instance.share(
+                    ShareParams(
+                      text:
+                          'Memory Home 가족 초대\nwilliamjames://join?token=$token',
+                    ),
+                  ),
                   icon: const Icon(Icons.ios_share_rounded),
                   label: const Text('초대 링크 공유'),
                 ),
@@ -156,101 +263,58 @@ class FamilyScreen extends StatelessWidget {
   }
 }
 
-class _JoinRequestCard extends StatelessWidget {
-  const _JoinRequestCard({required this.controller, required this.request});
-  final AppController controller;
-  final JoinRequestInfo request;
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: AppColors.mint,
-                child: Text(
-                  request.requester.displayName.characters.firstOrNull ?? '?',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      request.requester.displayName,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      request.requester.email,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => controller.reject(request),
-                  child: const Text('거절'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => controller.approve(request),
-                  child: const Text('승인'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
 class _MemberTile extends StatelessWidget {
   const _MemberTile({required this.controller, required this.member});
   final AppController controller;
   final DeviceMember member;
   @override
-  Widget build(BuildContext context) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    leading: CircleAvatar(
-      backgroundColor: member.role == 'OWNER'
-          ? AppColors.peach
-          : AppColors.mint,
-      child: Text(
-        member.user.displayName.characters.firstOrNull ?? '?',
-        style: const TextStyle(fontWeight: FontWeight.w800),
+  Widget build(BuildContext context) {
+    final colors = [
+      AppColors.yellowSoft,
+      AppColors.greenCard,
+      AppColors.pink,
+      AppColors.sageSoft,
+    ];
+    final color =
+        colors[member.user.displayName.hashCode.abs() % colors.length];
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+      leading: CircleAvatar(
+        backgroundColor: color,
+        child: Text(
+          member.user.displayName.characters.firstOrNull ?? '?',
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: AppColors.inkSoft,
+          ),
+        ),
       ),
-    ),
-    title: Text(member.user.displayName),
-    subtitle: Text(member.user.email),
-    trailing: member.role == 'OWNER'
-        ? const StatusPill(label: 'OWNER')
-        : controller.selectedDevice!.isOwner
-        ? TextButton(
-            onPressed: () => _confirmRevoke(context),
-            child: const Text('권한 회수'),
-          )
-        : const StatusPill(label: 'MEMBER'),
-  );
-  Future<void> _confirmRevoke(BuildContext context) async {
+      title: Text(
+        member.user.displayName,
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+      subtitle: Text(
+        member.user.email,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: member.role == 'OWNER'
+          ? const StatusPill(label: '소유자', color: AppColors.sageSoft)
+          : controller.selectedDevice!.isOwner
+          ? TextButton(
+              onPressed: () => _revoke(context),
+              child: const Text('접근 권한 회수'),
+            )
+          : const StatusPill(label: '멤버', color: AppColors.sageSoft),
+    );
+  }
+
+  Future<void> _revoke(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('접근 권한을 회수할까요?'),
-        content: Text(
-          '${member.user.displayName}님은 즉시 이 기기의 영상과 라이브를 볼 수 없게 됩니다.',
-        ),
+        content: Text('${member.user.displayName}님은 즉시 영상과 라이브를 볼 수 없게 됩니다.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -265,4 +329,82 @@ class _MemberTile extends StatelessWidget {
     );
     if (confirmed == true) controller.revoke(member);
   }
+}
+
+class _JoinRequestCard extends StatelessWidget {
+  const _JoinRequestCard({required this.controller, required this.request});
+  final AppController controller;
+  final JoinRequestInfo request;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: SoftCard(
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: AppColors.pink,
+            child: Text(
+              request.requester.displayName.characters.firstOrNull ?? '?',
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.requester.displayName,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  request.requester.email,
+                  style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => controller.reject(request),
+            child: const Text('거절'),
+          ),
+          FilledButton(
+            onPressed: () => controller.approve(request),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 38),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+            child: const Text('승인'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _OverlappingDots extends StatelessWidget {
+  const _OverlappingDots();
+  @override
+  Widget build(BuildContext context) => const SizedBox(
+    width: 62,
+    height: 34,
+    child: Stack(
+      children: [
+        Positioned(
+          left: 0,
+          child: CircleAvatar(
+            radius: 17,
+            backgroundColor: AppColors.yellowSoft,
+          ),
+        ),
+        Positioned(
+          left: 20,
+          child: CircleAvatar(radius: 17, backgroundColor: AppColors.greenCard),
+        ),
+        Positioned(
+          left: 40,
+          child: CircleAvatar(radius: 17, backgroundColor: AppColors.pink),
+        ),
+      ],
+    ),
+  );
 }

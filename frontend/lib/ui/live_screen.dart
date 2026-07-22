@@ -6,7 +6,6 @@ import 'package:video_player/video_player.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
-import 'media_player_surface.dart';
 import 'widgets.dart';
 
 class LiveScreen extends StatefulWidget {
@@ -22,8 +21,11 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   VideoPlayerController? player;
   Timer? pollTimer;
   Timer? heartbeatTimer;
+  Timer? tokenRefreshTimer;
+  String? currentPlayUrl;
   String? error;
   bool closing = false;
+  bool muted = false;
 
   @override
   void initState() {
@@ -55,60 +57,90 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _openPlayer(String url) async {
+  Future<void> _openPlayer(String url, {bool replace = false}) async {
+    if (!replace && currentPlayUrl == url && player != null) return;
     final next = VideoPlayerController.networkUrl(Uri.parse(url));
     await next.initialize();
+    await next.setVolume(muted ? 0 : 1);
     await next.play();
     if (!mounted) {
       await next.dispose();
       return;
     }
-    setState(() => player = next);
+    final old = player;
+    setState(() {
+      player = next;
+      currentPlayUrl = url;
+      error = null;
+    });
+    await old?.dispose();
   }
 
   Future<void> _heartbeat() async {
     final current = session;
-    if (current == null || closing) {
-      return;
-    }
+    if (current == null || closing) return;
     try {
       await widget.controller.api.heartbeatStream(current.id);
-    } catch (_) {}
+    } catch (_) {
+      // The status poll will expose terminal state; a transient heartbeat error
+      // must not blank a currently playing stream.
+    }
   }
 
   Future<void> _checkStatus() async {
     final current = session;
-    if (current == null || closing) {
-      return;
-    }
+    if (current == null || closing) return;
     try {
       final updated = await widget.controller.api.getStream(current.id);
       if (!mounted) return;
       setState(() => session = updated);
-      if (updated.isReady && player == null) {
+      if (updated.isReady) {
         pollTimer?.cancel();
         await _openPlayer(updated.playUrl!);
+        tokenRefreshTimer ??= Timer.periodic(
+          const Duration(seconds: 20),
+          (_) => _refreshPlaybackToken(),
+        );
       } else if (const {
         'FAILED',
         'CLOSED',
         'EXPIRED',
       }.contains(updated.status)) {
-        pollTimer?.cancel();
-        heartbeatTimer?.cancel();
+        _cancelTimers();
         setState(() => error = updated.failureCode ?? '라이브 세션이 종료됐어요.');
       }
     } catch (failure) {
-      if (mounted) setState(() => error = '$failure');
+      if (mounted && player == null) setState(() => error = '$failure');
     }
+  }
+
+  Future<void> _refreshPlaybackToken() async {
+    final current = session;
+    if (current == null || closing) return;
+    try {
+      final updated = await widget.controller.api.getStream(current.id);
+      if (!mounted) return;
+      session = updated;
+      if (updated.isReady && updated.playUrl != null) {
+        // Backend live JWT expires after 30 seconds. Recreating the network
+        // source every 20 seconds keeps Nginx playlist/segment auth valid.
+        await _openPlayer(updated.playUrl!, replace: true);
+      }
+    } catch (_) {}
+  }
+
+  void _cancelTimers() {
+    pollTimer?.cancel();
+    heartbeatTimer?.cancel();
+    tokenRefreshTimer?.cancel();
   }
 
   Future<void> _close() async {
     if (closing) return;
     closing = true;
-    pollTimer?.cancel();
-    heartbeatTimer?.cancel();
+    _cancelTimers();
     final current = session;
-    if (current != null) {
+    if (current != null && !(devHomeCam && devHlsUrl.isNotEmpty)) {
       try {
         await widget.controller.api.closeStream(current.id);
       } catch (_) {}
@@ -132,81 +164,238 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    onPopInvokedWithResult: (_, _) => _close(),
-    child: Scaffold(
-      appBar: AppBar(
-        title: const Text('실시간 보기'),
-        actions: [
-          const Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Center(child: StatusPill(label: 'LIVE')),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: PagePadding(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget build(BuildContext context) {
+    final status = widget.controller.deviceStatus;
+    return PopScope(
+      onPopInvokedWithResult: (_, _) => _close(),
+      child: Scaffold(
+        body: AppBackdrop(
+          child: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
                 Row(
                   children: [
-                    const Icon(
-                      Icons.videocam_rounded,
-                      color: AppColors.primary,
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.greenCard,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.eco_outlined,
+                        color: AppColors.sageDark,
+                        size: 30,
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      widget.device.name,
-                      style: Theme.of(context).textTheme.titleMedium,
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.device.name,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          Text(
+                            status?.isOnline == true
+                                ? '● 온라인 · 안전하게 연결됨'
+                                : '● 연결 준비 중',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: status?.isOnline == true
+                                      ? AppColors.sageDark
+                                      : AppColors.muted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const Spacer(),
-                    Text(
-                      session?.status ?? '연결 중',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    RoundIconButton(
+                      icon: Icons.notifications_none_rounded,
+                      badge: false,
+                      onPressed: () {},
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                AspectRatio(
-                  aspectRatio: 16 / 10,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(26),
-                    child: ColoredBox(
-                      color: AppColors.ink,
-                      child: _videoBody(),
+                const SizedBox(height: 20),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '● H O M E  C A M  ·  L I V E',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.4,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            '우리 집 라이브 스트리밍',
+                            style: TextStyle(
+                              fontSize: 23,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -1,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    FilledButton.tonalIcon(
+                      onPressed: () =>
+                          showAppSnack(context, '카메라 설정은 설정 화면에서 관리해 주세요.'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        backgroundColor: AppColors.sageSoft,
+                        foregroundColor: AppColors.inkSoft,
+                      ),
+                      icon: const Icon(Icons.videocam_outlined),
+                      label: const Text('카메라 관리'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 18),
-                Card(
-                  color: AppColors.mint,
-                  child: const Padding(
-                    padding: EdgeInsets.all(18),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 10),
+                SoftCard(
+                  padding: EdgeInsets.zero,
+                  borderColor: Colors.transparent,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: Column(
                       children: [
-                        Icon(Icons.lock_rounded, color: AppColors.primaryDark),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '가족에게만 안전하게 연결돼요',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primaryDark,
+                        Stack(
+                          children: [
+                            AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: _videoBody(),
+                            ),
+                            Positioned(
+                              left: 12,
+                              top: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xB32D312B),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 4,
+                                      backgroundColor: AppColors.live,
+                                    ),
+                                    SizedBox(width: 7),
+                                    Text(
+                                      'LIVE',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              SizedBox(height: 5),
-                              Text(
-                                '화면을 나가면 시청 세션이 종료되고 기기 송출도 자동으로 정리됩니다.',
-                                style: TextStyle(
-                                  height: 1.4,
-                                  color: AppColors.primaryDark,
+                            ),
+                            Positioned(
+                              right: 12,
+                              top: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 13,
+                                  vertical: 7,
                                 ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xA82D312B),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: const Text(
+                                  '1080p',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: 12,
+                              bottom: 12,
+                              child: FilledButton.icon(
+                                onPressed: () {
+                                  setState(() => muted = !muted);
+                                  player?.setVolume(muted ? 0 : 1);
+                                },
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(0, 42),
+                                  backgroundColor: const Color(0x9B2D312B),
+                                  foregroundColor: Colors.white,
+                                ),
+                                icon: Icon(
+                                  muted
+                                      ? Icons.volume_off_rounded
+                                      : Icons.volume_up_rounded,
+                                ),
+                                label: Text(muted ? '소리 꺼짐' : '소리 켜짐'),
+                              ),
+                            ),
+                            Positioned(
+                              right: 12,
+                              bottom: 12,
+                              child: CircleAvatar(
+                                radius: 25,
+                                backgroundColor: const Color(0xA82D312B),
+                                child: IconButton(
+                                  onPressed: () => showAppSnack(
+                                    context,
+                                    '전체 화면 모드는 플레이어 제어와 함께 다음 단계에서 제공돼요.',
+                                  ),
+                                  icon: const Icon(
+                                    Icons.fullscreen_rounded,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.device.name,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                    Text(
+                                      status?.personCount == null
+                                          ? '● 온라인 · 감지 인원 확인 중'
+                                          : '● 온라인 · 가족 ${status!.personCount}명 감지',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const StatusPill(
+                                label: 'LIVE',
+                                color: AppColors.greenCard,
                               ),
                             ],
                           ),
@@ -215,40 +404,214 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ),
+                const SizedBox(height: 22),
+                const SectionHeader('오늘의 기록'),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _LiveStat(
+                        label: '오늘 웃음',
+                        value:
+                            '${widget.controller.videoStats?.byTriggerType['LAUGHTER'] ?? 0}회',
+                        color: AppColors.yellowSoft,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _LiveStat(
+                        label: '자동 저장',
+                        value:
+                            '${widget.controller.homeSummary?.savedCount ?? 0}개',
+                        color: AppColors.greenCard,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _LiveStat(
+                        label: '작성한 메모',
+                        value:
+                            '${widget.controller.homeSummary?.memoCount ?? 0}개',
+                        color: AppColors.pink,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                const SectionHeader('다가오는 기념일'),
+                const SizedBox(height: 9),
+                const SoftCard(
+                  borderColor: AppColors.yellow,
+                  padding: EdgeInsets.all(13),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 27,
+                        backgroundColor: AppColors.yellowSoft,
+                        child: Text(
+                          '23\nJUL',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      SizedBox(width: 13),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '엄마 생일',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              '수요일 · 3일 뒤',
+                              style: TextStyle(color: AppColors.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const SectionHeader('최근 저장된 추억'),
+                const SizedBox(height: 9),
+                SoftCard(
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 80,
+                        child: FamilyReferenceImage(borderRadius: 13),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.controller.videos.firstOrNull?.title ??
+                                  '저녁 식탁의 웃음',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              widget.controller.videos.firstOrNull == null
+                                  ? '저장된 영상이 아직 없어요'
+                                  : memoryDate(
+                                      widget
+                                          .controller
+                                          .videos
+                                          .first
+                                          .capturedStartAt,
+                                    ),
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.add_rounded,
+                        size: 30,
+                        color: AppColors.muted,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _videoBody() {
-    if (error != null) {
-      return EmptyState(
-        icon: Icons.signal_wifi_connected_no_internet_4_rounded,
-        title: '라이브를 열지 못했어요',
-        message: error!,
-      );
-    }
-    if (player == null) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(color: AppColors.peach),
-          const SizedBox(height: 18),
-          Text(
-            session?.status == 'PENDING'
-                ? '카메라의 응답을 기다리고 있어요'
-                : '안전한 연결을 준비하고 있어요',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
+    if (player != null) {
+      return ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: AspectRatio(
+            aspectRatio: player!.value.aspectRatio,
+            child: VideoPlayer(player!),
           ),
-        ],
+        ),
       );
     }
-    return MediaPlayerSurface(controller: player!, isLive: true);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const FamilyReferenceImage(borderRadius: 0),
+        if (error != null)
+          ColoredBox(
+            color: const Color(0x752D312B),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Text(
+                  error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
+      ],
+    );
   }
+}
+
+class _LiveStat extends StatelessWidget {
+  const _LiveStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+  final String label;
+  final String value;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 74,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Column(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppColors.inkSoft,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+        ),
+      ],
+    ),
+  );
+}
+
+extension<T> on List<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }
