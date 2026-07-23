@@ -61,6 +61,7 @@ class AppController extends ChangeNotifier {
     }
     authenticated = await api.hasSession;
     if (authenticated) {
+      user = await api.cachedUser;
       try {
         await refreshAll();
       } on ApiFailure catch (error) {
@@ -76,20 +77,37 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String email, String password) async => _guard(() async {
-    final session = await api.login(email, password);
+  Future<bool> login(
+    String email,
+    String password, {
+    bool persistSession = true,
+  }) async => _guard(() async {
+    final session = await api.login(
+      email,
+      password,
+      persistSession: persistSession,
+    );
     user = session.user;
     authenticated = true;
     await refreshAll();
   });
 
-  Future<bool> signUp(String name, String email, String password) async =>
-      _guard(() async {
-        final session = await api.signUp(name, email, password);
-        user = session.user;
-        authenticated = true;
-        await refreshAll();
-      });
+  Future<bool> signUp(
+    String name,
+    String email,
+    String password, {
+    bool persistSession = true,
+  }) async => _guard(() async {
+    final session = await api.signUp(
+      name,
+      email,
+      password,
+      persistSession: persistSession,
+    );
+    user = session.user;
+    authenticated = true;
+    await refreshAll();
+  });
 
   Future<void> logout() async {
     busy = true;
@@ -151,7 +169,7 @@ class AppController extends ChangeNotifier {
     final results = await Future.wait<Object?>([
       api.getDeviceStatus(device.id),
       api.getVideoStats(device.id),
-      api.listVideos(device.id),
+      api.listAllVideos(device.id),
       api.listMembers(device.id),
       if (device.isOwner)
         api.listJoinRequests(device.id)
@@ -162,7 +180,7 @@ class AppController extends ChangeNotifier {
     ]);
     deviceStatus = results[0] as DeviceStatus;
     videoStats = results[1] as VideoStats;
-    videos = (results[2] as VideoPage).items;
+    videos = results[2] as List<VideoMemory>;
     members = results[3] as List<DeviceMember>;
     joinRequests = results[4] as List<JoinRequestInfo>;
     homeSummary = results[5] as HomeSummary?;
@@ -174,6 +192,48 @@ class AppController extends ChangeNotifier {
     devices = [...devices, claimed];
     selectedDevice = claimed;
     await refreshDeviceData();
+  });
+
+  Future<bool> updateSelectedDevice({String? name, int? retentionDays}) async =>
+      _guard(() async {
+        final device = selectedDevice;
+        if (device == null) return;
+        final updated = await api.updateDevice(
+          device.id,
+          name: name,
+          retentionDays: retentionDays,
+        );
+        devices = devices
+            .map((item) => item.id == updated.id ? updated : item)
+            .toList(growable: false);
+        selectedDevice = updated;
+        notifyListeners();
+      });
+
+  Future<bool> releaseSelectedDevice() async => _guard(() async {
+    final device = selectedDevice;
+    if (device == null) return;
+    await api.releaseDevice(device.id);
+
+    devices = devices
+        .where((item) => item.id != device.id)
+        .toList(growable: false);
+    selectedDevice = devices.isEmpty ? null : devices.first;
+    deviceStatus = null;
+    videoStats = null;
+    homeSummary = null;
+    videos = const [];
+    members = const [];
+    joinRequests = const [];
+
+    if (selectedDevice != null) {
+      try {
+        await refreshDeviceData();
+      } catch (_) {
+        // 기기 해제는 끝났으므로 다른 기기의 새로고침 실패와 분리한다.
+      }
+    }
+    notifyListeners();
   });
 
   Future<bool> removeVideo(VideoMemory video) async => _guard(() async {
@@ -191,6 +251,7 @@ class AppController extends ChangeNotifier {
         id: video.id,
         deviceId: video.deviceId,
         triggerType: video.triggerType,
+        sourceType: video.sourceType,
         title: video.title,
         description: video.description,
         status: video.status,

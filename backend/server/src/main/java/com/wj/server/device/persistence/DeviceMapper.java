@@ -209,7 +209,7 @@ public interface DeviceMapper {
         SELECT serial_number, model, firmware_version, 'UNCLAIMED'
           FROM devices
          WHERE id = #{deviceId}
-        RETURNING id
+        RETURNING id::text
         """)
-    UUID insertSuccessorDevice(@Param("deviceId") UUID deviceId);
+    String insertSuccessorDevice(@Param("deviceId") UUID deviceId);
 }

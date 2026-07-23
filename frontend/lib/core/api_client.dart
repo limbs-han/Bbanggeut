@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -42,8 +44,9 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await _storage.read(key: _accessKey);
-          if (token != null && !options.path.startsWith('/api/auth/')) {
+          final token =
+              _memoryAccessToken ?? await _storage.read(key: _accessKey);
+          if (token != null && !_isPublicAuthPath(options.path)) {
             options.headers['Authorization'] = 'Bearer $token';
           }
           handler.next(options);
@@ -51,13 +54,13 @@ class ApiClient {
         onError: (error, handler) async {
           if (error.response?.statusCode == 401 &&
               error.requestOptions.extra['retried'] != true &&
-              !_isAuthPath(error.requestOptions.path)) {
+              !_isPublicAuthPath(error.requestOptions.path)) {
             final refreshed = await _tryRefresh();
             if (refreshed) {
               final request = error.requestOptions;
               request.extra['retried'] = true;
               request.headers['Authorization'] =
-                  'Bearer ${await _storage.read(key: _accessKey)}';
+                  'Bearer ${_memoryAccessToken ?? await _storage.read(key: _accessKey)}';
               try {
                 return handler.resolve(await _dio.fetch<dynamic>(request));
               } on DioException catch (retryError) {
@@ -76,28 +79,54 @@ class ApiClient {
   static const _userKey = 'wj_user_marker';
   final Dio _dio;
   final FlutterSecureStorage _storage;
-  bool _refreshing = false;
+  Future<bool>? _refreshFuture;
+  String? _memoryAccessToken;
+  String? _memoryRefreshToken;
+  bool _persistSession = true;
 
-  bool _isAuthPath(String path) =>
+  bool _isPublicAuthPath(String path) =>
       path.contains('/api/auth/login') ||
       path.contains('/api/auth/signup') ||
       path.contains('/api/auth/refresh');
 
-  Future<bool> get hasSession async =>
-      await _storage.read(key: _accessKey) != null;
+  Future<bool> get hasSession async {
+    _memoryAccessToken = await _storage.read(key: _accessKey);
+    _memoryRefreshToken = await _storage.read(key: _refreshKey);
+    _persistSession = true;
+    return _memoryAccessToken != null;
+  }
 
-  Future<AuthSession> login(String email, String password) async {
+  Future<UserProfile?> get cachedUser async {
+    final raw = await _storage.read(key: _userKey);
+    if (raw == null) return null;
+    try {
+      return UserProfile.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<AuthSession> login(
+    String email,
+    String password, {
+    bool persistSession = true,
+  }) async {
     final session = AuthSession.fromJson(
       await _post(
         '/api/auth/login',
         data: {'email': email.trim(), 'password': password},
       ),
     );
-    await _saveSession(session);
+    await _saveSession(session, persistSession: persistSession);
     return session;
   }
 
-  Future<AuthSession> signUp(String name, String email, String password) async {
+  Future<AuthSession> signUp(
+    String name,
+    String email,
+    String password, {
+    bool persistSession = true,
+  }) async {
     final session = AuthSession.fromJson(
       await _post(
         '/api/auth/signup',
@@ -108,7 +137,7 @@ class ApiClient {
         },
       ),
     );
-    await _saveSession(session);
+    await _saveSession(session, persistSession: persistSession);
     return session;
   }
 
@@ -126,6 +155,8 @@ class ApiClient {
   }
 
   Future<void> clearSession() async {
+    _memoryAccessToken = null;
+    _memoryRefreshToken = null;
     await Future.wait([
       _storage.delete(key: _accessKey),
       _storage.delete(key: _refreshKey),
@@ -164,7 +195,7 @@ class ApiClient {
         'cursor': ?cursor,
         'from': ?from?.toUtc().toIso8601String(),
         'to': ?to?.toUtc().toIso8601String(),
-        'size': size,
+        'size': size.clamp(1, 100),
       },
     ),
   );
@@ -186,6 +217,8 @@ class ApiClient {
     },
   );
   Future<void> deleteVideo(String id) async => _delete('/api/videos/$id');
+  Future<VideoMemory> getVideo(String id) async =>
+      VideoMemory.fromJson(await _get('/api/videos/$id'));
   Future<List<DeviceMember>> listMembers(String deviceId) async =>
       (await _getList(
         '/api/devices/$deviceId/members',
@@ -214,6 +247,15 @@ class ApiClient {
       _post('/api/devices/$deviceId/join-requests/$requestId/reject');
   Future<void> revokeMember(String deviceId, String memberId) async =>
       _delete('/api/devices/$deviceId/members/$memberId');
+  Future<void> revokeInvite(String deviceId) async =>
+      _delete('/api/devices/$deviceId/invite-link');
+  Future<void> transferOwnership(String deviceId, String membershipId) async =>
+      _post(
+        '/api/devices/$deviceId/transfer-ownership',
+        data: {'newOwnerMembershipId': membershipId},
+      );
+  Future<void> releaseDevice(String deviceId) async =>
+      _delete('/api/devices/$deviceId');
   Future<StreamSession> createStream(String deviceId) async =>
       StreamSession.fromJson(
         await _post('/api/devices/$deviceId/stream-sessions'),
@@ -236,29 +278,93 @@ class ApiClient {
       SubscriptionInfo.fromJson(
         await _deleteMap('/api/devices/$deviceId/subscription'),
       );
-  Future<List<AccessLogEntry>> listAccessLogs(String deviceId) async {
-    final page = await _get(
+  Future<AccessLogPage> listAccessLogPage(
+    String deviceId, {
+    String? cursor,
+    int size = 30,
+  }) async => AccessLogPage.fromJson(
+    await _get(
       '/api/devices/$deviceId/access-logs',
-      query: {'size': 30},
-    );
-    return (page['items'] as List? ?? const [])
-        .map((item) => AccessLogEntry.fromJson(item as Map<String, dynamic>))
-        .toList();
+      query: {'size': size.clamp(1, 100), 'cursor': ?cursor},
+    ),
+  );
+
+  Future<List<AccessLogEntry>> listAccessLogs(String deviceId) async {
+    final result = <AccessLogEntry>[];
+    String? cursor;
+    do {
+      final page = await listAccessLogPage(deviceId, cursor: cursor, size: 100);
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
   }
 
-  Future<void> _saveSession(AuthSession session) async {
+  Future<List<VideoMemory>> listAllVideos(
+    String deviceId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final result = <VideoMemory>[];
+    String? cursor;
+    do {
+      final page = await listVideos(
+        deviceId,
+        triggerType: triggerType,
+        cursor: cursor,
+        from: from,
+        to: to,
+        size: 100,
+      );
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
+  }
+
+  Future<void> _saveSession(AuthSession session, {bool? persistSession}) async {
+    if (persistSession != null) _persistSession = persistSession;
+    _memoryAccessToken = session.accessToken;
+    _memoryRefreshToken = session.refreshToken;
+    if (!_persistSession) {
+      await Future.wait([
+        _storage.delete(key: _accessKey),
+        _storage.delete(key: _refreshKey),
+        _storage.delete(key: _userKey),
+      ]);
+      return;
+    }
     await Future.wait([
       _storage.write(key: _accessKey, value: session.accessToken),
       _storage.write(key: _refreshKey, value: session.refreshToken),
-      _storage.write(key: _userKey, value: session.user.email),
+      _storage.write(
+        key: _userKey,
+        value: jsonEncode({
+          'id': session.user.id,
+          'email': session.user.email,
+          'displayName': session.user.displayName,
+        }),
+      ),
     ]);
   }
 
   Future<bool> _tryRefresh() async {
-    if (_refreshing) return false;
-    final refresh = await _storage.read(key: _refreshKey);
+    final active = _refreshFuture;
+    if (active != null) return active;
+    final future = _performRefresh();
+    _refreshFuture = future;
+    try {
+      return await future;
+    } finally {
+      _refreshFuture = null;
+    }
+  }
+
+  Future<bool> _performRefresh() async {
+    final refresh =
+        _memoryRefreshToken ?? await _storage.read(key: _refreshKey);
     if (refresh == null) return false;
-    _refreshing = true;
     try {
       final response = await Dio(BaseOptions(baseUrl: _dio.options.baseUrl))
           .post<Map<String, dynamic>>(
@@ -271,8 +377,6 @@ class ApiClient {
     } catch (_) {
       await clearSession();
       return false;
-    } finally {
-      _refreshing = false;
     }
   }
 
