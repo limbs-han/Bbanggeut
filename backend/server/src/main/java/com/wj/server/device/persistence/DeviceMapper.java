@@ -146,18 +146,11 @@ public interface DeviceMapper {
     int revokeActiveCredentials(@Param("deviceId") UUID deviceId);
 
     @Update("""
-        UPDATE device_invite_links
-           SET revoked_at = now()
-         WHERE device_id = #{deviceId} AND revoked_at IS NULL
-        """)
-    int revokeInviteLinks(@Param("deviceId") UUID deviceId);
-
-    @Update("""
-        UPDATE join_requests
-           SET status = 'CANCELLED', decided_at = now()
+        UPDATE invitations
+           SET status = 'REVOKED', decided_at = now(), updated_at = now()
          WHERE device_id = #{deviceId} AND status = 'PENDING'
         """)
-    int cancelPendingJoinRequests(@Param("deviceId") UUID deviceId);
+    int cancelPendingInvitations(@Param("deviceId") UUID deviceId);
 
     @Update("""
         UPDATE videos

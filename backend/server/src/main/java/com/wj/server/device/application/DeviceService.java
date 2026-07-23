@@ -186,8 +186,7 @@ public class DeviceService {
             throw notFound();
         }
         deviceMapper.revokeActiveCredentials(deviceId);
-        deviceMapper.revokeInviteLinks(deviceId);
-        deviceMapper.cancelPendingJoinRequests(deviceId);
+        deviceMapper.cancelPendingInvitations(deviceId);
         deviceMapper.revokeAllMemberships(deviceId, userId);
         deviceMapper.markAllVideosDeleting(deviceId, userId);
         deviceMapper.enqueueDeletionJobsForDevice(deviceId);
