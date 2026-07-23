@@ -272,6 +272,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.9.1"
+  imgly_editor:
+    dependency: "direct main"
+    description:
+      name: imgly_editor
+      sha256: "57b85a035f53df3f8695c99be9a8a7fa3adac891ceac9602f980c4c17d3b6cd2"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.78.0"
   intl:
     dependency: "direct main"
     description:

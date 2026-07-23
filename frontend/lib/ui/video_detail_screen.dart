@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:imgly_editor/imgly_editor.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -6,6 +7,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import 'local_edit_screen.dart';
+import 'media_player_surface.dart';
 import 'widgets.dart';
 
 class VideoDetailScreen extends StatefulWidget {
@@ -81,6 +83,29 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
       }
     } catch (failure) {
       if (mounted) showAppSnack(context, '$failure', error: true);
+    }
+  }
+
+  Future<void> _openImglyEditor() async {
+    try {
+      await player?.pause();
+      final signed = await widget.controller.api.createDownloadUrl(video.id);
+      const license = String.fromEnvironment('IMGLY_LICENSE');
+      final result = await IMGLYEditor.openEditor(
+        source: Source.fromVideo(signed.url),
+        preset: EditorPreset.video,
+        settings: EditorSettings(
+          license: license.isEmpty ? null : license,
+          userId: widget.controller.user?.id,
+        ),
+      );
+      if (mounted && result?.artifact != null) {
+        showAppSnack(context, '영상 편집을 완료했어요.');
+      }
+    } catch (failure) {
+      if (mounted) {
+        showAppSnack(context, '영상 편집기를 열지 못했어요. $failure', error: true);
+      }
     }
   }
 
@@ -253,34 +278,12 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '함께한 사람',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                      Text(
-                        '가족 공유',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const Row(
-                    children: [
-                      _PersonAvatar(label: '엄', color: AppColors.yellowSoft),
-                      _PersonAvatar(label: '아', color: AppColors.greenCard),
-                      _PersonAvatar(label: '나', color: AppColors.pink),
-                      _PersonAvatar(label: '동', color: AppColors.sageSoft),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
                   FilledButton.icon(
-                    onPressed: _editMetadata,
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('영상 편집하기'),
+                    onPressed: video.status == 'READY'
+                        ? _openImglyEditor
+                        : null,
+                    icon: const Icon(Icons.auto_awesome_rounded),
+                    label: const Text('IMG.LY로 영상 편집'),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -322,38 +325,7 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
 
   Widget _media() {
     if (player != null) {
-      return GestureDetector(
-        onTap: () => setState(
-          () => player!.value.isPlaying ? player!.pause() : player!.play(),
-        ),
-        child: ColoredBox(
-          color: Colors.black,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Center(
-                child: AspectRatio(
-                  aspectRatio: player!.value.aspectRatio,
-                  child: VideoPlayer(player!),
-                ),
-              ),
-              Center(
-                child: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: const Color(0x802D312B),
-                  child: Icon(
-                    player!.value.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 34,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      return MediaPlayerSurface(controller: player!);
     }
     return Stack(
       fit: StackFit.expand,
@@ -372,34 +344,4 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
       ],
     );
   }
-}
-
-class _PersonAvatar extends StatelessWidget {
-  const _PersonAvatar({required this.label, required this.color});
-  final String label;
-  final Color color;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 12),
-    child: Column(
-      children: [
-        CircleAvatar(
-          radius: 20,
-          backgroundColor: color,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: AppColors.inkSoft,
-            ),
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 10, color: AppColors.muted),
-        ),
-      ],
-    ),
-  );
 }

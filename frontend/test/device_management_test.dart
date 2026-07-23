@@ -63,6 +63,38 @@ void main() {
     expect(controller.deviceStatus, isNull);
     controller.dispose();
   });
+
+  test('로그아웃 API가 실패해도 인증 상태를 초기화한다', () async {
+    final controller = AppController(api: _FailingLogoutApiClient())
+      ..authenticated = true
+      ..user = const UserProfile(
+        id: 'user-1',
+        email: 'user@example.com',
+        displayName: '사용자',
+      );
+
+    await expectLater(controller.logout(), throwsException);
+
+    expect(controller.authenticated, isFalse);
+    expect(controller.user, isNull);
+    expect(controller.busy, isFalse);
+    controller.dispose();
+  });
+
+  test('프로필 이름을 수정하면 현재 사용자에 즉시 반영한다', () async {
+    final api = _ProfileApiClient();
+    final controller = AppController(api: api)
+      ..user = const UserProfile(
+        id: 'user-1',
+        email: 'user@example.com',
+        displayName: '이전 이름',
+      );
+
+    expect(await controller.updateProfile('새 이름'), isTrue);
+    expect(api.requestedName, '새 이름');
+    expect(controller.user?.displayName, '새 이름');
+    controller.dispose();
+  });
 }
 
 class _ReleaseApiClient extends ApiClient {
@@ -71,5 +103,24 @@ class _ReleaseApiClient extends ApiClient {
   @override
   Future<void> releaseDevice(String deviceId) async {
     releasedDeviceId = deviceId;
+  }
+}
+
+class _FailingLogoutApiClient extends ApiClient {
+  @override
+  Future<void> logout() async => throw Exception('network unavailable');
+}
+
+class _ProfileApiClient extends ApiClient {
+  String? requestedName;
+
+  @override
+  Future<UserProfile> updateProfile(String displayName) async {
+    requestedName = displayName;
+    return UserProfile(
+      id: 'user-1',
+      email: 'user@example.com',
+      displayName: displayName,
+    );
   }
 }

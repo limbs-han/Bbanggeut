@@ -149,6 +149,26 @@ class ApiClient {
     }
   }
 
+  Future<UserProfile> updateProfile(String displayName) async {
+    final updated = UserProfile.fromJson(
+      await _patchMap(
+        '/api/auth/me',
+        data: {'displayName': displayName.trim()},
+      ),
+    );
+    if (_persistSession) {
+      await _storage.write(
+        key: _userKey,
+        value: jsonEncode({
+          'id': updated.id,
+          'email': updated.email,
+          'displayName': updated.displayName,
+        }),
+      );
+    }
+    return updated;
+  }
+
   Future<void> withdraw() async {
     await _dio.delete<void>('/api/auth/me');
     await clearSession();

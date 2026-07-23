@@ -112,10 +112,15 @@ class AppController extends ChangeNotifier {
   Future<void> logout() async {
     busy = true;
     notifyListeners();
-    await api.logout();
-    _reset();
-    busy = false;
-    notifyListeners();
+    try {
+      await api.logout();
+    } finally {
+      // 서버가 응답하지 않더라도 로컬 세션은 ApiClient에서 삭제된다.
+      // 화면 상태도 반드시 초기화해 실제 로그인 화면으로 전환한다.
+      _reset();
+      busy = false;
+      notifyListeners();
+    }
   }
 
   Future<void> withdraw() async {
@@ -123,6 +128,11 @@ class AppController extends ChangeNotifier {
     _reset();
     notifyListeners();
   }
+
+  Future<bool> updateProfile(String displayName) async => _guard(() async {
+    user = await api.updateProfile(displayName);
+    notifyListeners();
+  });
 
   Future<void> refreshAll() async {
     devices = await api.listDevices();

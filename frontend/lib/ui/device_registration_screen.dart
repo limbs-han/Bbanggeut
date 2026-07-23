@@ -106,6 +106,20 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     }
   }
 
+  Future<void> _exitToLogin() async {
+    if (widget.controller.busy) return;
+    try {
+      await scanner.stop();
+    } catch (_) {
+      // 스캐너 상태와 무관하게 로그아웃은 계속 진행한다.
+    }
+    try {
+      await widget.controller.logout();
+    } catch (_) {
+      // AppController가 로컬 인증 상태를 항상 초기화하므로 화면 전환은 보장된다.
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     resizeToAvoidBottomInset: false,
@@ -118,14 +132,16 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
               child: Row(
                 children: [
                   const SizedBox(width: 16),
-                  if (widget.canGoBack)
-                    RoundIconButton(
-                      icon: Icons.chevron_left_rounded,
-                      size: 44,
-                      onPressed: () => Navigator.pop(context),
-                    )
-                  else
-                    const SizedBox(width: 44),
+                  IconButton(
+                    key: const Key('device-registration-back'),
+                    tooltip: '로그인 화면으로 돌아가기',
+                    onPressed: _exitToLogin,
+                    icon: const Icon(
+                      Icons.chevron_left_rounded,
+                      size: 34,
+                      color: AppColors.ink,
+                    ),
+                  ),
                   Expanded(
                     child: Text(
                       '기기 등록',
@@ -489,6 +505,23 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    SizedBox(
+                      height: 34,
+                      child: TextButton(
+                        key: const Key('device-registration-logout'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: widget.controller.busy ? null : _exitToLogin,
+                        child: const Text(
+                          '로그아웃',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
                     ),
                   ],
                 ),

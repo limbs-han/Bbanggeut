@@ -43,6 +43,7 @@ dependencies:
   path_provider: ^2.1.6
   video_trimmer: ^5.0.0
   mobile_scanner: ^7.4.0
+  imgly_editor: ^1.78.0
 
 dev_dependencies:
   flutter_test:
