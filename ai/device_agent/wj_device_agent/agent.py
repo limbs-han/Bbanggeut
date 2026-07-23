@@ -195,7 +195,17 @@ class DeviceAgent:
                 continue
             finished = self.streams.clear_if_finished()
             if finished and finished.stream_id and self.current_context is not None:
-                self._stream_event(self.current_context, "STREAM_ERROR", finished.stream_id, "ENCODER_UNAVAILABLE")
+                LOG.warning(
+                    "stream relay exited for stream %s with return code %s",
+                    finished.stream_id,
+                    finished.return_code,
+                )
+                self._stream_event(
+                    self.current_context,
+                    "STREAM_ERROR",
+                    finished.stream_id,
+                    "STREAM_RELAY_EXITED",
+                )
                 self.current_context = None
 
     def _heartbeat_loop(self) -> None:

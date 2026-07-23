@@ -112,6 +112,22 @@ local copies throughout.
 
 ## Install on Raspberry Pi
 
+The production Raspberry Pi layout keeps one always-on camera owner and uses
+the device agent only as an on-demand relay:
+
+```text
+/dev/video0
+  -> homecam-publisher
+  -> local MediaMTX rtsp://127.0.0.1:8554/homecam
+  -> device agent (only while a viewer exists)
+  -> rtsps://i15e201.p.ssafy.io:8322/live/{streamId}
+```
+
+This prevents `homecam-publisher` and the device agent from opening the same
+V4L2 device concurrently. Use the stable `/dev/v4l/by-id/...-video-index0`
+camera path in `homecam-publisher` when available; `/dev/video0` can change
+after a reboot or USB reconnect.
+
 ```bash
 sudo mkdir -p /opt/william-james/device-agent /etc/william-james/certs
 sudo cp -r ai/device_agent/wj_device_agent ai/device_agent/requirements.txt \
@@ -137,11 +153,44 @@ MQTT_HOST=<broker DNS name>
 MQTT_PORT=8883
 ```
 
+For the direct production path, copy
+`device-agent.pi-rtsps.env.example` to
+`/etc/william-james/device-agent.env`, then replace the device credential and
+MediaMTX publish password. Never commit the populated file.
+
+Before starting the agent, verify the local shared stream:
+
+```bash
+ffprobe -v error -rtsp_transport tcp \
+  -show_entries stream=codec_type,codec_name,width,height \
+  -of default=noprint_wrappers=1 \
+  rtsp://127.0.0.1:8554/homecam
+```
+
+The stream must be online and H.264. Test the remote TLS listener separately:
+
+```bash
+openssl s_client \
+  -connect i15e201.p.ssafy.io:8322 \
+  -servername i15e201.p.ssafy.io \
+  -verify_return_error </dev/null
+```
+
+Then perform a short authenticated RTSPS publish before enabling the service.
+The MediaMTX account must have publish-only permission for `live/*`; TLS alone
+does not authenticate the device. Once direct RTSPS succeeds, the SSH tunnel is
+not needed:
+
+```bash
+sudo systemctl disable --now wj-media-tunnel
+sudo systemctl restart wj-device-agent
+```
+
 `MEDIA_PUBLISH_URL_TEMPLATE` must contain exactly one `{stream_id}` placeholder.
 For a temporary SSH tunnel use:
 
 ```text
-rtsp://127.0.0.1:8554/live/{stream_id}
+rtsp://127.0.0.1:18554/live/{stream_id}
 ```
 
 For direct production publishing in a future deployment, first configure and
@@ -187,4 +236,7 @@ sudo journalctl -u wj-media-tunnel -f
 
 The service deliberately suppresses FFmpeg stderr because publish URLs can
 contain credentials. Add a redacting log collector before enabling FFmpeg debug
-logs.
+logs. If the relay exits, the agent reports `STREAM_RELAY_EXITED`; this covers
+input-device, local RTSP, codec, TLS, authentication, and remote MediaMTX
+failures, not only encoder availability. Reproduce the generated FFmpeg command
+manually with a redacted URL to see the underlying stderr.
