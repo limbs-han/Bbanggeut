@@ -1,0 +1,17 @@
+[Unit]
+Description=MediaMTX loopback home camera media server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=video
+ExecStart=/usr/local/bin/mediamtx /etc/william-james/mediamtx.yml
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

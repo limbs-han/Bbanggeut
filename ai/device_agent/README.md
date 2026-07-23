@@ -129,38 +129,31 @@ camera path in `homecam-publisher` when available; `/dev/video0` can change
 after a reboot or USB reconnect.
 
 ```bash
-sudo mkdir -p /opt/william-james/device-agent /etc/william-james/certs
-sudo cp -r ai/device_agent/wj_device_agent ai/device_agent/requirements.txt \
-  /opt/william-james/device-agent/
-sudo python3 -m venv /opt/william-james/device-agent/venv
-sudo /opt/william-james/device-agent/venv/bin/pip install \
-  -r /opt/william-james/device-agent/requirements.txt
-sudo cp ai/device_agent/device-agent.env.example \
-  /etc/william-james/device-agent.env
-sudo chmod 600 /etc/william-james/device-agent.env
-sudo cp ai/device_agent/wj-device-agent.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now wj-device-agent
+cd ai/device_agent
+chmod +x scripts/*.sh homecam-publisher.sh
+sudo ./scripts/prepare-pi.sh /path/to/mqtt-ca.crt
+sudo ./scripts/configure-pi-rtsps.sh
 ```
 
-Copy the MQTT CA certificate to the path configured by `MQTT_CA_CERT`, then set
-the enrollment response values:
+The preparation script installs and checksum-verifies MediaMTX, creates the
+Python runtime, installs all three systemd services, starts loopback MediaMTX,
+and leaves the device agent stopped until enrollment. It does not require a
+bootstrap credential, so run it before creating the short-lived token.
 
-```text
-DEVICE_ID=<deviceId>
-DEVICE_BEARER_TOKEN=<OPERATING bearerToken>
-MQTT_HOST=<broker DNS name>
-MQTT_PORT=8883
-```
-
-For the direct production path, copy
-`device-agent.pi-rtsps.env.example` to
-`/etc/william-james/device-agent.env`, then replace the device credential and
-MediaMTX publish password. Never commit the populated file.
-
-Before starting the agent, verify the local shared stream:
+On EC2, use `scripts/create-device-on-server.sh` to write the bootstrap token
+directly to a mode-600 file without printing it. Transfer that file to the Pi,
+then enroll:
 
 ```bash
+sudo ./scripts/enroll-pi.sh /home/pi/wj-bootstrap.token
+```
+
+After connecting and configuring the USB camera:
+
+```bash
+sudoedit /etc/william-james/homecam-publisher.env
+sudo systemctl start homecam-publisher
+
 ffprobe -v error -rtsp_transport tcp \
   -show_entries stream=codec_type,codec_name,width,height \
   -of default=noprint_wrappers=1 \
@@ -186,19 +179,8 @@ sudo systemctl disable --now wj-media-tunnel
 sudo systemctl restart wj-device-agent
 ```
 
-`MEDIA_PUBLISH_URL_TEMPLATE` must contain exactly one `{stream_id}` placeholder.
-For a temporary SSH tunnel use:
-
-```text
-rtsp://127.0.0.1:18554/live/{stream_id}
-```
-
-For direct production publishing in a future deployment, first configure and
-expose authenticated RTSPS on MediaMTX, then use a URL such as:
-
-```text
-rtsps://device-user:password@media.example.com:8322/live/{stream_id}
-```
+The full two-host procedure, security rules, credential rotation, camera
+diagnostics, and expected logs are in `RASPBERRY_PI_RUNBOOK.md`.
 
 ## Jetson adapter
 

@@ -1,0 +1,20 @@
+[Unit]
+Description=William James always-on USB home camera publisher
+Requires=mediamtx.service
+After=network-online.target mediamtx.service
+
+[Service]
+Type=simple
+User=pi
+Group=video
+EnvironmentFile=-/etc/william-james/homecam-publisher.env
+ExecStart=/opt/william-james/device-agent/homecam-publisher.sh
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

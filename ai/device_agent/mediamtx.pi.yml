@@ -1,0 +1,17 @@
+logLevel: info
+
+# The Raspberry Pi MediaMTX instance is a loopback-only fan-out point. The
+# physical camera publisher writes /homecam and the on-demand device agent reads
+# it. Internet-facing RTSPS/HLS remain on the EC2 MediaMTX instance.
+rtsp: yes
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+
+paths:
+  homecam:
+    source: publisher
