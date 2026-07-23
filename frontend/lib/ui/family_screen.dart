@@ -174,24 +174,34 @@ class FamilyScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: () => _invite(context),
-                                    icon: const Icon(Icons.link_rounded),
-                                    label: const Text('초대 링크 복사'),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => _invite(context),
-                                    icon: const Icon(Icons.qr_code_rounded),
-                                    label: const Text('QR 코드 보기'),
-                                  ),
-                                ),
-                              ],
+                            FilledButton.icon(
+                              onPressed: () => _invite(context),
+                              icon: const Icon(Icons.link_rounded),
+                              label: const Text('초대 링크 복사'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: () async {
+                                try {
+                                  await controller.api.revokeInvite(device.id);
+                                  if (context.mounted) {
+                                    showAppSnack(context, '기존 초대 링크를 회수했어요.');
+                                  }
+                                } catch (failure) {
+                                  if (context.mounted) {
+                                    showAppSnack(
+                                      context,
+                                      '$failure',
+                                      error: true,
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.link_off_rounded,
+                                size: 17,
+                              ),
+                              label: const Text('기존 링크 회수'),
                             ),
                           ],
                         ),
@@ -301,12 +311,50 @@ class _MemberTile extends StatelessWidget {
       trailing: member.role == 'OWNER'
           ? const StatusPill(label: '소유자', color: AppColors.sageSoft)
           : controller.selectedDevice!.isOwner
-          ? TextButton(
-              onPressed: () => _revoke(context),
-              child: const Text('접근 권한 회수'),
+          ? PopupMenuButton<String>(
+              onSelected: (action) =>
+                  action == 'transfer' ? _transfer(context) : _revoke(context),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'transfer', child: Text('소유권 넘기기')),
+                PopupMenuItem(value: 'revoke', child: Text('접근 권한 회수')),
+              ],
             )
           : const StatusPill(label: '멤버', color: AppColors.sageSoft),
     );
+  }
+
+  Future<void> _transfer(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('소유권을 넘길까요?'),
+        content: Text(
+          '${member.user.displayName}님이 새 OWNER가 되고 나는 MEMBER가 됩니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('소유권 이전'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      try {
+        await controller.api.transferOwnership(
+          controller.selectedDevice!.id,
+          member.id,
+        );
+        await controller.refreshAll();
+        if (context.mounted) showAppSnack(context, '소유권을 이전했어요.');
+      } catch (failure) {
+        if (context.mounted) showAppSnack(context, '$failure', error: true);
+      }
+    }
   }
 
   Future<void> _revoke(BuildContext context) async {

@@ -85,6 +85,25 @@ void main() {
 }
 
 class _FakeApiClient extends ApiClient {
+  static const failedStream = StreamSession(
+    id: 'test-stream',
+    status: 'FAILED',
+    heartbeatIntervalSeconds: 15,
+    failureCode: '테스트에서는 라이브를 연결하지 않아요.',
+  );
+
+  @override
+  Future<StreamSession> createStream(String deviceId) async => failedStream;
+
+  @override
+  Future<StreamSession> getStream(String id) async => failedStream;
+
+  @override
+  Future<void> heartbeatStream(String id) async {}
+
+  @override
+  Future<void> closeStream(String id) async {}
+
   @override
   Future<VideoPage> listVideos(
     String deviceId, {

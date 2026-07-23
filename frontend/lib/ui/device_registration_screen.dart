@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../app/app_controller.dart';
@@ -267,27 +268,11 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                                             ),
                                           ),
                                           Positioned(
-                                            left: 8,
                                             right: 8,
                                             bottom: 8,
-                                            child: Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                _ScannerButton(
-                                                  icon: Icons
-                                                      .flashlight_on_outlined,
-                                                  onPressed:
-                                                      scanner.toggleTorch,
-                                                ),
-                                                _ScannerButton(
-                                                  icon: Icons
-                                                      .cameraswitch_outlined,
-                                                  onPressed:
-                                                      scanner.switchCamera,
-                                                ),
-                                              ],
+                                            child: _ScannerButton(
+                                              icon: Icons.cameraswitch_outlined,
+                                              onPressed: scanner.switchCamera,
                                             ),
                                           ),
                                         ],
@@ -320,6 +305,10 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                                     autofocus: true,
                                     textCapitalization:
                                         TextCapitalization.characters,
+                                    keyboardType: TextInputType.visiblePassword,
+                                    inputFormatters: const [
+                                      RegistrationCodeFormatter(),
+                                    ],
                                     maxLength: 9,
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
@@ -415,6 +404,39 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     } catch (failure) {
       if (mounted) showAppSnack(context, '$failure', error: true);
     }
+  }
+}
+
+class RegistrationCodeFormatter extends TextInputFormatter {
+  const RegistrationCodeFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final selectionEnd = newValue.selection.end.clamp(0, newValue.text.length);
+    final beforeSelection = newValue.text.substring(0, selectionEnd);
+    final raw = newValue.text.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
+    final limited = raw.length > 8 ? raw.substring(0, 8) : raw;
+    final formatted = limited.length > 4
+        ? '${limited.substring(0, 4)}-${limited.substring(4)}'
+        : limited;
+
+    final rawCursor = beforeSelection
+        .toUpperCase()
+        .replaceAll(RegExp('[^A-Z0-9]'), '')
+        .length
+        .clamp(0, limited.length);
+    final formattedCursor = (rawCursor + (rawCursor > 4 ? 1 : 0)).clamp(
+      0,
+      formatted.length,
+    );
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formattedCursor),
+    );
   }
 }
 

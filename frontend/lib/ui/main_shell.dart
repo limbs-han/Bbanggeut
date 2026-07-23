@@ -31,7 +31,10 @@ class _MainShellState extends State<MainShell> {
         openVideos: () => setState(() => index = 2),
         openCalendar: () => setState(() => index = 1),
       ),
-      CalendarScreen(controller: widget.controller),
+      CalendarScreen(
+        controller: widget.controller,
+        onBack: () => setState(() => index = 0),
+      ),
       VideosScreen(controller: widget.controller),
       FamilyScreen(controller: widget.controller),
       SettingsScreen(controller: widget.controller),

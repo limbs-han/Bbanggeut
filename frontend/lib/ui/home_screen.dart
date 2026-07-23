@@ -58,11 +58,7 @@ class HomeScreen extends StatelessWidget {
                       status: status,
                     ),
                     const SizedBox(height: 22),
-                    SectionHeader(
-                      '오늘의 기록',
-                      action: '전체 보기',
-                      onAction: openVideos,
-                    ),
+                    const SectionHeader('오늘의 기록'),
                     const SizedBox(height: 9),
                     Row(
                       children: [
@@ -94,81 +90,6 @@ class HomeScreen extends StatelessWidget {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 22),
-                    const SectionHeader('다가오는 기념일'),
-                    const SizedBox(height: 10),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(22),
-                      onTap: openCalendar,
-                      child: SoftCard(
-                        padding: const EdgeInsets.all(13),
-                        borderColor: AppColors.yellow,
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 54,
-                              height: 54,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: AppColors.yellowSoft,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    '${DateTime.now().add(const Duration(days: 3)).day}',
-                                    style: const TextStyle(
-                                      fontSize: 23,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const Text(
-                                    'JUL',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '엄마 생일',
-                                    style: TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  SizedBox(height: 3),
-                                  Text(
-                                    '수요일 · 3일 뒤',
-                                    style: TextStyle(
-                                      color: AppColors.muted,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const CircleAvatar(
-                              radius: 18,
-                              backgroundColor: AppColors.sageSoft,
-                              child: Icon(
-                                Icons.chevron_right_rounded,
-                                color: AppColors.inkSoft,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
                     const SizedBox(height: 22),
                     const SectionHeader('최근 저장된 추억'),
@@ -346,118 +267,10 @@ class _LivePreviewCard extends StatelessWidget {
   final DeviceSummary device;
   final DeviceStatus? status;
   @override
-  Widget build(BuildContext context) => SoftCard(
-    padding: EdgeInsets.zero,
-    radius: 24,
-    borderColor: Colors.transparent,
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: Column(
-        children: [
-          InkWell(
-            onTap: status?.isOnline == true
-                ? () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          LiveScreen(controller: controller, device: device),
-                    ),
-                  )
-                : () => showAppSnack(
-                    context,
-                    '카메라가 오프라인이라 라이브를 시작할 수 없어요.',
-                    error: true,
-                  ),
-            child: Stack(
-              children: [
-                const FamilyReferenceImage(borderRadius: 0),
-                Positioned(
-                  left: 12,
-                  top: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xA82D312B),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: const Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 4,
-                          backgroundColor: AppColors.live,
-                        ),
-                        SizedBox(width: 7),
-                        Text(
-                          'LIVE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xA82D312B),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: const Text(
-                      '1080p',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        device.name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        status?.personCount == null
-                            ? '${status?.isOnline == true ? '온라인' : '오프라인'} · 감지 인원 확인 중'
-                            : '온라인 · 가족 ${status!.personCount}명 감지',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.muted,
-                  size: 30,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
+  Widget build(BuildContext context) => EmbeddedLivePlayer(
+    controller: controller,
+    device: device,
+    status: status,
   );
 }
 

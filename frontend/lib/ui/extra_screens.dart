@@ -17,6 +17,7 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   int filter = 0;
+  bool allRead = false;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +40,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               _SubHeader(
                 title: '알림',
                 trailing: TextButton(
-                  onPressed: () {},
+                  onPressed: allRead
+                      ? null
+                      : () => setState(() => allRead = true),
                   child: const Text('모두 읽음'),
                 ),
               ),
@@ -63,13 +66,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     ),
                     const SizedBox(height: 8),
                     if (showAnniversary)
-                      const _NoticeTile(
+                      _NoticeTile(
                         icon: Icons.cake_outlined,
                         color: AppColors.yellowSoft,
                         title: '기념일 알림',
                         message: '엄마 생일이 3일 앞으로 다가왔어요.',
                         time: '오전 9:00',
-                        unread: true,
+                        unread: !allRead,
                       ),
                     if (showSystem)
                       ...controller.joinRequests.map(
@@ -80,7 +83,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           message:
                               '${request.requester.displayName}님이 가족 참여를 요청했어요.',
                           time: memoryDate(request.requestedAt),
-                          unread: true,
+                          unread: !allRead,
                         ),
                       ),
                     ...latest.map(
@@ -94,7 +97,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         time: memoryDate(
                           video.capturedStartAt ?? video.createdAt,
                         ),
-                        unread: video == latest.firstOrNull,
+                        unread: !allRead && video == latest.firstOrNull,
                       ),
                     ),
                     if (!hasNotices)
@@ -144,7 +147,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 }
 
 class AnniversaryEditorScreen extends StatefulWidget {
-  const AnniversaryEditorScreen({super.key});
+  const AnniversaryEditorScreen({
+    super.key,
+    this.initialDate,
+    this.screenTitle = '기념일 등록',
+  });
+  final DateTime? initialDate;
+  final String screenTitle;
   @override
   State<AnniversaryEditorScreen> createState() =>
       _AnniversaryEditorScreenState();
@@ -153,8 +162,14 @@ class AnniversaryEditorScreen extends StatefulWidget {
 class _AnniversaryEditorScreenState extends State<AnniversaryEditorScreen> {
   final title = TextEditingController(text: '엄마 생일');
   final memo = TextEditingController(text: '화이트 같은 날에 말해드려요');
-  DateTime date = DateTime.now().add(const Duration(days: 3));
+  late DateTime date;
   bool yearly = true;
+
+  @override
+  void initState() {
+    super.initState();
+    date = widget.initialDate ?? DateTime.now().add(const Duration(days: 3));
+  }
 
   @override
   void dispose() {
@@ -170,7 +185,7 @@ class _AnniversaryEditorScreenState extends State<AnniversaryEditorScreen> {
         child: Column(
           children: [
             _SubHeader(
-              title: '기념일 등록',
+              title: widget.screenTitle,
               trailing: TextButton(
                 onPressed: () {
                   showAppSnack(
@@ -349,7 +364,13 @@ class _ReportBody extends StatelessWidget {
     final stats = controller.videoStats;
     final laughs = stats?.byTriggerType['LAUGHTER'] ?? 0;
     final total = stats?.totalCount ?? 0;
-    final dailyCounts = _videoCountsByDay(controller.videos);
+    final dailyCounts = stats?.dailyCounts.isNotEmpty == true
+        ? <String, int>{
+            for (final day in stats!.dailyCounts)
+              if (day.date != null)
+                DateFormat('yyyy-MM-dd').format(day.date!): day.count,
+          }
+        : _videoCountsByDay(controller.videos);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -431,12 +452,17 @@ class _ReportBody extends StatelessWidget {
                       1 + index * 7,
                     );
                     final weekEnd = weekStart.add(const Duration(days: 7));
-                    final value = controller.videos.where((video) {
-                      final date = video.capturedStartAt ?? video.createdAt;
+                    final value = dailyCounts.entries.fold<int>(0, (
+                      sum,
+                      entry,
+                    ) {
+                      final date = DateTime.tryParse(entry.key);
                       return date != null &&
-                          !date.isBefore(weekStart) &&
-                          date.isBefore(weekEnd);
-                    }).length;
+                              !date.isBefore(weekStart) &&
+                              date.isBefore(weekEnd)
+                          ? sum + entry.value
+                          : sum;
+                    });
                     final height = 26.0 + value.clamp(0, 15) * 5;
                     return Expanded(
                       child: Column(
@@ -520,7 +546,14 @@ class _LawnBody extends StatelessWidget {
   final AppController controller;
   @override
   Widget build(BuildContext context) {
-    final counts = _videoCountsByDay(controller.videos);
+    final stats = controller.videoStats;
+    final counts = stats?.dailyCounts.isNotEmpty == true
+        ? <String, int>{
+            for (final day in stats!.dailyCounts)
+              if (day.date != null)
+                DateFormat('yyyy-MM-dd').format(day.date!): day.count,
+          }
+        : _videoCountsByDay(controller.videos);
     final start = DateTime(DateTime.now().year, 1, 1);
     return ListView(
       padding: const EdgeInsets.all(16),

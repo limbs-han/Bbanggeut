@@ -27,9 +27,12 @@ class _VideosScreenState extends State<VideosScreen> {
     final result = widget.controller.videos.where((video) {
       final matchesCategory = switch (category) {
         _MemoryCategory.homeCam =>
-          video.triggerType != 'LAUGHTER' && video.triggerType != 'EDIT',
+          video.triggerType != 'LAUGHTER' &&
+              video.triggerType != 'EDIT' &&
+              video.sourceType != 'EDIT_OUTPUT',
         _MemoryCategory.laughter => video.triggerType == 'LAUGHTER',
-        _MemoryCategory.edited => video.triggerType == 'EDIT',
+        _MemoryCategory.edited =>
+          video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
       };
       final matchesSearch =
           needle.isEmpty ||

@@ -128,13 +128,9 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
           title: title.text.trim(),
           description: description.text.trim(),
         );
+        final refreshed = await widget.controller.api.getVideo(video.id);
+        if (mounted) setState(() => video = refreshed);
         await widget.controller.refreshDeviceData();
-        final refreshed = widget.controller.videos.where(
-          (item) => item.id == video.id,
-        );
-        if (mounted && refreshed.isNotEmpty) {
-          setState(() => video = refreshed.first);
-        }
       } catch (failure) {
         if (mounted) showAppSnack(context, '$failure', error: true);
       }
@@ -178,6 +174,7 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                             id: video.id,
                             deviceId: video.deviceId,
                             triggerType: video.triggerType,
+                            sourceType: video.sourceType,
                             title: video.title,
                             status: video.status,
                             favorite: !video.favorite,

@@ -9,8 +9,9 @@ import 'video_detail_screen.dart';
 import 'widgets.dart';
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key, required this.controller});
+  const CalendarScreen({super.key, required this.controller, this.onBack});
   final AppController controller;
+  final VoidCallback? onBack;
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
@@ -39,13 +40,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       error = null;
     });
     try {
-      final page = await widget.controller.api.listVideos(
+      final items = await widget.controller.api.listAllVideos(
         device.id,
         from: month,
         to: DateTime(month.year, month.month + 1),
-        size: 200,
       );
-      if (mounted) setState(() => monthVideos = page.items);
+      if (mounted) setState(() => monthVideos = items);
     } catch (failure) {
       if (mounted) setState(() => error = '$failure');
     } finally {
@@ -91,10 +91,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: Column(
               children: [
                 _CalendarHeader(
+                  onBack: widget.onBack ?? () => Navigator.maybePop(context),
                   onAdd: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const AnniversaryEditorScreen(),
+                      builder: (_) => AnniversaryEditorScreen(
+                        initialDate: selected,
+                        screenTitle: '일정 추가',
+                      ),
                     ),
                   ),
                 ),
@@ -107,6 +111,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     onSelect: (date) => setState(() => selected = date),
                     onPrevious: () => _shiftMonth(-1),
                     onNext: () => _shiftMonth(1),
+                    onAnniversary: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AnniversaryEditorScreen(
+                          initialDate: DateTime(month.year, 7, 13),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -120,97 +132,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     controller: widget.controller,
                   ),
                 ),
-                const SizedBox(height: 12),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: SoftCard(
-                    padding: EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: AppColors.pink,
-                          child: Icon(
-                            Icons.favorite_rounded,
-                            color: AppColors.coral,
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '오늘의 한 줄',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                              SizedBox(height: 3),
-                              Text(
-                                '아빠가 메뉴 이름을 잘못 말해 모두 빵 터진 날',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.inkSoft,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text('😄', style: TextStyle(fontSize: 24)),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(22),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AnniversaryEditorScreen(),
-                      ),
-                    ),
-                    child: const SoftCard(
-                      padding: EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 25,
-                            backgroundColor: AppColors.pinkSoft,
-                            child: Icon(
-                              Icons.cake_outlined,
-                              color: AppColors.coral,
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '다가오는 기념일',
-                                  style: TextStyle(fontWeight: FontWeight.w900),
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  '엄마 생일    D-2    |    7월 13일 (일)',
-                                  style: TextStyle(
-                                    color: AppColors.inkSoft,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: AppColors.muted,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 24),
               ],
             ),
@@ -222,7 +143,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 }
 
 class _CalendarHeader extends StatelessWidget {
-  const _CalendarHeader({required this.onAdd});
+  const _CalendarHeader({required this.onBack, required this.onAdd});
+  final VoidCallback onBack;
   final VoidCallback onAdd;
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -232,7 +154,7 @@ class _CalendarHeader extends StatelessWidget {
         const SizedBox(width: 16),
         RoundIconButton(
           icon: Icons.chevron_left_rounded,
-          onPressed: () {},
+          onPressed: onBack,
           size: 44,
         ),
         Expanded(
@@ -269,6 +191,7 @@ class _CalendarCard extends StatelessWidget {
     required this.onSelect,
     required this.onPrevious,
     required this.onNext,
+    required this.onAnniversary,
   });
   final DateTime month;
   final DateTime? selected;
@@ -276,6 +199,7 @@ class _CalendarCard extends StatelessWidget {
   final ValueChanged<DateTime> onSelect;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+  final VoidCallback onAnniversary;
 
   @override
   Widget build(BuildContext context) {
@@ -303,6 +227,7 @@ class _CalendarCard extends StatelessWidget {
           date: DateTime(month.year, month.month, day),
           selected: selected,
           count: counts[day] ?? 0,
+          hasAnniversary: month.month == 7 && day == 13,
           onTap: onSelect,
         ),
     ];
@@ -345,7 +270,7 @@ class _CalendarCard extends StatelessWidget {
           const SizedBox(height: 8),
           InkWell(
             borderRadius: BorderRadius.circular(15),
-            onTap: () {},
+            onTap: onAnniversary,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
@@ -376,7 +301,6 @@ class _CalendarCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: AppColors.muted),
                 ],
               ),
             ),
@@ -392,11 +316,13 @@ class _DayCell extends StatelessWidget {
     required this.date,
     required this.selected,
     required this.count,
+    required this.hasAnniversary,
     required this.onTap,
   });
   final DateTime date;
   final DateTime? selected;
   final int count;
+  final bool hasAnniversary;
   final ValueChanged<DateTime> onTap;
   @override
   Widget build(BuildContext context) {
@@ -408,8 +334,8 @@ class _DayCell extends StatelessWidget {
       onTap: () => onTap(date),
       child: Center(
         child: Container(
-          width: 36,
-          height: 36,
+          width: 40,
+          height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: isSelected
@@ -419,16 +345,28 @@ class _DayCell extends StatelessWidget {
                 : Colors.transparent,
             shape: BoxShape.circle,
           ),
-          child: Text(
-            '${date.day}',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: isSunday
-                  ? AppColors.coral
-                  : isSaturday
-                  ? AppColors.sageDark
-                  : AppColors.ink,
-            ),
+          child: Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              if (hasAnniversary)
+                const Icon(
+                  Icons.favorite_border_rounded,
+                  size: 40,
+                  color: AppColors.coral,
+                ),
+              Text(
+                '${date.day}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: isSunday
+                      ? AppColors.coral
+                      : isSaturday
+                      ? AppColors.sageDark
+                      : AppColors.ink,
+                ),
+              ),
+            ],
           ),
         ),
       ),

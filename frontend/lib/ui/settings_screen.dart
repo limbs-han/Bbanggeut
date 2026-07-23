@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
@@ -15,9 +16,45 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const _storage = FlutterSecureStorage();
+  static const _anniversaryKey = 'wj_pref_anniversary_alerts';
+  static const _weeklyKey = 'wj_pref_weekly_report';
+  static const _memoryKey = 'wj_pref_new_memory_alerts';
   bool anniversaryAlerts = true;
   bool weeklyReport = true;
   bool newMemoryAlerts = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotificationPreferences();
+  }
+
+  Future<void> _loadNotificationPreferences() async {
+    try {
+      final values = await Future.wait([
+        _storage.read(key: _anniversaryKey),
+        _storage.read(key: _weeklyKey),
+        _storage.read(key: _memoryKey),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        anniversaryAlerts = values[0] != 'false';
+        weeklyReport = values[1] != 'false';
+        newMemoryAlerts = values[2] == 'true';
+      });
+    } catch (_) {
+      // 플랫폼 저장소를 사용할 수 없으면 현재 세션의 기본값을 유지한다.
+    }
+  }
+
+  Future<void> _savePreference(String key, bool value) async {
+    try {
+      await _storage.write(key: key, value: '$value');
+    } catch (_) {
+      // 화면 상태는 유지하고 다음 실행 시 기본값으로 복구한다.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,24 +165,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             title: '기념일 알림',
                             subtitle: '등록한 기념일을 알려드려요',
                             value: anniversaryAlerts,
-                            onChanged: (value) =>
-                                setState(() => anniversaryAlerts = value),
+                            onChanged: (value) {
+                              setState(() => anniversaryAlerts = value);
+                              _savePreference(_anniversaryKey, value);
+                            },
                           ),
                           const Divider(height: 1, indent: 18, endIndent: 18),
                           _SwitchRow(
                             title: '주간 리포트 알림',
                             subtitle: '이번 주 웃음 기록을 요약해요',
                             value: weeklyReport,
-                            onChanged: (value) =>
-                                setState(() => weeklyReport = value),
+                            onChanged: (value) {
+                              setState(() => weeklyReport = value);
+                              _savePreference(_weeklyKey, value);
+                            },
                           ),
                           const Divider(height: 1, indent: 18, endIndent: 18),
                           _SwitchRow(
                             title: '새로운 추억 알림',
                             subtitle: '새 영상 저장 시 알려드려요',
                             value: newMemoryAlerts,
-                            onChanged: (value) =>
-                                setState(() => newMemoryAlerts = value),
+                            onChanged: (value) {
+                              setState(() => newMemoryAlerts = value);
+                              _savePreference(_memoryKey, value);
+                            },
                           ),
                         ],
                       ),
@@ -214,6 +257,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                     ),
+                    if (device.isOwner) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => _releaseDevice(context),
+                        icon: const Icon(Icons.link_off_rounded),
+                        label: const Text('기기 해제'),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     TextButton.icon(
                       onPressed: () => _withdraw(context),
@@ -238,34 +289,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _editDevice(BuildContext context) async {
     final controller = widget.controller;
-    final input = TextEditingController(text: controller.selectedDevice!.name);
-    final value = await showDialog<String>(
+    final result = await showDialog<_DeviceManageResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('기기 이름 바꾸기'),
-        content: TextField(controller: input, autofocus: true, maxLength: 80),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, input.text.trim()),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
+      builder: (context) =>
+          _RenameDeviceDialog(initialName: controller.selectedDevice!.name),
     );
-    input.dispose();
+    if (!context.mounted || result == null) return;
+    if (result.release) {
+      await _releaseDevice(context);
+      return;
+    }
+    final value = result.name;
     if (value?.isNotEmpty == true) {
-      try {
-        await controller.api.updateDevice(
-          controller.selectedDevice!.id,
-          name: value,
+      final ok = await controller.updateSelectedDevice(name: value);
+      if (!ok && context.mounted) {
+        showAppSnack(
+          context,
+          controller.errorMessage ?? '기기 이름을 바꾸지 못했어요.',
+          error: true,
         );
-        await controller.refreshAll();
-      } catch (failure) {
-        if (context.mounted) showAppSnack(context, '$failure', error: true);
       }
     }
   }
@@ -298,14 +340,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (days != null) {
-      try {
-        await controller.api.updateDevice(
-          controller.selectedDevice!.id,
-          retentionDays: days,
+      final ok = await controller.updateSelectedDevice(retentionDays: days);
+      if (!ok && context.mounted) {
+        showAppSnack(
+          context,
+          controller.errorMessage ?? '보관 기간을 바꾸지 못했어요.',
+          error: true,
         );
-        await controller.refreshAll();
-      } catch (failure) {
-        if (context.mounted) showAppSnack(context, '$failure', error: true);
       }
     }
   }
@@ -436,6 +477,106 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
   }
+
+  Future<void> _releaseDevice(BuildContext context) async {
+    final device = widget.controller.selectedDevice!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('기기 등록을 해제할까요?'),
+        content: const Text(
+          '멤버십과 영상 접근이 종료되고 저장된 영상은 삭제 작업에 들어갑니다. 되돌릴 수 없습니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('등록 해제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      final ok = await widget.controller.releaseSelectedDevice();
+      if (!context.mounted) return;
+      if (ok) {
+        showAppSnack(context, '${device.name} 기기 연결을 해제했어요.');
+      } else {
+        showAppSnack(
+          context,
+          widget.controller.errorMessage ?? '기기 연결을 해제하지 못했어요.',
+          error: true,
+        );
+      }
+    }
+  }
+}
+
+class _DeviceManageResult {
+  const _DeviceManageResult.rename(this.name) : release = false;
+  const _DeviceManageResult.release() : name = null, release = true;
+
+  final String? name;
+  final bool release;
+}
+
+class _RenameDeviceDialog extends StatefulWidget {
+  const _RenameDeviceDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_RenameDeviceDialog> createState() => _RenameDeviceDialogState();
+}
+
+class _RenameDeviceDialogState extends State<_RenameDeviceDialog> {
+  late final TextEditingController input;
+
+  @override
+  void initState() {
+    super.initState();
+    input = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('기기 관리'),
+    content: TextField(
+      controller: input,
+      autofocus: true,
+      maxLength: 80,
+      decoration: const InputDecoration(labelText: '기기 이름'),
+    ),
+    actions: [
+      TextButton.icon(
+        style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+        onPressed: () =>
+            Navigator.pop(context, const _DeviceManageResult.release()),
+        icon: const Icon(Icons.link_off_rounded),
+        label: const Text('기기 해제'),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(
+          context,
+          _DeviceManageResult.rename(input.text.trim()),
+        ),
+        child: const Text('저장'),
+      ),
+    ],
+  );
 }
 
 class _GroupLabel extends StatelessWidget {
