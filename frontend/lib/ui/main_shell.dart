@@ -29,8 +29,12 @@ class _MainShellState extends State<MainShell> {
       HomeScreen(
         controller: widget.controller,
         openVideos: () => setState(() => index = 2),
+        openCalendar: () => setState(() => index = 1),
       ),
-      CalendarScreen(controller: widget.controller),
+      CalendarScreen(
+        controller: widget.controller,
+        onBack: () => setState(() => index = 0),
+      ),
       VideosScreen(controller: widget.controller),
       FamilyScreen(controller: widget.controller),
       SettingsScreen(controller: widget.controller),
@@ -40,36 +44,42 @@ class _MainShellState extends State<MainShell> {
         onRefresh: widget.controller.refreshDeviceData,
         child: IndexedStack(index: index, children: pages),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (value) => setState(() => index = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: '홈',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today_rounded),
-            label: '캘린더',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bookmark_border_rounded),
-            selectedIcon: Icon(Icons.bookmark_rounded),
-            label: '추억',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.group_outlined),
-            selectedIcon: Icon(Icons.group_rounded),
-            label: '가족',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune_rounded),
-            label: '설정',
-          ),
-        ],
+      bottomNavigationBar: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: Color(0xFFE4E5DC))),
+        ),
+        child: NavigationBar(
+          key: const ValueKey('main-bottom-navigation'),
+          selectedIndex: index,
+          onDestinationSelected: (value) => setState(() => index = value),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: '홈',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined),
+              selectedIcon: Icon(Icons.calendar_today_rounded),
+              label: '캘린더',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.bookmark_border_rounded),
+              selectedIcon: Icon(Icons.bookmark_rounded),
+              label: '추억',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.group_outlined),
+              selectedIcon: Icon(Icons.group_rounded),
+              label: '가족',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.tune_outlined),
+              selectedIcon: Icon(Icons.tune_rounded),
+              label: '설정',
+            ),
+          ],
+        ),
       ),
       floatingActionButton: widget.controller.busy
           ? const FloatingActionButton.small(

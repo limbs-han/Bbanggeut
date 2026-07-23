@@ -123,6 +123,7 @@ class VideoMemory {
     required this.title,
     required this.status,
     required this.favorite,
+    this.sourceType = 'IOT_CAPTURE',
     this.description,
     this.durationMs,
     this.thumbnailUrl,
@@ -136,6 +137,7 @@ class VideoMemory {
   final String? description;
   final String status;
   final bool favorite;
+  final String sourceType;
   final int? durationMs;
   final String? thumbnailUrl;
   final DateTime? capturedStartAt;
@@ -148,6 +150,7 @@ class VideoMemory {
     description: json['description'] as String?,
     status: json['status'] as String? ?? 'PROCESSING',
     favorite: json['isFavorite'] as bool? ?? false,
+    sourceType: json['sourceType'] as String? ?? 'IOT_CAPTURE',
     durationMs: (json['durationMs'] as num?)?.toInt(),
     thumbnailUrl: json['thumbnailUrl'] as String?,
     capturedStartAt: parseDate(json['capturedStartAt']),
@@ -174,16 +177,56 @@ class VideoPage {
 }
 
 class VideoStats {
-  const VideoStats({required this.totalCount, required this.byTriggerType});
+  const VideoStats({
+    required this.totalCount,
+    required this.byTriggerType,
+    this.dailyCounts = const [],
+    this.peakWeekday,
+    this.peakHour,
+  });
   final int totalCount;
   final Map<String, int> byTriggerType;
+  final List<DailyVideoCount> dailyCounts;
+  final NamedVideoCount? peakWeekday;
+  final NamedVideoCount? peakHour;
   factory VideoStats.fromJson(Map<String, dynamic> json) => VideoStats(
     totalCount: (json['totalCount'] as num?)?.toInt() ?? 0,
     byTriggerType: {
       for (final item in (json['byTriggerType'] as List? ?? const []))
         item['name'] as String: (item['count'] as num).toInt(),
     },
+    dailyCounts: (json['dailyCounts'] as List? ?? const [])
+        .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+    peakWeekday: json['peakWeekday'] == null
+        ? null
+        : NamedVideoCount.fromJson(json['peakWeekday'] as Map<String, dynamic>),
+    peakHour: json['peakHour'] == null
+        ? null
+        : NamedVideoCount.fromJson(json['peakHour'] as Map<String, dynamic>),
   );
+}
+
+class NamedVideoCount {
+  const NamedVideoCount({required this.name, required this.count});
+  final String name;
+  final int count;
+  factory NamedVideoCount.fromJson(Map<String, dynamic> json) =>
+      NamedVideoCount(
+        name: json['name'] as String? ?? '',
+        count: (json['count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class DailyVideoCount {
+  const DailyVideoCount({required this.date, required this.count});
+  final DateTime? date;
+  final int count;
+  factory DailyVideoCount.fromJson(Map<String, dynamic> json) =>
+      DailyVideoCount(
+        date: parseDate(json['date']),
+        count: (json['count'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class DeviceMember {
@@ -304,5 +347,23 @@ class AccessLogEntry {
     outcome: json['outcome'] as String? ?? 'SUCCESS',
     reasonCode: json['reasonCode'] as String?,
     createdAt: parseDate(json['createdAt']),
+  );
+}
+
+class AccessLogPage {
+  const AccessLogPage({
+    required this.items,
+    this.nextCursor,
+    required this.hasNext,
+  });
+  final List<AccessLogEntry> items;
+  final String? nextCursor;
+  final bool hasNext;
+  factory AccessLogPage.fromJson(Map<String, dynamic> json) => AccessLogPage(
+    items: (json['items'] as List? ?? const [])
+        .map((item) => AccessLogEntry.fromJson(item as Map<String, dynamic>))
+        .toList(),
+    nextCursor: json['nextCursor'] as String?,
+    hasNext: json['hasNext'] as bool? ?? false,
   );
 }

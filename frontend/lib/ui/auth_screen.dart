@@ -12,12 +12,12 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  final formKey = GlobalKey<FormState>();
   final name = TextEditingController();
   final email = TextEditingController();
   final password = TextEditingController();
   bool signUp = false;
   bool obscure = true;
+  bool remember = true;
 
   @override
   void dispose() {
@@ -29,143 +29,217 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> submit() async {
     FocusScope.of(context).unfocus();
-    if (!(formKey.currentState?.validate() ?? false)) {
-      return;
-    }
     final ok = signUp
-        ? await widget.controller.signUp(name.text, email.text, password.text)
-        : await widget.controller.login(email.text, password.text);
+        ? await widget.controller.signUp(
+            name.text,
+            email.text,
+            password.text,
+            persistSession: remember,
+          )
+        : await widget.controller.login(
+            email.text,
+            password.text,
+            persistSession: remember,
+          );
     if (!ok && mounted) {
       showAppSnack(
         context,
-        widget.controller.errorMessage ?? '다시 시도해 주세요.',
+        widget.controller.errorMessage ?? '입력한 정보를 다시 확인해 주세요.',
         error: true,
       );
     }
   }
 
+  void unavailable(String feature) =>
+      showAppSnack(context, '$feature 로그인은 현재 백엔드에 구현되어 있지 않아요.', error: true);
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Form(
-              key: formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: _BrandMark(),
-                  ),
-                  const SizedBox(height: 46),
-                  Text(
-                    signUp ? '새로운 추억을\n함께 시작해요' : '오늘의 순간을\n다시 만나보세요',
-                    style: Theme.of(context).textTheme.displaySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    signUp
-                        ? '계정을 만들고 우리 집 카메라를 연결해 보세요.'
-                        : '소중한 순간이 안전하게 기다리고 있어요.',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(color: AppColors.muted),
-                  ),
-                  const SizedBox(height: 38),
-                  if (signUp) ...[
-                    TextFormField(
-                      controller: name,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: '이름',
-                        prefixIcon: Icon(Icons.person_outline_rounded),
+    resizeToAvoidBottomInset: false,
+    body: AppBackdrop(
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: constraints.maxWidth > 520
+                      ? 520
+                      : constraints.maxWidth - 48,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const _BrandMark(),
+                      const SizedBox(height: 12),
+                      Text(
+                        '웃음이 머무는 우리 집',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: AppColors.muted, fontSize: 15),
                       ),
-                      validator: (value) => (value?.trim().isEmpty ?? true)
-                          ? '이름을 입력해 주세요.'
-                          : null,
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  TextFormField(
-                    controller: email,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: '이메일',
-                      prefixIcon: Icon(Icons.mail_outline_rounded),
-                    ),
-                    validator: (value) =>
-                        !RegExp(
-                          r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                        ).hasMatch(value?.trim() ?? '')
-                        ? '올바른 이메일을 입력해 주세요.'
-                        : null,
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: password,
-                    obscureText: obscure,
-                    onFieldSubmitted: (_) => submit(),
-                    decoration: InputDecoration(
-                      labelText: '비밀번호',
-                      helperText: signUp ? '10자 이상 입력해 주세요.' : null,
-                      prefixIcon: const Icon(Icons.lock_outline_rounded),
-                      suffixIcon: IconButton(
-                        onPressed: () => setState(() => obscure = !obscure),
-                        icon: Icon(
-                          obscure
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
+                      const SizedBox(height: 8),
+                      RichText(
+                        text: TextSpan(
+                          style: Theme.of(context).textTheme.displaySmall,
+                          children: const [
+                            TextSpan(text: '지나간 웃음도,\n다시 만나면\n'),
+                            TextSpan(
+                              text: '추억',
+                              style: TextStyle(color: Color(0xFFD98522)),
+                            ),
+                            TextSpan(text: '이 됩니다.'),
+                          ],
                         ),
                       ),
-                    ),
-                    validator: (value) =>
-                        (value?.length ?? 0) < (signUp ? 10 : 1)
-                        ? (signUp ? '비밀번호는 10자 이상이어야 해요.' : '비밀번호를 입력해 주세요.')
-                        : null,
-                  ),
-                  const SizedBox(height: 22),
-                  FilledButton(
-                    onPressed: widget.controller.busy ? null : submit,
-                    child: widget.controller.busy
-                        ? const SizedBox.square(
-                            dimension: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                      const SizedBox(height: 10),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'AI가 담은 우리 가족의 웃음,\n영상과 메모로 함께 간직해요.',
+                              style: Theme.of(context).textTheme.bodyLarge,
                             ),
-                          )
-                        : Text(signUp ? '계정 만들기' : '로그인'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: widget.controller.busy
-                        ? null
-                        : () => setState(() => signUp = !signUp),
-                    child: Text(signUp ? '이미 계정이 있어요' : '처음이신가요? 회원가입'),
-                  ),
-                  const SizedBox(height: 24),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.verified_user_outlined,
-                        size: 16,
-                        color: AppColors.primary,
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 4, right: 8),
+                            child: Icon(
+                              Icons.favorite_rounded,
+                              size: 17,
+                              color: AppColors.coral,
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(width: 7),
+                      const SizedBox(height: 14),
+                      if (signUp) ...[
+                        _FieldLabel('이름'),
+                        TextField(
+                          controller: name,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.person_outline_rounded),
+                            hintText: '가족에게 보일 이름',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      _FieldLabel('이메일'),
+                      TextField(
+                        controller: email,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.mail_outline_rounded),
+                          hintText: 'owner@example.com',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _FieldLabel('비밀번호'),
+                      TextField(
+                        controller: password,
+                        obscureText: obscure,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => submit(),
+                        autofillHints: const [AutofillHints.password],
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.lock_outline_rounded),
+                          hintText: signUp ? '10자 이상 입력해 주세요' : '••••••••',
+                          suffixIcon: IconButton(
+                            onPressed: () => setState(() => obscure = !obscure),
+                            icon: Icon(
+                              obscure
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: remember,
+                            onChanged: (value) =>
+                                setState(() => remember = value ?? true),
+                            activeColor: AppColors.inkSoft,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                          ),
+                          const Text(
+                            '로그인 상태 유지',
+                            style: TextStyle(color: AppColors.inkSoft),
+                          ),
+                          const Spacer(),
+                          if (!signUp)
+                            TextButton(
+                              onPressed: () => showAppSnack(
+                                context,
+                                '비밀번호 찾기 API가 아직 백엔드에 없어요.',
+                                error: true,
+                              ),
+                              child: const Text('비밀번호 찾기'),
+                            ),
+                        ],
+                      ),
+                      FilledButton(
+                        onPressed: widget.controller.busy ? null : submit,
+                        child: widget.controller.busy
+                            ? const SizedBox.square(
+                                dimension: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                ),
+                              )
+                            : Text(signUp ? '회원가입 완료' : '로그인'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: widget.controller.busy
+                            ? null
+                            : () => setState(() => signUp = !signUp),
+                        child: Text(signUp ? '로그인으로 돌아가기' : '회원가입'),
+                      ),
+                      const SizedBox(height: 14),
+                      const _SocialDivider(),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _SocialButton(
+                            label: 'Apple',
+                            mark: '●',
+                            onTap: () => unavailable('Apple'),
+                          ),
+                          _SocialButton(
+                            label: 'Google',
+                            mark: 'G',
+                            color: const Color(0xFF4285F4),
+                            onTap: () => unavailable('Google'),
+                          ),
+                          _SocialButton(
+                            label: '카카오',
+                            mark: 'TALK',
+                            color: const Color(0xFFF9DC00),
+                            onTap: () => unavailable('카카오'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       Text(
-                        'TLS로 안전하게 암호화된 연결',
-                        style: TextStyle(fontSize: 12, color: AppColors.muted),
+                        '로그인하면 서비스 이용약관 및 개인정보 처리방침에 동의하게 됩니다.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(fontSize: 11),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -177,34 +251,109 @@ class _AuthScreenState extends State<AuthScreen> {
 
 class _BrandMark extends StatelessWidget {
   const _BrandMark();
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.topLeft,
+    child: SizedBox(
+      width: 112,
+      height: 42,
+      child: Image.asset(
+        'assets/images/bbanggeut_logo.png',
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        semanticLabel: '빵긋 로고',
+      ),
+    ),
+  );
+}
+
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.label);
+  final String label;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 1, bottom: 7),
+    child: Text(
+      label,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        color: AppColors.inkSoft,
+      ),
+    ),
+  );
+}
+
+class _SocialDivider extends StatelessWidget {
+  const _SocialDivider();
   @override
   Widget build(BuildContext context) => const Row(
-    mainAxisSize: MainAxisSize.min,
     children: [
-      DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.all(Radius.circular(10)),
+      Expanded(child: Divider()),
+      Padding(
+        padding: EdgeInsets.symmetric(horizontal: 14),
+        child: Text(
+          '또는 간편 로그인',
+          style: TextStyle(color: AppColors.muted, fontSize: 13),
         ),
-        child: Padding(
-          padding: EdgeInsets.all(9),
-          child: Icon(
-            Icons.auto_awesome_rounded,
-            color: Colors.white,
-            size: 20,
+      ),
+      Expanded(child: Divider()),
+    ],
+  );
+}
+
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({
+    required this.label,
+    required this.mark,
+    required this.onTap,
+    this.color = Colors.black,
+  });
+  final String label;
+  final String mark;
+  final Color color;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => InkWell(
+    borderRadius: BorderRadius.circular(99),
+    onTap: onTap,
+    child: Column(
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x17000000),
+                blurRadius: 14,
+                offset: Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Text(
+            mark,
+            style: TextStyle(
+              fontSize: mark.length > 1 ? 9 : 24,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
           ),
         ),
-      ),
-      SizedBox(width: 10),
-      Text(
-        'WILLIAM JAMES',
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 1.4,
-          color: AppColors.primaryDark,
+        const SizedBox(height: 7),
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: AppColors.inkSoft,
+            fontSize: 12,
+          ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 }
