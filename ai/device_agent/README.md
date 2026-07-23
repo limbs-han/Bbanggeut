@@ -110,23 +110,23 @@ Opening Live View adds one relay process; leaving the view removes only that
 relay after the session's idle timeout. YOLO and YAMNet keep consuming their
 local copies throughout.
 
-## Install on Raspberry Pi
+## Raspberry Pi 설치
 
-The production Raspberry Pi layout keeps one always-on camera owner and uses
-the device agent only as an on-demand relay:
+운영 Raspberry Pi에서는 하나의 프로세스만 카메라를 계속 점유하고, 기기
+에이전트는 시청자가 있을 때만 릴레이를 실행합니다.
 
 ```text
 /dev/video0
   -> homecam-publisher
-  -> local MediaMTX rtsp://127.0.0.1:8554/homecam
-  -> device agent (only while a viewer exists)
+  -> Pi 내부 MediaMTX rtsp://127.0.0.1:8554/homecam
+  -> 기기 에이전트 (시청자가 있을 때만 실행)
   -> rtsps://i15e201.p.ssafy.io:8322/live/{streamId}
 ```
 
-This prevents `homecam-publisher` and the device agent from opening the same
-V4L2 device concurrently. Use the stable `/dev/v4l/by-id/...-video-index0`
-camera path in `homecam-publisher` when available; `/dev/video0` can change
-after a reboot or USB reconnect.
+이 구조는 `homecam-publisher`와 기기 에이전트가 같은 V4L2 장치를 동시에 여는
+문제를 방지합니다. 가능하면 `homecam-publisher`에서
+`/dev/v4l/by-id/...-video-index0`처럼 고정된 카메라 경로를 사용하세요.
+`/dev/video0`은 재부팅하거나 USB를 다시 연결하면 바뀔 수 있습니다.
 
 ```bash
 cd ai/device_agent
@@ -135,20 +135,20 @@ sudo ./scripts/prepare-pi.sh /path/to/mqtt-ca.crt
 sudo ./scripts/configure-pi-rtsps.sh
 ```
 
-The preparation script installs and checksum-verifies MediaMTX, creates the
-Python runtime, installs all three systemd services, starts loopback MediaMTX,
-and leaves the device agent stopped until enrollment. It does not require a
-bootstrap credential, so run it before creating the short-lived token.
+준비 스크립트는 MediaMTX 설치 및 체크섬 검증, Python 실행 환경 생성, systemd
+서비스 3개 설치, Pi 내부 MediaMTX 시작까지 처리합니다. 기기 에이전트는
+enrollment 전까지 중지 상태로 둡니다. 이 단계에는 bootstrap 자격증명이
+필요하지 않으므로 짧게 유지되는 토큰을 만들기 전에 실행하세요.
 
-On EC2, use `scripts/create-device-on-server.sh` to write the bootstrap token
-directly to a mode-600 file without printing it. Transfer that file to the Pi,
-then enroll:
+EC2에서는 `scripts/create-device-on-server.sh`를 사용해 bootstrap 토큰을
+화면에 출력하지 않고 권한 600 파일에 바로 저장합니다. 해당 파일만 Pi로
+전달한 뒤 enrollment를 실행합니다.
 
 ```bash
 sudo ./scripts/enroll-pi.sh /home/pi/wj-bootstrap.token
 ```
 
-After connecting and configuring the USB camera:
+USB 카메라를 연결하고 설정한 뒤:
 
 ```bash
 sudoedit /etc/william-james/homecam-publisher.env
@@ -160,7 +160,8 @@ ffprobe -v error -rtsp_transport tcp \
   rtsp://127.0.0.1:8554/homecam
 ```
 
-The stream must be online and H.264. Test the remote TLS listener separately:
+스트림은 온라인 상태이며 H.264여야 합니다. 원격 TLS listener는 별도로
+확인합니다.
 
 ```bash
 openssl s_client \
@@ -169,18 +170,17 @@ openssl s_client \
   -verify_return_error </dev/null
 ```
 
-Then perform a short authenticated RTSPS publish before enabling the service.
-The MediaMTX account must have publish-only permission for `live/*`; TLS alone
-does not authenticate the device. Once direct RTSPS succeeds, the SSH tunnel is
-not needed:
+서비스를 활성화하기 전에 짧은 인증 RTSPS 송출 시험을 수행합니다. MediaMTX
+계정에는 `live/*` 경로의 송출 전용 권한이 있어야 합니다. TLS만으로는 기기를
+인증하지 않습니다. 직접 RTSPS 송출이 성공하면 SSH 터널은 필요하지 않습니다.
 
 ```bash
 sudo systemctl disable --now wj-media-tunnel
 sudo systemctl restart wj-device-agent
 ```
 
-The full two-host procedure, security rules, credential rotation, camera
-diagnostics, and expected logs are in `RASPBERRY_PI_RUNBOOK.md`.
+EC2와 Pi 전체 절차, 보안 규칙, 자격증명 갱신, 카메라 진단과 정상 로그는
+`RASPBERRY_PI_RUNBOOK.md`에서 확인할 수 있습니다.
 
 ## Jetson adapter
 

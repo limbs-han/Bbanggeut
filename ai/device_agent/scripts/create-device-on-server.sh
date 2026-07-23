@@ -3,13 +3,13 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-Usage:
+사용법:
   DEVICE_PROVISIONING_ADMIN_KEY=... ./create-device-on-server.sh \
-    --serial WJ-PI-... --name "Living Room Pi" \
+    --serial WJ-PI-... --name "거실 Pi" \
     --token-out /secure/path/wj-bootstrap.token
 
-Run this script on the EC2 host. The internal provisioning endpoint is bound to
-127.0.0.1 and must not be exposed publicly.
+이 스크립트는 EC2에서 실행하세요. 내부 provisioning API는 127.0.0.1에만
+연결되어 있으며 외부에 공개하면 안 됩니다.
 EOF
 }
 
@@ -29,7 +29,7 @@ while (($#)); do
     --token-out) token_out="${2:-}"; shift 2 ;;
     --api-url) api_url="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+    *) echo "알 수 없는 인자입니다: $1" >&2; usage; exit 1 ;;
   esac
 done
 
@@ -38,15 +38,15 @@ if [[ -z "$serial" || -z "$name" || -z "$token_out" ]]; then
   exit 1
 fi
 if [[ -z "${DEVICE_PROVISIONING_ADMIN_KEY:-}" ]]; then
-  echo "DEVICE_PROVISIONING_ADMIN_KEY is not set." >&2
+  echo "DEVICE_PROVISIONING_ADMIN_KEY가 설정되지 않았습니다." >&2
   exit 1
 fi
 if [[ -e "$token_out" ]]; then
-  echo "Refusing to overwrite existing token file: $token_out" >&2
+  echo "기존 토큰 파일을 덮어쓰지 않습니다: $token_out" >&2
   exit 1
 fi
 if ! command -v jq >/dev/null || ! command -v curl >/dev/null; then
-  echo "curl and jq are required." >&2
+  echo "curl과 jq가 필요합니다." >&2
   exit 1
 fi
 
@@ -73,7 +73,7 @@ device_id="$(jq -r '.deviceId // empty' "$response_file")"
 token="$(jq -r '.bearerToken // empty' "$response_file")"
 expires_at="$(jq -r '.expiresAt // empty' "$response_file")"
 if [[ "$purpose" != "BOOTSTRAP" || -z "$device_id" || -z "$token" ]]; then
-  echo "Provisioning response did not contain a bootstrap credential." >&2
+  echo "Provisioning 응답에 bootstrap 자격증명이 없습니다." >&2
   exit 1
 fi
 
@@ -81,7 +81,7 @@ umask 077
 printf '%s\n' "$token" >"$token_out"
 chmod 600 "$token_out"
 
-echo "Created device: $device_id"
-echo "Bootstrap expires at: $expires_at"
-echo "Bootstrap token written with mode 600: $token_out"
-echo "Transfer the token file securely to the Pi and run enroll-pi.sh immediately."
+echo "기기 생성 완료: $device_id"
+echo "Bootstrap 만료 시각: $expires_at"
+echo "Bootstrap 토큰을 권한 600으로 저장했습니다: $token_out"
+echo "토큰 파일을 Pi로 안전하게 전달하고 enroll-pi.sh를 즉시 실행하세요."

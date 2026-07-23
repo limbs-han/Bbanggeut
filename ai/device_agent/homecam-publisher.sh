@@ -12,8 +12,8 @@ bufsize="${VIDEO_BUFSIZE:-3600k}"
 publish_url="${LOCAL_RTSP_URL:-rtsp://127.0.0.1:8554/homecam}"
 
 if [[ ! -e "$camera_device" ]]; then
-  echo "Camera device is not present: $camera_device" >&2
-  echo "Connect the camera, update /etc/william-james/homecam-publisher.env, then start this service." >&2
+  echo "카메라 장치를 찾을 수 없습니다: $camera_device" >&2
+  echo "카메라를 연결하고 /etc/william-james/homecam-publisher.env를 수정한 뒤 서비스를 시작하세요." >&2
   exit 0
 fi
 

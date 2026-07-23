@@ -1,5 +1,5 @@
 [Unit]
-Description=William James IoT streaming device agent
+Description=William James IoT 스트리밍 기기 에이전트
 Wants=network-online.target
 After=network-online.target
 

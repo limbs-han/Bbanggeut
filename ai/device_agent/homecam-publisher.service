@@ -1,5 +1,5 @@
 [Unit]
-Description=William James always-on USB home camera publisher
+Description=William James 상시 실행 USB 홈카메라 publisher
 Requires=mediamtx.service
 After=network-online.target mediamtx.service
 

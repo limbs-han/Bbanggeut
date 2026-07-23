@@ -1,5 +1,5 @@
 [Unit]
-Description=MediaMTX loopback home camera media server
+Description=MediaMTX Pi 내부 홈카메라 미디어 서버
 Wants=network-online.target
 After=network-online.target
 

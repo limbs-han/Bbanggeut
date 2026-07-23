@@ -84,7 +84,7 @@ class DeviceAgent:
         heartbeat.start()
         self.client.connect_async(self.config.mqtt_host, self.config.mqtt_port, keepalive=30)
         self.client.loop_start()
-        LOG.info("device agent started for device %s", self.config.device_id)
+        LOG.info("기기 에이전트 시작: %s", self.config.device_id)
         self.stop_event.wait()
         self.commands.put(None)
         self.streams.stop()
@@ -98,15 +98,15 @@ class DeviceAgent:
 
     def _on_connect(self, client, userdata, flags, reason_code, properties) -> None:
         if reason_code != 0:
-            LOG.warning("MQTT connection rejected: %s", reason_code)
+            LOG.warning("MQTT 연결 거부: %s", reason_code)
             return
         client.subscribe(f"{self.config.topic_base}/commands", qos=1)
         self._publish("status", self._status("ONLINE", "BOOT_COMPLETED"), 1, True)
-        LOG.info("MQTT connected and command subscription active")
+        LOG.info("MQTT 연결 및 명령 구독 활성화 완료")
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties) -> None:
         if not self.stop_event.is_set():
-            LOG.warning("MQTT disconnected: %s", reason_code)
+            LOG.warning("MQTT 연결 해제: %s", reason_code)
 
     def _on_message(self, client, userdata, message) -> None:
         try:
@@ -115,7 +115,7 @@ class DeviceAgent:
                 raise ValueError("command must be an object")
             self.commands.put_nowait(body)
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError, queue.Full) as error:
-            LOG.warning("invalid MQTT command ignored: %s", type(error).__name__)
+            LOG.warning("잘못된 MQTT 명령 무시: %s", type(error).__name__)
 
     def _command_worker(self) -> None:
         while not self.stop_event.is_set():
@@ -125,7 +125,7 @@ class DeviceAgent:
             try:
                 self._handle(command)
             except Exception as error:
-                LOG.exception("command processing failed: %s", type(error).__name__)
+                LOG.exception("명령 처리 실패: %s", type(error).__name__)
 
     def _handle(self, command: dict[str, Any]) -> None:
         request_id = self._validate(command)
@@ -196,7 +196,7 @@ class DeviceAgent:
             finished = self.streams.clear_if_finished()
             if finished and finished.stream_id and self.current_context is not None:
                 LOG.warning(
-                    "stream relay exited for stream %s with return code %s",
+                    "스트림 릴레이 종료: stream=%s, return_code=%s",
                     finished.stream_id,
                     finished.return_code,
                 )
@@ -292,7 +292,7 @@ class DeviceAgent:
             retain=retain,
         )
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
-            LOG.warning("MQTT publish failed for %s: rc=%s", suffix, result.rc)
+            LOG.warning("MQTT 발행 실패: topic=%s, rc=%s", suffix, result.rc)
 
 
 def main() -> None:
