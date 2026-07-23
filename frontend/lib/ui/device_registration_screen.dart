@@ -20,7 +20,10 @@ class DeviceRegistrationScreen extends StatefulWidget {
 }
 
 class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
-  final code = TextEditingController();
+  final codePrefix = TextEditingController();
+  final codeSuffix = TextEditingController();
+  final codePrefixFocus = FocusNode();
+  final codeSuffixFocus = FocusNode();
   final scanner = MobileScannerController(
     formats: const [BarcodeFormat.qrCode],
     detectionSpeed: DetectionSpeed.noDuplicates,
@@ -31,7 +34,10 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
 
   @override
   void dispose() {
-    code.dispose();
+    codePrefix.dispose();
+    codeSuffix.dispose();
+    codePrefixFocus.dispose();
+    codeSuffixFocus.dispose();
     scanner.dispose();
     super.dispose();
   }
@@ -45,14 +51,16 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
   }
 
   Future<void> _register([String? scannedValue]) async {
-    final normalized = _normalizedCode(scannedValue ?? code.text) ?? '';
+    final typedCode = '${codePrefix.text}-${codeSuffix.text}';
+    final normalized = _normalizedCode(scannedValue ?? typedCode) ?? '';
     if (normalized.length != 8) {
       showAppSnack(context, '기기 화면에 표시된 8자리 코드를 입력해 주세요.', error: true);
       return;
     }
     final formatted =
         '${normalized.substring(0, 4)}-${normalized.substring(4)}';
-    code.text = formatted;
+    codePrefix.text = formatted.substring(0, 4);
+    codeSuffix.text = formatted.substring(5);
     final ok = await widget.controller.claimDevice(formatted);
     if (!mounted) return;
     if (ok) {
@@ -92,6 +100,9 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
       await scanner.start();
     } else {
       await scanner.stop();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) codePrefixFocus.requestFocus();
+      });
     }
   }
 
@@ -300,25 +311,145 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 10),
-                                  TextField(
-                                    controller: code,
-                                    autofocus: true,
-                                    textCapitalization:
-                                        TextCapitalization.characters,
-                                    keyboardType: TextInputType.visiblePassword,
-                                    inputFormatters: const [
-                                      RegistrationCodeFormatter(),
-                                    ],
-                                    maxLength: 9,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontSize: 25,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 3,
-                                    ),
-                                    decoration: const InputDecoration(
-                                      hintText: 'XXXX-XXXX',
-                                      counterText: '',
+                                  AnimatedBuilder(
+                                    animation: Listenable.merge([
+                                      codePrefixFocus,
+                                      codeSuffixFocus,
+                                    ]),
+                                    builder: (context, _) => AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 120,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color:
+                                              codePrefixFocus.hasFocus ||
+                                                  codeSuffixFocus.hasFocus
+                                              ? AppColors.sageDark
+                                              : AppColors.line,
+                                          width:
+                                              codePrefixFocus.hasFocus ||
+                                                  codeSuffixFocus.hasFocus
+                                              ? 1.7
+                                              : 1.2,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              key: const Key(
+                                                'registration-code-prefix',
+                                              ),
+                                              controller: codePrefix,
+                                              focusNode: codePrefixFocus,
+                                              autofocus: true,
+                                              textCapitalization:
+                                                  TextCapitalization.characters,
+                                              keyboardType:
+                                                  TextInputType.visiblePassword,
+                                              textInputAction:
+                                                  TextInputAction.next,
+                                              autocorrect: false,
+                                              enableSuggestions: false,
+                                              inputFormatters: const [
+                                                RegistrationCodePartFormatter(),
+                                              ],
+                                              maxLength: 4,
+                                              textAlign: TextAlign.center,
+                                              onChanged: (value) {
+                                                if (value.length == 4) {
+                                                  codeSuffixFocus
+                                                      .requestFocus();
+                                                  codeSuffix.selection =
+                                                      TextSelection.collapsed(
+                                                        offset: codeSuffix
+                                                            .text
+                                                            .length,
+                                                      );
+                                                }
+                                              },
+                                              onSubmitted: (_) =>
+                                                  codeSuffixFocus
+                                                      .requestFocus(),
+                                              style: const TextStyle(
+                                                fontSize: 25,
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 3,
+                                              ),
+                                              decoration: const InputDecoration(
+                                                hintText: 'XXXX',
+                                                counterText: '',
+                                                filled: false,
+                                                border: InputBorder.none,
+                                                enabledBorder: InputBorder.none,
+                                                focusedBorder: InputBorder.none,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 18,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                            ),
+                                            child: Text(
+                                              '-',
+                                              style: TextStyle(
+                                                fontSize: 30,
+                                                fontWeight: FontWeight.w900,
+                                                color: AppColors.ink,
+                                              ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: TextField(
+                                              key: const Key(
+                                                'registration-code-suffix',
+                                              ),
+                                              controller: codeSuffix,
+                                              focusNode: codeSuffixFocus,
+                                              textCapitalization:
+                                                  TextCapitalization.characters,
+                                              keyboardType:
+                                                  TextInputType.visiblePassword,
+                                              textInputAction:
+                                                  TextInputAction.done,
+                                              autocorrect: false,
+                                              enableSuggestions: false,
+                                              inputFormatters: const [
+                                                RegistrationCodePartFormatter(),
+                                              ],
+                                              maxLength: 4,
+                                              textAlign: TextAlign.center,
+                                              onSubmitted: (_) => _register(),
+                                              style: const TextStyle(
+                                                fontSize: 25,
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 3,
+                                              ),
+                                              decoration: const InputDecoration(
+                                                hintText: 'XXXX',
+                                                counterText: '',
+                                                filled: false,
+                                                border: InputBorder.none,
+                                                enabledBorder: InputBorder.none,
+                                                focusedBorder: InputBorder.none,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 18,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -404,6 +535,31 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     } catch (failure) {
       if (mounted) showAppSnack(context, '$failure', error: true);
     }
+  }
+}
+
+class RegistrationCodePartFormatter extends TextInputFormatter {
+  const RegistrationCodePartFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final selectionEnd = newValue.selection.end.clamp(0, newValue.text.length);
+    final beforeSelection = newValue.text.substring(0, selectionEnd);
+    final raw = newValue.text.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
+    final limited = raw.length > 4 ? raw.substring(0, 4) : raw;
+    final cursor = beforeSelection
+        .toUpperCase()
+        .replaceAll(RegExp('[^A-Z0-9]'), '')
+        .length
+        .clamp(0, limited.length);
+
+    return TextEditingValue(
+      text: limited,
+      selection: TextSelection.collapsed(offset: cursor),
+    );
   }
 }
 

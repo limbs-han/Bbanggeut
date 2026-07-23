@@ -22,6 +22,21 @@ void main() {
     expect(format('ab!cd 12345').text, 'ABCD-1234');
   });
 
+  test('등록 코드의 앞뒤 네 자리 입력을 대문자 영숫자로 제한한다', () {
+    const formatter = RegistrationCodePartFormatter();
+
+    TextEditingValue format(String text) => formatter.formatEditUpdate(
+      TextEditingValue.empty,
+      TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ),
+    );
+
+    expect(format('ab1!c').text, 'AB1C');
+    expect(format('abcd12').text, 'ABCD');
+  });
+
   test('기기 해제 성공 시 선택 기기와 연결 데이터를 즉시 비운다', () async {
     final api = _ReleaseApiClient();
     const device = DeviceSummary(
