@@ -7,11 +7,13 @@ set -Eeuo pipefail
 
 DURATION_SECONDS="${1:-3600}"
 INTERVAL_SECONDS="${2:-60}"
+AI_SERVICE_UNIT="${3:-${AI_SERVICE_UNIT:-auto}}"
 
 : "${FFPROBE_PATH:=/usr/bin/ffprobe}"
 : "${RECORDING_DIR:=/var/lib/william-james/recordings}"
 : "${LOCAL_RTSP_MAIN_URL:=rtsp://127.0.0.1:8554/homecam/main}"
 : "${LOCAL_RTSP_AI_URL:=rtsp://127.0.0.1:8554/homecam/ai}"
+: "${AI_LOG_ROOT:=/home/ssafy/ai_events/logs}"
 
 if [[ "${EUID}" -ne 0 ]]; then
     echo "Run as root, preferably with systemd-run" >&2
@@ -29,11 +31,23 @@ if [[ ! -x "$FFPROBE_PATH" ]]; then
     exit 1
 fi
 
+if [[ "$AI_SERVICE_UNIT" == "auto" ]]; then
+    if systemctl is-active --quiet wj-edge-ai-recording.service; then
+        AI_SERVICE_UNIT="wj-edge-ai-recording.service"
+    elif systemctl is-active --quiet wj-edge-ai-mvp.service; then
+        AI_SERVICE_UNIT="wj-edge-ai-mvp.service"
+    else
+        echo "Neither edge AI service is active; specify the expected unit as argument 3" >&2
+        exit 1
+    fi
+fi
+
 units=(
     wj-media-source.service
     wj-mediamtx-local.service
     wj-local-recording.service
-    wj-edge-ai-mvp.service
+    "$AI_SERVICE_UNIT"
+    wj-recording-prune.timer
 )
 
 recording_bytes() {
@@ -77,6 +91,43 @@ probe_stream() {
         "$name" "$result" "$elapsed_ms"
 }
 
+latest_ai_log_dir() {
+    if [[ ! -d "$AI_LOG_ROOT" ]]; then
+        return 0
+    fi
+    find "$AI_LOG_ROOT" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -type d \
+        -printf '%T@ %p\n' 2>/dev/null |
+        sort -n |
+        tail -n 1 |
+        cut -d' ' -f2- || true
+}
+
+sample_ai_logs() {
+    local log_dir yolo_line yamnet_line
+    log_dir="$(latest_ai_log_dir)"
+    if [[ -z "$log_dir" ]]; then
+        printf 'AI_LOG status=UNAVAILABLE root=%s\n' "$AI_LOG_ROOT"
+        return
+    fi
+
+    yolo_line="$(
+        grep -aE 'frames=[0-9]+ fps=' "$log_dir/yolo.log" 2>/dev/null |
+        tail -n 1 || true
+    )"
+    yamnet_line="$(
+        tr '\r' '\n' <"$log_dir/yamnet.log" 2>/dev/null |
+        grep -aE \
+            'Audio stream (connected|unavailable|reconnected)|Local laughter event' |
+        tail -n 1 || true
+    )"
+    printf 'AI_LOG_DIR path=%s\n' "$log_dir"
+    printf 'YOLO_SAMPLE %s\n' "${yolo_line:-not-yet-reported}"
+    printf 'YAMNET_SAMPLE %s\n' "${yamnet_line:-not-yet-reported}"
+}
+
 sample_system() {
     local now_epoch="$1"
     local sample_index="$2"
@@ -101,6 +152,7 @@ sample_system() {
 
     probe_stream main "$LOCAL_RTSP_MAIN_URL"
     probe_stream ai "$LOCAL_RTSP_AI_URL"
+    sample_ai_logs
 
     printf 'RECORDING files=%s bytes=%s\n' \
         "$(recording_count)" \
@@ -146,6 +198,9 @@ printf 'SOAK_START timestamp=%s duration_seconds=%s interval_seconds=%s recordin
     "$DURATION_SECONDS" \
     "$INTERVAL_SECONDS" \
     "$initial_recording_bytes"
+printf 'SOAK_CONFIG ai_service_unit=%s ai_log_root=%s\n' \
+    "$AI_SERVICE_UNIT" \
+    "$AI_LOG_ROOT"
 
 while true; do
     now_epoch="$(date +%s)"

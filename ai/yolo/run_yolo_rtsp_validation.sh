@@ -280,21 +280,31 @@ fi
 printf 'finished_at=%s\n' "$(date --iso-8601=seconds)" >>"$METADATA"
 printf 'yolo_exit_status=%s\n' "$YOLO_STATUS" >>"$METADATA"
 
+SUMMARY_STATUS=0
+if [[ -s "$COMMANDS_JSONL" ]]; then
+    set +e
+    "$YOLO_PYTHON" "$SUMMARY_SCRIPT" \
+        --commands "$COMMANDS_JSONL" \
+        --log "$YOLO_LOG" \
+        --output-dir "$RUN_DIR" \
+        --tested-classes "$TESTED_CLASSES"
+    SUMMARY_STATUS="$?"
+    set -e
+else
+    echo "No framing command evidence was produced: $COMMANDS_JSONL" >&2
+    SUMMARY_STATUS=1
+fi
+printf 'summary_exit_status=%s\n' "$SUMMARY_STATUS" >>"$METADATA"
+
 if (( YOLO_STATUS != 0 && YOLO_STATUS != 130 )); then
     echo "YOLO exited unexpectedly with status $YOLO_STATUS" >&2
     echo "Inspect: $YOLO_LOG" >&2
     exit "$YOLO_STATUS"
 fi
-if [[ ! -s "$COMMANDS_JSONL" ]]; then
-    echo "No framing command evidence was produced: $COMMANDS_JSONL" >&2
-    exit 1
+if (( SUMMARY_STATUS != 0 )); then
+    echo "Validation summary failed with status $SUMMARY_STATUS" >&2
+    exit "$SUMMARY_STATUS"
 fi
-
-"$YOLO_PYTHON" "$SUMMARY_SCRIPT" \
-    --commands "$COMMANDS_JSONL" \
-    --log "$YOLO_LOG" \
-    --output-dir "$RUN_DIR" \
-    --tested-classes "$TESTED_CLASSES"
 
 echo
 echo "Validation finished."

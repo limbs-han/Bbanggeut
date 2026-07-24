@@ -2,11 +2,26 @@
 
 Jetson Orin Nano에서 영상과 음성을 동시에 분석하는 AI 모듈이다. YOLO + ByteTrack은 사람·고양이·강아지를 추적하여 카메라 구도 목표를 계산하고, YAMNet은 웃음소리를 감지한다. 두 결과는 로컬 Mosquitto를 통해 결합되어 추억 영상 저장 후보 이벤트로 전달된다.
 
-현재 Jetson 검증 경로는 공유 UDP 입력과 5초 전·후 MVP 클립이다. 공유 RTSP 입력과 H.264/AAC 1분 순환 녹화는 Jetson 스모크 테스트를 통과했으며, 30초 이벤트 병합과 최초 웃음 60초 전·마지막 웃음 60초 후 클립 경로는 장시간·단절 복구 시험 후 기본 경로로 전환한다. SG90 실제 제어는 다음 구현 단계이고, 전체 합의 규격은 `AI_EDGE_INTEGRATION_SPEC.md`를 따른다.
+현재 운영 서비스는 공유 UDP 입력을 사용한다. 별도 시험판에서는 YOLO가 공유
+RTSP를 직접 받아 실제 사람을 탐지·추적하고, 객체 소실 시
+`TRACKING → HOLD → HOME`으로 전환하며, RTSP 강제 중단 후 지수 백오프로
+자동 재연결하는 것까지 Jetson에서 검증했다. 고양이·강아지는 현장에 대상이
+없어 아직 시험하지 않았다. 운영 코드 묶음 배포와 YOLO·YAMNet 1시간 통합
+시험 전까지 UDP fallback은 유지한다.
+
+공유 RTSP 입력과 H.264/AAC 1분 순환 녹화는 Jetson 스모크 테스트를 통과했다.
+30초 이벤트 병합과 최초 웃음 60초 전·마지막 웃음 60초 후 로컬 MP4 생성도
+Jetson에서 확인했지만 서버 업로드의 HTTP 409 해결과 앱 조회 검증은 남아 있다.
+SG90 실제 제어는 다음 구현 단계이고, 전체 합의 규격은
+`AI_EDGE_INTEGRATION_SPEC.md`를 따른다.
 
 Jetson에서 웃음 감지부터 전후 60초 로컬 MP4 생성과 노트북 다운로드까지
 실기 검증할 때는 [`LAUGHTER_EVENT_RECORDING_RUNBOOK.md`](LAUGHTER_EVENT_RECORDING_RUNBOOK.md)를
 순서대로 따른다.
+
+2026-07-24 YOLO RTSP 사람 탐지·상태 전이·강제 단절 복구 결과는
+[`AI_YOLO_RTSP_VALIDATION_2026-07-24.md`](AI_YOLO_RTSP_VALIDATION_2026-07-24.md)에
+기록했다.
 
 ## 시스템 구조
 
@@ -43,19 +58,25 @@ ai/
 │   ├── vision_mqtt_publisher.py
 │   ├── event_fusion_service.py
 │   ├── segment_clip_uploader.py
+│   ├── summarize_yolo_validation.py
 │   ├── run_ai_stack.sh
 │   ├── run_edge_ai_recording.sh
+│   ├── run_yolo_rtsp_validation.sh
+│   ├── validate_jetson_release.sh
 │   ├── requirements-autoframe-jetson.txt
 │   ├── test_autoframe_logic.py
 │   ├── test_event_fusion.py
 │   ├── test_segment_clip_uploader.py
-│   └── test_stream_capture.py
+│   ├── test_stream_capture.py
+│   └── test_summarize_yolo_validation.py
 └── yamnet/
     ├── yamnet_laughter_detect_jetson.py
     ├── ffmpeg_audio_stream.py
+    ├── laughter_scoring.py
     ├── mqtt_event_publisher.py
     ├── requirements-jetson.txt
-    └── test_ffmpeg_audio_stream.py
+    ├── test_ffmpeg_audio_stream.py
+    └── test_laughter_scoring.py
 ```
 
 ## 현재 기능
@@ -79,6 +100,8 @@ ai/
 - 직접 마이크 또는 공유 RTSP/UDP 오디오를 YAMNet 입력용 16kHz mono 파형으로 변환
 - laughter 관련 클래스의 점수 중 최댓값 사용
 - threshold, consecutive, gain, cooldown 설정 지원
+- `max`, `mean`, `p90` 시간 패치 점수 집계 방식 비교 지원
+- 이벤트를 만들지 않고 점수·RMS·최상위 소리를 JSONL로 기록하는 진단 모드 지원
 - 웃음을 놓치지 않는 Recall 우선 설정 사용
 - 웃음 감지 시 MQTT 원본 이벤트 발행
 
@@ -176,10 +199,20 @@ python ai/yolo/test_event_fusion.py
 python ai/yolo/test_laughter_clip_uploader.py
 python ai/yolo/test_stream_capture.py
 python ai/yolo/test_segment_clip_uploader.py
+python ai/yolo/test_summarize_yolo_validation.py
 python ai/yamnet/test_ffmpeg_audio_stream.py
+python ai/yamnet/test_laughter_scoring.py
 ```
 
-현재 기준 총 22개 테스트가 통과해야 한다.
+현재 기준 총 32개 테스트가 통과해야 한다.
+
+Jetson에 전체 릴리스를 별도 폴더로 배치한 뒤에는 서비스를 변경하기 전에
+다음 명령으로 파일 구성, Bash·Python 문법과 32개 테스트를 한 번에 확인한다.
+
+```bash
+chmod +x ai/yolo/validate_jetson_release.sh
+ai/yolo/validate_jetson_release.sh
+```
 
 기본 객체 탐지만 확인하려면 다음 명령을 사용한다.
 
@@ -464,7 +497,8 @@ RTSP·녹화·기존 UDP AI를 함께 시험할 때는
 - 실제 팬·틸트 제어 전에는 데드존, EMA, 최대 속도와 물리적 각도 제한을 확정한다.
 - 디스크 기반 녹화·클립 경로를 Jetson에서 검증한 뒤 기존 5초 메모리 버퍼를 기본 경로에서 제거한다.
 - 디스크 기반 1분 전·후 클립 코드는 구현됐지만 실제 BRIO 스트림의 타임스탬프·A/V 동기화는 Jetson에서 확인해야 한다.
-- RTSP를 강제로 중단·복구하는 Jetson 실기 시험과 최소 1시간 자원 측정 전에는 UDP fallback을 제거하지 않는다.
+- YOLO 단독 RTSP 강제 중단·복구는 Jetson에서 확인했다. YOLO·YAMNet 동시
+  복구와 최소 1시간 자원 측정 전에는 UDP fallback을 제거하지 않는다.
 - 기존 5초 MVP 이벤트가 서버에서 HTTP 409로 거절되면 1초 간격으로 재시도하므로, 백엔드 충돌 응답 계약과 지수 백오프를 확정해야 한다.
 
 ## 문제 해결

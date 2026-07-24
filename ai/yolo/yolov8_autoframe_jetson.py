@@ -949,11 +949,8 @@ def run(args: argparse.Namespace) -> None:
     started_at = time.monotonic()
     last_report_at = started_at
     last_command_at = float("-inf")
-    actual_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) or args.width
-    actual_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or args.height
-    actual_fps = capture.get(cv2.CAP_PROP_FPS)
-    if actual_fps <= 0:
-        actual_fps = float(args.fps)
+    actual_fps = float(args.fps)
+    source_details_printed = False
     frame_history: deque[tuple[float, Any]] = deque()
     pending_video_clips: dict[str, dict[str, Any]] = {}
     seen_event_ids: set[str] = set()
@@ -963,7 +960,6 @@ def run(args: argparse.Namespace) -> None:
     print(f"Device: {device}")
     if device != "cpu":
         print(f"CUDA device: {torch.cuda.get_device_name(int(device))}")
-    print(f"Source: {source_name} ({actual_width}x{actual_height} @ {actual_fps:.1f} FPS)")
     print("Tracker: ByteTrack; classes: person, cat, dog")
     print("Motor output is disabled. This run only simulates framing commands.")
     print("Press Ctrl+C to stop" + (", or q in the display window." if args.display else "."))
@@ -976,6 +972,17 @@ def run(args: argparse.Namespace) -> None:
                     print("Input video ended.")
                     break
                 raise SystemExit("The camera opened, but a frame could not be read.")
+
+            if not source_details_printed:
+                actual_height, actual_width = frame.shape[:2]
+                reported_fps = capture.get(cv2.CAP_PROP_FPS)
+                if reported_fps > 0:
+                    actual_fps = reported_fps
+                print(
+                    f"Source: {source_name} "
+                    f"({actual_width}x{actual_height} @ {actual_fps:.1f} FPS)"
+                )
+                source_details_printed = True
 
             frame_epoch = time.time()
             if args.event_dir is not None:

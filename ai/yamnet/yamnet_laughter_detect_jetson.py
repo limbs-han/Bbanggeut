@@ -23,6 +23,7 @@ from ffmpeg_audio_stream import (
     detect_rtsp_timeout_option,
     redact_stream_url,
 )
+from laughter_scoring import SCORE_AGGREGATIONS, summarize_laughter_scores
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
@@ -81,6 +82,27 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="추론 전에 적용할 입력 증폭 배율입니다(기본값: 1.0).",
+    )
+    parser.add_argument(
+        "--score-aggregation",
+        choices=SCORE_AGGREGATIONS,
+        default=os.getenv("YAMNET_SCORE_AGGREGATION", "max"),
+        help=(
+            "시간 패치의 웃음 점수를 합치는 방식입니다: max, mean, p90 "
+            "(기본값: max)."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostics-jsonl",
+        type=Path,
+        help=(
+            "각 추론의 max·mean·p90, RMS와 판정 결과를 저장할 JSONL 경로입니다."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostics-only",
+        action="store_true",
+        help="판정은 기록하되 이벤트 파일과 MQTT 메시지는 생성하지 않습니다.",
     )
     parser.add_argument(
         "--model",
@@ -387,7 +409,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     laughter_names = [class_names[index] for index in laughter_indices]
     audio_queue: queue.Queue[Any] = queue.Queue(maxsize=8)
     mqtt_publisher = None
-    if args.mqtt_host:
+    if args.mqtt_host and not args.diagnostics_only:
         from mqtt_event_publisher import MqttEventPublisher
 
         mqtt_publisher = MqttEventPublisher(
@@ -418,12 +440,28 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     print(f"웃음 관련 클래스: {', '.join(laughter_names)}")
     print(
         f"임계값: {args.threshold:.2f}, 연속 횟수: {args.consecutive}, "
-        f"입력 증폭: {args.gain:.2f}배"
+        f"입력 증폭: {args.gain:.2f}배, 점수 집계: {args.score_aggregation}"
     )
+    diagnostics_output = None
+    if args.diagnostics_jsonl is not None:
+        diagnostics_path = args.diagnostics_jsonl.expanduser().resolve()
+        diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+        diagnostics_output = diagnostics_path.open(
+            "w",
+            encoding="utf-8",
+            buffering=1,
+        )
+        print(f"진단 JSONL: {diagnostics_path}")
+    if args.diagnostics_only:
+        print("진단 전용 모드: 이벤트 파일과 MQTT 메시지를 생성하지 않습니다.")
     print("마이크에 대고 웃어보세요. 종료하려면 Ctrl+C를 누르세요.\n")
 
     buffer = np.empty(0, dtype=np.float32)
-    save_audio_clips = args.event_dir is not None and not args.trigger_only
+    save_audio_clips = (
+        args.event_dir is not None
+        and not args.trigger_only
+        and not args.diagnostics_only
+    )
     history_samples = (
         max(1, int(round(capture_rate * args.clip_seconds)))
         if save_audio_clips
@@ -492,10 +530,13 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                 mean_scores = scores_np.mean(axis=0)
                 top_index = int(np.argmax(mean_scores))
                 laughter_slice = scores_np[:, laughter_indices]
-                per_class_max = np.max(laughter_slice, axis=0)
-                best_laugh_offset = int(np.argmax(per_class_max))
-                laugh_score = float(per_class_max[best_laugh_offset])
-                best_laugh_name = laughter_names[best_laugh_offset]
+                score_summary = summarize_laughter_scores(
+                    laughter_slice.tolist(),
+                    laughter_names,
+                    args.score_aggregation,
+                )
+                laugh_score = score_summary.selected_score
+                best_laugh_name = score_summary.selected_class
 
                 if laugh_score >= args.threshold:
                     positive_streak += 1
@@ -504,24 +545,69 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
 
                 print(
                     f"\r현재 소리: {class_names[top_index]:<28} "
-                    f"웃음: {laugh_score:.3f} ({best_laugh_name}) "
+                    f"웃음[{args.score_aggregation}]: "
+                    f"{laugh_score:.3f} ({best_laugh_name}) "
                     f"RMS: {rms:.4f} 추론: {inference_ms:.0f}ms   ",
                     end="",
                     flush=True,
                 )
 
                 now = time.monotonic()
-                if (
+                should_trigger = (
                     positive_streak >= args.consecutive
                     and now - last_alert_at >= args.cooldown
-                ):
+                )
+                if diagnostics_output is not None:
+                    diagnostics_output.write(
+                        json.dumps(
+                            {
+                                "observedAt": datetime.now(timezone.utc)
+                                .isoformat(timespec="milliseconds")
+                                .replace("+00:00", "Z"),
+                                "topClass": class_names[top_index],
+                                "topScore": round(
+                                    float(mean_scores[top_index]),
+                                    6,
+                                ),
+                                "laughterMax": round(
+                                    score_summary.max_score,
+                                    6,
+                                ),
+                                "laughterMaxClass": score_summary.max_class,
+                                "laughterMean": round(
+                                    score_summary.mean_score,
+                                    6,
+                                ),
+                                "laughterMeanClass": score_summary.mean_class,
+                                "laughterP90": round(
+                                    score_summary.p90_score,
+                                    6,
+                                ),
+                                "laughterP90Class": score_summary.p90_class,
+                                "selectedAggregation": args.score_aggregation,
+                                "selectedScore": round(laugh_score, 6),
+                                "selectedClass": best_laugh_name,
+                                "threshold": args.threshold,
+                                "positiveStreak": positive_streak,
+                                "wouldTrigger": should_trigger,
+                                "rms": round(rms, 6),
+                                "inferenceMs": round(inference_ms, 3),
+                            },
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    )
+
+                if should_trigger:
                     print(
-                        f"\n웃음 감지! 점수={laugh_score:.3f} "
+                        f"\n웃음 {'진단 판정' if args.diagnostics_only else '감지'}! "
+                        f"점수={laugh_score:.3f} "
                         f"종류={best_laugh_name}"
                     )
                     positive_streak = 0
                     last_alert_at = now
-                    if args.event_dir is not None:
+                    if args.event_dir is not None and not args.diagnostics_only:
                         event_id = str(uuid.uuid4())
                         occurred_at = datetime.now(timezone.utc)
                         if save_audio_clips:
@@ -569,6 +655,8 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     finally:
         if mqtt_publisher is not None:
             mqtt_publisher.close()
+        if diagnostics_output is not None:
+            diagnostics_output.close()
 
 
 def main() -> None:
