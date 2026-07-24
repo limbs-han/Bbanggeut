@@ -1,0 +1,27 @@
+[Unit]
+Description=William James disk-backed edge AI
+After=network-online.target wj-local-recording.service
+Wants=network-online.target
+Requires=wj-local-recording.service
+
+[Service]
+Type=simple
+User=ssafy
+Group=ssafy
+SupplementaryGroups=video audio williamjames
+Environment=HOME=/home/ssafy
+Environment=YOLO_PYTHON=/home/ssafy/venvs/yolo/bin/python
+Environment=YAMNET_PYTHON=/home/ssafy/venvs/yamnet/bin/python
+Environment=EVENT_DIR=/home/ssafy/ai_events
+EnvironmentFile=/etc/william-james/device-agent.env
+WorkingDirectory=/home/ssafy/ai/yolo
+ExecStart=/bin/bash /home/ssafy/ai/yolo/run_edge_ai_recording.sh
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

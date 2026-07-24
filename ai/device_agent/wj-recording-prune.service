@@ -1,0 +1,12 @@
+[Unit]
+Description=Prune expired William James homecam recordings
+
+[Service]
+Type=oneshot
+User=williamjames
+Group=williamjames
+EnvironmentFile=/etc/william-james/device-agent.env
+ExecStart=/opt/william-james/device-agent/recording-prune.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/william-james/recordings

@@ -14,6 +14,7 @@ Environment=EVENT_DIR=/home/ssafy/ai_events
 EnvironmentFile=/etc/william-james/device-agent.env
 WorkingDirectory=/home/ssafy/ai/yolo
 ExecStart=/bin/bash /home/ssafy/ai/yolo/run_edge_ai_mvp.sh
+SuccessExitStatus=143
 Restart=always
 RestartSec=5
 TimeoutStopSec=15
