@@ -4,6 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
 
 class DeviceRegistrationScreen extends StatefulWidget {
@@ -95,11 +96,14 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
   }
 
   Future<void> _selectTab(int value) async {
-    setState(() => tab = value);
     if (value == 0) {
+      FocusScope.of(context).unfocus();
+      setState(() => tab = value);
       await scanner.start();
     } else {
       await scanner.stop();
+      if (!mounted) return;
+      setState(() => tab = value);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) codePrefixFocus.requestFocus();
       });
@@ -108,6 +112,10 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
 
   Future<void> _exitToLogin() async {
     if (widget.controller.busy) return;
+    if (widget.canGoBack && Navigator.canPop(context)) {
+      Navigator.pop(context);
+      return;
+    }
     try {
       await scanner.stop();
     } catch (_) {
@@ -122,7 +130,7 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    resizeToAvoidBottomInset: false,
+    resizeToAvoidBottomInset: true,
     body: AppBackdrop(
       child: SafeArea(
         child: Column(
@@ -163,56 +171,67 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                 child: Column(
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(17),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x12000000),
-                                blurRadius: 14,
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.videocam_rounded,
-                            color: AppColors.sageDark,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '새 카메라 연결',
-                                style: TextStyle(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w900,
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 120),
+                      alignment: Alignment.topCenter,
+                      child: MediaQuery.viewInsetsOf(context).bottom > 0
+                          ? const SizedBox.shrink()
+                          : Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(17),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Color(0x12000000),
+                                            blurRadius: 14,
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(
+                                        Icons.videocam_rounded,
+                                        color: AppColors.sageDark,
+                                        size: 28,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '새 카메라 연결',
+                                            style: TextStyle(
+                                              fontSize: 19,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'QR 코드 또는 8자리 등록 코드로 연결해요.',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: AppColors.muted,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'QR 코드 또는 8자리 등록 코드로 연결해요.',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppColors.muted,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                                const SizedBox(height: 10),
+                              ],
+                            ),
                     ),
-                    const SizedBox(height: 10),
                     SizedBox(
                       height: 48,
                       child: SegmentedButton<int>(
@@ -306,169 +325,186 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 7),
-                                  const StatusPill(
-                                    label: 'QR 코드를 자동으로 인식해요',
-                                    color: AppColors.greenCard,
-                                  ),
                                 ],
                               ),
                             )
-                          : SoftCard(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const Text(
-                                    '8자리 등록 코드',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  AnimatedBuilder(
-                                    animation: Listenable.merge([
-                                      codePrefixFocus,
-                                      codeSuffixFocus,
-                                    ]),
-                                    builder: (context, _) => AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 120,
+                          : SingleChildScrollView(
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              child: SoftCard(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    const Text(
+                                      '8자리 등록 코드',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
                                       ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.surface,
-                                        borderRadius: BorderRadius.circular(18),
-                                        border: Border.all(
-                                          color:
-                                              codePrefixFocus.hasFocus ||
-                                                  codeSuffixFocus.hasFocus
-                                              ? AppColors.sageDark
-                                              : AppColors.line,
-                                          width:
-                                              codePrefixFocus.hasFocus ||
-                                                  codeSuffixFocus.hasFocus
-                                              ? 1.7
-                                              : 1.2,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    AnimatedBuilder(
+                                      animation: Listenable.merge([
+                                        codePrefixFocus,
+                                        codeSuffixFocus,
+                                      ]),
+                                      builder: (context, _) => AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 120,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surface,
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                          border: Border.all(
+                                            color:
+                                                codePrefixFocus.hasFocus ||
+                                                    codeSuffixFocus.hasFocus
+                                                ? AppColors.sageDark
+                                                : AppColors.line,
+                                            width:
+                                                codePrefixFocus.hasFocus ||
+                                                    codeSuffixFocus.hasFocus
+                                                ? 1.7
+                                                : 1.2,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                key: const Key(
+                                                  'registration-code-prefix',
+                                                ),
+                                                controller: codePrefix,
+                                                focusNode: codePrefixFocus,
+                                                textCapitalization:
+                                                    TextCapitalization
+                                                        .characters,
+                                                keyboardType: TextInputType
+                                                    .visiblePassword,
+                                                textInputAction:
+                                                    TextInputAction.next,
+                                                scrollPadding:
+                                                    const EdgeInsets.only(
+                                                      bottom: 100,
+                                                    ),
+                                                autocorrect: false,
+                                                enableSuggestions: false,
+                                                inputFormatters: const [
+                                                  RegistrationCodePartFormatter(),
+                                                ],
+                                                maxLength: 4,
+                                                textAlign: TextAlign.center,
+                                                onChanged: (value) {
+                                                  if (value.length == 4) {
+                                                    codeSuffixFocus
+                                                        .requestFocus();
+                                                    codeSuffix.selection =
+                                                        TextSelection.collapsed(
+                                                          offset: codeSuffix
+                                                              .text
+                                                              .length,
+                                                        );
+                                                  }
+                                                },
+                                                onSubmitted: (_) =>
+                                                    codeSuffixFocus
+                                                        .requestFocus(),
+                                                style: const TextStyle(
+                                                  fontSize: 25,
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 3,
+                                                ),
+                                                decoration:
+                                                    const InputDecoration(
+                                                      hintText: 'XXXX',
+                                                      counterText: '',
+                                                      filled: false,
+                                                      border: InputBorder.none,
+                                                      enabledBorder:
+                                                          InputBorder.none,
+                                                      focusedBorder:
+                                                          InputBorder.none,
+                                                      contentPadding:
+                                                          EdgeInsets.symmetric(
+                                                            horizontal: 14,
+                                                            vertical: 18,
+                                                          ),
+                                                    ),
+                                              ),
+                                            ),
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 10,
+                                              ),
+                                              child: Text(
+                                                '-',
+                                                style: TextStyle(
+                                                  fontSize: 30,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: AppColors.ink,
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: TextField(
+                                                key: const Key(
+                                                  'registration-code-suffix',
+                                                ),
+                                                controller: codeSuffix,
+                                                focusNode: codeSuffixFocus,
+                                                textCapitalization:
+                                                    TextCapitalization
+                                                        .characters,
+                                                keyboardType: TextInputType
+                                                    .visiblePassword,
+                                                textInputAction:
+                                                    TextInputAction.done,
+                                                scrollPadding:
+                                                    const EdgeInsets.only(
+                                                      bottom: 100,
+                                                    ),
+                                                autocorrect: false,
+                                                enableSuggestions: false,
+                                                inputFormatters: const [
+                                                  RegistrationCodePartFormatter(),
+                                                ],
+                                                maxLength: 4,
+                                                textAlign: TextAlign.center,
+                                                onSubmitted: (_) => _register(),
+                                                style: const TextStyle(
+                                                  fontSize: 25,
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 3,
+                                                ),
+                                                decoration:
+                                                    const InputDecoration(
+                                                      hintText: 'XXXX',
+                                                      counterText: '',
+                                                      filled: false,
+                                                      border: InputBorder.none,
+                                                      enabledBorder:
+                                                          InputBorder.none,
+                                                      focusedBorder:
+                                                          InputBorder.none,
+                                                      contentPadding:
+                                                          EdgeInsets.symmetric(
+                                                            horizontal: 14,
+                                                            vertical: 18,
+                                                          ),
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextField(
-                                              key: const Key(
-                                                'registration-code-prefix',
-                                              ),
-                                              controller: codePrefix,
-                                              focusNode: codePrefixFocus,
-                                              autofocus: true,
-                                              textCapitalization:
-                                                  TextCapitalization.characters,
-                                              keyboardType:
-                                                  TextInputType.visiblePassword,
-                                              textInputAction:
-                                                  TextInputAction.next,
-                                              autocorrect: false,
-                                              enableSuggestions: false,
-                                              inputFormatters: const [
-                                                RegistrationCodePartFormatter(),
-                                              ],
-                                              maxLength: 4,
-                                              textAlign: TextAlign.center,
-                                              onChanged: (value) {
-                                                if (value.length == 4) {
-                                                  codeSuffixFocus
-                                                      .requestFocus();
-                                                  codeSuffix.selection =
-                                                      TextSelection.collapsed(
-                                                        offset: codeSuffix
-                                                            .text
-                                                            .length,
-                                                      );
-                                                }
-                                              },
-                                              onSubmitted: (_) =>
-                                                  codeSuffixFocus
-                                                      .requestFocus(),
-                                              style: const TextStyle(
-                                                fontSize: 25,
-                                                fontWeight: FontWeight.w900,
-                                                letterSpacing: 3,
-                                              ),
-                                              decoration: const InputDecoration(
-                                                hintText: 'XXXX',
-                                                counterText: '',
-                                                filled: false,
-                                                border: InputBorder.none,
-                                                enabledBorder: InputBorder.none,
-                                                focusedBorder: InputBorder.none,
-                                                contentPadding:
-                                                    EdgeInsets.symmetric(
-                                                      horizontal: 14,
-                                                      vertical: 18,
-                                                    ),
-                                              ),
-                                            ),
-                                          ),
-                                          const Padding(
-                                            padding: EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                            ),
-                                            child: Text(
-                                              '-',
-                                              style: TextStyle(
-                                                fontSize: 30,
-                                                fontWeight: FontWeight.w900,
-                                                color: AppColors.ink,
-                                              ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: TextField(
-                                              key: const Key(
-                                                'registration-code-suffix',
-                                              ),
-                                              controller: codeSuffix,
-                                              focusNode: codeSuffixFocus,
-                                              textCapitalization:
-                                                  TextCapitalization.characters,
-                                              keyboardType:
-                                                  TextInputType.visiblePassword,
-                                              textInputAction:
-                                                  TextInputAction.done,
-                                              autocorrect: false,
-                                              enableSuggestions: false,
-                                              inputFormatters: const [
-                                                RegistrationCodePartFormatter(),
-                                              ],
-                                              maxLength: 4,
-                                              textAlign: TextAlign.center,
-                                              onSubmitted: (_) => _register(),
-                                              style: const TextStyle(
-                                                fontSize: 25,
-                                                fontWeight: FontWeight.w900,
-                                                letterSpacing: 3,
-                                              ),
-                                              decoration: const InputDecoration(
-                                                hintText: 'XXXX',
-                                                counterText: '',
-                                                filled: false,
-                                                border: InputBorder.none,
-                                                enabledBorder: InputBorder.none,
-                                                focusedBorder: InputBorder.none,
-                                                contentPadding:
-                                                    EdgeInsets.symmetric(
-                                                      horizontal: 14,
-                                                      vertical: 18,
-                                                    ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                     ),
@@ -481,48 +517,63 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                           : _register,
                       child: Text(tab == 0 ? '직접 코드 입력하기' : '기기 연결하기'),
                     ),
-                    SizedBox(
-                      height: 40,
-                      child: TextButton(
-                        onPressed: _joinWithInvite,
-                        child: const Text('제품 코드로 가족 연결하기'),
-                      ),
-                    ),
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.lock_outline_rounded,
-                          size: 14,
-                          color: AppColors.muted,
-                        ),
-                        SizedBox(width: 6),
-                        Text(
-                          '연결 정보는 암호화되어 안전하게 처리됩니다.',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: AppColors.muted,
+                    if (MediaQuery.viewInsetsOf(context).bottom == 0) ...[
+                      SizedBox(
+                        height: 40,
+                        child: TextButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => InvitationInboxScreen(
+                                controller: widget.controller,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            widget.controller.receivedInvitations.isEmpty
+                                ? '받은 가족 초대 확인하기'
+                                : '받은 가족 초대 ${widget.controller.receivedInvitations.length}개',
                           ),
                         ),
-                      ],
-                    ),
-                    SizedBox(
-                      height: 34,
-                      child: TextButton(
-                        key: const Key('device-registration-logout'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.danger,
-                          padding: EdgeInsets.zero,
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: widget.controller.busy ? null : _exitToLogin,
-                        child: const Text(
-                          '로그아웃',
-                          style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            size: 14,
+                            color: AppColors.muted,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            '연결 정보는 암호화되어 안전하게 처리됩니다.',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(
+                        height: 34,
+                        child: TextButton(
+                          key: const Key('device-registration-logout'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.danger,
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: widget.controller.busy
+                              ? null
+                              : _exitToLogin,
+                          child: const Text(
+                            '로그아웃',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -532,43 +583,6 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
       ),
     ),
   );
-
-  Future<void> _joinWithInvite() async {
-    final input = TextEditingController();
-    final token = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('가족 초대 받기'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          minLines: 1,
-          maxLines: 3,
-          decoration: const InputDecoration(labelText: '초대 링크 또는 토큰'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, input.text.trim()),
-            child: const Text('요청 보내기'),
-          ),
-        ],
-      ),
-    );
-    input.dispose();
-    if (token == null || token.isEmpty) return;
-    final parsed = Uri.tryParse(token);
-    final inviteToken = parsed?.queryParameters['token'] ?? token;
-    try {
-      await widget.controller.api.createJoinRequest(inviteToken);
-      if (mounted) showAppSnack(context, '가입 요청을 보냈어요. 소유자의 승인을 기다려 주세요.');
-    } catch (failure) {
-      if (mounted) showAppSnack(context, '$failure', error: true);
-    }
-  }
 }
 
 class RegistrationCodePartFormatter extends TextInputFormatter {

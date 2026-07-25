@@ -27,7 +27,7 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'William James',
+    title: '빵긋',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
     home: AnimatedBuilder(
@@ -45,28 +45,6 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
   @override
-  Widget build(BuildContext context) => const Scaffold(
-    body: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome_rounded, size: 46, color: AppColors.primary),
-          SizedBox(height: 18),
-          Text(
-            'WILLIAM JAMES',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-              color: AppColors.primaryDark,
-            ),
-          ),
-          SizedBox(height: 24),
-          SizedBox.square(
-            dimension: 24,
-            child: CircularProgressIndicator(strokeWidth: 2.5),
-          ),
-        ],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      const Scaffold(backgroundColor: AppColors.cream);
 }

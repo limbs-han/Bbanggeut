@@ -6,6 +6,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
 import 'extra_screens.dart';
+import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -132,6 +133,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 color: AppColors.surface,
                               ),
                             ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const _GroupLabel('가족 초대'),
+                    SoftCard(
+                      padding: EdgeInsets.zero,
+                      child: _SettingRow(
+                        icon: Icons.mark_email_unread_outlined,
+                        title: '받은 초대함',
+                        subtitle: controller.receivedInvitations.isEmpty
+                            ? '새로운 초대가 없어요'
+                            : '대기 중인 초대 ${controller.receivedInvitations.length}개',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                InvitationInboxScreen(controller: controller),
                           ),
                         ),
                       ),

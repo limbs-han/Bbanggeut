@@ -29,7 +29,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final showAnniversary = filter == 0 || filter == 1;
     final showSystem = filter == 0 || filter == 3;
     final hasNotices =
-        (showSystem && controller.joinRequests.isNotEmpty) ||
+        (showSystem && controller.receivedInvitations.isNotEmpty) ||
         showAnniversary ||
         latest.isNotEmpty;
     return Scaffold(
@@ -75,14 +75,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         unread: !allRead,
                       ),
                     if (showSystem)
-                      ...controller.joinRequests.map(
-                        (request) => _NoticeTile(
+                      ...controller.receivedInvitations.map(
+                        (invitation) => _NoticeTile(
                           icon: Icons.group_add_outlined,
                           color: AppColors.greenCard,
-                          title: '새로운 가족 가입 요청',
+                          title: '새로운 가족 초대',
                           message:
-                              '${request.requester.displayName}님이 가족 참여를 요청했어요.',
-                          time: memoryDate(request.requestedAt),
+                              '${invitation.inviter?.displayName ?? '가족'}님이 ${invitation.deviceName} 기기에 초대했어요.',
+                          time: memoryDate(invitation.createdAt),
                           unread: !allRead,
                         ),
                       ),

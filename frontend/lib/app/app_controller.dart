@@ -22,7 +22,8 @@ class AppController extends ChangeNotifier {
   HomeSummary? homeSummary;
   List<VideoMemory> videos = const [];
   List<DeviceMember> members = const [];
-  List<JoinRequestInfo> joinRequests = const [];
+  List<Invitation> sentInvitations = const [];
+  List<Invitation> receivedInvitations = const [];
 
   Future<void> initialize() async {
     if (devHomeCam && devHlsUrl.isNotEmpty) {
@@ -135,12 +136,17 @@ class AppController extends ChangeNotifier {
   });
 
   Future<void> refreshAll() async {
+    receivedInvitations = await api.listMyInvitations();
+    await refreshDevices();
+  }
+
+  Future<void> refreshDevices() async {
     devices = await api.listDevices();
     if (devices.isEmpty) {
       selectedDevice = null;
       videos = const [];
       members = const [];
-      joinRequests = const [];
+      sentInvitations = const [];
       deviceStatus = null;
       videoStats = null;
       homeSummary = null;
@@ -182,9 +188,9 @@ class AppController extends ChangeNotifier {
       api.listAllVideos(device.id),
       api.listMembers(device.id),
       if (device.isOwner)
-        api.listJoinRequests(device.id)
+        api.listDeviceInvitations(device.id)
       else
-        Future.value(<JoinRequestInfo>[]),
+        Future.value(<Invitation>[]),
       // Home summary is best-effort so a summary hiccup never blanks the tab.
       _loadHomeSummary(device.id),
     ]);
@@ -192,7 +198,7 @@ class AppController extends ChangeNotifier {
     videoStats = results[1] as VideoStats;
     videos = results[2] as List<VideoMemory>;
     members = results[3] as List<DeviceMember>;
-    joinRequests = results[4] as List<JoinRequestInfo>;
+    sentInvitations = results[4] as List<Invitation>;
     homeSummary = results[5] as HomeSummary?;
     notifyListeners();
   }
@@ -234,7 +240,7 @@ class AppController extends ChangeNotifier {
     homeSummary = null;
     videos = const [];
     members = const [];
-    joinRequests = const [];
+    sentInvitations = const [];
 
     if (selectedDevice != null) {
       try {
@@ -276,19 +282,62 @@ class AppController extends ChangeNotifier {
     }
   });
 
-  Future<bool> approve(JoinRequestInfo request) async => _guard(() async {
-    await api.approveJoinRequest(selectedDevice!.id, request.id);
-    await refreshDeviceData();
+  Future<bool> createInvitation(String email) async => _guard(() async {
+    final device = selectedDevice;
+    if (device == null || !device.isOwner) return;
+    await api.createInvitation(device.id, email);
+    sentInvitations = await api.listDeviceInvitations(device.id);
+    notifyListeners();
   });
 
-  Future<bool> reject(JoinRequestInfo request) async => _guard(() async {
-    await api.rejectJoinRequest(selectedDevice!.id, request.id);
-    await refreshDeviceData();
-  });
+  Future<bool> revokeInvitation(Invitation invitation) async =>
+      _guard(() async {
+        final device = selectedDevice;
+        if (device == null || !device.isOwner) return;
+        await api.revokeInvitation(device.id, invitation.id);
+        sentInvitations = sentInvitations
+            .where((item) => item.id != invitation.id)
+            .toList(growable: false);
+        notifyListeners();
+      });
 
-  Future<bool> revoke(DeviceMember member) async => _guard(() async {
-    await api.revokeMember(selectedDevice!.id, member.id);
-    await refreshDeviceData();
+  Future<void> refreshMyInvitations() async {
+    receivedInvitations = await api.listMyInvitations();
+    notifyListeners();
+  }
+
+  Future<bool> acceptInvitation(Invitation invitation) async =>
+      _guard(() async {
+        await api.acceptInvitation(invitation.id);
+        receivedInvitations = receivedInvitations
+            .where((item) => item.id != invitation.id)
+            .toList(growable: false);
+        await refreshDevices();
+      });
+
+  Future<bool> declineInvitation(Invitation invitation) async =>
+      _guard(() async {
+        await api.declineInvitation(invitation.id);
+        receivedInvitations = receivedInvitations
+            .where((item) => item.id != invitation.id)
+            .toList(growable: false);
+        notifyListeners();
+      });
+
+  Future<bool> revokeMemberAccess(DeviceMember member) async =>
+      _guard(() async {
+        await api.revokeMember(selectedDevice!.id, member.id);
+        await refreshDeviceData();
+      });
+
+  @Deprecated('Use revokeMemberAccess')
+  Future<bool> revoke(DeviceMember member) async {
+    return revokeMemberAccess(member);
+  }
+
+  Future<bool> transferOwnership(DeviceMember member) async => _guard(() async {
+    await api.transferOwnership(selectedDevice!.id, member.id);
+    await refreshAll();
   });
 
   void clearError() {
@@ -322,7 +371,8 @@ class AppController extends ChangeNotifier {
     selectedDevice = null;
     videos = const [];
     members = const [];
-    joinRequests = const [];
+    sentInvitations = const [];
+    receivedInvitations = const [];
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;

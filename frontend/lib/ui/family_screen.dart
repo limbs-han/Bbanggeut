@@ -1,14 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import 'widgets.dart';
 
-class FamilyScreen extends StatelessWidget {
+class FamilyScreen extends StatefulWidget {
   const FamilyScreen({super.key, required this.controller});
   final AppController controller;
+
+  @override
+  State<FamilyScreen> createState() => _FamilyScreenState();
+}
+
+class _FamilyScreenState extends State<FamilyScreen> {
+  final inviteEmail = TextEditingController();
+
+  AppController get controller => widget.controller;
+
+  @override
+  void dispose() {
+    inviteEmail.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +52,7 @@ class FamilyScreen extends StatelessWidget {
                         ),
                         if (device.isOwner)
                           TextButton(
-                            onPressed: () => _invite(context),
+                            onPressed: () => _showInviteDialog(context),
                             child: const Text('초대하기'),
                           )
                         else
@@ -134,10 +148,11 @@ class FamilyScreen extends StatelessWidget {
                         }).toList(),
                       ),
                     ),
-                    if (controller.joinRequests.isNotEmpty) ...[
+                    if (device.isOwner &&
+                        controller.sentInvitations.isNotEmpty) ...[
                       const SizedBox(height: 18),
                       const Text(
-                        '가입 요청',
+                        '보낸 초대',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w900,
@@ -145,10 +160,10 @@ class FamilyScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      ...controller.joinRequests.map(
-                        (request) => _JoinRequestCard(
+                      ...controller.sentInvitations.map(
+                        (invitation) => _SentInvitationCard(
                           controller: controller,
-                          request: request,
+                          invitation: invitation,
                         ),
                       ),
                     ],
@@ -174,34 +189,41 @@ class FamilyScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            FilledButton.icon(
-                              onPressed: () => _invite(context),
-                              icon: const Icon(Icons.link_rounded),
-                              label: const Text('초대 링크 복사'),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: inviteEmail,
+                                    keyboardType: TextInputType.emailAddress,
+                                    textInputAction: TextInputAction.send,
+                                    autofillHints: const [AutofillHints.email],
+                                    decoration: const InputDecoration(
+                                      labelText: '이메일',
+                                      hintText: 'family@example.com',
+                                    ),
+                                    onSubmitted: (_) => _sendInvitation(),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: controller.busy
+                                      ? null
+                                      : _sendInvitation,
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(72, 56),
+                                  ),
+                                  child: const Text('초대'),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 8),
-                            TextButton.icon(
-                              onPressed: () async {
-                                try {
-                                  await controller.api.revokeInvite(device.id);
-                                  if (context.mounted) {
-                                    showAppSnack(context, '기존 초대 링크를 회수했어요.');
-                                  }
-                                } catch (failure) {
-                                  if (context.mounted) {
-                                    showAppSnack(
-                                      context,
-                                      '$failure',
-                                      error: true,
-                                    );
-                                  }
-                                }
-                              },
-                              icon: const Icon(
-                                Icons.link_off_rounded,
-                                size: 17,
+                            const Text(
+                              '입력한 이메일 계정의 받은 초대함으로 초대를 보내요.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.inkSoft,
                               ),
-                              label: const Text('기존 링크 회수'),
                             ),
                           ],
                         ),
@@ -224,52 +246,65 @@ class FamilyScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _invite(BuildContext context) async {
-    try {
-      final result = await controller.api.createInvite(
-        controller.selectedDevice!.id,
-      );
-      final token = result['inviteToken'] as String;
-      final expires = parseDate(result['expiresAt']);
-      if (!context.mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '초대 링크가 준비됐어요',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${expires == null ? '정해진 시간 동안' : memoryDate(expires)}까지 유효하며, 가입 요청은 소유자가 다시 승인해야 합니다.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: () => SharePlus.instance.share(
-                    ShareParams(
-                      text:
-                          'Memory Home 가족 초대\nwilliamjames://join?token=$token',
-                    ),
-                  ),
-                  icon: const Icon(Icons.ios_share_rounded),
-                  label: const Text('초대 링크 공유'),
-                ),
-              ],
-            ),
+  Future<void> _showInviteDialog(BuildContext context) async {
+    final input = TextEditingController(text: inviteEmail.text);
+    final email = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('가족 초대'),
+        content: TextField(
+          controller: input,
+          autofocus: true,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.send,
+          autofillHints: const [AutofillHints.email],
+          decoration: const InputDecoration(
+            labelText: '이메일',
+            hintText: 'family@example.com',
           ),
+          onSubmitted: (value) => Navigator.pop(context, value.trim()),
         ),
-      );
-    } catch (failure) {
-      if (context.mounted) showAppSnack(context, '$failure', error: true);
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, input.text.trim()),
+            child: const Text('초대'),
+          ),
+        ],
+      ),
+    );
+    input.dispose();
+    if (email == null) return;
+    inviteEmail.text = email;
+    await _sendInvitation();
+  }
+
+  Future<void> _sendInvitation() async {
+    final email = inviteEmail.text.trim();
+    if (!_looksLikeEmail(email)) {
+      showAppSnack(context, '올바른 이메일 주소를 입력해 주세요.', error: true);
+      return;
     }
+    final ok = await controller.createInvitation(email);
+    if (!mounted) return;
+    if (ok) {
+      inviteEmail.clear();
+      showAppSnack(context, '$email 계정으로 초대를 보냈어요.');
+    } else {
+      showAppSnack(
+        context,
+        controller.errorMessage ?? '초대를 보내지 못했어요.',
+        error: true,
+      );
+    }
+  }
+
+  bool _looksLikeEmail(String value) {
+    final at = value.indexOf('@');
+    return at > 0 && at < value.length - 3 && value.substring(at).contains('.');
   }
 }
 
@@ -316,7 +351,7 @@ class _MemberTile extends StatelessWidget {
                   action == 'transfer' ? _transfer(context) : _revoke(context),
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'transfer', child: Text('소유권 넘기기')),
-                PopupMenuItem(value: 'revoke', child: Text('접근 권한 회수')),
+                PopupMenuItem(value: 'revoke', child: Text('구성원 내보내기')),
               ],
             )
           : const StatusPill(label: '멤버', color: AppColors.sageSoft),
@@ -361,7 +396,7 @@ class _MemberTile extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('접근 권한을 회수할까요?'),
+        title: const Text('구성원을 내보낼까요?'),
         content: Text('${member.user.displayName}님은 즉시 영상과 라이브를 볼 수 없게 됩니다.'),
         actions: [
           TextButton(
@@ -370,19 +405,22 @@ class _MemberTile extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('회수'),
+            child: const Text('내보내기'),
           ),
         ],
       ),
     );
-    if (confirmed == true) controller.revoke(member);
+    if (confirmed == true) controller.revokeMemberAccess(member);
   }
 }
 
-class _JoinRequestCard extends StatelessWidget {
-  const _JoinRequestCard({required this.controller, required this.request});
+class _SentInvitationCard extends StatelessWidget {
+  const _SentInvitationCard({
+    required this.controller,
+    required this.invitation,
+  });
   final AppController controller;
-  final JoinRequestInfo request;
+  final Invitation invitation;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
@@ -390,10 +428,8 @@ class _JoinRequestCard extends StatelessWidget {
       child: Row(
         children: [
           CircleAvatar(
-            backgroundColor: AppColors.pink,
-            child: Text(
-              request.requester.displayName.characters.firstOrNull ?? '?',
-            ),
+            backgroundColor: AppColors.greenCard,
+            child: const Icon(Icons.mail_outline_rounded),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -401,33 +437,47 @@ class _JoinRequestCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  request.requester.displayName,
+                  invitation.inviteeEmail,
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 Text(
-                  request.requester.email,
+                  _invitationStatusLabel(invitation.status),
                   style: const TextStyle(fontSize: 11, color: AppColors.muted),
                 ),
               ],
             ),
           ),
-          TextButton(
-            onPressed: () => controller.reject(request),
-            child: const Text('거절'),
-          ),
-          FilledButton(
-            onPressed: () => controller.approve(request),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(0, 38),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+          if (invitation.isPending)
+            TextButton(
+              onPressed: controller.busy
+                  ? null
+                  : () async {
+                      final ok = await controller.revokeInvitation(invitation);
+                      if (!context.mounted) return;
+                      showAppSnack(
+                        context,
+                        ok
+                            ? '초대를 취소했어요.'
+                            : (controller.errorMessage ?? '초대를 취소하지 못했어요.'),
+                        error: !ok,
+                      );
+                    },
+              child: const Text('초대 취소'),
             ),
-            child: const Text('승인'),
-          ),
         ],
       ),
     ),
   );
 }
+
+String _invitationStatusLabel(String status) => switch (status) {
+  'PENDING' => '수락 대기',
+  'ACCEPTED' => '수락됨',
+  'DECLINED' => '거절됨',
+  'REVOKED' => '취소됨',
+  'EXPIRED' => '만료됨',
+  _ => status,
+};
 
 class _OverlappingDots extends StatelessWidget {
   const _OverlappingDots();
