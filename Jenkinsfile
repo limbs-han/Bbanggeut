@@ -145,10 +145,10 @@ pipeline {
 
     post {
         success {
-            echo "CI passed for ${env.BRANCH_NAME} at ${env.GIT_COMMIT}"
+            echo "${env.BRANCH_NAME} 브랜치 CI가 통과했습니다: ${env.GIT_COMMIT}"
         }
         failure {
-            echo "CI failed for ${env.BRANCH_NAME}; review the failed domain stage."
+            echo "${env.BRANCH_NAME} 브랜치 CI가 실패했습니다. 실패한 영역 단계를 확인하세요."
         }
     }
 }
