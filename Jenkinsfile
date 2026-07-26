@@ -34,10 +34,7 @@ pipeline {
                     steps {
                         deleteDir()
                         checkout scm
-                        dir('backend/server') {
-                            sh 'chmod +x gradlew'
-                            sh './gradlew --no-daemon clean test bootJar'
-                        }
+                        sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
                         junit allowEmptyResults: false,
                             testResults: 'backend/server/build/test-results/test/TEST-*.xml'
                         archiveArtifacts artifacts: 'backend/server/build/libs/server-*.jar',

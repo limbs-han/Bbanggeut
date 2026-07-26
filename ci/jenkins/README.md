@@ -74,20 +74,17 @@ SHA를 지정해 특정 빌드를 직접 실행하는 요청은 HTTP 401로 차�
 
 ## PostgreSQL 통합 테스트
 
-현재 `FlywayMigrationIntegrationTest`에는 다음 설정이 있습니다.
+현재 `FlywayMigrationIntegrationTest`는 외부 테스트 DB 환경변수가 있으면 해당 DB를 사용하고,
+환경변수가 없으면 Testcontainers를 사용합니다.
 
-```java
-@Testcontainers(disabledWithoutDocker = true)
-```
-
-이 테스트는 Docker를 사용할 수 있으면 임시 PostgreSQL 컨테이너를 만들고, Docker를 사용할 수
-없으면 실패 대신 건너뜁니다. 현재 Jenkins Agent에는 운영 Docker를 제어할 수 있는 Docker 소켓이
-없으므로 기존 Testcontainers 테스트는 Jenkins에서 건너뜁니다.
+개발자 PC에서 Docker를 사용할 수 있으면 임시 PostgreSQL 컨테이너를 만듭니다.
+Jenkins Agent에는 운영 Docker를 제어할 수 있는 Docker 소켓이 없으므로 Jenkins 전용
+`postgres-ci`를 사용합니다.
 
 4단계에서는 운영 환경과 분리된 `postgres-ci`를 구성하고 Backend Agent에서
 `postgres-ci:5432` 연결이 가능한 것까지 확인했습니다.
 
-다음 5단계에서는 테스트 코드를 다음 방식으로 확장합니다.
+테스트는 다음 방식으로 실행됩니다.
 
 ```text
 로컬 개발 환경
@@ -100,6 +97,9 @@ Jenkins Backend Agent
   -> Flyway 통합 테스트 실행
   -> 테스트가 끝나면 임시 데이터베이스 삭제
 ```
+
+빌드별 DB 이름은 Jenkins 작업 이름의 해시와 빌드 번호로 만들기 때문에 다른 브랜치의 빌드와
+충돌하지 않습니다. 성공·실패와 관계없이 실행 스크립트의 종료 처리에서 DB를 삭제합니다.
 
 PostgreSQL CI 완료 조건은 다음과 같습니다.
 

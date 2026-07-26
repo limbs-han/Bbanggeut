@@ -77,9 +77,16 @@ services:
       JENKINS_AGENT_NAME: backend-agent
       JENKINS_AGENT_WORKDIR: /home/jenkins/agent
       JENKINS_WEB_SOCKET: "true"
+      TEST_POSTGRES_HOST: postgres-ci
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_ADMIN_DATABASE: jenkins
+      TEST_POSTGRES_ADMIN_USER: jenkins
+      TEST_POSTGRES_PASSWORD_FILE: /run/secrets/postgres-ci-password
     secrets:
       - source: backend_agent_secret
         target: jenkins-agent-secret
+      - source: postgres_ci_password
+        target: postgres-ci-password
     cpus: 0.75
     mem_limit: 1536m
     mem_reservation: 256m
