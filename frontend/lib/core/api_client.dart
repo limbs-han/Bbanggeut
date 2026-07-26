@@ -253,13 +253,28 @@ class ApiClient {
       data: {'name': ?name, 'retentionDays': ?retentionDays},
     ),
   );
-  Future<Invitation> createInvitation(String deviceId, String email) async =>
-      Invitation.fromJson(
-        await _post(
-          '/api/devices/$deviceId/invitations',
-          data: {'email': email.trim()},
-        ),
+  Future<Invitation> createInvitation(
+    String deviceId,
+    String email, {
+    String? membershipRequestToken,
+  }) async => Invitation.fromJson(
+    await _post(
+      '/api/devices/$deviceId/invitations',
+      data: {
+        'email': email.trim(),
+        'membershipRequestToken': ?membershipRequestToken,
+      },
+    ),
+  );
+  Future<MembershipRequestLink> createMembershipRequestLink() async =>
+      MembershipRequestLink.fromJson(
+        await _post('/api/membership-request-links'),
       );
+  Future<MembershipRequestPreview> previewMembershipRequest(
+    String token,
+  ) async => MembershipRequestPreview.fromJson(
+    await _get('/api/membership-request-links/${Uri.encodeComponent(token)}'),
+  );
   Future<List<Invitation>> listDeviceInvitations(String deviceId) async =>
       (await _getList(
         '/api/devices/$deviceId/invitations',

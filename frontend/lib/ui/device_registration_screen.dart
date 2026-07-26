@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
@@ -126,6 +127,22 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     } catch (_) {
       // AppController가 로컬 인증 상태를 항상 초기화하므로 화면 전환은 보장된다.
     }
+  }
+
+  Future<void> _shareMembershipRequest() async {
+    final link = await widget.controller.createMembershipRequestLink();
+    if (!mounted) return;
+    if (link == null) {
+      showAppSnack(
+        context,
+        widget.controller.errorMessage ?? '요청 링크를 만들지 못했어요.',
+        error: true,
+      );
+      return;
+    }
+    await SharePlus.instance.share(
+      ShareParams(subject: '빵긋 가족 멤버 요청', text: '빵긋에서 가족 멤버로 초대해 주세요.\n$link'),
+    );
   }
 
   @override
@@ -534,6 +551,16 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                                 ? '받은 가족 초대 확인하기'
                                 : '받은 가족 초대 ${widget.controller.receivedInvitations.length}개',
                           ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: 36,
+                        child: TextButton.icon(
+                          onPressed: widget.controller.busy
+                              ? null
+                              : _shareMembershipRequest,
+                          icon: const Icon(Icons.link_rounded, size: 17),
+                          label: const Text('가족에게 멤버 요청 링크 보내기'),
                         ),
                       ),
                       const Row(

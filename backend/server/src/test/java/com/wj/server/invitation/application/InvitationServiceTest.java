@@ -19,6 +19,7 @@ import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.InvitationProperties;
 import com.wj.server.invitation.domain.InvitationRow;
+import com.wj.server.invitation.domain.MembershipRequestRow;
 import com.wj.server.invitation.domain.MembershipRow;
 import com.wj.server.invitation.persistence.InvitationMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +37,8 @@ class InvitationServiceTest {
     private InvitationMapper mapper;
     @Mock
     private AuditService auditService;
+    @Mock
+    private MembershipRequestService membershipRequestService;
 
     private InvitationService service;
 
@@ -45,6 +48,7 @@ class InvitationServiceTest {
             mapper,
             new InvitationProperties(TTL),
             auditService,
+            membershipRequestService,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -65,7 +69,8 @@ class InvitationServiceTest {
             .thenAnswer(invocation -> Optional.of(pendingInvitation(
                 invocation.getArgument(1), deviceId, ownerId, "member@example.com", NOW.plus(TTL))));
 
-        var response = service.createInvitation(ownerId, deviceId, "  Member@Example.com ");
+        var response = service.createInvitation(
+            ownerId, deviceId, "  Member@Example.com ", null);
 
         verify(mapper).insertInvitation(
             any(), eq(deviceId), eq(ownerId), eq("member@example.com"), eq(NOW.plus(TTL)));
@@ -74,12 +79,37 @@ class InvitationServiceTest {
     }
 
     @Test
+    void ownerInvitationConsumesMatchingMembershipRequest() {
+        UUID ownerId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID requesterId = UUID.randomUUID();
+        String token = "opaque-request-token";
+        MembershipRequestRow request = new MembershipRequestRow(
+            UUID.randomUUID(), requesterId, "member@example.com", "멤버",
+            NOW.plusSeconds(60), null);
+        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(membershipRequestService.requireForInvitation(
+            token, "member@example.com")).thenReturn(request);
+        when(mapper.findScopedInvitation(eq(deviceId), any()))
+            .thenAnswer(invocation -> Optional.of(pendingInvitation(
+                invocation.getArgument(1), deviceId, ownerId,
+                "member@example.com", NOW.plus(TTL))));
+
+        service.createInvitation(
+            ownerId, deviceId, "member@example.com", token);
+
+        verify(membershipRequestService).consume(
+            eq(token), eq(request), eq(ownerId), any());
+    }
+
+    @Test
     void memberCannotInvite() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("MEMBER"));
 
-        assertThatThrownBy(() -> service.createInvitation(userId, deviceId, "member@example.com"))
+        assertThatThrownBy(() -> service.createInvitation(
+            userId, deviceId, "member@example.com", null))
             .isInstanceOf(ApiException.class)
             .satisfies(exception -> assertThat(((ApiException) exception).status().value()).isEqualTo(403));
         verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any());
@@ -92,7 +122,8 @@ class InvitationServiceTest {
         when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
         when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.createInvitation(ownerId, deviceId, "member@example.com"))
+        assertThatThrownBy(() -> service.createInvitation(
+            ownerId, deviceId, "member@example.com", null))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("ALREADY_DEVICE_MEMBER");

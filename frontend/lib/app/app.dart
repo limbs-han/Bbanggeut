@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 
 import '../ui/auth_screen.dart';
@@ -13,14 +16,29 @@ class WilliamJamesApp extends StatefulWidget {
 
 class _WilliamJamesAppState extends State<WilliamJamesApp> {
   late final AppController controller;
+  late final AppLinks appLinks;
+  StreamSubscription<Uri>? linkSubscription;
   @override
   void initState() {
     super.initState();
     controller = AppController()..initialize();
+    appLinks = AppLinks();
+    _listenForMembershipRequests();
+  }
+
+  Future<void> _listenForMembershipRequests() async {
+    final initial = await appLinks.getInitialLink();
+    if (initial != null) {
+      await controller.setMembershipRequestLink(initial);
+    }
+    linkSubscription = appLinks.uriLinkStream.listen(
+      controller.setMembershipRequestLink,
+    );
   }
 
   @override
   void dispose() {
+    linkSubscription?.cancel();
     controller.dispose();
     super.dispose();
   }

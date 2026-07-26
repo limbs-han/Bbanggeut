@@ -11,6 +11,7 @@ import com.wj.server.config.InvitationProperties;
 import com.wj.server.invitation.api.DeviceMemberResponse;
 import com.wj.server.invitation.api.InvitationResponse;
 import com.wj.server.invitation.domain.InvitationRow;
+import com.wj.server.invitation.domain.MembershipRequestRow;
 import com.wj.server.invitation.domain.MembershipRow;
 import com.wj.server.invitation.persistence.InvitationMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,34 +29,49 @@ public class InvitationService {
     private final InvitationMapper invitationMapper;
     private final InvitationProperties properties;
     private final AuditService auditService;
+    private final MembershipRequestService membershipRequestService;
     private final Clock clock;
 
     @Autowired
     public InvitationService(
         InvitationMapper invitationMapper,
         InvitationProperties properties,
-        AuditService auditService
+        AuditService auditService,
+        MembershipRequestService membershipRequestService
     ) {
-        this(invitationMapper, properties, auditService, Clock.systemUTC());
+        this(invitationMapper, properties, auditService,
+            membershipRequestService, Clock.systemUTC());
     }
 
     InvitationService(
         InvitationMapper invitationMapper,
         InvitationProperties properties,
         AuditService auditService,
+        MembershipRequestService membershipRequestService,
         Clock clock
     ) {
         this.invitationMapper = invitationMapper;
         this.properties = properties;
         this.auditService = auditService;
+        this.membershipRequestService = membershipRequestService;
         this.clock = clock;
     }
 
     /** OWNER invites an email; the invitation stays PENDING until that account acts. */
     @Transactional
-    public InvitationResponse createInvitation(UUID userId, UUID deviceId, String email) {
+    public InvitationResponse createInvitation(
+        UUID userId,
+        UUID deviceId,
+        String email,
+        String membershipRequestToken
+    ) {
         requireOwner(userId, deviceId, "MEMBER_INVITE", "INVITATION", null);
         String inviteeEmail = normalizeEmail(email);
+        MembershipRequestRow membershipRequest = membershipRequestToken == null
+            || membershipRequestToken.isBlank()
+            ? null
+            : membershipRequestService.requireForInvitation(
+                membershipRequestToken, inviteeEmail);
         if (invitationMapper.activeMemberEmailExists(deviceId, inviteeEmail)) {
             throw conflict("ALREADY_DEVICE_MEMBER", "이미 이 기기의 구성원입니다.");
         }
@@ -65,6 +81,10 @@ public class InvitationService {
         UUID invitationId = UUID.randomUUID();
         invitationMapper.insertInvitation(
             invitationId, deviceId, userId, inviteeEmail, clock.instant().plus(properties.ttl()));
+        if (membershipRequest != null) {
+            membershipRequestService.consume(
+                membershipRequestToken, membershipRequest, userId, invitationId);
+        }
         InvitationRow row = invitationMapper.findScopedInvitation(deviceId, invitationId)
             .orElseThrow(this::notFound);
         auditService.success(deviceId, userId, "MEMBER_INVITE", "INVITATION", invitationId);

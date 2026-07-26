@@ -24,6 +24,8 @@ class AppController extends ChangeNotifier {
   List<DeviceMember> members = const [];
   List<Invitation> sentInvitations = const [];
   List<Invitation> receivedInvitations = const [];
+  String? pendingMembershipRequestToken;
+  MembershipRequestPreview? pendingMembershipRequestPreview;
 
   Future<void> initialize() async {
     if (devHomeCam && devHlsUrl.isNotEmpty) {
@@ -65,6 +67,7 @@ class AppController extends ChangeNotifier {
       user = await api.cachedUser;
       try {
         await refreshAll();
+        await resolvePendingMembershipRequest();
       } on ApiFailure catch (error) {
         if (error.statusCode == 401) {
           await api.clearSession();
@@ -91,6 +94,7 @@ class AppController extends ChangeNotifier {
     user = session.user;
     authenticated = true;
     await refreshAll();
+    await resolvePendingMembershipRequest();
   });
 
   Future<bool> signUp(
@@ -108,6 +112,7 @@ class AppController extends ChangeNotifier {
     user = session.user;
     authenticated = true;
     await refreshAll();
+    await resolvePendingMembershipRequest();
   });
 
   Future<void> logout() async {
@@ -285,10 +290,81 @@ class AppController extends ChangeNotifier {
   Future<bool> createInvitation(String email) async => _guard(() async {
     final device = selectedDevice;
     if (device == null || !device.isOwner) return;
-    await api.createInvitation(device.id, email);
+    final requestToken =
+        pendingMembershipRequestPreview?.email.toLowerCase() ==
+            email.trim().toLowerCase()
+        ? pendingMembershipRequestToken
+        : null;
+    await api.createInvitation(
+      device.id,
+      email,
+      membershipRequestToken: requestToken,
+    );
+    if (requestToken != null) {
+      pendingMembershipRequestToken = null;
+      pendingMembershipRequestPreview = null;
+    }
     sentInvitations = await api.listDeviceInvitations(device.id);
     notifyListeners();
   });
+
+  Future<Uri?> createMembershipRequestLink() async {
+    busy = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      final response = await api.createMembershipRequestLink();
+      return Uri.parse(
+        defaultApiBaseUrl,
+      ).resolve('/api/membership-request-links/${response.token}/open');
+    } on ApiFailure catch (error) {
+      errorMessage = error.message;
+      return null;
+    } catch (_) {
+      errorMessage = '요청 링크를 만들지 못했어요. 잠시 후 다시 시도해 주세요.';
+      return null;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> setMembershipRequestLink(Uri uri) async {
+    if (uri.scheme != 'bbanggeut' || uri.host != 'membership-request') return;
+    final token = uri.pathSegments.isEmpty ? null : uri.pathSegments.first;
+    if (token == null || token.isEmpty || token.length > 200) return;
+    pendingMembershipRequestToken = token;
+    pendingMembershipRequestPreview = null;
+    notifyListeners();
+    await resolvePendingMembershipRequest();
+  }
+
+  Future<void> resolvePendingMembershipRequest() async {
+    final token = pendingMembershipRequestToken;
+    if (!authenticated || token == null) return;
+    final ownerDevices = devices.where((device) => device.isOwner);
+    final ownerDevice = ownerDevices.isEmpty ? null : ownerDevices.first;
+    if (ownerDevice == null) {
+      errorMessage = '기기를 소유한 계정만 멤버 요청 링크를 열 수 있어요.';
+      notifyListeners();
+      return;
+    }
+    try {
+      if (selectedDevice?.id != ownerDevice.id) {
+        selectedDevice = ownerDevice;
+        await refreshDeviceData();
+      }
+      pendingMembershipRequestPreview = await api.previewMembershipRequest(
+        token,
+      );
+      errorMessage = null;
+    } on ApiFailure catch (error) {
+      pendingMembershipRequestToken = null;
+      pendingMembershipRequestPreview = null;
+      errorMessage = error.message;
+    }
+    notifyListeners();
+  }
 
   Future<bool> revokeInvitation(Invitation invitation) async =>
       _guard(() async {
@@ -373,6 +449,8 @@ class AppController extends ChangeNotifier {
     members = const [];
     sentInvitations = const [];
     receivedInvitations = const [];
+    pendingMembershipRequestToken = null;
+    pendingMembershipRequestPreview = null;
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;

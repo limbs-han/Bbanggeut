@@ -21,7 +21,7 @@ cd server
 ## 구현 범위
 
 - 사용자 가입·로그인·refresh token 회전, 이메일·IP 해시 기반 로그인 시도 제한
-- 기기 claim, OWNER/MEMBER 멤버십, 초대, 설정·상태·회수
+- 기기 claim, OWNER/MEMBER 멤버십, 이메일 초대와 멤버 요청 링크, 설정·상태·회수
 - 기기 전용 credential과 IoT 영상 업로드/완료
 - loopback 전용 기기 provisioning·credential 발급/교체/회수 운영 API
 - 영상 목록·상세·재생·다운로드·메타데이터·비동기 삭제

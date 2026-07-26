@@ -1,9 +1,11 @@
 package com.wj.server.invitation.api;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
 import com.wj.server.invitation.application.InvitationService;
+import com.wj.server.invitation.application.MembershipRequestService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,9 +22,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class InvitationController {
     private final InvitationService invitationService;
+    private final MembershipRequestService membershipRequestService;
 
-    public InvitationController(InvitationService invitationService) {
+    public InvitationController(
+        InvitationService invitationService,
+        MembershipRequestService membershipRequestService
+    ) {
         this.invitationService = invitationService;
+        this.membershipRequestService = membershipRequestService;
     }
 
     // --- owner side: invite by email, list, withdraw ---
@@ -34,7 +41,34 @@ public class InvitationController {
         @Valid @RequestBody CreateInvitationRequest request
     ) {
         return ResponseEntity.status(201)
-            .body(invitationService.createInvitation(userId(jwt), deviceId, request.email()));
+            .body(invitationService.createInvitation(
+                userId(jwt), deviceId, request.email(), request.membershipRequestToken()));
+    }
+
+    @PostMapping("/membership-request-links")
+    public ResponseEntity<MembershipRequestLinkResponse> createMembershipRequestLink(
+        @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.status(201)
+            .body(membershipRequestService.create(userId(jwt)));
+    }
+
+    @GetMapping("/membership-request-links/{token}")
+    public MembershipRequestPreviewResponse previewMembershipRequest(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable String token
+    ) {
+        return membershipRequestService.preview(userId(jwt), token);
+    }
+
+    @GetMapping("/membership-request-links/{token}/open")
+    public ResponseEntity<Void> openMembershipRequest(@PathVariable String token) {
+        if (!token.matches("[A-Za-z0-9_-]{43}")) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.status(302)
+            .location(URI.create("bbanggeut://membership-request/" + token))
+            .build();
     }
 
     @GetMapping("/devices/{deviceId}/invitations")

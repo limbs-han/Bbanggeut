@@ -15,11 +15,39 @@ class FamilyScreen extends StatefulWidget {
 
 class _FamilyScreenState extends State<FamilyScreen> {
   final inviteEmail = TextEditingController();
+  String? appliedMembershipRequestToken;
 
   AppController get controller => widget.controller;
 
   @override
+  void initState() {
+    super.initState();
+    controller.addListener(_applyMembershipRequest);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _applyMembershipRequest(),
+    );
+  }
+
+  void _applyMembershipRequest() {
+    final token = controller.pendingMembershipRequestToken;
+    final preview = controller.pendingMembershipRequestPreview;
+    if (!mounted ||
+        token == null ||
+        preview == null ||
+        token == appliedMembershipRequestToken) {
+      return;
+    }
+    appliedMembershipRequestToken = token;
+    inviteEmail.value = TextEditingValue(
+      text: preview.email,
+      selection: TextSelection.collapsed(offset: preview.email.length),
+    );
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    controller.removeListener(_applyMembershipRequest);
     inviteEmail.dispose();
     super.dispose();
   }
@@ -189,6 +217,26 @@ class _FamilyScreenState extends State<FamilyScreen> {
                               ],
                             ),
                             const SizedBox(height: 12),
+                            if (controller.pendingMembershipRequestPreview !=
+                                null) ...[
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Text(
+                                  '${controller.pendingMembershipRequestPreview!.displayName}님이 멤버 초대를 요청했어요. 이메일을 확인하고 초대를 보내 주세요.',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.inkSoft,
+                                  ),
+                                ),
+                              ),
+                            ],
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [

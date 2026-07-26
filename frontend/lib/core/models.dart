@@ -17,6 +17,34 @@ class UserProfile {
   );
 }
 
+class MembershipRequestLink {
+  const MembershipRequestLink({required this.token, required this.expiresAt});
+  final String token;
+  final DateTime? expiresAt;
+  factory MembershipRequestLink.fromJson(Map<String, dynamic> json) =>
+      MembershipRequestLink(
+        token: json['token'] as String,
+        expiresAt: parseDate(json['expiresAt']),
+      );
+}
+
+class MembershipRequestPreview {
+  const MembershipRequestPreview({
+    required this.email,
+    required this.displayName,
+    required this.expiresAt,
+  });
+  final String email;
+  final String displayName;
+  final DateTime? expiresAt;
+  factory MembershipRequestPreview.fromJson(Map<String, dynamic> json) =>
+      MembershipRequestPreview(
+        email: json['email'] as String,
+        displayName: json['displayName'] as String? ?? '',
+        expiresAt: parseDate(json['expiresAt']),
+      );
+}
+
 class AuthSession {
   const AuthSession({
     required this.accessToken,
