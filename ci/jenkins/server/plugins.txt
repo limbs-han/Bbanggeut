@@ -1,0 +1,10 @@
+workflow-aggregator
+git
+credentials-binding
+ssh-agent
+gitlab-plugin
+gitlab-branch-source
+docker-workflow
+configuration-as-code
+timestamper
+ws-cleanup

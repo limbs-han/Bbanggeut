@@ -1,0 +1,21 @@
+FROM jenkins/inbound-agent@sha256:6274f49f86429c5382b3943e96df81b65fd81712677347ae2a50b235b6c4e286
+
+ARG FLUTTER_VERSION=3.44.7
+
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends curl xz-utils \
+    && curl --fail --location --silent --show-error \
+        "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz" \
+        --output /tmp/flutter.tar.xz \
+    && tar --extract --xz --file /tmp/flutter.tar.xz --directory /opt \
+    && rm /tmp/flutter.tar.xz \
+    && chown -R jenkins:jenkins /opt/flutter \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/opt/flutter/bin:/opt/flutter/bin/cache/dart-sdk/bin:${PATH}"
+
+USER jenkins
+RUN git config --global --add safe.directory /opt/flutter \
+    && flutter config --no-analytics \
+    && flutter --version
