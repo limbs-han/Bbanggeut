@@ -1,0 +1,167 @@
+package com.wj.server.iot.event;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+import com.wj.server.video.domain.DailyVideoCountRow;
+import com.wj.server.video.domain.VideoCountRow;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+@Mapper
+public interface DeviceEventMapper {
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1 FROM device_memberships
+             WHERE device_id = #{deviceId} AND user_id = #{userId} AND status = 'ACTIVE'
+        )
+        """)
+    boolean hasActiveMembership(@Param("userId") UUID userId, @Param("deviceId") UUID deviceId);
+
+    @Insert("""
+        INSERT INTO device_events (
+            id, device_id, event_type, occurred_at, confidence, local_clip_state,
+            before_ms, after_ms, merge_window_ms, source_node_id, source_component,
+            source_model_version
+        ) VALUES (
+            #{event.id}, #{event.deviceId}, #{event.type}, #{event.occurredAt},
+            #{event.confidence}, #{event.localClipState}, #{event.beforeMs},
+            #{event.afterMs}, #{event.mergeWindowMs}, #{event.sourceNodeId},
+            #{event.sourceComponent}, #{event.sourceModelVersion}
+        )
+        ON CONFLICT (id) DO NOTHING
+        """)
+    int insert(@Param("event") DeviceEvent event);
+
+    @Insert("""
+        INSERT INTO device_events (
+            id, device_id, event_type, occurred_at, source_component, upload_status
+        ) VALUES (
+            #{eventId}, #{deviceId}, #{eventType}, #{occurredAt}, 'HTTP_UPLOAD_RECOVERY', 'UPLOADING'
+        )
+        ON CONFLICT (id) DO NOTHING
+        """)
+    int insertUploadRecovery(
+        @Param("eventId") UUID eventId,
+        @Param("deviceId") UUID deviceId,
+        @Param("eventType") String eventType,
+        @Param("occurredAt") Instant occurredAt
+    );
+
+    @Update("""
+        UPDATE device_events
+           SET video_id = #{videoId}, upload_status = #{status}, updated_at = now()
+         WHERE id = #{eventId} AND device_id = #{deviceId}
+        """)
+    int linkVideo(
+        @Param("deviceId") UUID deviceId,
+        @Param("eventId") UUID eventId,
+        @Param("videoId") UUID videoId,
+        @Param("status") String status
+    );
+
+    @Select("""
+        SELECT count(*)
+          FROM device_events
+         WHERE device_id = #{deviceId}
+           AND occurred_at >= #{from} AND occurred_at < #{to}
+        """)
+    long countEvents(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT count(*)
+          FROM device_events
+         WHERE device_id = #{deviceId} AND upload_status = 'READY'
+           AND occurred_at >= #{from} AND occurred_at < #{to}
+        """)
+    long countReadyUploads(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT event_type AS label, count(*) AS count
+          FROM device_events
+         WHERE device_id = #{deviceId}
+           AND occurred_at >= #{from} AND occurred_at < #{to}
+         GROUP BY event_type
+         ORDER BY count DESC, label
+        """)
+    List<VideoCountRow> countByType(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to
+    );
+
+    @Select("""
+        SELECT (occurred_at AT TIME ZONE #{zoneId})::date AS date, count(*) AS count
+          FROM device_events
+         WHERE device_id = #{deviceId}
+           AND occurred_at >= #{from} AND occurred_at < #{to}
+         GROUP BY date
+         ORDER BY date
+        """)
+    List<DailyVideoCountRow> countByDay(
+        @Param("deviceId") UUID deviceId,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("zoneId") String zoneId
+    );
+
+    @Insert("""
+        INSERT INTO event_email_notifications (event_id, recipient_email)
+        SELECT #{eventId}, u.email
+          FROM device_events e
+          JOIN device_memberships m ON m.device_id = e.device_id
+          JOIN users u ON u.id = m.user_id
+         WHERE e.id = #{eventId}
+           AND e.event_type = 'TOUCH'
+           AND m.role = 'OWNER' AND m.status = 'ACTIVE' AND u.status = 'ACTIVE'
+        ON CONFLICT (event_id, recipient_email) DO NOTHING
+        """)
+    int enqueueOwnerTouchEmail(@Param("eventId") UUID eventId);
+
+    @Select("""
+        SELECT n.id, n.event_id, n.recipient_email, d.name AS device_name,
+               e.occurred_at, n.attempts
+          FROM event_email_notifications n
+          JOIN device_events e ON e.id = n.event_id
+          JOIN devices d ON d.id = e.device_id
+         WHERE n.status = 'PENDING' AND n.next_attempt_at <= now()
+         ORDER BY n.created_at
+         LIMIT #{limit}
+        """)
+    List<EventEmailNotificationRow> findDueEmails(@Param("limit") int limit);
+
+    @Update("""
+        UPDATE event_email_notifications
+           SET status = 'SENT', attempts = attempts + 1, sent_at = now(),
+               last_error_code = NULL, updated_at = now()
+         WHERE id = #{id} AND status = 'PENDING'
+        """)
+    int markEmailSent(@Param("id") UUID id);
+
+    @Update("""
+        UPDATE event_email_notifications
+           SET status = CASE WHEN attempts + 1 >= #{maxAttempts} THEN 'FAILED' ELSE 'PENDING' END,
+               attempts = attempts + 1,
+               next_attempt_at = now() + make_interval(secs =>
+                   LEAST(3600, CAST(power(2, LEAST(attempts, 10)) * 30 AS integer))),
+               last_error_code = #{errorCode}, updated_at = now()
+         WHERE id = #{id} AND status = 'PENDING'
+        """)
+    int markEmailFailed(
+        @Param("id") UUID id,
+        @Param("maxAttempts") int maxAttempts,
+        @Param("errorCode") String errorCode
+    );
+}

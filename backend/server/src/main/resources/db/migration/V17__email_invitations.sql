@@ -17,6 +17,10 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END
 $$;
 
+-- V6 created this enum before V12 dropped only the table. Existing databases
+-- therefore need the newly introduced decline state added explicitly.
+ALTER TYPE invitation_status ADD VALUE IF NOT EXISTS 'DECLINED';
+
 CREATE TABLE IF NOT EXISTS invitations (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,

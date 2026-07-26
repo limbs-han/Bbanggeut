@@ -12,6 +12,7 @@ import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.SubscriptionProperties;
+import com.wj.server.iot.event.DeviceEventService;
 import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.IotUploadCompleteRequest;
 import com.wj.server.video.api.IotUploadUrlRequest;
@@ -27,13 +28,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class IotVideoServiceTest {
     private static final UUID DEVICE_ID = UUID.randomUUID();
     private static final UUID VIDEO_ID = UUID.randomUUID();
-    private static final String EVENT_ID = "event-001";
+    private static final String EVENT_ID = UUID.randomUUID().toString();
     private static final String CHECKSUM = "a".repeat(64);
 
     @Mock
     private VideoMapper videoMapper;
     @Mock
     private ObjectStorageService objectStorageService;
+    @Mock
+    private DeviceEventService deviceEventService;
 
     private IotVideoService service;
 
@@ -41,7 +44,8 @@ class IotVideoServiceTest {
     void setUp() {
         service = new IotVideoService(
             videoMapper, objectStorageService,
-            new SubscriptionProperties(365, java.time.Duration.ofDays(30)));
+            new SubscriptionProperties(365, java.time.Duration.ofDays(30)),
+            deviceEventService);
     }
 
     @Test

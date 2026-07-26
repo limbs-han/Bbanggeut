@@ -11,6 +11,14 @@ spring:
     enabled: true
     baseline-on-migrate: true
     baseline-version: 0
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SMTP_STARTTLS:true}
 
 server:
   forward-headers-strategy: native
@@ -46,6 +54,10 @@ app:
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
   invitation:
     ttl: ${INVITATION_TTL:7d}
+  notification:
+    email-enabled: ${EVENT_EMAIL_ENABLED:false}
+    from: ${EVENT_EMAIL_FROM:no-reply@bbanggeut.local}
+    max-attempts: ${EVENT_EMAIL_MAX_ATTEMPTS:5}
   subscription:
     premium-retention-days: ${SUBSCRIPTION_PREMIUM_RETENTION_DAYS:365}
     grace: ${SUBSCRIPTION_GRACE:30d}

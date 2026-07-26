@@ -7,6 +7,8 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wj.server.iot.event.DeviceEvent;
+import com.wj.server.iot.event.DeviceEventService;
 import com.wj.server.stream.application.StreamEventService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,26 +21,30 @@ public class MqttInboundHandler {
     private final ObjectMapper objectMapper;
     private final DeviceTelemetryMapper telemetryMapper;
     private final StreamEventService streamEventService;
+    private final DeviceEventService deviceEventService;
     private final Clock clock;
 
     @Autowired
     public MqttInboundHandler(
         ObjectMapper objectMapper,
         DeviceTelemetryMapper telemetryMapper,
-        StreamEventService streamEventService
+        StreamEventService streamEventService,
+        DeviceEventService deviceEventService
     ) {
-        this(objectMapper, telemetryMapper, streamEventService, Clock.systemUTC());
+        this(objectMapper, telemetryMapper, streamEventService, deviceEventService, Clock.systemUTC());
     }
 
     MqttInboundHandler(
         ObjectMapper objectMapper,
         DeviceTelemetryMapper telemetryMapper,
         StreamEventService streamEventService,
+        DeviceEventService deviceEventService,
         Clock clock
     ) {
         this.objectMapper = objectMapper;
         this.telemetryMapper = telemetryMapper;
         this.streamEventService = streamEventService;
+        this.deviceEventService = deviceEventService;
         this.clock = clock;
     }
 
@@ -123,14 +129,51 @@ public class MqttInboundHandler {
         if (!java.util.Set.of("LAUGHTER", "WAKE_WORD", "TOUCH", "MANUAL").contains(type)) {
             throw new IllegalArgumentException("Unsupported event type");
         }
-        Instant.parse(text(body, "occurredAt"));
+        Instant occurredAt = Instant.parse(text(body, "occurredAt"));
+        if (occurredAt.isAfter(clock.instant().plus(5, ChronoUnit.MINUTES))) {
+            throw new IllegalArgumentException("Event time is too far in the future");
+        }
         JsonNode confidence = body.get("confidence");
         if (confidence != null && (!confidence.isNumber()
             || confidence.doubleValue() < 0.0 || confidence.doubleValue() > 1.0)) {
             throw new IllegalArgumentException("Invalid confidence");
         }
-        // Detection events announce edge work. The video upload API remains the
-        // durable source of truth for the generated clip.
+        if (java.util.Set.of("LAUGHTER", "WAKE_WORD").contains(type)
+            && (confidence == null || confidence.isNull())) {
+            throw new IllegalArgumentException("AI events require confidence");
+        }
+        if (java.util.Set.of("TOUCH", "MANUAL").contains(type)
+            && confidence != null && !confidence.isNull()) {
+            throw new IllegalArgumentException("Physical/manual events must not contain confidence");
+        }
+
+        JsonNode localClip = requiredObject(body, "localClip");
+        String clipState = text(localClip, "state");
+        if (!java.util.Set.of("SEGMENTS_LOCKED", "GENERATING", "QUEUED", "FAILED")
+            .contains(clipState)) {
+            throw new IllegalArgumentException("Invalid local clip state");
+        }
+        int beforeMs = boundedNonNegativeInt(localClip, "beforeMs", 3_600_000);
+        int afterMs = boundedNonNegativeInt(localClip, "afterMs", 3_600_000);
+        int mergeWindowMs = boundedNonNegativeInt(localClip, "mergeWindowMs", 600_000);
+
+        JsonNode source = requiredObject(body, "source");
+        String nodeId = requiredBoundedText(source, "nodeId", 80);
+        String component = requiredBoundedText(source, "component", 40);
+        if (!java.util.Set.of(
+            "YAMNET", "KEYWORD_SPOTTING", "TOUCH_SENSOR", "APP", "LOCAL_CONTROL"
+        ).contains(component)) {
+            throw new IllegalArgumentException("Invalid source component");
+        }
+        if ("TOUCH".equals(type) && !"TOUCH_SENSOR".equals(component)) {
+            throw new IllegalArgumentException("TOUCH events require TOUCH_SENSOR");
+        }
+        String modelVersion = boundedText(source, "modelVersion", 80);
+
+        deviceEventService.accept(new DeviceEvent(
+            eventId, deviceId, type, occurredAt,
+            confidence == null || confidence.isNull() ? null : confidence.doubleValue(),
+            clipState, beforeMs, afterMs, mergeWindowMs, nodeId, component, modelVersion));
         log.info("Accepted device event {} ({}) from {}", eventId, type, deviceId);
     }
 
@@ -172,5 +215,29 @@ public class MqttInboundHandler {
             throw new IllegalArgumentException("Invalid " + field);
         }
         return node.intValue();
+    }
+
+    private JsonNode requiredObject(JsonNode body, String field) {
+        JsonNode node = body.get(field);
+        if (node == null || !node.isObject()) {
+            throw new IllegalArgumentException("Missing " + field);
+        }
+        return node;
+    }
+
+    private String requiredBoundedText(JsonNode body, String field, int maxLength) {
+        String value = text(body, field);
+        if (value.length() > maxLength) {
+            throw new IllegalArgumentException("Invalid " + field);
+        }
+        return value;
+    }
+
+    private int boundedNonNegativeInt(JsonNode body, String field, int maxValue) {
+        int value = nonNegativeInt(body, field, -1);
+        if (value < 0 || value > maxValue) {
+            throw new IllegalArgumentException("Invalid " + field);
+        }
+        return value;
     }
 }
