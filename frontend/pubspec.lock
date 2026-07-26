@@ -33,14 +33,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.4"
-  archive:
-    dependency: transitive
-    description:
-      name: archive
-      sha256: a96e8b390886ee8abb49b7bd3ac8df6f451c621619f52a26e815fdcf568959ff
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.0.9"
   args:
     dependency: transitive
     description:
@@ -198,14 +190,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
-  flutter_native_video_trimmer:
-    dependency: transitive
-    description:
-      name: flutter_native_video_trimmer
-      sha256: d31159c34fb4e56fe53919b5b9978f75b5fb4b2934ceb05c6b369929139d3b72
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.9"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -264,14 +248,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  get_thumbnail_video:
-    dependency: transitive
-    description:
-      name: get_thumbnail_video
-      sha256: ff61495b42051765d2a9e93bd14dac7ede5853033837bde71c27575a192c53fc
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.3"
   gtk:
     dependency: transitive
     description:
@@ -304,22 +280,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
-  image:
-    dependency: transitive
-    description:
-      name: image
-      sha256: "6300175e00616bbc832e2fc91bfa4d776af5402c81c7151bee6905bb08473c52"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.9.1"
-  imgly_editor:
-    dependency: "direct main"
-    description:
-      name: imgly_editor
-      sha256: "57b85a035f53df3f8695c99be9a8a7fa3adac891ceac9602f980c4c17d3b6cd2"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.78.0"
   intl:
     dependency: "direct main"
     description:
@@ -496,14 +456,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-  petitparser:
-    dependency: transitive
-    description:
-      name: petitparser
-      sha256: "91bd59303e9f769f108f8df05e371341b15d59e995e6806aefab827b58336675"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.0.2"
   platform:
     dependency: transitive
     description:
@@ -520,14 +472,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.8"
-  posix:
-    dependency: transitive
-    description:
-      name: posix
-      sha256: bc1bad54ad2b735816e31f8d4600cfde6c7839975085ddfbca48b6c9f7c4044e
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.5.2"
   pub_semver:
     dependency: transitive
     description:
@@ -613,14 +557,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.11"
-  transparent_image:
-    dependency: transitive
-    description:
-      name: transparent_image
-      sha256: e8991d955a2094e197ca24c645efec2faf4285772a4746126ca12875e54ca02f
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.1"
   typed_data:
     dependency: transitive
     description:
@@ -701,6 +637,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.6.0"
+  ve_sdk_flutter:
+    dependency: "direct main"
+    description:
+      name: ve_sdk_flutter
+      sha256: "55dc988e03723413c8155a3422af0e6c1c272f8315228ac8b2a08654807dfb66"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.44.0"
   vector_math:
     dependency: transitive
     description:
@@ -749,14 +693,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.0"
-  video_trimmer:
-    dependency: "direct main"
-    description:
-      name: video_trimmer
-      sha256: a7e24512ec6bf47c99e3e192264a1c19a2b30e21d92add1b43ecd0995659a0b4
-      url: "https://pub.dev"
-    source: hosted
-    version: "5.0.0"
   vm_service:
     dependency: transitive
     description:
@@ -789,14 +725,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.0"
-  xml:
-    dependency: transitive
-    description:
-      name: xml
-      sha256: "67f0aff7be013d107995e9b75bf4e7f2c3ef2dfdb2c8e68024bba0a7fd5756a4"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.0.1"
   yaml:
     dependency: transitive
     description:

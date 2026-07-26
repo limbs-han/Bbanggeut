@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:imgly_editor/imgly_editor.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -86,26 +85,21 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
     }
   }
 
-  Future<void> _openImglyEditor() async {
-    try {
-      await player?.pause();
-      final signed = await widget.controller.api.createDownloadUrl(video.id);
-      const license = String.fromEnvironment('IMGLY_LICENSE');
-      final result = await IMGLYEditor.openEditor(
-        source: Source.fromVideo(signed.url),
-        preset: EditorPreset.video,
-        settings: EditorSettings(
-          license: license.isEmpty ? null : license,
-          userId: widget.controller.user?.id,
+  Future<void> _openVideoEditor({bool drafts = false}) async {
+    await player?.pause();
+    if (!mounted) return;
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocalEditScreen(
+          controller: widget.controller,
+          video: video,
+          openDrafts: drafts,
         ),
-      );
-      if (mounted && result?.artifact != null) {
-        showAppSnack(context, '영상 편집을 완료했어요.');
-      }
-    } catch (failure) {
-      if (mounted) {
-        showAppSnack(context, '영상 편집기를 열지 못했어요. $failure', error: true);
-      }
+      ),
+    );
+    if (mounted && result != null) {
+      showAppSnack(context, '편집 영상을 앱 저장소에 보관했어요.');
     }
   }
 
@@ -280,10 +274,10 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: video.status == 'READY'
-                        ? _openImglyEditor
+                        ? _openVideoEditor
                         : null,
                     icon: const Icon(Icons.auto_awesome_rounded),
-                    label: const Text('IMG.LY로 영상 편집'),
+                    label: const Text('영상 편집하기'),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -298,17 +292,11 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                       const SizedBox(width: 9),
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => LocalEditScreen(
-                                controller: widget.controller,
-                                video: video,
-                              ),
-                            ),
-                          ),
-                          icon: const Icon(Icons.content_cut_rounded),
-                          label: const Text('구간 편집'),
+                          onPressed: video.status == 'READY'
+                              ? () => _openVideoEditor(drafts: true)
+                              : null,
+                          icon: const Icon(Icons.edit_note_rounded),
+                          label: const Text('저장된 초안'),
                         ),
                       ),
                     ],
