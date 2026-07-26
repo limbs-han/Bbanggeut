@@ -21,6 +21,7 @@ import com.wj.server.device.domain.DeviceViewRow;
 import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
+import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +40,8 @@ class DeviceServiceTest {
     private ClaimAttemptService claimAttemptService;
     @Mock
     private AuditService auditService;
+    @Mock
+    private DeviceMqttIdentityManager mqttIdentityManager;
 
     private RegistrationCodeHasher registrationCodeHasher;
     private DeviceService deviceService;
@@ -48,7 +51,8 @@ class DeviceServiceTest {
         registrationCodeHasher = new RegistrationCodeHasher();
         deviceService = new DeviceService(
             deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, Clock.fixed(NOW, ZoneOffset.UTC));
+            claimAttemptService, auditService, mqttIdentityManager,
+            Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -195,7 +199,7 @@ class DeviceServiceTest {
     }
 
     @Test
-    void ownerRevocationClosesOldRowDeletesVideosAndCreatesSuccessor() {
+    void ownerRevocationClosesDataAndMqttIdentityWithoutCreatingGhostDevice() {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.lockAccessibleDevice(ownerId, deviceId))
@@ -209,7 +213,7 @@ class DeviceServiceTest {
         verify(deviceMapper).revokeAllMemberships(deviceId, ownerId);
         verify(deviceMapper).markAllVideosDeleting(deviceId, ownerId);
         verify(deviceMapper).enqueueDeletionJobsForDevice(deviceId);
-        verify(deviceMapper).insertSuccessorDevice(deviceId);
+        verify(mqttIdentityManager).revoke(deviceId);
     }
 
     @Test

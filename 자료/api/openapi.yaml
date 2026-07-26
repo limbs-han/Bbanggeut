@@ -248,7 +248,10 @@ paths:
       tags: [Devices]
       operationId: revokeDevice
       summary: 기기 등록 해제
-      description: 해당 기기의 활성 OWNER만 수행할 수 있다. 영상을 즉시 물리 삭제하지 않고 보존 정책에 따라 처리한다.
+      description: |
+        해당 기기의 활성 OWNER만 수행할 수 있다. 멤버십·기기 HTTP Credential·MQTT
+        identity를 폐기하고 영상을 비동기로 삭제한다. 같은 물리 기기를 다시 사용하려면
+        새 device identity와 bootstrap credential을 발급하는 재프로비저닝이 필요하다.
       responses:
         '204':
           description: 등록 해제 요청 완료
@@ -270,7 +273,7 @@ paths:
         현재 OWNER가 같은 기기의 활성 MEMBER에게 소유권을 넘긴다. 한 트랜잭션에서
         기존 OWNER는 MEMBER로 강등되고 대상이 OWNER로 승격된다. 영상·구성원·설정·구독은
         모두 유지된다(기기 행 불변). 외부인에게 넘기려면 먼저 초대·승인으로 MEMBER로
-        만들거나, 영상을 삭제하는 기기 해제(양도) 절차를 사용한다.
+        만든다. 외부인에게 물리 기기 자체를 넘길 때는 기기 해제 후 재프로비저닝한다.
       requestBody:
         required: true
         content:

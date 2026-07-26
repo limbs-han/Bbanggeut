@@ -1,8 +1,6 @@
 package com.wj.server.iot.event;
 
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -18,23 +16,12 @@ class DeviceEventServiceTest {
     private DeviceEventMapper mapper;
 
     @Test
-    void firstTouchEventQueuesOwnerEmail() {
+    void eventIsPersistedWithoutNotificationSideEffects() {
         DeviceEvent event = event("TOUCH");
-        when(mapper.insert(event)).thenReturn(1);
 
         new DeviceEventService(mapper).accept(event);
 
-        verify(mapper).enqueueOwnerTouchEmail(event.id());
-    }
-
-    @Test
-    void duplicateTouchEventDoesNotQueueDuplicateEmail() {
-        DeviceEvent event = event("TOUCH");
-        when(mapper.insert(event)).thenReturn(0);
-
-        new DeviceEventService(mapper).accept(event);
-
-        verify(mapper, never()).enqueueOwnerTouchEmail(event.id());
+        verify(mapper).insert(event);
     }
 
     private DeviceEvent event(String type) {

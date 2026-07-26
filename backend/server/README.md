@@ -28,7 +28,8 @@ cd server
 - 캘린더 기간 필터, 저장 영상 통계와 업로드 실패를 포함한 원시 감지 이벤트 통계
 - 로컬 편집용 원본 다운로드 URL 발급(편집 작업·결과 파일은 서버에 저장하지 않음)
 - MQTT heartbeat·등록 모드·상태·라이브 이벤트 수신
-- 감지 이벤트 멱등 저장, 영상 업로드 상태 연결, TOUCH 이벤트 OWNER 이메일 알림 재시도
+- 감지 이벤트 멱등 저장과 영상 업로드 상태 연결
+- 완료되지 않은 업로드의 `FAILED` 전환과 동일 이벤트 재시도
 - 공유 라이브 송출 세션, 시청자 heartbeat/TTL, START·EXTEND·STOP 명령
 - 주요 접근·변경 감사 로그
 
@@ -45,7 +46,7 @@ API 계약은 [`../../자료/api/openapi.yaml`](../../자료/api/openapi.yaml), 
 - `MEDIA_BASE_URL`: 외부 앱이 접근할 HLS 기준 URL
 - `DEVICE_PROVISIONING_ENABLED`, `DEVICE_PROVISIONING_ADMIN_KEY`: loopback 운영 API 활성화와 32자 이상 관리자 키
 - `LOGIN_MAX_FAILURES`, `LOGIN_FAILURE_WINDOW`: 기본 5회/10분 로그인 제한
-- `EVENT_EMAIL_ENABLED`, `EVENT_EMAIL_FROM`, `SMTP_*`: TOUCH 이벤트 OWNER 이메일 알림. SMTP 설정 검증 전에는 `false`로 둔다.
+- `UPLOAD_STALE_AFTER`, `UPLOAD_SWEEP_DELAY_MS`: 중단 업로드 실패 전환 기준과 점검 주기
 
 ## 라이브 미디어 경계
 

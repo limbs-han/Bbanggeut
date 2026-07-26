@@ -193,16 +193,4 @@ public interface DeviceMapper {
         """)
     int promoteMemberToOwner(@Param("deviceId") UUID deviceId, @Param("membershipId") UUID membershipId);
 
-    /**
-     * Ownership transfer: the revoked row keeps the history while the same
-     * physical serial gets a fresh UNCLAIMED row for the next owner.
-     */
-    @Select("""
-        INSERT INTO devices (serial_number, model, firmware_version, status)
-        SELECT serial_number, model, firmware_version, 'UNCLAIMED'
-          FROM devices
-         WHERE id = #{deviceId}
-        RETURNING id::text
-        """)
-    String insertSuccessorDevice(@Param("deviceId") UUID deviceId);
 }

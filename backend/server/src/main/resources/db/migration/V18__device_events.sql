@@ -37,23 +37,3 @@ CREATE INDEX IF NOT EXISTS ix_device_events_device_occurred
     ON device_events (device_id, occurred_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS ix_device_events_device_type_occurred
     ON device_events (device_id, event_type, occurred_at DESC);
-
-CREATE TABLE IF NOT EXISTS event_email_notifications (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id uuid NOT NULL REFERENCES device_events(id) ON DELETE CASCADE,
-    recipient_email varchar(320) NOT NULL,
-    status varchar(20) NOT NULL DEFAULT 'PENDING',
-    attempts integer NOT NULL DEFAULT 0,
-    next_attempt_at timestamptz NOT NULL DEFAULT now(),
-    last_error_code varchar(120),
-    sent_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT uq_event_email_recipient UNIQUE (event_id, recipient_email),
-    CONSTRAINT ck_event_email_status CHECK (status IN ('PENDING', 'SENT', 'FAILED')),
-    CONSTRAINT ck_event_email_attempts CHECK (attempts >= 0)
-);
-
-CREATE INDEX IF NOT EXISTS ix_event_email_due
-    ON event_email_notifications (next_attempt_at, created_at)
-    WHERE status = 'PENDING';

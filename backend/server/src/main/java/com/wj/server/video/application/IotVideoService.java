@@ -60,6 +60,15 @@ public class IotVideoService {
         VideoRow video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
             .orElseGet(() -> createVideo(deviceId, request));
         verifySameUpload(video, request);
+        if ("FAILED".equals(video.status())) {
+            if (videoMapper.retryFailedUpload(deviceId, video.id()) != 1) {
+                throw new ApiException(
+                    HttpStatus.CONFLICT, "VIDEO_STATE_CONFLICT",
+                    "현재 상태에서는 영상을 다시 업로드할 수 없습니다.");
+            }
+            video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
+                .orElseThrow(() -> new IllegalStateException("Retried video disappeared"));
+        }
         deviceEventService.linkUpload(
             deviceId, eventId, request.triggerType(), request.capturedStartAt(),
             video.id(), video.status());

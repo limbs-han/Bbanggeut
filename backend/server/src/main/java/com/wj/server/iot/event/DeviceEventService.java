@@ -16,9 +16,7 @@ public class DeviceEventService {
 
     @Transactional
     public void accept(DeviceEvent event) {
-        if (mapper.insert(event) == 1 && "TOUCH".equals(event.type())) {
-            mapper.enqueueOwnerTouchEmail(event.id());
-        }
+        mapper.insert(event);
     }
 
     @Transactional

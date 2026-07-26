@@ -27,12 +27,14 @@ public interface DeviceEventMapper {
             id, device_id, event_type, occurred_at, confidence, local_clip_state,
             before_ms, after_ms, merge_window_ms, source_node_id, source_component,
             source_model_version
-        ) VALUES (
+        )
+        SELECT
             #{event.id}, #{event.deviceId}, #{event.type}, #{event.occurredAt},
             #{event.confidence}, #{event.localClipState}, #{event.beforeMs},
             #{event.afterMs}, #{event.mergeWindowMs}, #{event.sourceNodeId},
             #{event.sourceComponent}, #{event.sourceModelVersion}
-        )
+          FROM devices
+         WHERE id = #{event.deviceId} AND status IN ('ONLINE', 'OFFLINE')
         ON CONFLICT (id) DO NOTHING
         """)
     int insert(@Param("event") DeviceEvent event);
@@ -117,51 +119,4 @@ public interface DeviceEventMapper {
         @Param("zoneId") String zoneId
     );
 
-    @Insert("""
-        INSERT INTO event_email_notifications (event_id, recipient_email)
-        SELECT #{eventId}, u.email
-          FROM device_events e
-          JOIN device_memberships m ON m.device_id = e.device_id
-          JOIN users u ON u.id = m.user_id
-         WHERE e.id = #{eventId}
-           AND e.event_type = 'TOUCH'
-           AND m.role = 'OWNER' AND m.status = 'ACTIVE' AND u.status = 'ACTIVE'
-        ON CONFLICT (event_id, recipient_email) DO NOTHING
-        """)
-    int enqueueOwnerTouchEmail(@Param("eventId") UUID eventId);
-
-    @Select("""
-        SELECT n.id, n.event_id, n.recipient_email, d.name AS device_name,
-               e.occurred_at, n.attempts
-          FROM event_email_notifications n
-          JOIN device_events e ON e.id = n.event_id
-          JOIN devices d ON d.id = e.device_id
-         WHERE n.status = 'PENDING' AND n.next_attempt_at <= now()
-         ORDER BY n.created_at
-         LIMIT #{limit}
-        """)
-    List<EventEmailNotificationRow> findDueEmails(@Param("limit") int limit);
-
-    @Update("""
-        UPDATE event_email_notifications
-           SET status = 'SENT', attempts = attempts + 1, sent_at = now(),
-               last_error_code = NULL, updated_at = now()
-         WHERE id = #{id} AND status = 'PENDING'
-        """)
-    int markEmailSent(@Param("id") UUID id);
-
-    @Update("""
-        UPDATE event_email_notifications
-           SET status = CASE WHEN attempts + 1 >= #{maxAttempts} THEN 'FAILED' ELSE 'PENDING' END,
-               attempts = attempts + 1,
-               next_attempt_at = now() + make_interval(secs =>
-                   LEAST(3600, CAST(power(2, LEAST(attempts, 10)) * 30 AS integer))),
-               last_error_code = #{errorCode}, updated_at = now()
-         WHERE id = #{id} AND status = 'PENDING'
-        """)
-    int markEmailFailed(
-        @Param("id") UUID id,
-        @Param("maxAttempts") int maxAttempts,
-        @Param("errorCode") String errorCode
-    );
 }
