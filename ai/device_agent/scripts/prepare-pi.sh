@@ -21,7 +21,8 @@ fi
 echo "[1/8] 운영체제 필수 패키지 설치"
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  python3-venv python3-pip ffmpeg v4l-utils ca-certificates curl
+  python3-venv python3-pip python3-gpiozero python3-lgpio \
+  ffmpeg v4l-utils ca-certificates curl
 
 agent_was_enabled=false
 if systemctl is-enabled --quiet wj-device-agent 2>/dev/null; then
@@ -37,6 +38,8 @@ install -d -m 755 "$INSTALL_DIR/wj_device_agent"
 cp -a "$SOURCE_DIR/wj_device_agent/." "$INSTALL_DIR/wj_device_agent/"
 install -m 644 "$SOURCE_DIR/requirements.txt" "$INSTALL_DIR/requirements.txt"
 install -m 755 "$SOURCE_DIR/homecam-publisher.sh" "$INSTALL_DIR/homecam-publisher.sh"
+install -m 755 "$SOURCE_DIR/registration-button.sh" "$INSTALL_DIR/registration-button.sh"
+install -m 644 "$SOURCE_DIR/registration_button.py" "$INSTALL_DIR/registration_button.py"
 
 echo "[4/8] Python 가상환경 생성"
 python3 -m venv --clear "$INSTALL_DIR/venv"
@@ -100,8 +103,12 @@ install -m 644 \
   "$SOURCE_DIR/homecam-publisher.service" \
   /etc/systemd/system/homecam-publisher.service
 install -m 644 "$SOURCE_DIR/wj-device-agent.service" /etc/systemd/system/wj-device-agent.service
+install -m 644 \
+  "$SOURCE_DIR/wj-registration-button.service" \
+  /etc/systemd/system/wj-registration-button.service
 systemctl daemon-reload
 systemctl enable --now mediamtx
+systemctl enable --now wj-registration-button
 systemctl enable homecam-publisher
 if [[ "$agent_was_enabled" == true ]]; then
   systemctl enable --now wj-device-agent
@@ -114,6 +121,7 @@ cd "$INSTALL_DIR"
 "$INSTALL_DIR/venv/bin/python" -c \
   "import paho.mqtt.client; import wj_device_agent; import wj_device_agent.provision; print('기기 에이전트 모듈 확인: 정상')"
 systemctl is-active --quiet mediamtx
+systemctl is-active --quiet wj-registration-button
 ss -ltn 'sport = :8554'
 
 echo

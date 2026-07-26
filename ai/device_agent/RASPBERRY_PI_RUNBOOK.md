@@ -54,6 +54,7 @@ sudo ./scripts/prepare-pi.sh /path/to/mqtt-ca.crt
 - `wj-device-agent.service`
 - `mediamtx.service`
 - `homecam-publisher.service`
+- `wj-registration-button.service` (BCM GPIO 17, physical pin 11)
 - `/etc/william-james` 아래의 root 소유 예제 설정
 
 `wj-device-agent`는 enrollment 전까지 시작하지 않습니다. MediaMTX는 즉시

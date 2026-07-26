@@ -85,8 +85,8 @@ Opening that camera's Live View in Flutter creates the stream; leaving the view
 closes it. A missing client close is covered by the 45-second viewer TTL, the
 backend idle stop, and the Jetson hard lease.
 
-Until a physical registration button is wired, run this command on the Jetson
-to enter the same two-minute registration mode and print the one-time code:
+Run this command to enter the two-minute registration mode manually and print
+the one-time code:
 
 ```bash
 sudo -u williamjames \
@@ -95,8 +95,22 @@ sudo -u williamjames \
 
 Enter the displayed `XXXX-XXXX` value in App > Settings > Connect new device.
 The command requires the one-time factory provisioning/enrollment flow to have
-already stored an OPERATING bearer token in `device-agent.env`. A future GPIO
-button handler can invoke this same script without changing the backend or app.
+already stored an OPERATING bearer token in `device-agent.env`.
+
+On Raspberry Pi, `prepare-pi.sh` also installs and starts
+`wj-registration-button.service`. Wire a normally-open momentary button between
+BCM GPIO 17 (physical pin 11) and GND. Pressing it runs the same registration
+command without interactive `sudo`. The registration code is written to the
+service journal:
+
+```bash
+journalctl -u wj-registration-button -f
+```
+
+To use another BCM GPIO number, override `REGISTRATION_BUTTON_GPIO` with
+`systemctl edit wj-registration-button`, then restart the service. The service
+runs as root only because `device-agent.env` is deliberately root-readable; the
+button handler executes a fixed command and accepts no shell input.
 
 Follow a real request with:
 
