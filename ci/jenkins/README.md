@@ -20,6 +20,7 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 - `Dockerfile.frontend-agent`: Flutter Agent
 - `init.groovy.d/20-domain-agents.groovy`: 영역별 Agent 노드 생성
 - `init.groovy.d/30-gitlab-multibranch.groovy`: GitLab Credentials와 Multibranch 작업 생성
+- `init.groovy.d/35-gitlab-status.groovy`: Jenkins CI/CD 결과를 GitLab 커밋 상태로 전송
 - `init.groovy.d/40-git-notify-security.groovy`: Push 알림을 Polling 전용으로 제한
 
 ## 보안 및 격리
@@ -31,6 +32,8 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 - `postgres-ci` 데이터 디렉터리는 메모리 기반 `tmpfs`입니다.
 - GitLab 저장소는 만료일이 있는 `read_repository` 전용 Deploy Token으로 읽습니다.
 - Deploy Token은 Jenkins Credentials에 저장하고 작업에는 Credential ID만 기록합니다.
+- GitLab 상태 기록은 프로젝트 전용 `api` 토큰을 별도 사용하며
+  `/home/ubuntu/jenkins-agent-secrets/gitlab-api-token`에만 저장합니다.
 
 Jenkins Controller가 Java 21로 실행되므로 Agent 연결 프로그램도 Java 21을 사용합니다.
 Backend Gradle 설정은 Java 17 toolchain을 요구하므로 공통 Agent에는 Java 17을 별도 경로로
@@ -63,8 +66,8 @@ SHA를 지정해 특정 빌드를 직접 실행하는 요청은 HTTP 401로 차�
 | `develop/frontend`, `feat/frontend/**` | Frontend |
 | `develop/device`, `feat/device/**` | IoT와 AI |
 
-초기 구축용 `feat/jenkins-pipeline` 브랜치에서는 네 Agent와 Pipeline을 한 번에 검증하기 위해
-모든 영역을 실행합니다.
+Jenkins 자체 구성을 바꾸는 검증 브랜치에서는 Backend, Frontend, Device 전체 CI를 실행하도록
+해당 브랜치 이름을 `Jenkinsfile`에 명시합니다.
 
 현재 GitLab의 `master`나 `develop/*` 브랜치는 자동으로 생성하거나 변경하지 않습니다.
 브랜치 정책 적용은 별도의 GitLab 관리 단계에서 진행합니다.
@@ -107,19 +110,19 @@ PostgreSQL CI 완료 조건은 다음과 같습니다.
 5. Jenkins JUnit 보고서에서 테스트가 `SKIPPED`가 아니라 실행된 것으로 표시됩니다.
 6. 테스트 종료 후 빌드 전용 임시 DB가 삭제됩니다.
 
-## Frontend APK
+## Frontend CI
 
-Frontend CI는 분석과 테스트가 끝난 후 Android Debug APK를 만듭니다.
+Frontend CI는 의존성 설치, 정적 분석, 자동 테스트까지만 수행합니다.
 
 ```text
 flutter analyze
   -> flutter test
-  -> flutter build apk --debug
-  -> app-debug.apk를 Jenkins artifact로 보관
 ```
 
-Debug APK는 팀 내부 설치와 동작 확인용입니다. Google Play 배포용 Release APK·AAB는 별도의
-서명 키 관리가 필요하므로 이 단계에서 자동 배포하지 않습니다.
+휴대폰에서의 실제 실행은 개발자 PC에 기기를 연결한 뒤 `flutter run`으로 확인합니다.
+Jenkins 서버에는 물리 Android 기기가 연결되어 있지 않으므로 `flutter run`을 수행하지 않습니다.
+Frontend CD 작업은 구성하지 않습니다. Jenkins Frontend Agent에도 Android SDK, Build Tools,
+NDK를 설치하지 않으며 APK·AAB 생성, 기기 설치, 앱 스토어 업로드를 수행하지 않습니다.
 
 ## Backend 운영 배포
 
@@ -139,7 +142,23 @@ S15P11E201/master CI 성공
 ```
 
 운영 PostgreSQL·MinIO·Mosquitto·MediaMTX Compose는 Backend JAR 배포 과정에서 재시작하지
-않습니다. IoT와 AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+않습니다. Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+
+## GitLab 상태 알림
+
+Jenkins는 테스트와 배포 결과를 GitLab 커밋과 Merge Request 화면에 다음 이름으로 표시합니다.
+
+| 상태 이름 | 의미 |
+|---|---|
+| `ci/backend` | Backend 빌드, 단위 테스트, PostgreSQL 통합 테스트 |
+| `ci/frontend` | Flutter 의존성 설치, 분석, 자동 테스트 |
+| `ci/device` | Device Agent와 AI 테스트 |
+| `deploy/production` | Backend 운영 배포 승인 대기와 배포 결과 |
+
+상태는 실행 중 `running`, 성공 시 `success`, 실패 시 `failed`, 취소나 승인 시간 초과 시
+`canceled`가 됩니다. GitLab에는 Jenkins 빌드 상세 화면으로 이동하는 링크도 함께 표시됩니다.
+Jenkins 공개 주소는 `http://i15e201.p.ssafy.io:8080/`로 설정되어 이 링크가 실제 Jenkins
+빌드 화면을 가리킵니다.
 
 ## 현재 검증 결과
 
