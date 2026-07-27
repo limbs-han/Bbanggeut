@@ -1,0 +1,19 @@
+[Unit]
+Description=William James loopback-only MediaMTX
+After=network.target wj-media-source.service
+Wants=wj-media-source.service
+
+[Service]
+Type=simple
+User=williamjames
+Group=williamjames
+EnvironmentFile=/etc/william-james/device-agent.env
+ExecStart=/opt/william-james/device-agent/run-local-mediamtx.sh
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

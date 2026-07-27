@@ -6,8 +6,9 @@ import argparse
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import UUID
 
 
 def utc_now() -> str:
@@ -16,6 +17,51 @@ def utc_now() -> str:
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
     )
+
+
+def validate_laughter_event(payload: dict[str, Any]) -> None:
+    required = {
+        "schema_version",
+        "event_id",
+        "device_id",
+        "event_type",
+        "detected_at",
+        "score",
+        "clip",
+    }
+    missing = sorted(required.difference(payload))
+    if missing:
+        raise ValueError(f"missing required fields: {', '.join(missing)}")
+    try:
+        UUID(str(payload["event_id"]))
+    except ValueError as exc:
+        raise ValueError("event_id must be a UUID") from exc
+    if not str(payload["device_id"]).strip():
+        raise ValueError("device_id cannot be empty")
+    if str(payload["event_type"]).casefold() != "laughter":
+        raise ValueError("event_type must be laughter")
+
+    detected_at = datetime.fromisoformat(
+        str(payload["detected_at"]).replace("Z", "+00:00")
+    )
+    if detected_at.tzinfo is None or detected_at.utcoffset() != timedelta(0):
+        raise ValueError("detected_at must be UTC ISO-8601")
+
+    score = payload["score"]
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        raise ValueError("score must be a number")
+    if not 0.0 <= float(score) <= 1.0:
+        raise ValueError("score must be between 0 and 1")
+
+    clip = payload["clip"]
+    if not isinstance(clip, dict):
+        raise ValueError("clip must be an object")
+    for field in ("pre_seconds", "post_seconds"):
+        value = clip.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"clip.{field} must be a number")
+        if float(value) <= 0:
+            raise ValueError(f"clip.{field} must be positive")
 
 
 def build_fused_event(
@@ -27,6 +73,7 @@ def build_fused_event(
     fused = dict(laughter_event)
     source_schema_version = fused.get("schema_version")
     fused["schema_version"] = "1.1"
+    fused["event_type"] = str(fused.get("event_type", "laughter")).casefold()
     if source_schema_version is not None:
         fused["source_schema_version"] = source_schema_version
     fused["fused_at"] = utc_now()
@@ -40,6 +87,8 @@ def build_fused_event(
         fused["vision_context"] = {
             "available": False,
             "age_ms": vision_age_ms,
+            "object_count": 0,
+            "track_ids": [],
         }
         return fused
 
@@ -48,6 +97,12 @@ def build_fused_event(
     fused["vision_context"] = {
         "available": True,
         "age_ms": vision_age_ms,
+        "object_count": int(vision_state.get("total_stable_objects", 0)),
+        "track_ids": list(
+            vision_state.get("track_ids")
+            or vision_state.get("target_ids")
+            or []
+        ),
         "person_count": int(counts.get("person", 0)),
         "cat_count": int(counts.get("cat", 0)),
         "dog_count": int(counts.get("dog", 0)),
@@ -159,6 +214,11 @@ class EventFusionService:
             self.latest_vision_received_at = time.monotonic()
             return
         if message.topic != self.laughter_topic:
+            return
+        try:
+            validate_laughter_event(payload)
+        except (TypeError, ValueError) as exc:
+            print(f"Ignored invalid laughter event: {exc}")
             return
 
         now = time.monotonic()

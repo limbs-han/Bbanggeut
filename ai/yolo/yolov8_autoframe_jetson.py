@@ -22,6 +22,8 @@ import cv2
 import torch
 from ultralytics import YOLO
 
+from stream_capture import LatestFrameCapture, redact_stream_url
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_MODEL_PATH = BASE_DIR / "yolov8n.pt"
@@ -81,11 +83,16 @@ class CameraCommand:
         payload = asdict(self)
         payload["target_ids"] = list(self.target_ids)
         payload["frame_index"] = frame_index
-        payload["created_at"] = (
+        sent_at = (
             datetime.now(timezone.utc)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
+        payload["schema_version"] = "1.0"
+        payload["sequence"] = frame_index
+        payload["sent_at"] = sent_at
+        payload["ttl_ms"] = 500
+        payload["created_at"] = sent_at
         payload["monotonic_ns"] = time.monotonic_ns()
         return payload
 
@@ -106,7 +113,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stream-url",
         default=os.getenv("YOLO_SOURCE_URL"),
-        help="Local shared stream URL. When set, --camera is ignored.",
+        help="Shared RTSP/UDP stream URL. When set, --camera is ignored.",
+    )
+    parser.add_argument(
+        "--reconnect-initial-seconds",
+        type=float,
+        default=float(os.getenv("STREAM_RECONNECT_INITIAL_SECONDS", "1")),
+        help="Initial stream reconnect delay in seconds (default: 1).",
+    )
+    parser.add_argument(
+        "--reconnect-max-seconds",
+        type=float,
+        default=float(os.getenv("STREAM_RECONNECT_MAX_SECONDS", "10")),
+        help="Maximum stream reconnect delay in seconds (default: 10).",
+    )
+    parser.add_argument(
+        "--stream-open-timeout-seconds",
+        type=float,
+        default=float(os.getenv("STREAM_OPEN_TIMEOUT_SECONDS", "5")),
+        help="Network stream open timeout in seconds (default: 5).",
+    )
+    parser.add_argument(
+        "--stream-read-timeout-seconds",
+        type=float,
+        default=float(os.getenv("STREAM_READ_TIMEOUT_SECONDS", "5")),
+        help="Network stream read timeout in seconds (default: 5).",
     )
     parser.add_argument(
         "--video",
@@ -214,6 +245,10 @@ def parse_args() -> argparse.Namespace:
         help="Optional vision-state topic override.",
     )
     parser.add_argument(
+        "--control-mqtt-topic",
+        help="Optional servo-target topic override.",
+    )
+    parser.add_argument(
         "--display",
         action="store_true",
         help="Show an OpenCV window. Do not use over plain headless SSH.",
@@ -268,6 +303,16 @@ def parse_args() -> argparse.Namespace:
         parser.error("--max-frames cannot be negative")
     if args.clip_seconds <= 0:
         parser.error("--clip-seconds must be positive")
+    if args.reconnect_initial_seconds <= 0:
+        parser.error("--reconnect-initial-seconds must be positive")
+    if args.reconnect_max_seconds < args.reconnect_initial_seconds:
+        parser.error(
+            "--reconnect-max-seconds must be at least --reconnect-initial-seconds"
+        )
+    if args.stream_open_timeout_seconds <= 0:
+        parser.error("--stream-open-timeout-seconds must be positive")
+    if args.stream_read_timeout_seconds <= 0:
+        parser.error("--stream-read-timeout-seconds must be positive")
     return args
 
 
@@ -628,6 +673,42 @@ def choose_device(requested_device: str) -> int | str:
     return cuda_index
 
 
+def create_network_capture(args: argparse.Namespace, source: str) -> Any:
+    """Open one low-latency FFmpeg-backed capture for a network source."""
+
+    if source.casefold().startswith(("rtsp://", "rtsps://")):
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp",
+        )
+
+    parameters: list[int] = []
+    if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+        parameters.extend(
+            [
+                cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,
+                max(1, round(args.stream_open_timeout_seconds * 1_000)),
+            ]
+        )
+    if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+        parameters.extend(
+            [
+                cv2.CAP_PROP_READ_TIMEOUT_MSEC,
+                max(1, round(args.stream_read_timeout_seconds * 1_000)),
+            ]
+        )
+
+    try:
+        if parameters:
+            capture = cv2.VideoCapture(source, cv2.CAP_FFMPEG, parameters)
+        else:
+            capture = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+    except (TypeError, cv2.error):
+        capture = cv2.VideoCapture(source, cv2.CAP_FFMPEG)
+    capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return capture
+
+
 def open_source(args: argparse.Namespace) -> tuple[Any, bool, str]:
     if args.video is not None:
         video_path = args.video.expanduser().resolve()
@@ -639,14 +720,18 @@ def open_source(args: argparse.Namespace) -> tuple[Any, bool, str]:
         return capture, True, str(video_path)
 
     if args.stream_url:
-        capture = cv2.VideoCapture(args.stream_url, cv2.CAP_FFMPEG)
-        if not capture.isOpened():
-            capture.release()
-            capture = cv2.VideoCapture(args.stream_url)
-        if not capture.isOpened():
-            raise SystemExit(f"Could not open shared stream: {args.stream_url}")
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        return capture, False, args.stream_url
+        capture = LatestFrameCapture(
+            args.stream_url,
+            lambda source: create_network_capture(args, source),
+            property_ids=(
+                cv2.CAP_PROP_FRAME_WIDTH,
+                cv2.CAP_PROP_FRAME_HEIGHT,
+                cv2.CAP_PROP_FPS,
+            ),
+            reconnect_initial_seconds=args.reconnect_initial_seconds,
+            reconnect_max_seconds=args.reconnect_max_seconds,
+        )
+        return capture, False, redact_stream_url(args.stream_url)
 
     capture = cv2.VideoCapture(args.camera, cv2.CAP_V4L2)
     if not capture.isOpened():
@@ -849,6 +934,7 @@ def run(args: argparse.Namespace) -> None:
             username=args.mqtt_username,
             password=args.mqtt_password,
             topic=args.mqtt_topic,
+            control_topic=args.control_mqtt_topic,
         )
     histories: dict[int, TrackLife] = {}
     selector = StableGroupSelector(args.switch_frames)
@@ -863,11 +949,8 @@ def run(args: argparse.Namespace) -> None:
     started_at = time.monotonic()
     last_report_at = started_at
     last_command_at = float("-inf")
-    actual_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    actual_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    actual_fps = capture.get(cv2.CAP_PROP_FPS)
-    if actual_fps <= 0:
-        actual_fps = float(args.fps)
+    actual_fps = float(args.fps)
+    source_details_printed = False
     frame_history: deque[tuple[float, Any]] = deque()
     pending_video_clips: dict[str, dict[str, Any]] = {}
     seen_event_ids: set[str] = set()
@@ -877,7 +960,6 @@ def run(args: argparse.Namespace) -> None:
     print(f"Device: {device}")
     if device != "cpu":
         print(f"CUDA device: {torch.cuda.get_device_name(int(device))}")
-    print(f"Source: {source_name} ({actual_width}x{actual_height} @ {actual_fps:.1f} FPS)")
     print("Tracker: ByteTrack; classes: person, cat, dog")
     print("Motor output is disabled. This run only simulates framing commands.")
     print("Press Ctrl+C to stop" + (", or q in the display window." if args.display else "."))
@@ -890,6 +972,17 @@ def run(args: argparse.Namespace) -> None:
                     print("Input video ended.")
                     break
                 raise SystemExit("The camera opened, but a frame could not be read.")
+
+            if not source_details_printed:
+                actual_height, actual_width = frame.shape[:2]
+                reported_fps = capture.get(cv2.CAP_PROP_FPS)
+                if reported_fps > 0:
+                    actual_fps = reported_fps
+                print(
+                    f"Source: {source_name} "
+                    f"({actual_width}x{actual_height} @ {actual_fps:.1f} FPS)"
+                )
+                source_details_printed = True
 
             frame_epoch = time.time()
             if args.event_dir is not None:
@@ -1001,6 +1094,9 @@ def run(args: argparse.Namespace) -> None:
                     )
                     for class_name in TARGET_CLASSES.values()
                 }
+                command_payload["track_ids"] = [
+                    item.track_id for item in stable_objects
+                ]
                 if control_output is not None:
                     control_output.write(
                         json.dumps(
