@@ -40,6 +40,7 @@ services:
       - "8080:8080"
     volumes:
       - /home/ubuntu/jenkins-data:/var/jenkins_home
+      - ./init.groovy.d/10-security-bootstrap.groovy:/var/jenkins_home/init.groovy.d/10-security-bootstrap.groovy:ro
       - ./init.groovy.d/20-domain-agents.groovy:/var/jenkins_home/init.groovy.d/20-domain-agents.groovy:ro
       - ./init.groovy.d/30-gitlab-multibranch.groovy:/var/jenkins_home/init.groovy.d/30-gitlab-multibranch.groovy:ro
       - ./init.groovy.d/40-git-notify-security.groovy:/var/jenkins_home/init.groovy.d/40-git-notify-security.groovy:ro

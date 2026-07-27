@@ -147,10 +147,10 @@ if (job == null) {
 }
 
 job.setDefinition(new CpsFlowDefinition(pipelineScript, false))
-job.getTriggers().values()
-    .findAll { it instanceof ReverseBuildTrigger }
-    .each { job.removeTrigger(it.descriptor) }
-job.addTrigger(new ReverseBuildTrigger("S15P11E201/master", Result.SUCCESS))
+def retainedTriggers = job.getTriggers().values()
+    .findAll { !(it instanceof ReverseBuildTrigger) }
+retainedTriggers.add(new ReverseBuildTrigger("S15P11E201/master", Result.SUCCESS))
+job.setTriggers(retainedTriggers)
 job.setDisabled(false)
 job.save()
 folder.save()
