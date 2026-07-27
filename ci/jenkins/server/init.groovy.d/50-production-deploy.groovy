@@ -78,7 +78,8 @@ pipeline {
         stage('Validate master CI') {
             steps {
                 script {
-                    def cause = currentBuild.rawBuild.getCause(hudson.model.Cause.UpstreamCause)
+                    def causes = currentBuild.getBuildCauses('hudson.model.Cause$UpstreamCause')
+                    def cause = causes ? causes[0] : null
                     if (cause == null || cause.upstreamProject != 'S15P11E201/master') {
                         error('S15P11E201/master CI 성공으로 시작된 작업만 배포할 수 있습니다.')
                     }
@@ -89,10 +90,12 @@ pipeline {
         }
 
         stage('Production approval') {
-            input {
-                message 'master CI 결과물을 운영 EC2에 배포할까요?'
-                ok 'Backend 배포 승인'
-                submitterParameter 'APPROVED_BY'
+            steps {
+                input(
+                    message: 'master CI 결과물을 운영 EC2에 배포할까요?',
+                    ok: 'Backend 배포 승인',
+                    submitterParameter: 'APPROVED_BY'
+                )
             }
         }
 
@@ -112,13 +115,13 @@ pipeline {
                 sshagent(credentials: ['production-backend-ssh']) {
                     sh """
                         set -eu
-                        jar_file="\$(find . -maxdepth 1 -type f -name 'server-*.jar' -print -quit)"
-                        test -n "\${jar_file}"
+                        jar_file="\\$(find . -maxdepth 1 -type f -name 'server-*.jar' -print -quit)"
+                        test -n "\\${jar_file}"
                         scp \
                           -o BatchMode=yes \
                           -o StrictHostKeyChecking=yes \
                           -o UserKnownHostsFile=/run/secrets/production-known-hosts \
-                          "\${jar_file}" \
+                          "\\${jar_file}" \
                           jenkins-deploy@host.docker.internal:/home/jenkins-deploy/incoming/server.jar.next
                         ssh \
                           -o BatchMode=yes \
@@ -146,10 +149,10 @@ if (job == null) {
     throw new IllegalStateException("${folderName}/${jobName} exists but is not a Pipeline job")
 }
 
-job.setDefinition(new CpsFlowDefinition(pipelineScript, false))
+job.setDefinition(new CpsFlowDefinition(pipelineScript, true))
 def retainedTriggers = job.getTriggers().values()
     .findAll { !(it instanceof ReverseBuildTrigger) }
-retainedTriggers.add(new ReverseBuildTrigger("S15P11E201/master", Result.SUCCESS))
+retainedTriggers.add(new ReverseBuildTrigger("/S15P11E201/master", Result.SUCCESS))
 job.setTriggers(retainedTriggers)
 job.setDisabled(false)
 job.save()
