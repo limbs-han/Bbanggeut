@@ -109,7 +109,7 @@ services:
       - source: frontend_agent_secret
         target: jenkins-agent-secret
     cpus: 1.5
-    mem_limit: 4g
+    mem_limit: 6g
     mem_reservation: 512m
 
   device-agent:
