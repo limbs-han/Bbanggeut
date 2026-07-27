@@ -8,10 +8,15 @@ if [[ ! -r "$ENV_FILE" ]]; then
     exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+API_BASE_URL="$(
+    sed -n 's/^API_BASE_URL=//p' "$ENV_FILE" |
+        tail -n 1 |
+        sed -e 's/^["'\'']//' -e 's/["'\'']$//'
+)"
+API_BASE_URL="${API_BASE_URL:-https://i15e201.p.ssafy.io}"
 
 exec /opt/william-james/device-agent/venv/bin/python \
-    /opt/william-james/device-agent/registration_button.py
+    -m wj_device_agent.provision \
+    --api-base-url "$API_BASE_URL" \
+    --env-file "$ENV_FILE" \
+    registration-code

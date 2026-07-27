@@ -231,6 +231,9 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
 
     @Override
     public void revoke(UUID deviceId) {
+        if (!clientExists(deviceId)) {
+            return;
+        }
         executeDynsec(List.of(command("disableClient").put("username", deviceId.toString())), true);
     }
 

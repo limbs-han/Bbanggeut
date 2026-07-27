@@ -22,7 +22,10 @@ class AppController extends ChangeNotifier {
   HomeSummary? homeSummary;
   List<VideoMemory> videos = const [];
   List<DeviceMember> members = const [];
-  List<JoinRequestInfo> joinRequests = const [];
+  List<Invitation> sentInvitations = const [];
+  List<Invitation> receivedInvitations = const [];
+  String? pendingMembershipRequestToken;
+  MembershipRequestPreview? pendingMembershipRequestPreview;
 
   Future<void> initialize() async {
     if (devHomeCam && devHlsUrl.isNotEmpty) {
@@ -64,6 +67,7 @@ class AppController extends ChangeNotifier {
       user = await api.cachedUser;
       try {
         await refreshAll();
+        await resolvePendingMembershipRequest();
       } on ApiFailure catch (error) {
         if (error.statusCode == 401) {
           await api.clearSession();
@@ -90,6 +94,7 @@ class AppController extends ChangeNotifier {
     user = session.user;
     authenticated = true;
     await refreshAll();
+    await resolvePendingMembershipRequest();
   });
 
   Future<bool> signUp(
@@ -107,15 +112,21 @@ class AppController extends ChangeNotifier {
     user = session.user;
     authenticated = true;
     await refreshAll();
+    await resolvePendingMembershipRequest();
   });
 
   Future<void> logout() async {
     busy = true;
     notifyListeners();
-    await api.logout();
-    _reset();
-    busy = false;
-    notifyListeners();
+    try {
+      await api.logout();
+    } finally {
+      // 서버가 응답하지 않더라도 로컬 세션은 ApiClient에서 삭제된다.
+      // 화면 상태도 반드시 초기화해 실제 로그인 화면으로 전환한다.
+      _reset();
+      busy = false;
+      notifyListeners();
+    }
   }
 
   Future<void> withdraw() async {
@@ -124,13 +135,23 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> updateProfile(String displayName) async => _guard(() async {
+    user = await api.updateProfile(displayName);
+    notifyListeners();
+  });
+
   Future<void> refreshAll() async {
+    receivedInvitations = await api.listMyInvitations();
+    await refreshDevices();
+  }
+
+  Future<void> refreshDevices() async {
     devices = await api.listDevices();
     if (devices.isEmpty) {
       selectedDevice = null;
       videos = const [];
       members = const [];
-      joinRequests = const [];
+      sentInvitations = const [];
       deviceStatus = null;
       videoStats = null;
       homeSummary = null;
@@ -172,9 +193,9 @@ class AppController extends ChangeNotifier {
       api.listAllVideos(device.id),
       api.listMembers(device.id),
       if (device.isOwner)
-        api.listJoinRequests(device.id)
+        api.listDeviceInvitations(device.id)
       else
-        Future.value(<JoinRequestInfo>[]),
+        Future.value(<Invitation>[]),
       // Home summary is best-effort so a summary hiccup never blanks the tab.
       _loadHomeSummary(device.id),
     ]);
@@ -182,7 +203,7 @@ class AppController extends ChangeNotifier {
     videoStats = results[1] as VideoStats;
     videos = results[2] as List<VideoMemory>;
     members = results[3] as List<DeviceMember>;
-    joinRequests = results[4] as List<JoinRequestInfo>;
+    sentInvitations = results[4] as List<Invitation>;
     homeSummary = results[5] as HomeSummary?;
     notifyListeners();
   }
@@ -224,7 +245,7 @@ class AppController extends ChangeNotifier {
     homeSummary = null;
     videos = const [];
     members = const [];
-    joinRequests = const [];
+    sentInvitations = const [];
 
     if (selectedDevice != null) {
       try {
@@ -266,19 +287,135 @@ class AppController extends ChangeNotifier {
     }
   });
 
-  Future<bool> approve(JoinRequestInfo request) async => _guard(() async {
-    await api.approveJoinRequest(selectedDevice!.id, request.id);
-    await refreshDeviceData();
-  });
+  Future<bool> createInvitation(String email, String role) async =>
+      _guard(() async {
+        final device = selectedDevice;
+        if (device == null || !device.isOwner) return;
+        final requestToken =
+            pendingMembershipRequestPreview?.email.toLowerCase() ==
+                email.trim().toLowerCase()
+            ? pendingMembershipRequestToken
+            : null;
+        await api.createInvitation(
+          device.id,
+          email,
+          role,
+          membershipRequestToken: requestToken,
+        );
+        if (requestToken != null) {
+          pendingMembershipRequestToken = null;
+          pendingMembershipRequestPreview = null;
+        }
+        sentInvitations = await api.listDeviceInvitations(device.id);
+        notifyListeners();
+      });
 
-  Future<bool> reject(JoinRequestInfo request) async => _guard(() async {
-    await api.rejectJoinRequest(selectedDevice!.id, request.id);
-    await refreshDeviceData();
-  });
+  Future<Uri?> createMembershipRequestLink() async {
+    busy = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      final response = await api.createMembershipRequestLink();
+      return Uri.parse(
+        defaultApiBaseUrl,
+      ).resolve('/api/membership-request-links/${response.token}/open');
+    } on ApiFailure catch (error) {
+      errorMessage = error.message;
+      return null;
+    } catch (_) {
+      errorMessage = '요청 링크를 만들지 못했어요. 잠시 후 다시 시도해 주세요.';
+      return null;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
 
-  Future<bool> revoke(DeviceMember member) async => _guard(() async {
-    await api.revokeMember(selectedDevice!.id, member.id);
-    await refreshDeviceData();
+  Future<void> setMembershipRequestLink(Uri uri) async {
+    if (uri.scheme != 'bbanggeut' || uri.host != 'membership-request') return;
+    final token = uri.pathSegments.isEmpty ? null : uri.pathSegments.first;
+    if (token == null || token.isEmpty || token.length > 200) return;
+    pendingMembershipRequestToken = token;
+    pendingMembershipRequestPreview = null;
+    notifyListeners();
+    await resolvePendingMembershipRequest();
+  }
+
+  Future<void> resolvePendingMembershipRequest() async {
+    final token = pendingMembershipRequestToken;
+    if (!authenticated || token == null) return;
+    final ownerDevices = devices.where((device) => device.isOwner);
+    final ownerDevice = ownerDevices.isEmpty ? null : ownerDevices.first;
+    if (ownerDevice == null) {
+      errorMessage = '기기를 소유한 계정만 멤버 요청 링크를 열 수 있어요.';
+      notifyListeners();
+      return;
+    }
+    try {
+      if (selectedDevice?.id != ownerDevice.id) {
+        selectedDevice = ownerDevice;
+        await refreshDeviceData();
+      }
+      pendingMembershipRequestPreview = await api.previewMembershipRequest(
+        token,
+      );
+      errorMessage = null;
+    } on ApiFailure catch (error) {
+      pendingMembershipRequestToken = null;
+      pendingMembershipRequestPreview = null;
+      errorMessage = error.message;
+    }
+    notifyListeners();
+  }
+
+  Future<bool> revokeInvitation(Invitation invitation) async =>
+      _guard(() async {
+        final device = selectedDevice;
+        if (device == null || !device.isOwner) return;
+        await api.revokeInvitation(device.id, invitation.id);
+        sentInvitations = sentInvitations
+            .where((item) => item.id != invitation.id)
+            .toList(growable: false);
+        notifyListeners();
+      });
+
+  Future<void> refreshMyInvitations() async {
+    receivedInvitations = await api.listMyInvitations();
+    notifyListeners();
+  }
+
+  Future<bool> acceptInvitation(Invitation invitation) async =>
+      _guard(() async {
+        await api.acceptInvitation(invitation.id);
+        receivedInvitations = receivedInvitations
+            .where((item) => item.id != invitation.id)
+            .toList(growable: false);
+        await refreshDevices();
+      });
+
+  Future<bool> declineInvitation(Invitation invitation) async =>
+      _guard(() async {
+        await api.declineInvitation(invitation.id);
+        receivedInvitations = receivedInvitations
+            .where((item) => item.id != invitation.id)
+            .toList(growable: false);
+        notifyListeners();
+      });
+
+  Future<bool> revokeMemberAccess(DeviceMember member) async =>
+      _guard(() async {
+        await api.revokeMember(selectedDevice!.id, member.id);
+        await refreshDeviceData();
+      });
+
+  @Deprecated('Use revokeMemberAccess')
+  Future<bool> revoke(DeviceMember member) async {
+    return revokeMemberAccess(member);
+  }
+
+  Future<bool> transferOwnership(DeviceMember member) async => _guard(() async {
+    await api.transferOwnership(selectedDevice!.id, member.id);
+    await refreshAll();
   });
 
   void clearError() {
@@ -312,7 +449,10 @@ class AppController extends ChangeNotifier {
     selectedDevice = null;
     videos = const [];
     members = const [];
-    joinRequests = const [];
+    sentInvitations = const [];
+    receivedInvitations = const [];
+    pendingMembershipRequestToken = null;
+    pendingMembershipRequestPreview = null;
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;

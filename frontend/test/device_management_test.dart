@@ -1,6 +1,7 @@
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/app/app_controller.dart';
+import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
 import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/device_registration_screen.dart';
@@ -63,6 +64,127 @@ void main() {
     expect(controller.deviceStatus, isNull);
     controller.dispose();
   });
+
+  test('로그아웃 API가 실패해도 인증 상태를 초기화한다', () async {
+    final controller = AppController(api: _FailingLogoutApiClient())
+      ..authenticated = true
+      ..user = const UserProfile(
+        id: 'user-1',
+        email: 'user@example.com',
+        displayName: '사용자',
+      );
+
+    await expectLater(controller.logout(), throwsException);
+
+    expect(controller.authenticated, isFalse);
+    expect(controller.user, isNull);
+    expect(controller.busy, isFalse);
+    controller.dispose();
+  });
+
+  test('프로필 이름을 수정하면 현재 사용자에 즉시 반영한다', () async {
+    final api = _ProfileApiClient();
+    final controller = AppController(api: api)
+      ..user = const UserProfile(
+        id: 'user-1',
+        email: 'user@example.com',
+        displayName: '이전 이름',
+      );
+
+    expect(await controller.updateProfile('새 이름'), isTrue);
+    expect(api.requestedName, '새 이름');
+    expect(controller.user?.displayName, '새 이름');
+    controller.dispose();
+  });
+
+  testWidgets('기기 코드를 입력할 때 키보드가 입력칸을 가리지 않는다', (tester) async {
+    tester.view.physicalSize = const Size(390, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+
+    final controller = AppController();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: DeviceRegistrationScreen(
+          controller: controller,
+          canGoBack: false,
+        ),
+      ),
+    );
+    expect(find.text('QR 코드를 자동으로 인식해요'), findsNothing);
+
+    await tester.tap(find.text('직접 코드 입력하기'));
+    await tester.pumpAndSettle();
+    final codeField = find.byKey(const Key('registration-code-prefix'));
+    expect(codeField, findsOneWidget);
+
+    await tester.tap(codeField);
+    await tester.pump();
+    var editable = tester.widget<EditableText>(
+      find.descendant(of: codeField, matching: find.byType(EditableText)),
+    );
+    expect(editable.focusNode.hasFocus, isTrue);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+
+    editable = tester.widget<EditableText>(
+      find.descendant(of: codeField, matching: find.byType(EditableText)),
+    );
+    expect(editable.focusNode.hasFocus, isTrue);
+    expect(tester.getBottomRight(codeField).dy, lessThanOrEqualTo(380));
+    expect(tester.takeException(), isNull);
+    controller.dispose();
+  });
+
+  test('이메일 초대 응답을 기기와 초대한 사람 정보까지 파싱한다', () {
+    final invitation = Invitation.fromJson({
+      'id': 'invitation-1',
+      'deviceId': 'device-1',
+      'deviceName': '거실 카메라',
+      'inviteeEmail': 'family@example.com',
+      'role': 'VIEWER',
+      'inviter': {
+        'id': 'owner-1',
+        'email': 'owner@example.com',
+        'displayName': '소유자',
+      },
+      'status': 'PENDING',
+      'expiresAt': '2026-08-01T12:00:00Z',
+      'createdAt': '2026-07-25T12:00:00Z',
+    });
+
+    expect(invitation.deviceName, '거실 카메라');
+    expect(invitation.inviteeEmail, 'family@example.com');
+    expect(invitation.role, 'VIEWER');
+    expect(invitation.inviter?.displayName, '소유자');
+    expect(invitation.isPending, isTrue);
+    expect(invitation.expiresAt, isNotNull);
+  });
+
+  test('초대 수락 성공 시 받은 초대를 제거하고 기기 목록을 갱신한다', () async {
+    final api = _AcceptInvitationApiClient();
+    const invitation = Invitation(
+      id: 'invitation-1',
+      deviceId: 'device-1',
+      deviceName: '거실 카메라',
+      inviteeEmail: 'member@example.com',
+      role: 'EDITOR',
+      status: 'PENDING',
+    );
+    final controller = AppController(api: api)
+      ..receivedInvitations = const [invitation];
+
+    expect(await controller.acceptInvitation(invitation), isTrue);
+    expect(api.acceptedInvitationId, invitation.id);
+    expect(controller.receivedInvitations, isEmpty);
+    expect(controller.devices.single.id, invitation.deviceId);
+    expect(controller.selectedDevice?.id, invitation.deviceId);
+    controller.dispose();
+  });
 }
 
 class _ReleaseApiClient extends ApiClient {
@@ -72,4 +194,80 @@ class _ReleaseApiClient extends ApiClient {
   Future<void> releaseDevice(String deviceId) async {
     releasedDeviceId = deviceId;
   }
+}
+
+class _FailingLogoutApiClient extends ApiClient {
+  @override
+  Future<void> logout() async => throw Exception('network unavailable');
+}
+
+class _ProfileApiClient extends ApiClient {
+  String? requestedName;
+
+  @override
+  Future<UserProfile> updateProfile(String displayName) async {
+    requestedName = displayName;
+    return UserProfile(
+      id: 'user-1',
+      email: 'user@example.com',
+      displayName: displayName,
+    );
+  }
+}
+
+class _AcceptInvitationApiClient extends ApiClient {
+  String? acceptedInvitationId;
+
+  static const device = DeviceSummary(
+    id: 'device-1',
+    name: '거실 카메라',
+    model: 'test',
+    status: 'ONLINE',
+    myRole: 'EDITOR',
+    retentionDays: 30,
+  );
+
+  @override
+  Future<DeviceMember> acceptInvitation(String invitationId) async {
+    acceptedInvitationId = invitationId;
+    return const DeviceMember(
+      id: 'membership-1',
+      user: UserProfile(
+        id: 'member-1',
+        email: 'member@example.com',
+        displayName: '구성원',
+      ),
+      role: 'EDITOR',
+      status: 'ACTIVE',
+    );
+  }
+
+  @override
+  Future<List<DeviceSummary>> listDevices() async => const [device];
+
+  @override
+  Future<DeviceStatus> getDeviceStatus(String id) async => const DeviceStatus(
+    status: 'ONLINE',
+    recording: false,
+    uploadQueueDepth: 0,
+  );
+
+  @override
+  Future<VideoStats> getVideoStats(String id) async =>
+      const VideoStats(totalCount: 0, byTriggerType: {});
+
+  @override
+  Future<List<VideoMemory>> listAllVideos(
+    String deviceId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async => const [];
+
+  @override
+  Future<List<DeviceMember>> listMembers(String deviceId) async => const [];
+
+  @override
+  Future<HomeSummary> getHomeSummary(String id) async =>
+      const HomeSummary(captureCount: 0, savedCount: 0, memoCount: 0);
 }

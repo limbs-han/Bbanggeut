@@ -17,6 +17,42 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int index = 0;
+  String? handledMembershipRequestToken;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_openMembershipRequest);
+  }
+
+  @override
+  void didUpdateWidget(covariant MainShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_openMembershipRequest);
+      widget.controller.addListener(_openMembershipRequest);
+    }
+  }
+
+  void _openMembershipRequest() {
+    final token = widget.controller.pendingMembershipRequestToken;
+    final preview = widget.controller.pendingMembershipRequestPreview;
+    if (!mounted ||
+        token == null ||
+        preview == null ||
+        token == handledMembershipRequestToken) {
+      return;
+    }
+    handledMembershipRequestToken = token;
+    setState(() => index = 3);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_openMembershipRequest);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.controller.selectedDevice == null) {

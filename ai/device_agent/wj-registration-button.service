@@ -1,0 +1,20 @@
+[Unit]
+Description=William James physical registration button
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/william-james/device-agent.env
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+Environment=REGISTRATION_BUTTON_GPIO=17
+WorkingDirectory=/opt/william-james/device-agent
+ExecStart=/usr/bin/python3 /opt/william-james/device-agent/registration_button.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

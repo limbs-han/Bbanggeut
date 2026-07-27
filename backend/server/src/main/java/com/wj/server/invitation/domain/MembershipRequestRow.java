@@ -3,13 +3,12 @@ package com.wj.server.invitation.domain;
 import java.time.Instant;
 import java.util.UUID;
 
-public record JoinRequestRow(
+public record MembershipRequestRow(
     UUID id,
-    UUID deviceId,
-    UUID userId,
+    UUID requesterId,
     String email,
     String displayName,
-    String status,
-    Instant requestedAt
+    Instant expiresAt,
+    Instant usedAt
 ) {
 }

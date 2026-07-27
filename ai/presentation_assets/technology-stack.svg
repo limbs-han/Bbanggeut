@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#735F4B" flood-opacity="0.10"/>
+    </filter>
+    <linearGradient id="blueWash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EAF3FA"/>
+      <stop offset="1" stop-color="#C8DDEF"/>
+    </linearGradient>
+    <linearGradient id="warmWash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FAF8F4"/>
+      <stop offset="1" stop-color="#EEE8DF"/>
+    </linearGradient>
+    <pattern id="dots" width="84" height="84" patternUnits="userSpaceOnUse">
+      <circle cx="20" cy="22" r="5" fill="#8EAFCE" opacity="0.75"/>
+    </pattern>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#FBFBFA"/>
+  <rect x="0" y="916" width="1920" height="164" fill="#D5E5F3"/>
+  <rect x="0" y="916" width="1920" height="164" fill="url(#dots)" opacity="0.82"/>
+  <rect x="0" y="854" width="84" height="226" fill="#D5E5F3"/>
+  <rect x="1836" y="854" width="84" height="226" fill="#D5E5F3"/>
+
+  <!-- House roof, matching the presentation template -->
+  <path d="M78 254 L960 64 L1842 254" fill="none" stroke="#CBDEEF" stroke-width="18"/>
+  <rect x="1642" y="112" width="88" height="104" fill="#CBDEEF"/>
+
+  <!-- Header -->
+  <g font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <rect x="88" y="103" width="520" height="132" rx="18" fill="#FBFBFA" opacity="0.96"/>
+    <rect x="1328" y="117" width="500" height="88" rx="18" fill="#FBFBFA" opacity="0.94"/>
+    <g transform="translate(120 123)">
+      <rect x="0" y="0" width="12" height="12" fill="#A9C9E7"/>
+      <rect x="15" y="0" width="12" height="12" fill="#67727A"/>
+      <rect x="0" y="15" width="12" height="12" fill="#67727A"/>
+      <text x="40" y="22" font-size="22" font-weight="600" fill="#5F6263" letter-spacing="1.2">WILLIAM JAMES · TECHNOLOGY</text>
+    </g>
+    <text x="120" y="220" font-size="64" font-weight="700" fill="#655847">기술 스택</text>
+    <text x="1800" y="164" text-anchor="end" font-size="25" font-weight="500" fill="#777674">사람은 순간을 살고, 기술은 기억합니다</text>
+    <path d="M1440 184 H1800" stroke="#C8DDEF" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <!-- App card -->
+  <g transform="translate(84 304)" filter="url(#softShadow)" font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <rect width="326" height="540" rx="28" fill="#FFFFFF"/>
+    <rect x="0" y="0" width="326" height="252" rx="28" fill="url(#blueWash)"/>
+    <rect x="0" y="224" width="326" height="28" fill="url(#blueWash)"/>
+    <text x="28" y="42" font-size="18" font-weight="700" fill="#65717A" letter-spacing="2">MOBILE APP</text>
+
+    <!-- Phone illustration -->
+    <rect x="93" y="62" width="140" height="158" rx="28" fill="#FFFFFF" stroke="#6C6258" stroke-width="6"/>
+    <rect x="109" y="82" width="108" height="74" rx="16" fill="#AFCDEA"/>
+    <circle cx="163" cy="119" r="20" fill="#FFFFFF" opacity="0.92"/>
+    <path d="M156 106 L178 119 L156 132 Z" fill="#6C6258"/>
+    <rect x="109" y="168" width="50" height="32" rx="11" fill="#E5EEF6"/>
+    <rect x="167" y="168" width="50" height="32" rx="11" fill="#EFE9E0"/>
+    <circle cx="163" cy="210" r="5" fill="#6C6258"/>
+
+    <text x="163" y="318" text-anchor="middle" font-size="37" font-weight="700" fill="#655847">Flutter</text>
+    <text x="163" y="352" text-anchor="middle" font-size="20" font-weight="500" fill="#88827C">Dart · Android</text>
+    <path d="M52 385 H274" stroke="#E8E4DF" stroke-width="2"/>
+    <g font-size="21" font-weight="600" fill="#5F6263">
+      <circle cx="68" cy="424" r="8" fill="#AFCDEA"/>
+      <text x="88" y="431">실시간 홈 보기</text>
+      <circle cx="68" cy="466" r="8" fill="#AFCDEA"/>
+      <text x="88" y="473">추억 영상 관리</text>
+      <circle cx="68" cy="508" r="8" fill="#AFCDEA"/>
+      <text x="88" y="515">가족 권한 공유</text>
+    </g>
+  </g>
+
+  <!-- Backend card -->
+  <g transform="translate(440 304)" filter="url(#softShadow)" font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <rect width="326" height="540" rx="28" fill="#FFFFFF"/>
+    <rect x="0" y="0" width="326" height="252" rx="28" fill="url(#warmWash)"/>
+    <rect x="0" y="224" width="326" height="28" fill="url(#warmWash)"/>
+    <text x="28" y="42" font-size="18" font-weight="700" fill="#746B62" letter-spacing="2">BACKEND API</text>
+
+    <!-- API / server illustration -->
+    <rect x="72" y="75" width="182" height="124" rx="22" fill="#FFFFFF" stroke="#6C6258" stroke-width="6"/>
+    <rect x="94" y="96" width="138" height="25" rx="9" fill="#D4E4F2"/>
+    <circle cx="110" cy="108" r="5" fill="#6C6258"/>
+    <circle cx="127" cy="108" r="5" fill="#AFCDEA"/>
+    <rect x="94" y="133" width="138" height="44" rx="10" fill="#EFE9E0"/>
+    <path d="M122 155 H204" stroke="#6C6258" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="101" cy="155" r="7" fill="#9CBBD7"/>
+    <path d="M147 199 V218 M179 199 V218 M126 218 H200" stroke="#6C6258" stroke-width="6" stroke-linecap="round"/>
+
+    <text x="163" y="318" text-anchor="middle" font-size="35" font-weight="700" fill="#655847">Spring Boot</text>
+    <text x="163" y="352" text-anchor="middle" font-size="20" font-weight="500" fill="#88827C">Java 17 · JWT</text>
+    <path d="M52 385 H274" stroke="#E8E4DF" stroke-width="2"/>
+    <g font-size="21" font-weight="600" fill="#5F6263">
+      <circle cx="68" cy="424" r="8" fill="#C9BBAA"/>
+      <text x="88" y="431">인증 · 기기 등록</text>
+      <circle cx="68" cy="466" r="8" fill="#C9BBAA"/>
+      <text x="88" y="473">영상 메타데이터</text>
+      <circle cx="68" cy="508" r="8" fill="#C9BBAA"/>
+      <text x="88" y="515">라이브 세션 제어</text>
+    </g>
+  </g>
+
+  <!-- Edge AI card -->
+  <g transform="translate(796 304)" filter="url(#softShadow)" font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <rect width="326" height="540" rx="28" fill="#FFFFFF"/>
+    <rect x="0" y="0" width="326" height="252" rx="28" fill="url(#blueWash)"/>
+    <rect x="0" y="224" width="326" height="28" fill="url(#blueWash)"/>
+    <text x="28" y="42" font-size="18" font-weight="700" fill="#65717A" letter-spacing="2">ON-DEVICE AI</text>
+
+    <!-- AI chip illustration -->
+    <rect x="91" y="72" width="144" height="144" rx="26" fill="#FFFFFF" stroke="#6C6258" stroke-width="6"/>
+    <g stroke="#6C6258" stroke-width="5" stroke-linecap="round">
+      <path d="M111 60 V76 M139 60 V76 M167 60 V76 M195 60 V76 M223 60 V76"/>
+      <path d="M111 212 V228 M139 212 V228 M167 212 V228 M195 212 V228 M223 212 V228"/>
+      <path d="M79 92 H95 M79 120 H95 M79 148 H95 M79 176 H95 M79 204 H95"/>
+      <path d="M231 92 H247 M231 120 H247 M231 148 H247 M231 176 H247 M231 204 H247"/>
+    </g>
+    <path d="M119 142 Q163 96 207 142 Q163 188 119 142 Z" fill="#D6E6F4" stroke="#6C6258" stroke-width="5"/>
+    <circle cx="163" cy="142" r="20" fill="#6C6258"/>
+    <circle cx="170" cy="135" r="6" fill="#FFFFFF"/>
+
+    <text x="163" y="318" text-anchor="middle" font-size="36" font-weight="700" fill="#655847">Jetson AI</text>
+    <text x="163" y="352" text-anchor="middle" font-size="20" font-weight="500" fill="#88827C">PyTorch · TensorFlow</text>
+    <path d="M52 385 H274" stroke="#E8E4DF" stroke-width="2"/>
+    <g font-size="21" font-weight="600" fill="#5F6263">
+      <circle cx="68" cy="424" r="8" fill="#AFCDEA"/>
+      <text x="88" y="431">YOLOv8 · ByteTrack</text>
+      <circle cx="68" cy="466" r="8" fill="#AFCDEA"/>
+      <text x="88" y="473">YAMNet 웃음 감지</text>
+      <circle cx="68" cy="508" r="8" fill="#AFCDEA"/>
+      <text x="88" y="515">CUDA 가속 추론</text>
+    </g>
+  </g>
+
+  <!-- Media card -->
+  <g transform="translate(1152 304)" filter="url(#softShadow)" font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <rect width="326" height="540" rx="28" fill="#FFFFFF"/>
+    <rect x="0" y="0" width="326" height="252" rx="28" fill="url(#warmWash)"/>
+    <rect x="0" y="224" width="326" height="28" fill="url(#warmWash)"/>
+    <text x="28" y="42" font-size="18" font-weight="700" fill="#746B62" letter-spacing="2">MEDIA &amp; MESSAGE</text>
+
+    <!-- Streaming illustration -->
+    <rect x="67" y="88" width="118" height="90" rx="22" fill="#FFFFFF" stroke="#6C6258" stroke-width="6"/>
+    <circle cx="126" cy="133" r="28" fill="#D5E5F3"/>
+    <path d="M117 116 L143 133 L117 150 Z" fill="#6C6258"/>
+    <path d="M198 104 Q238 133 198 162" fill="none" stroke="#9CBBD7" stroke-width="7" stroke-linecap="round"/>
+    <path d="M216 86 Q280 133 216 180" fill="none" stroke="#6C6258" stroke-width="7" stroke-linecap="round"/>
+    <path d="M76 204 Q92 188 108 204 T140 204 T172 204 T204 204 T236 204" fill="none" stroke="#9CBBD7" stroke-width="6" stroke-linecap="round"/>
+
+    <text x="163" y="318" text-anchor="middle" font-size="36" font-weight="700" fill="#655847">Media Flow</text>
+    <text x="163" y="352" text-anchor="middle" font-size="20" font-weight="500" fill="#88827C">H.264 · AAC</text>
+    <path d="M52 385 H274" stroke="#E8E4DF" stroke-width="2"/>
+    <g font-size="21" font-weight="600" fill="#5F6263">
+      <circle cx="68" cy="424" r="8" fill="#C9BBAA"/>
+      <text x="88" y="431">FFmpeg 인코딩</text>
+      <circle cx="68" cy="466" r="8" fill="#C9BBAA"/>
+      <text x="88" y="473">MediaMTX 스트리밍</text>
+      <circle cx="68" cy="508" r="8" fill="#C9BBAA"/>
+      <text x="88" y="515">Mosquitto MQTT</text>
+    </g>
+  </g>
+
+  <!-- Cloud and data card -->
+  <g transform="translate(1508 304)" filter="url(#softShadow)" font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <rect width="326" height="540" rx="28" fill="#FFFFFF"/>
+    <rect x="0" y="0" width="326" height="252" rx="28" fill="url(#blueWash)"/>
+    <rect x="0" y="224" width="326" height="28" fill="url(#blueWash)"/>
+    <text x="28" y="42" font-size="18" font-weight="700" fill="#65717A" letter-spacing="2">CLOUD &amp; DATA</text>
+
+    <!-- Cloud / database illustration -->
+    <path d="M77 145 C77 115 101 93 131 93 C143 70 166 58 193 64 C222 70 239 90 242 117 C263 121 278 137 278 158 C278 182 259 201 235 201 H102 C73 201 52 181 52 156 C52 151 53 147 55 143" fill="#FFFFFF" stroke="#6C6258" stroke-width="6"/>
+    <ellipse cx="163" cy="131" rx="54" ry="18" fill="#D5E5F3" stroke="#6C6258" stroke-width="5"/>
+    <path d="M109 131 V180 C109 190 133 198 163 198 C193 198 217 190 217 180 V131" fill="#D5E5F3" stroke="#6C6258" stroke-width="5"/>
+    <path d="M109 155 C109 165 133 173 163 173 C193 173 217 165 217 155" fill="none" stroke="#6C6258" stroke-width="4"/>
+
+    <text x="163" y="318" text-anchor="middle" font-size="36" font-weight="700" fill="#655847">AWS Cloud</text>
+    <text x="163" y="352" text-anchor="middle" font-size="20" font-weight="500" fill="#88827C">EC2 · Docker · Nginx</text>
+    <path d="M52 385 H274" stroke="#E8E4DF" stroke-width="2"/>
+    <g font-size="21" font-weight="600" fill="#5F6263">
+      <circle cx="68" cy="424" r="8" fill="#AFCDEA"/>
+      <text x="88" y="431">PostgreSQL</text>
+      <circle cx="68" cy="466" r="8" fill="#AFCDEA"/>
+      <text x="88" y="473">MinIO 비공개 저장</text>
+      <circle cx="68" cy="508" r="8" fill="#AFCDEA"/>
+      <text x="88" y="515">GitLab CI/CD</text>
+    </g>
+  </g>
+
+  <!-- Bottom protocol rail -->
+  <g transform="translate(300 942)" font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <g transform="translate(0 0)">
+      <circle cx="28" cy="36" r="27" fill="#FFFFFF" opacity="0.92"/>
+      <path d="M18 36 H38 M28 26 V46" stroke="#7C9FBE" stroke-width="5" stroke-linecap="round"/>
+      <text x="70" y="45" font-size="25" font-weight="700" fill="#5F6263">HTTPS · JWT</text>
+    </g>
+    <path d="M280 36 H375" stroke="#A8C2D9" stroke-width="5" stroke-linecap="round"/>
+    <g transform="translate(395 0)">
+      <circle cx="28" cy="36" r="27" fill="#FFFFFF" opacity="0.92"/>
+      <path d="M14 39 Q28 18 42 39 M20 44 Q28 32 36 44" fill="none" stroke="#7C9FBE" stroke-width="5" stroke-linecap="round"/>
+      <text x="70" y="45" font-size="25" font-weight="700" fill="#5F6263">MQTTS</text>
+    </g>
+    <path d="M600 36 H695" stroke="#A8C2D9" stroke-width="5" stroke-linecap="round"/>
+    <g transform="translate(715 0)">
+      <circle cx="28" cy="36" r="27" fill="#FFFFFF" opacity="0.92"/>
+      <path d="M16 24 L43 36 L16 48 Z" fill="#7C9FBE"/>
+      <text x="70" y="45" font-size="25" font-weight="700" fill="#5F6263">RTSPS</text>
+    </g>
+    <path d="M915 36 H1010" stroke="#A8C2D9" stroke-width="5" stroke-linecap="round"/>
+    <g transform="translate(1030 0)">
+      <circle cx="28" cy="36" r="27" fill="#FFFFFF" opacity="0.92"/>
+      <rect x="14" y="22" width="28" height="28" rx="5" fill="none" stroke="#7C9FBE" stroke-width="5"/>
+      <path d="M23 19 V53 M33 19 V53" stroke="#7C9FBE" stroke-width="3"/>
+      <text x="70" y="45" font-size="25" font-weight="700" fill="#5F6263">HLS</text>
+    </g>
+  </g>
+</svg>

@@ -10,14 +10,20 @@ from datetime import datetime, timezone
 import json
 import os
 import queue
-import subprocess
 import sys
-import threading
 import time
 import uuid
 import wave
 from pathlib import Path
 from typing import Any
+
+from ffmpeg_audio_stream import (
+    ReconnectingFfmpegAudio,
+    build_audio_command,
+    detect_rtsp_timeout_option,
+    redact_stream_url,
+)
+from laughter_scoring import SCORE_AGGREGATIONS, summarize_laughter_scores
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
@@ -78,6 +84,27 @@ def parse_args() -> argparse.Namespace:
         help="추론 전에 적용할 입력 증폭 배율입니다(기본값: 1.0).",
     )
     parser.add_argument(
+        "--score-aggregation",
+        choices=SCORE_AGGREGATIONS,
+        default=os.getenv("YAMNET_SCORE_AGGREGATION", "max"),
+        help=(
+            "시간 패치의 웃음 점수를 합치는 방식입니다: max, mean, p90 "
+            "(기본값: max)."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostics-jsonl",
+        type=Path,
+        help=(
+            "각 추론의 max·mean·p90, RMS와 판정 결과를 저장할 JSONL 경로입니다."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostics-only",
+        action="store_true",
+        help="판정은 기록하되 이벤트 파일과 MQTT 메시지는 생성하지 않습니다.",
+    )
+    parser.add_argument(
         "--model",
         default=YAMNET_URL,
         help="TensorFlow Hub URL 또는 내려받은 로컬 YAMNet 디렉터리입니다.",
@@ -128,9 +155,35 @@ def parse_args() -> argparse.Namespace:
         help="Write local laughter triggers and audio clips for edge upload.",
     )
     parser.add_argument(
+        "--trigger-only",
+        action="store_true",
+        help=(
+            "Write event triggers without buffering WAV clips. Use this when "
+            "clips are extracted from compressed rolling recordings."
+        ),
+    )
+    parser.add_argument(
         "--stream-url",
         default=os.getenv("YAMNET_SOURCE_URL"),
-        help="Local shared media URL. When set, the microphone is decoded by FFmpeg.",
+        help="Shared RTSP/UDP media URL. When set, audio is decoded by FFmpeg.",
+    )
+    parser.add_argument(
+        "--reconnect-initial-seconds",
+        type=float,
+        default=float(os.getenv("STREAM_RECONNECT_INITIAL_SECONDS", "1")),
+        help="Initial stream reconnect delay in seconds (default: 1).",
+    )
+    parser.add_argument(
+        "--reconnect-max-seconds",
+        type=float,
+        default=float(os.getenv("STREAM_RECONNECT_MAX_SECONDS", "10")),
+        help="Maximum stream reconnect delay in seconds (default: 10).",
+    )
+    parser.add_argument(
+        "--stream-read-timeout-seconds",
+        type=float,
+        default=float(os.getenv("STREAM_READ_TIMEOUT_SECONDS", "5")),
+        help="RTSP socket read timeout in seconds (default: 5).",
     )
     parser.add_argument(
         "--clip-seconds",
@@ -184,70 +237,38 @@ def open_audio_input(
             yield
         return
 
-    command = [
-        os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg"),
-        "-hide_banner",
-        "-nostdin",
-        "-loglevel",
-        "error",
-        "-fflags",
-        "nobuffer",
-        "-i",
+    ffmpeg_path = os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg")
+    timeout_option = detect_rtsp_timeout_option(ffmpeg_path)
+    if timeout_option is None:
+        print(
+            "FFmpeg RTSP 읽기 타임아웃 옵션을 찾지 못해 "
+            "타임아웃 없이 스트림을 엽니다."
+        )
+    command = build_audio_command(
+        ffmpeg_path,
         args.stream_url,
-        "-map",
-        "0:a:0",
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        str(capture_rate),
-        "-f",
-        "f32le",
-        "pipe:1",
-    ]
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        capture_rate,
+        args.stream_read_timeout_seconds,
+        rtsp_timeout_option=timeout_option,
     )
-    if process.stdout is None:
-        process.kill()
-        raise RuntimeError("FFmpeg audio pipe was not created")
-    stopped = threading.Event()
 
-    def read_audio() -> None:
-        block_bytes = block_size * 4
-        buffered = bytearray()
-        while not stopped.is_set():
-            data = process.stdout.read(block_bytes - len(buffered))
-            if not data:
-                if not stopped.is_set():
-                    print(
-                        f"Shared audio decoder stopped with status {process.poll()}",
-                        file=sys.stderr,
-                    )
-                return
-            buffered.extend(data)
-            if len(buffered) < block_bytes:
-                continue
-            chunk = np.frombuffer(buffered, dtype="<f4").copy().reshape(-1, 1)
-            buffered.clear()
-            audio_callback(chunk, len(chunk), None, None)
+    def handle_pcm_block(data: bytes) -> None:
+        chunk = np.frombuffer(data, dtype="<f4").copy().reshape(-1, 1)
+        audio_callback(chunk, len(chunk), None, None)
 
-    reader = threading.Thread(target=read_audio, name="shared-audio-reader", daemon=True)
+    reader = ReconnectingFfmpegAudio(
+        command,
+        block_size * 4,
+        handle_pcm_block,
+        reconnect_initial_seconds=args.reconnect_initial_seconds,
+        reconnect_max_seconds=args.reconnect_max_seconds,
+        safe_source=redact_stream_url(args.stream_url),
+    )
     reader.start()
     try:
         yield
     finally:
-        stopped.set()
-        process.terminate()
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=1)
-        reader.join(timeout=1)
+        reader.close()
 
 
 def load_yamnet(model_source: str, cache_dir: str) -> tuple[Any, Any, list[str]]:
@@ -316,6 +337,15 @@ def validate_args(args: argparse.Namespace) -> None:
     if not args.device_id.strip():
         raise SystemExit("--device-id는 비어 있을 수 없습니다.")
 
+    if args.reconnect_initial_seconds <= 0:
+        raise SystemExit("--reconnect-initial-seconds must be positive")
+    if args.reconnect_max_seconds < args.reconnect_initial_seconds:
+        raise SystemExit(
+            "--reconnect-max-seconds must be at least --reconnect-initial-seconds"
+        )
+    if args.stream_read_timeout_seconds <= 0:
+        raise SystemExit("--stream-read-timeout-seconds must be positive")
+
 
 def write_wav(path: Path, samples: Any, sample_rate: int, np: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -360,7 +390,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
         raise SystemExit("--clip-seconds must be positive")
     device = normalize_device_argument(args.device)
     if args.stream_url:
-        device_info = {"name": f"shared stream {args.stream_url}"}
+        device_info = {"name": f"shared stream {redact_stream_url(args.stream_url)}"}
         capture_rate = args.sample_rate or YAMNET_SAMPLE_RATE
     else:
         try:
@@ -379,7 +409,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     laughter_names = [class_names[index] for index in laughter_indices]
     audio_queue: queue.Queue[Any] = queue.Queue(maxsize=8)
     mqtt_publisher = None
-    if args.mqtt_host:
+    if args.mqtt_host and not args.diagnostics_only:
         from mqtt_event_publisher import MqttEventPublisher
 
         mqtt_publisher = MqttEventPublisher(
@@ -409,13 +439,34 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     print(f"캡처 샘플레이트: {capture_rate} Hz")
     print(f"웃음 관련 클래스: {', '.join(laughter_names)}")
     print(
-        f"임계값: {args.threshold:.2f}, 연속 횟수: {args.consecutive}, "
-        f"입력 증폭: {args.gain:.2f}배"
+        f"임계값: {args.threshold:.3f}, 연속 횟수: {args.consecutive}, "
+        f"입력 증폭: {args.gain:.2f}배, 점수 집계: {args.score_aggregation}"
     )
+    diagnostics_output = None
+    if args.diagnostics_jsonl is not None:
+        diagnostics_path = args.diagnostics_jsonl.expanduser().resolve()
+        diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+        diagnostics_output = diagnostics_path.open(
+            "w",
+            encoding="utf-8",
+            buffering=1,
+        )
+        print(f"진단 JSONL: {diagnostics_path}")
+    if args.diagnostics_only:
+        print("진단 전용 모드: 이벤트 파일과 MQTT 메시지를 생성하지 않습니다.")
     print("마이크에 대고 웃어보세요. 종료하려면 Ctrl+C를 누르세요.\n")
 
     buffer = np.empty(0, dtype=np.float32)
-    history_samples = max(1, int(round(capture_rate * args.clip_seconds)))
+    save_audio_clips = (
+        args.event_dir is not None
+        and not args.trigger_only
+        and not args.diagnostics_only
+    )
+    history_samples = (
+        max(1, int(round(capture_rate * args.clip_seconds)))
+        if save_audio_clips
+        else 0
+    )
     audio_history: deque[Any] = deque()
     audio_history_size = 0
     pending_clips: dict[str, dict[str, Any]] = {}
@@ -435,13 +486,17 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
         ):
             while True:
                 chunk = audio_queue.get()
-                audio_history.append(chunk.copy())
-                audio_history_size += len(chunk)
-                while audio_history and audio_history_size - len(audio_history[0]) >= history_samples:
-                    removed = audio_history.popleft()
-                    audio_history_size -= len(removed)
+                if save_audio_clips:
+                    audio_history.append(chunk.copy())
+                    audio_history_size += len(chunk)
+                    while (
+                        audio_history
+                        and audio_history_size - len(audio_history[0]) >= history_samples
+                    ):
+                        removed = audio_history.popleft()
+                        audio_history_size -= len(removed)
 
-                if args.event_dir is not None:
+                if save_audio_clips:
                     for event_id, pending in tuple(pending_clips.items()):
                         pending["parts"].append(chunk.copy())
                         pending["post_samples"] += len(chunk)
@@ -475,10 +530,13 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                 mean_scores = scores_np.mean(axis=0)
                 top_index = int(np.argmax(mean_scores))
                 laughter_slice = scores_np[:, laughter_indices]
-                per_class_max = np.max(laughter_slice, axis=0)
-                best_laugh_offset = int(np.argmax(per_class_max))
-                laugh_score = float(per_class_max[best_laugh_offset])
-                best_laugh_name = laughter_names[best_laugh_offset]
+                score_summary = summarize_laughter_scores(
+                    laughter_slice.tolist(),
+                    laughter_names,
+                    args.score_aggregation,
+                )
+                laugh_score = score_summary.selected_score
+                best_laugh_name = score_summary.selected_class
 
                 if laugh_score >= args.threshold:
                     positive_streak += 1
@@ -487,33 +545,79 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
 
                 print(
                     f"\r현재 소리: {class_names[top_index]:<28} "
-                    f"웃음: {laugh_score:.3f} ({best_laugh_name}) "
+                    f"웃음[{args.score_aggregation}]: "
+                    f"{laugh_score:.3f} ({best_laugh_name}) "
                     f"RMS: {rms:.4f} 추론: {inference_ms:.0f}ms   ",
                     end="",
                     flush=True,
                 )
 
                 now = time.monotonic()
-                if (
+                should_trigger = (
                     positive_streak >= args.consecutive
                     and now - last_alert_at >= args.cooldown
-                ):
+                )
+                if diagnostics_output is not None:
+                    diagnostics_output.write(
+                        json.dumps(
+                            {
+                                "observedAt": datetime.now(timezone.utc)
+                                .isoformat(timespec="milliseconds")
+                                .replace("+00:00", "Z"),
+                                "topClass": class_names[top_index],
+                                "topScore": round(
+                                    float(mean_scores[top_index]),
+                                    6,
+                                ),
+                                "laughterMax": round(
+                                    score_summary.max_score,
+                                    6,
+                                ),
+                                "laughterMaxClass": score_summary.max_class,
+                                "laughterMean": round(
+                                    score_summary.mean_score,
+                                    6,
+                                ),
+                                "laughterMeanClass": score_summary.mean_class,
+                                "laughterP90": round(
+                                    score_summary.p90_score,
+                                    6,
+                                ),
+                                "laughterP90Class": score_summary.p90_class,
+                                "selectedAggregation": args.score_aggregation,
+                                "selectedScore": round(laugh_score, 6),
+                                "selectedClass": best_laugh_name,
+                                "threshold": args.threshold,
+                                "positiveStreak": positive_streak,
+                                "wouldTrigger": should_trigger,
+                                "rms": round(rms, 6),
+                                "inferenceMs": round(inference_ms, 3),
+                            },
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    )
+
+                if should_trigger:
                     print(
-                        f"\n웃음 감지! 점수={laugh_score:.3f} "
+                        f"\n웃음 {'진단 판정' if args.diagnostics_only else '감지'}! "
+                        f"점수={laugh_score:.3f} "
                         f"종류={best_laugh_name}"
                     )
                     positive_streak = 0
                     last_alert_at = now
-                    if args.event_dir is not None:
+                    if args.event_dir is not None and not args.diagnostics_only:
                         event_id = str(uuid.uuid4())
                         occurred_at = datetime.now(timezone.utc)
-                        pre_audio = np.concatenate(tuple(audio_history))
-                        if len(pre_audio) > history_samples:
-                            pre_audio = pre_audio[-history_samples:]
-                        pending_clips[event_id] = {
-                            "parts": [pre_audio.copy()],
-                            "post_samples": 0,
-                        }
+                        if save_audio_clips:
+                            pre_audio = np.concatenate(tuple(audio_history))
+                            if len(pre_audio) > history_samples:
+                                pre_audio = pre_audio[-history_samples:]
+                            pending_clips[event_id] = {
+                                "parts": [pre_audio.copy()],
+                                "post_samples": 0,
+                            }
                         write_trigger(
                             args.event_dir,
                             event_id,
@@ -551,6 +655,8 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     finally:
         if mqtt_publisher is not None:
             mqtt_publisher.close()
+        if diagnostics_output is not None:
+            diagnostics_output.close()
 
 
 def main() -> None:

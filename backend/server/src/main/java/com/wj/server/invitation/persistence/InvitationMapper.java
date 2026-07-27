@@ -5,8 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.wj.server.invitation.domain.InviteLinkRow;
-import com.wj.server.invitation.domain.JoinRequestRow;
+import com.wj.server.invitation.domain.InvitationRow;
 import com.wj.server.invitation.domain.MembershipRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -25,37 +24,123 @@ public interface InvitationMapper {
         """)
     Optional<String> findActiveRole(@Param("userId") UUID userId, @Param("deviceId") UUID deviceId);
 
-    // --- invite links ---
+    @Select("SELECT email FROM users WHERE id = #{userId} AND deleted_at IS NULL")
+    Optional<String> findUserEmail(@Param("userId") UUID userId);
 
-    @Update("""
-        UPDATE device_invite_links
-           SET revoked_at = now()
-         WHERE device_id = #{deviceId} AND revoked_at IS NULL
+    // --- email invitations ---
+
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1 FROM device_memberships m
+              JOIN users u ON u.id = m.user_id
+             WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'
+               AND lower(u.email) = lower(#{email})
+        )
         """)
-    int revokeActiveLinks(@Param("deviceId") UUID deviceId);
+    boolean activeMemberEmailExists(@Param("deviceId") UUID deviceId, @Param("email") String email);
+
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1 FROM invitations
+             WHERE device_id = #{deviceId} AND lower(invitee_email) = lower(#{email})
+               AND status = 'PENDING'
+        )
+        """)
+    boolean pendingInvitationExists(@Param("deviceId") UUID deviceId, @Param("email") String email);
 
     @Insert("""
-        INSERT INTO device_invite_links (id, device_id, token_hash, created_by, expires_at)
-        VALUES (#{id}, #{deviceId}, #{tokenHash}, #{createdBy}, #{expiresAt})
+        INSERT INTO invitations (id, device_id, inviter_id, invitee_email, role, expires_at)
+        VALUES (
+            #{id}, #{deviceId}, #{inviterId}, lower(btrim(#{inviteeEmail})),
+            #{role}::device_role, #{expiresAt}
+        )
         """)
-    int insertLink(
+    int insertInvitation(
         @Param("id") UUID id,
         @Param("deviceId") UUID deviceId,
-        @Param("tokenHash") String tokenHash,
-        @Param("createdBy") UUID createdBy,
+        @Param("inviterId") UUID inviterId,
+        @Param("inviteeEmail") String inviteeEmail,
+        @Param("role") String role,
         @Param("expiresAt") Instant expiresAt
     );
 
     @Select("""
-        SELECT l.id, l.device_id, l.expires_at, l.revoked_at,
-               d.status::text AS device_status
-          FROM device_invite_links l
-          JOIN devices d ON d.id = l.device_id
-         WHERE l.token_hash = #{tokenHash}
+        SELECT i.id, i.device_id, d.name AS device_name,
+               i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
+          FROM invitations i
+          JOIN devices d ON d.id = i.device_id
+          LEFT JOIN users iu ON iu.id = i.inviter_id
+         WHERE i.device_id = #{deviceId} AND i.id = #{invitationId}
         """)
-    Optional<InviteLinkRow> findLinkByTokenHash(@Param("tokenHash") String tokenHash);
+    Optional<InvitationRow> findScopedInvitation(
+        @Param("deviceId") UUID deviceId,
+        @Param("invitationId") UUID invitationId
+    );
 
-    // --- join requests ---
+    @Select("""
+        SELECT i.id, i.device_id, d.name AS device_name,
+               i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
+          FROM invitations i
+          JOIN devices d ON d.id = i.device_id
+          LEFT JOIN users iu ON iu.id = i.inviter_id
+         WHERE i.device_id = #{deviceId} AND i.status = 'PENDING'
+         ORDER BY i.created_at DESC, i.id
+        """)
+    List<InvitationRow> findDeviceInvitations(@Param("deviceId") UUID deviceId);
+
+    @Select("""
+        SELECT i.id, i.device_id, d.name AS device_name,
+               i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
+          FROM invitations i
+          JOIN devices d ON d.id = i.device_id
+          LEFT JOIN users iu ON iu.id = i.inviter_id
+         WHERE lower(i.invitee_email) = lower(#{email}) AND i.status = 'PENDING'
+           AND i.expires_at > now() AND d.status != 'REVOKED'
+         ORDER BY i.created_at DESC, i.id
+        """)
+    List<InvitationRow> findReceivedInvitations(@Param("email") String email);
+
+    @Select("""
+        SELECT i.id, i.device_id, d.name AS device_name,
+               i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
+          FROM invitations i
+          JOIN devices d ON d.id = i.device_id
+          LEFT JOIN users iu ON iu.id = i.inviter_id
+         WHERE i.id = #{invitationId}
+         FOR UPDATE OF i
+        """)
+    Optional<InvitationRow> lockInvitation(@Param("invitationId") UUID invitationId);
+
+    @Update("""
+        UPDATE invitations
+           SET status = 'REVOKED', decided_by = #{ownerId}, decided_at = now(), updated_at = now()
+         WHERE id = #{invitationId} AND device_id = #{deviceId} AND status = 'PENDING'
+        """)
+    int revokeInvitation(
+        @Param("deviceId") UUID deviceId,
+        @Param("invitationId") UUID invitationId,
+        @Param("ownerId") UUID ownerId
+    );
+
+    @Update("""
+        UPDATE invitations
+           SET status = 'ACCEPTED', decided_by = #{userId}, decided_at = now(), updated_at = now()
+         WHERE id = #{invitationId} AND status = 'PENDING'
+        """)
+    int acceptInvitation(@Param("invitationId") UUID invitationId, @Param("userId") UUID userId);
+
+    @Update("""
+        UPDATE invitations
+           SET status = 'DECLINED', decided_by = #{userId}, decided_at = now(), updated_at = now()
+         WHERE id = #{invitationId} AND status = 'PENDING'
+        """)
+    int declineInvitation(@Param("invitationId") UUID invitationId, @Param("userId") UUID userId);
+
+    // --- memberships ---
 
     @Select("""
         SELECT EXISTS (
@@ -66,67 +151,17 @@ public interface InvitationMapper {
     boolean activeMembershipExists(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
 
     @Insert("""
-        INSERT INTO join_requests (id, device_id, user_id)
-        VALUES (#{id}, #{deviceId}, #{userId})
-        """)
-    int insertJoinRequest(
-        @Param("id") UUID id,
-        @Param("deviceId") UUID deviceId,
-        @Param("userId") UUID userId
-    );
-
-    @Select("""
-        SELECT EXISTS (
-            SELECT 1 FROM join_requests
-             WHERE device_id = #{deviceId} AND user_id = #{userId} AND status = 'PENDING'
-        )
-        """)
-    boolean pendingJoinRequestExists(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
-
-    @Select("""
-        SELECT r.id, r.device_id, r.user_id, u.email, u.display_name,
-               r.status::text, r.requested_at
-          FROM join_requests r
-          JOIN users u ON u.id = r.user_id
-         WHERE r.device_id = #{deviceId} AND r.status = 'PENDING'
-         ORDER BY r.requested_at, r.id
-        """)
-    List<JoinRequestRow> findPendingJoinRequests(@Param("deviceId") UUID deviceId);
-
-    @Select("""
-        SELECT r.id, r.device_id, r.user_id, u.email, u.display_name,
-               r.status::text, r.requested_at
-          FROM join_requests r
-          JOIN users u ON u.id = r.user_id
-         WHERE r.id = #{requestId} AND r.device_id = #{deviceId}
-         FOR UPDATE OF r
-        """)
-    Optional<JoinRequestRow> lockScopedJoinRequest(
-        @Param("deviceId") UUID deviceId,
-        @Param("requestId") UUID requestId
-    );
-
-    @Update("""
-        UPDATE join_requests
-           SET status = CAST(#{status} AS join_request_status), decided_at = now(), decided_by = #{decidedBy}
-         WHERE id = #{requestId} AND status = 'PENDING'
-        """)
-    int decideJoinRequest(
-        @Param("requestId") UUID requestId,
-        @Param("status") String status,
-        @Param("decidedBy") UUID decidedBy
-    );
-
-    // --- memberships ---
-
-    @Insert("""
         INSERT INTO device_memberships (device_id, user_id, role, status, joined_at)
-        VALUES (#{deviceId}, #{userId}, 'MEMBER', 'ACTIVE', now())
+        VALUES (#{deviceId}, #{userId}, #{role}::device_role, 'ACTIVE', now())
         ON CONFLICT (device_id, user_id) DO UPDATE
-            SET role = 'MEMBER', status = 'ACTIVE', joined_at = now(),
+            SET role = EXCLUDED.role, status = 'ACTIVE', joined_at = now(),
                 revoked_at = NULL, revoked_by = NULL, updated_at = now()
         """)
-    int activateMember(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
+    int activateMember(
+        @Param("deviceId") UUID deviceId,
+        @Param("userId") UUID userId,
+        @Param("role") String role
+    );
 
     @Select("""
         SELECT m.id, m.device_id, m.user_id, u.email, u.display_name,
@@ -166,7 +201,7 @@ public interface InvitationMapper {
     @Update("""
         UPDATE device_memberships
            SET status = 'REVOKED', revoked_at = now(), revoked_by = #{ownerId}, updated_at = now()
-         WHERE id = #{membershipId} AND role = 'MEMBER' AND status = 'ACTIVE'
+         WHERE id = #{membershipId} AND role IN ('EDITOR', 'VIEWER') AND status = 'ACTIVE'
         """)
     int revokeMember(@Param("membershipId") UUID membershipId, @Param("ownerId") UUID ownerId);
 }

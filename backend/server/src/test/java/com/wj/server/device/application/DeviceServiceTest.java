@@ -21,6 +21,7 @@ import com.wj.server.device.domain.DeviceViewRow;
 import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
+import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +40,8 @@ class DeviceServiceTest {
     private ClaimAttemptService claimAttemptService;
     @Mock
     private AuditService auditService;
+    @Mock
+    private DeviceMqttIdentityManager mqttIdentityManager;
 
     private RegistrationCodeHasher registrationCodeHasher;
     private DeviceService deviceService;
@@ -48,7 +51,8 @@ class DeviceServiceTest {
         registrationCodeHasher = new RegistrationCodeHasher();
         deviceService = new DeviceService(
             deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, Clock.fixed(NOW, ZoneOffset.UTC));
+            claimAttemptService, auditService, mqttIdentityManager,
+            Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -195,7 +199,7 @@ class DeviceServiceTest {
     }
 
     @Test
-    void ownerRevocationClosesOldRowDeletesVideosAndCreatesSuccessor() {
+    void ownerRevocationClosesDataAndMqttIdentityWithoutCreatingGhostDevice() {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.lockAccessibleDevice(ownerId, deviceId))
@@ -205,12 +209,11 @@ class DeviceServiceTest {
         deviceService.revoke(ownerId, deviceId);
 
         verify(deviceMapper).revokeActiveCredentials(deviceId);
-        verify(deviceMapper).revokeInviteLinks(deviceId);
-        verify(deviceMapper).cancelPendingJoinRequests(deviceId);
+        verify(deviceMapper).cancelPendingInvitations(deviceId);
         verify(deviceMapper).revokeAllMemberships(deviceId, ownerId);
         verify(deviceMapper).markAllVideosDeleting(deviceId, ownerId);
         verify(deviceMapper).enqueueDeletionJobsForDevice(deviceId);
-        verify(deviceMapper).insertSuccessorDevice(deviceId);
+        verify(mqttIdentityManager).revoke(deviceId);
     }
 
     @Test
@@ -223,15 +226,15 @@ class DeviceServiceTest {
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
         when(deviceMapper.lockMembership(deviceId, membershipId))
             .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
-                membershipId, memberId, "MEMBER", "ACTIVE")));
-        when(deviceMapper.demoteOwnerToMember(deviceId, ownerId)).thenReturn(1);
-        when(deviceMapper.promoteMemberToOwner(deviceId, membershipId)).thenReturn(1);
+                membershipId, memberId, "EDITOR", "ACTIVE")));
+        when(deviceMapper.demoteOwnerToEditor(deviceId, ownerId)).thenReturn(1);
+        when(deviceMapper.promoteNonOwnerToOwner(deviceId, membershipId)).thenReturn(1);
 
         deviceService.transferOwnership(
             ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId));
 
-        verify(deviceMapper).demoteOwnerToMember(deviceId, ownerId);
-        verify(deviceMapper).promoteMemberToOwner(deviceId, membershipId);
+        verify(deviceMapper).demoteOwnerToEditor(deviceId, ownerId);
+        verify(deviceMapper).promoteNonOwnerToOwner(deviceId, membershipId);
         verify(deviceMapper, never()).markAllVideosDeleting(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
@@ -245,14 +248,14 @@ class DeviceServiceTest {
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
         when(deviceMapper.lockMembership(deviceId, membershipId))
             .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
-                membershipId, UUID.randomUUID(), "MEMBER", "REVOKED")));
+                membershipId, UUID.randomUUID(), "VIEWER", "REVOKED")));
 
         assertThatThrownBy(() -> deviceService.transferOwnership(
             ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId)))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("TRANSFER_TARGET_NOT_ACTIVE_MEMBER");
-        verify(deviceMapper, never()).demoteOwnerToMember(
+        verify(deviceMapper, never()).demoteOwnerToEditor(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 

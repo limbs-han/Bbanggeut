@@ -28,9 +28,9 @@ details are documented in `INTEGRATION_STATUS.md` and
 The production RTSP port is intentionally bound to server loopback. The Jetson
 therefore uses an authenticated SSH local-forward, just like
 `backend/demo/start-webcam-live.ps1`. One always-on FFmpeg process opens the
-physical webcam and microphone and fans an encoded stream to three loopback UDP
-ports. YOLO, YAMNet, and the on-demand live relay each consume a separate local
-port, so they never compete for the hardware. Only the live relay crosses the
+physical webcam and microphone and fans an encoded stream to four loopback UDP
+ports. YOLO, YAMNet, the on-demand live relay, and the optional local RTSP
+publisher each consume a separate local port, so they never compete for the hardware. Only the live relay crosses the
 SSH tunnel, and it exists only between `START_STREAM` and `STOP_STREAM`.
 
 On the Jetson, from the repository checkout:
@@ -85,8 +85,8 @@ Opening that camera's Live View in Flutter creates the stream; leaving the view
 closes it. A missing client close is covered by the 45-second viewer TTL, the
 backend idle stop, and the Jetson hard lease.
 
-Until a physical registration button is wired, run this command on the Jetson
-to enter the same two-minute registration mode and print the one-time code:
+Run this command to enter the two-minute registration mode manually and print
+the one-time code:
 
 ```bash
 sudo -u williamjames \
@@ -95,8 +95,22 @@ sudo -u williamjames \
 
 Enter the displayed `XXXX-XXXX` value in App > Settings > Connect new device.
 The command requires the one-time factory provisioning/enrollment flow to have
-already stored an OPERATING bearer token in `device-agent.env`. A future GPIO
-button handler can invoke this same script without changing the backend or app.
+already stored an OPERATING bearer token in `device-agent.env`.
+
+On Raspberry Pi, `prepare-pi.sh` also installs and starts
+`wj-registration-button.service`. Wire a normally-open momentary button between
+BCM GPIO 17 (physical pin 11) and GND. Pressing it runs the same registration
+command without interactive `sudo`. The registration code is written to the
+service journal:
+
+```bash
+journalctl -u wj-registration-button -f
+```
+
+To use another BCM GPIO number, override `REGISTRATION_BUTTON_GPIO` with
+`systemctl edit wj-registration-button`, then restart the service. The service
+runs as root only because `device-agent.env` is deliberately root-readable; the
+button handler executes a fixed command and accepts no shell input.
 
 Follow a real request with:
 
@@ -109,6 +123,57 @@ There is always one FFmpeg process for the loopback-only shared media source.
 Opening Live View adds one relay process; leaving the view removes only that
 relay after the session's idle timeout. YOLO and YAMNet keep consuming their
 local copies throughout.
+
+If the configured camera device is absent during boot or temporarily
+disconnected, `wj-media-source` stays active and waits instead of generating a
+systemd restart loop. It resumes capture when the device becomes readable.
+
+## Optional local RTSP and seven-day recording
+
+The migration package keeps UDP ports 23000-23002 unchanged and adds port
+23003 as MediaMTX's native MPEG-TS input. This avoids an extra FFmpeg
+republisher and lets MediaMTX recover stream headers at the next keyframe.
+MediaMTX listens only on `127.0.0.1:8554`, disables MoQ and its other network
+servers, and exposes:
+
+```text
+rtsp://127.0.0.1:8554/homecam/main
+rtsp://127.0.0.1:8554/homecam/ai
+```
+
+The recording worker reads `main`, copies H.264/AAC into one-minute MPEG-TS
+segments, and the timer deletes only `homecam-*.ts` files older than seven
+days. Both deletion and event extraction require the
+`.homecam-recordings` safety marker.
+
+During tests on the Jetson's current 64GB root disk,
+`RECORDING_MAX_GIB=8` is a hard recording limit. When that limit is exceeded,
+the pruning timer removes the oldest completed segments even if they are less
+than seven days old. At the current 2.5Mbps video and 128kbps audio settings,
+8GiB provides roughly 6-7 hours of recording while leaving space for the OS,
+models, logs, and event clips.
+
+Install the files without starting or switching any existing service:
+
+```bash
+cd ai/device_agent
+chmod +x install-local-media.sh
+sudo ./install-local-media.sh
+```
+
+Follow the activation commands printed by the installer. Verify both RTSP
+paths before starting recording, then wait at least 70 seconds and verify that
+a completed segment exists:
+
+```bash
+sudo -u williamjames \
+  /opt/william-james/device-agent/check-local-media.sh
+```
+
+After a one-hour run, forced MediaMTX interruption, automatic recovery, and
+resource checks pass, switch from `wj-edge-ai-mvp` to
+`wj-edge-ai-recording`. The installer prints the exact rollback commands; the
+original UDP consumers remain available throughout.
 
 ## Raspberry Pi 설치
 

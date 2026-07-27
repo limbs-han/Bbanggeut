@@ -9,6 +9,7 @@ Group=williamjames
 SupplementaryGroups=video audio
 EnvironmentFile=/etc/william-james/device-agent.env
 ExecStart=/opt/william-james/device-agent/media-source.sh
+SuccessExitStatus=255
 Restart=always
 RestartSec=3
 TimeoutStopSec=10

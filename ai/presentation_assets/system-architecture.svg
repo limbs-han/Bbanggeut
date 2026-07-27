@@ -1,0 +1,291 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#735F4B" flood-opacity="0.10"/>
+    </filter>
+    <linearGradient id="edgeWash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6FAFD"/>
+      <stop offset="1" stop-color="#DCEAF5"/>
+    </linearGradient>
+    <linearGradient id="cloudWash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F1EEE8"/>
+    </linearGradient>
+    <linearGradient id="appWash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FBFD"/>
+      <stop offset="1" stop-color="#D1E3F2"/>
+    </linearGradient>
+    <marker id="arrowBlue" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="16" refY="9" orient="auto">
+      <path d="M0 0 L18 9 L0 18 Z" fill="#6E98BC"/>
+    </marker>
+    <marker id="arrowBrown" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="16" refY="9" orient="auto">
+      <path d="M0 0 L18 9 L0 18 Z" fill="#6B5A49"/>
+    </marker>
+    <marker id="arrowGray" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="16" refY="9" orient="auto">
+      <path d="M0 0 L18 9 L0 18 Z" fill="#87939A"/>
+    </marker>
+    <marker id="arrowGrayStart" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="2" refY="9" orient="auto">
+      <path d="M18 0 L0 9 L18 18 Z" fill="#87939A"/>
+    </marker>
+    <pattern id="dots" width="84" height="84" patternUnits="userSpaceOnUse">
+      <circle cx="20" cy="22" r="5" fill="#8EAFCE" opacity="0.75"/>
+    </pattern>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#FBFBFA"/>
+  <rect x="0" y="942" width="1920" height="138" fill="#D5E5F3"/>
+  <rect x="0" y="942" width="1920" height="138" fill="url(#dots)" opacity="0.82"/>
+
+  <!-- Template-inspired roof -->
+  <path d="M76 246 L960 62 L1844 246" fill="none" stroke="#CBDEEF" stroke-width="18"/>
+  <rect x="1642" y="108" width="88" height="104" fill="#CBDEEF"/>
+
+  <!-- Header -->
+  <g font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <rect x="86" y="97" width="600" height="135" rx="18" fill="#FBFBFA" opacity="0.96"/>
+    <rect x="690" y="112" width="1134" height="108" rx="18" fill="#FBFBFA" opacity="0.94"/>
+    <g transform="translate(116 118)">
+      <rect x="0" y="0" width="12" height="12" fill="#A9C9E7"/>
+      <rect x="15" y="0" width="12" height="12" fill="#67727A"/>
+      <rect x="0" y="15" width="12" height="12" fill="#67727A"/>
+      <text x="40" y="22" font-size="22" font-weight="600" fill="#5F6263" letter-spacing="1.2">WILLIAM JAMES · SYSTEM FLOW</text>
+    </g>
+    <text x="116" y="214" font-size="62" font-weight="700" fill="#655847">서비스 아키텍처</text>
+    <text x="1796" y="155" text-anchor="end" font-size="24" font-weight="600" fill="#6F7476">LOCAL AI · ON-DEMAND LIVE · PRIVATE MEMORY</text>
+    <text x="1796" y="195" text-anchor="end" font-size="24" font-weight="500" fill="#8A8783">집 안에서 판단하고, 필요한 순간만 안전하게 연결합니다</text>
+  </g>
+
+  <!-- Three main zones -->
+  <g font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <!-- Home edge -->
+    <g transform="translate(58 292)" filter="url(#shadow)">
+      <rect width="520" height="612" rx="34" fill="url(#edgeWash)"/>
+      <path d="M62 118 L260 28 L458 118" fill="none" stroke="#9FBED9" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M96 102 V190 M424 102 V190" stroke="#9FBED9" stroke-width="12" stroke-linecap="round"/>
+      <text x="52" y="58" font-size="20" font-weight="700" fill="#6A7780" letter-spacing="2">HOME EDGE</text>
+      <text x="52" y="91" font-size="29" font-weight="700" fill="#655847">우리 집 · 온디바이스</text>
+
+      <!-- Brio camera -->
+      <g transform="translate(72 172)">
+        <rect x="0" y="20" width="142" height="94" rx="30" fill="#FFFFFF" stroke="#6C6258" stroke-width="6"/>
+        <circle cx="72" cy="67" r="33" fill="#D4E5F3" stroke="#6C6258" stroke-width="6"/>
+        <circle cx="72" cy="67" r="16" fill="#6C6258"/>
+        <circle cx="79" cy="60" r="5" fill="#FFFFFF"/>
+        <path d="M142 44 L180 28 V106 L142 90 Z" fill="#FFFFFF" stroke="#6C6258" stroke-width="6" stroke-linejoin="round"/>
+        <path d="M54 116 V138 M29 138 H115" stroke="#6C6258" stroke-width="7" stroke-linecap="round"/>
+        <path d="M204 46 Q224 67 204 88 M222 30 Q258 67 222 104" fill="none" stroke="#83A9C9" stroke-width="7" stroke-linecap="round"/>
+        <text x="90" y="174" text-anchor="middle" font-size="21" font-weight="700" fill="#5F6263">BRIO 100</text>
+        <text x="90" y="200" text-anchor="middle" font-size="17" font-weight="500" fill="#8A8783">CAMERA + MIC</text>
+      </g>
+
+      <!-- Jetson chip -->
+      <g transform="translate(286 164)">
+        <rect x="0" y="0" width="158" height="158" rx="28" fill="#FFFFFF" stroke="#6C6258" stroke-width="6"/>
+        <g stroke="#6C6258" stroke-width="5" stroke-linecap="round">
+          <path d="M25 -12 V5 M55 -12 V5 M85 -12 V5 M115 -12 V5 M145 -12 V5"/>
+          <path d="M25 153 V170 M55 153 V170 M85 153 V170 M115 153 V170 M145 153 V170"/>
+          <path d="M-12 28 H5 M-12 58 H5 M-12 88 H5 M-12 118 H5"/>
+          <path d="M153 28 H170 M153 58 H170 M153 88 H170 M153 118 H170"/>
+        </g>
+        <path d="M37 79 Q79 37 121 79 Q79 121 37 79 Z" fill="#D4E5F3" stroke="#6C6258" stroke-width="5"/>
+        <circle cx="79" cy="79" r="18" fill="#6C6258"/>
+        <circle cx="86" cy="72" r="5" fill="#FFFFFF"/>
+        <text x="79" y="201" text-anchor="middle" font-size="21" font-weight="700" fill="#5F6263">JETSON ORIN NANO</text>
+        <text x="79" y="227" text-anchor="middle" font-size="17" font-weight="500" fill="#8A8783">EDGE AI + MEDIA</text>
+      </g>
+
+      <path d="M224 238 H268" stroke="#87939A" stroke-width="5" marker-end="url(#arrowGray)" stroke-linecap="round"/>
+
+      <!-- Edge capabilities -->
+      <g transform="translate(34 430)">
+        <rect x="0" y="0" width="142" height="130" rx="24" fill="#FFFFFF"/>
+        <rect x="25" y="23" width="48" height="58" rx="8" fill="none" stroke="#729ABD" stroke-width="4"/>
+        <circle cx="49" cy="43" r="10" fill="#729ABD"/>
+        <path d="M34 72 Q49 54 64 72" fill="none" stroke="#729ABD" stroke-width="5" stroke-linecap="round"/>
+        <rect x="84" y="32" width="33" height="41" rx="6" fill="none" stroke="#729ABD" stroke-width="4"/>
+        <circle cx="101" cy="46" r="7" fill="#729ABD"/>
+        <text x="71" y="106" text-anchor="middle" font-size="19" font-weight="700" fill="#5F6263">사람 추적</text>
+        <text x="71" y="127" text-anchor="middle" font-size="15" font-weight="500" fill="#8A8783">YOLO · ByteTrack</text>
+
+        <rect x="155" y="0" width="142" height="130" rx="24" fill="#FFFFFF"/>
+        <path d="M176 52 Q188 26 200 52 T224 52 T248 52 T272 52" fill="none" stroke="#729ABD" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="226" cy="66" r="25" fill="#D5E5F3"/>
+        <path d="M214 67 Q226 80 238 67" fill="none" stroke="#6C6258" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="216" cy="59" r="3" fill="#6C6258"/>
+        <circle cx="236" cy="59" r="3" fill="#6C6258"/>
+        <text x="226" y="106" text-anchor="middle" font-size="19" font-weight="700" fill="#5F6263">웃음 감지</text>
+        <text x="226" y="127" text-anchor="middle" font-size="15" font-weight="500" fill="#8A8783">YAMNet</text>
+
+        <rect x="310" y="0" width="142" height="130" rx="24" fill="#FFFFFF"/>
+        <circle cx="381" cy="54" r="30" fill="none" stroke="#729ABD" stroke-width="5"/>
+        <path d="M381 36 V55 L395 65" fill="none" stroke="#6C6258" stroke-width="5" stroke-linecap="round"/>
+        <path d="M354 36 Q365 20 384 22" fill="none" stroke="#729ABD" stroke-width="5" stroke-linecap="round"/>
+        <text x="381" y="106" text-anchor="middle" font-size="19" font-weight="700" fill="#5F6263">순환 녹화</text>
+        <text x="381" y="127" text-anchor="middle" font-size="15" font-weight="500" fill="#8A8783">FFmpeg · H.264/AAC</text>
+      </g>
+    </g>
+
+    <!-- AWS cloud -->
+    <g transform="translate(704 292)" filter="url(#shadow)">
+      <rect width="612" height="612" rx="34" fill="url(#cloudWash)"/>
+      <text x="38" y="58" font-size="20" font-weight="700" fill="#746B62" letter-spacing="2">AWS EC2 · DOCKER</text>
+      <text x="38" y="94" font-size="29" font-weight="700" fill="#655847">안전한 연결과 보관</text>
+      <path d="M421 72 C421 46 441 28 466 28 C477 8 497 0 519 6 C543 12 557 28 560 50 C578 53 591 67 591 84 C591 103 576 118 557 118 H445 C422 118 405 102 405 82 C405 78 406 75 408 72" fill="#E1ECF5" stroke="#9FBED9" stroke-width="5"/>
+      <text x="500" y="79" text-anchor="middle" font-size="18" font-weight="700" fill="#5F6263">CLOUD</text>
+
+      <!-- Nginx -->
+      <g transform="translate(32 154)">
+        <rect width="164" height="154" rx="24" fill="#FFFFFF"/>
+        <path d="M82 29 L118 50 V94 L82 115 L46 94 V50 Z" fill="#D5E5F3" stroke="#6C6258" stroke-width="5"/>
+        <path d="M65 91 V54 L99 91 V53" fill="none" stroke="#6C6258" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="82" y="138" text-anchor="middle" font-size="21" font-weight="700" fill="#5F6263">Nginx</text>
+      </g>
+
+      <!-- Spring -->
+      <g transform="translate(224 154)">
+        <rect width="164" height="154" rx="24" fill="#FFFFFF"/>
+        <circle cx="82" cy="68" r="41" fill="#EDE8E0" stroke="#6C6258" stroke-width="5"/>
+        <path d="M55 80 C68 91 92 89 106 66 C95 71 81 70 73 60 C83 59 94 54 101 43 C81 40 59 52 55 80 Z" fill="#9DBDD8"/>
+        <text x="82" y="138" text-anchor="middle" font-size="21" font-weight="700" fill="#5F6263">Spring Boot</text>
+      </g>
+
+      <!-- PostgreSQL -->
+      <g transform="translate(416 154)">
+        <rect width="164" height="154" rx="24" fill="#FFFFFF"/>
+        <ellipse cx="82" cy="45" rx="42" ry="17" fill="#D5E5F3" stroke="#6C6258" stroke-width="5"/>
+        <path d="M40 45 V94 C40 104 59 112 82 112 C105 112 124 104 124 94 V45" fill="#D5E5F3" stroke="#6C6258" stroke-width="5"/>
+        <path d="M40 69 C40 79 59 87 82 87 C105 87 124 79 124 69" fill="none" stroke="#6C6258" stroke-width="4"/>
+        <text x="82" y="138" text-anchor="middle" font-size="20" font-weight="700" fill="#5F6263">PostgreSQL</text>
+      </g>
+
+      <!-- Mosquitto -->
+      <g transform="translate(224 342)">
+        <rect width="164" height="154" rx="24" fill="#FFFFFF"/>
+        <rect x="40" y="38" width="84" height="61" rx="12" fill="#EDE8E0" stroke="#6C6258" stroke-width="5"/>
+        <path d="M45 45 L82 72 L119 45" fill="none" stroke="#6C6258" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M51 100 Q82 124 113 100" fill="none" stroke="#9DBDD8" stroke-width="5" stroke-linecap="round"/>
+        <text x="82" y="138" text-anchor="middle" font-size="20" font-weight="700" fill="#5F6263">Mosquitto</text>
+      </g>
+
+      <!-- MediaMTX -->
+      <g transform="translate(32 342)">
+        <rect width="164" height="154" rx="24" fill="#FFFFFF"/>
+        <rect x="35" y="35" width="94" height="71" rx="18" fill="#D5E5F3" stroke="#6C6258" stroke-width="5"/>
+        <path d="M71 53 L103 71 L71 89 Z" fill="#6C6258"/>
+        <path d="M133 46 Q152 71 133 96" fill="none" stroke="#9DBDD8" stroke-width="5" stroke-linecap="round"/>
+        <text x="82" y="138" text-anchor="middle" font-size="20" font-weight="700" fill="#5F6263">MediaMTX</text>
+      </g>
+
+      <!-- MinIO -->
+      <g transform="translate(416 342)">
+        <rect width="164" height="154" rx="24" fill="#FFFFFF"/>
+        <path d="M42 45 L82 25 L122 45 V91 L82 112 L42 91 Z" fill="#EDE8E0" stroke="#6C6258" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M42 45 L82 66 L122 45 M82 66 V112" fill="none" stroke="#6C6258" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M68 48 L96 34" stroke="#9DBDD8" stroke-width="6" stroke-linecap="round"/>
+        <text x="82" y="138" text-anchor="middle" font-size="20" font-weight="700" fill="#5F6263">MinIO</text>
+      </g>
+
+      <!-- Internal links -->
+      <path d="M196 231 H224" stroke="#B8B1AA" stroke-width="4" marker-end="url(#arrowGray)"/>
+      <path d="M388 231 H416" stroke="#B8B1AA" stroke-width="4" marker-end="url(#arrowGray)"/>
+      <path d="M114 308 V342" stroke="#B8B1AA" stroke-width="4" marker-end="url(#arrowGray)"/>
+      <path d="M306 308 V342" stroke="#B8B1AA" stroke-width="4" marker-end="url(#arrowGray)"/>
+      <path d="M351 308 L457 342" stroke="#B8B1AA" stroke-width="4" marker-end="url(#arrowGray)"/>
+
+      <rect x="116" y="526" width="380" height="48" rx="24" fill="#D5E5F3"/>
+      <text x="306" y="558" text-anchor="middle" font-size="20" font-weight="700" fill="#5F6263">Docker Compose · TLS · Private Storage</text>
+    </g>
+
+    <!-- Flutter family app -->
+    <g transform="translate(1442 292)" filter="url(#shadow)">
+      <rect width="420" height="612" rx="34" fill="url(#appWash)"/>
+      <text x="34" y="58" font-size="20" font-weight="700" fill="#6A7780" letter-spacing="2">FAMILY APP</text>
+      <text x="34" y="94" font-size="29" font-weight="700" fill="#655847">지금과 추억을 함께</text>
+
+      <!-- Phone -->
+      <g transform="translate(82 126)">
+        <rect x="0" y="0" width="256" height="374" rx="42" fill="#FFFFFF" stroke="#6C6258" stroke-width="7"/>
+        <rect x="86" y="15" width="84" height="10" rx="5" fill="#6C6258"/>
+        <rect x="22" y="45" width="212" height="142" rx="22" fill="#BCD5E9"/>
+        <path d="M22 152 Q67 114 105 143 T188 138 T234 151 V187 H22 Z" fill="#A7C3DC"/>
+        <circle cx="176" cy="89" r="29" fill="#FFFFFF" opacity="0.92"/>
+        <path d="M166 73 L193 89 L166 105 Z" fill="#6C6258"/>
+        <rect x="38" y="61" width="55" height="25" rx="12" fill="#FFFFFF" opacity="0.92"/>
+        <circle cx="51" cy="73" r="5" fill="#6E98BC"/>
+        <text x="65" y="79" text-anchor="middle" font-size="13" font-weight="700" fill="#5F6263">LIVE</text>
+        <rect x="22" y="208" width="98" height="90" rx="18" fill="#E9F1F7"/>
+        <rect x="136" y="208" width="98" height="90" rx="18" fill="#EFE9E0"/>
+        <circle cx="71" cy="241" r="17" fill="#9FBED9"/>
+        <path d="M61 251 Q71 260 81 251" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+        <path d="M156 242 H214 M156 260 H201" stroke="#A99A89" stroke-width="7" stroke-linecap="round"/>
+        <rect x="22" y="318" width="212" height="30" rx="15" fill="#D5E5F3"/>
+        <circle cx="128" cy="361" r="7" fill="#6C6258"/>
+      </g>
+
+      <g transform="translate(34 520)" font-size="18" font-weight="700" fill="#5F6263">
+        <rect x="0" y="0" width="110" height="46" rx="23" fill="#FFFFFF"/>
+        <text x="55" y="30" text-anchor="middle">LIVE</text>
+        <rect x="121" y="0" width="110" height="46" rx="23" fill="#FFFFFF"/>
+        <text x="176" y="30" text-anchor="middle">MEMORY</text>
+        <rect x="242" y="0" width="110" height="46" rx="23" fill="#FFFFFF"/>
+        <text x="297" y="30" text-anchor="middle">FAMILY</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Edge to cloud protocol arrows -->
+  <g font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <line x1="584" y1="455" x2="696" y2="455" stroke="#87939A" stroke-width="5" marker-start="url(#arrowGrayStart)" marker-end="url(#arrowGray)"/>
+    <rect x="586" y="414" width="108" height="31" rx="15" fill="#FBFBFA"/>
+    <text x="640" y="437" text-anchor="middle" font-size="17" font-weight="700" fill="#66727A">MQTTS</text>
+    <text x="640" y="481" text-anchor="middle" font-size="15" font-weight="600" fill="#8A8783">명령 · 상태</text>
+
+    <line x1="584" y1="608" x2="696" y2="608" stroke="#6E98BC" stroke-width="7" marker-end="url(#arrowBlue)"/>
+    <rect x="586" y="567" width="108" height="31" rx="15" fill="#FBFBFA"/>
+    <text x="640" y="590" text-anchor="middle" font-size="17" font-weight="700" fill="#5C87AA">RTSPS</text>
+    <text x="640" y="635" text-anchor="middle" font-size="15" font-weight="600" fill="#8A8783">라이브 송출</text>
+
+    <line x1="584" y1="761" x2="696" y2="761" stroke="#6B5A49" stroke-width="7" marker-end="url(#arrowBrown)"/>
+    <rect x="582" y="720" width="116" height="31" rx="15" fill="#FBFBFA"/>
+    <text x="640" y="743" text-anchor="middle" font-size="17" font-weight="700" fill="#6B5A49">HTTPS</text>
+    <text x="640" y="788" text-anchor="middle" font-size="15" font-weight="600" fill="#8A8783">이벤트 MP4</text>
+  </g>
+
+  <!-- Cloud to app protocol arrows -->
+  <g font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <line x1="1324" y1="455" x2="1434" y2="455" stroke="#87939A" stroke-width="5" marker-start="url(#arrowGrayStart)" marker-end="url(#arrowGray)"/>
+    <rect x="1326" y="414" width="106" height="31" rx="15" fill="#FBFBFA"/>
+    <text x="1379" y="437" text-anchor="middle" font-size="16" font-weight="700" fill="#66727A">HTTPS</text>
+    <text x="1379" y="481" text-anchor="middle" font-size="15" font-weight="600" fill="#8A8783">API · JWT</text>
+
+    <line x1="1324" y1="608" x2="1434" y2="608" stroke="#6E98BC" stroke-width="7" marker-end="url(#arrowBlue)"/>
+    <rect x="1326" y="567" width="106" height="31" rx="15" fill="#FBFBFA"/>
+    <text x="1379" y="590" text-anchor="middle" font-size="17" font-weight="700" fill="#5C87AA">HLS</text>
+    <text x="1379" y="635" text-anchor="middle" font-size="15" font-weight="600" fill="#8A8783">실시간 재생</text>
+
+    <line x1="1324" y1="761" x2="1434" y2="761" stroke="#6B5A49" stroke-width="7" marker-end="url(#arrowBrown)"/>
+    <rect x="1324" y="720" width="110" height="31" rx="15" fill="#FBFBFA"/>
+    <text x="1379" y="743" text-anchor="middle" font-size="16" font-weight="700" fill="#6B5A49">SIGNED URL</text>
+    <text x="1379" y="788" text-anchor="middle" font-size="15" font-weight="600" fill="#8A8783">추억 재생</text>
+  </g>
+
+  <!-- Bottom narrative strip -->
+  <g transform="translate(230 962)" font-family="Pretendard, Malgun Gothic, Arial, sans-serif">
+    <circle cx="22" cy="30" r="22" fill="#FFFFFF"/>
+    <path d="M12 30 Q22 18 32 30 Q22 42 12 30 Z" fill="none" stroke="#789EBD" stroke-width="4"/>
+    <circle cx="22" cy="30" r="6" fill="#789EBD"/>
+    <text x="58" y="38" font-size="23" font-weight="700" fill="#5F6263">집에서 판단</text>
+    <path d="M250 30 H390" stroke="#A4BED4" stroke-width="5" marker-end="url(#arrowBlue)"/>
+    <circle cx="440" cy="30" r="22" fill="#FFFFFF"/>
+    <path d="M428 30 H452 M440 18 V42" stroke="#789EBD" stroke-width="4" stroke-linecap="round"/>
+    <text x="476" y="38" font-size="23" font-weight="700" fill="#5F6263">필요할 때만 연결</text>
+    <path d="M735 30 H875" stroke="#A4BED4" stroke-width="5" marker-end="url(#arrowBlue)"/>
+    <circle cx="925" cy="30" r="22" fill="#FFFFFF"/>
+    <path d="M915 34 Q925 44 935 34 M915 25 H915 M935 25 H935" stroke="#789EBD" stroke-width="4" stroke-linecap="round"/>
+    <text x="961" y="38" font-size="23" font-weight="700" fill="#5F6263">소중한 순간만 보관</text>
+    <path d="M1260 30 H1400" stroke="#A4BED4" stroke-width="5" marker-end="url(#arrowBlue)"/>
+    <circle cx="1450" cy="30" r="22" fill="#FFFFFF"/>
+    <path d="M1439 31 L1447 39 L1462 22" fill="none" stroke="#789EBD" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1486" y="38" font-size="23" font-weight="700" fill="#5F6263">허락된 가족과 공유</text>
+  </g>
+</svg>

@@ -245,7 +245,7 @@ class _HomeHeader extends StatelessWidget {
       ),
       RoundIconButton(
         icon: Icons.notifications_none_rounded,
-        badge: controller.joinRequests.isNotEmpty,
+        badge: controller.receivedInvitations.isNotEmpty,
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(

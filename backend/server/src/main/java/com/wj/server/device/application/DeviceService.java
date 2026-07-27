@@ -17,6 +17,7 @@ import com.wj.server.device.domain.MembershipStateRow;
 import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
+import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class DeviceService {
     private final RegistrationCodeHasher registrationCodeHasher;
     private final ClaimAttemptService claimAttemptService;
     private final AuditService auditService;
+    private final DeviceMqttIdentityManager mqttIdentityManager;
     private final Clock clock;
 
     @Autowired
@@ -37,10 +39,11 @@ public class DeviceService {
         RegistrationCodeMapper registrationCodeMapper,
         RegistrationCodeHasher registrationCodeHasher,
         ClaimAttemptService claimAttemptService,
-        AuditService auditService
+        AuditService auditService,
+        DeviceMqttIdentityManager mqttIdentityManager
     ) {
         this(deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, Clock.systemUTC());
+            claimAttemptService, auditService, mqttIdentityManager, Clock.systemUTC());
     }
 
     DeviceService(
@@ -49,6 +52,7 @@ public class DeviceService {
         RegistrationCodeHasher registrationCodeHasher,
         ClaimAttemptService claimAttemptService,
         AuditService auditService,
+        DeviceMqttIdentityManager mqttIdentityManager,
         Clock clock
     ) {
         this.deviceMapper = deviceMapper;
@@ -56,6 +60,7 @@ public class DeviceService {
         this.registrationCodeHasher = registrationCodeHasher;
         this.claimAttemptService = claimAttemptService;
         this.auditService = auditService;
+        this.mqttIdentityManager = mqttIdentityManager;
         this.clock = clock;
     }
 
@@ -145,7 +150,7 @@ public class DeviceService {
     }
 
     /**
-     * Transfers ownership to an existing active MEMBER of the same device.
+     * Transfers ownership to an existing active EDITOR or VIEWER of the same device.
      * Videos, members, settings and the device subscription all stay — only the
      * roles swap. The deferred one-active-OWNER trigger re-validates at commit.
      */
@@ -160,22 +165,22 @@ public class DeviceService {
             throw new ApiException(
                 HttpStatus.CONFLICT, "ALREADY_OWNER", "이미 본인이 OWNER인 기기입니다.");
         }
-        if (!"MEMBER".equals(target.role()) || !"ACTIVE".equals(target.status())
-            || deviceMapper.demoteOwnerToMember(deviceId, userId) != 1
-            || deviceMapper.promoteMemberToOwner(deviceId, target.id()) != 1) {
+        if ((!"EDITOR".equals(target.role()) && !"VIEWER".equals(target.role()))
+            || !"ACTIVE".equals(target.status())
+            || deviceMapper.demoteOwnerToEditor(deviceId, userId) != 1
+            || deviceMapper.promoteNonOwnerToOwner(deviceId, target.id()) != 1) {
             throw new ApiException(
                 HttpStatus.CONFLICT,
                 "TRANSFER_TARGET_NOT_ACTIVE_MEMBER",
-                "해당 기기의 활성 MEMBER에게만 소유권을 넘길 수 있습니다.");
+                "해당 기기의 활성 EDITOR 또는 VIEWER에게만 소유권을 넘길 수 있습니다.");
         }
         auditService.success(deviceId, userId, "DEVICE_UPDATE", "MEMBERSHIP", target.id());
     }
 
     /**
-     * Releases (revokes) a device for handover. The old row is closed with its
-     * memberships, credentials, invitations and videos, and a fresh UNCLAIMED
-     * row is created for the same serial so the next owner registers as if it
-     * were a new device — nobody can reach the previous owner's videos.
+     * Releases a device and closes every server-side access path. Reusing the
+     * physical unit requires explicit provisioning so a fresh device identity
+     * and bootstrap credential can be delivered to it.
      */
     @Transactional
     public void revoke(UUID userId, UUID deviceId) {
@@ -186,12 +191,11 @@ public class DeviceService {
             throw notFound();
         }
         deviceMapper.revokeActiveCredentials(deviceId);
-        deviceMapper.revokeInviteLinks(deviceId);
-        deviceMapper.cancelPendingJoinRequests(deviceId);
+        deviceMapper.cancelPendingInvitations(deviceId);
         deviceMapper.revokeAllMemberships(deviceId, userId);
         deviceMapper.markAllVideosDeleting(deviceId, userId);
         deviceMapper.enqueueDeletionJobsForDevice(deviceId);
-        deviceMapper.insertSuccessorDevice(deviceId);
+        mqttIdentityManager.revoke(deviceId);
         auditService.success(deviceId, userId, "DEVICE_REVOKE", "DEVICE", deviceId);
     }
 

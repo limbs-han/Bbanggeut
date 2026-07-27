@@ -1,0 +1,22 @@
+[Unit]
+Description=William James seven-day local recording
+After=network.target wj-mediamtx-local.service
+Requires=wj-mediamtx-local.service
+
+[Service]
+Type=simple
+User=williamjames
+Group=williamjames
+EnvironmentFile=/etc/william-james/device-agent.env
+ExecStart=/opt/william-james/device-agent/local-recording.sh
+SuccessExitStatus=255
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/william-james/recordings
+
+[Install]
+WantedBy=multi-user.target
