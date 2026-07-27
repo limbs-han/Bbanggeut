@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import UUID
 
 
@@ -54,6 +55,8 @@ class AgentConfig:
     mqtt_environment: str
     mqtt_ca_cert: Path
     publish_url_template: str
+    media_tls_ca_cert: Path | None
+    ffmpeg_output_args: tuple[str, ...]
     ffmpeg_path: str
     ffmpeg_input_args: tuple[str, ...]
     ffmpeg_video_args: tuple[str, ...]
@@ -76,6 +79,31 @@ class AgentConfig:
             raise ValueError("MEDIA_PUBLISH_URL_TEMPLATE must contain {stream_id} exactly once")
         if not template.startswith(("rtsp://", "rtsps://")):
             raise ValueError("MEDIA_PUBLISH_URL_TEMPLATE must use RTSP or RTSPS")
+        media_tls_ca_cert: Path | None = None
+        ffmpeg_output_args: tuple[str, ...] = ()
+        if template.startswith("rtsps://"):
+            parsed_template = urlsplit(template)
+            if (
+                not parsed_template.hostname
+                or parsed_template.username is None
+                or parsed_template.password is None
+                or parsed_template.path != "/live/{stream_id}"
+                or parsed_template.query
+                or parsed_template.fragment
+            ):
+                raise ValueError(
+                    "RTSPS MEDIA_PUBLISH_URL_TEMPLATE must include credentials "
+                    "and use /live/{stream_id}"
+                )
+            media_tls_ca_cert = Path(_required("MEDIA_TLS_CA_CERT"))
+            if not media_tls_ca_cert.is_file():
+                raise ValueError(
+                    f"MEDIA_TLS_CA_CERT does not exist: {media_tls_ca_cert}"
+                )
+            ffmpeg_output_args = (
+                "-tls_verify", "1",
+                "-ca_file", str(media_tls_ca_cert),
+            )
 
         fps = _positive_int("CAMERA_FPS", 30)
         width = _positive_int("CAMERA_WIDTH", 1280)
@@ -124,6 +152,8 @@ class AgentConfig:
             mqtt_environment=os.environ.get("MQTT_ENV", "prod"),
             mqtt_ca_cert=ca_cert,
             publish_url_template=template,
+            media_tls_ca_cert=media_tls_ca_cert,
+            ffmpeg_output_args=ffmpeg_output_args,
             ffmpeg_path=os.environ.get("FFMPEG_PATH", "/usr/bin/ffmpeg"),
             ffmpeg_input_args=input_args,
             ffmpeg_video_args=video_args,

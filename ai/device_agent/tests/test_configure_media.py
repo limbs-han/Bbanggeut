@@ -27,6 +27,20 @@ class ConfigureMediaTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_publish_url("user", "password", "media.example.test", 0)
 
+    def test_authenticated_plain_rtsp_can_be_built_for_ssh_tunnel_rollback(self):
+        value = build_publish_url(
+            "jetson",
+            "secret",
+            "127.0.0.1",
+            18554,
+            "rtsp",
+        )
+
+        self.assertEqual(
+            value,
+            "rtsp://jetson:secret@127.0.0.1:18554/live/{stream_id}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

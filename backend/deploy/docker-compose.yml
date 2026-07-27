@@ -100,11 +100,31 @@ services:
   mediamtx:
     image: bluenviron/mediamtx:1
     restart: unless-stopped
+    environment:
+      # Keep the configuration file free of credentials. This account can only
+      # publish canonical UUID stream paths and cannot read or use admin APIs.
+      MTX_AUTHMETHOD: internal
+      MTX_AUTHINTERNALUSERS_0_USER: ${MEDIAMTX_JETSON_PUBLISH_USER:?Set MEDIAMTX_JETSON_PUBLISH_USER}
+      MTX_AUTHINTERNALUSERS_0_PASS: ${MEDIAMTX_JETSON_PUBLISH_PASSWORD:?Set MEDIAMTX_JETSON_PUBLISH_PASSWORD}
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_ACTION: publish
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+
+      # HLS is reachable only from host-loopback Nginx, which authenticates app
+      # viewers before proxying requests to MediaMTX.
+      MTX_AUTHINTERNALUSERS_1_USER: any
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: read
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+
+      # optional preserves the existing plaintext loopback tunnel as rollback.
+      # Change only this secret-file value to strict after migration validation.
+      MTX_RTSPENCRYPTION: ${MEDIAMTX_RTSP_ENCRYPTION:-optional}
     ports:
       - "127.0.0.1:8554:8554"
+      - "8322:8322"
       - "127.0.0.1:8888:8888"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
+      - ${MEDIAMTX_TLS_CERT_DIR:?Set MEDIAMTX_TLS_CERT_DIR}:/certs:ro
 
 volumes:
   postgres-data:

@@ -3,7 +3,8 @@
 
 This script is intended to be executed as the device-agent service user while
 the service itself is stopped.  It publishes to a temporary MediaMTX path and
-then verifies that the path can be read back through the local SSH tunnel.
+then verifies either a credential-free local tunnel or a direct RTSPS publisher.
+Credential-bearing URLs and FFmpeg stderr are never printed for direct RTSPS.
 """
 
 from __future__ import annotations
@@ -21,14 +22,23 @@ from wj_device_agent.config import AgentConfig
 
 def main() -> int:
     config = AgentConfig.from_environment()
-    stream_id = f"diagnose-{uuid.uuid4()}"
+    stream_id = str(uuid.uuid4())
     publish_url = config.publish_url_template.format(stream_id=stream_id)
     parsed_url = urlsplit(publish_url)
 
-    # Diagnostics may expose an output URL in FFmpeg messages.  Only allow the
-    # credential-free local tunnel endpoint used by the production agent.
-    if parsed_url.hostname not in {"127.0.0.1", "localhost"} or parsed_url.username:
-        print("REFUSED: RTSP publish URL is not a credential-free local tunnel URL")
+    local_tunnel = (
+        parsed_url.scheme == "rtsp"
+        and parsed_url.hostname in {"127.0.0.1", "localhost"}
+    )
+    direct_rtsps = (
+        parsed_url.scheme == "rtsps"
+        and parsed_url.hostname is not None
+        and parsed_url.username is not None
+        and parsed_url.password is not None
+        and config.media_tls_ca_cert is not None
+    )
+    if not local_tunnel and not direct_rtsps:
+        print("REFUSED: publish URL is neither verified RTSPS nor the loopback rollback tunnel")
         return 2
 
     command = [
@@ -51,11 +61,17 @@ def main() -> int:
         command.extend(config.ffmpeg_audio_args)
     else:
         command.append("-an")
+    command.extend(config.ffmpeg_output_args)
     command.extend(["-f", "rtsp", "-rtsp_transport", "tcp", publish_url])
 
     print(f"DIAGNOSTIC_STREAM_ID={stream_id}", flush=True)
     print("Starting the exact configured FFmpeg publisher for up to 15 seconds...", flush=True)
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL)
+    sensitive_publish_url = parsed_url.username is not None
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL if sensitive_publish_url else None,
+    )
 
     try:
         deadline = time.monotonic() + 15
@@ -65,6 +81,11 @@ def main() -> int:
                 print(f"RESULT=FFMPEG_EXITED RETURN_CODE={return_code}")
                 return 1
             time.sleep(0.5)
+
+        if sensitive_publish_url:
+            result_name = "RTSPS" if direct_rtsps else "AUTHENTICATED_TUNNEL"
+            print(f"RESULT={result_name}_PUBLISH_STAYED_RUNNING")
+            return 0
 
         ffprobe_path = str(Path(config.ffmpeg_path).with_name("ffprobe"))
         if not Path(ffprobe_path).exists():

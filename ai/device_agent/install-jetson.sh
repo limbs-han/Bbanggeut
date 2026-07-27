@@ -12,7 +12,7 @@ INSTALL_DIR=/opt/william-james/device-agent
 CONFIG_DIR=/etc/william-james
 SERVICE_USER=williamjames
 
-for command in python3 ffmpeg ssh; do
+for command in python3 ffmpeg openssl ssh; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command is missing: ${command}" >&2
         exit 1
@@ -34,6 +34,10 @@ install -m 0644 "$SCRIPT_DIR/requirements.txt" "$INSTALL_DIR/requirements.txt"
 install -m 0755 "$SCRIPT_DIR/media-tunnel.sh" "$INSTALL_DIR/media-tunnel.sh"
 install -m 0755 "$SCRIPT_DIR/media-source.sh" "$INSTALL_DIR/media-source.sh"
 install -m 0755 "$SCRIPT_DIR/check-jetson.sh" "$INSTALL_DIR/check-jetson.sh"
+install -m 0755 "$SCRIPT_DIR/configure-jetson-rtsps.sh" \
+    "$INSTALL_DIR/configure-jetson-rtsps.sh"
+install -m 0755 "$SCRIPT_DIR/verify-mediamtx-rtsps.sh" \
+    "$INSTALL_DIR/verify-mediamtx-rtsps.sh"
 install -m 0755 "$SCRIPT_DIR/registration-button.sh" "$INSTALL_DIR/registration-button.sh"
 install -m 0644 "$SCRIPT_DIR/registration_button.py" "$INSTALL_DIR/registration_button.py"
 
@@ -56,13 +60,15 @@ if [[ ! -e "$CONFIG_DIR/device-agent.env" ]]; then
 fi
 
 systemctl daemon-reload
-systemctl enable wj-media-source.service wj-media-tunnel.service wj-device-agent.service
+systemctl enable wj-media-source.service wj-device-agent.service
 
 cat <<'EOF'
 Installed, but services were not started because credentials must be supplied.
 
 1. Edit /etc/william-james/device-agent.env.
-2. Copy the MQTT CA, SSH key, and a verified known_hosts entry to the paths there.
-3. Run: sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
-4. Run: sudo systemctl start wj-media-source wj-media-tunnel wj-device-agent
+2. Install the MQTT CA and verified MediaMTX CA certificate.
+3. Run configure-jetson-rtsps.sh to enter the publish credential without shell history.
+4. Keep the SSH key and known_hosts files only for rollback.
+5. Run: sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
+6. Run: sudo systemctl start wj-media-source wj-device-agent
 EOF

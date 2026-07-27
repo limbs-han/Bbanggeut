@@ -23,30 +23,47 @@ connection with the same device identity. Current deployment and validation
 details are documented in `INTEGRATION_STATUS.md` and
 `JETSON_HANDOFF_2026-07-23.md`.
 
-## Install on Jetson (current production server)
+## Install on Jetson (direct RTSPS)
 
-The production RTSP port is intentionally bound to server loopback. The Jetson
-therefore uses an authenticated SSH local-forward, just like
-`backend/demo/start-webcam-live.ps1`. One always-on FFmpeg process opens the
+The Jetson publishes directly to authenticated MediaMTX RTSPS on port 8322.
+The legacy SSH local-forward remains installed only as rollback while the
+server uses `rtspEncryption: optional`; it is not a normal service dependency.
+One always-on FFmpeg process opens the
 physical webcam and microphone and fans an encoded stream to four loopback UDP
 ports. YOLO, YAMNet, the on-demand live relay, and the optional local RTSP
-publisher each consume a separate local port, so they never compete for the hardware. Only the live relay crosses the
-SSH tunnel, and it exists only between `START_STREAM` and `STOP_STREAM`.
+publisher each consume a separate local port, so they never compete for the
+hardware. Only the live relay crosses the network, and it exists only between
+`START_STREAM` and `STOP_STREAM`.
 
 On the Jetson, from the repository checkout:
 
 ```bash
 cd ai/device_agent
-chmod +x install-jetson.sh media-source.sh media-tunnel.sh check-jetson.sh
+chmod +x install-jetson.sh media-source.sh media-tunnel.sh check-jetson.sh \
+  configure-jetson-rtsps.sh verify-mediamtx-rtsps.sh
 sudo ./install-jetson.sh
 sudoedit /etc/william-james/device-agent.env
 ```
 
 Use `device-agent.jetson.env.example` as the reference. Set the device ID and
-operating bearer token returned by backend provisioning, and install secrets:
+operating bearer token returned by backend provisioning. Install the MQTT CA
+and the public trust-anchor certificate used to validate MediaMTX; never copy
+the server private key:
 
 ```bash
 sudo install -m 0644 mqtt-ca.crt /etc/william-james/certs/mqtt-ca.crt
+sudo install -m 0644 mediamtx-ca.crt \
+  /etc/william-james/certs/mediamtx-ca.crt
+sudo ./configure-jetson-rtsps.sh --username wj-jetson-001
+sudo -u williamjames ./verify-mediamtx-rtsps.sh
+```
+
+Set `MEDIA_TLS_CA_SHA256` to the CA certificate fingerprint confirmed through
+a separate trusted channel. The verification script checks that fingerprint,
+the certificate chain, and the `i15e201.p.ssafy.io` hostname before FFmpeg is
+allowed to publish. Keep the following SSH material only for rollback:
+
+```bash
 sudo install -m 0600 -o williamjames -g williamjames I15E201T.pem \
   /etc/william-james/ssh/media-tunnel.key
 ssh-keyscan -H i15e201.p.ssafy.io | \
@@ -70,14 +87,13 @@ provisioning endpoint is intentionally loopback-only and is not exposed by
 Nginx.
 
 Verify the SSH host-key fingerprint through a trusted channel before accepting
-the `ssh-keyscan` result. Then test the tunnel, camera, and broker and start the
-services:
+the `ssh-keyscan` rollback entry. Then test the camera, broker, and direct RTSPS
+endpoint and start the services:
 
 ```bash
-sudo systemctl start wj-media-source wj-media-tunnel
 sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
-sudo systemctl start wj-device-agent
-sudo systemctl status wj-media-source wj-media-tunnel wj-device-agent --no-pager
+sudo systemctl start wj-media-source wj-device-agent
+sudo systemctl status wj-media-source wj-device-agent --no-pager
 ```
 
 The camera must be provisioned, claimed by the owner/admin account, and ONLINE.
@@ -116,7 +132,21 @@ Follow a real request with:
 
 ```bash
 sudo journalctl -u wj-device-agent -f
-pgrep -a ffmpeg
+pgrep -x -c ffmpeg
+```
+
+Do not use `pgrep -a`, `ps aux`, or verbose FFmpeg logging for the direct
+publisher: Basic-auth credentials are part of FFmpeg's output URL and can
+appear in process arguments or diagnostic output.
+
+To roll back while the server still uses `rtspEncryption: optional`, reuse the
+same publish-only MediaMTX credential through the encrypted SSH tunnel:
+
+```bash
+sudo systemctl enable --now wj-media-tunnel
+sudo /opt/william-james/device-agent/configure-jetson-rtsps.sh \
+  --scheme rtsp --host 127.0.0.1 --port 18554 --username wj-jetson-001
+sudo systemctl restart wj-device-agent
 ```
 
 There is always one FFmpeg process for the loopback-only shared media source.

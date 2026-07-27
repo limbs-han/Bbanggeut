@@ -20,6 +20,12 @@ for container in william-james-postgres-1 william-james-minio-1 william-james-mo
   fi
 done
 
+check bash -c 'timeout 12 openssl s_client \
+  -connect i15e201.p.ssafy.io:8322 \
+  -servername i15e201.p.ssafy.io \
+  -verify_hostname i15e201.p.ssafy.io \
+  -verify_return_error </dev/null'
+
 disk_used="$(df -P /home/ubuntu/william-james | awk 'NR==2 {gsub(/%/, "", $5); print $5}')"
 if [[ "$disk_used" -ge "${WJ_DISK_ALERT_PERCENT:-85}" ]]; then
   echo "FAILED: disk usage is ${disk_used}%" >&2

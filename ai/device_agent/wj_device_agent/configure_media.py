@@ -8,7 +8,13 @@ from urllib.parse import quote
 from .provision import read_secret_file, update_environment
 
 
-def build_publish_url(username: str, password: str, host: str, port: int) -> str:
+def build_publish_url(
+    username: str,
+    password: str,
+    host: str,
+    port: int,
+    scheme: str = "rtsps",
+) -> str:
     username = username.strip()
     host = host.strip()
     if not username:
@@ -23,8 +29,10 @@ def build_publish_url(username: str, password: str, host: str, port: int) -> str
         raise ValueError("미디어 호스트에는 포트를 제외한 DNS 이름 또는 IPv4 주소만 입력해야 합니다")
     if not 1 <= port <= 65535:
         raise ValueError("미디어 포트는 1에서 65535 사이여야 합니다")
+    if scheme not in {"rtsp", "rtsps"}:
+        raise ValueError("미디어 스킴은 rtsp 또는 rtsps여야 합니다")
     return (
-        f"rtsps://{quote(username, safe='')}:{quote(password, safe='')}"
+        f"{scheme}://{quote(username, safe='')}:{quote(password, safe='')}"
         f"@{host}:{port}/live/{{stream_id}}"
     )
 
@@ -40,6 +48,7 @@ def parser() -> argparse.ArgumentParser:
     )
     value.add_argument("--host", default="i15e201.p.ssafy.io")
     value.add_argument("--port", type=int, default=8322)
+    value.add_argument("--scheme", choices=("rtsp", "rtsps"), default="rtsps")
     value.add_argument("--username")
     value.add_argument(
         "--password-file",
@@ -57,11 +66,17 @@ def main() -> None:
         if args.password_file
         else getpass("MediaMTX 송출 비밀번호: ")
     )
-    publish_url = build_publish_url(username, password, args.host, args.port)
+    publish_url = build_publish_url(
+        username,
+        password,
+        args.host,
+        args.port,
+        args.scheme,
+    )
     update_environment(args.env_file, {"MEDIA_PUBLISH_URL_TEMPLATE": publish_url})
     print(
-        "직접 RTSPS 송출 주소를 설정했습니다: "
-        f"{args.host}:{args.port}/live/{{stream_id}} ({args.env_file})"
+        "미디어 송출 주소를 설정했습니다: "
+        f"{args.scheme}://{args.host}:{args.port}/live/{{stream_id}} ({args.env_file})"
     )
 
 

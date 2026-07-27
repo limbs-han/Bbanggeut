@@ -10,6 +10,7 @@ if [[ ! -f "$INFRA_ENV" ]]; then
   POSTGRES_PASSWORD="$(openssl rand -hex 32)"
   MINIO_ROOT_PASSWORD="$(openssl rand -hex 32)"
   MQTT_PASSWORD="$(openssl rand -hex 32)"
+  MEDIAMTX_JETSON_PUBLISH_PASSWORD="$(openssl rand -hex 32)"
   cat > "$INFRA_ENV" <<EOF
 POSTGRES_DB=william_james
 POSTGRES_USER=william
@@ -19,7 +20,26 @@ MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD
 MINIO_VIDEO_BUCKET=william-james-videos
 MQTT_USERNAME=wj-backend
 MQTT_PASSWORD=$MQTT_PASSWORD
+MEDIAMTX_JETSON_PUBLISH_USER=wj-jetson-001
+MEDIAMTX_JETSON_PUBLISH_PASSWORD=$MEDIAMTX_JETSON_PUBLISH_PASSWORD
+MEDIAMTX_TLS_CERT_DIR=$ROOT/secrets/mediamtx
+MEDIAMTX_RTSP_ENCRYPTION=optional
 EOF
+fi
+
+# Older servers already have infra/.env. Add only missing keys without rotating
+# an existing credential or printing any secret.
+if ! grep -q '^MEDIAMTX_JETSON_PUBLISH_USER=' "$INFRA_ENV"; then
+  printf '%s\n' 'MEDIAMTX_JETSON_PUBLISH_USER=wj-jetson-001' >>"$INFRA_ENV"
+fi
+if ! grep -q '^MEDIAMTX_JETSON_PUBLISH_PASSWORD=' "$INFRA_ENV"; then
+  printf 'MEDIAMTX_JETSON_PUBLISH_PASSWORD=%s\n' "$(openssl rand -hex 32)" >>"$INFRA_ENV"
+fi
+if ! grep -q '^MEDIAMTX_TLS_CERT_DIR=' "$INFRA_ENV"; then
+  printf 'MEDIAMTX_TLS_CERT_DIR=%s\n' "$ROOT/secrets/mediamtx" >>"$INFRA_ENV"
+fi
+if ! grep -q '^MEDIAMTX_RTSP_ENCRYPTION=' "$INFRA_ENV"; then
+  printf '%s\n' 'MEDIAMTX_RTSP_ENCRYPTION=optional' >>"$INFRA_ENV"
 fi
 
 # Values are generated as hex and are safe to source as simple assignments.

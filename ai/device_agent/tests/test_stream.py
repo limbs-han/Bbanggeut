@@ -41,6 +41,8 @@ def config() -> AgentConfig:
         mqtt_environment="test",
         mqtt_ca_cert=Path("ca.crt"),
         publish_url_template="rtsp://localhost/live/{stream_id}",
+        media_tls_ca_cert=None,
+        ffmpeg_output_args=(),
         ffmpeg_path="ffmpeg",
         ffmpeg_input_args=("-f", "lavfi", "-i", "testsrc"),
         ffmpeg_video_args=("-c:v", "libx264"),
@@ -130,6 +132,37 @@ class StreamManagerTest(unittest.TestCase):
         self.assertIn("0:a:0", command)
         self.assertIn("copy", command)
         self.assertNotIn("-an", command)
+
+    def test_rtsps_output_enables_peer_verification_with_explicit_ca(self):
+        calls = []
+        secure_config = AgentConfig(
+            **{
+                **config().__dict__,
+                "publish_url_template": (
+                    "rtsps://device:secret@media.example.test:8322/live/{stream_id}"
+                ),
+                "media_tls_ca_cert": Path("/etc/william-james/certs/mediamtx-ca.crt"),
+                "ffmpeg_output_args": (
+                    "-tls_verify", "1",
+                    "-ca_file", "/etc/william-james/certs/mediamtx-ca.crt",
+                ),
+            }
+        )
+        manager = StreamManager(
+            secure_config,
+            lambda command, **kwargs: calls.append(command) or FakeProcess(),
+        )
+
+        manager.start(
+            "77777777-7777-4777-8777-777777777777",
+            datetime(2030, 1, 1, tzinfo=timezone.utc),
+        )
+
+        command = calls[0]
+        self.assertIn("-tls_verify", command)
+        self.assertIn("/etc/william-james/certs/mediamtx-ca.crt", command)
+        output_format_index = command.index("-f", command.index("-tls_verify"))
+        self.assertLess(command.index("-tls_verify"), output_format_index)
 
 
 if __name__ == "__main__":
