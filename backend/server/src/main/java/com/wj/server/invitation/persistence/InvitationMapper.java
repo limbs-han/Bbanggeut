@@ -31,6 +31,15 @@ public interface InvitationMapper {
 
     @Select("""
         SELECT EXISTS (
+            SELECT 1 FROM users
+             WHERE lower(email) = lower(#{email})
+               AND status = 'ACTIVE' AND deleted_at IS NULL
+        )
+        """)
+    boolean activeUserEmailExists(@Param("email") String email);
+
+    @Select("""
+        SELECT EXISTS (
             SELECT 1 FROM device_memberships m
               JOIN users u ON u.id = m.user_id
              WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'

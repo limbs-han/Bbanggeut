@@ -67,6 +67,7 @@ class InvitationServiceTest {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("member@example.com")).thenReturn(true);
         when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(false);
         when(mapper.pendingInvitationExists(deviceId, "member@example.com")).thenReturn(false);
         when(mapper.findScopedInvitation(eq(deviceId), any()))
@@ -95,6 +96,7 @@ class InvitationServiceTest {
             UUID.randomUUID(), requesterId, "member@example.com", "멤버",
             NOW.plusSeconds(60), null);
         when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("member@example.com")).thenReturn(true);
         when(membershipRequestService.requireForInvitation(
             token, "member@example.com")).thenReturn(request);
         when(mapper.findScopedInvitation(eq(deviceId), any()))
@@ -127,6 +129,7 @@ class InvitationServiceTest {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("member@example.com")).thenReturn(true);
         when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> service.createInvitation(
@@ -135,6 +138,23 @@ class InvitationServiceTest {
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("ALREADY_DEVICE_MEMBER");
         verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void invitingUnknownEmailIsRejectedBeforeInvitationIsCreated() {
+        UUID ownerId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("unknown@example.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createInvitation(
+            ownerId, deviceId, " Unknown@example.com ", null))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("INVITEE_ACCOUNT_NOT_FOUND");
+
+        verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
+        verify(notificationService, never()).invitationReceived(any(), any(), any(), any());
     }
 
     @Test

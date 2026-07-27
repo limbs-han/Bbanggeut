@@ -72,6 +72,12 @@ public class InvitationService {
     ) {
         requireOwner(userId, deviceId, "MEMBER_INVITE", "INVITATION", null);
         String inviteeEmail = normalizeEmail(email);
+        if (!invitationMapper.activeUserEmailExists(inviteeEmail)) {
+            throw new ApiException(
+                HttpStatus.NOT_FOUND,
+                "INVITEE_ACCOUNT_NOT_FOUND",
+                "가입된 사용자 이메일을 찾을 수 없습니다.");
+        }
         MembershipRequestRow membershipRequest = membershipRequestToken == null
             || membershipRequestToken.isBlank()
             ? null
