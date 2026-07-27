@@ -73,10 +73,7 @@ pipeline {
                                 sh 'flutter pub get'
                                 sh 'flutter analyze'
                                 sh 'flutter test --reporter expanded'
-                                sh 'flutter build apk --debug --build-number "${BUILD_NUMBER}"'
                             }
-                            archiveArtifacts artifacts: 'frontend/build/app/outputs/flutter-apk/app-debug.apk',
-                                fingerprint: true
                         }
                     }
                     post {
