@@ -16,6 +16,7 @@ def agentDefinitions = [
     [name: "frontend-agent", label: "frontend"],
     [name: "iot-agent",      label: "iot"],
     [name: "ai-agent",       label: "ai"],
+    [name: "deploy-agent",   label: "deploy"],
 ]
 
 // 빌드는 Controller가 아니라 전용 Agent에서만 실행한다.

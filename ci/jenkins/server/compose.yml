@@ -43,6 +43,7 @@ services:
       - ./init.groovy.d/20-domain-agents.groovy:/var/jenkins_home/init.groovy.d/20-domain-agents.groovy:ro
       - ./init.groovy.d/30-gitlab-multibranch.groovy:/var/jenkins_home/init.groovy.d/30-gitlab-multibranch.groovy:ro
       - ./init.groovy.d/40-git-notify-security.groovy:/var/jenkins_home/init.groovy.d/40-git-notify-security.groovy:ro
+      - ./init.groovy.d/50-production-deploy.groovy:/var/jenkins_home/init.groovy.d/50-production-deploy.groovy:ro
       - /home/ubuntu/jenkins-agent-secrets:/var/jenkins_agent_secrets
     networks:
       - control
@@ -148,6 +149,29 @@ services:
     mem_limit: 1g
     mem_reservation: 256m
 
+  deploy-agent:
+    <<: *agent-common
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy-agent
+    image: william-james/jenkins-agent:deploy
+    container_name: jenkins-deploy-agent
+    environment:
+      JENKINS_URL: http://jenkins:8080
+      JENKINS_AGENT_NAME: deploy-agent
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      JENKINS_WEB_SOCKET: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    secrets:
+      - source: deploy_agent_secret
+        target: jenkins-agent-secret
+      - source: production_known_hosts
+        target: production-known-hosts
+    cpus: 0.25
+    mem_limit: 512m
+    mem_reservation: 128m
+
   postgres-ci:
     image: postgres:16-alpine
     container_name: jenkins-postgres-ci
@@ -188,8 +212,12 @@ secrets:
     file: /home/ubuntu/jenkins-agent-secrets/iot-agent
   ai_agent_secret:
     file: /home/ubuntu/jenkins-agent-secrets/ai-agent
+  deploy_agent_secret:
+    file: /home/ubuntu/jenkins-agent-secrets/deploy-agent
   postgres_ci_password:
     file: /home/ubuntu/jenkins-agent-secrets/postgres-ci-password
+  production_known_hosts:
+    file: /home/ubuntu/jenkins-agent-secrets/production-known-hosts
 
 networks:
   control:

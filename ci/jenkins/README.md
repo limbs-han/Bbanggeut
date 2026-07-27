@@ -110,9 +110,43 @@ PostgreSQL CI 완료 조건은 다음과 같습니다.
 5. Jenkins JUnit 보고서에서 테스트가 `SKIPPED`가 아니라 실행된 것으로 표시됩니다.
 6. 테스트 종료 후 빌드 전용 임시 DB가 삭제됩니다.
 
+## Frontend APK
+
+Frontend CI는 분석과 테스트가 끝난 후 Android Debug APK를 만듭니다.
+
+```text
+flutter analyze
+  -> flutter test
+  -> flutter build apk --debug
+  -> app-debug.apk를 Jenkins artifact로 보관
+```
+
+Debug APK는 팀 내부 설치와 동작 확인용입니다. Google Play 배포용 Release APK·AAB는 별도의
+서명 키 관리가 필요하므로 이 단계에서 자동 배포하지 않습니다.
+
+## Backend 운영 배포
+
+운영 배포는 `Production/S15P11E201-backend-deploy`라는 저장소 외부의 신뢰된 Jenkins 작업이
+담당합니다. 일반 브랜치의 Jenkinsfile에서는 운영 SSH 자격증명에 접근할 수 없습니다.
+
+```text
+S15P11E201/master CI 성공
+  -> Production 작업 자동 생성
+  -> 사람의 배포 승인 대기
+  -> master 빌드의 JAR artifact만 복사
+  -> 전용 jenkins-deploy 계정으로 EC2에 업로드
+  -> 현재 JAR 백업
+  -> Spring Boot systemd 서비스만 재시작
+  -> health 성공 시 완료
+  -> health 실패 시 이전 JAR로 복구
+```
+
+운영 PostgreSQL·MinIO·Mosquitto·MediaMTX Compose는 Backend JAR 배포 과정에서 재시작하지
+않습니다. IoT와 AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+
 ## 현재 검증 결과
 
-- 네 Agent가 각각 `backend`, `frontend`, `iot`, `ai` 라벨로 Jenkins에 연결됨
+- 영역별 Agent가 각각 `backend`, `frontend`, `iot`, `ai` 라벨로 Jenkins에 연결됨
 - Backend Agent에서 Java 21과 Gradle용 Java 17을 모두 실행함
 - Backend Agent에서 `postgres-ci:5432` 연결 성공
 - Controller와 네 Agent의 Docker 소켓 미연결 확인

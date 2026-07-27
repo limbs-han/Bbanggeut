@@ -8,3 +8,4 @@ docker-workflow
 configuration-as-code
 timestamper
 ws-cleanup
+copyartifact

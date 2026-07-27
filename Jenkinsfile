@@ -3,6 +3,7 @@ pipeline {
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
+        copyArtifactPermission('Production/S15P11E201-backend-deploy')
         disableConcurrentBuilds(abortPrevious: true)
         skipDefaultCheckout(true)
         timestamps()
@@ -68,7 +69,10 @@ pipeline {
                             sh 'flutter pub get'
                             sh 'flutter analyze'
                             sh 'flutter test --reporter expanded'
+                            sh 'flutter build apk --debug --build-number "${BUILD_NUMBER}"'
                         }
+                        archiveArtifacts artifacts: 'frontend/build/app/outputs/flutter-apk/app-debug.apk',
+                            fingerprint: true
                     }
                     post {
                         cleanup {

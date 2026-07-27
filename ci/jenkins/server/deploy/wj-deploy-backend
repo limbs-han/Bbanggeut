@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+incoming="/home/jenkins-deploy/incoming/server.jar.next"
+application_root="/home/ubuntu/william-james"
+current_jar="${application_root}/app/server.jar"
+release_root="${application_root}/releases/backend"
+deployment_root="${application_root}/deployments"
+health_url="http://127.0.0.1:8081/actuator/health"
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+exec 9>/run/lock/william-james-backend-deploy.lock
+if ! flock -n 9; then
+  echo "다른 Backend 배포가 진행 중입니다." >&2
+  exit 1
+fi
+
+if [[ ! -f "${incoming}" ]]; then
+  echo "배포할 JAR가 없습니다: ${incoming}" >&2
+  exit 1
+fi
+
+if ! /usr/bin/jar --list --file "${incoming}" >/dev/null; then
+  echo "업로드된 파일이 유효한 JAR가 아닙니다." >&2
+  exit 1
+fi
+
+install -d -o ubuntu -g ubuntu -m 0750 "${release_root}" "${deployment_root}"
+
+incoming_sha="$(sha256sum "${incoming}" | awk '{print $1}')"
+previous_jar=""
+if [[ -f "${current_jar}" ]]; then
+  previous_sha="$(sha256sum "${current_jar}" | awk '{print $1}')"
+  previous_jar="${release_root}/server-${timestamp}-${previous_sha:0:12}.jar"
+  install -o ubuntu -g ubuntu -m 0644 "${current_jar}" "${previous_jar}"
+fi
+
+install -o ubuntu -g ubuntu -m 0644 "${incoming}" "${current_jar}.next"
+mv -f "${current_jar}.next" "${current_jar}"
+rm -f "${incoming}"
+
+systemctl restart william-james
+
+healthy=false
+for _ in $(seq 1 30); do
+  if curl --fail --silent --max-time 3 "${health_url}" >/dev/null; then
+    healthy=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "${healthy}" == "true" ]]; then
+  printf '%s status=SUCCESS sha256=%s backup=%s\n' \
+    "${timestamp}" "${incoming_sha}" "${previous_jar:-none}" \
+    >>"${deployment_root}/backend.log"
+  echo "Backend 배포 성공: ${incoming_sha}"
+  exit 0
+fi
+
+printf '%s status=FAILED sha256=%s backup=%s\n' \
+  "${timestamp}" "${incoming_sha}" "${previous_jar:-none}" \
+  >>"${deployment_root}/backend.log"
+
+if [[ -z "${previous_jar}" || ! -f "${previous_jar}" ]]; then
+  echo "Health 확인 실패이며 복구할 이전 JAR가 없습니다." >&2
+  exit 1
+fi
+
+install -o ubuntu -g ubuntu -m 0644 "${previous_jar}" "${current_jar}.rollback"
+mv -f "${current_jar}.rollback" "${current_jar}"
+systemctl restart william-james
+
+for _ in $(seq 1 30); do
+  if curl --fail --silent --max-time 3 "${health_url}" >/dev/null; then
+    printf '%s status=ROLLED_BACK restored=%s\n' \
+      "${timestamp}" "${previous_jar}" \
+      >>"${deployment_root}/backend.log"
+    echo "새 배포의 Health 확인이 실패해 이전 JAR로 복구했습니다." >&2
+    exit 1
+  fi
+  sleep 2
+done
+
+printf '%s status=ROLLBACK_FAILED restored=%s\n' \
+  "${timestamp}" "${previous_jar}" \
+  >>"${deployment_root}/backend.log"
+echo "새 배포와 이전 JAR 복구가 모두 실패했습니다." >&2
+exit 1
