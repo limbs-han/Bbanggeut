@@ -614,11 +614,13 @@ class EmbeddedLivePlayer extends StatefulWidget {
     required this.controller,
     required this.device,
     required this.status,
+    this.houseMode = false,
   });
 
   final AppController controller;
   final DeviceSummary device;
   final DeviceStatus? status;
+  final bool houseMode;
 
   @override
   State<EmbeddedLivePlayer> createState() => _EmbeddedLivePlayerState();
@@ -831,10 +833,10 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   @override
   Widget build(BuildContext context) => SoftCard(
     padding: EdgeInsets.zero,
-    radius: 24,
+    radius: widget.houseMode ? 0 : 24,
     borderColor: Colors.transparent,
     child: ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(widget.houseMode ? 0 : 24),
       child: Column(
         children: [
           AspectRatio(
@@ -845,7 +847,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                 _videoBody(),
                 Positioned(
                   left: 12,
-                  top: 12,
+                  top: widget.houseMode ? 30 : 12,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 11,

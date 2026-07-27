@@ -18,123 +18,114 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   int filter = 0;
   bool allRead = false;
+  bool dismissed = false;
 
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    final latest = controller.videos
-        .where((video) => filter == 0 || video.triggerType == 'LAUGHTER')
-        .take(3)
-        .toList();
+    final showVideos = filter == 0 || filter == 2;
+    final latest = showVideos
+        ? controller.videos
+              .where((video) => filter != 2 || video.triggerType == 'LAUGHTER')
+              .take(3)
+              .toList()
+        : <VideoMemory>[];
     final showAnniversary = filter == 0 || filter == 1;
     final showSystem = filter == 0 || filter == 3;
     final hasNotices =
-        (showSystem && controller.receivedInvitations.isNotEmpty) ||
-        showAnniversary ||
-        latest.isNotEmpty;
+        !dismissed &&
+        ((showSystem &&
+                controller.receivedInvitations.any(
+                  (invitation) => invitation.isPending,
+                )) ||
+            showAnniversary ||
+            latest.isNotEmpty);
     return Scaffold(
       body: AppBackdrop(
         child: SafeArea(
           child: Column(
             children: [
-              _SubHeader(
-                title: '알림',
-                trailing: TextButton(
-                  onPressed: allRead
-                      ? null
-                      : () => setState(() => allRead = true),
-                  child: const Text('모두 읽음'),
-                ),
+              _NotificationHeader(
+                allRead: allRead,
+                onReadAll: () => setState(() => allRead = true),
+                onDelete: () => setState(() => dismissed = true),
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                   children: [
                     _FilterRow(
                       labels: const ['전체', '기념일', '웃음 감지', '시스템'],
                       selectedIndex: filter,
                       onSelected: (value) => setState(() => filter = value),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 24),
                     const Text(
                       '오늘',
                       style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.muted,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                        color: AppColors.ink,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    if (showAnniversary)
+                    const SizedBox(height: 12),
+                    if (!dismissed && showAnniversary)
                       _NoticeTile(
-                        icon: Icons.cake_outlined,
+                        icon: Icons.cake_rounded,
                         color: AppColors.yellowSoft,
+                        iconColor: Color(0xFFE49C36),
                         title: '기념일 알림',
                         message: '엄마 생일이 3일 앞으로 다가왔어요.',
                         time: '오전 9:00',
                         unread: !allRead,
                       ),
-                    if (showSystem)
-                      ...controller.receivedInvitations.map(
-                        (invitation) => _NoticeTile(
-                          icon: Icons.group_add_outlined,
-                          color: AppColors.greenCard,
-                          title: '새로운 가족 초대',
-                          message:
-                              '${invitation.inviter?.displayName ?? '가족'}님이 ${invitation.deviceName} 기기에 초대했어요.',
-                          time: memoryDate(invitation.createdAt),
-                          unread: !allRead,
+                    if (!dismissed && showSystem)
+                      ...controller.receivedInvitations
+                          .where((invitation) => invitation.isPending)
+                          .map(
+                            (invitation) => _NoticeTile(
+                              icon: Icons.group_add_outlined,
+                              color: AppColors.greenCard,
+                              iconColor: AppColors.sageDark,
+                              title: '새로운 가족 가입 요청',
+                              message:
+                                  '${invitation.inviter?.displayName ?? invitation.inviteeEmail}님이 가족 참여를 요청했어요.',
+                              time: memoryDate(
+                                invitation.createdAt ?? DateTime.now(),
+                              ),
+                              unread: !allRead,
+                            ),
+                          ),
+                    if (!dismissed)
+                      ...latest.map(
+                        (video) => _NoticeTile(
+                          icon: video.triggerType == 'LAUGHTER'
+                              ? Icons.sentiment_very_satisfied_rounded
+                              : Icons.videocam_rounded,
+                          color: video.triggerType == 'LAUGHTER'
+                              ? const Color(0xFFFFE8D7)
+                              : AppColors.greenCard,
+                          iconColor: video.triggerType == 'LAUGHTER'
+                              ? AppColors.coral
+                              : AppColors.sageDark,
+                          title: video.triggerType == 'LAUGHTER'
+                              ? '웃음 포착'
+                              : '새로운 추억',
+                          message: '${video.title} 영상이 안전하게 저장됐어요.',
+                          time: memoryDate(
+                            video.capturedStartAt ?? video.createdAt,
+                          ),
+                          unread: !allRead && video == latest.firstOrNull,
                         ),
                       ),
-                    ...latest.map(
-                      (video) => _NoticeTile(
-                        icon: triggerIcon(video.triggerType),
-                        color: triggerColor(video.triggerType),
-                        title: video.triggerType == 'LAUGHTER'
-                            ? '웃음 포착'
-                            : '새로운 추억',
-                        message: '${video.title} 영상이 안전하게 저장됐어요.',
-                        time: memoryDate(
-                          video.capturedStartAt ?? video.createdAt,
-                        ),
-                        unread: !allRead && video == latest.firstOrNull,
-                      ),
-                    ),
                     if (!hasNotices)
                       const EmptyState(
                         icon: Icons.notifications_none_rounded,
                         title: '새 알림이 없어요',
                         message: '새로운 웃음과 가족 소식이 생기면 알려드릴게요.',
                       ),
-                    const SizedBox(height: 18),
-                    const SoftCard(
-                      color: AppColors.sageSoft,
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: AppColors.surface,
-                            child: Icon(
-                              Icons.notifications_none_rounded,
-                              color: AppColors.sageDark,
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              '필요한 알림만 받아보세요\n설정에서 알림 시간을 조정할 수 있어요.',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: AppColors.inkSoft,
-                              ),
-                            ),
-                          ),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: AppColors.muted,
-                          ),
-                        ],
-                      ),
-                    ),
+                    const SizedBox(height: 16),
+                    const _NotificationBanner(),
                   ],
                 ),
               ),
@@ -656,6 +647,157 @@ Map<String, int> _videoCountsByDay(Iterable<VideoMemory> videos) {
   return counts;
 }
 
+class _NotificationHeader extends StatelessWidget {
+  const _NotificationHeader({
+    required this.allRead,
+    required this.onReadAll,
+    required this.onDelete,
+  });
+
+  final bool allRead;
+  final VoidCallback onReadAll;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 84,
+    child: Row(
+      children: [
+        const SizedBox(width: 20),
+        RoundIconButton(
+          icon: Icons.chevron_left_rounded,
+          size: 48,
+          onPressed: () => Navigator.pop(context),
+        ),
+        Expanded(
+          child: Text(
+            '알림',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontSize: 25,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        TextButton(
+          onPressed: allRead ? null : onReadAll,
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.coral,
+            disabledForegroundColor: AppColors.muted,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            textStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          child: const Text('모두 읽음'),
+        ),
+        SizedBox.square(
+          dimension: 48,
+          child: OutlinedButton(
+            onPressed: onDelete,
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.zero,
+              backgroundColor: AppColors.surfaceWarm,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: const Icon(
+              Icons.delete_outline_rounded,
+              color: AppColors.coral,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+      ],
+    ),
+  );
+}
+
+class _NotificationBanner extends StatelessWidget {
+  const _NotificationBanner();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 120,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF8EF),
+      borderRadius: BorderRadius.circular(26),
+      border: Border.all(color: const Color(0xFFFFD7BA)),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x16E49C66),
+          blurRadius: 15,
+          offset: Offset(0, 7),
+        ),
+      ],
+    ),
+    child: Stack(
+      children: [
+        const Positioned(
+          left: 18,
+          top: 22,
+          child: CircleAvatar(
+            radius: 24,
+            backgroundColor: AppColors.surface,
+            child: Icon(Icons.notifications_rounded, color: Color(0xFFE9A23F)),
+          ),
+        ),
+        const Positioned(
+          left: 78,
+          top: 20,
+          right: 72,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '필요한 알림만 받아보세요',
+                maxLines: 2,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.ink,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 5),
+              Text(
+                '설정에서 알림 시간을 조정할 수 있어요.',
+                maxLines: 2,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppColors.inkSoft,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          right: -4,
+          bottom: -16,
+          width: 145,
+          height: 125,
+          child: Image.asset(
+            'assets/images/bbanggeut_mascot.png',
+            fit: BoxFit.contain,
+            alignment: Alignment.bottomCenter,
+          ),
+        ),
+        const Positioned(
+          right: 126,
+          top: 12,
+          child: Text(
+            '♥',
+            style: TextStyle(color: AppColors.coral, fontSize: 14),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _SubHeader extends StatelessWidget {
   const _SubHeader({required this.title, this.trailing});
   final String title;
@@ -732,6 +874,7 @@ class _NoticeTile extends StatelessWidget {
   const _NoticeTile({
     required this.icon,
     required this.color,
+    required this.iconColor,
     required this.title,
     required this.message,
     required this.time,
@@ -739,28 +882,82 @@ class _NoticeTile extends StatelessWidget {
   });
   final IconData icon;
   final Color color;
+  final Color iconColor;
   final String title;
   final String message;
   final String time;
   final bool unread;
   @override
-  Widget build(BuildContext context) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(vertical: 5),
-    leading: CircleAvatar(
-      backgroundColor: color,
-      child: Icon(icon, color: AppColors.inkSoft),
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minHeight: 110),
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.fromLTRB(16, 15, 14, 15),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(25),
+      border: Border.all(color: const Color(0xFFF1E3D5)),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x16E5A66E),
+          blurRadius: 14,
+          offset: Offset(0, 6),
+        ),
+      ],
     ),
-    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-    subtitle: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
-    trailing: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+    child: Row(
       children: [
-        Text(time, style: const TextStyle(fontSize: 9, color: AppColors.muted)),
-        if (unread)
-          const Padding(
-            padding: EdgeInsets.only(top: 5),
-            child: CircleAvatar(radius: 3, backgroundColor: AppColors.coral),
+        CircleAvatar(
+          radius: 27,
+          backgroundColor: color,
+          child: Icon(icon, color: iconColor, size: 28),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.ink,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.35,
+                  color: AppColors.inkSoft,
+                ),
+              ),
+            ],
           ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              time,
+              style: const TextStyle(fontSize: 10, color: AppColors.muted),
+            ),
+            if (unread)
+              const Padding(
+                padding: EdgeInsets.only(top: 9, right: 4),
+                child: CircleAvatar(
+                  radius: 4,
+                  backgroundColor: AppColors.coral,
+                ),
+              ),
+          ],
+        ),
       ],
     ),
   );

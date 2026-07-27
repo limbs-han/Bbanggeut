@@ -80,11 +80,7 @@ class _MediaPlayerSurfaceState extends State<MediaPlayerSurface> {
       await controller.seekTo(Duration.zero);
     }
     await controller.play();
-    if (mounted) {
-      _hideTimer?.cancel();
-      setState(() => _showControls = widget.isLive);
-      if (widget.isLive) _scheduleHide();
-    }
+    if (mounted) _showTemporarily();
   }
 
   Future<void> _seekBy(Duration delta) async {

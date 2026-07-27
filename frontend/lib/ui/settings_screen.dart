@@ -6,7 +6,6 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
 import 'extra_screens.dart';
-import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -73,87 +72,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      '설정',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 18),
-                    SoftCard(
-                      color: AppColors.sage,
-                      borderColor: AppColors.sage,
-                      padding: EdgeInsets.zero,
-                      child: InkWell(
-                        key: const Key('edit-profile-button'),
-                        onTap: () => _editProfile(context),
-                        child: Padding(
-                          padding: const EdgeInsets.all(13),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 25,
-                                backgroundColor: AppColors.surface,
-                                child: Text(
-                                  controller
-                                          .user
-                                          ?.displayName
-                                          .characters
-                                          .firstOrNull ??
-                                      '나',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: AppColors.sageDark,
-                                  ),
-                                ),
+                    SizedBox(
+                      height: 100,
+                      child: Stack(
+                        children: [
+                          const Positioned(
+                            left: 4,
+                            top: 22,
+                            child: Text(
+                              '설정',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.ink,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      controller.user?.displayName ?? '현재 사용자',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    Text(
-                                      controller.user?.email ?? '로그인 계정',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.inkSoft,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const StatusPill(
-                                label: '수정',
-                                color: AppColors.surface,
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
+                          Positioned(
+                            right: 40,
+                            bottom: -6,
+                            width: 116,
+                            height: 104,
+                            child: Image.asset(
+                              'assets/images/bbanggeut_mascot.png',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                          const Positioned(
+                            right: 5,
+                            top: 25,
+                            child: Icon(
+                              Icons.notifications_none_rounded,
+                              color: AppColors.muted,
+                              size: 25,
+                            ),
+                          ),
+                          const Positioned(
+                            right: 142,
+                            top: 23,
+                            child: Icon(
+                              Icons.favorite_rounded,
+                              color: AppColors.sageSoft,
+                              size: 19,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    const _GroupLabel('가족 초대'),
+                    const SizedBox(height: 4),
                     SoftCard(
-                      padding: EdgeInsets.zero,
-                      child: _SettingRow(
-                        icon: Icons.mark_email_unread_outlined,
-                        title: '받은 초대함',
-                        subtitle: controller.receivedInvitations.isEmpty
-                            ? '새로운 초대가 없어요'
-                            : '대기 중인 초대 ${controller.receivedInvitations.length}개',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                InvitationInboxScreen(controller: controller),
+                      color: AppColors.surface,
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 28,
+                            backgroundColor: AppColors.surfaceWarm,
+                            child: Text(
+                              controller
+                                      .user
+                                      ?.displayName
+                                      .characters
+                                      .firstOrNull ??
+                                  '나',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.sageDark,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  controller.user?.displayName ?? '현재 사용자',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 17,
+                                  ),
+                                ),
+                                Text(
+                                  controller.user?.email ?? '로그인 계정',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.inkSoft,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const StatusPill(
+                            label: '수정',
+                            color: AppColors.sageSoft,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -163,7 +177,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Column(
                         children: [
                           _SettingRow(
-                            key: const Key('edit-camera-name-button'),
                             icon: Icons.videocam_outlined,
                             title: '카메라 설정',
                             subtitle: device.name,
@@ -190,6 +203,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Column(
                         children: [
                           _SwitchRow(
+                            icon: Icons.notifications_active_outlined,
                             title: '기념일 알림',
                             subtitle: '등록한 기념일을 알려드려요',
                             value: anniversaryAlerts,
@@ -200,6 +214,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           const Divider(height: 1, indent: 18, endIndent: 18),
                           _SwitchRow(
+                            icon: Icons.event_available_outlined,
                             title: '주간 리포트 알림',
                             subtitle: '이번 주 웃음 기록을 요약해요',
                             value: weeklyReport,
@@ -210,6 +225,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           const Divider(height: 1, indent: 18, endIndent: 18),
                           _SwitchRow(
+                            icon: Icons.video_camera_back_outlined,
                             title: '새로운 추억 알림',
                             subtitle: '새 영상 저장 시 알려드려요',
                             value: newMemoryAlerts,
@@ -289,6 +305,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         onPressed: () => _releaseDevice(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.inkSoft,
+                          backgroundColor: AppColors.surfaceWarm,
+                          minimumSize: const Size.fromHeight(48),
+                          side: const BorderSide(color: AppColors.line),
+                        ),
                         icon: const Icon(Icons.link_off_rounded),
                         label: const Text('기기 해제'),
                       ),
@@ -296,6 +318,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 8),
                     TextButton.icon(
                       onPressed: () => _withdraw(context),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                        backgroundColor: AppColors.pink,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
                       icon: const Icon(Icons.person_off_outlined),
                       label: const Text('회원 탈퇴'),
                     ),
@@ -315,50 +345,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _editProfile(BuildContext context) async {
-    final controller = widget.controller;
-    final input = TextEditingController(text: controller.user?.displayName);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('프로필 수정'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          maxLength: 60,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(labelText: '이름'),
-          onSubmitted: (value) {
-            final name = value.trim();
-            if (name.isNotEmpty) Navigator.pop(context, name);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = input.text.trim();
-              if (name.isNotEmpty) Navigator.pop(context, name);
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-    input.dispose();
-    if (!context.mounted || value == null) return;
-    final ok = await controller.updateProfile(value);
-    if (!context.mounted) return;
-    showAppSnack(
-      context,
-      ok ? '프로필을 수정했어요.' : (controller.errorMessage ?? '프로필을 수정하지 못했어요.'),
-      error: !ok,
-    );
-  }
-
   Future<void> _editDevice(BuildContext context) async {
     final controller = widget.controller;
     final result = await showDialog<_DeviceManageResult>(
@@ -374,13 +360,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final value = result.name;
     if (value?.isNotEmpty == true) {
       final ok = await controller.updateSelectedDevice(name: value);
-      if (context.mounted) {
+      if (!ok && context.mounted) {
         showAppSnack(
           context,
-          ok
-              ? '카메라 이름을 수정했어요.'
-              : (controller.errorMessage ?? '기기 이름을 바꾸지 못했어요.'),
-          error: !ok,
+          controller.errorMessage ?? '기기 이름을 바꾸지 못했어요.',
+          error: true,
         );
       }
     }
@@ -662,9 +646,9 @@ class _GroupLabel extends StatelessWidget {
     child: Text(
       label,
       style: const TextStyle(
-        fontSize: 11,
-        color: AppColors.muted,
-        fontWeight: FontWeight.w800,
+        fontSize: 13,
+        color: AppColors.inkSoft,
+        fontWeight: FontWeight.w900,
       ),
     ),
   );
@@ -672,7 +656,6 @@ class _GroupLabel extends StatelessWidget {
 
 class _SettingRow extends StatelessWidget {
   const _SettingRow({
-    super.key,
     required this.icon,
     required this.title,
     this.subtitle,
@@ -686,26 +669,31 @@ class _SettingRow extends StatelessWidget {
   final bool danger;
   @override
   Widget build(BuildContext context) => ListTile(
+    minVerticalPadding: 11,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
     leading: CircleAvatar(
-      radius: 17,
+      radius: 20,
       backgroundColor: danger ? AppColors.pink : AppColors.sageSoft,
       child: Icon(
         icon,
-        size: 19,
+        size: 21,
         color: danger ? AppColors.danger : AppColors.sageDark,
       ),
     ),
     title: Text(
       title,
       style: TextStyle(
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: FontWeight.w800,
         color: danger ? AppColors.danger : AppColors.ink,
       ),
     ),
     subtitle: subtitle == null
         ? null
-        : Text(subtitle!, style: const TextStyle(fontSize: 10)),
+        : Text(
+            subtitle!,
+            style: const TextStyle(fontSize: 11, color: AppColors.inkSoft),
+          ),
     trailing: onTap == null
         ? null
         : const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
@@ -715,24 +703,39 @@ class _SettingRow extends StatelessWidget {
 
 class _SwitchRow extends StatelessWidget {
   const _SwitchRow({
+    required this.icon,
     required this.title,
     required this.subtitle,
     required this.value,
     required this.onChanged,
   });
+  final IconData icon;
   final String title;
   final String subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
   @override
-  Widget build(BuildContext context) => SwitchListTile(
+  Widget build(BuildContext context) => ListTile(
+    minVerticalPadding: 9,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+    leading: CircleAvatar(
+      radius: 20,
+      backgroundColor: AppColors.sageSoft,
+      child: Icon(icon, size: 21, color: AppColors.sageDark),
+    ),
     title: Text(
       title,
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
     ),
-    subtitle: Text(subtitle, style: const TextStyle(fontSize: 10)),
-    value: value,
-    activeTrackColor: AppColors.sage,
-    onChanged: onChanged,
+    subtitle: Text(
+      subtitle,
+      style: const TextStyle(fontSize: 10, color: AppColors.inkSoft),
+    ),
+    trailing: Switch(
+      value: value,
+      activeTrackColor: AppColors.sage,
+      onChanged: onChanged,
+    ),
+    onTap: () => onChanged(!value),
   );
 }
