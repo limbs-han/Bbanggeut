@@ -60,6 +60,34 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/password/change")
+    public ResponseEntity<Void> changePassword(
+        @AuthenticationPrincipal Jwt jwt,
+        @Valid @RequestBody ChangePasswordRequest request
+    ) {
+        authService.changePassword(
+            UUID.fromString(jwt.getSubject()),
+            UUID.fromString(jwt.getClaimAsString("sid")),
+            request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/password/forgot")
+    public ResponseEntity<Void> forgotPassword(
+        @Valid @RequestBody ForgotPasswordRequest request
+    ) {
+        authService.requestPasswordReset(request);
+        return ResponseEntity.accepted().build();
+    }
+
+    @PostMapping("/password/reset")
+    public ResponseEntity<Void> resetPassword(
+        @Valid @RequestBody ResetPasswordRequest request
+    ) {
+        authService.resetPassword(request);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/me")
     public ResponseEntity<Void> withdraw(@AuthenticationPrincipal Jwt jwt) {
         authService.withdraw(UUID.fromString(jwt.getSubject()));

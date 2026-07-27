@@ -7,6 +7,17 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/wj}
     username: ${DB_USER:wj}
     password: ${DB_PASSWORD:wj-dev-only}
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -34,6 +45,8 @@ app:
     jwt-secret: ${JWT_SIGNING_KEY:local-development-signing-key-change-me-2026}
     login-max-failures: ${LOGIN_MAX_FAILURES:5}
     login-failure-window: ${LOGIN_FAILURE_WINDOW:10m}
+    password-reset-url: ${PASSWORD_RESET_URL:bbanggeut://password-reset?token=}
+    password-reset-from: ${PASSWORD_RESET_FROM:no-reply@bbanggeut.local}
   provisioning:
     enabled: ${DEVICE_PROVISIONING_ENABLED:false}
     admin-key: ${DEVICE_PROVISIONING_ADMIN_KEY:}

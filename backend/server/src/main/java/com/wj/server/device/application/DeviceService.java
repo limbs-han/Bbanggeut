@@ -150,7 +150,7 @@ public class DeviceService {
     }
 
     /**
-     * Transfers ownership to an existing active EDITOR or VIEWER of the same device.
+     * Transfers ownership to an existing active MEMBER of the same device.
      * Videos, members, settings and the device subscription all stay — only the
      * roles swap. The deferred one-active-OWNER trigger re-validates at commit.
      */
@@ -165,14 +165,14 @@ public class DeviceService {
             throw new ApiException(
                 HttpStatus.CONFLICT, "ALREADY_OWNER", "이미 본인이 OWNER인 기기입니다.");
         }
-        if ((!"EDITOR".equals(target.role()) && !"VIEWER".equals(target.role()))
+        if (!"MEMBER".equals(target.role())
             || !"ACTIVE".equals(target.status())
-            || deviceMapper.demoteOwnerToEditor(deviceId, userId) != 1
+            || deviceMapper.demoteOwnerToMember(deviceId, userId) != 1
             || deviceMapper.promoteNonOwnerToOwner(deviceId, target.id()) != 1) {
             throw new ApiException(
                 HttpStatus.CONFLICT,
                 "TRANSFER_TARGET_NOT_ACTIVE_MEMBER",
-                "해당 기기의 활성 EDITOR 또는 VIEWER에게만 소유권을 넘길 수 있습니다.");
+                "해당 기기의 활성 MEMBER에게만 소유권을 넘길 수 있습니다.");
         }
         auditService.success(deviceId, userId, "DEVICE_UPDATE", "MEMBERSHIP", target.id());
     }

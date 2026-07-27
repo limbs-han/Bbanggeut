@@ -41,7 +41,7 @@ class VideoCommandServiceTest {
         request.setTitle("  새 제목  ");
         request.setDescription(null);
         when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
-        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("EDITOR"));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
         when(mapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
 
         service.update(userId, video.id(), request);
@@ -64,7 +64,7 @@ class VideoCommandServiceTest {
         UpdateVideoRequest request = new UpdateVideoRequest();
         request.setTitle("새 제목");
         when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
-        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("VIEWER"));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("LEGACY_VIEWER"));
 
         assertThatThrownBy(() -> service.update(userId, video.id(), request))
             .isInstanceOf(ApiException.class)
@@ -80,7 +80,7 @@ class VideoCommandServiceTest {
         UUID userId = UUID.randomUUID();
         VideoRow video = video();
         when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
-        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("EDITOR"));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
 
         assertThatThrownBy(() -> service.delete(userId, video.id()))
             .isInstanceOf(ApiException.class)

@@ -73,7 +73,9 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/signup", "/api/auth/login", "/api/auth/refresh").permitAll()
+                .requestMatchers(
+                    "/api/auth/signup", "/api/auth/login", "/api/auth/refresh",
+                    "/api/auth/password/forgot", "/api/auth/password/reset").permitAll()
                 .requestMatchers(
                     HttpMethod.GET, "/api/membership-request-links/*/open").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
