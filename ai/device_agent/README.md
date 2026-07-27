@@ -38,11 +38,22 @@ hardware. Only the live relay crosses the network, and it exists only between
 On the Jetson, from the repository checkout:
 
 ```bash
+install -d -m 0700 /home/ssafy/.ssh
+# Add lab.ssafy.com's independently verified host key to known_hosts first.
+GIT_SSH_COMMAND='ssh -i /home/ssafy/.ssh/wj_gitlab_deploy -o IdentitiesOnly=yes' \
+git clone git@lab.ssafy.com:s15-webmobile3-sub1/S15P11E201.git \
+  /home/ssafy/william-james
+cd /home/ssafy/william-james
+git config core.sshCommand \
+  'ssh -i /home/ssafy/.ssh/wj_gitlab_deploy -o IdentitiesOnly=yes'
+git switch master
+git pull --ff-only origin master
+git rev-parse HEAD
 cd ai/device_agent
 chmod +x install-jetson.sh media-source.sh media-tunnel.sh check-jetson.sh \
-  configure-jetson-rtsps.sh verify-mediamtx-rtsps.sh
+  configure-jetson-rtsps.sh verify-mediamtx-rtsps.sh \
+  diagnose-mediamtx-publish.sh
 sudo ./install-jetson.sh
-sudoedit /etc/william-james/device-agent.env
 ```
 
 Use `device-agent.jetson.env.example` as the reference. Set the device ID and
@@ -54,7 +65,12 @@ the server private key:
 sudo install -m 0644 mqtt-ca.crt /etc/william-james/certs/mqtt-ca.crt
 sudo install -m 0644 mediamtx-ca.crt \
   /etc/william-james/certs/mediamtx-ca.crt
-sudo ./configure-jetson-rtsps.sh --username wj-jetson-001
+sudo install -m 0600 jetson-mediamtx-credentials.env \
+  /etc/william-james/jetson-mediamtx-credentials.env
+sudo ./configure-jetson-rtsps.sh \
+  --credentials-env /etc/william-james/jetson-mediamtx-credentials.env \
+  --ca-cert /etc/william-james/certs/mediamtx-ca.crt \
+  --ca-fingerprint-file mediamtx-ca.sha256
 sudo -u williamjames ./verify-mediamtx-rtsps.sh
 ```
 
@@ -92,8 +108,37 @@ endpoint and start the services:
 
 ```bash
 sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
-sudo systemctl start wj-media-source wj-device-agent
+sudo -u williamjames \
+  /opt/william-james/device-agent/diagnose-mediamtx-publish.sh
+sudo systemctl start wj-media-source
+# Only after the server confirms the final MQTT v2 ACL:
+sudo systemctl restart wj-device-agent
 sudo systemctl status wj-media-source wj-device-agent --no-pager
+```
+
+Neither `install-jetson.sh` nor `configure-jetson-rtsps.sh` restarts the agent.
+The latter keeps `/etc/william-james/device-agent.env.rollback` and restores it
+automatically when certificate, hostname, fingerprint, or FFmpeg TLS
+verification fails. Do not pass `--restart` until the final MQTT v2 device ACL
+has been checked on the running broker.
+
+For a code rollback, use the revision recorded before installation:
+
+```bash
+previous="$(cat /opt/william-james/device-agent/PREVIOUS_DEPLOYED_COMMIT)"
+cd /home/ssafy/william-james
+git fetch origin master
+git checkout --detach "$previous"
+sudo ./ai/device_agent/install-jetson.sh
+sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
+sudo systemctl restart wj-device-agent
+```
+
+Return to the tracked deployment branch after the incident:
+
+```bash
+git switch master
+git pull --ff-only origin master
 ```
 
 The camera must be provisioned, claimed by the owner/admin account, and ONLINE.
