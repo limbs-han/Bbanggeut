@@ -10,7 +10,7 @@
 
 ## 0. 이 문서를 읽는 법
 
-이 프로젝트를 한 번에 전부 이해하려고 하면 HTTP, MQTT, JWT, PostgreSQL, MinIO, MediaMTX, YAMNet이 한꺼번에 튀어나와서 헷갈린다. 먼저 다음 한 문장만 기억하자.
+이 프로젝트를 한 번에 전부 이해하려고 하면 HTTP, MQTT, JWT, PostgreSQL, MinIO, MediaMTX, YAMNet이 한꺼번에 튀어나와서 헷갈린다. 모르는 것이 정상이다. 아래 한 문장은 지금 이해하라는 설명이 아니라 앞으로 배울 대상의 지도다. 외우지 말고 한 번만 본 뒤 0.2절부터 순서대로 읽고, 0.16절에서 다시 돌아온다.
 
 > **앱과 서버는 REST로 대화하고, 서버와 홈캠은 MQTT로 작은 명령·상태를 주고받고, 큰 영상 파일은 MinIO에 직접 올리며, 라이브 영상은 MediaMTX가 전달한다.**
 
@@ -38,7 +38,990 @@
 
 `old` 폴더에는 과거 설계가 남아 있다. 공부에는 도움이 되지만 현재 MVP를 판단할 때 그대로 믿으면 안 된다.
 
-### 0.2 MVP의 정확한 범위
+### 0.2 진짜 맨 처음: 컴퓨터, 프로그램, 프로세스, 서버
+
+#### 컴퓨터
+
+컴퓨터는 입력을 받고, 정해진 명령을 실행하고, 결과를 내놓는 기계다. 노트북, 스마트폰, EC2, Jetson, Raspberry Pi가 모두 컴퓨터다. 크기와 성능, 운영체제, 맡은 일이 다를 뿐이다.
+
+컴퓨터 안의 중요한 자원은 다음과 같다.
+
+| 자원 | 쉽게 말하면 | 이 프로젝트에서의 예 |
+|---|---|---|
+| CPU | 명령을 계산하는 일꾼 | Spring 코드 실행, SQL 결과 처리 |
+| GPU | 같은 종류의 계산을 대량 병렬 처리하는 일꾼 | Jetson에서 AI 추론 |
+| RAM | 지금 일하는 내용을 잠깐 펼쳐 놓는 책상 | 실행 중인 Java 객체, MQTT 메시지 |
+| 디스크 | 전원을 꺼도 남는 서랍 | PostgreSQL 데이터, MinIO MP4, edge 로컬 영상 |
+| 네트워크 장치 | 다른 컴퓨터와 데이터를 주고받는 통로 | Wi-Fi, Ethernet |
+
+#### 프로그램과 프로세스
+
+- **프로그램(program)**: 디스크에 저장된 실행 방법이다. Java JAR, `mosquitto.exe`, Docker image 같은 것이 여기에 가깝다.
+- **프로세스(process)**: 프로그램을 실제로 실행한 상태다. RAM과 CPU를 사용하며 운영체제가 관리한다.
+
+레시피 파일이 프로그램이라면, 주방에서 실제로 요리 중인 요리사가 프로세스다. 같은 프로그램을 여러 번 실행하면 프로세스도 여러 개 생길 수 있다.
+
+#### 서버라는 말의 두 가지 뜻
+
+`서버`는 문맥에 따라 두 가지를 뜻한다.
+
+1. **서버 컴퓨터**: 서비스를 실행하는 물리·가상 컴퓨터. 예: EC2.
+2. **서버 프로그램**: 다른 프로그램의 요청을 기다렸다가 응답하는 프로세스. 예: Spring Boot, PostgreSQL, Mosquitto.
+
+“서버가 죽었다”는 말도 EC2 전체가 꺼졌다는 뜻일 수 있고, 그 안의 Spring 프로세스만 멈췄다는 뜻일 수 있다. 반드시 구분해서 물어봐야 한다.
+
+#### 서비스(service)
+
+서비스는 사용자에게 제공하는 전체 기능을 뜻하기도 하고, 운영체제에서 백그라운드로 계속 실행되는 프로그램을 뜻하기도 한다.
+
+- 제품 의미: 윌리엄 제임스 홈캠 서비스
+- 운영 의미: `william-james.service`라는 systemd 백그라운드 프로세스
+
+#### 백엔드
+
+백엔드는 사용자가 직접 보는 화면 뒤에서 동작하는 부분이다.
+
+- 요청을 받는다.
+- 사용자를 인증한다.
+- 권한을 검사한다.
+- 비즈니스 규칙을 실행한다.
+- DB와 저장소를 읽고 쓴다.
+- 다른 서비스와 통신한다.
+- 결과나 오류를 프론트엔드에 돌려준다.
+
+백엔드는 곧 DB가 아니다. Spring Boot 백엔드 **프로그램**이 PostgreSQL **DB 서버**에 질의하는 관계다.
+
+### 0.3 클라이언트와 서버
+
+#### 클라이언트
+
+클라이언트는 먼저 요청하는 쪽이다. 이 프로젝트에는 클라이언트가 하나만 있는 것이 아니다.
+
+- Flutter 앱은 Spring API의 클라이언트다.
+- 홈캠은 Spring IoT API의 클라이언트다.
+- Spring은 PostgreSQL에 질의할 때 PostgreSQL의 클라이언트다.
+- Spring은 Mosquitto에 연결할 때 MQTT 클라이언트다.
+- Nginx는 Spring에 요청을 넘길 때 Spring의 클라이언트처럼 동작한다.
+
+클라이언트와 서버는 제품의 고정 신분이 아니라 **특정 통신에서 누가 요청하고 누가 받는가**로 정해진다.
+
+#### 요청과 응답
+
+가장 기본적인 통신은 다음과 같다.
+
+```text
+클라이언트: "내가 접근할 수 있는 기기 목록을 줘"
+    ↓ 요청(request)
+서버: 인증 → DB 조회 → 응답 생성
+    ↓ 응답(response)
+클라이언트: 받은 JSON으로 화면을 그림
+```
+
+요청에는 보통 다음이 들어간다.
+
+- 어디로 보낼지: URL
+- 무엇을 할지: HTTP method
+- 부가 정보: header
+- 실제 입력 데이터: body
+
+응답에는 보통 다음이 들어간다.
+
+- 성공·실패 종류: status code
+- 부가 정보: header
+- 결과 데이터: body
+
+### 0.4 네트워크의 출발점: IP, 도메인, 포트
+
+#### 네트워크
+
+네트워크는 여러 컴퓨터가 데이터를 주고받도록 연결한 것이다. 인터넷은 전 세계의 수많은 네트워크가 서로 연결된 거대한 네트워크다.
+
+데이터는 보통 작은 **패킷(packet)** 단위로 나뉘어 이동한다. 영상 파일 하나가 물리적으로 통째로 순간 이동하는 것이 아니다. 여러 패킷이 네트워크를 지나 상대 컴퓨터에서 다시 조립된다.
+
+#### IP 주소
+
+IP 주소는 네트워크에서 컴퓨터나 네트워크 인터페이스를 찾기 위한 주소다.
+
+예:
+
+```text
+127.0.0.1
+192.168.0.10
+13.125.xxx.xxx
+```
+
+- `127.0.0.1`, `localhost`: 지금 이 컴퓨터 자기 자신
+- 사설 IP: 집·회사·Docker 내부에서 쓰는 주소
+- 공인 IP: 인터넷에서 찾아올 수 있는 주소
+
+IP 주소는 사람에게 외우기 불편하고 바뀔 수 있다.
+
+#### 도메인과 DNS
+
+도메인은 `i15e201.p.ssafy.io`처럼 사람이 읽기 쉬운 이름이다. DNS는 도메인을 IP 주소로 찾아주는 시스템이다.
+
+전화번호부에 비유하면:
+
+- 도메인: 사람 이름
+- IP 주소: 전화번호
+- DNS: 이름으로 번호를 찾는 전화번호부
+
+DNS가 통신 내용을 전달하는 것은 아니다. 먼저 목적지 IP를 찾게 도와준다.
+
+#### 포트
+
+IP가 건물 주소라면 포트는 그 건물의 창구 번호다. 한 컴퓨터에서 Spring, PostgreSQL, MinIO 같은 여러 서버 프로그램이 동시에 실행되기 때문에 어느 프로그램으로 보낼지 포트로 구분한다.
+
+```text
+localhost:8080
+│         └─ 포트 8080의 Spring Boot
+└─ 현재 컴퓨터
+```
+
+이 프로젝트의 대표 포트:
+
+| 포트 | 프로그램 | 용도 |
+|---:|---|---|
+| 443 | Nginx | 외부 HTTPS 정문 |
+| 8080 | Spring Boot | 내부 API |
+| 5432 | PostgreSQL | DB 연결 |
+| 8883 | Mosquitto | TLS를 적용한 MQTT |
+| 9000 | MinIO | S3 호환 API |
+| 9001 | MinIO | 관리자 웹 화면 |
+| 8554 | MediaMTX | RTSP ingest |
+| 8888 | MediaMTX | HLS 제공 |
+
+포트 번호 자체가 보안 기능은 아니다. 포트를 안다고 접속 권한이 생겨서는 안 된다. 방화벽, 인증, TLS, ACL이 따로 필요하다.
+
+#### 소켓과 연결
+
+소켓은 프로그램이 네트워크 통신에 사용하는 운영체제의 창구다. 보통 IP, port, protocol의 조합으로 연결 상대를 식별한다.
+
+백엔드 초반에는 소켓 API를 직접 구현할 필요는 없다. Spring, Paho, PostgreSQL driver 같은 라이브러리가 대신 다룬다. 다만 “한 포트는 보통 한 프로세스가 listen한다”, “연결이 열려 있어야 데이터를 주고받는다” 정도는 알아야 한다.
+
+#### 공유기, 라우터, NAT
+
+라우터는 서로 다른 네트워크 사이에서 패킷이 갈 길을 정하는 장비·기능이다. 가정용 공유기도 라우터 역할을 한다.
+
+집 안의 노트북, 휴대폰, 홈캠은 보통 각각 사설 IP를 갖지만 인터넷에서는 공유기의 공인 IP 하나를 함께 사용한다. NAT는 내부 사설 주소와 외부 공인 주소·포트를 변환한다.
+
+```text
+홈캠 192.168.0.20 ─┐
+휴대폰 192.168.0.21 ├─ 공유기/NAT ─ 공인 IP ─ 인터넷
+노트북 192.168.0.22 ┘
+```
+
+외부 서버가 집 안 홈캠으로 갑자기 새 연결을 시작하기는 어렵다. 공유기가 어느 내부 기기로 보내야 하는지 모르고 차단하기 때문이다. 반대로 홈캠이 먼저 외부 Mosquitto나 Spring에 연결하면 NAT가 연결 대응 정보를 만들므로 응답을 받을 수 있다. IoT 기기가 서버로 **outbound 연결을 먼저 여는 구조**가 흔한 이유다.
+
+#### 방화벽
+
+방화벽은 어떤 IP·port·protocol의 통신을 허용하거나 차단하는 규칙이다.
+
+- 443 HTTPS는 사용자에게 허용
+- 5432 PostgreSQL은 인터넷에서 차단
+- 9001 MinIO 관리자 화면은 내부에서만 허용
+- 8883 MQTTS는 필요한 기기에서만 접근하도록 제한
+
+프로그램이 5432에서 실행 중이어도 방화벽이 막으면 외부에서 접속할 수 없다. 반대로 방화벽을 열었다고 인증이 생기는 것도 아니다. 방화벽은 여러 보안 층 중 하나다.
+
+#### 대역폭과 지연시간
+
+- 대역폭(bandwidth): 일정 시간에 얼마나 많은 데이터를 보낼 수 있는지. 수도관의 굵기.
+- 지연시간(latency): 데이터가 상대에게 도착하기까지 걸리는 시간. 수도관의 길이.
+
+큰 MP4 업로드는 대역폭 영향을 크게 받고, 라이브 조작 반응은 지연시간 영향을 크게 받는다. 대역폭이 높아도 왕복 거리가 멀면 지연시간은 클 수 있다.
+
+#### 동기, 비동기, polling, push
+
+- 동기적 요청-응답: 요청한 쪽이 결과를 기다린다. 일반 REST 호출.
+- 비동기: 요청한 작업의 완료가 나중에 오거나 별도 경로로 전달된다. 객체 삭제 job, MQTT event.
+- polling: 클라이언트가 일정 간격으로 “됐나요?”라고 반복 조회한다.
+- push: 상태가 생긴 쪽에서 메시지를 보내 알린다. MQTT publish.
+
+이 프로젝트의 라이브는 두 방식을 섞는다. 기기는 MQTT로 `STREAM_READY`를 서버에 push하고, 앱은 REST로 session 상태를 polling한다.
+
+### 0.5 TCP와 UDP
+
+인터넷에서 데이터를 보내는 대표 전송 방식이다.
+
+#### TCP
+
+TCP는 상대와 연결을 만들고 데이터가 순서대로 빠짐없이 도착하도록 확인한다.
+
+택배 비유:
+
+- 송장 번호가 있다.
+- 빠진 상자가 있으면 다시 보낸다.
+- 순서가 뒤섞이면 정렬한다.
+- 상대가 받았는지 확인한다.
+
+장점:
+
+- 신뢰성
+- 순서 보장
+- 재전송
+
+단점:
+
+- 확인과 재전송 때문에 overhead와 지연이 생긴다.
+
+HTTP, HTTPS, MQTT, PostgreSQL 연결은 일반적으로 TCP 위에서 동작한다.
+
+#### UDP
+
+UDP는 연결과 수신 확인을 최소화하고 데이터를 보낸다.
+
+방송 비유:
+
+- 일단 송출한다.
+- 일부가 빠져도 기본 UDP가 다시 보내주지 않는다.
+- 순서 보장을 기본 제공하지 않는다.
+
+장점:
+
+- 단순하고 빠르다.
+- 약간의 유실보다 지연이 더 중요한 실시간 통신에 유리할 수 있다.
+
+단점:
+
+- 신뢰성 처리를 애플리케이션이나 상위 프로토콜이 해야 한다.
+
+“영상은 무조건 UDP”도 틀린 말이다. RTSP/RTP 설정, 방화벽, 네트워크 환경에 따라 TCP 또는 UDP를 사용할 수 있다.
+
+### 0.6 프로토콜, HTTP, API, REST, JSON
+
+#### 프로토콜
+
+프로토콜은 컴퓨터끼리 대화하기로 약속한 규칙이다.
+
+사람이 대화할 때도 언어, 문법, 질문·대답 순서가 필요하다. 컴퓨터도 다음을 약속해야 한다.
+
+- 메시지 형식
+- 누가 먼저 말하는지
+- 주소 표현 방법
+- 성공과 실패 표현
+- 연결 유지·종료 방법
+
+HTTP, MQTT, RTSP, TLS가 각각 다른 목적의 프로토콜이다.
+
+#### HTTP
+
+HTTP는 클라이언트가 요청하고 서버가 응답하는 데 널리 쓰는 프로토콜이다.
+
+요청 예:
+
+```http
+GET /api/devices HTTP/1.1
+Host: i15e201.p.ssafy.io
+Authorization: Bearer eyJ...
+Accept: application/json
+```
+
+응답 예:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+[
+  {"id": "...", "name": "거실 홈캠", "status": "ONLINE"}
+]
+```
+
+#### HTTP method
+
+| method | 보통 의미 | 프로젝트 예 |
+|---|---|---|
+| GET | 조회 | 기기·영상 목록 |
+| POST | 생성 또는 명령 | 로그인, stream session 생성 |
+| PATCH | 일부 수정 | 기기 이름 수정 |
+| PUT | 전체 설정 또는 정해진 대상 쓰기 | 구독 상태, MinIO 객체 업로드 |
+| DELETE | 삭제·종료 | 영상 삭제, stream session 종료 |
+
+method 이름만으로 보안이나 멱등성이 자동 보장되는 것은 아니다. 서버 구현과 API 계약이 의미를 지켜야 한다.
+
+#### URL
+
+```text
+https://i15e201.p.ssafy.io/api/videos?deviceId=123&size=20
+└─scheme └──── host ────┘└── path ──┘└── query ────────┘
+```
+
+- scheme: 어떤 방식으로 통신하는지, `https`
+- host: 어느 컴퓨터인지, 도메인
+- port: 생략 시 HTTPS 기본 443
+- path: 어느 기능·자원인지
+- query: 조회 조건
+
+#### header와 body
+
+- header: 메시지에 대한 부가 정보. 인증 token, content type, idempotency key 등.
+- body: 실제 전달 데이터. 회원가입 JSON, 영상 metadata 등.
+
+#### API
+
+API는 한 프로그램이 다른 프로그램의 기능을 사용하도록 공개한 사용 규칙이다. 버튼 화면이 아니라 프로그램끼리 쓰는 창구라고 보면 된다.
+
+API 명세에는 다음이 있어야 한다.
+
+- URL과 method
+- 필요한 인증
+- 요청 header/body
+- 응답 body
+- 오류 code
+
+이 프로젝트의 REST API 계약은 `자료/api/openapi.yaml`에 있다.
+
+#### REST
+
+REST는 HTTP API를 자원 중심으로 설계하는 방식이다.
+
+```text
+/api/devices
+/api/videos/{videoId}
+/api/stream-sessions/{sessionId}
+```
+
+명사를 URL로 표현하고 HTTP method로 동작을 구분하는 경향이 있다. 모든 HTTP API가 자동으로 REST인 것은 아니고, REST도 하나의 설계 방식이다.
+
+#### JSON
+
+JSON은 데이터를 문자열로 표현하는 형식이다.
+
+```json
+{
+  "deviceId": "11111111-1111-4111-8111-111111111111",
+  "status": "ONLINE",
+  "recording": true,
+  "uploadQueueDepth": 0
+}
+```
+
+기본 형태:
+
+- object: `{}` 안의 key-value
+- array: `[]` 안의 목록
+- string: `"문자열"`
+- number: `123`, `0.92`
+- boolean: `true`, `false`
+- null: 값 없음
+
+JSON key는 데이터 필드 이름이다. 암호 키와 아무 관계가 없다.
+
+### 0.7 HTTP와 HTTPS, TLS
+
+#### 평문 HTTP의 문제
+
+HTTP 내용을 암호화하지 않으면 같은 네트워크의 공격자나 중간 장비가 token, 비밀번호, 영상 URL을 훔쳐보거나 바꿀 수 있다.
+
+#### HTTPS
+
+HTTPS는 HTTP를 TLS로 보호한 것이다.
+
+TLS가 제공하는 핵심:
+
+1. **기밀성**: 중간에서 내용을 읽기 어렵게 암호화
+2. **무결성**: 전송 중 변경됐는지 확인
+3. **서버 인증**: 접속한 서버가 해당 도메인의 진짜 서버인지 인증서로 확인
+
+#### 인증서
+
+인증서는 “이 공개 키는 이 도메인의 서버 것”이라는 보증서다. CA라는 신뢰 기관이 서명한다.
+
+서버에는 인증서와 쌍을 이루는 private key가 있다. private key는 절대 Git이나 앱에 넣지 않는다.
+
+#### TLS와 JWT의 차이
+
+- TLS: 네트워크 **연결 전체**를 보호
+- JWT: API 요청자가 누구인지 증명하는 **응용 데이터**
+
+HTTPS를 쓴다고 사용자가 자동 로그인되는 것이 아니고, JWT를 쓴다고 통신 내용이 자동 암호화되는 것도 아니다. 둘 다 필요하다.
+
+#### MQTTS와 RTSPS
+
+- MQTTS: MQTT 연결을 TLS로 보호
+- RTSPS: RTSP 연결을 TLS로 보호
+
+뒤의 `S`는 보통 secure/TLS 적용을 뜻한다.
+
+### 0.8 Java, Spring Boot, Gradle은 각각 무엇인가
+
+#### Java
+
+Java는 백엔드 코드를 작성한 프로그래밍 언어다. `.java` 파일을 compile하면 JVM이 실행할 bytecode가 된다.
+
+#### JVM과 JDK
+
+- JVM: Java 프로그램을 실행하는 가상 실행 환경
+- JDK: Java 코드 compile, 실행, 개발에 필요한 도구 묶음
+
+이 프로젝트는 Java 17 JDK가 필요하다.
+
+#### Spring Framework
+
+Spring은 Java 백엔드 개발에서 반복되는 일을 도와주는 framework다.
+
+- HTTP 요청을 Controller method에 연결
+- 객체 생성과 의존성 연결
+- DB transaction 관리
+- validation
+- 인증·인가
+- 설정 파일과 환경변수 처리
+
+framework는 라이브러리보다 애플리케이션의 전체 실행 구조를 더 많이 정해 준다.
+
+#### Spring Boot
+
+Spring Boot는 Spring 애플리케이션을 빠르게 구성·실행하도록 기본 설정과 내장 서버를 제공한다. 이 프로젝트의 `ServerApplication.java`를 실행하면 내장 web server와 Spring 구성 요소가 올라온다.
+
+`Controller`, `Service`, `Mapper`는 물리 서버가 세 개라는 뜻이 아니다. 같은 Spring 프로세스 안에서 책임을 나눈 코드 계층이다.
+
+#### 의존성
+
+의존성은 우리 코드가 가져다 쓰는 외부 코드 묶음이다.
+
+예:
+
+- Spring Security
+- PostgreSQL driver
+- MinIO SDK
+- Eclipse Paho MQTT client
+
+직접 전부 구현하지 않고 검증된 기능을 가져다 쓴다.
+
+#### Gradle
+
+Gradle은 Java 프로젝트의 build 도구다.
+
+- 어떤 의존성을 받을지 관리
+- Java compile
+- test 실행
+- 실행 가능한 JAR 생성
+
+`build.gradle`은 build 방법을 적은 파일이고, `gradlew.bat`는 PC에 Gradle을 따로 설치하지 않아도 정해진 버전을 실행하는 wrapper다.
+
+### 0.9 Nginx란 무엇인가
+
+#### 한 줄 정의
+
+> **Nginx는 인터넷에서 들어오는 요청을 가장 먼저 받아 적절한 내부 프로그램으로 전달하는 웹 서버이자 리버스 프록시다.**
+
+발음은 보통 “엔진엑스”다.
+
+#### 왜 필요한가
+
+우리 서버 컴퓨터 안에는 여러 프로그램이 있다.
+
+```text
+Spring Boot :8080
+MediaMTX HLS :8888
+MinIO :9000
+```
+
+이 포트를 모두 인터넷에 공개하면 사용자는 주소를 여러 개 알아야 하고, 각 서비스가 TLS와 접근 제어를 따로 처리해야 하며 공격 표면도 커진다.
+
+Nginx를 정문으로 두면:
+
+```text
+인터넷 사용자는 https://서비스도메인:443 하나만 접속
+                    ↓
+                  Nginx
+             ┌──────┴──────┐
+          /api 요청      /live 요청
+             ↓              ↓
+       Spring :8080    MediaMTX :8888
+```
+
+#### 프록시와 리버스 프록시
+
+- forward proxy: 클라이언트를 대신해 외부 서버에 접근
+- reverse proxy: 서버들을 대신해 외부 클라이언트 요청을 받음
+
+Nginx는 이 프로젝트에서 reverse proxy다. 사용자는 뒤에 Spring과 MediaMTX가 따로 있다는 사실을 몰라도 된다.
+
+#### 이 프로젝트에서 Nginx가 하는 일
+
+- 443에서 HTTPS 요청 수신
+- TLS 인증서와 private key 사용
+- `/api/**`를 Spring Boot로 전달
+- HLS playlist/segment 요청 전에 live token 검사
+- 허용되면 MediaMTX로 전달
+- PostgreSQL, MinIO, Spring 내부 포트를 외부에서 숨김
+- 실제 client IP와 원래 HTTPS 정보를 header로 전달
+
+#### Nginx가 하지 않는 일
+
+- 비즈니스 규칙 판단
+- 사용자·영상 metadata를 DB에 저장
+- MQTT 메시지 중계
+- AI 추론
+- MP4 영구 보관
+
+Nginx는 Spring을 대체하지 않는다. 정문과 교통정리 역할이다.
+
+### 0.10 Docker와 Docker Compose란 무엇인가
+
+#### “내 컴퓨터에서는 되는데요” 문제
+
+개발자마다 다음이 다르면 프로그램이 다르게 동작한다.
+
+- PostgreSQL 버전
+- 설치 경로
+- 설정 파일
+- 환경변수
+- 필요한 library
+
+#### Docker image
+
+Docker image는 프로그램과 실행 환경을 묶은 읽기 전용 template다. 설치 설명서와 재료를 합쳐 포장한 실행 상자 설계도에 가깝다.
+
+#### container
+
+container는 image를 실제로 실행한 instance다.
+
+- `postgres:16-alpine` image
+- 그것을 실행한 `wj-postgres` container
+
+image와 container는 class와 object처럼 “설계도와 실행 개체” 관계로 생각해도 된다.
+
+#### volume
+
+container를 삭제하면 container 내부 변경도 사라질 수 있다. DB와 영상은 그러면 안 되므로 volume에 영속 저장한다.
+
+- `wj-pgdata`: PostgreSQL 데이터
+- `wj-minio`: MinIO 객체
+- `wj-mosquitto`: broker 설정·상태
+
+container 삭제와 volume 삭제는 영향이 다르다. 운영에서 volume을 지우는 명령은 데이터 삭제다.
+
+#### Docker network
+
+같은 Compose 안의 container는 서비스 이름으로 서로 찾을 수 있다.
+
+```text
+Spring 또는 init container → http://minio:9000
+```
+
+여기서 `minio`는 인터넷 DNS 이름이 아니라 Compose 내부 서비스 이름이다. 휴대폰은 이 이름을 알 수 없다.
+
+#### Docker Compose
+
+Compose는 여러 container, port, volume, environment, healthcheck를 한 YAML 파일로 정의하고 함께 실행하는 도구다.
+
+이 프로젝트에서는 PostgreSQL, MinIO, Mosquitto, MediaMTX를 한꺼번에 로컬에서 올린다.
+
+### 0.11 PostgreSQL, SQL, MyBatis, Flyway란 무엇인가
+
+#### 데이터베이스
+
+데이터베이스는 데이터를 저장하고 검색·수정하도록 전문화된 프로그램이다. 단순 파일 폴더보다 동시 접근, 검색, 관계, 무결성을 체계적으로 관리한다.
+
+#### 관계형 데이터베이스
+
+관계형 DB는 데이터를 table과 관계로 표현한다.
+
+`users` 예:
+
+| id | email | display_name |
+|---|---|---|
+| UUID-1 | a@example.com | 찬형 |
+
+- table: 같은 종류 데이터의 표
+- row: 한 개체의 한 줄
+- column: 속성
+- primary key: row를 유일하게 식별
+- foreign key: 다른 table row와 관계
+- index: 검색을 빠르게 하는 별도 자료구조
+- constraint: 허용되지 않는 데이터를 막는 규칙
+
+#### PostgreSQL
+
+PostgreSQL은 관계형 DB 제품 이름이다. “DB”가 일반 종류라면 “PostgreSQL”은 우리가 선택한 구체적인 프로그램이다.
+
+Spring은 PostgreSQL의 5432 포트에 연결해 SQL을 보낸다.
+
+#### SQL
+
+SQL은 관계형 DB에 명령하는 언어다.
+
+```sql
+SELECT *
+FROM videos
+WHERE device_id = ?
+  AND status = 'READY';
+```
+
+- `SELECT`: 조회
+- `INSERT`: 생성
+- `UPDATE`: 수정
+- `DELETE`: 삭제
+- `CREATE TABLE`: 구조 생성
+
+#### MyBatis
+
+Java method와 SQL을 연결해 주는 도구다.
+
+```text
+Java Service
+  → VideoMapper.findAccessibleVideos(...)
+  → MyBatis가 SQL 실행
+  → PostgreSQL row
+  → Java 객체로 변환
+```
+
+MyBatis는 DB가 아니고, DB를 편하게 사용하는 Java library다.
+
+#### schema와 migration
+
+schema는 DB의 구조다. table, column, index, constraint 정의가 포함된다.
+
+기능이 늘면 구조도 변한다.
+
+```text
+V1: users, auth_sessions
+V2: devices, memberships
+V4: videos
+V10: stream sessions
+V18: device events
+```
+
+migration은 구조 변경을 순서대로 기록한 SQL이다.
+
+#### Flyway
+
+Flyway는 어떤 migration이 이미 적용됐는지 기록하고, 서버 시작 때 아직 적용하지 않은 다음 버전을 순서대로 실행하는 도구다.
+
+Flyway는 DB 그 자체가 아니다. DB schema의 버전 관리자다.
+
+### 0.12 MinIO와 객체 저장소란 무엇인가
+
+#### 파일을 PostgreSQL에 다 넣지 않는 이유
+
+MP4는 수십~수백 MB가 될 수 있다. 큰 파일을 DB row에 넣으면:
+
+- DB 크기와 backup이 급격히 커진다.
+- 영상 전송 중 DB connection을 오래 쓴다.
+- API 서버가 파일 중계 병목이 된다.
+
+그래서 metadata와 실제 파일을 나눈다.
+
+```text
+PostgreSQL videos row
+  - 제목
+  - 촬영 시각
+  - 상태
+  - storage_key
+  - checksum
+
+MinIO object
+  - 실제 MP4 bytes
+```
+
+#### 객체 저장소
+
+객체 저장소는 큰 파일을 `key → object` 형태로 저장하는 시스템이다.
+
+- bucket: 객체를 담는 큰 보관 단위
+- object: 파일 bytes와 metadata
+- object key: 객체 이름
+
+```text
+bucket: wj-videos
+key: private/{deviceId}/events/{videoId}.mp4
+```
+
+object key의 `key`는 암호 키가 아니다. 창고 안의 물건 이름표다.
+
+#### S3
+
+S3는 Amazon의 객체 저장 서비스이며, 그 API 방식이 사실상 널리 쓰이는 표준처럼 되었다. “S3 호환”은 Amazon S3와 비슷한 API로 bucket과 object를 다룰 수 있다는 뜻이다.
+
+#### MinIO
+
+> **MinIO는 우리가 직접 실행할 수 있는 S3 호환 객체 저장소 프로그램이다.**
+
+로컬 개발과 현재 배포에서 실제 MP4를 저장한다.
+
+MinIO가 하는 일:
+
+- MP4 object 저장
+- object metadata 보관
+- 특정 object 조회·삭제
+- presigned URL 검증
+- 운영 환경의 저장 시 암호화
+
+MinIO가 하지 않는 일:
+
+- 사용자가 어느 기기의 멤버인지 판단
+- 로그인
+- 영상 목록 검색 규칙
+- 웃음 통계 계산
+
+이 판단은 Spring과 PostgreSQL이 한다.
+
+#### presigned URL
+
+MinIO의 master access key를 앱과 기기에 주면 모든 객체에 위험한 권한을 줄 수 있다. 대신 Spring이 특정 작업만 잠깐 허용하는 서명 URL을 만든다.
+
+```text
+특정 bucket + 특정 object + PUT + 15분
+특정 bucket + 특정 object + GET + 5분
+```
+
+쉽게 말해 창고 마스터키가 아니라 “3번 사물함을 5분 동안 열 수 있는 출입증”이다.
+
+### 0.13 MQTT와 Mosquitto란 무엇인가
+
+#### HTTP만으로 기기 상태를 받으면
+
+서버가 홈캠 상태를 알고 싶을 때 HTTP polling만 사용한다면:
+
+```text
+서버: 상태 바뀌었어?
+기기: 아니
+서버: 상태 바뀌었어?
+기기: 아니
+서버: 상태 바뀌었어?
+기기: 응
+```
+
+변화가 없어도 계속 요청해야 한다. 기기가 서버의 요청을 받으려면 가정용 NAT와 방화벽 문제도 생긴다.
+
+#### publish / subscribe
+
+MQTT는 발행/구독 방식의 가벼운 메시지 프로토콜이다.
+
+- publisher: 메시지를 발행하는 프로그램
+- subscriber: 특정 topic을 구독하는 프로그램
+- topic: 메시지 분류·주소 문자열
+- broker: publisher에게 받아 subscriber에게 전달하는 중간 서버
+
+```text
+홈캠 publisher
+  → topic: prod/wj/v2/devices/D/heartbeat
+  → MQTT broker
+  → 이 topic을 구독한 Spring backend
+```
+
+publisher와 subscriber는 서로 직접 주소를 몰라도 broker와 연결하면 된다.
+
+#### MQTT
+
+MQTT는 **대화 규칙인 프로토콜 이름**이다. 프로그램 제품 이름이 아니다.
+
+HTTP가 규칙인 것처럼 MQTT도:
+
+- 연결
+- 구독
+- 발행
+- QoS
+- retain
+- keep alive
+
+같은 규칙을 정의한다.
+
+#### broker
+
+broker는 MQTT 메시지 중개 프로그램이다.
+
+우체국 비유:
+
+- topic: 우편함 분류 주소
+- publisher: 편지를 맡기는 사람
+- broker: 우체국
+- subscriber: 해당 주소 편지를 받겠다고 신청한 사람
+
+broker는 topic과 구독 관계를 보고 전달한다.
+
+#### Mosquitto
+
+> **Mosquitto는 MQTT 규칙을 실제로 구현한 broker 프로그램의 제품 이름이다.**
+
+정리하면:
+
+```text
+MQTT      = 통신 규칙
+Mosquitto = 그 규칙으로 메시지를 중개하는 실제 프로그램
+Paho      = Java/Spring이 MQTT에 연결할 때 쓰는 client library
+```
+
+웹으로 비유하면:
+
+```text
+HTTP      = 통신 규칙
+Nginx     = HTTP를 처리하는 실제 서버 프로그램 중 하나
+브라우저   = HTTP client
+```
+
+#### 이 프로젝트에서 Mosquitto가 전달하는 것
+
+- 기기 → 서버: online/offline, heartbeat
+- 기기 → 서버: 등록 모드
+- 기기 → 서버: 웃음 등 감지 이벤트
+- 기기 → 서버: 라이브 준비·종료 이벤트
+- 서버 → 기기: 라이브 START/EXTEND/STOP 명령
+- 기기 → 서버: 명령 ACK
+
+전달하지 않는 것:
+
+- MP4 파일
+- 라이브 H.264/AAC 전체
+- 사용자 JWT
+- 등록 코드 평문
+- presigned URL
+
+#### 왜 Mosquitto에 MP4를 안 보내나
+
+MQTT broker는 작은 상태·명령 메시지를 빠르게 중개하는 역할에 적합하다. 수백 MB MP4를 보내면 broker memory, 저장, 재전송, 느린 subscriber 때문에 작은 heartbeat와 명령까지 지연될 수 있다.
+
+#### topic은 채널 이름이다
+
+```text
+prod/wj/v2/devices/{deviceId}/heartbeat
+prod/wj/v2/devices/{deviceId}/commands
+```
+
+topic을 안다고 메시지를 보낼 권한이 생기는 것은 아니다. Mosquitto가 client 인증과 ACL로 자기 기기 topic만 허용해야 한다.
+
+#### QoS, retain, LWT 미리 보기
+
+- QoS: 전달을 어느 정도 확인할지
+- retain: broker가 topic의 마지막 값 하나를 기억할지
+- LWT: 기기가 비정상 종료되면 broker가 대신 OFFLINE을 알릴지
+
+자세한 동작은 뒤의 13장에서 다시 다룬다.
+
+### 0.14 MediaMTX, RTSP, HLS, 코덱이란 무엇인가
+
+#### 영상 파일과 라이브 스트림
+
+- 영상 파일: 시작과 끝이 있는 완성된 MP4
+- 라이브 스트림: 지금도 계속 만들어지는 영상·음성 데이터
+
+MinIO는 완성된 파일 보관에 적합하고, MediaMTX는 계속 흐르는 라이브 전달에 적합하다.
+
+#### 원본 영상이 사실 무엇인가
+
+카메라 센서가 만드는 원시 영상은 매우 크다. 그대로 네트워크로 보내기 어렵기 때문에 압축한다.
+
+#### 코덱
+
+코덱은 영상·음성을 압축하고 다시 푸는 규칙/기술이다.
+
+- H.264: 영상 코덱
+- AAC: 음성 코덱
+
+코덱은 파일 확장자와 다르다.
+
+#### 컨테이너
+
+컨테이너는 압축된 영상·음성, 시간 정보 등을 한 파일이나 전달 구조에 담는 형식이다.
+
+- MP4: 저장 파일 컨테이너
+- MPEG-TS/fMP4 segment: HLS에서 사용할 수 있는 조각 형식
+
+Docker container와 영상 container는 이름만 같고 전혀 다른 개념이다.
+
+#### RTSP
+
+RTSP는 라이브 미디어 session을 제어하는 프로토콜이다. 이 프로젝트에서는 홈캠이 MediaMTX에 H.264/AAC stream을 publish하는 ingest 쪽에서 사용한다.
+
+#### HLS
+
+HLS는 라이브 영상을 짧은 파일 조각으로 나누고 HTTP로 재생하는 방식이다.
+
+```text
+index.m3u8 playlist
+  ├─ segment001
+  ├─ segment002
+  └─ segment003
+```
+
+앱 player는 playlist를 반복해서 읽고 새 segment를 이어 재생한다.
+
+#### ingest와 playback
+
+- ingest: 기기 영상이 미디어 서버로 들어오는 것
+- playback: 사용자가 미디어 서버의 영상을 재생하는 것
+
+이 프로젝트:
+
+```text
+홈캠 --RTSP(S) ingest--> MediaMTX --HLS playback--> 앱
+```
+
+#### MediaMTX
+
+> **MediaMTX는 여러 미디어 프로토콜 사이에서 라이브 스트림을 받아 전달하는 미디어 서버 프로그램이다.**
+
+이 프로젝트에서:
+
+- 홈캠의 RTSP(S) publish를 받음
+- H.264/AAC를 가능하면 다시 인코딩하지 않음
+- HLS playlist/segment로 제공
+- 한 입력을 여러 시청자에게 전달
+
+MediaMTX가 하지 않는 일:
+
+- 사용자 회원가입
+- 기기 membership 검사
+- MQTT 명령 전달
+- MP4 영구 저장
+- 통계
+
+#### remux와 transcode
+
+- transcode: 압축을 풀고 다른 설정/코덱으로 다시 압축. 비용이 큼.
+- remux: 압축된 H.264/AAC는 유지하고 포장·전달 형식만 변경. 비용이 작음.
+
+MediaMTX를 쓴 핵심 이유 중 하나는 가능한 경로에서 remux와 fan-out을 전문 프로그램에 맡기는 것이다.
+
+### 0.15 주요 이름을 “종류”별로 다시 정리
+
+| 이름 | 이것의 정체 | 한 줄 역할 |
+|---|---|---|
+| EC2 | 빌린 가상 컴퓨터 | 운영 프로그램들이 실행되는 기계 |
+| Linux | 운영체제 | 프로세스·파일·네트워크 관리 |
+| systemd | Linux 서비스 관리자 | Spring 등을 백그라운드 실행·재시작 |
+| Java | 프로그래밍 언어 | 백엔드 코드 작성 |
+| JVM | Java 실행 환경 | compiled Java 실행 |
+| Spring Boot | Java backend framework | REST API와 비즈니스 로직 실행 |
+| Gradle | build 도구 | 의존성·compile·test·JAR |
+| Nginx | web server/reverse proxy | HTTPS 정문과 내부 routing |
+| PostgreSQL | 관계형 DB 프로그램 | 계정·권한·metadata·상태 저장 |
+| SQL | DB 명령 언어 | PostgreSQL 조회·수정 |
+| MyBatis | Java DB mapping library | Java method와 SQL 연결 |
+| Flyway | DB migration 도구 | schema version 순서 적용 |
+| MinIO | S3 호환 객체 저장소 | MP4 파일 보관 |
+| MQTT | pub/sub 통신 프로토콜 | 작은 기기 메시지 규칙 |
+| Mosquitto | MQTT broker 프로그램 | MQTT 메시지 중개 |
+| Paho | MQTT client library | Spring이 Mosquitto와 연결 |
+| MediaMTX | 미디어 서버 | RTSP ingest를 HLS로 전달 |
+| Docker | container 실행 도구 | 의존 프로그램 환경 격리 |
+| Docker Compose | 다중 container 정의 도구 | 인프라를 함께 실행 |
+| Flutter | 앱 framework | Android 사용자 화면과 API 호출 |
+| Jetson | edge 컴퓨터 | AI 감지·영상 처리 |
+| YAMNet | 오디오 분류 AI 모델 | 웃음 후보 감지 |
+| Banuba | 모바일 영상 편집 SDK | Android 로컬 편집 |
+
+이 표에서 가장 중요한 구분은 **규칙과 구현 제품을 섞지 않는 것**이다.
+
+```text
+HTTP/MQTT/RTSP/HLS = 통신 규칙 또는 전달 방식
+Nginx/Mosquitto/MediaMTX = 그 일을 실제로 수행하는 프로그램
+PostgreSQL/MinIO = 서로 다른 종류의 저장 프로그램
+Spring Boot = 우리 비즈니스 로직을 실행하는 프로그램 기반
+```
+
+### 0.16 이제야 읽는 전체 한 문장
+
+앞의 정의를 바탕으로 처음 문장을 다시 풀면 다음과 같다.
+
+> Flutter 앱은 HTTP라는 요청·응답 규칙으로 Nginx라는 외부 정문에 요청한다. Nginx는 API 요청을 Spring Boot 프로그램에 넘긴다. Spring은 사용자와 권한을 확인하고 PostgreSQL에 metadata를 저장한다. 홈캠과 Spring 사이의 작은 비동기 상태·명령은 MQTT 규칙을 사용하고 Mosquitto가 중개한다. 완성된 MP4는 파일 전문 저장소인 MinIO에 보관한다. 라이브 H.264/AAC stream은 홈캠에서 MediaMTX로 들어가고, MediaMTX가 앱이 재생하기 쉬운 HLS로 내보낸다.
+
+이 문장을 자기 말로 설명할 수 있으면 뒤의 MVP 흐름을 읽을 준비가 된 것이다.
+
+### 0.17 MVP의 정확한 범위
 
 서비스 기획서 8절이 확정한 시연 MVP는 다음 7개다.
 
