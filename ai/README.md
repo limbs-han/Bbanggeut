@@ -37,6 +37,206 @@ Jetson에서 웃음 감지부터 전후 60초 로컬 MP4 생성과 노트북 다
 [`yolo/validate_laughter_event_e2e.sh`](yolo/validate_laughter_event_e2e.sh)를
 사용한다.
 
+## 2026-07-27 작업 마감 기록
+
+### 오늘 달성한 단계
+
+오늘은 기존 SSH 터널 기반 라이브 송출을 Jetson의 직접 RTSPS 송출 구조로
+전환하고, 기기 등록부터 실제 웃음 이벤트의 서버 업로드와 Flutter 앱 재생까지
+최소 MVP의 이벤트 조회 경로를 종단 검증했다.
+
+| 항목 | 결과 |
+| --- | --- |
+| Jetson → MediaMTX 직접 RTSPS publish | 보안 진단 완료 |
+| Jetson 전용 계정 권한 | UUID 경로 publish만 허용, read와 잘못된 경로 publish 거부 확인 |
+| MQTT | 최종 `prod/wj/v2/devices/{deviceId}/...` 규격 적용·연결 확인 |
+| 앱 기기 등록 | 신규 일회용 코드로 claim 및 ONLINE 확인 |
+| 수동 이벤트 업로드 | 서버 업로드와 Flutter 재생 성공 |
+| 실제 웃음 이벤트 | YAMNet 감지 → 전후 60초 MP4 → 서버 업로드 → 앱 영상·음성 재생 성공 |
+| 이벤트 로컬 정리 | 업로드 성공 후 MP4·Trigger 자동 삭제 확인 |
+| 보존 정책 | 업로드 완료 영수증은 유지하고 영구 차단 MP4·Trigger는 조사 근거로 보존 |
+| 직접 RTSPS 전환 후 Live View 최종 재확인 | 내일 시작 시 영상·음성을 다시 확인 |
+| 앱 비파괴 편집·편집본 다운로드 | 다음 최우선 작업 |
+
+실제 기기 ID, 이벤트 ID, 등록 코드, 계정 비밀번호와 인증 토큰은 문서에
+기록하지 않는다.
+
+### RTSPS 전환 방향
+
+기존 구성은 Jetson이 EC2까지 SSH 터널을 열고 로컬
+`rtsp://127.0.0.1:18554/...` 주소로 재게시하는 방식이었다. 최종 구성에서는
+Jetson의 라이브 relay가 MediaMTX의
+`rtsps://<server>:8322/live/{streamId}`로 직접 송출한다.
+
+카메라 캡처와 AI 입력 구조는 바꾸지 않았다. BRIO 100은
+`wj-media-source` 하나만 열고, YOLO·YAMNet·라이브·로컬 MediaMTX용 UDP
+출력을 각각 분기한다. 직접 RTSPS로 나가는 프로세스는 앱의
+`START_STREAM` 명령을 받은 라이브 relay 하나뿐이다. 로컬 AI와 상시 녹화는
+외부 라이브 세션 유무와 관계없이 계속 동작한다.
+
+SSH 터널 서비스는 직접 RTSPS 검증 중 장애가 발생할 때 사용할 롤백 수단으로
+남겨 두었다. 직접 RTSPS Live View의 영상·음성을 최종 확인하기 전에는 서버의
+`rtspEncryption`을 strict로 바꾸거나 롤백 구성을 제거하지 않는다.
+
+### RTSPS 전환 중 발생한 문제와 해결
+
+| 문제 | 원인 | 해결 및 검증 |
+| --- | --- | --- |
+| 기존 라이브 게시가 `401 Unauthorized`로 실패 | SSH 터널 뒤의 RTSP 주소도 MediaMTX 인증이 필요했지만 기존 Agent 설정이 이를 충족하지 못함 | Jetson 전용 publish-only 계정과 직접 RTSPS 주소를 사용하도록 전환 |
+| 최신 Agent를 바로 설치하면 MQTT가 끊길 위험 | Jetson은 v1, 서버 코드와 최종 규격은 v2 `devices` 토픽을 사용했고 Broker에는 과거 `d2c/c2d` ACL도 남아 있었음 | Agent 전환을 보류한 채 실행 중 Broker에 최종 v2 Device·Backend ACL을 적용하고 양방향 권한을 확인한 후 설치 |
+| MQTT ACL 마이그레이션 워커 반복 실패 | 서버 워커에서 DB 예외가 발생해 자동 마이그레이션을 신뢰할 수 없었음 | Mosquitto를 먼저 재시작하지 않고 동적 보안 ACL을 백업·수정·검증하여 기존 연결 중단을 피함 |
+| CA와 Jetson 자격증명이 처음에는 준비되지 않음 | 서버 인증서 전체 체인만 있고 Jetson용 trust anchor·계정 전달이 끝나지 않았음 | 공개 CA, 별도 채널에서 확인한 SHA-256 지문과 Jetson 전용 계정을 전달받아 설치 |
+| GitLab SSH 22번 포트 연결 timeout | Jetson이 현재 네트워크에서 GitLab SSH에 직접 연결하지 못함 | SHA-256을 확인한 오프라인 Git bundle로 저장소와 커밋을 복원하고 Device Agent 테스트 24개를 통과한 뒤 배포 |
+| 정상 RTSPS publish가 진단에서 실패로 표시 | 테스트 영상이 실시간보다 빠르게 생성돼 2초 생존 확인 전에 FFmpeg가 정상 종료함 | FFmpeg 테스트 입력에 `-re`를 추가해 실시간 속도로 유지하고 진단 재실행 |
+| 설치 후 등록 코드 도구가 Python 모듈을 찾지 못함 | 실행 위치가 설치 디렉터리로 고정되지 않아 `wj_device_agent` import가 실패함 | wrapper가 설치 디렉터리로 이동한 뒤 모듈을 실행하도록 수정하고 등록 성공 확인 |
+| 이벤트 업로드가 HTTP 409로 차단 | 임시 기기가 사용자 계정에 claim되지 않음 | 신규 논리 기기를 등록 코드로 앱에 claim한 뒤 업로드 성공 확인 |
+| 로그 감시 명령이 실제 웃음을 `NOT_DETECTED`로 표시 | `tail -n 0 -F` 시작 경계에서 이벤트 로그가 먼저 기록되는 race condition | 로그 한 줄 대신 새 Trigger 파일을 감시하는 `validate_laughter_event_e2e.sh` 추가 |
+
+RTSPS 진단의 최종 통과 조건은 다음 세 가지다.
+
+1. 인증된 canonical `live/{UUID}` 경로 publish 성공
+2. publish-only 계정의 read 거부
+3. UUID가 아닌 경로의 publish 거부
+
+### RTSPS 보안 원칙
+
+- Jetson에는 공개 CA trust anchor만 설치하며 서버 개인키는 전달하지 않는다.
+- CA 파일의 SHA-256 지문은 인증서 파일과 다른 신뢰 채널에서 확인한다.
+- Jetson 계정은 `live/{UUID}` publish만 허용하고 read 권한을 주지 않는다.
+- 자격증명 파일은 `0600`, 운영 환경 파일은 `root:williamjames 0640`으로 유지한다.
+- RTSPS Basic 인증정보가 FFmpeg 인자에 포함될 수 있으므로
+  `ps aux | grep ffmpeg`나 `pgrep -af ffmpeg`를 사용하지 않는다.
+- 프로세스 확인은 인증정보를 출력하지 않는 `pgrep -x -c ffmpeg`만 사용한다.
+- 설치·설정 스크립트는 검증 전 Agent를 자동 재시작하지 않는다.
+
+### 이벤트 MVP 결과와 로컬 보관 정책
+
+실제 BRIO 100 웃음에서 YAMNet의 연속 `mean` 점수가 운영 기준을 만족해
+Trigger가 생성됐다. 최초 감지 60초 전부터 마지막 감지 60초 후까지의
+H.264/AAC MP4가 서버에 올라갔고, Flutter 앱에서 영상·음성·실제 웃음 구간과
+약 2분 길이를 확인했다.
+
+`DELETE_EVENT_AFTER_UPLOAD=true`를 적용해 업로드 성공 후 Jetson의 MP4와
+Trigger는 자동 삭제한다. 작은 `uploaded.json` 영수증만 남겨 재처리를 막는다.
+과거 업로드 완료 파일도 같은 기준으로 정리했다. 병합 완료 Trigger는
+`merged.json`을 확인한 뒤 삭제했고, 영구 차단된 이벤트의 MP4·Trigger·
+`upload-blocked.json`은 원인 조사와 수동 복구를 위해 보존했다.
+사용자가 소장하기로 한 수동 시험 영상은 서버와 앱에 그대로 유지되며,
+Jetson의 로컬 중복 파일 정리는 서버 영상을 삭제하지 않는다.
+
+### 내일 재개 우선순위
+
+#### P0-1. 파이프라인 재시작과 직접 RTSPS Live View 재확인
+
+아래 “오늘 종료와 내일 재시작” 절차로 서비스를 올린 뒤 앱에서 기기가
+ONLINE인지 확인한다. Live View를 열어 영상과 음성을 확인하고, 화면을 닫은 뒤
+idle timeout 이후 라이브 relay FFmpeg 하나만 종료되는지 확인한다.
+
+#### P0-2. 앱 비파괴 편집과 편집본 다운로드 종단 검증
+
+서버에 보관된 이벤트 영상 하나로 다음을 확인한다.
+
+1. 이벤트 상세 화면에서 원본 재생
+2. 편집 화면 진입
+3. 구간 자르기 등 최소 한 가지 편집 적용
+4. 편집본을 앱 저장소에 저장
+5. 편집본을 외부 파일로 다운로드 또는 공유
+6. 다운로드한 파일의 영상·음성 재생
+7. 편집 후에도 서버의 원본 영상이 변경되지 않았는지 재확인
+
+편집 기능에서 코드 수정이 필요하면 현재 Device 브랜치에 섞지 않고
+`develop/frontend`에서 `feat/frontend/<기능명>` 브랜치를 새로 만든다.
+
+#### P0-3. Git 작업 마무리
+
+- 현재 기능 브랜치: `feat/device/event-upload-mvp`
+- Merge Request 대상: `develop/device`
+- MR의 Device CI 결과를 확인하고 성공한 경우에만 병합한다.
+- 병합 후 기능 브랜치를 삭제한다.
+
+#### P1 이후
+
+1. 30초 안에 연속 발생한 실제 웃음의 단일 영상 병합 검증
+2. 네트워크 단절 중 생성한 이벤트의 복구 후 자동 업로드 검증
+3. BRIO 100 조건별 웃음 평가 데이터 확장
+4. AI-06 공식 1시간 동시 실행·강제 단절 복구 시험
+5. SG90 두 축과 PCA9685 실제 제어
+
+### 오늘 종료와 내일 재시작
+
+오늘은 재부팅 설정을 바꾸지 않고 실행 중인 캡처·라이브·AI·녹화 서비스만
+중지한다. 따라서 내일 같은 구성으로 다시 시작할 수 있다.
+
+```bash
+sudo systemctl stop \
+  wj-edge-ai-recording \
+  wj-local-recording \
+  wj-recording-prune.timer \
+  wj-device-agent \
+  wj-media-tunnel \
+  wj-mediamtx-local \
+  wj-media-source
+
+for service in \
+  wj-device-agent \
+  wj-media-source \
+  wj-media-tunnel \
+  wj-mediamtx-local \
+  wj-local-recording \
+  wj-recording-prune.timer \
+  wj-edge-ai-recording
+do
+  printf '%-28s %s\n' \
+    "$service" \
+    "$(systemctl is-active "$service" 2>/dev/null || true)"
+done
+
+echo "FFMPEG_COUNT=$(pgrep -x -c ffmpeg 2>/dev/null || true)"
+```
+
+모든 서비스가 `inactive`, FFmpeg 수가 `0`이면 영상·음성 캡처와 외부 송출이
+모두 종료된 상태다. 서버에서 기기는 heartbeat 만료 후 OFFLINE으로 보이는 것이
+정상이다.
+
+내일은 물리 장치 연결을 확인한 뒤 다음 순서로 시작한다. 직접 RTSPS 정상
+경로에서는 `wj-media-tunnel`을 시작하지 않는다.
+
+```bash
+echo "=== DEVICES ==="
+lsusb
+cat /proc/asound/cards
+ls -l /dev/video* 2>/dev/null
+
+sudo systemctl start wj-media-source
+sleep 8
+
+sudo systemctl start \
+  wj-mediamtx-local \
+  wj-local-recording \
+  wj-recording-prune.timer
+sleep 8
+
+sudo systemctl start \
+  wj-edge-ai-recording \
+  wj-device-agent
+sleep 15
+
+for service in \
+  wj-device-agent \
+  wj-media-source \
+  wj-mediamtx-local \
+  wj-local-recording \
+  wj-recording-prune.timer \
+  wj-edge-ai-recording
+do
+  printf '%-28s %s\n' \
+    "$service" \
+    "$(systemctl is-active "$service" 2>/dev/null || true)"
+done
+```
+
+직접 RTSPS가 실패할 때만 `wj-media-tunnel` 롤백 절차를 사용한다.
+
 ## 시스템 구조
 
 ```mermaid
