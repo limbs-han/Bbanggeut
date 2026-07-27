@@ -1,0 +1,206 @@
+name: william-james-jenkins
+
+x-agent-common: &agent-common
+  restart: unless-stopped
+  depends_on:
+    jenkins:
+      condition: service_healthy
+  environment:
+    JENKINS_URL: http://jenkins:8080
+    JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+    JENKINS_WEB_SOCKET: "true"
+  entrypoint:
+    - /bin/sh
+    - -c
+  command:
+    - >-
+      export JENKINS_SECRET="$$(cat /run/secrets/jenkins-agent-secret)";
+      exec /usr/local/bin/jenkins-agent
+  networks:
+    - agents
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 384
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile.controller
+    image: william-james/jenkins:2.568.1
+    container_name: jenkins
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "8080:8080"
+    volumes:
+      - /home/ubuntu/jenkins-data:/var/jenkins_home
+      - ./init.groovy.d/10-security-bootstrap.groovy:/var/jenkins_home/init.groovy.d/10-security-bootstrap.groovy:ro
+      - ./init.groovy.d/20-domain-agents.groovy:/var/jenkins_home/init.groovy.d/20-domain-agents.groovy:ro
+      - ./init.groovy.d/30-gitlab-multibranch.groovy:/var/jenkins_home/init.groovy.d/30-gitlab-multibranch.groovy:ro
+      - ./init.groovy.d/40-git-notify-security.groovy:/var/jenkins_home/init.groovy.d/40-git-notify-security.groovy:ro
+      - ./init.groovy.d/50-production-deploy.groovy:/var/jenkins_home/init.groovy.d/50-production-deploy.groovy:ro
+      - /home/ubuntu/jenkins-agent-secrets:/var/jenkins_agent_secrets
+    networks:
+      - control
+      - agents
+    cpus: 1.5
+    mem_limit: 3g
+    mem_reservation: 512m
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  backend-agent:
+    <<: *agent-common
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    image: william-james/jenkins-agent:java21-python-java17
+    container_name: jenkins-backend-agent
+    environment:
+      JENKINS_URL: http://jenkins:8080
+      JENKINS_AGENT_NAME: backend-agent
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      JENKINS_WEB_SOCKET: "true"
+      TEST_POSTGRES_HOST: postgres-ci
+      TEST_POSTGRES_PORT: "5432"
+      TEST_POSTGRES_ADMIN_DATABASE: jenkins
+      TEST_POSTGRES_ADMIN_USER: jenkins
+      TEST_POSTGRES_PASSWORD_FILE: /run/secrets/postgres-ci-password
+    secrets:
+      - source: backend_agent_secret
+        target: jenkins-agent-secret
+      - source: postgres_ci_password
+        target: postgres-ci-password
+    cpus: 0.75
+    mem_limit: 1536m
+    mem_reservation: 256m
+
+  frontend-agent:
+    <<: *agent-common
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend-agent
+    image: william-james/jenkins-agent:flutter-3.44.7
+    container_name: jenkins-frontend-agent
+    environment:
+      JENKINS_URL: http://jenkins:8080
+      JENKINS_AGENT_NAME: frontend-agent
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      JENKINS_WEB_SOCKET: "true"
+    secrets:
+      - source: frontend_agent_secret
+        target: jenkins-agent-secret
+    cpus: 1.5
+    mem_limit: 6g
+    mem_reservation: 512m
+
+  device-agent:
+    <<: *agent-common
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    image: william-james/jenkins-agent:java21-python-java17
+    container_name: jenkins-device-agent
+    environment:
+      JENKINS_URL: http://jenkins:8080
+      JENKINS_AGENT_NAME: device-agent
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      JENKINS_WEB_SOCKET: "true"
+    secrets:
+      - source: device_agent_secret
+        target: jenkins-agent-secret
+    cpus: 1.0
+    mem_limit: 1536m
+    mem_reservation: 256m
+
+  deploy-agent:
+    <<: *agent-common
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy-agent
+    image: william-james/jenkins-agent:deploy
+    container_name: jenkins-deploy-agent
+    environment:
+      JENKINS_URL: http://jenkins:8080
+      JENKINS_AGENT_NAME: deploy-agent
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      JENKINS_WEB_SOCKET: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    secrets:
+      - source: deploy_agent_secret
+        target: jenkins-agent-secret
+      - source: production_known_hosts
+        target: production-known-hosts
+    cpus: 0.25
+    mem_limit: 512m
+    mem_reservation: 128m
+
+  postgres-ci:
+    image: postgres:16-alpine
+    container_name: jenkins-postgres-ci
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jenkins
+      POSTGRES_USER: jenkins
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_ci_password
+    secrets:
+      - postgres_ci_password
+    tmpfs:
+      - /var/lib/postgresql/data:rw,noexec,nosuid,size=512m
+    networks:
+      - agents
+    cpus: 0.5
+    mem_limit: 768m
+    mem_reservation: 128m
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jenkins -d jenkins"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  backend_agent_secret:
+    file: /home/ubuntu/jenkins-agent-secrets/backend-agent
+  frontend_agent_secret:
+    file: /home/ubuntu/jenkins-agent-secrets/frontend-agent
+  device_agent_secret:
+    file: /home/ubuntu/jenkins-agent-secrets/device-agent
+  deploy_agent_secret:
+    file: /home/ubuntu/jenkins-agent-secrets/deploy-agent
+  postgres_ci_password:
+    file: /home/ubuntu/jenkins-agent-secrets/postgres-ci-password
+  production_known_hosts:
+    file: /home/ubuntu/jenkins-agent-secrets/production-known-hosts
+
+networks:
+  control:
+    name: william-james-jenkins-control
+  agents:
+    name: william-james-jenkins-agents
