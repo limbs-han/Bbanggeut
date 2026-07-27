@@ -121,6 +121,11 @@ services:
       # HLS is reachable only from host-loopback Nginx, which authenticates app
       # viewers before proxying requests to MediaMTX.
       MTX_AUTHINTERNALUSERS_2_USER: any
+      # HLS reaches the container through the host-side loopback mapping and
+      # Docker bridge. Public RTSPS clients must not inherit this read identity.
+      MTX_AUTHINTERNALUSERS_2_IPS_0: 127.0.0.1/32
+      MTX_AUTHINTERNALUSERS_2_IPS_1: ::1/128
+      MTX_AUTHINTERNALUSERS_2_IPS_2: 172.16.0.0/12
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 

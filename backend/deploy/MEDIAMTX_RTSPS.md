@@ -43,8 +43,8 @@ sudo docker compose up -d mediamtx
 The Pi and Jetson accounts each have only `publish` permission and only for
 canonical `live/{UUID}` paths. Neither has `read`, `playback`, `api`, `metrics`,
 or `pprof` permission. App HLS reads use a separate anonymous MediaMTX identity
-reachable only through host-loopback Nginx; Nginx remains responsible for
-viewer authentication.
+restricted to loopback and the private Docker bridge, reachable only through
+host-loopback Nginx. Nginx remains responsible for viewer authentication.
 
 ## Migration and rollback
 
