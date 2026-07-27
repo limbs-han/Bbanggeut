@@ -121,7 +121,8 @@ flutter analyze
 
 휴대폰에서의 실제 실행은 개발자 PC에 기기를 연결한 뒤 `flutter run`으로 확인합니다.
 Jenkins 서버에는 물리 Android 기기가 연결되어 있지 않으므로 `flutter run`을 수행하지 않습니다.
-APK·AAB 자동 생성과 앱 스토어 배포는 현재 CI/CD 범위에서 제외합니다.
+Frontend CD 작업은 구성하지 않습니다. Jenkins Frontend Agent에도 Android SDK, Build Tools,
+NDK를 설치하지 않으며 APK·AAB 생성, 기기 설치, 앱 스토어 업로드를 수행하지 않습니다.
 
 ## Backend 운영 배포
 
@@ -141,7 +142,7 @@ S15P11E201/master CI 성공
 ```
 
 운영 PostgreSQL·MinIO·Mosquitto·MediaMTX Compose는 Backend JAR 배포 과정에서 재시작하지
-않습니다. IoT와 AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+않습니다. Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
 
 ## GitLab 상태 알림
 
