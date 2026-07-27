@@ -36,6 +36,18 @@ Demo credentials:
 - Pending viewer invitation: `request@wj.local` / `WjRequest!2026`
 - Fixed registration code for a second camera: `WJDE-2026`
 
+Six additional accounts start without a device and therefore open the
+device-registration screen. Claiming the paired code makes the account OWNER:
+
+| Account | Password | Registration code |
+| --- | --- | --- |
+| `admin01@wj.local` | `WjAdmin01!2026` | `WJ01-2026` |
+| `admin02@wj.local` | `WjAdmin02!2026` | `WJ02-2026` |
+| `admin03@wj.local` | `WjAdmin03!2026` | `WJ03-2026` |
+| `admin04@wj.local` | `WjAdmin04!2026` | `WJ04-2026` |
+| `admin05@wj.local` | `WjAdmin05!2026` | `WJ05-2026` |
+| `admin06@wj.local` | `WjAdmin06!2026` | `WJ06-2026` |
+
 The admin and family accounts already have access to the seeded primary camera,
 so Flutter opens the main shell instead of the device-registration screen. The
 request account has no camera yet and opens its pending invitation flow. Use
