@@ -70,6 +70,7 @@ pipeline {
     options {
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '30'))
+        gitLabConnection('s15p11e201-gitlab-api')
         timestamps()
         timeout(time: 30, unit: 'MINUTES')
     }
@@ -89,17 +90,7 @@ pipeline {
             }
         }
 
-        stage('Production approval') {
-            steps {
-                input(
-                    message: 'master CI 결과물을 운영 EC2에 배포할까요?',
-                    ok: 'Backend 배포 승인',
-                    submitterParameter: 'APPROVED_BY'
-                )
-            }
-        }
-
-        stage('Deploy Backend') {
+        stage('Resolve source revision') {
             agent {
                 label 'deploy'
             }
@@ -108,33 +99,70 @@ pipeline {
                 copyArtifacts(
                     projectName: '/S15P11E201/master',
                     selector: specific("${env.SOURCE_BUILD}"),
-                    filter: 'backend/server/build/libs/server-*.jar',
+                    filter: 'ci/jenkins/commit.txt',
                     flatten: true,
                     fingerprintArtifacts: true
                 )
-                sshagent(credentials: ['production-backend-ssh']) {
-                    sh """
-                        set -eu
-                        jar_file="\\$(find . -maxdepth 1 -type f -name 'server-*.jar' -print -quit)"
-                        test -n "\\${jar_file}"
-                        scp \
-                          -o BatchMode=yes \
-                          -o StrictHostKeyChecking=yes \
-                          -o UserKnownHostsFile=/run/secrets/production-known-hosts \
-                          "\\${jar_file}" \
-                          jenkins-deploy@host.docker.internal:/home/jenkins-deploy/incoming/server.jar.next
-                        ssh \
-                          -o BatchMode=yes \
-                          -o StrictHostKeyChecking=yes \
-                          -o UserKnownHostsFile=/run/secrets/production-known-hosts \
-                          jenkins-deploy@host.docker.internal \
-                          sudo /usr/local/sbin/wj-deploy-backend
-                    """
+                script {
+                    env.SOURCE_SHA = readFile('commit.txt').trim()
+                    if (!(env.SOURCE_SHA ==~ /[0-9a-f]{40}/)) {
+                        error('master CI 커밋 SHA를 확인할 수 없습니다.')
+                    }
+                    currentBuild.description = "master #${env.SOURCE_BUILD} ${env.SOURCE_SHA.take(8)}"
                 }
             }
-            post {
-                cleanup {
-                    cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+        }
+
+        stage('Approve and deploy Backend') {
+            steps {
+                script {
+                    gitlabCommitStatus(
+                        name: 'deploy/production',
+                        connection: gitLabConnection('s15p11e201-gitlab-api'),
+                        builds: [[
+                            projectId: 's15-webmobile3-sub1/S15P11E201',
+                            revisionHash: env.SOURCE_SHA
+                        ]]
+                    ) {
+                        input(
+                            message: 'master CI 결과물을 운영 EC2에 배포할까요?',
+                            ok: 'Backend 배포 승인',
+                            submitterParameter: 'APPROVED_BY'
+                        )
+                        node('deploy') {
+                            try {
+                                deleteDir()
+                                copyArtifacts(
+                                    projectName: '/S15P11E201/master',
+                                    selector: specific("${env.SOURCE_BUILD}"),
+                                    filter: 'backend/server/build/libs/server-*.jar',
+                                    flatten: true,
+                                    fingerprintArtifacts: true
+                                )
+                                sshagent(credentials: ['production-backend-ssh']) {
+                                    sh """
+                                        set -eu
+                                        jar_file="\\$(find . -maxdepth 1 -type f -name 'server-*.jar' -print -quit)"
+                                        test -n "\\${jar_file}"
+                                        scp \
+                                          -o BatchMode=yes \
+                                          -o StrictHostKeyChecking=yes \
+                                          -o UserKnownHostsFile=/run/secrets/production-known-hosts \
+                                          "\\${jar_file}" \
+                                          jenkins-deploy@host.docker.internal:/home/jenkins-deploy/incoming/server.jar.next
+                                        ssh \
+                                          -o BatchMode=yes \
+                                          -o StrictHostKeyChecking=yes \
+                                          -o UserKnownHostsFile=/run/secrets/production-known-hosts \
+                                          jenkins-deploy@host.docker.internal \
+                                          sudo /usr/local/sbin/wj-deploy-backend
+                                    """
+                                }
+                            } finally {
+                                cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+                            }
+                        }
+                    }
                 }
             }
         }

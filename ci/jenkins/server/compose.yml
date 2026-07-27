@@ -43,6 +43,7 @@ services:
       - ./init.groovy.d/10-security-bootstrap.groovy:/var/jenkins_home/init.groovy.d/10-security-bootstrap.groovy:ro
       - ./init.groovy.d/20-domain-agents.groovy:/var/jenkins_home/init.groovy.d/20-domain-agents.groovy:ro
       - ./init.groovy.d/30-gitlab-multibranch.groovy:/var/jenkins_home/init.groovy.d/30-gitlab-multibranch.groovy:ro
+      - ./init.groovy.d/35-gitlab-status.groovy:/var/jenkins_home/init.groovy.d/35-gitlab-status.groovy:ro
       - ./init.groovy.d/40-git-notify-security.groovy:/var/jenkins_home/init.groovy.d/40-git-notify-security.groovy:ro
       - ./init.groovy.d/50-production-deploy.groovy:/var/jenkins_home/init.groovy.d/50-production-deploy.groovy:ro
       - /home/ubuntu/jenkins-agent-secrets:/var/jenkins_agent_secrets
@@ -98,7 +99,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend-agent
-    image: william-james/jenkins-agent:flutter-3.44.7
+    image: william-james/jenkins-agent:flutter-ci-3.44.7
     container_name: jenkins-frontend-agent
     environment:
       JENKINS_URL: http://jenkins:8080
