@@ -35,8 +35,7 @@ pipeline {
                     steps {
                         deleteDir()
                         checkout scm
-                        writeFile file: 'ci/jenkins/commit.txt',
-                            text: "${env.GIT_COMMIT}\n"
+                        sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
                         gitlabCommitStatus(name: 'ci/backend') {
                             sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
                             junit allowEmptyResults: false,
