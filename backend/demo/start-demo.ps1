@@ -12,6 +12,7 @@ $repositoryDirectory = Split-Path $backendDirectory -Parent
 $runtimeDirectory = Join-Path $repositoryDirectory "runtime\demo"
 $clipDirectory = Join-Path $demoDirectory "generated-clips"
 $seedFile = Join-Path $demoDirectory "seed.sql"
+$ownerFixtureFile = Join-Path $demoDirectory "seed-owner-registration-fixtures.sql"
 
 if (-not (Test-Path -LiteralPath $SourceVideo)) {
     throw "Source video not found: $SourceVideo"
@@ -157,6 +158,12 @@ mc cp /clips/demo-clip-03.mp4 local/wj-videos/private/10000000-0000-0000-0000-00
         -f /tmp/wj-demo-seed.sql
     if ($LASTEXITCODE -ne 0) { throw "Demo database seed failed" }
 
+    Write-Host "Seeding six OWNER registration accounts and cameras..."
+    & docker compose cp $ownerFixtureFile postgres:/tmp/wj-owner-registration-fixtures.sql | Out-Null
+    & docker compose exec -T postgres psql -U wj -d wj `
+        -f /tmp/wj-owner-registration-fixtures.sql
+    if ($LASTEXITCODE -ne 0) { throw "OWNER registration fixture seed failed" }
+
     Write-Host "Verifying demo login and device access..."
     function Get-DemoSession {
         param(
@@ -201,6 +208,17 @@ mc cp /clips/demo-clip-03.mp4 local/wj-videos/private/10000000-0000-0000-0000-00
     if (-not $pendingInvitation) {
         throw "Demo request account did not receive the seeded VIEWER invitation"
     }
+
+    foreach ($fixtureNumber in 1..6) {
+        $suffix = $fixtureNumber.ToString("00")
+        $ownerSession = Get-DemoSession `
+            -Email "admin${suffix}@wj.local" `
+            -Password "WjAdmin${suffix}!2026"
+        $ownerDevices = Get-DemoDevices -AccessToken $ownerSession.accessToken
+        if ($ownerDevices.Count -ne 0) {
+            throw "Demo owner account admin${suffix}@wj.local must start without a device"
+        }
+    }
     Write-Host "Demo authentication and frontend entry fixtures are valid."
 
     $streamPidFile = Join-Path $runtimeDirectory "stream.pid"
@@ -222,6 +240,9 @@ mc cp /clips/demo-clip-03.mp4 local/wj-videos/private/10000000-0000-0000-0000-00
     Write-Host "Demo is ready."
     Write-Host "  Admin login : admin@wj.local / $AdminPassword"
     Write-Host "  Fixed code  : WJDE-2026 (claims the second camera)"
+    Write-Host "  OWNER tests : admin01@wj.local .. admin06@wj.local"
+    Write-Host "                passwords WjAdmin01!2026 .. WjAdmin06!2026"
+    Write-Host "                codes WJ01-2026 .. WJ06-2026"
     Write-Host "  API         : http://localhost:8080"
     Write-Host "  Live HLS    : $DemoLiveHlsUrl"
     Write-Host "  Clips       : $clipDirectory"
