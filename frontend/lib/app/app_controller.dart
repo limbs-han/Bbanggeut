@@ -287,26 +287,28 @@ class AppController extends ChangeNotifier {
     }
   });
 
-  Future<bool> createInvitation(String email) async => _guard(() async {
-    final device = selectedDevice;
-    if (device == null || !device.isOwner) return;
-    final requestToken =
-        pendingMembershipRequestPreview?.email.toLowerCase() ==
-            email.trim().toLowerCase()
-        ? pendingMembershipRequestToken
-        : null;
-    await api.createInvitation(
-      device.id,
-      email,
-      membershipRequestToken: requestToken,
-    );
-    if (requestToken != null) {
-      pendingMembershipRequestToken = null;
-      pendingMembershipRequestPreview = null;
-    }
-    sentInvitations = await api.listDeviceInvitations(device.id);
-    notifyListeners();
-  });
+  Future<bool> createInvitation(String email, String role) async =>
+      _guard(() async {
+        final device = selectedDevice;
+        if (device == null || !device.isOwner) return;
+        final requestToken =
+            pendingMembershipRequestPreview?.email.toLowerCase() ==
+                email.trim().toLowerCase()
+            ? pendingMembershipRequestToken
+            : null;
+        await api.createInvitation(
+          device.id,
+          email,
+          role,
+          membershipRequestToken: requestToken,
+        );
+        if (requestToken != null) {
+          pendingMembershipRequestToken = null;
+          pendingMembershipRequestPreview = null;
+        }
+        sentInvitations = await api.listDeviceInvitations(device.id);
+        notifyListeners();
+      });
 
   Future<Uri?> createMembershipRequestLink() async {
     busy = true;

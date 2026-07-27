@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Invite flow: the OWNER invites a specific email address, and only the account
- * that owns that email can accept the invitation in-app to become a MEMBER. A
+ * that owns that email can accept the invitation in-app as an EDITOR or VIEWER. A
  * home camera is shared with named people, never through a link that can leak.
  */
 @Service
@@ -63,10 +63,12 @@ public class InvitationService {
         UUID userId,
         UUID deviceId,
         String email,
+        String role,
         String membershipRequestToken
     ) {
         requireOwner(userId, deviceId, "MEMBER_INVITE", "INVITATION", null);
         String inviteeEmail = normalizeEmail(email);
+        String inviteeRole = normalizeInviteRole(role);
         MembershipRequestRow membershipRequest = membershipRequestToken == null
             || membershipRequestToken.isBlank()
             ? null
@@ -80,7 +82,8 @@ public class InvitationService {
         }
         UUID invitationId = UUID.randomUUID();
         invitationMapper.insertInvitation(
-            invitationId, deviceId, userId, inviteeEmail, clock.instant().plus(properties.ttl()));
+            invitationId, deviceId, userId, inviteeEmail, inviteeRole,
+            clock.instant().plus(properties.ttl()));
         if (membershipRequest != null) {
             membershipRequestService.consume(
                 membershipRequestToken, membershipRequest, userId, invitationId);
@@ -115,7 +118,7 @@ public class InvitationService {
         return invitationMapper.findReceivedInvitations(email).stream().map(this::toInvitation).toList();
     }
 
-    /** The invited account accepts and becomes a MEMBER. */
+    /** The invited account accepts and receives the role selected by the OWNER. */
     @Transactional
     public DeviceMemberResponse acceptInvitation(UUID userId, UUID invitationId) {
         String email = invitationMapper.findUserEmail(userId).orElseThrow(this::notFound);
@@ -129,7 +132,7 @@ public class InvitationService {
         if (invitationMapper.acceptInvitation(invitationId, userId) != 1) {
             throw conflict("INVITATION_NOT_PENDING", "대기 중인 초대만 수락할 수 있습니다.");
         }
-        invitationMapper.activateMember(invitation.deviceId(), userId);
+        invitationMapper.activateMember(invitation.deviceId(), userId, invitation.role());
         DeviceMemberResponse response = invitationMapper.findMembership(invitation.deviceId(), userId)
             .map(this::toMember)
             .orElseThrow(this::notFound);
@@ -169,7 +172,7 @@ public class InvitationService {
             throw conflict("OWNER_CANNOT_BE_REVOKED", "OWNER 멤버십은 이 API로 회수할 수 없습니다.");
         }
         if (!"ACTIVE".equals(target.status()) || invitationMapper.revokeMember(membershipId, userId) != 1) {
-            throw conflict("MEMBERSHIP_NOT_ACTIVE", "활성 MEMBER 멤버십만 회수할 수 있습니다.");
+            throw conflict("MEMBERSHIP_NOT_ACTIVE", "활성 EDITOR 또는 VIEWER만 회수할 수 있습니다.");
         }
         auditService.success(deviceId, userId, "MEMBER_REVOKE", "MEMBERSHIP", membershipId);
     }
@@ -200,7 +203,7 @@ public class InvitationService {
             : new UserSummary(row.inviterId(), row.inviterEmail(), row.inviterDisplayName());
         return new InvitationResponse(
             row.id(), row.deviceId(), row.deviceName(), row.inviteeEmail(),
-            inviter, row.status(), row.expiresAt(), row.createdAt());
+            row.role(), inviter, row.status(), row.expiresAt(), row.createdAt());
     }
 
     private DeviceMemberResponse toMember(MembershipRow row) {
@@ -213,11 +216,23 @@ public class InvitationService {
         return email == null ? "" : email.trim().toLowerCase();
     }
 
+    private String normalizeInviteRole(String role) {
+        String normalized = role == null ? "" : role.trim().toUpperCase();
+        if (!"EDITOR".equals(normalized) && !"VIEWER".equals(normalized)) {
+            throw validation("role은 EDITOR 또는 VIEWER여야 합니다.");
+        }
+        return normalized;
+    }
+
     private ApiException notFound() {
         return new ApiException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다.");
     }
 
     private ApiException conflict(String code, String message) {
         return new ApiException(HttpStatus.CONFLICT, code, message);
+    }
+
+    private ApiException validation(String message) {
+        return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED", message);
     }
 }

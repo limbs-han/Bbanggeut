@@ -11,6 +11,7 @@ public record InvitationRow(
     String inviterEmail,
     String inviterDisplayName,
     String inviteeEmail,
+    String role,
     String status,
     Instant expiresAt,
     Instant createdAt

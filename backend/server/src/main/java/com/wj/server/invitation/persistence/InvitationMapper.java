@@ -49,21 +49,25 @@ public interface InvitationMapper {
     boolean pendingInvitationExists(@Param("deviceId") UUID deviceId, @Param("email") String email);
 
     @Insert("""
-        INSERT INTO invitations (id, device_id, inviter_id, invitee_email, expires_at)
-        VALUES (#{id}, #{deviceId}, #{inviterId}, lower(btrim(#{inviteeEmail})), #{expiresAt})
+        INSERT INTO invitations (id, device_id, inviter_id, invitee_email, role, expires_at)
+        VALUES (
+            #{id}, #{deviceId}, #{inviterId}, lower(btrim(#{inviteeEmail})),
+            #{role}::device_role, #{expiresAt}
+        )
         """)
     int insertInvitation(
         @Param("id") UUID id,
         @Param("deviceId") UUID deviceId,
         @Param("inviterId") UUID inviterId,
         @Param("inviteeEmail") String inviteeEmail,
+        @Param("role") String role,
         @Param("expiresAt") Instant expiresAt
     );
 
     @Select("""
         SELECT i.id, i.device_id, d.name AS device_name,
                i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
-               i.invitee_email, i.status::text, i.expires_at, i.created_at
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
           FROM invitations i
           JOIN devices d ON d.id = i.device_id
           LEFT JOIN users iu ON iu.id = i.inviter_id
@@ -77,7 +81,7 @@ public interface InvitationMapper {
     @Select("""
         SELECT i.id, i.device_id, d.name AS device_name,
                i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
-               i.invitee_email, i.status::text, i.expires_at, i.created_at
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
           FROM invitations i
           JOIN devices d ON d.id = i.device_id
           LEFT JOIN users iu ON iu.id = i.inviter_id
@@ -89,7 +93,7 @@ public interface InvitationMapper {
     @Select("""
         SELECT i.id, i.device_id, d.name AS device_name,
                i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
-               i.invitee_email, i.status::text, i.expires_at, i.created_at
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
           FROM invitations i
           JOIN devices d ON d.id = i.device_id
           LEFT JOIN users iu ON iu.id = i.inviter_id
@@ -102,7 +106,7 @@ public interface InvitationMapper {
     @Select("""
         SELECT i.id, i.device_id, d.name AS device_name,
                i.inviter_id, iu.email AS inviter_email, iu.display_name AS inviter_display_name,
-               i.invitee_email, i.status::text, i.expires_at, i.created_at
+               i.invitee_email, i.role::text, i.status::text, i.expires_at, i.created_at
           FROM invitations i
           JOIN devices d ON d.id = i.device_id
           LEFT JOIN users iu ON iu.id = i.inviter_id
@@ -148,12 +152,16 @@ public interface InvitationMapper {
 
     @Insert("""
         INSERT INTO device_memberships (device_id, user_id, role, status, joined_at)
-        VALUES (#{deviceId}, #{userId}, 'MEMBER', 'ACTIVE', now())
+        VALUES (#{deviceId}, #{userId}, #{role}::device_role, 'ACTIVE', now())
         ON CONFLICT (device_id, user_id) DO UPDATE
-            SET role = 'MEMBER', status = 'ACTIVE', joined_at = now(),
+            SET role = EXCLUDED.role, status = 'ACTIVE', joined_at = now(),
                 revoked_at = NULL, revoked_by = NULL, updated_at = now()
         """)
-    int activateMember(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
+    int activateMember(
+        @Param("deviceId") UUID deviceId,
+        @Param("userId") UUID userId,
+        @Param("role") String role
+    );
 
     @Select("""
         SELECT m.id, m.device_id, m.user_id, u.email, u.display_name,
@@ -193,7 +201,7 @@ public interface InvitationMapper {
     @Update("""
         UPDATE device_memberships
            SET status = 'REVOKED', revoked_at = now(), revoked_by = #{ownerId}, updated_at = now()
-         WHERE id = #{membershipId} AND role = 'MEMBER' AND status = 'ACTIVE'
+         WHERE id = #{membershipId} AND role IN ('EDITOR', 'VIEWER') AND status = 'ACTIVE'
         """)
     int revokeMember(@Param("membershipId") UUID membershipId, @Param("ownerId") UUID ownerId);
 }

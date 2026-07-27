@@ -15,6 +15,7 @@ public record InvitationResponse(
     UUID deviceId,
     String deviceName,
     String inviteeEmail,
+    String role,
     UserSummary inviter,
     String status,
     Instant expiresAt,

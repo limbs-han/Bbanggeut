@@ -15,6 +15,7 @@ class FamilyScreen extends StatefulWidget {
 
 class _FamilyScreenState extends State<FamilyScreen> {
   final inviteEmail = TextEditingController();
+  String inviteRole = 'VIEWER';
   String? appliedMembershipRequestToken;
 
   AppController get controller => widget.controller;
@@ -217,6 +218,28 @@ class _FamilyScreenState extends State<FamilyScreen> {
                               ],
                             ),
                             const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: inviteRole,
+                              decoration: const InputDecoration(
+                                labelText: '권한',
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'VIEWER',
+                                  child: Text('VIEWER · 영상 보기'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'EDITOR',
+                                  child: Text('EDITOR · 보기 및 편집'),
+                                ),
+                              ],
+                              onChanged: controller.busy
+                                  ? null
+                                  : (value) => setState(
+                                      () => inviteRole = value ?? 'VIEWER',
+                                    ),
+                            ),
+                            const SizedBox(height: 10),
                             if (controller.pendingMembershipRequestPreview !=
                                 null) ...[
                               Container(
@@ -336,7 +359,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
       showAppSnack(context, '올바른 이메일 주소를 입력해 주세요.', error: true);
       return;
     }
-    final ok = await controller.createInvitation(email);
+    final ok = await controller.createInvitation(email, inviteRole);
     if (!mounted) return;
     if (ok) {
       inviteEmail.clear();
@@ -391,18 +414,28 @@ class _MemberTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: member.role == 'OWNER'
-          ? const StatusPill(label: '소유자', color: AppColors.sageSoft)
-          : controller.selectedDevice!.isOwner
-          ? PopupMenuButton<String>(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StatusPill(
+            label: switch (member.role) {
+              'OWNER' => '소유자',
+              'EDITOR' => '편집자',
+              _ => '뷰어',
+            },
+            color: AppColors.sageSoft,
+          ),
+          if (member.role != 'OWNER' && controller.selectedDevice!.isOwner)
+            PopupMenuButton<String>(
               onSelected: (action) =>
                   action == 'transfer' ? _transfer(context) : _revoke(context),
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'transfer', child: Text('소유권 넘기기')),
                 PopupMenuItem(value: 'revoke', child: Text('구성원 내보내기')),
               ],
-            )
-          : const StatusPill(label: '멤버', color: AppColors.sageSoft),
+            ),
+        ],
+      ),
     );
   }
 
@@ -412,7 +445,7 @@ class _MemberTile extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('소유권을 넘길까요?'),
         content: Text(
-          '${member.user.displayName}님이 새 OWNER가 되고 나는 MEMBER가 됩니다.',
+          '${member.user.displayName}님이 새 OWNER가 되고 나는 EDITOR가 됩니다.',
         ),
         actions: [
           TextButton(
@@ -489,7 +522,7 @@ class _SentInvitationCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 Text(
-                  _invitationStatusLabel(invitation.status),
+                  '${invitation.role} · ${_invitationStatusLabel(invitation.status)}',
                   style: const TextStyle(fontSize: 11, color: AppColors.muted),
                 ),
               ],

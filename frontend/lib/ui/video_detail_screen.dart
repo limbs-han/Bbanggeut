@@ -26,6 +26,7 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
   late VideoMemory video;
   bool loading = true;
   String? error;
+  bool get canEdit => widget.controller.selectedDevice?.canEditVideos == true;
 
   @override
   void initState() {
@@ -180,41 +181,42 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
               ),
             ),
             actions: [
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: CircleAvatar(
-                  backgroundColor: const Color(0x9B2D312B),
-                  child: IconButton(
-                    onPressed: () async {
-                      await widget.controller.toggleFavorite(video);
-                      if (mounted) {
-                        setState(
-                          () => video = VideoMemory(
-                            id: video.id,
-                            deviceId: video.deviceId,
-                            triggerType: video.triggerType,
-                            sourceType: video.sourceType,
-                            title: video.title,
-                            status: video.status,
-                            favorite: !video.favorite,
-                            description: video.description,
-                            durationMs: video.durationMs,
-                            thumbnailUrl: video.thumbnailUrl,
-                            capturedStartAt: video.capturedStartAt,
-                            createdAt: video.createdAt,
-                          ),
-                        );
-                      }
-                    },
-                    icon: Icon(
-                      video.favorite
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      color: Colors.white,
+              if (canEdit)
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: CircleAvatar(
+                    backgroundColor: const Color(0x9B2D312B),
+                    child: IconButton(
+                      onPressed: () async {
+                        await widget.controller.toggleFavorite(video);
+                        if (mounted) {
+                          setState(
+                            () => video = VideoMemory(
+                              id: video.id,
+                              deviceId: video.deviceId,
+                              triggerType: video.triggerType,
+                              sourceType: video.sourceType,
+                              title: video.title,
+                              status: video.status,
+                              favorite: !video.favorite,
+                              description: video.description,
+                              durationMs: video.durationMs,
+                              thumbnailUrl: video.thumbnailUrl,
+                              capturedStartAt: video.capturedStartAt,
+                              createdAt: video.createdAt,
+                            ),
+                          );
+                        }
+                      },
+                      icon: Icon(
+                        video.favorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
             flexibleSpace: FlexibleSpaceBar(background: _media()),
           ),
@@ -231,11 +233,12 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                         color: triggerColor(video.triggerType),
                       ),
                       const Spacer(),
-                      RoundIconButton(
-                        icon: Icons.edit_outlined,
-                        size: 42,
-                        onPressed: _editMetadata,
-                      ),
+                      if (canEdit)
+                        RoundIconButton(
+                          icon: Icons.edit_outlined,
+                          size: 42,
+                          onPressed: _editMetadata,
+                        ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -272,14 +275,16 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: video.status == 'READY'
-                        ? _openVideoEditor
-                        : null,
-                    icon: const Icon(Icons.auto_awesome_rounded),
-                    label: const Text('영상 편집하기'),
-                  ),
-                  const SizedBox(height: 10),
+                  if (canEdit) ...[
+                    FilledButton.icon(
+                      onPressed: video.status == 'READY'
+                          ? _openVideoEditor
+                          : null,
+                      icon: const Icon(Icons.auto_awesome_rounded),
+                      label: const Text('영상 편집하기'),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   Row(
                     children: [
                       Expanded(
@@ -289,16 +294,18 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                           label: const Text('저장'),
                         ),
                       ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: video.status == 'READY'
-                              ? () => _openVideoEditor(drafts: true)
-                              : null,
-                          icon: const Icon(Icons.edit_note_rounded),
-                          label: const Text('저장된 초안'),
+                      if (canEdit) ...[
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: video.status == 'READY'
+                                ? () => _openVideoEditor(drafts: true)
+                                : null,
+                            icon: const Icon(Icons.edit_note_rounded),
+                            label: const Text('저장된 초안'),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 24),

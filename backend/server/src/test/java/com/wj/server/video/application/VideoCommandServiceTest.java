@@ -41,6 +41,7 @@ class VideoCommandServiceTest {
         request.setTitle("  새 제목  ");
         request.setDescription(null);
         when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("EDITOR"));
         when(mapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
 
         service.update(userId, video.id(), request);
@@ -57,11 +58,29 @@ class VideoCommandServiceTest {
     }
 
     @Test
-    void memberCannotDeleteButResourceIsNotHidden() {
+    void viewerCannotUpdateVideoMetadata() {
+        UUID userId = UUID.randomUUID();
+        VideoRow video = video();
+        UpdateVideoRequest request = new UpdateVideoRequest();
+        request.setTitle("새 제목");
+        when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("VIEWER"));
+
+        assertThatThrownBy(() -> service.update(userId, video.id(), request))
+            .isInstanceOf(ApiException.class)
+            .satisfies(exception -> {
+                ApiException apiException = (ApiException) exception;
+                assertThat(apiException.status().value()).isEqualTo(403);
+                assertThat(apiException.code()).isEqualTo("FORBIDDEN_ROLE");
+            });
+    }
+
+    @Test
+    void editorCannotDeleteButResourceIsNotHidden() {
         UUID userId = UUID.randomUUID();
         VideoRow video = video();
         when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
-        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("EDITOR"));
 
         assertThatThrownBy(() -> service.delete(userId, video.id()))
             .isInstanceOf(ApiException.class)

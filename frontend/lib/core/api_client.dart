@@ -255,13 +255,15 @@ class ApiClient {
   );
   Future<Invitation> createInvitation(
     String deviceId,
-    String email, {
+    String email,
+    String role, {
     String? membershipRequestToken,
   }) async => Invitation.fromJson(
     await _post(
       '/api/devices/$deviceId/invitations',
       data: {
         'email': email.trim(),
+        'role': role,
         'membershipRequestToken': ?membershipRequestToken,
       },
     ),

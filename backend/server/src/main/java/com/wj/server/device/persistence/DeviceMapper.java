@@ -179,18 +179,18 @@ public interface DeviceMapper {
 
     @Update("""
         UPDATE device_memberships
-           SET role = 'MEMBER', updated_at = now()
+           SET role = 'EDITOR', updated_at = now()
          WHERE device_id = #{deviceId} AND user_id = #{userId}
            AND role = 'OWNER' AND status = 'ACTIVE'
         """)
-    int demoteOwnerToMember(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
+    int demoteOwnerToEditor(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
 
     @Update("""
         UPDATE device_memberships
            SET role = 'OWNER', updated_at = now()
          WHERE id = #{membershipId} AND device_id = #{deviceId}
-           AND role = 'MEMBER' AND status = 'ACTIVE'
+           AND role IN ('EDITOR', 'VIEWER') AND status = 'ACTIVE'
         """)
-    int promoteMemberToOwner(@Param("deviceId") UUID deviceId, @Param("membershipId") UUID membershipId);
+    int promoteNonOwnerToOwner(@Param("deviceId") UUID deviceId, @Param("membershipId") UUID membershipId);
 
 }

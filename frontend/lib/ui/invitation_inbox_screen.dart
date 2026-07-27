@@ -162,6 +162,14 @@ class _InvitationCard extends StatelessWidget {
                           color: AppColors.muted,
                         ),
                       ),
+                      Text(
+                        invitation.role == 'EDITOR' ? '편집자로 참여' : '뷰어로 참여',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.sageDark,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                   ),
                 ),

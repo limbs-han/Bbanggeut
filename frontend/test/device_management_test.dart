@@ -146,6 +146,7 @@ void main() {
       'deviceId': 'device-1',
       'deviceName': '거실 카메라',
       'inviteeEmail': 'family@example.com',
+      'role': 'VIEWER',
       'inviter': {
         'id': 'owner-1',
         'email': 'owner@example.com',
@@ -158,6 +159,7 @@ void main() {
 
     expect(invitation.deviceName, '거실 카메라');
     expect(invitation.inviteeEmail, 'family@example.com');
+    expect(invitation.role, 'VIEWER');
     expect(invitation.inviter?.displayName, '소유자');
     expect(invitation.isPending, isTrue);
     expect(invitation.expiresAt, isNotNull);
@@ -170,6 +172,7 @@ void main() {
       deviceId: 'device-1',
       deviceName: '거실 카메라',
       inviteeEmail: 'member@example.com',
+      role: 'EDITOR',
       status: 'PENDING',
     );
     final controller = AppController(api: api)
@@ -220,7 +223,7 @@ class _AcceptInvitationApiClient extends ApiClient {
     name: '거실 카메라',
     model: 'test',
     status: 'ONLINE',
-    myRole: 'MEMBER',
+    myRole: 'EDITOR',
     retentionDays: 30,
   );
 
@@ -234,7 +237,7 @@ class _AcceptInvitationApiClient extends ApiClient {
         email: 'member@example.com',
         displayName: '구성원',
       ),
-      role: 'MEMBER',
+      role: 'EDITOR',
       status: 'ACTIVE',
     );
   }
