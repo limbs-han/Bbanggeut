@@ -115,8 +115,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   Future<void> _launchEditor({bool enableAiCaptions = false}) async {
-    final sourcePath = _sourcePath;
-    if (sourcePath == null || _launching) return;
+    if (!await _canLaunchEditor()) return;
+    final sourcePath = _sourcePath!;
     await _preview?.pause();
     if (!mounted) return;
     setState(() {
@@ -146,8 +146,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   Future<void> _launchPortraitAiEdit() async {
-    final sourcePath = _sourcePath;
-    if (sourcePath == null || _launching) return;
+    if (!await _canLaunchEditor()) return;
+    final sourcePath = _sourcePath!;
     await _preview?.pause();
     if (!mounted) return;
     setState(() {
@@ -183,6 +183,25 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       });
       showAppSnack(context, '$failure', error: true);
     }
+  }
+
+  Future<bool> _canLaunchEditor() async {
+    if (_launching) return false;
+    final configured = await _editor.isConfigured;
+    if (!mounted) return false;
+    if (!configured) {
+      showAppSnack(
+        context,
+        'Banuba 토큰이 적용되지 않았어요. 토큰 설정으로 앱을 다시 실행해 주세요.',
+        error: true,
+      );
+      return false;
+    }
+    if (_sourcePath == null) {
+      showAppSnack(context, '영상을 불러오는 중이에요. 잠시만 기다려 주세요.');
+      return false;
+    }
+    return true;
   }
 
   Future<String> _downloadSource() async {
@@ -361,7 +380,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           ],
         ),
       ),
-      _EditorToolbar(onTap: _launchEditor),
+      _EditorToolbar(onTap: _launchEditor, enabled: false),
     ],
   );
 
@@ -406,7 +425,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           ],
         ),
       ),
-      _EditorToolbar(onTap: () {}),
+      _EditorToolbar(onTap: _launchEditor, enabled: false),
     ],
   );
 
@@ -549,7 +568,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             ],
           ),
         ),
-        _EditorToolbar(onTap: _launchEditor),
+        _EditorToolbar(onTap: _launchEditor, enabled: !_launching),
       ],
     );
   }
@@ -700,9 +719,10 @@ class _AiCircleButton extends StatelessWidget {
 }
 
 class _EditorToolbar extends StatelessWidget {
-  const _EditorToolbar({required this.onTap});
+  const _EditorToolbar({required this.onTap, this.enabled = true});
 
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -716,12 +736,28 @@ class _EditorToolbar extends StatelessWidget {
           icon: Icons.crop_rounded,
           label: '자르기',
           selected: true,
-          onTap: onTap,
+          onTap: enabled ? onTap : null,
         ),
-        _Tool(icon: Icons.text_fields_rounded, label: '자막', onTap: onTap),
-        _Tool(icon: Icons.music_note_rounded, label: '오디오', onTap: onTap),
-        _Tool(icon: Icons.auto_awesome_rounded, label: '효과', onTap: onTap),
-        _Tool(icon: Icons.view_in_ar_rounded, label: 'AR', onTap: onTap),
+        _Tool(
+          icon: Icons.text_fields_rounded,
+          label: '자막',
+          onTap: enabled ? onTap : null,
+        ),
+        _Tool(
+          icon: Icons.music_note_rounded,
+          label: '오디오',
+          onTap: enabled ? onTap : null,
+        ),
+        _Tool(
+          icon: Icons.auto_awesome_rounded,
+          label: '효과',
+          onTap: enabled ? onTap : null,
+        ),
+        _Tool(
+          icon: Icons.view_in_ar_rounded,
+          label: 'AR',
+          onTap: enabled ? onTap : null,
+        ),
       ],
     ),
   );
@@ -737,7 +773,7 @@ class _Tool extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool selected;
 
   @override
@@ -753,19 +789,24 @@ class _Tool extends StatelessWidget {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: selected ? AppColors.sageSoft : Colors.transparent,
+              color: selected && onTap != null
+                  ? AppColors.sageSoft
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(icon, color: AppColors.inkSoft, size: 27),
+            child: Icon(
+              icon,
+              color: onTap == null ? AppColors.muted : AppColors.inkSoft,
+              size: 27,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(
-              color: AppColors.inkSoft,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)
+                .copyWith(
+                  color: onTap == null ? AppColors.muted : AppColors.inkSoft,
+                ),
           ),
         ],
       ),

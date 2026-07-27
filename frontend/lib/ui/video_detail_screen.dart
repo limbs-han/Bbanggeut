@@ -4,6 +4,7 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
 import 'local_edit_screen.dart';
 import 'widgets.dart';
@@ -81,6 +82,19 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
       }
     } catch (failure) {
       if (mounted) showAppSnack(context, '$failure', error: true);
+    }
+  }
+
+  Future<void> _openVideoEditor() async {
+    final result = await Navigator.push<SavedBanubaEdit>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            LocalEditScreen(controller: widget.controller, video: video),
+      ),
+    );
+    if (mounted && result != null) {
+      showAppSnack(context, '편집 영상을 저장했어요.');
     }
   }
 
@@ -278,8 +292,8 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                   ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
-                    onPressed: _editMetadata,
-                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: _openVideoEditor,
+                    icon: const Icon(Icons.video_settings_outlined),
                     label: const Text('영상 편집하기'),
                   ),
                   const SizedBox(height: 10),
@@ -295,17 +309,9 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                       const SizedBox(width: 9),
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => LocalEditScreen(
-                                controller: widget.controller,
-                                video: video,
-                              ),
-                            ),
-                          ),
-                          icon: const Icon(Icons.content_cut_rounded),
-                          label: const Text('구간 편집'),
+                          onPressed: _editMetadata,
+                          icon: const Icon(Icons.edit_note_rounded),
+                          label: const Text('제목·메모'),
                         ),
                       ),
                     ],

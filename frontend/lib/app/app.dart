@@ -106,10 +106,15 @@ class _SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset(
-              'assets/images/bbanggeut_logo.png',
-              width: 190,
-              fit: BoxFit.contain,
+            SizedBox(
+              width: 240,
+              height: 90,
+              child: Image.asset(
+                'assets/images/bbanggeut_logo.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                semanticLabel: '빵긋 로딩 로고',
+              ),
             ),
             const SizedBox(height: 18),
             const Text(
