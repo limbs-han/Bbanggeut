@@ -46,7 +46,7 @@ publish_sample() {
     local log_file="$3"
     timeout "$((duration + 8))" "$FFMPEG_PATH" \
         -hide_banner -nostdin -loglevel error \
-        -f lavfi -i "color=c=black:s=160x90:r=5" \
+        -re -f lavfi -i "color=c=black:s=160x90:r=5" \
         -t "$duration" -an \
         -c:v libx264 -preset ultrafast -tune zerolatency -g 5 \
         -tls_verify 1 -ca_file "$MEDIA_TLS_CA_CERT" \
