@@ -59,14 +59,16 @@ class FlywayMigrationIntegrationTest {
         var result = flyway.migrate();
 
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("16");
+        assertThat(result.targetSchemaVersion).isEqualTo("23");
         try (var connection = DriverManager.getConnection(
             jdbcUrl, username, password);
              var statement = connection.prepareStatement(
-                 "select count(*) from information_schema.tables where table_name in ('auth_login_attempts', 'device_credentials')");
+                 "select count(*) from information_schema.tables where table_name in "
+                     + "('auth_login_attempts', 'device_credentials', 'device_events', "
+                     + "'membership_request_links')");
              var rows = statement.executeQuery()) {
             rows.next();
-            assertThat(rows.getInt(1)).isEqualTo(2);
+            assertThat(rows.getInt(1)).isEqualTo(4);
         }
     }
 

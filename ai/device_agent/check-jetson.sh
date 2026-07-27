@@ -32,16 +32,31 @@ CAMERA_FPS="${CAMERA_FPS:-30}"
 CAMERA_INPUT_FORMAT="${CAMERA_INPUT_FORMAT:-mjpeg}"
 FFMPEG_PATH="${FFMPEG_PATH:-/usr/bin/ffmpeg}"
 MEDIA_TUNNEL_LOCAL_PORT="${MEDIA_TUNNEL_LOCAL_PORT:-18554}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 check "FFmpeg executable" test -x "$FFMPEG_PATH"
 check "camera device ${CAMERA_DEVICE}" test -r "$CAMERA_DEVICE"
 check "MQTT CA certificate" test -r "${MQTT_CA_CERT:-/missing}"
-check "media SSH key" test -r "${MEDIA_SSH_KEY:-/missing}"
-check "media SSH known_hosts" test -r "${MEDIA_SSH_KNOWN_HOSTS:-/missing}"
 check "MQTT TLS port ${MQTT_HOST:-missing}:${MQTT_PORT:-8883}" \
     timeout 5 bash -c "</dev/tcp/${MQTT_HOST:-missing}/${MQTT_PORT:-8883}"
-check "local MediaMTX tunnel port ${MEDIA_TUNNEL_LOCAL_PORT}" \
-    timeout 3 bash -c "</dev/tcp/127.0.0.1/${MEDIA_TUNNEL_LOCAL_PORT}"
+
+case "${MEDIA_PUBLISH_URL_TEMPLATE:-}" in
+    rtsps://*)
+        check "MediaMTX CA certificate" test -r "${MEDIA_TLS_CA_CERT:-/missing}"
+        check "MediaMTX RTSPS certificate and hostname" \
+            "$SCRIPT_DIR/verify-mediamtx-rtsps.sh" "$ENV_FILE"
+        ;;
+    rtsp://127.0.0.1:*|rtsp://localhost:*|rtsp://*@127.0.0.1:*|rtsp://*@localhost:*)
+        check "media SSH key" test -r "${MEDIA_SSH_KEY:-/missing}"
+        check "media SSH known_hosts" test -r "${MEDIA_SSH_KNOWN_HOSTS:-/missing}"
+        check "local MediaMTX tunnel port ${MEDIA_TUNNEL_LOCAL_PORT}" \
+            timeout 3 bash -c "</dev/tcp/127.0.0.1/${MEDIA_TUNNEL_LOCAL_PORT}"
+        ;;
+    *)
+        printf '[FAIL] MEDIA_PUBLISH_URL_TEMPLATE must use direct RTSPS or the loopback rollback tunnel\n' >&2
+        failures=$((failures + 1))
+        ;;
+esac
 
 if [[ -x "$FFMPEG_PATH" && -r "$CAMERA_DEVICE" ]]; then
     check "one-second camera capture" timeout 8 "$FFMPEG_PATH" \

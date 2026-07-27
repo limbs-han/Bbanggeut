@@ -25,7 +25,7 @@ tags:
   - name: Streaming
     description: 활성 시청자가 있을 때만 동작하는 실시간 보기 세션
   - name: Invitations
-    description: 기기별 초대 링크 공유, 가입 요청과 OWNER 승인·거절, 구성원 관리
+    description: OWNER가 특정 이메일 계정을 초대하고 초대받은 사용자가 앱에서 수락·거절하는 구성원 관리
   - name: Videos
     description: 기기별 영상 조회·재생·원본 다운로드·삭제. 일반 편집은 앱 로컬 처리
   - name: IoT
@@ -248,7 +248,10 @@ paths:
       tags: [Devices]
       operationId: revokeDevice
       summary: 기기 등록 해제
-      description: 해당 기기의 활성 OWNER만 수행할 수 있다. 영상을 즉시 물리 삭제하지 않고 보존 정책에 따라 처리한다.
+      description: |
+        해당 기기의 활성 OWNER만 수행할 수 있다. 멤버십·기기 HTTP Credential·MQTT
+        identity를 폐기하고 영상을 비동기로 삭제한다. 같은 물리 기기를 다시 사용하려면
+        새 device identity와 bootstrap credential을 발급하는 재프로비저닝이 필요하다.
       responses:
         '204':
           description: 등록 해제 요청 완료
@@ -267,10 +270,10 @@ paths:
       operationId: transferOwnership
       summary: 기기 소유권 이전
       description: |
-        현재 OWNER가 같은 기기의 활성 MEMBER에게 소유권을 넘긴다. 한 트랜잭션에서
-        기존 OWNER는 MEMBER로 강등되고 대상이 OWNER로 승격된다. 영상·구성원·설정·구독은
-        모두 유지된다(기기 행 불변). 외부인에게 넘기려면 먼저 초대·승인으로 MEMBER로
-        만들거나, 영상을 삭제하는 기기 해제(양도) 절차를 사용한다.
+        현재 OWNER가 같은 기기의 활성 EDITOR 또는 VIEWER에게 소유권을 넘긴다. 한 트랜잭션에서
+        기존 OWNER는 EDITOR로 강등되고 대상이 OWNER로 승격된다. 영상·구성원·설정·구독은
+        모두 유지된다(기기 행 불변). 외부인에게 넘기려면 먼저 초대·승인으로 구성원으로
+        만든다. 외부인에게 물리 기기 자체를 넘길 때는 기기 해제 후 재프로비저닝한다.
       requestBody:
         required: true
         content:
@@ -287,7 +290,7 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
         '409':
-          description: 대상이 활성 MEMBER가 아니거나 본인임
+          description: 대상이 활성 EDITOR·VIEWER가 아니거나 본인임
           content:
             application/json:
               schema:
@@ -384,6 +387,40 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /api/devices/{deviceId}/event-stats:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Devices]
+      operationId: getDeviceEventStats
+      summary: 원시 감지 이벤트 통계 조회
+      description: |
+        활성 OWNER, EDITOR 또는 VIEWER가 조회한다. 영상 업로드 성공 여부와 무관한 원시 감지 횟수,
+        READY 영상 연결 수, 유형별·일자별 집계를 반환한다. 기본 기간은 최근 30일이며 최대 366일이다.
+      parameters:
+        - name: from
+          in: query
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          schema: {type: string, format: date}
+        - name: timeZone
+          in: query
+          schema: {type: string, default: Asia/Seoul}
+      responses:
+        '200':
+          description: 원시 감지 및 업로드 성공 집계
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /api/devices/{deviceId}/stream-sessions:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
@@ -392,7 +429,7 @@ paths:
       operationId: createStreamSession
       summary: 온디맨드 실시간 보기 세션 시작
       description: |
-        OWNER 또는 MEMBER의 활성 기기 멤버십을 확인한 뒤 시청자 세션을 만든다.
+        OWNER, EDITOR 또는 VIEWER의 활성 기기 멤버십을 확인한 뒤 시청자 세션을 만든다.
         이미 같은 기기의 송출이 있으면 하나의 edge 송출을 여러 시청자가 공유하고 MQTT START를 다시 보내지 않는다.
         최초 시청자는 MQTT START 후 HLS 세그먼트가 준비될 때까지 수초간 `PENDING`일 수 있다.
 
@@ -506,7 +543,7 @@ paths:
       tags: [Devices]
       operationId: revokeDeviceMember
       summary: 구성원 접근 권한 회수
-      description: 활성 OWNER만 MEMBER를 회수할 수 있다. 다른 기기의 멤버십 ID도 404로 응답한다.
+      description: 활성 OWNER만 EDITOR 또는 VIEWER를 회수할 수 있다. 다른 기기의 멤버십 ID도 404로 응답한다.
       responses:
         '204':
           description: 권한 회수 완료
@@ -519,92 +556,54 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /api/devices/{deviceId}/invite-link:
+  /api/devices/{deviceId}/invitations:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
     post:
       tags: [Invitations]
-      operationId: createInviteLink
-      summary: 기기 초대 링크 생성·회전
+      operationId: createInvitation
+      summary: 이메일 계정으로 EDITOR 또는 VIEWER 초대
       description: |
-        활성 OWNER만 발급할 수 있다. 발급 시 이전 활성 링크는 즉시 무효화된다(회전).
-        평문 토큰은 이 응답에만 존재하며 서버는 해시만 저장한다. 링크는 기본 7일 후 만료된다.
-        링크만으로는 멤버십이 생기지 않고, 가입 요청 후 OWNER 승인을 거쳐야 한다.
-      responses:
-        '201':
-          description: 새 초대 링크
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InviteLink'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/ForbiddenRole'
-        '404':
-          $ref: '#/components/responses/HiddenNotFound'
-    delete:
-      tags: [Invitations]
-      operationId: revokeInviteLink
-      summary: 기기 초대 링크 무효화
-      description: 활성 OWNER만 수행할 수 있다.
-      responses:
-        '204':
-          description: 링크 무효화 완료
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/ForbiddenRole'
-        '404':
-          $ref: '#/components/responses/HiddenNotFound'
-
-  /api/join-requests:
-    post:
-      tags: [Invitations]
-      operationId: createJoinRequest
-      summary: 초대 링크로 가입 요청
-      description: |
-        로그인 사용자가 공유받은 초대 링크의 토큰을 제출한다. 무효·만료·회수된 토큰은 404로 응답해
-        존재를 숨긴다. 성공 시 PENDING 가입 요청이 생성되고 OWNER 승인 전까지 접근 권한이 없다.
+        활성 OWNER가 특정 이메일 계정을 초대한다. 공개 링크나 전달 가능한 토큰은 만들지 않는다.
+        초대받은 이메일로 로그인한 사용자만 앱의 받은 초대함에서 수락할 수 있다.
+        멤버 요청 링크에서 진입한 경우 membershipRequestToken을 함께 보내 요청을 1회 소비한다.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateJoinRequestRequest'
+              $ref: '#/components/schemas/CreateInvitationRequest'
       responses:
         '201':
-          description: 가입 요청 생성
+          description: 대기 중인 초대
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/JoinRequest'
+                $ref: '#/components/schemas/Invitation'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationError'
-
-  /api/devices/{deviceId}/join-requests:
-    parameters:
-      - $ref: '#/components/parameters/DeviceId'
     get:
       tags: [Invitations]
-      operationId: listPendingJoinRequests
-      summary: 대기 중인 가입 요청 목록
+      operationId: listDeviceInvitations
+      summary: 기기의 대기 중 초대 목록
       description: 활성 OWNER만 조회할 수 있다.
       responses:
         '200':
-          description: 대기 요청 목록
+          description: 대기 중 초대 목록
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/JoinRequest'
+                  $ref: '#/components/schemas/Invitation'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -612,22 +611,18 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
-  /api/devices/{deviceId}/join-requests/{requestId}/approve:
+  /api/devices/{deviceId}/invitations/{invitationId}:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
-      - $ref: '#/components/parameters/JoinRequestId'
-    post:
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
       tags: [Invitations]
-      operationId: approveJoinRequest
-      summary: 가입 요청 승인
-      description: 활성 OWNER만 수행하며, 승인 시 해당 사용자의 MEMBER 멤버십을 생성하거나 재활성화한다.
+      operationId: revokeInvitation
+      summary: 대기 중 초대 취소
+      description: 활성 OWNER만 수행할 수 있다.
       responses:
-        '200':
-          description: 승인 완료
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DeviceMember'
+        '204':
+          description: 초대 취소 완료
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -637,22 +632,129 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
-  /api/devices/{deviceId}/join-requests/{requestId}/reject:
-    parameters:
-      - $ref: '#/components/parameters/DeviceId'
-      - $ref: '#/components/parameters/JoinRequestId'
+  /api/invitations:
+    get:
+      tags: [Invitations]
+      operationId: listMyInvitations
+      summary: 내 받은 초대함
+      description: 로그인 계정 이메일과 일치하는 유효한 PENDING 초대만 반환한다.
+      responses:
+        '200':
+          description: 받은 초대 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/membership-request-links:
     post:
       tags: [Invitations]
-      operationId: rejectJoinRequest
-      summary: 가입 요청 거절
-      description: 활성 OWNER만 수행할 수 있다.
+      operationId: createMembershipRequestLink
+      summary: 멤버 초대 요청 링크 생성
+      description: |
+        로그인 사용자가 OWNER에게 전달할 24시간짜리 1회용 요청 토큰을 만든다.
+        링크는 카메라 접근 권한을 부여하지 않으며 이메일 원문을 포함하지 않는다.
+        새 링크를 만들면 이전 미사용 링크는 폐기된다.
       responses:
-        '204':
-          description: 거절 완료
+        '201':
+          description: 요청 링크 구성에 사용할 불투명 토큰
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipRequestLink'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/membership-request-links/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+    get:
+      tags: [Invitations]
+      operationId: previewMembershipRequest
+      summary: 멤버 요청자 확인
+      description: 활성 기기 OWNER만 요청자의 이메일과 표시 이름을 확인할 수 있다.
+      responses:
+        '200':
+          description: OWNER 초대 화면에 채울 요청자 정보
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipRequestPreview'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/membership-request-links/{token}/open:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+    get:
+      tags: [Invitations]
+      operationId: openMembershipRequest
+      summary: 앱 멤버 요청 화면으로 이동
+      description: 인증 없이 HTTPS 공유 링크를 앱의 custom scheme으로 리다이렉트한다. 이메일이나 요청자 정보는 반환하지 않는다.
+      security: []
+      responses:
+        '302':
+          description: bbanggeut://membership-request/{token}으로 이동
+          headers:
+            Location:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/invitations/{invitationId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      operationId: acceptInvitation
+      summary: 이메일 초대 수락
+      description: 초대 대상 이메일 계정만 수행할 수 있으며 초대에 지정된 EDITOR 또는 VIEWER 멤버십을 생성하거나 재활성화한다.
+      responses:
+        '200':
+          description: 초대 수락 및 멤버십 활성화
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/invitations/{invitationId}/decline:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      operationId: declineInvitation
+      summary: 이메일 초대 거절
+      description: 초대 대상 이메일 계정만 수행할 수 있다.
+      responses:
+        '204':
+          description: 초대 거절 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
         '409':
@@ -784,6 +886,7 @@ paths:
       tags: [Videos]
       operationId: updateVideo
       summary: 영상 제목·설명·즐겨찾기 수정
+      description: 해당 기기의 활성 OWNER 또는 EDITOR만 수행할 수 있다.
       requestBody:
         required: true
         content:
@@ -799,6 +902,8 @@ paths:
                 $ref: '#/components/schemas/Video'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
         '422':
@@ -859,35 +964,6 @@ paths:
           $ref: '#/components/responses/HiddenNotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-
-  /api/iot/registration-codes:
-    post:
-      tags: [IoT]
-      operationId: issueRegistrationCode
-      summary: IoT 1회용 등록 코드 발급
-      description: |
-        기기가 물리 버튼으로 등록 모드에 진입할 때 호출한다. `DeviceBearerAuth`로 인증한 기기가
-        `UNCLAIMED` 상태일 때만 허용한다. 서버는 CSPRNG로 8자리 등록 코드를 생성해
-        (혼동 문자를 제외한 대문자·숫자 32자 문자셋, 활성 코드 간 유일성 보장) 해시만 저장하고
-        평문은 이 응답에만 담는다. 기기는 코드를 7" LCD에 `XXXX-XXXX` 형식으로 표시한다.
-        코드와 등록 모드는 120초 후 만료되며, 재진입 시 항상 새 코드가 발급되고 이전 코드는 무효가 된다.
-      security:
-        - DeviceBearerAuth: []
-      responses:
-        '200':
-          description: 새 등록 코드
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RegistrationCodeResponse'
-        '401':
-          $ref: '#/components/responses/DeviceUnauthorized'
-        '409':
-          description: 이미 등록된 기기(UNCLAIMED가 아님)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
   /api/iot/registration-codes:
     post:
@@ -1051,8 +1127,8 @@ components:
       schema:
         type: string
         format: uuid
-    JoinRequestId:
-      name: requestId
+    InvitationId:
+      name: invitationId
       in: path
       required: true
       schema:
@@ -1266,7 +1342,7 @@ components:
 
     DeviceRole:
       type: string
-      enum: [OWNER, MEMBER]
+      enum: [OWNER, EDITOR, VIEWER]
 
     MembershipStatus:
       type: string
@@ -1501,39 +1577,53 @@ components:
         newOwnerMembershipId:
           type: string
           format: uuid
-          description: 같은 기기의 활성 MEMBER 멤버십 ID
+          description: 같은 기기의 활성 EDITOR 또는 VIEWER 멤버십 ID
 
-    InviteLink:
+    CreateInvitationRequest:
       type: object
-      required: [deviceId, inviteToken, expiresAt]
+      required: [email, role]
+      additionalProperties: false
       properties:
-        deviceId:
+        email:
           type: string
-          format: uuid
-        inviteToken:
+          format: email
+          maxLength: 320
+        role:
           type: string
-          description: 메신저 공유·딥링크용 원문. 응답 후 서버는 해시만 저장하며 재조회할 수 없다.
+          enum: [EDITOR, VIEWER]
+        membershipRequestToken:
+          type: string
+          maxLength: 200
+          nullable: true
+          description: 멤버 요청 링크에서 진입했을 때만 전달하는 불투명 토큰
+
+    MembershipRequestLink:
+      type: object
+      required: [token, expiresAt]
+      properties:
+        token:
+          type: string
+          description: 이 응답에만 포함되는 1회용 불투명 토큰
         expiresAt:
           type: string
           format: date-time
 
-    JoinRequestStatus:
-      type: string
-      enum: [PENDING, APPROVED, REJECTED, CANCELLED]
-
-    CreateJoinRequestRequest:
+    MembershipRequestPreview:
       type: object
-      required: [inviteToken]
-      additionalProperties: false
+      required: [email, displayName, expiresAt]
       properties:
-        inviteToken:
+        email:
           type: string
-          minLength: 16
-          maxLength: 100
+          format: email
+        displayName:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
 
-    JoinRequest:
+    Invitation:
       type: object
-      required: [id, deviceId, requester, status, requestedAt]
+      required: [id, deviceId, deviceName, inviteeEmail, role, status, expiresAt, createdAt]
       properties:
         id:
           type: string
@@ -1541,11 +1631,24 @@ components:
         deviceId:
           type: string
           format: uuid
-        requester:
+        deviceName:
+          type: string
+        inviteeEmail:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [EDITOR, VIEWER]
+        inviter:
           $ref: '#/components/schemas/UserSummary'
+          nullable: true
         status:
-          $ref: '#/components/schemas/JoinRequestStatus'
-        requestedAt:
+          type: string
+          enum: [PENDING, ACCEPTED, DECLINED, EXPIRED, REVOKED]
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
           type: string
           format: date-time
 
@@ -1704,6 +1807,39 @@ components:
           allOf:
             - $ref: '#/components/schemas/NamedCount'
           nullable: true
+
+    EventStats:
+      type: object
+      required: [deviceId, from, to, timeZone, detectedCount, uploadedVideoCount, byType, dailyCounts]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timeZone:
+          type: string
+          example: Asia/Seoul
+        detectedCount:
+          type: integer
+          format: int64
+          description: 영상 생성·업로드 성공 여부와 무관한 원시 감지 횟수
+        uploadedVideoCount:
+          type: integer
+          format: int64
+          description: READY 영상과 연결된 감지 횟수
+        byType:
+          type: array
+          items:
+            $ref: '#/components/schemas/NamedCount'
+        dailyCounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyCount'
 
     NamedCount:
       type: object

@@ -21,12 +21,35 @@ void main() {
     );
 
     expect(find.widgetWithText(FilledButton, '로그인'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is RichText &&
+            widget.text.toPlainText().startsWith('지나간 웃음도,\n추억이 됩니다. '),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.bySemanticsLabel('빵긋 로고')).dx,
+      lessThan(tester.getTopLeft(find.text('웃음이 머무는 우리 집')).dx),
+    );
 
     final signUpButton = find.widgetWithText(OutlinedButton, '회원가입');
     await tester.ensureVisible(signUpButton);
     await tester.tap(signUpButton);
     await tester.pumpAndSettle();
 
+    expect(find.text('웃음이 머무는 우리 집'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is RichText &&
+            widget.text.toPlainText().startsWith('지나간 웃음도,\n추억이 됩니다. '),
+      ),
+      findsNothing,
+    );
+    expect(find.bySemanticsLabel('빵긋 로고'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -34,8 +57,80 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == '10자 이상 입력해 주세요',
+      ),
+      findsOneWidget,
+    );
     expect(find.widgetWithText(FilledButton, '회원가입 완료'), findsOneWidget);
     expect(find.textContaining('로그인 없이 둘러보기'), findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('작은 화면에서 키보드가 열려도 로그인과 회원가입 입력칸이 보인다', (tester) async {
+    tester.view.physicalSize = const Size(390, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+
+    final controller = AppController();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: AuthScreen(controller: controller),
+      ),
+    );
+
+    final passwordField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == '비밀번호를 입력해주세요',
+    );
+    final loginPassword = tester.widget<TextField>(passwordField);
+    expect(loginPassword.decoration?.hintStyle?.color, AppColors.muted);
+    expect(loginPassword.decoration?.hintStyle?.fontSize, 13);
+    await tester.tap(passwordField);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+
+    expect(tester.getBottomRight(passwordField).dy, lessThanOrEqualTo(380));
+    expect(tester.takeException(), isNull);
+
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+    final signUpButton = find.widgetWithText(OutlinedButton, '회원가입');
+    await tester.ensureVisible(signUpButton);
+    await tester.tap(signUpButton);
+    await tester.pumpAndSettle();
+
+    final terms = find.textContaining('로그인하면 서비스 이용약관');
+    expect(tester.getBottomRight(terms).dy, lessThanOrEqualTo(700));
+    expect(
+      tester
+          .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
+          .physics,
+      isA<NeverScrollableScrollPhysics>(),
+    );
+
+    final nameField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == '가족에게 보일 이름',
+    );
+    await tester.tap(nameField);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+
+    expect(tester.getBottomRight(nameField).dy, lessThanOrEqualTo(380));
+    expect(
+      tester
+          .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
+          .physics,
+      isA<ClampingScrollPhysics>(),
+    );
+    expect(tester.takeException(), isNull);
     controller.dispose();
   });
 

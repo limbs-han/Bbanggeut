@@ -65,15 +65,16 @@ VALUES (
 ON CONFLICT (device_id, user_id) DO UPDATE SET
     role = 'MEMBER', status = 'ACTIVE', revoked_at = NULL, revoked_by = NULL, updated_at = now();
 
--- A pending request makes the owner approval/rejection UI testable.
-DELETE FROM join_requests
+-- A pending invitation makes the invitee accept/decline UI testable.
+DELETE FROM invitations
  WHERE device_id = '10000000-0000-0000-0000-000000000001'
-   AND user_id = (SELECT id FROM users WHERE email = 'request@wj.local');
-INSERT INTO join_requests (id, device_id, user_id, status, requested_at)
+   AND lower(invitee_email) = 'request@wj.local';
+INSERT INTO invitations (id, device_id, inviter_id, invitee_email, status, expires_at, created_at)
 VALUES (
     '12000000-0000-0000-0000-000000000001',
     '10000000-0000-0000-0000-000000000001',
-    (SELECT id FROM users WHERE email = 'request@wj.local'), 'PENDING', now() - interval '10 minutes'
+    (SELECT id FROM users WHERE email = 'admin@wj.local'),
+    'request@wj.local', 'PENDING', now() + interval '7 days', now() - interval '10 minutes'
 );
 
 -- Separate unclaimed camera for testing the fixed registration code WJDE-2026.

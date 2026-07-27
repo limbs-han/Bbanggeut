@@ -1,0 +1,26 @@
+logLevel: info
+
+rtsp: true
+rtspAddress: 127.0.0.1:8554
+rtspTransports: [tcp]
+
+rtmp: false
+hls: false
+webrtc: false
+srt: false
+moq: false
+api: false
+metrics: false
+pprof: false
+playback: false
+
+paths:
+  homecam/main:
+    source: udp+mpegts://127.0.0.1:23003
+
+  homecam/ai:
+    source: rtsp://127.0.0.1:8554/homecam/main
+    rtspTransport: tcp
+    sourceOnDemand: true
+    sourceOnDemandStartTimeout: 10s
+    sourceOnDemandCloseAfter: 10s

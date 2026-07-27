@@ -1,7 +1,19 @@
 logLevel: info
 
+authMethod: internal
+# Users are injected by Docker Compose from the root-only infra/.env file.
+authInternalUsers: []
+
 rtsp: true
+rtspTransports: [tcp]
+# Keep optional while the loopback SSH-tunnel rollback is available. Set
+# MEDIAMTX_RTSP_ENCRYPTION=strict after direct RTSPS and app playback pass.
+rtspEncryption: optional
 rtspAddress: :8554
+rtspsAddress: :8322
+rtspAuthMethods: [basic]
+rtspServerCert: /certs/server.crt
+rtspServerKey: /certs/server.key
 rtmp: false
 hls: true
 hlsAddress: :8888
@@ -18,7 +30,7 @@ api: false
 metrics: false
 pprof: false
 
-# Both ports are bound to loopback by Docker Compose. External publish/read
-# remains disabled until device-specific TLS credentials and edge auth are wired.
+# Publishing is authorized by the device-specific Compose user. HLS stays on
+# loopback and is exposed only through the authenticated Nginx route.
 paths:
   all_others:

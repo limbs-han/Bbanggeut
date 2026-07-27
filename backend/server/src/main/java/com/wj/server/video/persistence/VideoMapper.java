@@ -89,6 +89,54 @@ public interface VideoMapper {
         @Param("premiumRetentionDays") int premiumRetentionDays
     );
 
+    @Update("""
+        UPDATE videos
+           SET status = 'UPLOADING', failure_code = NULL,
+               retention_until = NULL, updated_at = now()
+         WHERE id = #{videoId} AND device_id = #{deviceId} AND status = 'FAILED'
+        """)
+    int retryFailedUpload(
+        @Param("deviceId") UUID deviceId,
+        @Param("videoId") UUID videoId
+    );
+
+    /**
+     * Turns abandoned upload reservations into recoverable FAILED rows. The
+     * same sourceEventId may later reset the row to UPLOADING and receive a
+     * fresh presigned URL.
+     */
+    @Select("""
+        WITH stale AS (
+            SELECT id
+              FROM videos
+             WHERE status = 'UPLOADING' AND updated_at < #{cutoff}
+             ORDER BY updated_at
+             LIMIT #{limit}
+             FOR UPDATE SKIP LOCKED
+        ),
+        failed_videos AS (
+            UPDATE videos v
+               SET status = 'FAILED', failure_code = 'UPLOAD_TIMEOUT',
+                   retention_until = COALESCE(retention_until, now() + interval '7 days'),
+                   updated_at = now()
+              FROM stale
+             WHERE v.id = stale.id AND v.status = 'UPLOADING'
+            RETURNING v.id
+        ),
+        event_updates AS (
+            UPDATE device_events e
+               SET upload_status = 'FAILED', updated_at = now()
+              FROM failed_videos f
+             WHERE e.video_id = f.id
+            RETURNING e.id
+        )
+        SELECT id FROM failed_videos
+        """)
+    List<UUID> markStaleUploadsFailed(
+        @Param("cutoff") Instant cutoff,
+        @Param("limit") int limit
+    );
+
     /**
      * Retention sweep: flips expired videos to DELETING and returns their ids so
      * the caller can enqueue deletion jobs in the same transaction.

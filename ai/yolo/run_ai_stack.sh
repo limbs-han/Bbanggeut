@@ -16,7 +16,9 @@ RUN_ROOT="${STACK_HOME}/ai_runs"
 
 CAMERA_INDEX=0
 MIC_DEVICE=""
-DEVICE_ID="homecam-001"
+VIDEO_SOURCE="${VIDEO_SOURCE:-}"
+AUDIO_SOURCE="${AUDIO_SOURCE:-}"
+DEVICE_ID="${DEVICE_ID:-homecam-001}"
 MQTT_HOST="localhost"
 MQTT_PORT=1883
 LAUGHTER_THRESHOLD=0.20
@@ -34,6 +36,8 @@ Usage: ./run_ai_stack.sh [options]
 Options:
   --mic-device VALUE       YAMNet input device number or name (default: system input)
   --camera INDEX           V4L2 camera index (default: 0)
+  --video-source URI       Shared RTSP/UDP video source; overrides --camera
+  --audio-source URI       Shared RTSP/UDP audio source; overrides --mic-device
   --device-id ID           Home camera ID (default: homecam-001)
   --duration SECONDS       Stop cleanly after this duration; 0 runs until Ctrl+C
   --threshold VALUE        YAMNet laughter threshold (default: 0.20)
@@ -52,6 +56,10 @@ Options:
 Examples:
   ./run_ai_stack.sh --mic-device 2 --record-debug-video
   ./run_ai_stack.sh --mic-device "BRIO 100" --duration 600
+  ./run_ai_stack.sh \
+    --video-source rtsp://127.0.0.1:8554/homecam/ai \
+    --audio-source rtsp://127.0.0.1:8554/homecam/ai \
+    --device-id homecam-01
 EOF
 }
 
@@ -72,6 +80,16 @@ while [[ $# -gt 0 ]]; do
         --camera)
             require_value "$@"
             CAMERA_INDEX="$2"
+            shift 2
+            ;;
+        --video-source)
+            require_value "$@"
+            VIDEO_SOURCE="$2"
+            shift 2
+            ;;
+        --audio-source)
+            require_value "$@"
+            AUDIO_SOURCE="$2"
             shift 2
             ;;
         --device-id)
@@ -242,8 +260,18 @@ FINAL_EVENT_TOPIC="homecam/v1/${DEVICE_ID}/events/memory-candidate"
     printf 'run_id=%s\n' "$RUN_ID"
     printf 'started_at=%s\n' "$(date --iso-8601=seconds)"
     printf 'device_id=%s\n' "$DEVICE_ID"
-    printf 'camera_index=%s\n' "$CAMERA_INDEX"
-    printf 'mic_device=%s\n' "${MIC_DEVICE:-system-default}"
+    if [[ -n "$VIDEO_SOURCE" ]]; then
+        printf 'video_source_mode=shared-stream\n'
+    else
+        printf 'video_source_mode=camera\n'
+        printf 'camera_index=%s\n' "$CAMERA_INDEX"
+    fi
+    if [[ -n "$AUDIO_SOURCE" ]]; then
+        printf 'audio_source_mode=shared-stream\n'
+    else
+        printf 'audio_source_mode=microphone\n'
+        printf 'mic_device=%s\n' "${MIC_DEVICE:-system-default}"
+    fi
     printf 'mqtt_broker=%s:%s\n' "$MQTT_HOST" "$MQTT_PORT"
     printf 'laughter_threshold=%s\n' "$LAUGHTER_THRESHOLD"
     printf 'laughter_consecutive=%s\n' "$LAUGHTER_CONSECUTIVE"
@@ -363,12 +391,16 @@ CORE_NAMES+=("event-fusion")
 
 YOLO_COMMAND=(
     "$YOLO_PYTHON" -u "$YOLO_SCRIPT"
-    --camera "$CAMERA_INDEX"
     --mqtt-host "$MQTT_HOST"
     --mqtt-port "$MQTT_PORT"
     --device-id "$DEVICE_ID"
     --control-output "${RUN_DIR}/autoframe_commands.jsonl"
 )
+if [[ -n "$VIDEO_SOURCE" ]]; then
+    YOLO_COMMAND+=(--stream-url "$VIDEO_SOURCE")
+else
+    YOLO_COMMAND+=(--camera "$CAMERA_INDEX")
+fi
 if (( RECORD_DEBUG_VIDEO == 1 )); then
     YOLO_COMMAND+=(--output "${RUN_DIR}/autoframe.mp4")
 fi
@@ -385,7 +417,9 @@ YAMNET_COMMAND=(
     --consecutive "$LAUGHTER_CONSECUTIVE"
     --gain "$MIC_GAIN"
 )
-if [[ -n "$MIC_DEVICE" ]]; then
+if [[ -n "$AUDIO_SOURCE" ]]; then
+    YAMNET_COMMAND+=(--stream-url "$AUDIO_SOURCE")
+elif [[ -n "$MIC_DEVICE" ]]; then
     YAMNET_COMMAND+=(--device "$MIC_DEVICE")
 fi
 start_process "YAMNet laughter" "${RUN_DIR}/yamnet.log" "${YAMNET_COMMAND[@]}"

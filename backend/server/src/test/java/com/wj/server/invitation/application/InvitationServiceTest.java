@@ -3,7 +3,6 @@ package com.wj.server.invitation.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,9 +18,8 @@ import java.util.UUID;
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.InvitationProperties;
-import com.wj.server.invitation.api.CreateJoinRequestRequest;
-import com.wj.server.invitation.domain.InviteLinkRow;
-import com.wj.server.invitation.domain.JoinRequestRow;
+import com.wj.server.invitation.domain.InvitationRow;
+import com.wj.server.invitation.domain.MembershipRequestRow;
 import com.wj.server.invitation.domain.MembershipRow;
 import com.wj.server.invitation.persistence.InvitationMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,11 +31,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class InvitationServiceTest {
     private static final Instant NOW = Instant.parse("2026-07-20T10:00:00Z");
+    private static final Duration TTL = Duration.ofDays(7);
 
     @Mock
     private InvitationMapper mapper;
     @Mock
     private AuditService auditService;
+    @Mock
+    private MembershipRequestService membershipRequestService;
 
     private InvitationService service;
 
@@ -45,113 +46,162 @@ class InvitationServiceTest {
     void setUp() {
         service = new InvitationService(
             mapper,
-            new InvitationProperties(Duration.ofDays(7)),
+            new InvitationProperties(TTL),
             auditService,
+            membershipRequestService,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
-    @Test
-    void ownerRotatesInviteLinkAndPlaintextTokenIsReturnedOnce() {
-        UUID ownerId = UUID.randomUUID();
-        UUID deviceId = UUID.randomUUID();
-        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
-
-        var response = service.createInviteLink(ownerId, deviceId);
-
-        verify(mapper).revokeActiveLinks(deviceId);
-        verify(mapper).insertLink(any(), eq(deviceId), anyString(), eq(ownerId), eq(NOW.plus(Duration.ofDays(7))));
-        assertThat(response.inviteToken()).isNotBlank();
-        assertThat(response.expiresAt()).isEqualTo(NOW.plus(Duration.ofDays(7)));
+    private InvitationRow pendingInvitation(UUID id, UUID deviceId, UUID inviterId, String inviteeEmail, Instant expiresAt) {
+        return new InvitationRow(
+            id, deviceId, "Camera", inviterId, "owner@example.com", "오너",
+            inviteeEmail, "EDITOR", "PENDING", expiresAt, NOW);
     }
 
     @Test
-    void memberCannotCreateInviteLink() {
+    void ownerInvitesEmailAndNormalizesIt() {
+        UUID ownerId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(false);
+        when(mapper.pendingInvitationExists(deviceId, "member@example.com")).thenReturn(false);
+        when(mapper.findScopedInvitation(eq(deviceId), any()))
+            .thenAnswer(invocation -> Optional.of(pendingInvitation(
+                invocation.getArgument(1), deviceId, ownerId, "member@example.com", NOW.plus(TTL))));
+
+        var response = service.createInvitation(
+            ownerId, deviceId, "  Member@Example.com ", "EDITOR", null);
+
+        verify(mapper).insertInvitation(
+            any(), eq(deviceId), eq(ownerId), eq("member@example.com"),
+            eq("EDITOR"), eq(NOW.plus(TTL)));
+        assertThat(response.status()).isEqualTo("PENDING");
+        assertThat(response.inviteeEmail()).isEqualTo("member@example.com");
+    }
+
+    @Test
+    void ownerInvitationConsumesMatchingMembershipRequest() {
+        UUID ownerId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID requesterId = UUID.randomUUID();
+        String token = "opaque-request-token";
+        MembershipRequestRow request = new MembershipRequestRow(
+            UUID.randomUUID(), requesterId, "member@example.com", "멤버",
+            NOW.plusSeconds(60), null);
+        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(membershipRequestService.requireForInvitation(
+            token, "member@example.com")).thenReturn(request);
+        when(mapper.findScopedInvitation(eq(deviceId), any()))
+            .thenAnswer(invocation -> Optional.of(pendingInvitation(
+                invocation.getArgument(1), deviceId, ownerId,
+                "member@example.com", NOW.plus(TTL))));
+
+        service.createInvitation(
+            ownerId, deviceId, "member@example.com", "VIEWER", token);
+
+        verify(membershipRequestService).consume(
+            eq(token), eq(request), eq(ownerId), any());
+    }
+
+    @Test
+    void memberCannotInvite() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("MEMBER"));
+        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("EDITOR"));
 
-        assertThatThrownBy(() -> service.createInviteLink(userId, deviceId))
+        assertThatThrownBy(() -> service.createInvitation(
+            userId, deviceId, "member@example.com", "EDITOR", null))
             .isInstanceOf(ApiException.class)
             .satisfies(exception -> assertThat(((ApiException) exception).status().value()).isEqualTo(403));
-        verify(mapper, never()).insertLink(any(), any(), anyString(), any(), any());
+        verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
     }
 
     @Test
-    void expiredOrRevokedLinkHidesResourceOnJoinRequest() {
-        UUID userId = UUID.randomUUID();
+    void invitingAnExistingMemberConflicts() {
+        UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        when(mapper.findLinkByTokenHash(anyString()))
-            .thenReturn(Optional.of(new InviteLinkRow(
-                UUID.randomUUID(), deviceId, NOW, null, "OFFLINE")));
+        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.createJoinRequest(
-            userId, new CreateJoinRequestRequest("token-value-1234")))
+        assertThatThrownBy(() -> service.createInvitation(
+            ownerId, deviceId, "member@example.com", "VIEWER", null))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
-            .isEqualTo("RESOURCE_NOT_FOUND");
-        verify(mapper, never()).insertJoinRequest(any(), any(), any());
+            .isEqualTo("ALREADY_DEVICE_MEMBER");
+        verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
     }
 
     @Test
-    void validLinkCreatesPendingJoinRequest() {
+    void acceptActivatesMembershipForTheInvitedEmail() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        when(mapper.findLinkByTokenHash(anyString()))
-            .thenReturn(Optional.of(new InviteLinkRow(
-                UUID.randomUUID(), deviceId, NOW.plusSeconds(60), null, "OFFLINE")));
-        when(mapper.activeMembershipExists(deviceId, userId)).thenReturn(false);
-        when(mapper.pendingJoinRequestExists(deviceId, userId)).thenReturn(false);
-        when(mapper.lockScopedJoinRequest(eq(deviceId), any()))
-            .thenAnswer(invocation -> Optional.of(new JoinRequestRow(
-                invocation.getArgument(1), deviceId, userId,
-                "member@example.com", "멤버", "PENDING", NOW)));
-
-        var response = service.createJoinRequest(
-            userId, new CreateJoinRequestRequest("token-value-1234"));
-
-        verify(mapper).insertJoinRequest(any(), eq(deviceId), eq(userId));
-        assertThat(response.status()).isEqualTo("PENDING");
-        assertThat(response.requester().email()).isEqualTo("member@example.com");
-    }
-
-    @Test
-    void approvalActivatesMembership() {
-        UUID ownerId = UUID.randomUUID();
-        UUID requesterId = UUID.randomUUID();
-        UUID deviceId = UUID.randomUUID();
-        UUID requestId = UUID.randomUUID();
-        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
-        when(mapper.lockScopedJoinRequest(deviceId, requestId))
-            .thenReturn(Optional.of(new JoinRequestRow(
-                requestId, deviceId, requesterId, "member@example.com", "멤버", "PENDING", NOW)));
-        when(mapper.decideJoinRequest(requestId, "APPROVED", ownerId)).thenReturn(1);
-        when(mapper.findMembership(deviceId, requesterId))
+        UUID invitationId = UUID.randomUUID();
+        when(mapper.findUserEmail(userId)).thenReturn(Optional.of("member@example.com"));
+        when(mapper.lockInvitation(invitationId))
+            .thenReturn(Optional.of(pendingInvitation(
+                invitationId, deviceId, UUID.randomUUID(), "member@example.com", NOW.plusSeconds(60))));
+        when(mapper.acceptInvitation(invitationId, userId)).thenReturn(1);
+        when(mapper.findMembership(deviceId, userId))
             .thenReturn(Optional.of(new MembershipRow(
-                UUID.randomUUID(), deviceId, requesterId,
-                "member@example.com", "멤버", "MEMBER", "ACTIVE", NOW)));
+                UUID.randomUUID(), deviceId, userId,
+                "member@example.com", "멤버", "EDITOR", "ACTIVE", NOW)));
 
-        var member = service.approveJoinRequest(ownerId, deviceId, requestId);
+        var member = service.acceptInvitation(userId, invitationId);
 
-        verify(mapper).activateMember(deviceId, requesterId);
-        assertThat(member.role()).isEqualTo("MEMBER");
+        verify(mapper).activateMember(deviceId, userId, "EDITOR");
+        assertThat(member.role()).isEqualTo("EDITOR");
         assertThat(member.status()).isEqualTo("ACTIVE");
     }
 
     @Test
-    void rejectionDoesNotCreateMembership() {
-        UUID ownerId = UUID.randomUUID();
+    void acceptByAnotherEmailIsHidden() {
+        UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        UUID requestId = UUID.randomUUID();
-        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
-        when(mapper.lockScopedJoinRequest(deviceId, requestId))
-            .thenReturn(Optional.of(new JoinRequestRow(
-                requestId, deviceId, UUID.randomUUID(),
-                "member@example.com", "멤버", "PENDING", NOW)));
-        when(mapper.decideJoinRequest(requestId, "REJECTED", ownerId)).thenReturn(1);
+        UUID invitationId = UUID.randomUUID();
+        when(mapper.findUserEmail(userId)).thenReturn(Optional.of("stranger@example.com"));
+        when(mapper.lockInvitation(invitationId))
+            .thenReturn(Optional.of(pendingInvitation(
+                invitationId, deviceId, UUID.randomUUID(), "member@example.com", NOW.plusSeconds(60))));
 
-        service.rejectJoinRequest(ownerId, deviceId, requestId);
+        assertThatThrownBy(() -> service.acceptInvitation(userId, invitationId))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("RESOURCE_NOT_FOUND");
+        verify(mapper, never()).acceptInvitation(any(), any());
+        verify(mapper, never()).activateMember(any(), any(), any());
+    }
 
-        verify(mapper, never()).activateMember(any(), any());
+    @Test
+    void acceptExpiredInvitationConflicts() {
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID invitationId = UUID.randomUUID();
+        when(mapper.findUserEmail(userId)).thenReturn(Optional.of("member@example.com"));
+        when(mapper.lockInvitation(invitationId))
+            .thenReturn(Optional.of(pendingInvitation(
+                invitationId, deviceId, UUID.randomUUID(), "member@example.com", NOW.minusSeconds(1))));
+
+        assertThatThrownBy(() -> service.acceptInvitation(userId, invitationId))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("INVITATION_EXPIRED");
+        verify(mapper, never()).acceptInvitation(any(), any());
+    }
+
+    @Test
+    void declineMarksInvitationWithoutMembership() {
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID invitationId = UUID.randomUUID();
+        when(mapper.findUserEmail(userId)).thenReturn(Optional.of("member@example.com"));
+        when(mapper.lockInvitation(invitationId))
+            .thenReturn(Optional.of(pendingInvitation(
+                invitationId, deviceId, UUID.randomUUID(), "member@example.com", NOW.plusSeconds(60))));
+        when(mapper.declineInvitation(invitationId, userId)).thenReturn(1);
+
+        service.declineInvitation(userId, invitationId);
+
+        verify(mapper, never()).activateMember(any(), any(), any());
     }
 
     @Test

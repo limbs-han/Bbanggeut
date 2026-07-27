@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.SubscriptionProperties;
+import com.wj.server.iot.event.DeviceEventService;
 import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.IotUploadCompleteRequest;
 import com.wj.server.video.api.IotUploadUrlRequest;
@@ -23,15 +24,18 @@ public class IotVideoService {
     private final VideoMapper videoMapper;
     private final ObjectStorageService objectStorageService;
     private final SubscriptionProperties subscriptionProperties;
+    private final DeviceEventService deviceEventService;
 
     public IotVideoService(
         VideoMapper videoMapper,
         ObjectStorageService objectStorageService,
-        SubscriptionProperties subscriptionProperties
+        SubscriptionProperties subscriptionProperties,
+        DeviceEventService deviceEventService
     ) {
         this.videoMapper = videoMapper;
         this.objectStorageService = objectStorageService;
         this.subscriptionProperties = subscriptionProperties;
+        this.deviceEventService = deviceEventService;
     }
 
     @Transactional
@@ -41,6 +45,7 @@ public class IotVideoService {
         IotUploadUrlRequest request
     ) {
         validateIdempotencyKey(idempotencyKey, request.sourceEventId());
+        UUID eventId = parseEventId(request.sourceEventId());
         if (request.sizeBytes() > 524_288_000L) {
             throw new ApiException(
                 HttpStatus.PAYLOAD_TOO_LARGE, "VIDEO_TOO_LARGE", "영상은 500 MiB 이하여야 합니다.");
@@ -55,6 +60,18 @@ public class IotVideoService {
         VideoRow video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
             .orElseGet(() -> createVideo(deviceId, request));
         verifySameUpload(video, request);
+        if ("FAILED".equals(video.status())) {
+            if (videoMapper.retryFailedUpload(deviceId, video.id()) != 1) {
+                throw new ApiException(
+                    HttpStatus.CONFLICT, "VIDEO_STATE_CONFLICT",
+                    "현재 상태에서는 영상을 다시 업로드할 수 없습니다.");
+            }
+            video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
+                .orElseThrow(() -> new IllegalStateException("Retried video disappeared"));
+        }
+        deviceEventService.linkUpload(
+            deviceId, eventId, request.triggerType(), request.capturedStartAt(),
+            video.id(), video.status());
 
         if ("READY".equals(video.status())) {
             return new IotUploadUrlResponse(video.id(), true, null, null, null, null);
@@ -82,6 +99,9 @@ public class IotVideoService {
         validateIdempotencyKey(idempotencyKey, video.sourceEventId());
 
         if ("READY".equals(video.status())) {
+            deviceEventService.linkUpload(
+                deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
+                video.capturedStartAt(), video.id(), "READY");
             return toResponse(video);
         }
         if (!"UPLOADING".equals(video.status())) {
@@ -100,9 +120,13 @@ public class IotVideoService {
         }
 
         videoMapper.markReady(deviceId, video.id(), subscriptionProperties.premiumRetentionDays());
-        return videoMapper.findOwnedVideo(deviceId, video.id())
+        VideoResponse response = videoMapper.findOwnedVideo(deviceId, video.id())
             .map(this::toResponse)
             .orElseThrow(() -> new IllegalStateException("Completed video disappeared"));
+        deviceEventService.linkUpload(
+            deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
+            video.capturedStartAt(), video.id(), "READY");
+        return response;
     }
 
     private VideoRow createVideo(UUID deviceId, IotUploadUrlRequest request) {
@@ -139,6 +163,14 @@ public class IotVideoService {
                 HttpStatus.CONFLICT,
                 "IDEMPOTENCY_KEY_MISMATCH",
                 "Idempotency-Key는 sourceEventId와 같아야 합니다.");
+        }
+    }
+
+    private UUID parseEventId(String sourceEventId) {
+        try {
+            return UUID.fromString(sourceEventId);
+        } catch (IllegalArgumentException exception) {
+            throw validation("sourceEventId는 UUID 형식이어야 합니다.");
         }
     }
 

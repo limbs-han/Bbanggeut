@@ -11,7 +11,6 @@ spring:
     enabled: true
     baseline-on-migrate: true
     baseline-version: 0
-
 server:
   forward-headers-strategy: native
 
@@ -51,6 +50,9 @@ app:
     grace: ${SUBSCRIPTION_GRACE:30d}
   retention:
     sweep-delay: ${RETENTION_SWEEP_DELAY:60000}
+  upload:
+    stale-after: ${UPLOAD_STALE_AFTER:30m}
+    sweep-delay-ms: ${UPLOAD_SWEEP_DELAY_MS:60000}
   mqtt:
     broker-url: ${MQTT_BROKER_URL:ssl://localhost:8883}
     client-id: ${MQTT_CLIENT_ID:wj-backend-local}

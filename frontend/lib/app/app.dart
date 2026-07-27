@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 
 import '../ui/auth_screen.dart';
@@ -13,21 +16,36 @@ class WilliamJamesApp extends StatefulWidget {
 
 class _WilliamJamesAppState extends State<WilliamJamesApp> {
   late final AppController controller;
+  late final AppLinks appLinks;
+  StreamSubscription<Uri>? linkSubscription;
   @override
   void initState() {
     super.initState();
     controller = AppController()..initialize();
+    appLinks = AppLinks();
+    _listenForMembershipRequests();
+  }
+
+  Future<void> _listenForMembershipRequests() async {
+    final initial = await appLinks.getInitialLink();
+    if (initial != null) {
+      await controller.setMembershipRequestLink(initial);
+    }
+    linkSubscription = appLinks.uriLinkStream.listen(
+      controller.setMembershipRequestLink,
+    );
   }
 
   @override
   void dispose() {
+    linkSubscription?.cancel();
     controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'William James',
+    title: '빵긋',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
     home: AnimatedBuilder(
@@ -45,28 +63,6 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
   @override
-  Widget build(BuildContext context) => const Scaffold(
-    body: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome_rounded, size: 46, color: AppColors.primary),
-          SizedBox(height: 18),
-          Text(
-            'WILLIAM JAMES',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-              color: AppColors.primaryDark,
-            ),
-          ),
-          SizedBox(height: 24),
-          SizedBox.square(
-            dimension: 24,
-            child: CircularProgressIndicator(strokeWidth: 2.5),
-          ),
-        ],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      const Scaffold(backgroundColor: AppColors.cream);
 }

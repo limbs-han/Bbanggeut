@@ -9,7 +9,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TYPE user_status AS ENUM ('ACTIVE', 'LOCKED', 'WITHDRAWN');
-CREATE TYPE device_role AS ENUM ('OWNER', 'MEMBER');
+CREATE TYPE device_role AS ENUM ('OWNER', 'EDITOR', 'VIEWER');
 CREATE TYPE membership_status AS ENUM ('ACTIVE', 'REVOKED');
 CREATE TYPE device_status AS ENUM ('UNCLAIMED', 'ONLINE', 'OFFLINE', 'REVOKED');
 CREATE TYPE credential_type AS ENUM ('CERTIFICATE', 'TOKEN_HASH');
@@ -160,7 +160,7 @@ CREATE TABLE device_memberships (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    role device_role NOT NULL DEFAULT 'MEMBER',
+    role device_role NOT NULL DEFAULT 'VIEWER',
     status membership_status NOT NULL DEFAULT 'ACTIVE',
     joined_at timestamptz NOT NULL DEFAULT now(),
     revoked_at timestamptz,
@@ -290,7 +290,7 @@ CREATE TABLE invitations (
     device_id uuid NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
     inviter_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     invitee_email varchar(320) NOT NULL,
-    role device_role NOT NULL DEFAULT 'MEMBER',
+    role device_role NOT NULL DEFAULT 'VIEWER',
     token_hash char(64) NOT NULL,
     status invitation_status NOT NULL DEFAULT 'PENDING',
     expires_at timestamptz NOT NULL,
@@ -302,7 +302,7 @@ CREATE TABLE invitations (
     CONSTRAINT uq_invitations_token_hash UNIQUE (token_hash),
     CONSTRAINT ck_invitations_email_normalized CHECK (invitee_email = lower(btrim(invitee_email))),
     CONSTRAINT ck_invitations_email_shape CHECK (position('@' in invitee_email) > 1),
-    CONSTRAINT ck_invitations_member_only CHECK (role = 'MEMBER'),
+    CONSTRAINT ck_invitations_non_owner_only CHECK (role IN ('EDITOR', 'VIEWER')),
     CONSTRAINT ck_invitations_token_hash CHECK (token_hash ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_invitations_expiry CHECK (expires_at > created_at),
     CONSTRAINT ck_invitations_acceptance CHECK (

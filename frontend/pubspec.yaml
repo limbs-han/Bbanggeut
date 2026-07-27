@@ -1,5 +1,5 @@
 name: william_james_app
-description: "William James warm memory companion app"
+description: "Bbanggeut warm memory companion app"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -41,8 +41,9 @@ dependencies:
   url_launcher: ^6.3.2
   share_plus: ^13.2.1
   path_provider: ^2.1.6
-  video_trimmer: ^5.0.0
   mobile_scanner: ^7.4.0
+  app_links: ^7.2.1
+  ve_sdk_flutter: ^0.44.0
 
 dev_dependencies:
   flutter_test:

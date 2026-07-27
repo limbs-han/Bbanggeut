@@ -17,6 +17,7 @@ class VisionMqttPublisher:
         username: str | None = None,
         password: str | None = None,
         topic: str | None = None,
+        control_topic: str | None = None,
         connect_timeout: float = 5.0,
     ) -> None:
         try:
@@ -28,6 +29,9 @@ class VisionMqttPublisher:
 
         self._device_id = device_id
         self._topic = topic or f"homecam/v1/{device_id}/ai/vision/state"
+        self._control_topic = control_topic or (
+            f"homecam/v1/{device_id}/control/framing/target"
+        )
         self._status_topic = f"homecam/v1/{device_id}/ai/vision/status"
         self._connected = threading.Event()
         self._connect_error: str | None = None
@@ -68,6 +72,7 @@ class VisionMqttPublisher:
             ) from exc
 
         print(f"Vision MQTT: {self._topic}")
+        print(f"Framing target MQTT: {self._control_topic}")
 
     def _on_connect(
         self,
@@ -112,13 +117,19 @@ class VisionMqttPublisher:
                 print("Vision MQTT disconnected; tracking continues without publishing.")
                 self._warned_disconnected = True
             return False
-        message = self._client.publish(
+        state_message = self._client.publish(
             self._topic,
             payload=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             qos=0,
             retain=False,
         )
-        return message.rc == 0
+        control_message = self._client.publish(
+            self._control_topic,
+            payload=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            qos=0,
+            retain=False,
+        )
+        return state_message.rc == 0 and control_message.rc == 0
 
     def close(self) -> None:
         if self._connected.is_set():

@@ -1,7 +1,7 @@
 [Unit]
 Description=William James IoT streaming device agent (Jetson)
-Wants=network-online.target wj-media-source.service wj-media-tunnel.service
-After=network-online.target wj-media-source.service wj-media-tunnel.service
+Wants=network-online.target wj-media-source.service
+After=network-online.target wj-media-source.service
 
 [Service]
 Type=simple
@@ -10,6 +10,7 @@ Group=williamjames
 SupplementaryGroups=video audio
 EnvironmentFile=/etc/william-james/device-agent.env
 WorkingDirectory=/opt/william-james/device-agent
+ExecStartPre=/opt/william-james/device-agent/verify-mediamtx-rtsps.sh
 ExecStart=/opt/william-james/device-agent/venv/bin/python -m wj_device_agent
 Restart=always
 RestartSec=5

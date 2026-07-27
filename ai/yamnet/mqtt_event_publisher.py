@@ -129,7 +129,7 @@ class MqttEventPublisher:
             "schema_version": "1.0",
             "event_id": event_id,
             "device_id": self._device_id,
-            "event_type": "LAUGHTER",
+            "event_type": "laughter",
             "detected_at": detected_at,
             "monotonic_ns": monotonic_ns,
             "score": round(score, 6),

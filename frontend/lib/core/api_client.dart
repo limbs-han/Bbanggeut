@@ -149,6 +149,26 @@ class ApiClient {
     }
   }
 
+  Future<UserProfile> updateProfile(String displayName) async {
+    final updated = UserProfile.fromJson(
+      await _patchMap(
+        '/api/auth/me',
+        data: {'displayName': displayName.trim()},
+      ),
+    );
+    if (_persistSession) {
+      await _storage.write(
+        key: _userKey,
+        value: jsonEncode({
+          'id': updated.id,
+          'email': updated.email,
+          'displayName': updated.displayName,
+        }),
+      );
+    }
+    return updated;
+  }
+
   Future<void> withdraw() async {
     await _dio.delete<void>('/api/auth/me');
     await clearSession();
@@ -233,22 +253,46 @@ class ApiClient {
       data: {'name': ?name, 'retentionDays': ?retentionDays},
     ),
   );
-  Future<void> createJoinRequest(String inviteToken) async =>
-      _post('/api/join-requests', data: {'inviteToken': inviteToken.trim()});
-  Future<List<JoinRequestInfo>> listJoinRequests(String deviceId) async =>
+  Future<Invitation> createInvitation(
+    String deviceId,
+    String email,
+    String role, {
+    String? membershipRequestToken,
+  }) async => Invitation.fromJson(
+    await _post(
+      '/api/devices/$deviceId/invitations',
+      data: {
+        'email': email.trim(),
+        'role': role,
+        'membershipRequestToken': ?membershipRequestToken,
+      },
+    ),
+  );
+  Future<MembershipRequestLink> createMembershipRequestLink() async =>
+      MembershipRequestLink.fromJson(
+        await _post('/api/membership-request-links'),
+      );
+  Future<MembershipRequestPreview> previewMembershipRequest(
+    String token,
+  ) async => MembershipRequestPreview.fromJson(
+    await _get('/api/membership-request-links/${Uri.encodeComponent(token)}'),
+  );
+  Future<List<Invitation>> listDeviceInvitations(String deviceId) async =>
       (await _getList(
-        '/api/devices/$deviceId/join-requests',
-      )).map(JoinRequestInfo.fromJson).toList();
-  Future<Map<String, dynamic>> createInvite(String deviceId) async =>
-      _post('/api/devices/$deviceId/invite-link');
-  Future<void> approveJoinRequest(String deviceId, String requestId) async =>
-      _post('/api/devices/$deviceId/join-requests/$requestId/approve');
-  Future<void> rejectJoinRequest(String deviceId, String requestId) async =>
-      _post('/api/devices/$deviceId/join-requests/$requestId/reject');
+        '/api/devices/$deviceId/invitations',
+      )).map(Invitation.fromJson).toList();
+  Future<void> revokeInvitation(String deviceId, String invitationId) async =>
+      _delete('/api/devices/$deviceId/invitations/$invitationId');
+  Future<List<Invitation>> listMyInvitations() async =>
+      (await _getList('/api/invitations')).map(Invitation.fromJson).toList();
+  Future<DeviceMember> acceptInvitation(String invitationId) async =>
+      DeviceMember.fromJson(
+        await _post('/api/invitations/$invitationId/accept'),
+      );
+  Future<void> declineInvitation(String invitationId) async =>
+      _post('/api/invitations/$invitationId/decline');
   Future<void> revokeMember(String deviceId, String memberId) async =>
       _delete('/api/devices/$deviceId/members/$memberId');
-  Future<void> revokeInvite(String deviceId) async =>
-      _delete('/api/devices/$deviceId/invite-link');
   Future<void> transferOwnership(String deviceId, String membershipId) async =>
       _post(
         '/api/devices/$deviceId/transfer-ownership',

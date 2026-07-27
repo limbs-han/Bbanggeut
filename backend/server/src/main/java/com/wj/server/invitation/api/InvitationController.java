@@ -1,9 +1,11 @@
 package com.wj.server.invitation.api;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
 import com.wj.server.invitation.application.InvitationService;
+import com.wj.server.invitation.application.MembershipRequestService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,62 +22,99 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class InvitationController {
     private final InvitationService invitationService;
+    private final MembershipRequestService membershipRequestService;
 
-    public InvitationController(InvitationService invitationService) {
+    public InvitationController(
+        InvitationService invitationService,
+        MembershipRequestService membershipRequestService
+    ) {
         this.invitationService = invitationService;
+        this.membershipRequestService = membershipRequestService;
     }
 
-    @PostMapping("/devices/{deviceId}/invite-link")
-    public ResponseEntity<InviteLinkResponse> createInviteLink(
+    // --- owner side: invite by email, list, withdraw ---
+
+    @PostMapping("/devices/{deviceId}/invitations")
+    public ResponseEntity<InvitationResponse> createInvitation(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID deviceId,
+        @Valid @RequestBody CreateInvitationRequest request
+    ) {
+        return ResponseEntity.status(201)
+            .body(invitationService.createInvitation(
+                userId(jwt), deviceId, request.email(), request.role(),
+                request.membershipRequestToken()));
+    }
+
+    @PostMapping("/membership-request-links")
+    public ResponseEntity<MembershipRequestLinkResponse> createMembershipRequestLink(
+        @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.status(201)
+            .body(membershipRequestService.create(userId(jwt)));
+    }
+
+    @GetMapping("/membership-request-links/{token}")
+    public MembershipRequestPreviewResponse previewMembershipRequest(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable String token
+    ) {
+        return membershipRequestService.preview(userId(jwt), token);
+    }
+
+    @GetMapping("/membership-request-links/{token}/open")
+    public ResponseEntity<Void> openMembershipRequest(@PathVariable String token) {
+        if (!token.matches("[A-Za-z0-9_-]{43}")) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.status(302)
+            .location(URI.create("bbanggeut://membership-request/" + token))
+            .build();
+    }
+
+    @GetMapping("/devices/{deviceId}/invitations")
+    public List<InvitationResponse> listDeviceInvitations(
         @AuthenticationPrincipal Jwt jwt,
         @PathVariable UUID deviceId
     ) {
-        return ResponseEntity.status(201).body(invitationService.createInviteLink(userId(jwt), deviceId));
+        return invitationService.listDeviceInvitations(userId(jwt), deviceId);
     }
 
-    @DeleteMapping("/devices/{deviceId}/invite-link")
-    public ResponseEntity<Void> revokeInviteLink(
+    @DeleteMapping("/devices/{deviceId}/invitations/{invitationId}")
+    public ResponseEntity<Void> revokeInvitation(
         @AuthenticationPrincipal Jwt jwt,
-        @PathVariable UUID deviceId
+        @PathVariable UUID deviceId,
+        @PathVariable UUID invitationId
     ) {
-        invitationService.revokeInviteLink(userId(jwt), deviceId);
+        invitationService.revokeInvitation(userId(jwt), deviceId, invitationId);
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/join-requests")
-    public ResponseEntity<JoinRequestResponse> createJoinRequest(
-        @AuthenticationPrincipal Jwt jwt,
-        @Valid @RequestBody CreateJoinRequestRequest request
-    ) {
-        return ResponseEntity.status(201).body(invitationService.createJoinRequest(userId(jwt), request));
+    // --- invitee side: inbox, accept, decline ---
+
+    @GetMapping("/invitations")
+    public List<InvitationResponse> listMyInvitations(@AuthenticationPrincipal Jwt jwt) {
+        return invitationService.listMyInvitations(userId(jwt));
     }
 
-    @GetMapping("/devices/{deviceId}/join-requests")
-    public List<JoinRequestResponse> listPendingJoinRequests(
+    @PostMapping("/invitations/{invitationId}/accept")
+    public DeviceMemberResponse acceptInvitation(
         @AuthenticationPrincipal Jwt jwt,
-        @PathVariable UUID deviceId
+        @PathVariable UUID invitationId
     ) {
-        return invitationService.listPendingJoinRequests(userId(jwt), deviceId);
+        return invitationService.acceptInvitation(userId(jwt), invitationId);
     }
 
-    @PostMapping("/devices/{deviceId}/join-requests/{requestId}/approve")
-    public DeviceMemberResponse approveJoinRequest(
+    @PostMapping("/invitations/{invitationId}/decline")
+    public ResponseEntity<Void> declineInvitation(
         @AuthenticationPrincipal Jwt jwt,
-        @PathVariable UUID deviceId,
-        @PathVariable UUID requestId
+        @PathVariable UUID invitationId
     ) {
-        return invitationService.approveJoinRequest(userId(jwt), deviceId, requestId);
-    }
-
-    @PostMapping("/devices/{deviceId}/join-requests/{requestId}/reject")
-    public ResponseEntity<Void> rejectJoinRequest(
-        @AuthenticationPrincipal Jwt jwt,
-        @PathVariable UUID deviceId,
-        @PathVariable UUID requestId
-    ) {
-        invitationService.rejectJoinRequest(userId(jwt), deviceId, requestId);
+        invitationService.declineInvitation(userId(jwt), invitationId);
         return ResponseEntity.noContent().build();
     }
+
+    // --- members ---
 
     @GetMapping("/devices/{deviceId}/members")
     public List<DeviceMemberResponse> listMembers(

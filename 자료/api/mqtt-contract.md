@@ -243,6 +243,13 @@ MVP 권장 구간:
 
 MQTT 발행 실패 시에도 클립은 로컬 업로드 큐에 남는다. 재연결 후 이벤트를 같은 `eventId`로 재발행할 수 있으며, HTTP 업로드도 같은 `sourceEventId`를 사용한다.
 
+서버는 유효한 `/events` 원문을 `eventId` 기준으로 멱등 저장한다. 이 기록은 영상 행과 별개이므로
+클립 생성·업로드에 실패한 감지도 통계와 장애 분석에 남는다. HTTP 업로드가 먼저 도착한 경우에는
+동일 UUID `sourceEventId`로 최소 이벤트 행을 복구하고, 이후 영상의 `UPLOADING`·`READY` 상태를 연결한다.
+`TOUCH` 이벤트는 `source.component=TOUCH_SENSOR`이고 `confidence`가 없어야 하며, 최초 저장 시
+TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장한다. 기기 등록 버튼은
+`POST /api/iot/registration-codes`를 호출하는 별도 물리 입력이며 TOUCH 이벤트가 아니다.
+
 ### 5.5 서버 명령 `/commands`
 
 ```json

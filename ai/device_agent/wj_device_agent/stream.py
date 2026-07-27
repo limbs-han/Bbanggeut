@@ -62,6 +62,7 @@ class StreamManager:
                     )
                     else ("-an",)
                 ),
+                *self._config.ffmpeg_output_args,
                 "-f", "rtsp", "-rtsp_transport", "tcp", publish_url,
             ]
             self._process = self._process_factory(

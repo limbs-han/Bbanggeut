@@ -17,6 +17,34 @@ class UserProfile {
   );
 }
 
+class MembershipRequestLink {
+  const MembershipRequestLink({required this.token, required this.expiresAt});
+  final String token;
+  final DateTime? expiresAt;
+  factory MembershipRequestLink.fromJson(Map<String, dynamic> json) =>
+      MembershipRequestLink(
+        token: json['token'] as String,
+        expiresAt: parseDate(json['expiresAt']),
+      );
+}
+
+class MembershipRequestPreview {
+  const MembershipRequestPreview({
+    required this.email,
+    required this.displayName,
+    required this.expiresAt,
+  });
+  final String email;
+  final String displayName;
+  final DateTime? expiresAt;
+  factory MembershipRequestPreview.fromJson(Map<String, dynamic> json) =>
+      MembershipRequestPreview(
+        email: json['email'] as String,
+        displayName: json['displayName'] as String? ?? '',
+        expiresAt: parseDate(json['expiresAt']),
+      );
+}
+
 class AuthSession {
   const AuthSession({
     required this.accessToken,
@@ -55,12 +83,13 @@ class DeviceSummary {
   final DateTime? lastSeenAt;
   bool get isOnline => status == 'ONLINE';
   bool get isOwner => myRole == 'OWNER';
+  bool get canEditVideos => myRole == 'OWNER' || myRole == 'EDITOR';
   factory DeviceSummary.fromJson(Map<String, dynamic> json) => DeviceSummary(
     id: json['id'] as String,
     name: json['name'] as String? ?? '내 카메라',
     model: json['model'] as String? ?? '',
     status: json['status'] as String? ?? 'OFFLINE',
-    myRole: json['myRole'] as String? ?? 'MEMBER',
+    myRole: json['myRole'] as String? ?? 'VIEWER',
     retentionDays: (json['retentionDays'] as num?)?.toInt() ?? 30,
     lastSeenAt: parseDate(json['lastSeenAt']),
   );
@@ -245,32 +274,63 @@ class DeviceMember {
   factory DeviceMember.fromJson(Map<String, dynamic> json) => DeviceMember(
     id: json['id'] as String,
     user: UserProfile.fromJson(json['user'] as Map<String, dynamic>),
-    role: json['role'] as String? ?? 'MEMBER',
+    role: json['role'] as String? ?? 'VIEWER',
     status: json['status'] as String? ?? 'ACTIVE',
     joinedAt: parseDate(json['joinedAt']),
   );
 }
 
-class JoinRequestInfo {
-  const JoinRequestInfo({
+class UserSummary {
+  const UserSummary({
     required this.id,
-    required this.requester,
-    required this.status,
-    this.requestedAt,
+    required this.email,
+    required this.displayName,
   });
   final String id;
-  final UserProfile requester;
+  final String email;
+  final String displayName;
+  factory UserSummary.fromJson(Map<String, dynamic> json) => UserSummary(
+    id: json['id'] as String? ?? '',
+    email: json['email'] as String? ?? '',
+    displayName: json['displayName'] as String? ?? '',
+  );
+}
+
+class Invitation {
+  const Invitation({
+    required this.id,
+    required this.deviceId,
+    required this.deviceName,
+    required this.inviteeEmail,
+    required this.role,
+    required this.status,
+    this.inviter,
+    this.expiresAt,
+    this.createdAt,
+  });
+  final String id;
+  final String deviceId;
+  final String deviceName;
+  final String inviteeEmail;
+  final String role;
+  final UserSummary? inviter;
   final String status;
-  final DateTime? requestedAt;
-  factory JoinRequestInfo.fromJson(Map<String, dynamic> json) =>
-      JoinRequestInfo(
-        id: json['id'] as String,
-        requester: UserProfile.fromJson(
-          json['requester'] as Map<String, dynamic>,
-        ),
-        status: json['status'] as String? ?? 'PENDING',
-        requestedAt: parseDate(json['requestedAt']),
-      );
+  final DateTime? expiresAt;
+  final DateTime? createdAt;
+  bool get isPending => status == 'PENDING';
+  factory Invitation.fromJson(Map<String, dynamic> json) => Invitation(
+    id: json['id'] as String? ?? '',
+    deviceId: json['deviceId'] as String? ?? '',
+    deviceName: json['deviceName'] as String? ?? '카메라',
+    inviteeEmail: json['inviteeEmail'] as String? ?? '',
+    role: json['role'] as String? ?? 'VIEWER',
+    inviter: json['inviter'] is Map<String, dynamic>
+        ? UserSummary.fromJson(json['inviter'] as Map<String, dynamic>)
+        : null,
+    status: json['status'] as String? ?? 'PENDING',
+    expiresAt: parseDate(json['expiresAt']),
+    createdAt: parseDate(json['createdAt']),
+  );
 }
 
 class StreamSession {

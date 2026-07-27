@@ -1,4 +1,4 @@
-# William James Flutter App
+# 빵긋 Flutter App
 
 백엔드 OpenAPI를 기준으로 구현한 Android 우선 Flutter 앱입니다. Figma 와이어프레임의 화면 흐름과 따뜻한 색감은 참고하되, 실제 API 상태·오류·권한 모델을 우선합니다.
 

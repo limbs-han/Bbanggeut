@@ -6,6 +6,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
 import 'extra_screens.dart';
+import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -81,52 +82,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SoftCard(
                       color: AppColors.sage,
                       borderColor: AppColors.sage,
-                      padding: const EdgeInsets.all(13),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 25,
-                            backgroundColor: AppColors.surface,
-                            child: Text(
-                              controller
-                                      .user
-                                      ?.displayName
-                                      .characters
-                                      .firstOrNull ??
-                                  '나',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: AppColors.sageDark,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  controller.user?.displayName ?? '현재 사용자',
+                      padding: EdgeInsets.zero,
+                      child: InkWell(
+                        key: const Key('edit-profile-button'),
+                        onTap: () => _editProfile(context),
+                        child: Padding(
+                          padding: const EdgeInsets.all(13),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 25,
+                                backgroundColor: AppColors.surface,
+                                child: Text(
+                                  controller
+                                          .user
+                                          ?.displayName
+                                          .characters
+                                          .firstOrNull ??
+                                      '나',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
-                                    fontSize: 16,
+                                    color: AppColors.sageDark,
                                   ),
                                 ),
-                                Text(
-                                  controller.user?.email ?? '로그인 계정',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.inkSoft,
-                                  ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      controller.user?.displayName ?? '현재 사용자',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    Text(
+                                      controller.user?.email ?? '로그인 계정',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.inkSoft,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                              const StatusPill(
+                                label: '수정',
+                                color: AppColors.surface,
+                              ),
+                            ],
                           ),
-                          const StatusPill(
-                            label: '수정',
-                            color: AppColors.surface,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const _GroupLabel('가족 초대'),
+                    SoftCard(
+                      padding: EdgeInsets.zero,
+                      child: _SettingRow(
+                        icon: Icons.mark_email_unread_outlined,
+                        title: '받은 초대함',
+                        subtitle: controller.receivedInvitations.isEmpty
+                            ? '새로운 초대가 없어요'
+                            : '대기 중인 초대 ${controller.receivedInvitations.length}개',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                InvitationInboxScreen(controller: controller),
                           ),
-                        ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -136,6 +163,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Column(
                         children: [
                           _SettingRow(
+                            key: const Key('edit-camera-name-button'),
                             icon: Icons.videocam_outlined,
                             title: '카메라 설정',
                             subtitle: device.name,
@@ -287,6 +315,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _editProfile(BuildContext context) async {
+    final controller = widget.controller;
+    final input = TextEditingController(text: controller.user?.displayName);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('프로필 수정'),
+        content: TextField(
+          controller: input,
+          autofocus: true,
+          maxLength: 60,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(labelText: '이름'),
+          onSubmitted: (value) {
+            final name = value.trim();
+            if (name.isNotEmpty) Navigator.pop(context, name);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = input.text.trim();
+              if (name.isNotEmpty) Navigator.pop(context, name);
+            },
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    input.dispose();
+    if (!context.mounted || value == null) return;
+    final ok = await controller.updateProfile(value);
+    if (!context.mounted) return;
+    showAppSnack(
+      context,
+      ok ? '프로필을 수정했어요.' : (controller.errorMessage ?? '프로필을 수정하지 못했어요.'),
+      error: !ok,
+    );
+  }
+
   Future<void> _editDevice(BuildContext context) async {
     final controller = widget.controller;
     final result = await showDialog<_DeviceManageResult>(
@@ -302,11 +374,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final value = result.name;
     if (value?.isNotEmpty == true) {
       final ok = await controller.updateSelectedDevice(name: value);
-      if (!ok && context.mounted) {
+      if (context.mounted) {
         showAppSnack(
           context,
-          controller.errorMessage ?? '기기 이름을 바꾸지 못했어요.',
-          error: true,
+          ok
+              ? '카메라 이름을 수정했어요.'
+              : (controller.errorMessage ?? '기기 이름을 바꾸지 못했어요.'),
+          error: !ok,
         );
       }
     }
@@ -598,6 +672,7 @@ class _GroupLabel extends StatelessWidget {
 
 class _SettingRow extends StatelessWidget {
   const _SettingRow({
+    super.key,
     required this.icon,
     required this.title,
     this.subtitle,

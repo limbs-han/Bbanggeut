@@ -146,18 +146,11 @@ public interface DeviceMapper {
     int revokeActiveCredentials(@Param("deviceId") UUID deviceId);
 
     @Update("""
-        UPDATE device_invite_links
-           SET revoked_at = now()
-         WHERE device_id = #{deviceId} AND revoked_at IS NULL
-        """)
-    int revokeInviteLinks(@Param("deviceId") UUID deviceId);
-
-    @Update("""
-        UPDATE join_requests
-           SET status = 'CANCELLED', decided_at = now()
+        UPDATE invitations
+           SET status = 'REVOKED', decided_at = now(), updated_at = now()
          WHERE device_id = #{deviceId} AND status = 'PENDING'
         """)
-    int cancelPendingJoinRequests(@Param("deviceId") UUID deviceId);
+    int cancelPendingInvitations(@Param("deviceId") UUID deviceId);
 
     @Update("""
         UPDATE videos
@@ -186,30 +179,18 @@ public interface DeviceMapper {
 
     @Update("""
         UPDATE device_memberships
-           SET role = 'MEMBER', updated_at = now()
+           SET role = 'EDITOR', updated_at = now()
          WHERE device_id = #{deviceId} AND user_id = #{userId}
            AND role = 'OWNER' AND status = 'ACTIVE'
         """)
-    int demoteOwnerToMember(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
+    int demoteOwnerToEditor(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
 
     @Update("""
         UPDATE device_memberships
            SET role = 'OWNER', updated_at = now()
          WHERE id = #{membershipId} AND device_id = #{deviceId}
-           AND role = 'MEMBER' AND status = 'ACTIVE'
+           AND role IN ('EDITOR', 'VIEWER') AND status = 'ACTIVE'
         """)
-    int promoteMemberToOwner(@Param("deviceId") UUID deviceId, @Param("membershipId") UUID membershipId);
+    int promoteNonOwnerToOwner(@Param("deviceId") UUID deviceId, @Param("membershipId") UUID membershipId);
 
-    /**
-     * Ownership transfer: the revoked row keeps the history while the same
-     * physical serial gets a fresh UNCLAIMED row for the next owner.
-     */
-    @Select("""
-        INSERT INTO devices (serial_number, model, firmware_version, status)
-        SELECT serial_number, model, firmware_version, 'UNCLAIMED'
-          FROM devices
-         WHERE id = #{deviceId}
-        RETURNING id::text
-        """)
-    String insertSuccessorDevice(@Param("deviceId") UUID deviceId);
 }
