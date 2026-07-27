@@ -31,11 +31,11 @@ Jetson과 Raspberry Pi가 하나의 카메라 시스템을 이룰 때 서버 권
 
 | 항목 | 규칙 |
 | --- | --- |
-| 토픽 루트 | `{env}/wj/v1`, 예: `dev/wj/v1`, `prod/wj/v1` |
+| 토픽 루트 | `{env}/wj/v2`, 예: `dev/wj/v2`, `prod/wj/v2` |
 | 인코딩 | UTF-8 JSON, `Content-Type: application/json` |
 | 식별자 | 서버 발급 UUID 문자열 |
 | 시각 | UTC ISO 8601, 밀리초 포함 권장 |
-| 스키마 버전 | 모든 payload에 `schemaVersion: "1.0"` 포함 |
+| 스키마 버전 | 모든 payload에 `schemaVersion: "2.0"` 포함 |
 | QoS | heartbeat는 0, 상태·이벤트·명령·ACK는 1 |
 | 중복 처리 | `eventId` 또는 `requestId`를 기기 범위 멱등 키로 사용 |
 | 순서 | 서로 다른 토픽 사이의 전역 순서를 가정하지 않음 |
@@ -60,13 +60,13 @@ Jetson과 Raspberry Pi가 하나의 카메라 시스템을 이룰 때 서버 권
 인증된 기기 `deviceId=D`의 최소 ACL은 다음과 같다.
 
 ```text
-publish:   {env}/wj/v1/devices/D/status
-publish:   {env}/wj/v1/devices/D/heartbeat
-publish:   {env}/wj/v1/devices/D/registration
-publish:   {env}/wj/v1/devices/D/events
-publish:   {env}/wj/v1/devices/D/stream/events
-publish:   {env}/wj/v1/devices/D/commands/ack
-subscribe: {env}/wj/v1/devices/D/commands
+publish:   {env}/wj/v2/devices/D/status
+publish:   {env}/wj/v2/devices/D/heartbeat
+publish:   {env}/wj/v2/devices/D/registration
+publish:   {env}/wj/v2/devices/D/events
+publish:   {env}/wj/v2/devices/D/stream/events
+publish:   {env}/wj/v2/devices/D/commands/ack
+subscribe: {env}/wj/v2/devices/D/commands
 ```
 
 다른 기기의 토픽과 와일드카드 구독은 금지한다. 백엔드 서비스 계정만 필요한 기기 범위의 와일드카드를 사용할 수 있다.
@@ -76,12 +76,12 @@ subscribe: {env}/wj/v1/devices/D/commands
 기기 연결 시 아래 LWT를 QoS 1, retained로 설정한다.
 
 ```text
-{env}/wj/v1/devices/{deviceId}/status
+{env}/wj/v2/devices/{deviceId}/status
 ```
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "deviceId": "11111111-1111-4111-8111-111111111111",
   "state": "OFFLINE",
   "reason": "CONNECTION_LOST",
@@ -103,7 +103,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 | `/commands` | 서버 → 기기 | 1 | N | 스트리밍·설정 갱신 명령 |
 | `/commands/ack` | 기기 → 서버 | 1 | N | 명령 수신·처리 결과 |
 
-전체 예시는 `dev/wj/v1/devices/11111111-1111-4111-8111-111111111111/events`다.
+전체 예시는 `dev/wj/v2/devices/11111111-1111-4111-8111-111111111111/events`다.
 
 ## 5. 메시지 상세
 
@@ -113,7 +113,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "deviceId": "11111111-1111-4111-8111-111111111111",
   "state": "ONLINE",
   "reason": "BOOT_COMPLETED",
@@ -124,7 +124,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 
 | 필드 | 타입 | 필수 | 제약 |
 | --- | --- | :---: | --- |
-| `schemaVersion` | string | Y | `1.0` |
+| `schemaVersion` | string | Y | `2.0` |
 | `deviceId` | UUID | Y | 인증 주체의 기기 ID와 일치 |
 | `state` | enum | Y | `ONLINE`, `OFFLINE`, `DEGRADED`, `ERROR` |
 | `reason` | string | Y | 사전 합의한 상태 원인 코드 |
@@ -139,7 +139,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "deviceId": "11111111-1111-4111-8111-111111111111",
   "sentAt": "2026-07-25T04:05:30.000Z",
   "uptimeSeconds": 8123,
@@ -170,7 +170,7 @@ subscribe: {env}/wj/v1/devices/D/commands
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "deviceId": "11111111-1111-4111-8111-111111111111",
   "mode": "ENABLED",
   "enabledAt": "2026-07-25T04:10:00.000Z",
@@ -195,7 +195,7 @@ MQTT 5에서는 retained `ENABLED` 메시지에 Message Expiry Interval을 설�
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "eventId": "22222222-2222-4222-8222-222222222222",
   "deviceId": "11111111-1111-4111-8111-111111111111",
   "type": "LAUGHTER",
@@ -254,7 +254,7 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "requestId": "33333333-3333-4333-8333-333333333333",
   "deviceId": "11111111-1111-4111-8111-111111111111",
   "type": "START_STREAM",
@@ -291,7 +291,7 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "requestId": "33333333-3333-4333-8333-333333333333",
   "deviceId": "11111111-1111-4111-8111-111111111111",
   "sessionId": "44444444-4444-4444-8444-444444444444",
@@ -327,7 +327,7 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "eventId": "66666666-6666-4666-8666-666666666666",
   "requestId": "33333333-3333-4333-8333-333333333333",
   "deviceId": "11111111-1111-4111-8111-111111111111",

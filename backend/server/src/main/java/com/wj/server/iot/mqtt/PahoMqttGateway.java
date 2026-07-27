@@ -48,6 +48,10 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
     private static final Logger log = LoggerFactory.getLogger(PahoMqttGateway.class);
     private static final String DYNSEC_REQUEST_TOPIC = "$CONTROL/dynamic-security/v1";
     private static final String DYNSEC_RESPONSE_TOPIC = "$CONTROL/dynamic-security/v1/response";
+    private static final String TOPIC_VERSION = "v2";
+    private static final String LEGACY_TOPIC_VERSION = "v1";
+    private static final List<String> DEVICE_PUBLISH_SUFFIXES = List.of(
+        "status", "heartbeat", "registration", "events", "stream/events", "commands/ack");
     private final MqttProperties properties;
     private final ObjectMapper objectMapper;
     private final MqttInboundHandler inboundHandler;
@@ -182,9 +186,7 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
         commands.add(command("createClient")
             .put("username", username).put("password", password).put("clientid", username));
         commands.add(command("createRole").put("rolename", role));
-        for (String suffix : List.of(
-            "status", "heartbeat", "registration", "events", "stream/events", "commands/ack"
-        )) {
+        for (String suffix : DEVICE_PUBLISH_SUFFIXES) {
             commands.add(acl(role, "publishClientSend", deviceTopic(deviceId, suffix)));
         }
         commands.add(acl(role, "subscribeLiteral", deviceTopic(deviceId, "commands")));
@@ -219,6 +221,51 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
                 .put("clientid", deviceId.toString()),
             command("enableClient").put("username", deviceId.toString())
         ), true);
+        migrateTopicAcl(deviceId);
+    }
+
+    @Override
+    public void migrateTopicAcl(UUID deviceId) {
+        if (!clientExists(deviceId)) {
+            return;
+        }
+        String role = "device-" + deviceId;
+        if (!roleExists(role)) {
+            executeDynsec(List.of(command("createRole").put("rolename", role)), true);
+        }
+
+        List<ObjectNode> removals = new ArrayList<>();
+        for (String version : List.of(LEGACY_TOPIC_VERSION, TOPIC_VERSION)) {
+            for (String suffix : DEVICE_PUBLISH_SUFFIXES) {
+                removals.add(removeAcl(
+                    role, "publishClientSend", deviceTopic(version, deviceId, suffix)));
+            }
+            removals.add(removeAcl(
+                role, "subscribeLiteral", deviceTopic(version, deviceId, "commands")));
+            removals.add(removeAcl(
+                role, "publishClientReceive", deviceTopic(version, deviceId, "commands")));
+        }
+        executeDynsec(removals, false);
+
+        List<ObjectNode> additions = new ArrayList<>();
+        for (String suffix : DEVICE_PUBLISH_SUFFIXES) {
+            additions.add(acl(role, "publishClientSend", deviceTopic(deviceId, suffix)));
+        }
+        additions.add(acl(role, "subscribeLiteral", deviceTopic(deviceId, "commands")));
+        additions.add(acl(role, "publishClientReceive", deviceTopic(deviceId, "commands")));
+        executeDynsec(additions, true);
+        executeDynsec(List.of(command("addClientRole")
+            .put("username", deviceId.toString())
+            .put("rolename", role)
+            .put("priority", 100)), false);
+    }
+
+    private boolean roleExists(String role) {
+        JsonNode response = executeDynsec(List.of(
+            command("getRole").put("rolename", role)
+        ), false);
+        JsonNode first = response.path("responses").path(0);
+        return first.isObject() && !first.hasNonNull("error");
     }
 
     private boolean clientExists(UUID deviceId) {
@@ -250,8 +297,19 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
             .put("allow", true);
     }
 
+    private ObjectNode removeAcl(String role, String type, String topic) {
+        return command("removeRoleACL")
+            .put("rolename", role)
+            .put("acltype", type)
+            .put("topic", topic);
+    }
+
     private String deviceTopic(UUID deviceId, String suffix) {
-        return baseTopic() + "/devices/" + deviceId + "/" + suffix;
+        return deviceTopic(TOPIC_VERSION, deviceId, suffix);
+    }
+
+    private String deviceTopic(String version, UUID deviceId, String suffix) {
+        return properties.environment() + "/wj/" + version + "/devices/" + deviceId + "/" + suffix;
     }
 
     private synchronized JsonNode executeDynsec(List<ObjectNode> commands, boolean failOnCommandError) {
@@ -313,7 +371,7 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
         }
         Instant issuedAt = Instant.now();
         Map<String, Object> command = new LinkedHashMap<>();
-        command.put("schemaVersion", "1.0");
+        command.put("schemaVersion", "2.0");
         command.put("requestId", UUID.randomUUID());
         command.put("deviceId", deviceId);
         command.put("type", type);
@@ -334,7 +392,7 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
     }
 
     private String baseTopic() {
-        return properties.environment() + "/wj/v1";
+        return properties.environment() + "/wj/" + TOPIC_VERSION;
     }
 
     @PreDestroy

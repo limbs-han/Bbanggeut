@@ -150,7 +150,7 @@ flowchart LR
 | AI → IoT | eventId, type, occurredAtUtc, confidence, modelVersion | 7/21 | 필드 변경은 PM과 양 담당 승인 |
 | IoT → 백엔드 | 업로드 요청·완료 메타데이터·멱등 키 | 7/21 | OpenAPI 또는 예제 JSON 동시 갱신 |
 | 백엔드 → 프론트 | 인증·오류·페이지·다운로드 URL·라이브 시청 세션 상태·권한 | 7/21 | mock 응답과 Swagger 갱신 |
-| IoT ↔ 백엔드 | 기기 상태·재시도, `{env}/wj/v1/devices/{deviceId}/commands`의 START/EXTEND/STOP·ACK | 7/22 | topic 버전 또는 payload version 명시 |
+| IoT ↔ 백엔드 | 기기 상태·재시도, `{env}/wj/v2/devices/{deviceId}/commands`의 START/EXTEND/STOP·ACK | 7/22 | topic 버전 또는 payload version 명시 |
 | 프론트 ↔ PM | 화면별 허용 역할·빈/오류 상태 | 7/21 | 와이어프레임·요구사항 함께 갱신 |
 
 ## 7. 리스크 등록부

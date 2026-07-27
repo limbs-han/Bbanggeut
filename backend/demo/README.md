@@ -32,9 +32,14 @@ looping server video after the test with:
 Demo credentials:
 
 - Owner/admin: `admin@wj.local` / `WjDemo!2026`
-- Existing member: `family@wj.local` / `WjFamily!2026`
-- Pending member request: `request@wj.local` / `WjRequest!2026`
+- Existing editor: `family@wj.local` / `WjFamily!2026`
+- Pending viewer invitation: `request@wj.local` / `WjRequest!2026`
 - Fixed registration code for a second camera: `WJDE-2026`
+
+The admin and family accounts already have access to the seeded primary camera,
+so Flutter opens the main shell instead of the device-registration screen. The
+request account has no camera yet and opens its pending invitation flow. Use
+`WJDE-2026` only when explicitly testing claim of the separate second camera.
 
 Run Flutter against the real API, not the old frontend-only shortcut:
 

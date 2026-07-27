@@ -157,6 +157,52 @@ mc cp /clips/demo-clip-03.mp4 local/wj-videos/private/10000000-0000-0000-0000-00
         -f /tmp/wj-demo-seed.sql
     if ($LASTEXITCODE -ne 0) { throw "Demo database seed failed" }
 
+    Write-Host "Verifying demo login and device access..."
+    function Get-DemoSession {
+        param(
+            [Parameter(Mandatory = $true)][string]$Email,
+            [Parameter(Mandatory = $true)][string]$Password
+        )
+        $body = @{ email = $Email; password = $Password } | ConvertTo-Json
+        Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/auth/login" `
+            -ContentType "application/json" -Body $body -TimeoutSec 10
+    }
+    function Get-DemoDevices {
+        param([Parameter(Mandatory = $true)][string]$AccessToken)
+        @(Invoke-RestMethod -Uri "http://localhost:8080/api/devices" `
+            -Headers @{ Authorization = "Bearer $AccessToken" } -TimeoutSec 10)
+    }
+
+    $adminSession = Get-DemoSession -Email "admin@wj.local" -Password $AdminPassword
+    $adminDevices = Get-DemoDevices -AccessToken $adminSession.accessToken
+    $adminDevice = $adminDevices | Where-Object {
+        $_.id -eq "10000000-0000-0000-0000-000000000001" -and $_.myRole -eq "OWNER"
+    } | Select-Object -First 1
+    if (-not $adminDevice) {
+        throw "Demo admin did not receive the seeded OWNER camera"
+    }
+
+    $familySession = Get-DemoSession -Email "family@wj.local" -Password "WjFamily!2026"
+    $familyDevices = Get-DemoDevices -AccessToken $familySession.accessToken
+    $familyDevice = $familyDevices | Where-Object {
+        $_.id -eq "10000000-0000-0000-0000-000000000001" -and $_.myRole -eq "EDITOR"
+    } | Select-Object -First 1
+    if (-not $familyDevice) {
+        throw "Demo family account did not receive the seeded EDITOR camera"
+    }
+
+    $requestSession = Get-DemoSession -Email "request@wj.local" -Password "WjRequest!2026"
+    $requestInvitations = @(Invoke-RestMethod -Uri "http://localhost:8080/api/invitations" `
+        -Headers @{ Authorization = "Bearer $($requestSession.accessToken)" } -TimeoutSec 10)
+    $pendingInvitation = $requestInvitations | Where-Object {
+        $_.deviceId -eq "10000000-0000-0000-0000-000000000001" `
+            -and $_.role -eq "VIEWER" -and $_.status -eq "PENDING"
+    } | Select-Object -First 1
+    if (-not $pendingInvitation) {
+        throw "Demo request account did not receive the seeded VIEWER invitation"
+    }
+    Write-Host "Demo authentication and frontend entry fixtures are valid."
+
     $streamPidFile = Join-Path $runtimeDirectory "stream.pid"
     if (Test-Path -LiteralPath $streamPidFile) {
         $oldPid = [int](Get-Content -LiteralPath $streamPidFile)

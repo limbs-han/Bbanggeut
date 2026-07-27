@@ -73,11 +73,13 @@ services:
         chmod 600 /mosquitto/data/dynamic-security.json
         mosquitto -c /mosquitto/config/mosquitto.conf & broker_pid=$$!
         until mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec listClients >/dev/null 2>&1; do sleep 1; done
-        if ! mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec getRole wj-backend >/dev/null 2>&1; then
+        if ! mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec listRoles 2>/dev/null | grep -Fxq wj-backend; then
           mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec createRole wj-backend
-          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addRoleACL wj-backend publishClientSend '+/wj/v1/devices/+/commands' allow 100
-          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addClientRole "$${MQTT_USERNAME}" wj-backend 100
         fi
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec removeRoleACL wj-backend publishClientSend '+/wj/v1/devices/+/commands' || true
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec removeRoleACL wj-backend publishClientSend '+/wj/v2/devices/+/commands' || true
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addRoleACL wj-backend publishClientSend '+/wj/v2/devices/+/commands' allow 100
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h localhost -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addClientRole "$${MQTT_USERNAME}" wj-backend 100 || true
         kill "$$broker_pid"
         wait "$$broker_pid" || true
         exec mosquitto -c /mosquitto/config/mosquitto.conf

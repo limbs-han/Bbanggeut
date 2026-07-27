@@ -171,7 +171,7 @@ class DeviceAgent:
         self._ack(command, "SUCCEEDED", stream_id=stream_id, session_id=payload.get("sessionId"))
 
     def _validate(self, command: dict[str, Any]) -> str:
-        if command.get("schemaVersion") != "1.0":
+        if command.get("schemaVersion") != "2.0":
             raise ValueError("unsupported schema")
         if command.get("deviceId") != self.config.device_id:
             raise ValueError("wrong device")
@@ -212,7 +212,7 @@ class DeviceAgent:
         while not self.stop_event.wait(30):
             snapshot = self.streams.snapshot()
             self._publish("heartbeat", {
-                "schemaVersion": "1.0",
+                "schemaVersion": "2.0",
                 "deviceId": self.config.device_id,
                 "sentAt": isoformat(),
                 "uptimeSeconds": int(time.monotonic()),
@@ -226,7 +226,7 @@ class DeviceAgent:
 
     def _status(self, state: str, reason: str) -> dict[str, Any]:
         return {
-            "schemaVersion": "1.0",
+            "schemaVersion": "2.0",
             "deviceId": self.config.device_id,
             "state": state,
             "reason": reason,
@@ -243,7 +243,7 @@ class DeviceAgent:
         session_id: str | None = None,
     ) -> None:
         ack = {
-            "schemaVersion": "1.0",
+            "schemaVersion": "2.0",
             "requestId": command["requestId"],
             "deviceId": self.config.device_id,
             "status": status,
@@ -270,7 +270,7 @@ class DeviceAgent:
     ) -> None:
         payload = command.get("payload", {})
         event = {
-            "schemaVersion": "1.0",
+            "schemaVersion": "2.0",
             "eventId": str(uuid4()),
             "requestId": command["requestId"],
             "deviceId": self.config.device_id,

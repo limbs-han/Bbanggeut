@@ -38,7 +38,7 @@ class MqttInboundHandlerTest {
     void recordsValidHeartbeatForTopicDevice() {
         UUID deviceId = UUID.randomUUID();
         handle(deviceId, "heartbeat", """
-            {"schemaVersion":"1.0","deviceId":"%s","recording":true,
+            {"schemaVersion":"2.0","deviceId":"%s","recording":true,
              "uploadQueueDepth":2,"bufferSeconds":120,"personCount":3,"firmwareVersion":"0.4.0"}
             """.formatted(deviceId));
 
@@ -49,7 +49,7 @@ class MqttInboundHandlerTest {
     void ignoresPayloadWhoseDeviceDoesNotMatchTopic() {
         UUID topicDeviceId = UUID.randomUUID();
         handle(topicDeviceId, "heartbeat", """
-            {"schemaVersion":"1.0","deviceId":"%s","recording":true,"uploadQueueDepth":2}
+            {"schemaVersion":"2.0","deviceId":"%s","recording":true,"uploadQueueDepth":2}
             """.formatted(UUID.randomUUID()));
 
         verify(telemetryMapper, never()).recordHeartbeat(
@@ -62,7 +62,7 @@ class MqttInboundHandlerTest {
     void acceptsRegistrationOnlyWithinFiveMinutes() {
         UUID deviceId = UUID.randomUUID();
         handle(deviceId, "registration", """
-            {"schemaVersion":"1.0","deviceId":"%s","mode":"ENABLED",
+            {"schemaVersion":"2.0","deviceId":"%s","mode":"ENABLED",
              "expiresAt":"2026-07-17T10:02:00Z"}
             """.formatted(deviceId));
 
@@ -74,7 +74,7 @@ class MqttInboundHandlerTest {
         UUID deviceId = UUID.randomUUID();
         UUID streamId = UUID.randomUUID();
         handle(deviceId, "stream/events", """
-            {"schemaVersion":"1.0","deviceId":"%s","streamId":"%s",
+            {"schemaVersion":"2.0","deviceId":"%s","streamId":"%s",
              "type":"STREAM_READY","hardExpiresAt":"2026-07-17T10:02:00Z"}
             """.formatted(deviceId, streamId));
 
@@ -86,7 +86,7 @@ class MqttInboundHandlerTest {
         UUID deviceId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();
         handle(deviceId, "events", """
-            {"schemaVersion":"1.0","deviceId":"%s","eventId":"%s","type":"TOUCH",
+            {"schemaVersion":"2.0","deviceId":"%s","eventId":"%s","type":"TOUCH",
              "occurredAt":"2026-07-17T09:59:00Z",
              "localClip":{"state":"QUEUED","beforeMs":120000,"afterMs":0,"mergeWindowMs":0},
              "source":{"nodeId":"pi-gateway","component":"TOUCH_SENSOR"}}
@@ -104,7 +104,7 @@ class MqttInboundHandlerTest {
     void rejectsTouchEventFromNonSensorComponent() {
         UUID deviceId = UUID.randomUUID();
         handle(deviceId, "events", """
-            {"schemaVersion":"1.0","deviceId":"%s","eventId":"%s","type":"TOUCH",
+            {"schemaVersion":"2.0","deviceId":"%s","eventId":"%s","type":"TOUCH",
              "occurredAt":"2026-07-17T09:59:00Z",
              "localClip":{"state":"QUEUED","beforeMs":120000,"afterMs":0,"mergeWindowMs":0},
              "source":{"nodeId":"pi-gateway","component":"APP"}}
@@ -114,7 +114,7 @@ class MqttInboundHandlerTest {
     }
 
     private void handle(UUID deviceId, String suffix, String json) {
-        handler.handle(("local/wj/v1/devices/" + deviceId + "/" + suffix),
+        handler.handle(("local/wj/v2/devices/" + deviceId + "/" + suffix),
             json.getBytes(StandardCharsets.UTF_8));
     }
 }

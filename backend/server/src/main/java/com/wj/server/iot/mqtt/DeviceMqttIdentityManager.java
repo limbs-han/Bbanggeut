@@ -7,5 +7,7 @@ public interface DeviceMqttIdentityManager {
 
     void rotate(UUID deviceId, String password);
 
+    void migrateTopicAcl(UUID deviceId);
+
     void revoke(UUID deviceId);
 }
