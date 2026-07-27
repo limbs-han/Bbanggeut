@@ -90,10 +90,12 @@ pipeline {
         }
 
         stage('Production approval') {
-            input {
-                message 'master CI 결과물을 운영 EC2에 배포할까요?'
-                ok 'Backend 배포 승인'
-                submitterParameter 'APPROVED_BY'
+            steps {
+                input(
+                    message: 'master CI 결과물을 운영 EC2에 배포할까요?',
+                    ok: 'Backend 배포 승인',
+                    submitterParameter: 'APPROVED_BY'
+                )
             }
         }
 
@@ -113,13 +115,13 @@ pipeline {
                 sshagent(credentials: ['production-backend-ssh']) {
                     sh """
                         set -eu
-                        jar_file="\$(find . -maxdepth 1 -type f -name 'server-*.jar' -print -quit)"
-                        test -n "\${jar_file}"
+                        jar_file="\\$(find . -maxdepth 1 -type f -name 'server-*.jar' -print -quit)"
+                        test -n "\\${jar_file}"
                         scp \
                           -o BatchMode=yes \
                           -o StrictHostKeyChecking=yes \
                           -o UserKnownHostsFile=/run/secrets/production-known-hosts \
-                          "\${jar_file}" \
+                          "\\${jar_file}" \
                           jenkins-deploy@host.docker.internal:/home/jenkins-deploy/incoming/server.jar.next
                         ssh \
                           -o BatchMode=yes \
