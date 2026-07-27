@@ -90,10 +90,12 @@ pipeline {
         }
 
         stage('Production approval') {
-            input {
-                message 'master CI 결과물을 운영 EC2에 배포할까요?'
-                ok 'Backend 배포 승인'
-                submitterParameter 'APPROVED_BY'
+            steps {
+                input(
+                    message: 'master CI 결과물을 운영 EC2에 배포할까요?',
+                    ok: 'Backend 배포 승인',
+                    submitterParameter: 'APPROVED_BY'
+                )
             }
         }
 
