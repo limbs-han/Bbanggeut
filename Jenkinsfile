@@ -3,7 +3,7 @@ pipeline {
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
-        copyArtifactPermission('Production/S15P11E201-backend-deploy')
+        copyArtifactPermission('/Production/S15P11E201-backend-deploy')
         disableConcurrentBuilds(abortPrevious: true)
         gitLabConnection('s15p11e201-gitlab-api')
         skipDefaultCheckout(true)
