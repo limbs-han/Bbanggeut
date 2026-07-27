@@ -252,9 +252,9 @@ if [[ -L "${RUN_ROOT}/latest" || ! -e "${RUN_ROOT}/latest" ]]; then
     ln -sfn "$RUN_ID" "${RUN_ROOT}/latest"
 fi
 
-VISION_TOPIC="homecam/v1/${DEVICE_ID}/ai/vision/state"
-LAUGHTER_TOPIC="homecam/v1/${DEVICE_ID}/ai/laughter/detected"
-FINAL_EVENT_TOPIC="homecam/v1/${DEVICE_ID}/events/memory-candidate"
+VISION_TOPIC="homecam/v2/${DEVICE_ID}/ai/vision/state"
+LAUGHTER_TOPIC="homecam/v2/${DEVICE_ID}/ai/laughter/detected"
+FINAL_EVENT_TOPIC="homecam/v2/${DEVICE_ID}/events/memory-candidate"
 
 {
     printf 'run_id=%s\n' "$RUN_ID"

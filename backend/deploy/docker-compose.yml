@@ -81,8 +81,12 @@ services:
         until mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec listClients >/dev/null 2>&1; do sleep 1; done
         if ! mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec listRoles 2>/dev/null | grep -Fxq wj-backend; then
           mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec createRole wj-backend
-          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addRoleACL wj-backend publishClientSend '+/wj/v1/devices/+/commands' allow 100
         fi
+        # Replace the persisted command ACL so an existing Dynamic Security
+        # volume cannot keep the retired v1 namespace active.
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec removeRoleACL wj-backend publishClientSend '+/wj/v1/devices/+/commands' || true
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec removeRoleACL wj-backend publishClientSend '+/wj/v2/devices/+/commands' || true
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addRoleACL wj-backend publishClientSend '+/wj/v2/devices/+/commands' allow 100
         # The role can persist while its client assignment is missing (for
         # example after an older partial bootstrap). Always repair it. The
         # command returns an error when the assignment already exists.
@@ -101,19 +105,27 @@ services:
     image: bluenviron/mediamtx:1
     restart: unless-stopped
     environment:
-      # Keep the configuration file free of credentials. This account can only
-      # publish canonical UUID stream paths and cannot read or use admin APIs.
+      # Keep the existing Pi account unchanged while assigning Jetson a
+      # different credential. Both device accounts are publish-only.
       MTX_AUTHMETHOD: internal
-      MTX_AUTHINTERNALUSERS_0_USER: ${MEDIAMTX_JETSON_PUBLISH_USER:?Set MEDIAMTX_JETSON_PUBLISH_USER}
-      MTX_AUTHINTERNALUSERS_0_PASS: ${MEDIAMTX_JETSON_PUBLISH_PASSWORD:?Set MEDIAMTX_JETSON_PUBLISH_PASSWORD}
+      MTX_AUTHINTERNALUSERS_0_USER: ${MEDIAMTX_PUBLISH_USER:?Set existing Pi MEDIAMTX_PUBLISH_USER}
+      MTX_AUTHINTERNALUSERS_0_PASS: ${MEDIAMTX_PUBLISH_PASSWORD:?Set existing Pi MEDIAMTX_PUBLISH_PASSWORD}
       MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_ACTION: publish
       MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
+      MTX_AUTHINTERNALUSERS_1_USER: ${MEDIAMTX_JETSON_PUBLISH_USER:?Set MEDIAMTX_JETSON_PUBLISH_USER}
+      MTX_AUTHINTERNALUSERS_1_PASS: ${MEDIAMTX_JETSON_PUBLISH_PASSWORD:?Set MEDIAMTX_JETSON_PUBLISH_PASSWORD}
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: publish
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+
       # HLS is reachable only from host-loopback Nginx, which authenticates app
       # viewers before proxying requests to MediaMTX.
-      MTX_AUTHINTERNALUSERS_1_USER: any
-      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: read
-      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      MTX_AUTHINTERNALUSERS_2_USER: any
+      # HLS reaches the container through the host-side loopback mapping and
+      # Docker bridge. Public RTSPS clients must not inherit this read identity.
+      MTX_AUTHINTERNALUSERS_2_IPS: "127.0.0.1/32,::1/128,172.16.0.0/12"
+      MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
+      MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
       # optional preserves the existing plaintext loopback tunnel as rollback.
       # Change only this secret-file value to strict after migration validation.

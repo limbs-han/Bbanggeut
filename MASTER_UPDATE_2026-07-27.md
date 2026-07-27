@@ -231,7 +231,7 @@ UPLOAD_SWEEP_DELAY_MS=60000
 | 기기 → 서버 | `status`, `heartbeat`, `registration`, `events`, `stream/events`, `commands/ack` |
 | 서버 → 기기 | `commands` |
 
-백엔드 관리자 계정은 전체 기기 명령 토픽 `+/wj/v1/devices/+/commands`에 발행할 수 있다.
+백엔드 관리자 계정은 전체 기기 명령 토픽 `+/wj/v2/devices/+/commands`에 발행할 수 있다.
 
 Mosquitto 초기화 및 등록 실패 방어:
 
@@ -282,8 +282,8 @@ Mosquitto 초기화 및 등록 실패 방어:
 
 - Python Paho MQTT 클라이언트는 `CallbackAPIVersion.VERSION2` 콜백 API를 사용한다.
 - 이는 **Paho 콜백 인터페이스 v2**를 뜻한다.
-- 서비스 MQTT 토픽 계약 자체는 현재 `prod/wj/v1/devices/{deviceId}/...` 형식을 유지한다.
-- 따라서 토픽을 `wj/v2`로 바꾸는 작업은 이번 통합에 포함되지 않았다.
+- 서비스 MQTT 토픽 계약은 후속 커밋에서 `prod/wj/v2/devices/{deviceId}/...` 형식으로 전환했다.
+- Python Paho 콜백 API v2와 서비스 토픽 스키마 v2는 서로 다른 버전 체계지만 현재는 둘 다 v2다.
 
 ## 6. IoT·Raspberry Pi
 
@@ -351,7 +351,7 @@ REGISTRATION_BUTTON_TIMEOUT_SECONDS=30
 
 - 물리 버튼은 enrollment 자체를 대신하지 않는다. 기기에 유효한 `OPERATING` token과 MQTT CA가 먼저 설치돼 있어야 한다.
 - 앱에 입력하는 코드는 사용자 소유권 claim용이며 MQTT 비밀번호가 아니다.
-- 현재 서버 토픽 버전은 `wj/v1`이고, Python Paho의 `CallbackAPIVersion.VERSION2`와는 별개다.
+- 현재 서버 토픽 버전은 `wj/v2`이며 Python Paho의 `CallbackAPIVersion.VERSION2`와는 별개다.
 
 ## 7. DB·API 계약
 

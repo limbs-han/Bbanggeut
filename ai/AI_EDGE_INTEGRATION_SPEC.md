@@ -299,11 +299,11 @@ Jetson 내부 프로세스 통신에는 로컬 Mosquitto를 사용한다.
 
 | 토픽 | QoS | Retain | 발행자 | 구독자 |
 | --- | ---: | --- | --- | --- |
-| `homecam/v1/{device_id}/ai/vision/state` | 0 | false | YOLO | 융합기·진단 |
-| `homecam/v1/{device_id}/ai/laughter/detected` | 1 | false | YAMNet | 이벤트 관리자 |
-| `homecam/v1/{device_id}/events/memory-candidate` | 1 | false | 이벤트 관리자 | 녹화·업로드 관리자 |
-| `homecam/v1/{device_id}/control/framing/target` | 0 | false | YOLO | 서보 제어기 |
-| `homecam/v1/{device_id}/control/framing/status` | 0 | false | 서보 제어기 | 진단·Device Agent |
+| `homecam/v2/{device_id}/ai/vision/state` | 0 | false | YOLO | 융합기·진단 |
+| `homecam/v2/{device_id}/ai/laughter/detected` | 1 | false | YAMNet | 이벤트 관리자 |
+| `homecam/v2/{device_id}/events/memory-candidate` | 1 | false | 이벤트 관리자 | 녹화·업로드 관리자 |
+| `homecam/v2/{device_id}/control/framing/target` | 0 | false | YOLO | 서보 제어기 |
+| `homecam/v2/{device_id}/control/framing/status` | 0 | false | 서보 제어기 | 진단·Device Agent |
 
 클라우드 MQTTS 자격증명은 YOLO와 YAMNet에 전달하지 않는다.
 Device Agent가 기기 인증정보를 소유하고 필요한 이벤트만 클라우드로 전달한다.

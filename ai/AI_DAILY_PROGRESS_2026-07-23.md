@@ -244,7 +244,7 @@ AI 파트는 다음 범위를 담당한다.
 
 ```text
 YOLO
-→ homecam/v1/{device_id}/control/framing/target
+→ homecam/v2/{device_id}/control/framing/target
 → servo_controller
 → PCA9685 Channel 0/1
 → PAN/TILT SG90
@@ -309,7 +309,7 @@ Jetson에 전달할 직접 RTSPS publisher는 다음 계약을 따라야 한다.
 신규 웃음 이벤트의 기본 토픽은 다음과 같다.
 
 ```text
-homecam/v1/{device_id}/ai/laughter/detected
+homecam/v2/{device_id}/ai/laughter/detected
 ```
 
 필수 정보는 UUID `event_id`, UTC ISO-8601 `detected_at`, 0~1 `score`,

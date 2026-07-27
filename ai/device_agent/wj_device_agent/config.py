@@ -67,7 +67,7 @@ class AgentConfig:
 
     @property
     def topic_base(self) -> str:
-        return f"{self.mqtt_environment}/wj/v1/devices/{self.device_id}"
+        return f"{self.mqtt_environment}/wj/v2/devices/{self.device_id}"
 
     @classmethod
     def from_environment(cls) -> "AgentConfig":

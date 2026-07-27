@@ -28,11 +28,11 @@ class VisionMqttPublisher:
             ) from exc
 
         self._device_id = device_id
-        self._topic = topic or f"homecam/v1/{device_id}/ai/vision/state"
+        self._topic = topic or f"homecam/v2/{device_id}/ai/vision/state"
         self._control_topic = control_topic or (
-            f"homecam/v1/{device_id}/control/framing/target"
+            f"homecam/v2/{device_id}/control/framing/target"
         )
-        self._status_topic = f"homecam/v1/{device_id}/ai/vision/status"
+        self._status_topic = f"homecam/v2/{device_id}/ai/vision/status"
         self._connected = threading.Event()
         self._connect_error: str | None = None
         self._warned_disconnected = False

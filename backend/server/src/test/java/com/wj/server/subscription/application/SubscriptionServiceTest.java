@@ -95,11 +95,11 @@ class SubscriptionServiceTest {
     }
 
     @Test
-    void memberCannotChangeSubscription() {
+    void editorCannotChangeSubscription() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.lockAccessibleDevice(userId, deviceId))
-            .thenReturn(Optional.of(view(deviceId, "MEMBER")));
+            .thenReturn(Optional.of(view(deviceId, "EDITOR")));
 
         assertThatThrownBy(() -> service.activate(userId, deviceId))
             .isInstanceOf(ApiException.class)
