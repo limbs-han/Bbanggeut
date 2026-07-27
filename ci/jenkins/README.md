@@ -107,19 +107,17 @@ PostgreSQL CI 완료 조건은 다음과 같습니다.
 5. Jenkins JUnit 보고서에서 테스트가 `SKIPPED`가 아니라 실행된 것으로 표시됩니다.
 6. 테스트 종료 후 빌드 전용 임시 DB가 삭제됩니다.
 
-## Frontend APK
+## Frontend CI
 
-Frontend CI는 분석과 테스트가 끝난 후 Android Debug APK를 만듭니다.
+Frontend CI는 의존성 설치, 정적 분석, 자동 테스트까지만 수행합니다.
 
 ```text
 flutter analyze
   -> flutter test
-  -> flutter build apk --debug
-  -> app-debug.apk를 Jenkins artifact로 보관
 ```
 
-Debug APK는 팀 내부 설치와 동작 확인용입니다. Google Play 배포용 Release APK·AAB는 별도의
-서명 키 관리가 필요하므로 이 단계에서 자동 배포하지 않습니다.
+휴대폰에서의 실제 실행은 개발자 PC에 기기를 연결한 뒤 `flutter run`으로 확인합니다.
+Jenkins에서는 APK·AAB 생성과 Frontend CD를 수행하지 않습니다.
 
 ## Backend 운영 배포
 
