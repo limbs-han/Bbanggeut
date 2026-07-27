@@ -14,10 +14,10 @@ def jenkins = Jenkins.get()
 def agentDefinitions = [
     [name: "backend-agent",  label: "backend"],
     [name: "frontend-agent", label: "frontend"],
-    [name: "iot-agent",      label: "iot"],
-    [name: "ai-agent",       label: "ai"],
+    [name: "device-agent",   label: "device"],
     [name: "deploy-agent",   label: "deploy"],
 ]
+def obsoleteAgentNames = ["iot-agent", "ai-agent"]
 
 // 빌드는 Controller가 아니라 전용 Agent에서만 실행한다.
 jenkins.setNumExecutors(0)
@@ -44,6 +44,13 @@ agentDefinitions.each { definition ->
         agent.setMode(Node.Mode.EXCLUSIVE)
         agent.setLauncher(new JNLPLauncher())
         agent.setRetentionStrategy(new RetentionStrategy.Always())
+    }
+}
+
+obsoleteAgentNames.each { obsoleteName ->
+    def obsoleteAgent = jenkins.getNode(obsoleteName)
+    if (obsoleteAgent != null) {
+        jenkins.removeNode(obsoleteAgent)
     }
 }
 

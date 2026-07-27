@@ -9,8 +9,7 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 |---|---|---|
 | `backend-agent` | Jenkins 연결용 JDK 21, Gradle용 JDK 17, Python, PostgreSQL Client | `backend/` |
 | `frontend-agent` | JDK 21, Flutter 3.44.7, Dart 3.12.2 | `frontend/` |
-| `iot-agent` | JDK 21, Python 3, venv, Bash | `ai/device_agent/` |
-| `ai-agent` | JDK 21, Python 3, Bash | `ai/yolo/` 및 하드웨어 입출력 코드 |
+| `device-agent` | JDK 21, Python 3, venv, Bash | `ai/device_agent/`와 `ai/yolo/` |
 | `postgres-ci` | PostgreSQL 16 | Backend 통합 테스트 전용 |
 
 서버 구성 파일은 `ci/jenkins/server/`에 있습니다.
@@ -60,11 +59,9 @@ SHA를 지정해 특정 빌드를 직접 실행하는 요청은 HTTP 401로 차�
 | 브랜치 | 실행되는 CI |
 |---|---|
 | `master` | Backend, Frontend, IoT, AI 전체 |
-| `develop` | Backend, Frontend, IoT, AI 전체 |
 | `develop/backend`, `feat/backend/**` | Backend |
 | `develop/frontend`, `feat/frontend/**` | Frontend |
-| `develop/iot`, `feat/iot/**` | IoT |
-| `develop/ai`, `feat/ai/**` | AI |
+| `develop/device`, `feat/device/**` | IoT와 AI |
 
 초기 구축용 `feat/jenkins-pipeline` 브랜치에서는 네 Agent와 Pipeline을 한 번에 검증하기 위해
 모든 영역을 실행합니다.
@@ -146,7 +143,7 @@ S15P11E201/master CI 성공
 
 ## 현재 검증 결과
 
-- 영역별 Agent가 각각 `backend`, `frontend`, `iot`, `ai` 라벨로 Jenkins에 연결됨
+- 영역별 Agent가 각각 `backend`, `frontend`, `device` 라벨로 Jenkins에 연결됨
 - Backend Agent에서 Java 21과 Gradle용 Java 17을 모두 실행함
 - Backend Agent에서 `postgres-ci:5432` 연결 성공
 - Controller와 네 Agent의 Docker 소켓 미연결 확인

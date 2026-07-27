@@ -112,42 +112,23 @@ services:
     mem_limit: 4g
     mem_reservation: 512m
 
-  iot-agent:
+  device-agent:
     <<: *agent-common
     build:
       context: .
       dockerfile: Dockerfile.agent
     image: william-james/jenkins-agent:java21-python-java17
-    container_name: jenkins-iot-agent
+    container_name: jenkins-device-agent
     environment:
       JENKINS_URL: http://jenkins:8080
-      JENKINS_AGENT_NAME: iot-agent
+      JENKINS_AGENT_NAME: device-agent
       JENKINS_AGENT_WORKDIR: /home/jenkins/agent
       JENKINS_WEB_SOCKET: "true"
     secrets:
-      - source: iot_agent_secret
+      - source: device_agent_secret
         target: jenkins-agent-secret
-    cpus: 0.5
-    mem_limit: 1g
-    mem_reservation: 256m
-
-  ai-agent:
-    <<: *agent-common
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    image: william-james/jenkins-agent:java21-python-java17
-    container_name: jenkins-ai-agent
-    environment:
-      JENKINS_URL: http://jenkins:8080
-      JENKINS_AGENT_NAME: ai-agent
-      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
-      JENKINS_WEB_SOCKET: "true"
-    secrets:
-      - source: ai_agent_secret
-        target: jenkins-agent-secret
-    cpus: 0.5
-    mem_limit: 1g
+    cpus: 1.0
+    mem_limit: 1536m
     mem_reservation: 256m
 
   deploy-agent:
@@ -209,10 +190,8 @@ secrets:
     file: /home/ubuntu/jenkins-agent-secrets/backend-agent
   frontend_agent_secret:
     file: /home/ubuntu/jenkins-agent-secrets/frontend-agent
-  iot_agent_secret:
-    file: /home/ubuntu/jenkins-agent-secrets/iot-agent
-  ai_agent_secret:
-    file: /home/ubuntu/jenkins-agent-secrets/ai-agent
+  device_agent_secret:
+    file: /home/ubuntu/jenkins-agent-secrets/device-agent
   deploy_agent_secret:
     file: /home/ubuntu/jenkins-agent-secrets/deploy-agent
   postgres_ci_password:

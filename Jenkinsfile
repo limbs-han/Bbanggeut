@@ -23,7 +23,6 @@ pipeline {
                         beforeAgent true
                         anyOf {
                             branch 'master'
-                            branch 'develop'
                             branch 'develop/backend'
                             branch pattern: 'feat/backend/**', comparator: 'GLOB'
                             branch 'feat/jenkins-pipeline'
@@ -53,7 +52,6 @@ pipeline {
                         beforeAgent true
                         anyOf {
                             branch 'master'
-                            branch 'develop'
                             branch 'develop/frontend'
                             branch pattern: 'feat/frontend/**', comparator: 'GLOB'
                             branch 'feat/jenkins-pipeline'
@@ -81,19 +79,18 @@ pipeline {
                     }
                 }
 
-                stage('IoT Device Agent') {
+                stage('Device (IoT + AI)') {
                     when {
                         beforeAgent true
                         anyOf {
                             branch 'master'
-                            branch 'develop'
-                            branch 'develop/iot'
-                            branch pattern: 'feat/iot/**', comparator: 'GLOB'
+                            branch 'develop/device'
+                            branch pattern: 'feat/device/**', comparator: 'GLOB'
                             branch 'feat/jenkins-pipeline'
                         }
                     }
                     agent {
-                        label 'iot'
+                        label 'device'
                     }
                     steps {
                         deleteDir()
@@ -103,31 +100,6 @@ pipeline {
                             sh '.venv-ci/bin/python -m pip install -r requirements.txt'
                             sh '.venv-ci/bin/python -m unittest discover -s tests -v'
                         }
-                    }
-                    post {
-                        cleanup {
-                            cleanWs(deleteDirs: true, disableDeferredWipeout: true)
-                        }
-                    }
-                }
-
-                stage('AI Logic') {
-                    when {
-                        beforeAgent true
-                        anyOf {
-                            branch 'master'
-                            branch 'develop'
-                            branch 'develop/ai'
-                            branch pattern: 'feat/ai/**', comparator: 'GLOB'
-                            branch 'feat/jenkins-pipeline'
-                        }
-                    }
-                    agent {
-                        label 'ai'
-                    }
-                    steps {
-                        deleteDir()
-                        checkout scm
                         dir('ai/yolo') {
                             sh 'python3 -m unittest -v test_event_fusion.py test_laughter_clip_uploader.py'
                             sh 'python3 -m py_compile *.py'
