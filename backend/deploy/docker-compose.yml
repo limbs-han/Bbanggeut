@@ -101,19 +101,24 @@ services:
     image: bluenviron/mediamtx:1
     restart: unless-stopped
     environment:
-      # Keep the configuration file free of credentials. This account can only
-      # publish canonical UUID stream paths and cannot read or use admin APIs.
+      # Keep the existing Pi account unchanged while assigning Jetson a
+      # different credential. Both device accounts are publish-only.
       MTX_AUTHMETHOD: internal
-      MTX_AUTHINTERNALUSERS_0_USER: ${MEDIAMTX_JETSON_PUBLISH_USER:?Set MEDIAMTX_JETSON_PUBLISH_USER}
-      MTX_AUTHINTERNALUSERS_0_PASS: ${MEDIAMTX_JETSON_PUBLISH_PASSWORD:?Set MEDIAMTX_JETSON_PUBLISH_PASSWORD}
+      MTX_AUTHINTERNALUSERS_0_USER: ${MEDIAMTX_PUBLISH_USER:?Set existing Pi MEDIAMTX_PUBLISH_USER}
+      MTX_AUTHINTERNALUSERS_0_PASS: ${MEDIAMTX_PUBLISH_PASSWORD:?Set existing Pi MEDIAMTX_PUBLISH_PASSWORD}
       MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_ACTION: publish
       MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
+      MTX_AUTHINTERNALUSERS_1_USER: ${MEDIAMTX_JETSON_PUBLISH_USER:?Set MEDIAMTX_JETSON_PUBLISH_USER}
+      MTX_AUTHINTERNALUSERS_1_PASS: ${MEDIAMTX_JETSON_PUBLISH_PASSWORD:?Set MEDIAMTX_JETSON_PUBLISH_PASSWORD}
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: publish
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+
       # HLS is reachable only from host-loopback Nginx, which authenticates app
       # viewers before proxying requests to MediaMTX.
-      MTX_AUTHINTERNALUSERS_1_USER: any
-      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: read
-      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      MTX_AUTHINTERNALUSERS_2_USER: any
+      MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
+      MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
       # optional preserves the existing plaintext loopback tunnel as rollback.
       # Change only this secret-file value to strict after migration validation.

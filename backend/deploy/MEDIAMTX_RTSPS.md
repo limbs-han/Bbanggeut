@@ -27,9 +27,11 @@ permissions, and reload or restart the MediaMTX container.
 
 ## Provision and deploy
 
-`provision-secrets.sh` creates a dedicated `wj-jetson-001` publish password
-without printing it. Existing secret files are extended without rotating
-already-present values.
+`provision-secrets.sh` creates separate Pi and Jetson publish passwords on a
+new installation without printing them. On an existing installation, the
+legacy `MEDIAMTX_PUBLISH_USER` and `MEDIAMTX_PUBLISH_PASSWORD` Pi values are
+preserved exactly, while missing Jetson values are added without rotating the
+Pi account.
 
 ```bash
 cd /home/ubuntu/william-james/infra
@@ -38,11 +40,11 @@ sudo docker compose config --quiet
 sudo docker compose up -d mediamtx
 ```
 
-The account has only `publish` permission and only for canonical
-`live/{UUID}` paths. It has no `read`, `playback`, `api`, `metrics`, or `pprof`
-permission. App HLS reads use a separate anonymous MediaMTX identity reachable
-only through host-loopback Nginx; Nginx remains responsible for viewer
-authentication.
+The Pi and Jetson accounts each have only `publish` permission and only for
+canonical `live/{UUID}` paths. Neither has `read`, `playback`, `api`, `metrics`,
+or `pprof` permission. App HLS reads use a separate anonymous MediaMTX identity
+reachable only through host-loopback Nginx; Nginx remains responsible for
+viewer authentication.
 
 ## Migration and rollback
 
