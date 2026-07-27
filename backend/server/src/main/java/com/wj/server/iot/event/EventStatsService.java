@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ public class EventStatsService {
     private final DeviceEventMapper mapper;
     private final Clock clock;
 
+    @Autowired
     public EventStatsService(DeviceEventMapper mapper) {
         this(mapper, Clock.systemUTC());
     }
