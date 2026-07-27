@@ -99,7 +99,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend-agent
-    image: william-james/jenkins-agent:flutter-3.44.7
+    image: william-james/jenkins-agent:flutter-ci-3.44.7
     container_name: jenkins-frontend-agent
     environment:
       JENKINS_URL: http://jenkins:8080
