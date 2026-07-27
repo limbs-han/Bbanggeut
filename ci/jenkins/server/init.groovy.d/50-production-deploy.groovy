@@ -97,7 +97,7 @@ pipeline {
             steps {
                 deleteDir()
                 copyArtifacts(
-                    projectName: '/S15P11E201/master',
+                    projectName: 'S15P11E201/master',
                     selector: specific("${env.SOURCE_BUILD}"),
                     filter: 'ci/jenkins/commit.txt',
                     flatten: true,
@@ -133,7 +133,7 @@ pipeline {
                             try {
                                 deleteDir()
                                 copyArtifacts(
-                                    projectName: '/S15P11E201/master',
+                                    projectName: 'S15P11E201/master',
                                     selector: specific("${env.SOURCE_BUILD}"),
                                     filter: 'backend/server/build/libs/server-*.jar',
                                     flatten: true,
