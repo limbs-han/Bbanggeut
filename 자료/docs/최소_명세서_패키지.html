@@ -719,7 +719,7 @@ Authorization: Bearer {accessToken}</pre>
     </tr>
     <tr>
       <td><b>라이브 제어 (MQTT)</b></td>
-      <td>단일 토픽 <code>{env}/wj/v1/devices/{deviceId}/commands</code> · <code>START_STREAM / EXTEND_STREAM / STOP_STREAM</code> · <code>hardExpiresAt</code> 기본 120초 lease, 제어 경로 끊기면 기기가 자체 종료</td>
+      <td>단일 토픽 <code>{env}/wj/v2/devices/{deviceId}/commands</code> · <code>START_STREAM / EXTEND_STREAM / STOP_STREAM</code> · <code>hardExpiresAt</code> 기본 120초 lease, 제어 경로 끊기면 기기가 자체 종료</td>
       <td><span class="r r-iot">IoT</span><span class="r r-be">BE</span></td>
       <td>QoS·멱등 처리 세부는 <a href="../api/mqtt-contract.md">mqtt-contract.md</a> 준수</td>
     </tr>

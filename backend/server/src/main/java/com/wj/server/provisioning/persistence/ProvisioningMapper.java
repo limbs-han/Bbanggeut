@@ -1,5 +1,6 @@
 package com.wj.server.provisioning.persistence;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,6 +12,18 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface ProvisioningMapper {
+
+    @Select("""
+        SELECT DISTINCT c.device_id
+          FROM device_credentials c
+          JOIN devices d ON d.id = c.device_id
+         WHERE c.status = 'ACTIVE'
+           AND c.purpose = 'OPERATING'
+           AND c.expires_at > now()
+           AND d.status <> 'REVOKED'
+         ORDER BY c.device_id
+        """)
+    List<UUID> findActiveOperatingDeviceIds();
 
     @Select("""
         INSERT INTO devices (serial_number, name, model, firmware_version, status)

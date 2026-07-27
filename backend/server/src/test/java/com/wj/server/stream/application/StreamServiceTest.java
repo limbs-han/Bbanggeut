@@ -71,7 +71,7 @@ class StreamServiceTest {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UUID streamId = UUID.randomUUID();
-        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("MEMBER"));
+        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("VIEWER"));
         when(mapper.findAccessibleDeviceStatus(userId, deviceId)).thenReturn(Optional.of("ONLINE"));
         when(mapper.findReusableStream(deviceId)).thenReturn(Optional.of(
             new DeviceStreamRow(streamId, deviceId, "RUNNING", NOW.plusSeconds(80), null, null)));

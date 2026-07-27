@@ -56,7 +56,7 @@ public class MqttInboundHandler {
             }
             UUID topicDeviceId = UUID.fromString(parts[4]);
             JsonNode body = objectMapper.readTree(payload);
-            if (!"1.0".equals(text(body, "schemaVersion"))
+            if (!"2.0".equals(text(body, "schemaVersion"))
                 || !topicDeviceId.equals(UUID.fromString(text(body, "deviceId")))) {
                 return;
             }

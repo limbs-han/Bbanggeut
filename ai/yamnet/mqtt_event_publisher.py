@@ -33,9 +33,9 @@ class MqttEventPublisher:
 
         self._device_id = device_id
         self._event_topic = event_topic or (
-            f"homecam/v1/{device_id}/ai/laughter/detected"
+            f"homecam/v2/{device_id}/ai/laughter/detected"
         )
-        self._status_topic = f"homecam/v1/{device_id}/ai/status"
+        self._status_topic = f"homecam/v2/{device_id}/ai/status"
         self._connected = threading.Event()
         self._connect_error: str | None = None
 

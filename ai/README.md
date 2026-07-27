@@ -444,10 +444,10 @@ tail -F \
 
 | 토픽 | QoS | Retain | 발행자 | 용도 |
 |---|---:|---|---|---|
-| `homecam/v1/{device_id}/ai/vision/state` | 0 | false | YOLO | 최신 객체·자동 구도 상태, 5Hz |
-| `homecam/v1/{device_id}/control/framing/target` | 0 | false | YOLO | SG90 제어기가 사용할 정규화 오차 목표, 5Hz |
-| `homecam/v1/{device_id}/ai/laughter/detected` | 1 | false | YAMNet | 원본 웃음 감지 이벤트 |
-| `homecam/v1/{device_id}/events/memory-candidate` | 1 | false | 결합기 | 백엔드·IoT가 사용할 최종 후보 이벤트 |
+| `homecam/v2/{device_id}/ai/vision/state` | 0 | false | YOLO | 최신 객체·자동 구도 상태, 5Hz |
+| `homecam/v2/{device_id}/control/framing/target` | 0 | false | YOLO | SG90 제어기가 사용할 정규화 오차 목표, 5Hz |
+| `homecam/v2/{device_id}/ai/laughter/detected` | 1 | false | YAMNet | 원본 웃음 감지 이벤트 |
+| `homecam/v2/{device_id}/events/memory-candidate` | 1 | false | 결합기 | 백엔드·IoT가 사용할 최종 후보 이벤트 |
 
 최종 이벤트 예시는 다음과 같다.
 

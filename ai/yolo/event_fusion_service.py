@@ -162,13 +162,13 @@ class EventFusionService:
         self.mqtt = mqtt
         self.args = args
         self.vision_topic = args.vision_topic or (
-            f"homecam/v1/{args.device_id}/ai/vision/state"
+            f"homecam/v2/{args.device_id}/ai/vision/state"
         )
         self.laughter_topic = args.laughter_topic or (
-            f"homecam/v1/{args.device_id}/ai/laughter/detected"
+            f"homecam/v2/{args.device_id}/ai/laughter/detected"
         )
         self.output_topic = args.output_topic or (
-            f"homecam/v1/{args.device_id}/events/memory-candidate"
+            f"homecam/v2/{args.device_id}/events/memory-candidate"
         )
         self.latest_vision: dict[str, Any] | None = None
         self.latest_vision_received_at: float | None = None

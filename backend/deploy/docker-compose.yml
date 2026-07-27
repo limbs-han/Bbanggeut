@@ -81,8 +81,12 @@ services:
         until mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec listClients >/dev/null 2>&1; do sleep 1; done
         if ! mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec listRoles 2>/dev/null | grep -Fxq wj-backend; then
           mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec createRole wj-backend
-          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addRoleACL wj-backend publishClientSend '+/wj/v1/devices/+/commands' allow 100
         fi
+        # Replace the persisted command ACL so an existing Dynamic Security
+        # volume cannot keep the retired v1 namespace active.
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec removeRoleACL wj-backend publishClientSend '+/wj/v1/devices/+/commands' || true
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec removeRoleACL wj-backend publishClientSend '+/wj/v2/devices/+/commands' || true
+        mosquitto_ctrl --cafile /mosquitto/certs/ca.crt -h "$${mqtt_tls_host}" -p 8883 -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}" dynsec addRoleACL wj-backend publishClientSend '+/wj/v2/devices/+/commands' allow 100
         # The role can persist while its client assignment is missing (for
         # example after an older partial bootstrap). Always repair it. The
         # command returns an error when the assignment already exists.

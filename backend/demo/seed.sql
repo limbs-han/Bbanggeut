@@ -60,21 +60,21 @@ INSERT INTO device_memberships (id, device_id, user_id, role, status)
 VALUES (
     '11000000-0000-0000-0000-000000000002',
     '10000000-0000-0000-0000-000000000001',
-    (SELECT id FROM users WHERE email = 'family@wj.local'), 'MEMBER', 'ACTIVE'
+    (SELECT id FROM users WHERE email = 'family@wj.local'), 'EDITOR', 'ACTIVE'
 )
 ON CONFLICT (device_id, user_id) DO UPDATE SET
-    role = 'MEMBER', status = 'ACTIVE', revoked_at = NULL, revoked_by = NULL, updated_at = now();
+    role = 'EDITOR', status = 'ACTIVE', revoked_at = NULL, revoked_by = NULL, updated_at = now();
 
 -- A pending invitation makes the invitee accept/decline UI testable.
 DELETE FROM invitations
  WHERE device_id = '10000000-0000-0000-0000-000000000001'
    AND lower(invitee_email) = 'request@wj.local';
-INSERT INTO invitations (id, device_id, inviter_id, invitee_email, status, expires_at, created_at)
+INSERT INTO invitations (id, device_id, inviter_id, invitee_email, role, status, expires_at, created_at)
 VALUES (
     '12000000-0000-0000-0000-000000000001',
     '10000000-0000-0000-0000-000000000001',
     (SELECT id FROM users WHERE email = 'admin@wj.local'),
-    'request@wj.local', 'PENDING', now() + interval '7 days', now() - interval '10 minutes'
+    'request@wj.local', 'VIEWER', 'PENDING', now() + interval '7 days', now() - interval '10 minutes'
 );
 
 -- Separate unclaimed camera for testing the fixed registration code WJDE-2026.
@@ -159,5 +159,48 @@ INSERT INTO access_logs (
  'VIDEO_PLAY', 'VIDEO', '14000000-0000-0000-0000-000000000002', 'SUCCESS', '{"demo":true}', now() - interval '1 hour'),
 ('10000000-0000-0000-0000-000000000001', (SELECT id FROM users WHERE email='admin@wj.local'),
  'STREAM_OPEN', 'STREAM_SESSION', NULL, 'SUCCESS', '{"demo":true}', now() - interval '20 minutes');
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+          FROM device_memberships m
+          JOIN users u ON u.id = m.user_id
+         WHERE u.email = 'admin@wj.local'
+           AND m.device_id = '10000000-0000-0000-0000-000000000001'
+           AND m.role = 'OWNER' AND m.status = 'ACTIVE'
+    ) THEN
+        RAISE EXCEPTION 'Demo OWNER fixture was not created';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+          FROM device_memberships m
+          JOIN users u ON u.id = m.user_id
+         WHERE u.email = 'family@wj.local'
+           AND m.device_id = '10000000-0000-0000-0000-000000000001'
+           AND m.role = 'EDITOR' AND m.status = 'ACTIVE'
+    ) THEN
+        RAISE EXCEPTION 'Demo EDITOR fixture was not created';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+          FROM invitations i
+         WHERE i.invitee_email = 'request@wj.local'
+           AND i.device_id = '10000000-0000-0000-0000-000000000001'
+           AND i.role = 'VIEWER' AND i.status = 'PENDING'
+    ) THEN
+        RAISE EXCEPTION 'Demo pending invitation fixture was not created';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+          FROM registration_codes c
+         WHERE c.device_id = '10000000-0000-0000-0000-000000000002'
+           AND c.code_hash = encode(digest('WJDE2026', 'sha256'), 'hex')
+           AND c.used_at IS NULL AND c.expires_at > now()
+    ) THEN
+        RAISE EXCEPTION 'Demo registration code fixture was not created';
+    END IF;
+END
+$$;
 
 COMMIT;

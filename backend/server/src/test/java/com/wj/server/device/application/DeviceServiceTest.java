@@ -163,13 +163,13 @@ class DeviceServiceTest {
     }
 
     @Test
-    void memberCannotUpdateDeviceSettings() {
+    void editorCannotUpdateDeviceSettings() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UpdateDeviceRequest request = new UpdateDeviceRequest();
         request.setName("New name");
         when(deviceMapper.lockAccessibleDevice(userId, deviceId))
-            .thenReturn(Optional.of(view(deviceId, "Before", "OFFLINE", "MEMBER")));
+            .thenReturn(Optional.of(view(deviceId, "Before", "OFFLINE", "EDITOR")));
 
         assertThatThrownBy(() -> deviceService.update(userId, deviceId, request))
             .isInstanceOf(ApiException.class)
@@ -185,7 +185,7 @@ class DeviceServiceTest {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.findAccessibleDevice(userId, deviceId))
-            .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "MEMBER")));
+            .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "VIEWER")));
         when(deviceMapper.findAccessibleStatus(userId, deviceId))
             .thenReturn(Optional.of(new DeviceStatusRow(deviceId, "OFFLINE", false, 2, 120, null)));
 
