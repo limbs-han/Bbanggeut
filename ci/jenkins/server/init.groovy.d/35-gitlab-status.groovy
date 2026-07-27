@@ -9,6 +9,7 @@ import com.dabsquared.gitlabjenkins.connection.GitLabConnectionConfig
 import hudson.security.ACL
 import hudson.util.Secret
 import jenkins.model.Jenkins
+import jenkins.model.JenkinsLocationConfiguration
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -18,6 +19,7 @@ def jenkins = Jenkins.get()
 def credentialId = "gitlab-status-api-token"
 def connectionName = "s15p11e201-gitlab-api"
 def gitlabUrl = "https://lab.ssafy.com"
+def jenkinsUrl = "http://i15e201.p.ssafy.io:8080/"
 def tokenFile = Paths.get("/var/jenkins_agent_secrets/gitlab-api-token")
 
 if (!Files.isRegularFile(tokenFile)) {
@@ -66,5 +68,9 @@ def retainedConnections = connectionConfig.getConnections()
 retainedConnections.add(connection)
 connectionConfig.setConnections(retainedConnections)
 connectionConfig.save()
+
+def locationConfig = JenkinsLocationConfiguration.get()
+locationConfig.setUrl(jenkinsUrl)
+locationConfig.save()
 
 println("Configured GitLab commit-status connection: ${connectionName}")

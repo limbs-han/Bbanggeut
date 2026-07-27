@@ -157,6 +157,8 @@ Jenkins는 테스트와 배포 결과를 GitLab 커밋과 Merge Request 화면�
 
 상태는 실행 중 `running`, 성공 시 `success`, 실패 시 `failed`, 취소나 승인 시간 초과 시
 `canceled`가 됩니다. GitLab에는 Jenkins 빌드 상세 화면으로 이동하는 링크도 함께 표시됩니다.
+Jenkins 공개 주소는 `http://i15e201.p.ssafy.io:8080/`로 설정되어 이 링크가 실제 Jenkins
+빌드 화면을 가리킵니다.
 
 ## 현재 검증 결과
 
