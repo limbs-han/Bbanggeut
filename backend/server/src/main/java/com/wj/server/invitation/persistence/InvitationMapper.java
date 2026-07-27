@@ -201,7 +201,7 @@ public interface InvitationMapper {
     @Update("""
         UPDATE device_memberships
            SET status = 'REVOKED', revoked_at = now(), revoked_by = #{ownerId}, updated_at = now()
-         WHERE id = #{membershipId} AND role IN ('EDITOR', 'VIEWER') AND status = 'ACTIVE'
+         WHERE id = #{membershipId} AND role = 'MEMBER' AND status = 'ACTIVE'
         """)
     int revokeMember(@Param("membershipId") UUID membershipId, @Param("ownerId") UUID ownerId);
 }

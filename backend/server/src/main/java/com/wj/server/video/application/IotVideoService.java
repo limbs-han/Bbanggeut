@@ -8,6 +8,7 @@ import java.util.UUID;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.SubscriptionProperties;
 import com.wj.server.iot.event.DeviceEventService;
+import com.wj.server.notification.application.NotificationService;
 import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.IotUploadCompleteRequest;
 import com.wj.server.video.api.IotUploadUrlRequest;
@@ -25,17 +26,20 @@ public class IotVideoService {
     private final ObjectStorageService objectStorageService;
     private final SubscriptionProperties subscriptionProperties;
     private final DeviceEventService deviceEventService;
+    private final NotificationService notificationService;
 
     public IotVideoService(
         VideoMapper videoMapper,
         ObjectStorageService objectStorageService,
         SubscriptionProperties subscriptionProperties,
-        DeviceEventService deviceEventService
+        DeviceEventService deviceEventService,
+        NotificationService notificationService
     ) {
         this.videoMapper = videoMapper;
         this.objectStorageService = objectStorageService;
         this.subscriptionProperties = subscriptionProperties;
         this.deviceEventService = deviceEventService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -102,6 +106,7 @@ public class IotVideoService {
             deviceEventService.linkUpload(
                 deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
                 video.capturedStartAt(), video.id(), "READY");
+            notifyLaughterVideo(video);
             return toResponse(video);
         }
         if (!"UPLOADING".equals(video.status())) {
@@ -126,7 +131,18 @@ public class IotVideoService {
         deviceEventService.linkUpload(
             deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
             video.capturedStartAt(), video.id(), "READY");
+        if ("LAUGHTER".equals(video.triggerType())) {
+            notificationService.laughterVideoReady(
+                video.deviceId(), video.id(), video.title());
+        }
         return response;
+    }
+
+    private void notifyLaughterVideo(VideoRow video) {
+        if ("LAUGHTER".equals(video.triggerType())) {
+            notificationService.laughterVideoReady(
+                video.deviceId(), video.id(), video.title());
+        }
     }
 
     private VideoRow createVideo(UUID deviceId, IotUploadUrlRequest request) {

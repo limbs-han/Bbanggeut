@@ -22,6 +22,7 @@ import com.wj.server.invitation.domain.InvitationRow;
 import com.wj.server.invitation.domain.MembershipRequestRow;
 import com.wj.server.invitation.domain.MembershipRow;
 import com.wj.server.invitation.persistence.InvitationMapper;
+import com.wj.server.notification.application.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +40,8 @@ class InvitationServiceTest {
     private AuditService auditService;
     @Mock
     private MembershipRequestService membershipRequestService;
+    @Mock
+    private NotificationService notificationService;
 
     private InvitationService service;
 
@@ -49,13 +52,14 @@ class InvitationServiceTest {
             new InvitationProperties(TTL),
             auditService,
             membershipRequestService,
+            notificationService,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private InvitationRow pendingInvitation(UUID id, UUID deviceId, UUID inviterId, String inviteeEmail, Instant expiresAt) {
         return new InvitationRow(
             id, deviceId, "Camera", inviterId, "owner@example.com", "오너",
-            inviteeEmail, "EDITOR", "PENDING", expiresAt, NOW);
+            inviteeEmail, "MEMBER", "PENDING", expiresAt, NOW);
     }
 
     @Test
@@ -70,11 +74,13 @@ class InvitationServiceTest {
                 invocation.getArgument(1), deviceId, ownerId, "member@example.com", NOW.plus(TTL))));
 
         var response = service.createInvitation(
-            ownerId, deviceId, "  Member@Example.com ", "EDITOR", null);
+            ownerId, deviceId, "  Member@Example.com ", null);
 
         verify(mapper).insertInvitation(
             any(), eq(deviceId), eq(ownerId), eq("member@example.com"),
-            eq("EDITOR"), eq(NOW.plus(TTL)));
+            eq("MEMBER"), eq(NOW.plus(TTL)));
+        verify(notificationService).invitationReceived(
+            eq("member@example.com"), eq(deviceId), eq("Camera"), any());
         assertThat(response.status()).isEqualTo("PENDING");
         assertThat(response.inviteeEmail()).isEqualTo("member@example.com");
     }
@@ -97,7 +103,7 @@ class InvitationServiceTest {
                 "member@example.com", NOW.plus(TTL))));
 
         service.createInvitation(
-            ownerId, deviceId, "member@example.com", "VIEWER", token);
+            ownerId, deviceId, "member@example.com", token);
 
         verify(membershipRequestService).consume(
             eq(token), eq(request), eq(ownerId), any());
@@ -107,10 +113,10 @@ class InvitationServiceTest {
     void memberCannotInvite() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("EDITOR"));
+        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("MEMBER"));
 
         assertThatThrownBy(() -> service.createInvitation(
-            userId, deviceId, "member@example.com", "EDITOR", null))
+            userId, deviceId, "member@example.com", null))
             .isInstanceOf(ApiException.class)
             .satisfies(exception -> assertThat(((ApiException) exception).status().value()).isEqualTo(403));
         verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
@@ -124,7 +130,7 @@ class InvitationServiceTest {
         when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> service.createInvitation(
-            ownerId, deviceId, "member@example.com", "VIEWER", null))
+            ownerId, deviceId, "member@example.com", null))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("ALREADY_DEVICE_MEMBER");
@@ -144,12 +150,12 @@ class InvitationServiceTest {
         when(mapper.findMembership(deviceId, userId))
             .thenReturn(Optional.of(new MembershipRow(
                 UUID.randomUUID(), deviceId, userId,
-                "member@example.com", "멤버", "EDITOR", "ACTIVE", NOW)));
+                "member@example.com", "멤버", "MEMBER", "ACTIVE", NOW)));
 
         var member = service.acceptInvitation(userId, invitationId);
 
-        verify(mapper).activateMember(deviceId, userId, "EDITOR");
-        assertThat(member.role()).isEqualTo("EDITOR");
+        verify(mapper).activateMember(deviceId, userId, "MEMBER");
+        assertThat(member.role()).isEqualTo("MEMBER");
         assertThat(member.status()).isEqualTo("ACTIVE");
     }
 

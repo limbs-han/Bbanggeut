@@ -53,7 +53,7 @@ class AccessLogQueryServiceTest {
     void editorCannotReadAuditLogs() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("EDITOR"));
+        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("MEMBER"));
 
         assertThatThrownBy(() -> service.list(userId, deviceId, null, 20))
             .isInstanceOf(ApiException.class)

@@ -13,6 +13,7 @@ import java.util.UUID;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.SubscriptionProperties;
 import com.wj.server.iot.event.DeviceEventService;
+import com.wj.server.notification.application.NotificationService;
 import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.IotUploadCompleteRequest;
 import com.wj.server.video.api.IotUploadUrlRequest;
@@ -37,6 +38,8 @@ class IotVideoServiceTest {
     private ObjectStorageService objectStorageService;
     @Mock
     private DeviceEventService deviceEventService;
+    @Mock
+    private NotificationService notificationService;
 
     private IotVideoService service;
 
@@ -45,7 +48,7 @@ class IotVideoServiceTest {
         service = new IotVideoService(
             videoMapper, objectStorageService,
             new SubscriptionProperties(365, java.time.Duration.ofDays(30)),
-            deviceEventService);
+            deviceEventService, notificationService);
     }
 
     @Test
@@ -76,6 +79,24 @@ class IotVideoServiceTest {
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("UPLOAD_INTEGRITY_MISMATCH");
         verify(videoMapper, never()).markReady(DEVICE_ID, VIDEO_ID, 365);
+    }
+
+    @Test
+    void completedLaughterVideoNotifiesDeviceMembersIdempotently() {
+        VideoRow laughterVideo = new VideoRow(
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", EVENT_ID, "웃음 영상", null,
+            "video/mp4", 100L, CHECKSUM, 1000L,
+            Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
+            "private/device/video.mp4", "READY", false,
+            Instant.parse("2026-07-17T10:00:02Z"));
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
+            .thenReturn(Optional.of(laughterVideo));
+
+        service.complete(
+            DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
+
+        verify(notificationService).laughterVideoReady(
+            DEVICE_ID, VIDEO_ID, laughterVideo.title());
     }
 
     @Test
