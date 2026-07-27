@@ -14,16 +14,16 @@ import org.apache.ibatis.annotations.Update;
 public interface ProvisioningMapper {
 
     @Select("""
-        SELECT DISTINCT c.device_id
+        SELECT DISTINCT c.device_id::text
           FROM device_credentials c
           JOIN devices d ON d.id = c.device_id
          WHERE c.status = 'ACTIVE'
            AND c.purpose = 'OPERATING'
            AND c.expires_at > now()
            AND d.status <> 'REVOKED'
-         ORDER BY c.device_id
+         ORDER BY c.device_id::text
         """)
-    List<UUID> findActiveOperatingDeviceIds();
+    List<String> findActiveOperatingDeviceIds();
 
     @Select("""
         INSERT INTO devices (serial_number, name, model, firmware_version, status)
