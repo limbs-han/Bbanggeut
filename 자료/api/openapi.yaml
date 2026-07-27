@@ -33,6 +33,9 @@ tags:
   - name: Audit
     description: OWNER가 확인하는 기기별 접근 감사 기록
 
+  - name: Notifications
+    description: In-app invitation and laughter-video notifications
+
 security:
   - UserBearerAuth: []
 
@@ -124,6 +127,63 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/auth/password/change:
+    post:
+      tags: [Auth]
+      operationId: changePassword
+      summary: Change the signed-in user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password changed; other sessions were revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/auth/password/forgot:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Request a password reset email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '202':
+          description: Accepted regardless of whether the account exists
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/auth/password/reset:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Reset a password using a one-time token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '204':
+          description: Password reset; all sessions were revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /api/auth/me:
     delete:
       tags: [Auth]
@@ -144,6 +204,65 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Newest notifications first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+
+  /api/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: countUnreadNotifications
+      responses:
+        '200':
+          description: Unread notification count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadNotificationCount'
+
+  /api/notifications/{notificationId}/read:
+    patch:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Marked as read
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/notifications/read-all:
+    patch:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      responses:
+        '204':
+          description: All notifications marked as read
 
   /api/devices:
     get:
@@ -270,8 +389,8 @@ paths:
       operationId: transferOwnership
       summary: 기기 소유권 이전
       description: |
-        현재 OWNER가 같은 기기의 활성 EDITOR 또는 VIEWER에게 소유권을 넘긴다. 한 트랜잭션에서
-        기존 OWNER는 EDITOR로 강등되고 대상이 OWNER로 승격된다. 영상·구성원·설정·구독은
+        현재 OWNER가 같은 기기의 활성 MEMBER에게 소유권을 넘긴다. 한 트랜잭션에서
+        기존 OWNER는 MEMBER로 강등되고 대상이 OWNER로 승격된다. 영상·구성원·설정·구독은
         모두 유지된다(기기 행 불변). 외부인에게 넘기려면 먼저 초대·승인으로 구성원으로
         만든다. 외부인에게 물리 기기 자체를 넘길 때는 기기 해제 후 재프로비저닝한다.
       requestBody:
@@ -290,7 +409,7 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
         '409':
-          description: 대상이 활성 EDITOR·VIEWER가 아니거나 본인임
+          description: 대상이 활성 MEMBER가 아니거나 본인임
           content:
             application/json:
               schema:
@@ -395,7 +514,7 @@ paths:
       operationId: getDeviceEventStats
       summary: 원시 감지 이벤트 통계 조회
       description: |
-        활성 OWNER, EDITOR 또는 VIEWER가 조회한다. 영상 업로드 성공 여부와 무관한 원시 감지 횟수,
+        활성 OWNER 또는 MEMBER가 조회한다. 영상 업로드 성공 여부와 무관한 원시 감지 횟수,
         READY 영상 연결 수, 유형별·일자별 집계를 반환한다. 기본 기간은 최근 30일이며 최대 366일이다.
       parameters:
         - name: from
@@ -429,7 +548,7 @@ paths:
       operationId: createStreamSession
       summary: 온디맨드 실시간 보기 세션 시작
       description: |
-        OWNER, EDITOR 또는 VIEWER의 활성 기기 멤버십을 확인한 뒤 시청자 세션을 만든다.
+        OWNER 또는 MEMBER의 활성 기기 멤버십을 확인한 뒤 시청자 세션을 만든다.
         이미 같은 기기의 송출이 있으면 하나의 edge 송출을 여러 시청자가 공유하고 MQTT START를 다시 보내지 않는다.
         최초 시청자는 MQTT START 후 HLS 세그먼트가 준비될 때까지 수초간 `PENDING`일 수 있다.
 
@@ -543,7 +662,7 @@ paths:
       tags: [Devices]
       operationId: revokeDeviceMember
       summary: 구성원 접근 권한 회수
-      description: 활성 OWNER만 EDITOR 또는 VIEWER를 회수할 수 있다. 다른 기기의 멤버십 ID도 404로 응답한다.
+      description: 활성 OWNER만 MEMBER를 회수할 수 있다. 다른 기기의 멤버십 ID도 404로 응답한다.
       responses:
         '204':
           description: 권한 회수 완료
@@ -562,9 +681,10 @@ paths:
     post:
       tags: [Invitations]
       operationId: createInvitation
-      summary: 이메일 계정으로 EDITOR 또는 VIEWER 초대
+      summary: 이메일 계정으로 MEMBER 초대
       description: |
         활성 OWNER가 특정 이메일 계정을 초대한다. 공개 링크나 전달 가능한 토큰은 만들지 않는다.
+        초대 이메일은 현재 가입 상태가 ACTIVE인 계정이어야 한다.
         초대받은 이메일로 로그인한 사용자만 앱의 받은 초대함에서 수락할 수 있다.
         멤버 요청 링크에서 진입한 경우 membershipRequestToken을 함께 보내 요청을 1회 소비한다.
       requestBody:
@@ -585,7 +705,11 @@ paths:
         '403':
           $ref: '#/components/responses/ForbiddenRole'
         '404':
-          $ref: '#/components/responses/HiddenNotFound'
+          description: 기기를 찾을 수 없거나 가입된 초대 대상이 없음 (`INVITEE_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -727,7 +851,7 @@ paths:
       tags: [Invitations]
       operationId: acceptInvitation
       summary: 이메일 초대 수락
-      description: 초대 대상 이메일 계정만 수행할 수 있으며 초대에 지정된 EDITOR 또는 VIEWER 멤버십을 생성하거나 재활성화한다.
+      description: 초대 대상 이메일 계정만 수행할 수 있으며 초대에 지정된 MEMBER 멤버십을 생성하거나 재활성화한다.
       responses:
         '200':
           description: 초대 수락 및 멤버십 활성화
@@ -886,7 +1010,7 @@ paths:
       tags: [Videos]
       operationId: updateVideo
       summary: 영상 제목·설명·즐겨찾기 수정
-      description: 해당 기기의 활성 OWNER 또는 EDITOR만 수행할 수 있다.
+      description: 해당 기기의 활성 OWNER 또는 MEMBER만 수행할 수 있다.
       requestBody:
         required: true
         content:
@@ -1322,6 +1446,45 @@ components:
           minLength: 32
           maxLength: 2048
 
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      additionalProperties: false
+      properties:
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
+          type: string
+          format: password
+          minLength: 10
+          maxLength: 72
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, newPassword]
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 200
+        newPassword:
+          type: string
+          format: password
+          minLength: 10
+          maxLength: 72
+
     AuthTokenResponse:
       type: object
       required: [accessToken, refreshToken, tokenType, expiresIn, user]
@@ -1342,7 +1505,7 @@ components:
 
     DeviceRole:
       type: string
-      enum: [OWNER, EDITOR, VIEWER]
+      enum: [OWNER, MEMBER]
 
     MembershipStatus:
       type: string
@@ -1577,20 +1740,17 @@ components:
         newOwnerMembershipId:
           type: string
           format: uuid
-          description: 같은 기기의 활성 EDITOR 또는 VIEWER 멤버십 ID
+          description: 같은 기기의 활성 MEMBER 멤버십 ID
 
     CreateInvitationRequest:
       type: object
-      required: [email, role]
+      required: [email]
       additionalProperties: false
       properties:
         email:
           type: string
           format: email
           maxLength: 320
-        role:
-          type: string
-          enum: [EDITOR, VIEWER]
         membershipRequestToken:
           type: string
           maxLength: 200
@@ -1638,7 +1798,7 @@ components:
           format: email
         role:
           type: string
-          enum: [EDITOR, VIEWER]
+          enum: [MEMBER]
         inviter:
           $ref: '#/components/schemas/UserSummary'
           nullable: true
@@ -2041,6 +2201,45 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    Notification:
+      type: object
+      required: [id, type, title, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [INVITATION_RECEIVED, LAUGHTER_VIDEO_READY]
+        title:
+          type: string
+        body:
+          type: string
+        deviceId:
+          type: string
+          format: uuid
+          nullable: true
+        resourceId:
+          type: string
+          format: uuid
+          nullable: true
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    UnreadNotificationCount:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+          format: int64
+          minimum: 0
 
     AccessLogPage:
       type: object
