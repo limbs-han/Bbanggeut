@@ -26,7 +26,7 @@ pipeline {
                             branch 'master'
                             branch 'develop/backend'
                             branch pattern: 'feat/backend/**', comparator: 'GLOB'
-                            branch 'feat/jenkins-gitlab-status'
+                            branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
                     agent {
@@ -59,7 +59,7 @@ pipeline {
                             branch 'master'
                             branch 'develop/frontend'
                             branch pattern: 'feat/frontend/**', comparator: 'GLOB'
-                            branch 'feat/jenkins-gitlab-status'
+                            branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
                     agent {
@@ -90,7 +90,7 @@ pipeline {
                             branch 'master'
                             branch 'develop/device'
                             branch pattern: 'feat/device/**', comparator: 'GLOB'
-                            branch 'feat/jenkins-gitlab-status'
+                            branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
                     agent {
