@@ -26,6 +26,15 @@ test-backend:
       - backend/server/build/reports/tests/test/
     expire_in: 7 days
 
+test-device-agent:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - cd ai/device_agent
+    - python -m pip install --disable-pip-version-check -r requirements.txt
+  script:
+    - python -m unittest discover -s tests -v
+
 package-backend:
   stage: package
   needs: [test-backend]
