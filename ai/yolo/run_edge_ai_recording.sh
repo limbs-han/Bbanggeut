@@ -34,9 +34,29 @@ fi
 : "${EVENT_CLIP_SECONDS:=60}"
 : "${EVENT_MERGE_GAP_SECONDS:=30}"
 : "${DELETE_EVENT_AFTER_UPLOAD:=true}"
-: "${YAMNET_THRESHOLD:=0.05}"
-: "${YAMNET_CONSECUTIVE:=2}"
+: "${YAMNET_SCORE_AGGREGATION:=mean}"
+: "${YAMNET_THRESHOLD:=0.125}"
+: "${YAMNET_CONSECUTIVE:=3}"
 : "${YAMNET_COOLDOWN:=12}"
+: "${YAMNET_GAIN:=1.5}"
+: "${UPLOAD_RETRY_INITIAL_SECONDS:=5}"
+: "${UPLOAD_RETRY_MAX_SECONDS:=300}"
+
+YAMNET_SCORE_AGGREGATION="${YAMNET_SCORE_AGGREGATION,,}"
+case "$YAMNET_SCORE_AGGREGATION" in
+    max|mean|p90)
+        ;;
+    *)
+        echo \
+            "YAMNET_SCORE_AGGREGATION must be one of: max, mean, p90" \
+            >&2
+        exit 2
+        ;;
+esac
+if [[ ! "$YAMNET_CONSECUTIVE" =~ ^[1-9][0-9]*$ ]]; then
+    echo "YAMNET_CONSECUTIVE must be a positive integer" >&2
+    exit 2
+fi
 
 for required in \
     "$YOLO_PYTHON" \
@@ -71,6 +91,13 @@ echo "Starting disk-backed edge AI for device ${DEVICE_ID}"
 echo "AI source: loopback RTSP"
 echo "Rolling recordings: ${RECORDING_DIR}"
 echo "Event clips: ${EVENT_DIR}"
+echo \
+    "YAMNet detector: aggregation=${YAMNET_SCORE_AGGREGATION} " \
+    "threshold=${YAMNET_THRESHOLD} consecutive=${YAMNET_CONSECUTIVE} " \
+    "cooldown=${YAMNET_COOLDOWN}s gain=${YAMNET_GAIN}"
+echo \
+    "Upload retry: initial=${UPLOAD_RETRY_INITIAL_SECONDS}s " \
+    "maximum=${UPLOAD_RETRY_MAX_SECONDS}s; terminal 4xx is quarantined"
 
 UPLOADER_COMMAND=(
     "$YOLO_PYTHON" -u "${SCRIPT_DIR}/segment_clip_uploader.py"
@@ -79,6 +106,8 @@ UPLOADER_COMMAND=(
     --api-base-url "$API_BASE_URL"
     --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
     --segment-seconds "$RECORDING_SEGMENT_SECONDS"
+    --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
+    --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"
 )
 case "${DELETE_EVENT_AFTER_UPLOAD,,}" in
     true|1|yes)
@@ -99,10 +128,11 @@ YAMNET_COMMAND=(
     "$YAMNET_PYTHON" -u "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py"
     --device-id "$DEVICE_ID"
     --stream-url "$LOCAL_RTSP_AI_URL"
+    --score-aggregation "$YAMNET_SCORE_AGGREGATION"
     --threshold "$YAMNET_THRESHOLD"
     --consecutive "$YAMNET_CONSECUTIVE"
     --cooldown "$YAMNET_COOLDOWN"
-    --gain 1.5
+    --gain "$YAMNET_GAIN"
     --event-dir "$EVENT_DIR"
     --clip-seconds "$EVENT_CLIP_SECONDS"
     --trigger-only

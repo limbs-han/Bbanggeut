@@ -13,6 +13,7 @@ import subprocess
 import time
 from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 
 from laughter_clip_uploader import (
     instant,
@@ -23,6 +24,9 @@ from laughter_clip_uploader import (
 
 
 SEGMENT_NAME_FORMAT = "homecam-%Y%m%dT%H%M%S.ts"
+RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429})
+TERMINAL_HTTP_STATUSES = frozenset({400, 401, 403, 404, 409, 410, 422})
+MAX_ERROR_BODY_CHARACTERS = 2_048
 
 
 class SegmentCoverageError(ValueError):
@@ -44,6 +48,12 @@ class Segment:
     started_at: datetime
 
 
+@dataclass(frozen=True)
+class RetryState:
+    attempts: int
+    retry_at: float
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event-dir", type=Path, required=True)
@@ -62,6 +72,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=3.0,
         help="Additional wait after the requested clip end (default: 3).",
+    )
+    parser.add_argument(
+        "--retry-initial-seconds",
+        type=float,
+        default=5.0,
+        help="Initial upload retry delay in seconds (default: 5).",
+    )
+    parser.add_argument(
+        "--retry-max-seconds",
+        type=float,
+        default=300.0,
+        help="Maximum upload retry delay in seconds (default: 300).",
     )
     parser.add_argument("--delete-after-upload", action="store_true")
     return parser.parse_args()
@@ -245,6 +267,75 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def safe_endpoint(url: str) -> str:
+    """Return an HTTP endpoint without credentials, query, or fragment."""
+
+    parsed = urlsplit(url)
+    host = parsed.hostname or ""
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return f"{parsed.scheme}://{host}{parsed.path}"
+
+
+def http_error_body(error: HTTPError) -> str:
+    """Read and bound an HTTP error body for logs and local diagnostics."""
+
+    try:
+        raw = error.read(MAX_ERROR_BODY_CHARACTERS + 1)
+    except OSError:
+        return ""
+    text = raw.decode("utf-8", errors="replace")
+    text = " ".join(text.split())
+    if len(text) > MAX_ERROR_BODY_CHARACTERS:
+        return text[:MAX_ERROR_BODY_CHARACTERS] + "…"
+    return text
+
+
+def is_retryable_http_status(status: int) -> bool:
+    if status in RETRYABLE_HTTP_STATUSES:
+        return True
+    if status in TERMINAL_HTTP_STATUSES:
+        return False
+    return status >= 500
+
+
+def retry_delay(
+    attempts: int,
+    initial_seconds: float,
+    maximum_seconds: float,
+) -> float:
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
+    return min(initial_seconds * (2 ** (attempts - 1)), maximum_seconds)
+
+
+def write_upload_blocked(
+    args: argparse.Namespace,
+    group: list[Trigger],
+    *,
+    reason: str,
+    http_status: int | None = None,
+    endpoint: str | None = None,
+    response_body: str = "",
+) -> None:
+    canonical = group[0]
+    blocked_at = instant(datetime.now(timezone.utc))
+    for trigger in group:
+        write_json_atomic(
+            args.event_dir / f"{trigger.event_id}.upload-blocked.json",
+            {
+                "eventId": trigger.event_id,
+                "canonicalEventId": canonical.event_id,
+                "blockedAt": blocked_at,
+                "reason": reason,
+                "httpStatus": http_status,
+                "endpoint": endpoint,
+                "responseBody": response_body,
+                "retryable": False,
+            },
+        )
+
+
 def upload_group(
     args: argparse.Namespace,
     group: list[Trigger],
@@ -360,6 +451,8 @@ def unhandled_triggers(event_dir: Path) -> list[Trigger]:
             continue
         if (event_dir / f"{event_id}.merged.json").exists():
             continue
+        if (event_dir / f"{event_id}.upload-blocked.json").exists():
+            continue
         triggers.append(parse_trigger(path))
     return triggers
 
@@ -371,9 +464,15 @@ def validate_args(args: argparse.Namespace) -> None:
         "poll_seconds",
         "segment_seconds",
         "segment_finalize_seconds",
+        "retry_initial_seconds",
+        "retry_max_seconds",
     ):
         if getattr(args, name) <= 0:
             raise SystemExit(f"--{name.replace('_', '-')} must be positive")
+    if args.retry_initial_seconds > args.retry_max_seconds:
+        raise SystemExit(
+            "--retry-initial-seconds cannot exceed --retry-max-seconds"
+        )
     if args.merge_gap_seconds < 0:
         raise SystemExit("--merge-gap-seconds cannot be negative")
     if not (args.recording_dir / ".homecam-recordings").is_file():
@@ -388,6 +487,7 @@ def run(args: argparse.Namespace) -> None:
     args.event_dir.mkdir(parents=True, exist_ok=True)
     print(f"Watching event triggers: {args.event_dir.resolve()}")
     print(f"Reading rolling segments: {args.recording_dir.resolve()}")
+    retry_states: dict[str, RetryState] = {}
     while True:
         try:
             triggers = unhandled_triggers(args.event_dir)
@@ -397,19 +497,85 @@ def run(args: argparse.Namespace) -> None:
             continue
 
         for group in group_triggers(triggers, args.merge_gap_seconds):
+            canonical_id = group[0].event_id
+            retry_state = retry_states.get(canonical_id)
+            monotonic_now = time.monotonic()
+            if retry_state is not None and monotonic_now < retry_state.retry_at:
+                continue
             try:
                 process_group(args, group, datetime.now(timezone.utc))
+                retry_states.pop(canonical_id, None)
             except SegmentCoverageError as error:
                 print(f"Rolling clip pending for {group[0].event_id}: {error}")
-            except (
-                HTTPError,
-                URLError,
-                OSError,
-                ValueError,
-                KeyError,
-                subprocess.CalledProcessError,
-            ) as error:
-                print(f"Rolling clip failed for {group[0].event_id}: {error}")
+            except HTTPError as error:
+                body = http_error_body(error)
+                endpoint = safe_endpoint(error.url)
+                detail = (
+                    f"HTTP {error.code} endpoint={endpoint}"
+                    + (f" body={body}" if body else "")
+                )
+                if is_retryable_http_status(error.code):
+                    previous_attempts = (
+                        retry_state.attempts if retry_state is not None else 0
+                    )
+                    attempts = previous_attempts + 1
+                    delay = retry_delay(
+                        attempts,
+                        args.retry_initial_seconds,
+                        args.retry_max_seconds,
+                    )
+                    retry_states[canonical_id] = RetryState(
+                        attempts=attempts,
+                        retry_at=time.monotonic() + delay,
+                    )
+                    print(
+                        f"Rolling clip retry scheduled for {canonical_id}: "
+                        f"{detail} attempt={attempts} delay={delay:.1f}s"
+                    )
+                else:
+                    write_upload_blocked(
+                        args,
+                        group,
+                        reason="terminal HTTP response",
+                        http_status=error.code,
+                        endpoint=endpoint,
+                        response_body=body,
+                    )
+                    retry_states.pop(canonical_id, None)
+                    print(
+                        f"Rolling clip upload blocked for {canonical_id}: "
+                        f"{detail}; local files preserved"
+                    )
+            except (ValueError, KeyError, json.JSONDecodeError) as error:
+                write_upload_blocked(
+                    args,
+                    group,
+                    reason=f"{type(error).__name__}: {error}",
+                )
+                retry_states.pop(canonical_id, None)
+                print(
+                    f"Rolling clip upload blocked for {canonical_id}: "
+                    f"{type(error).__name__}: {error}; local files preserved"
+                )
+            except (URLError, OSError, subprocess.CalledProcessError) as error:
+                previous_attempts = (
+                    retry_state.attempts if retry_state is not None else 0
+                )
+                attempts = previous_attempts + 1
+                delay = retry_delay(
+                    attempts,
+                    args.retry_initial_seconds,
+                    args.retry_max_seconds,
+                )
+                retry_states[canonical_id] = RetryState(
+                    attempts=attempts,
+                    retry_at=time.monotonic() + delay,
+                )
+                print(
+                    f"Rolling clip retry scheduled for {canonical_id}: "
+                    f"{type(error).__name__}: {error} "
+                    f"attempt={attempts} delay={delay:.1f}s"
+                )
         time.sleep(args.poll_seconds)
 
 

@@ -3,16 +3,28 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
+import json
 from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
 
 from segment_clip_uploader import (
     SegmentCoverageError,
     Trigger,
     clip_interval,
     group_triggers,
+    http_error_body,
+    is_retryable_http_status,
     parse_segment,
+    retry_delay,
+    run,
+    safe_endpoint,
     select_completed_segments,
+    unhandled_triggers,
 )
 
 
@@ -99,6 +111,97 @@ class SegmentClipUploaderTests(unittest.TestCase):
                 datetime(2026, 7, 23, 12, 0, 10, tzinfo=UTC),
                 60,
             )
+
+    def test_http_error_diagnostics_redact_query_and_bound_body(self) -> None:
+        error = HTTPError(
+            "https://storage.example/video?secret=signed-value",
+            409,
+            "Conflict",
+            {},
+            BytesIO(b'{"message":"duplicate event"}'),
+        )
+
+        self.assertEqual(
+            safe_endpoint(error.url),
+            "https://storage.example/video",
+        )
+        self.assertEqual(
+            http_error_body(error),
+            '{"message":"duplicate event"}',
+        )
+
+    def test_http_retry_policy(self) -> None:
+        self.assertFalse(is_retryable_http_status(409))
+        self.assertFalse(is_retryable_http_status(422))
+        self.assertTrue(is_retryable_http_status(429))
+        self.assertTrue(is_retryable_http_status(503))
+
+    def test_retry_delay_is_exponential_and_capped(self) -> None:
+        self.assertEqual(retry_delay(1, 5, 300), 5)
+        self.assertEqual(retry_delay(2, 5, 300), 10)
+        self.assertEqual(retry_delay(20, 5, 300), 300)
+
+    def test_blocked_trigger_is_not_scanned_again(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            event_dir = root / "events"
+            recording_dir = root / "recordings"
+            event_dir.mkdir()
+            recording_dir.mkdir()
+            (recording_dir / ".homecam-recordings").touch()
+            item = trigger("blocked", 0)
+            trigger_path = event_dir / item.path.name
+            trigger_path.write_text(
+                json.dumps(
+                    {
+                        "eventId": "blocked",
+                        "occurredAt": "2026-07-23T12:00:00.000Z",
+                        "preSeconds": 60,
+                        "postSeconds": 60,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                event_dir=event_dir,
+                recording_dir=recording_dir,
+                device_token="test-token",
+                poll_seconds=1.0,
+                segment_seconds=60.0,
+                segment_finalize_seconds=3.0,
+                retry_initial_seconds=5.0,
+                retry_max_seconds=300.0,
+                merge_gap_seconds=30.0,
+            )
+            error = HTTPError(
+                "https://api.example/videos/upload-url?secret=value",
+                409,
+                "Conflict",
+                {},
+                BytesIO(b'{"message":"conflict"}'),
+            )
+
+            with (
+                patch(
+                    "segment_clip_uploader.process_group",
+                    side_effect=error,
+                ),
+                patch(
+                    "segment_clip_uploader.time.sleep",
+                    side_effect=KeyboardInterrupt,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                run(args)
+
+            self.assertEqual(unhandled_triggers(event_dir), [])
+            marker = json.loads(
+                (event_dir / "blocked.upload-blocked.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(marker["httpStatus"], 409)
+            self.assertFalse(marker["retryable"])
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ required_files=(
     "${SCRIPT_DIR}/run_yolo_rtsp_validation.sh"
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py"
     "${YAMNET_DIR}/ffmpeg_audio_stream.py"
+    "${YAMNET_DIR}/laughter_eval_dataset.py"
     "${YAMNET_DIR}/laughter_scoring.py"
     "${YAMNET_DIR}/mqtt_event_publisher.py"
 )
@@ -44,6 +45,14 @@ bash -n \
 if [[ -f "${DEVICE_AGENT_DIR}/integration-soak-test.sh" ]]; then
     bash -n "${DEVICE_AGENT_DIR}/integration-soak-test.sh"
 fi
+grep -Fq ': "${YAMNET_SCORE_AGGREGATION:=mean}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${YAMNET_THRESHOLD:=0.125}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${YAMNET_CONSECUTIVE:=3}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 
 echo "[2/4] Python syntax"
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
@@ -57,6 +66,7 @@ PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
 PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" -m py_compile \
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py" \
     "${YAMNET_DIR}/ffmpeg_audio_stream.py" \
+    "${YAMNET_DIR}/laughter_eval_dataset.py" \
     "${YAMNET_DIR}/laughter_scoring.py" \
     "${YAMNET_DIR}/mqtt_event_publisher.py"
 
@@ -77,7 +87,10 @@ echo "[4/4] YAMNet stream tests"
 (
     cd -- "$YAMNET_DIR"
     PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" \
-        -m unittest test_ffmpeg_audio_stream test_laughter_scoring
+        -m unittest \
+        test_ffmpeg_audio_stream \
+        test_laughter_eval_dataset \
+        test_laughter_scoring
 )
 
-echo "PASS: staged Jetson AI release validation completed (32 tests)."
+echo "PASS: staged Jetson AI release validation completed (44 tests)."

@@ -270,14 +270,46 @@ grep --line-buffered -E \
   'Local laughter event|Audio stream|Rolling clip|Uploaded rolling|failed|pending'
 ```
 
-마이크 가까이에서 자연스럽게 웃는다. 기본 디스크 경로 설정은 다음과
-같다.
+마이크 가까이에서 자연스럽게 웃는다. 큰 웃음용 최소 MVP 임시 설정은
+다음과 같다.
 
 ```text
-threshold=0.05
-consecutive=2
+score_aggregation=mean
+threshold=0.125
+consecutive=3
 cooldown=12초
 ```
+
+기존 `max / 0.05 / 2회`는 무음과 일반 말소리에서 과탐이 확인돼 더 이상
+운영 기본값으로 사용하지 않는다. 위 임시값도 작은 웃음은 감지하지 못하므로
+최종 정확도 기준이 아니며, 이 절차에서는 명확한 큰 웃음으로 MVP 경로만
+검증한다.
+
+실제 웃음이 명확하게 녹음됐지만 이벤트가 생성되지 않았다면 threshold를
+즉시 낮추지 않는다. 진단 JSONL의 웃음 점수와 무음·말소리 점수를 비교하고,
+상시 녹화 세그먼트가 삭제되기 전에 평가 샘플로 보존한다.
+
+```bash
+python "$HOME/ai/yamnet/laughter_eval_dataset.py" create --help
+```
+
+샘플 생성 후 검토용 `context.mp4`와 `audio_16k_mono.wav`를 직접 재생한다.
+작업자 안내 시각은 사람의 반응 지연을 포함하므로 임시 라벨일 뿐이다.
+확인한 실제 시작·종료 시각으로 라벨을 확정한다.
+
+```bash
+python "$HOME/ai/yamnet/laughter_eval_dataset.py" finalize \
+  --sample-dir "$HOME/ai_datasets/laughter_eval/<environment>/<sample>" \
+  --start-seconds <START> \
+  --end-seconds <END> \
+  --audio-clarity clear
+
+python "$HOME/ai/yamnet/laughter_eval_dataset.py" catalog \
+  --dataset-root "$HOME/ai_datasets/laughter_eval"
+```
+
+BRIO 100이 아닌 장치에서 수집한 자료는 도구와 분류기 개발에는 사용할 수
+있지만 BRIO 최종 정확도 지표에는 포함하지 않는다.
 
 감지 성공 시 다음 로그가 나온다.
 
@@ -357,8 +389,13 @@ explorer.exe $destination
 
 ## 12. 시험 종료
 
-서버가 `HTTP 409`를 반환하면 업로더가 같은 요청을 반복하므로 시험이
-끝난 뒤 디스크 기반 AI를 멈춘다. 순환 녹화는 필요에 따라 유지한다.
+서버가 `HTTP 409`를 반환하면 최신 업로더는 같은 요청을 반복하지 않고
+`<eventId>.upload-blocked.json`을 생성한다. MP4와 Trigger는 그대로 보존된다.
+응답 본문과 상태 코드를 확인한 뒤 백엔드 계약을 수정하고, 재시도할 때만
+격리 마커를 운영자가 제거한다.
+
+구버전처럼 409가 반복되거나 격리 마커가 생성되지 않으면 디스크 기반 AI를
+중지하고 최신 릴리스 배포 여부를 확인한다. 순환 녹화는 필요에 따라 유지한다.
 
 ```bash
 sudo systemctl stop wj-edge-ai-recording
@@ -383,6 +420,6 @@ sudo systemctl start wj-edge-ai-mvp
 | `Trigger scan failed` | 비었거나 손상된 과거 JSON | 해당 트리거를 삭제하지 말고 별도 디렉터리로 격리 |
 | `recording gap before ...` | 오래된 트리거 또는 실제 녹화 공백 | 과거 트리거 격리 후 로컬 녹화 상태 확인 |
 | `waiting for recording coverage` | 이벤트 후 세그먼트가 아직 열려 있음 | 마지막 웃음 후 최대 약 2분 대기 |
-| `HTTP Error 409` 반복 | 서버가 이벤트 업로드 요청을 거절 | 로컬 MP4 검증 후 AI 서비스를 멈추고 업로드 계약 별도 수정 |
+| `HTTP 409`과 `.upload-blocked.json` | 서버가 이벤트 업로드 요청을 영구 충돌로 거절 | 마커의 상태·응답 본문을 백엔드와 확인하고 MP4·Trigger 보존 |
+| `HTTP Error 409` 반복 | 구버전 업로더 또는 잘못된 운영 릴리스 | AI 서비스를 멈추고 활성 릴리스·격리 기능 확인 |
 | 녹화 디렉터리 `Permission denied` | `ssafy`가 녹화 그룹 파일을 직접 읽음 | `sudo -u williamjames find ...` 사용 |
-

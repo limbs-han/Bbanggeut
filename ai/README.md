@@ -2,16 +2,18 @@
 
 Jetson Orin Nano에서 영상과 음성을 동시에 분석하는 AI 모듈이다. YOLO + ByteTrack은 사람·고양이·강아지를 추적하여 카메라 구도 목표를 계산하고, YAMNet은 웃음소리를 감지한다. 두 결과는 로컬 Mosquitto를 통해 결합되어 추억 영상 저장 후보 이벤트로 전달된다.
 
-현재 운영 서비스는 공유 UDP 입력을 사용한다. 별도 시험판에서는 YOLO가 공유
-RTSP를 직접 받아 실제 사람을 탐지·추적하고, 객체 소실 시
+현재 디스크 기반 운영 구성은 로컬 RTSP 입력을 사용한다. YOLO가 공유 RTSP를
+직접 받아 실제 사람을 탐지·추적하고, 객체 소실 시
 `TRACKING → HOLD → HOME`으로 전환하며, RTSP 강제 중단 후 지수 백오프로
-자동 재연결하는 것까지 Jetson에서 검증했다. 고양이·강아지는 현장에 대상이
-없어 아직 시험하지 않았다. 운영 코드 묶음 배포와 YOLO·YAMNet 1시간 통합
-시험 전까지 UDP fallback은 유지한다.
+자동 재연결하는 것까지 Jetson에서 검증하고 버전 묶음으로 배포했다.
+고양이·강아지는 현장에 대상이 없어 아직 시험하지 않았다. YOLO·YAMNet
+1시간 통합 시험 전까지 UDP 입력은 fallback으로 유지한다.
 
 공유 RTSP 입력과 H.264/AAC 1분 순환 녹화는 Jetson 스모크 테스트를 통과했다.
 30초 이벤트 병합과 최초 웃음 60초 전·마지막 웃음 60초 후 로컬 MP4 생성도
-Jetson에서 확인했지만 서버 업로드의 HTTP 409 해결과 앱 조회 검증은 남아 있다.
+Jetson에서 확인했다. 서버 업로드의 HTTP 409 원인은 사용자 계정에 claim되지
+않은 기기였으며, 영구 4xx 차단·파일 보존·서비스 재시작 후 무재시도까지
+검증했다. 기기 claim 이후의 업로드 성공과 앱 조회 검증은 남아 있다.
 SG90 실제 제어는 다음 구현 단계이고, 전체 합의 규격은
 `AI_EDGE_INTEGRATION_SPEC.md`를 따른다.
 
@@ -21,6 +23,11 @@ Jetson에서 웃음 감지부터 전후 60초 로컬 MP4 생성과 노트북 다
 
 2026-07-24 YOLO RTSP 사람 탐지·상태 전이·강제 단절 복구 결과는
 [`AI_YOLO_RTSP_VALIDATION_2026-07-24.md`](AI_YOLO_RTSP_VALIDATION_2026-07-24.md)에
+기록했다.
+
+2026-07-26 야간부터 27일 새벽까지의 업로드 안전성, 웃음 false-negative
+분석, 평가 데이터 도구와 다음 작업은
+[`AI_DAILY_PROGRESS_2026-07-27.md`](AI_DAILY_PROGRESS_2026-07-27.md)에
 기록했다.
 
 ## 시스템 구조
@@ -72,10 +79,12 @@ ai/
 └── yamnet/
     ├── yamnet_laughter_detect_jetson.py
     ├── ffmpeg_audio_stream.py
+    ├── laughter_eval_dataset.py
     ├── laughter_scoring.py
     ├── mqtt_event_publisher.py
     ├── requirements-jetson.txt
     ├── test_ffmpeg_audio_stream.py
+    ├── test_laughter_eval_dataset.py
     └── test_laughter_scoring.py
 ```
 
@@ -98,12 +107,49 @@ ai/
 ### YAMNet 웃음 감지
 
 - 직접 마이크 또는 공유 RTSP/UDP 오디오를 YAMNet 입력용 16kHz mono 파형으로 변환
-- laughter 관련 클래스의 점수 중 최댓값 사용
 - threshold, consecutive, gain, cooldown 설정 지원
 - `max`, `mean`, `p90` 시간 패치 점수 집계 방식 비교 지원
 - 이벤트를 만들지 않고 점수·RMS·최상위 소리를 JSONL로 기록하는 진단 모드 지원
-- 웃음을 놓치지 않는 Recall 우선 설정 사용
+- 큰 웃음용 MVP 임시 기준선은 `mean / 0.125 / 3회` 사용
+- 이 임시 기준선은 작은 웃음을 놓치므로 최종 운영 정확도를 충족하지 않음
+- 작은 웃음 개선은 YAMNet 임베딩 기반 커스텀 분류기 Task로 분리
 - 웃음 감지 시 MQTT 원본 이벤트 발행
+
+### 웃음 평가 데이터
+
+`yamnet/laughter_eval_dataset.py`는 상시 녹화 세그먼트에서 평가 샘플을
+분리하고, 수동 검토 라벨을 확정한 뒤 전체 데이터의 JSON·CSV·Markdown
+카탈로그를 생성한다.
+
+- 원본 MPEG-TS 세그먼트와 검토용 H.264/AAC MP4를 함께 보존한다.
+- 모델 입력과 같은 PCM 16-bit, 16kHz mono WAV를 만든다.
+- 진단 JSONL, 작업자 시간 창, SHA-256과 모델 설정을 `metadata.json`에
+  기록한다.
+- 라벨은 처음에는 `provisional`, 실제 재생 확인 후에만 `verified`로
+  전환한다.
+- BRIO 100과 다른 마이크로 수집한 샘플은 환경을 분리하고 최종 BRIO
+  정확도 지표에 포함하지 않는다.
+
+```bash
+# 수동 재생 검토 후 정답 구간 확정
+python yamnet/laughter_eval_dataset.py finalize \
+  --sample-dir "$HOME/ai_datasets/laughter_eval/<environment>/<sample>" \
+  --start-seconds 4.5 \
+  --end-seconds 10.5 \
+  --audio-clarity clear
+
+# 파일 크기와 SHA-256을 포함한 샘플 무결성 검사
+python yamnet/laughter_eval_dataset.py validate \
+  --sample-dir "$HOME/ai_datasets/laughter_eval/<environment>/<sample>"
+
+# 전체 샘플 검사 후 catalog.json, catalog.csv, catalog.md 생성
+python yamnet/laughter_eval_dataset.py catalog \
+  --dataset-root "$HOME/ai_datasets/laughter_eval"
+```
+
+원본 세그먼트 추출에는 `create --help`에 표시되는 `source-segment`,
+`segment-started-at`, context offset·duration과 임시 라벨 범위를 사용한다.
+메타데이터에는 토큰, 인증정보와 실제 기기 ID를 넣지 않는다.
 
 ### 공유 스트림 입력
 
@@ -499,7 +545,12 @@ RTSP·녹화·기존 UDP AI를 함께 시험할 때는
 - 디스크 기반 1분 전·후 클립 코드는 구현됐지만 실제 BRIO 스트림의 타임스탬프·A/V 동기화는 Jetson에서 확인해야 한다.
 - YOLO 단독 RTSP 강제 중단·복구는 Jetson에서 확인했다. YOLO·YAMNet 동시
   복구와 최소 1시간 자원 측정 전에는 UDP fallback을 제거하지 않는다.
-- 기존 5초 MVP 이벤트가 서버에서 HTTP 409로 거절되면 1초 간격으로 재시도하므로, 백엔드 충돌 응답 계약과 지수 백오프를 확정해야 한다.
+- 이벤트 업로더는 409 등 영구 4xx를 `.upload-blocked.json`으로 격리하고
+  로컬 MP4·Trigger를 보존한다.
+- 408·429·5xx와 네트워크 오류는 5초부터 최대 5분까지 지수 백오프로
+  재시도하며, 서명 URL의 쿼리는 로그와 오류 마커에 남기지 않는다.
+- HTTP 409 원인은 미claim 기기로 확인했으며, claim 이후 업로드 성공과 서버
+  `READY`·앱 조회 종단 검증은 아직 남아 있다.
 
 ## 문제 해결
 

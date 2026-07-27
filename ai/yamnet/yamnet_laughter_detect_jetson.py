@@ -439,7 +439,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     print(f"캡처 샘플레이트: {capture_rate} Hz")
     print(f"웃음 관련 클래스: {', '.join(laughter_names)}")
     print(
-        f"임계값: {args.threshold:.2f}, 연속 횟수: {args.consecutive}, "
+        f"임계값: {args.threshold:.3f}, 연속 횟수: {args.consecutive}, "
         f"입력 증폭: {args.gain:.2f}배, 점수 집계: {args.score_aggregation}"
     )
     diagnostics_output = None
