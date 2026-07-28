@@ -34,7 +34,7 @@ tags:
     description: OWNER가 확인하는 기기별 접근 감사 기록
 
   - name: Notifications
-    description: In-app invitation and laughter-video notifications
+    description: In-app and FCM invitation and laughter-video notifications
 
 security:
   - UserBearerAuth: []
@@ -263,6 +263,47 @@ paths:
       responses:
         '204':
           description: All notifications marked as read
+
+  /api/notifications/push-tokens:
+    put:
+      tags: [Notifications]
+      operationId: registerPushToken
+      summary: FCM 토큰 등록 또는 갱신
+      description: |
+        앱 설치별 FCM 토큰을 현재 로그인 사용자에게 연결한다. 같은 설치의 토큰이
+        갱신되거나 같은 토큰으로 사용자가 전환되면 기존 연결을 안전하게 교체한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterPushTokenRequest'
+      responses:
+        '204':
+          description: 등록 또는 갱신 완료
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/notifications/push-tokens/{installationId}:
+    delete:
+      tags: [Notifications]
+      operationId: unregisterPushToken
+      summary: FCM 토큰 연결 해제
+      description: 로그아웃하거나 알림 수신을 해제할 때 현재 사용자의 앱 설치 연결을 제거한다.
+      parameters:
+        - in: path
+          name: installationId
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '204':
+          description: 연결 해제 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/devices:
     get:
@@ -1306,6 +1347,12 @@ components:
         maxLength: 100
 
   responses:
+    BadRequest:
+      description: 요청 본문 또는 파라미터 검증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: 사용자 인증 실패
       content:
@@ -2240,6 +2287,24 @@ components:
           type: integer
           format: int64
           minimum: 0
+
+    RegisterPushTokenRequest:
+      type: object
+      required: [installationId, token, platform]
+      properties:
+        installationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: 앱 설치를 식별하는 안정적인 임의 ID
+        token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: Firebase Messaging에서 발급한 등록 토큰
+        platform:
+          type: string
+          enum: [ANDROID, IOS]
 
     AccessLogPage:
       type: object
