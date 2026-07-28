@@ -408,6 +408,16 @@ Override `REGISTRATION_BUTTON_CHIP`, `REGISTRATION_BUTTON_LINE`,
 `LCD_I2C_BUS`, `LCD_I2C_ADDRESS`, or `LCD_COLUMNS` in
 `/etc/william-james/device-agent.env` when the target differs.
 
+To issue one code and show it on the LCD without a physical button, stop the
+button service temporarily and run the same program once:
+
+```bash
+sudo systemctl stop wj-registration-button-jetson
+sudo /usr/bin/python3 \
+  /opt/william-james/device-agent/jetson_registration_button.py --once
+sudo systemctl start wj-registration-button-jetson
+```
+
 ### Jetson PCA9685 servo test
 
 Use a PCA9685 rather than driving an SG90 directly from a Jetson GPIO. Connect

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from jetson_registration_button import (
     RegistrationDisplay,
     environment_integer,
+    parse_args,
     parse_registration_response,
     request_registration_code,
 )
@@ -31,6 +32,10 @@ class FakeResult:
 
 
 class JetsonRegistrationButtonTest(unittest.TestCase):
+    def test_once_argument_requests_immediate_registration(self):
+        self.assertTrue(parse_args(["--once"]).once)
+        self.assertFalse(parse_args([]).once)
+
     def test_display_shows_ready_requesting_and_code(self):
         lcd = FakeLcd()
         display = RegistrationDisplay(lcd, columns=16)
