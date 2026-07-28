@@ -9,6 +9,7 @@ import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/auth_screen.dart';
 import 'package:william_james_app/ui/local_edit_screen.dart';
 import 'package:william_james_app/ui/main_shell.dart';
+import 'package:william_james_app/ui/onboarding_screen.dart';
 import 'package:william_james_app/ui/video_detail_screen.dart';
 
 void main() {
@@ -80,6 +81,59 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('로그인 비밀번호를 기본 숨김 처리하고 지정된 간편 로그인만 표시한다', (tester) async {
+    final controller = AppController();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: AuthScreen(controller: controller),
+      ),
+    );
+
+    final passwordField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == '비밀번호를 입력하세요',
+    );
+    expect(tester.widget<TextField>(passwordField).obscureText, isTrue);
+    expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
+    expect(find.text('Google'), findsOneWidget);
+    expect(find.text('카카오'), findsOneWidget);
+    expect(find.text('Apple'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.visibility_off_outlined));
+    await tester.pump();
+    expect(tester.widget<TextField>(passwordField).obscureText, isFalse);
+    expect(find.byIcon(Icons.visibility_outlined), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('온보딩 마지막 페이지에서 건너뛰기를 숨기고 로그인 버튼을 표시한다', (tester) async {
+    var finished = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: OnboardingScreen(
+          onFinished: () async {
+            finished = true;
+          },
+        ),
+      ),
+    );
+
+    for (var index = 0; index < 3; index++) {
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('매일의 웃음이 우리집 보물이 돼요'), findsOneWidget);
+    expect(find.text('건너뛰기'), findsNothing);
+    final loginButton = find.widgetWithText(FilledButton, '로그인하러 가기');
+    expect(loginButton, findsOneWidget);
+    await tester.tap(loginButton);
+    await tester.pump();
+    expect(finished, isTrue);
+  });
+
   testWidgets('작은 화면에서 키보드가 열려도 로그인과 회원가입 입력칸이 보인다', (tester) async {
     tester.view.physicalSize = const Size(390, 700);
     tester.view.devicePixelRatio = 1;
@@ -145,7 +199,8 @@ void main() {
   });
 
   testWidgets('메인 화면에 다섯 개 하단 네비게이션을 표시한다', (tester) async {
-    final controller = AppController(api: _FakeApiClient())
+    final api = _FakeApiClient();
+    final controller = AppController(api: api)
       ..selectedDevice = const DeviceSummary(
         id: 'test-device',
         name: '테스트 홈캠',
@@ -169,6 +224,8 @@ void main() {
 
     final navigation = find.byKey(const ValueKey('main-bottom-navigation'));
     expect(navigation, findsOneWidget);
+    expect(tester.widget<NavigationBar>(navigation).selectedIndex, 2);
+    expect(api.streamCreationCount, 0);
     for (final label in ['홈', '캘린더', '추억', '가족', '설정']) {
       expect(
         find.descendant(of: navigation, matching: find.text(label)),
@@ -181,7 +238,6 @@ void main() {
     );
     await tester.pump();
     expect(find.text('전체 추억'), findsOneWidget);
-    expect(find.text('홈캠'), findsOneWidget);
     expect(find.text('웃음 감지'), findsOneWidget);
     expect(find.text('편집 완료'), findsOneWidget);
     expect(find.text('최신순'), findsOneWidget);
@@ -224,6 +280,7 @@ void main() {
 }
 
 class _FakeApiClient extends ApiClient {
+  int streamCreationCount = 0;
   static const failedStream = StreamSession(
     id: 'test-stream',
     status: 'FAILED',
@@ -232,7 +289,10 @@ class _FakeApiClient extends ApiClient {
   );
 
   @override
-  Future<StreamSession> createStream(String deviceId) async => failedStream;
+  Future<StreamSession> createStream(String deviceId) async {
+    streamCreationCount++;
+    return failedStream;
+  }
 
   @override
   Future<StreamSession> getStream(String id) async => failedStream;

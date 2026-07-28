@@ -17,7 +17,31 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int index = 0;
+  int index = 2;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.controller.consumeOpenFamilyAfterDeviceClaim() ||
+        widget.controller.pendingMembershipRequestPreview != null) {
+      index = 3;
+    }
+    widget.controller.addListener(_handleRequestedRoute);
+  }
+
+  void _handleRequestedRoute() {
+    final openFamily =
+        widget.controller.consumeOpenFamilyAfterDeviceClaim() ||
+        widget.controller.pendingMembershipRequestPreview != null;
+    if (mounted && openFamily && index != 3) setState(() => index = 3);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleRequestedRoute);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.controller.selectedDevice == null) {
@@ -27,16 +51,16 @@ class _MainShellState extends State<MainShell> {
       );
     }
     final pages = [
-      HomeScreen(
-        controller: widget.controller,
-        openVideos: () => setState(() => index = 2),
-        openCalendar: () => setState(() => index = 1),
-      ),
       CalendarScreen(
         controller: widget.controller,
-        onBack: () => setState(() => index = 0),
+        onBack: () => setState(() => index = 2),
       ),
       VideosScreen(controller: widget.controller),
+      HomeScreen(
+        controller: widget.controller,
+        openVideos: () => setState(() => index = 1),
+        openCalendar: () => setState(() => index = 0),
+      ),
       FamilyScreen(controller: widget.controller),
       SettingsScreen(controller: widget.controller),
     ];
@@ -65,11 +89,6 @@ class _MainShellState extends State<MainShell> {
             onDestinationSelected: (value) => setState(() => index = value),
             destinations: const [
               NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home_rounded),
-                label: '홈',
-              ),
-              NavigationDestination(
                 icon: Icon(Icons.calendar_month_outlined),
                 selectedIcon: Icon(Icons.calendar_month_rounded),
                 label: '캘린더',
@@ -78,6 +97,11 @@ class _MainShellState extends State<MainShell> {
                 icon: Icon(Icons.play_circle_outline_rounded),
                 selectedIcon: Icon(Icons.play_circle_fill_rounded),
                 label: '추억',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: '홈',
               ),
               NavigationDestination(
                 icon: Icon(Icons.family_restroom_outlined),

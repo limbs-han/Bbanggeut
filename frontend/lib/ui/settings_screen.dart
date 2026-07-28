@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
-import 'extra_screens.dart';
+import 'laugh_report_content_screen.dart';
+import 'password_change_screen.dart';
+import 'profile_edit_screen.dart';
 import 'widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -99,15 +101,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           const Positioned(
-                            right: 5,
-                            top: 25,
-                            child: Icon(
-                              Icons.notifications_none_rounded,
-                              color: AppColors.muted,
-                              size: 25,
-                            ),
-                          ),
-                          const Positioned(
                             right: 142,
                             top: 23,
                             child: Icon(
@@ -122,11 +115,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 4),
                     SoftCard(
                       color: AppColors.surface,
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(14),
                       child: Row(
                         children: [
                           CircleAvatar(
-                            radius: 28,
+                            radius: 24,
                             backgroundColor: AppColors.surfaceWarm,
                             child: Text(
                               controller
@@ -163,9 +156,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ],
                             ),
                           ),
-                          const StatusPill(
-                            label: '수정',
-                            color: AppColors.sageSoft,
+                          TextButton(
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ProfileEditScreen(controller: controller),
+                              ),
+                            ),
+                            child: const Text('수정하기'),
                           ),
                         ],
                       ),
@@ -182,15 +181,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             subtitle: device.name,
                             onTap: device.isOwner
                                 ? () => _editDevice(context)
-                                : null,
-                          ),
-                          const Divider(height: 1, indent: 58),
-                          _SettingRow(
-                            icon: Icons.auto_awesome_motion_outlined,
-                            title: '녹화 및 저장 설정',
-                            subtitle: '${device.retentionDays}일 자동 보관',
-                            onTap: device.isOwner
-                                ? () => _editRetention(context)
                                 : null,
                           ),
                         ],
@@ -249,8 +239,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    LaughReportScreen(controller: controller),
+                                builder: (_) => LaughReportContentScreen(
+                                  controller: controller,
+                                ),
                               ),
                             ),
                           ),
@@ -285,10 +276,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           _SettingRow(
                             icon: Icons.lock_outline_rounded,
                             title: '비밀번호 변경',
-                            onTap: () => showAppSnack(
+                            onTap: () => Navigator.push(
                               context,
-                              '비밀번호 변경 API가 아직 백엔드에 없어요.',
-                              error: true,
+                              MaterialPageRoute(
+                                builder: (_) => PasswordChangeScreen(
+                                  controller: controller,
+                                ),
+                              ),
                             ),
                           ),
                           const Divider(height: 1, indent: 58),
@@ -364,45 +358,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         showAppSnack(
           context,
           controller.errorMessage ?? '기기 이름을 바꾸지 못했어요.',
-          error: true,
-        );
-      }
-    }
-  }
-
-  Future<void> _editRetention(BuildContext context) async {
-    final controller = widget.controller;
-    final days = await showModalBottomSheet<int>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text(
-                '기본 보관 기간',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-            for (final value in [7, 14, 30, 60, 90])
-              ListTile(
-                title: Text('$value일'),
-                trailing: value == controller.selectedDevice!.retentionDays
-                    ? const Icon(Icons.check_rounded)
-                    : null,
-                onTap: () => Navigator.pop(context, value),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (days != null) {
-      final ok = await controller.updateSelectedDevice(retentionDays: days);
-      if (!ok && context.mounted) {
-        showAppSnack(
-          context,
-          controller.errorMessage ?? '보관 기간을 바꾸지 못했어요.',
           error: true,
         );
       }
@@ -672,11 +627,11 @@ class _SettingRow extends StatelessWidget {
     minVerticalPadding: 11,
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
     leading: CircleAvatar(
-      radius: 20,
+      radius: 18,
       backgroundColor: danger ? AppColors.pink : AppColors.sageSoft,
       child: Icon(
         icon,
-        size: 21,
+        size: 19,
         color: danger ? AppColors.danger : AppColors.sageDark,
       ),
     ),

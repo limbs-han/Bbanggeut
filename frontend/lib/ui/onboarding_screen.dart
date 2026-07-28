@@ -20,25 +20,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   static const _pages = [
     (
       eyebrow: '1 / 4',
-      title: '우리 집 웃음을\n놓치지 않을게요',
+      title: '우리집 웃음을 놓치지 않을게요.',
       body: '빵긋이가 소중한 순간을 감지하고\n따뜻한 추억으로 기록해요.',
       type: _OnboardingVisual.mascot,
     ),
     (
       eyebrow: '2 / 4',
-      title: '쉽게 보고,\n예쁘게 편집해요',
+      title: '쉽게 보고, 예쁘게 편집해요',
       body: '기록된 순간을 모아\n나만의 가족 이야기를 만들어보세요.',
       type: _OnboardingVisual.edit,
     ),
     (
       eyebrow: '3 / 4',
-      title: '가족과 함께\n추억을 나눠요',
+      title: '가족과 함께 추억을 나눠요',
       body: '언제 어디서든 함께 보고\n우리 집의 웃음을 공유할 수 있어요.',
       type: _OnboardingVisual.family,
     ),
     (
       eyebrow: '4 / 4',
-      title: '매일의 웃음이\n우리 집 보물이 돼요',
+      title: '매일의 웃음이 우리집 보물이 돼요',
       body: '오늘부터 빵긋이와 함께\n소중한 순간을 차곡차곡 모아봐요.',
       type: _OnboardingVisual.ready,
     ),
@@ -84,10 +84,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     fit: BoxFit.contain,
                   ),
                   const Spacer(),
-                  TextButton(
-                    onPressed: _finishing ? null : _finish,
-                    child: const Text('건너뛰기'),
-                  ),
+                  if (_page != _pages.length - 1)
+                    TextButton(
+                      onPressed: _finishing ? null : _finish,
+                      child: const Text('건너뛰기'),
+                    )
+                  else
+                    const SizedBox(width: 80),
                 ],
               ),
             ),
@@ -109,50 +112,67 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 22),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_page > 0)
-                    _CircleAction(
-                      icon: Icons.arrow_back_rounded,
-                      onPressed: () => _pageController.previousPage(
-                        duration: const Duration(milliseconds: 360),
-                        curve: Curves.easeOutCubic,
-                      ),
-                    )
-                  else
-                    const SizedBox(width: 52),
-                  Expanded(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        _pages.length,
-                        (index) => AnimatedContainer(
-                          duration: const Duration(milliseconds: 260),
-                          width: index == _page ? 22 : 7,
-                          height: 7,
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            color: index == _page
-                                ? AppColors.coral
-                                : AppColors.line,
-                            borderRadius: BorderRadius.circular(99),
+                  Row(
+                    children: [
+                      if (_page > 0)
+                        _CircleAction(
+                          icon: Icons.arrow_back_rounded,
+                          onPressed: () => _pageController.previousPage(
+                            duration: const Duration(milliseconds: 360),
+                            curve: Curves.easeOutCubic,
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 52),
+                      Expanded(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            _pages.length,
+                            (index) => AnimatedContainer(
+                              duration: const Duration(milliseconds: 260),
+                              width: index == _page ? 22 : 7,
+                              height: 7,
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              decoration: BoxDecoration(
+                                color: index == _page
+                                    ? AppColors.coral
+                                    : AppColors.line,
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                            ),
                           ),
                         ),
                       ),
+                      if (_page == _pages.length - 1)
+                        const SizedBox(width: 52)
+                      else
+                        _CircleAction(
+                          icon: Icons.arrow_forward_rounded,
+                          onPressed: _finishing ? null : _next,
+                        ),
+                    ],
+                  ),
+                  if (_page == _pages.length - 1) ...[
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _finishing ? null : _finish,
+                        child: _finishing
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                ),
+                              )
+                            : const Text('로그인하러 가기'),
+                      ),
                     ),
-                  ),
-                  _CircleAction(
-                    icon: _page == _pages.length - 1
-                        ? Icons.favorite_rounded
-                        : Icons.arrow_forward_rounded,
-                    color: _page == _pages.length - 1
-                        ? AppColors.coral
-                        : AppColors.surfaceWarm,
-                    foreground: _page == _pages.length - 1
-                        ? Colors.white
-                        : AppColors.ink,
-                    onPressed: _finishing ? null : _next,
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -217,63 +237,71 @@ class _Visual extends StatelessWidget {
   Widget build(BuildContext context) {
     if (type == _OnboardingVisual.edit) {
       return Center(
-        child: SoftCard(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Stack(
-                alignment: Alignment.center,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox(
+            width: 520,
+            child: SoftCard(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const _OnboardingFamilyPhoto(borderRadius: 18),
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: const BoxDecoration(
-                      color: Color(0x9A3A2C22),
-                      shape: BoxShape.circle,
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const _OnboardingFamilyPhoto(borderRadius: 18),
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: const BoxDecoration(
+                          color: Color(0x9A3A2C22),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 34,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: List.generate(
+                      5,
+                      (index) => Expanded(
+                        child: Container(
+                          height: 38,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceWarm,
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(color: AppColors.line),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Opacity(
+                            opacity: index == 2 ? 1 : .72,
+                            child: const _OnboardingFamilyPhoto(
+                              borderRadius: 0,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 34,
-                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _EditTool(Icons.content_cut_rounded, '자르기'),
+                      _EditTool(Icons.music_note_rounded, '음악'),
+                      _EditTool(Icons.mood_rounded, '스티커'),
+                      _EditTool(Icons.title_rounded, '텍스트'),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: List.generate(
-                  5,
-                  (index) => Expanded(
-                    child: Container(
-                      height: 38,
-                      margin: const EdgeInsets.symmetric(horizontal: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceWarm,
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(color: AppColors.line),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Opacity(
-                        opacity: index == 2 ? 1 : .72,
-                        child: const _OnboardingFamilyPhoto(borderRadius: 0),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _EditTool(Icons.content_cut_rounded, '자르기'),
-                  _EditTool(Icons.music_note_rounded, '음악'),
-                  _EditTool(Icons.mood_rounded, '스티커'),
-                  _EditTool(Icons.title_rounded, '텍스트'),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -355,16 +383,9 @@ class _EditTool extends StatelessWidget {
 }
 
 class _CircleAction extends StatelessWidget {
-  const _CircleAction({
-    required this.icon,
-    required this.onPressed,
-    this.color = AppColors.surfaceWarm,
-    this.foreground = AppColors.ink,
-  });
+  const _CircleAction({required this.icon, required this.onPressed});
   final IconData icon;
   final VoidCallback? onPressed;
-  final Color color;
-  final Color foreground;
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
@@ -372,8 +393,8 @@ class _CircleAction extends StatelessWidget {
     child: IconButton.filled(
       onPressed: onPressed,
       style: IconButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: foreground,
+        backgroundColor: AppColors.surfaceWarm,
+        foregroundColor: AppColors.ink,
         disabledBackgroundColor: AppColors.line,
       ),
       icon: Icon(icon),

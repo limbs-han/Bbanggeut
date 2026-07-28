@@ -52,13 +52,20 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
   }
 
   Future<void> _listenForMembershipRequests() async {
-    final initial = await appLinks.getInitialLink();
-    if (initial != null) {
-      await controller.setMembershipRequestLink(initial);
+    try {
+      final initial = await appLinks.getInitialLink();
+      if (initial != null) {
+        await controller.setMembershipRequestLink(initial);
+      }
+      linkSubscription = appLinks.uriLinkStream.listen(
+        controller.setMembershipRequestLink,
+        onError: (_) {
+          // 잘못된 외부 링크는 현재 화면을 유지하고 무시한다.
+        },
+      );
+    } catch (_) {
+      // 딥링크 플러그인을 사용할 수 없는 환경에서도 앱 실행은 계속한다.
     }
-    linkSubscription = appLinks.uriLinkStream.listen(
-      controller.setMembershipRequestLink,
-    );
   }
 
   @override

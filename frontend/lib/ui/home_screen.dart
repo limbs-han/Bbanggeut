@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
-import 'extra_screens.dart';
+import 'all_memories_screen.dart';
+import 'content_notifications_screen.dart';
+import 'device_registration_screen.dart';
+import 'favorite_videos_screen.dart';
+import 'invitation_inbox_screen.dart';
+import 'laugh_report_content_screen.dart';
 import 'live_screen.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
@@ -64,31 +69,54 @@ class HomeScreen extends StatelessWidget {
                         Expanded(
                           child: _StatCard(
                             icon: Icons.sentiment_very_satisfied_rounded,
-                            label: '오늘 웃음',
-                            value:
-                                '${controller.videoStats?.byTriggerType['LAUGHTER'] ?? 0}',
+                            label: '오늘의 웃음',
+                            value: '${summary?.captureCount ?? 0}',
                             unit: '회',
                             color: AppColors.yellowSoft,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    AllMemoriesScreen(controller: controller),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: _StatCard(
-                            icon: Icons.archive_rounded,
-                            label: '자동 저장',
-                            value: '${summary?.savedCount ?? 0}',
+                            icon: Icons.favorite_rounded,
+                            label: '즐겨찾는 영상',
+                            value:
+                                '${controller.videos.where((video) => video.favorite).length}',
                             unit: '개',
                             color: AppColors.greenCard,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => FavoriteVideosScreen(
+                                  controller: controller,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: _StatCard(
-                            icon: Icons.note_alt_rounded,
-                            label: '작성한 메모',
-                            value: '${summary?.memoCount ?? 0}',
-                            unit: '개',
+                            icon: Icons.bar_chart_rounded,
+                            label: '웃음 리포트',
+                            value: '${controller.videoStats?.totalCount ?? 0}',
+                            unit: '회',
                             color: AppColors.pink,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => LaughReportContentScreen(
+                                  controller: controller,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -217,7 +245,7 @@ class _HomeHeader extends StatelessWidget {
               ],
             ),
             child: const Icon(
-              Icons.nest_cam_wired_stand_rounded,
+              Icons.camera_indoor_rounded,
               color: AppColors.sageDark,
               size: 30,
             ),
@@ -288,7 +316,23 @@ class _HomeHeader extends StatelessWidget {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => NotificationsScreen(controller: controller),
+                builder: (_) => ContentNotificationsScreen(
+                  controller: controller,
+                  onOpenInvitations: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          InvitationInboxScreen(controller: controller),
+                    ),
+                  ),
+                  onOpenDevices: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          DeviceRegistrationScreen(controller: controller),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -314,28 +358,42 @@ class _LivePreviewCard extends StatelessWidget {
   final DeviceSummary device;
   final DeviceStatus? status;
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      boxShadow: [
-        BoxShadow(
-          color: Color(0x329D6A32),
-          blurRadius: 24,
-          offset: Offset(0, 11),
-        ),
-      ],
-    ),
-    child: CustomPaint(
-      painter: const _HouseBorderPainter(),
-      foregroundPainter: const _HouseAccentPainter(),
-      child: Padding(
-        padding: const EdgeInsets.all(7),
-        child: ClipPath(
-          clipper: const _HouseFrameClipper(),
-          child: EmbeddedLivePlayer(
-            controller: controller,
-            device: device,
-            status: status,
-            houseMode: true,
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onHorizontalDragEnd: (details) {
+      final velocity = details.primaryVelocity ?? 0;
+      if (velocity.abs() < 250 || controller.devices.length < 2) return;
+      final currentIndex = controller.devices.indexWhere(
+        (item) => item.id == device.id,
+      );
+      final nextIndex = velocity < 0 ? currentIndex + 1 : currentIndex - 1;
+      if (nextIndex < 0 || nextIndex >= controller.devices.length) return;
+      controller.selectDevice(controller.devices[nextIndex]);
+    },
+    child: DecoratedBox(
+      decoration: const BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x329D6A32),
+            blurRadius: 24,
+            offset: Offset(0, 11),
+          ),
+        ],
+      ),
+      child: CustomPaint(
+        painter: const _HouseBorderPainter(),
+        foregroundPainter: const _HouseAccentPainter(),
+        child: Padding(
+          padding: const EdgeInsets.all(7),
+          child: ClipPath(
+            clipper: const _HouseFrameClipper(),
+            child: EmbeddedLivePlayer(
+              key: ValueKey('live-${device.id}'),
+              controller: controller,
+              device: device,
+              status: status,
+              houseMode: true,
+            ),
           ),
         ),
       ),
@@ -350,84 +408,90 @@ class _StatCard extends StatelessWidget {
     required this.value,
     required this.unit,
     required this.color,
+    required this.onTap,
   });
   final IconData icon;
   final String label;
   final String value;
   final String unit;
   final Color color;
+  final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Container(
-    height: 112,
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: Colors.white.withValues(alpha: .75)),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x186B4C2D),
-          blurRadius: 12,
-          offset: Offset(0, 6),
-        ),
-      ],
-    ),
-    child: Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .58),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, size: 19, color: AppColors.inkSoft),
-            ),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.inkSoft,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const Spacer(),
-        RichText(
-          text: TextSpan(
-            style: const TextStyle(color: AppColors.ink),
+  Widget build(BuildContext context) => InkWell(
+    borderRadius: BorderRadius.circular(24),
+    onTap: onTap,
+    child: Container(
+      height: 112,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: .75)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x186B4C2D),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              TextSpan(
-                text: value,
-                style: const TextStyle(
-                  fontSize: 31,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .58),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: Icon(icon, size: 19, color: AppColors.inkSoft),
               ),
-              TextSpan(
-                text: unit,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.inkSoft,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Icon(Icons.eco_rounded, size: 15, color: AppColors.sageDark),
-        ),
-      ],
+          const Spacer(),
+          RichText(
+            text: TextSpan(
+              style: const TextStyle(color: AppColors.ink),
+              children: [
+                TextSpan(
+                  text: value,
+                  style: const TextStyle(
+                    fontSize: 31,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                TextSpan(
+                  text: unit,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Icon(Icons.eco_rounded, size: 15, color: AppColors.sageDark),
+          ),
+        ],
+      ),
     ),
   );
 }

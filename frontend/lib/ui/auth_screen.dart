@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import 'password_reset_screen.dart';
 import 'widgets.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
   bool obscure = true;
   bool remember = true;
   bool keyboardVisible = false;
+  String? submissionError;
 
   @override
   void initState() {
@@ -88,7 +90,9 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
   }
 
   Future<void> submit() async {
+    if (widget.controller.busy) return;
     FocusScope.of(context).unfocus();
+    if (mounted) setState(() => submissionError = null);
     final ok = signUp
         ? await widget.controller.signUp(
             name.text,
@@ -102,11 +106,9 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
             persistSession: remember,
           );
     if (!ok && mounted) {
-      showAppSnack(
-        context,
-        widget.controller.errorMessage ?? '입력한 정보를 다시 확인해 주세요.',
-        error: true,
-      );
+      final message = widget.controller.errorMessage ?? '입력한 정보를 다시 확인해 주세요.';
+      setState(() => submissionError = message);
+      showAppSnack(context, message, error: true);
     }
   }
 
@@ -258,8 +260,8 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                           onPressed: () => setState(() => obscure = !obscure),
                           icon: Icon(
                             obscure
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
                           ),
                         ),
                       ),
@@ -283,15 +285,43 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                         const Spacer(),
                         if (!signUp)
                           TextButton(
-                            onPressed: () => showAppSnack(
-                              context,
-                              '비밀번호 찾기 API가 아직 백엔드에 없어요.',
-                              error: true,
-                            ),
+                            onPressed: widget.controller.busy
+                                ? null
+                                : () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PasswordResetScreen(
+                                        controller: widget.controller,
+                                        initialEmail: email.text.trim(),
+                                      ),
+                                    ),
+                                  ),
                             child: const Text('비밀번호 찾기'),
                           ),
                       ],
                     ),
+                    if (submissionError != null) ...[
+                      Container(
+                        key: const Key('auth-error-message'),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 13,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.pink,
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: Text(
+                          submissionError!,
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                     FilledButton(
                       onPressed: widget.controller.busy ? null : submit,
                       child: widget.controller.busy
@@ -314,19 +344,15 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                     const _SocialDivider(),
                     const SizedBox(height: 10),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _SocialButton(
-                          label: 'Apple',
-                          mark: '●',
-                          onTap: () => unavailable('Apple'),
-                        ),
                         _SocialButton(
                           label: 'Google',
                           mark: 'G',
                           color: const Color(0xFF4285F4),
                           onTap: () => unavailable('Google'),
                         ),
+                        const SizedBox(width: 42),
                         _SocialButton(
                           label: '카카오',
                           mark: 'TALK',
