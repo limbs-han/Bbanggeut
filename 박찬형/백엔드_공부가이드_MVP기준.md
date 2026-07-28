@@ -1119,6 +1119,8 @@ MVP 동선에 필요한 전제 기능은 다음 3개다.
 - 이메일, 비밀번호로 로그인한다.
 - 앱을 껐다 켜도 refresh token으로 세션을 복구한다.
 - 로그인 실패가 10분 안에 5회 누적되면 일시 제한한다.
+- 로그인 상태에서는 현재 비밀번호를 확인한 뒤 비밀번호를 바꾼다.
+- 비밀번호를 잊으면 이메일로 받은 재설정 링크로 새 비밀번호를 정한다.
 
 관련 API:
 
@@ -1128,6 +1130,9 @@ MVP 동선에 필요한 전제 기능은 다음 3개다.
 | `POST /api/auth/login` | 아니오 | 비밀번호 확인 후 토큰 발급 |
 | `POST /api/auth/refresh` | 아니오 | refresh token 회전 |
 | `POST /api/auth/logout` | 사용자 JWT | 현재 세션 폐기 |
+| `POST /api/auth/password/change` | 사용자 JWT | 현재 비밀번호 확인 후 변경 |
+| `POST /api/auth/password/forgot` | 아니오 | 재설정 링크(토큰) 발급 요청 |
+| `POST /api/auth/password/reset` | 아니오 | 토큰으로 비밀번호 재설정 |
 | `DELETE /api/auth/me` | 사용자 JWT | 계정 탈퇴 |
 
 ## 2.2 아주 기초: 인증과 인가
@@ -1230,11 +1235,13 @@ CSRF를 끈 이유도 쿠키 기반 서버 세션이 아니라 Authorization hea
 - `auth/application/AuthService.java`
 - `auth/application/JwtTokenService.java`
 - `auth/application/LoginAttemptService.java`
+- `auth/application/PasswordResetSender.java` / `ConfiguredPasswordResetSender.java`
 - `auth/persistence/AuthMapper.java`
 - `config/SecurityConfig.java`
 - `config/JwtConfig.java`
 - `db/migration/V1__auth.sql`
 - `db/migration/V14__login_rate_limit.sql`
+- `db/migration/V25__member_password_reset_notifications.sql` (password_reset_tokens 테이블)
 
 ## 2.9 다른 파트가 물을 만한 질문
 
@@ -1252,6 +1259,78 @@ A. refresh 세션은 폐기된다. 짧은 access token은 설계에 따라 만�
 
 **Q. 프론트가 access token을 영구 저장해도 되나요?**  
 A. access token은 짧게 쓰고, 민감 저장소에는 refresh token을 두며, 401 시 한 번만 refresh 후 원 요청을 재시도하는 흐름이 일반적이다. 동시 refresh 중복도 막아야 한다.
+
+## 2.10 비밀번호 변경과 재설정
+
+비밀번호를 바꾸는 길은 두 갈래다. **현재 비밀번호를 아는 사람**이 바꾸는 변경과, **비밀번호를 잊은 사람**이 이메일로 되찾는 재설정이다. 둘의 신뢰 근거가 다르므로 흐름도 다르다.
+
+### 변경 — 로그인한 사람이 바꾼다
+
+로그인 상태에서 `POST /api/auth/password/change`를 부른다. 이미 JWT로 “누구인지”는 확인됐지만, 비밀번호를 바꾸는 민감한 동작이라 **현재 비밀번호를 한 번 더 확인**한다(토큰만 탈취한 공격자가 비밀번호까지 바꾸지 못하게).
+
+```text
+앱 (로그인 상태)
+  → POST /api/auth/password/change { currentPassword, newPassword }
+  → BCrypt.matches(currentPassword, 저장 해시)  ── 틀리면 401
+  → newPassword가 현재와 같으면 422 (그대로 두는 변경 거부)
+  → 새 비밀번호 BCrypt 해시로 교체
+  → 이 사용자의 재설정 토큰 전부 만료
+  → 지금 세션만 남기고 다른 세션 전부 폐기
+```
+
+마지막 줄이 중요하다. 비밀번호를 바꾸면 예전 비밀번호로 로그인해 둔 **다른 기기 세션은 끊는다**(`revokeOtherSessionsForUser`). 지금 조작 중인 세션 하나만 살린다.
+
+### 재설정 — 비밀번호를 잊은 사람이 되찾는다
+
+비밀번호를 모르니 현재 비밀번호로 증명할 수 없다. 대신 **이메일 수신함 접근**을 신원 증거로 삼는다. 두 단계로 나뉜다.
+
+**1단계 — 요청** `POST /api/auth/password/forgot { email }`
+
+```text
+→ 이메일 정규화 후 활성 사용자 조회
+├─ 없으면: 아무 일도 안 하고 그냥 202 응답   (가입 여부를 숨김)
+└─ 있으면:
+     → 32바이트 난수 토큰 생성
+     → 그 사용자의 기존 재설정 토큰 만료
+     → 토큰의 SHA-256 해시 + 만료(30분)를 password_reset_tokens에 저장
+     → 이메일로 재설정 링크 발송 (원문 토큰은 메일에만 담김)
+```
+
+응답은 계정 존재 여부와 무관하게 항상 `202 Accepted`다. “이 이메일은 가입돼 있다”는 정보를 주지 않으려는 것으로, 2.4 로그인의 동일 메시지 원칙과 같은 이유다.
+
+**2단계 — 실행** `POST /api/auth/password/reset { token, newPassword }`
+
+```text
+→ 받은 token을 SHA-256 해시로 바꿔 DB 행을 잠그고 조회
+→ 이미 썼거나 / 만료됐거나 / 소비 실패면 401
+→ 토큰을 사용됨으로 표시 (원자적 1회 소비)
+→ 새 비밀번호 BCrypt 해시로 교체
+→ 남은 재설정 토큰 전부 만료
+→ 이 사용자의 모든 세션 폐기
+```
+
+변경과 달리 재설정은 **모든 세션을 폐기**한다. 비밀번호를 잊었다는 것은 계정이 위험한 상황일 수 있으므로, 어디서 로그인돼 있든 전부 끊고 새로 로그인하게 만든다.
+
+### 토큰을 왜 원문으로 저장하지 않나
+
+refresh token과 같은 사고방식이다. DB에는 토큰의 **SHA-256 해시만** 저장한다. DB가 유출돼도 그 값으로는 재설정 링크를 만들 수 없다. 검증할 때는 들어온 토큰을 같은 방식으로 해시해서 비교한다. 비밀번호에 BCrypt를 쓰고 토큰에 SHA-256을 쓰는 이유는 2.3에 정리돼 있다. 토큰은 원래 예측 불가능한 난수라 느린 해시가 필요 없다.
+
+### 만료 30분이 지나면
+
+30분 제한은 “비밀번호”가 아니라 **재설정 링크(토큰)**의 수명이다. 링크가 만료되면 재설정이 무산될 뿐, 비밀번호는 바뀌지 않았으므로 사용자는 **원래 비밀번호로 그대로 로그인**하면 된다. 정말 잊어서 요청했다면 forgot을 다시 눌러 새 링크를 받는다. 새 요청은 이전 토큰을 먼저 만료시키므로 항상 가장 최근 링크 하나만 유효하다.
+
+### 메일 발송이 설정 안 된 환경
+
+메일 서버(`spring.mail.host`)가 비어 있으면 발송을 건너뛰고 경고 로그만 남긴다(`ConfiguredPasswordResetSender`). 개발 환경에서 메일 인프라 없이도 forgot 흐름이 500으로 죽지 않게 한 것이다.
+
+### 정리: 변경 vs 재설정
+
+| 구분 | 변경(change) | 재설정(reset) |
+|---|---|---|
+| 신원 증거 | 로그인 JWT + 현재 비밀번호 | 이메일로 받은 1회용 토큰 |
+| 로그인 필요 | 필요 | 불필요 |
+| 세션 처리 | 현재 세션만 유지, 나머지 폐기 | 전 세션 폐기 |
+| 계정 노출 방지 | 해당 없음 | 없는 계정도 202로 동일 응답 |
 
 ---
 
@@ -1738,7 +1817,69 @@ UUID와 경로를 안다고 읽을 수 있어서는 안 된다. 버킷은 privat
 
 기본 보존 기간은 30일이다. 구독 확장 코드에는 365일과 해지 유예 30일도 있으나 MVP 핵심은 아니다. `RetentionSweepWorker`가 만료 대상을 비동기 삭제 흐름으로 넘긴다.
 
-## 5.11 코드 위치
+## 5.11 알림 생성 — 웃음 영상 준비 완료
+
+이벤트 영상이 그냥 저장만 되면 가족은 새 영상이 생긴 줄 모른다. 그래서 영상이 재생 가능한 상태로 확정되는 순간 **인앱 알림**을 만든다. 여기서 알림은 푸시 메시지나 이메일이 아니라, 서버 DB(`notifications` 테이블)에 쌓아 두고 앱의 알림함에서 조회하는 방식이다.
+
+### 언제 만들어지나
+
+5.4의 완료 통지(2단계)에서 서버가 업로드 무결성을 확인하고 영상을 `READY`로 확정한 **바로 그 트랜잭션 안**에서 만든다.
+
+```text
+IotVideoService.completeUpload
+  → 크기·체크섬 검증
+  → videos 상태 READY로 확정 (markReady)
+  → device_events에 업로드 연결
+  → triggerType이 LAUGHTER면
+       notificationService.laughterVideoReady(deviceId, videoId, title)
+```
+
+`triggerType`이 `LAUGHTER`일 때만 알림을 만든다. 즉 “웃음으로 판정된 영상이 실제로 재생 가능해진 순간”에만 알린다. 업로드가 실패하거나 무결성 검사에서 막히면 `READY`가 되지 않으므로 알림도 생기지 않는다. 알림 생성이 완료 트랜잭션 안에 있는 이유도 이것이다. 영상 확정과 알림이 함께 커밋되거나 함께 무산된다.
+
+### 누구에게 만들어지나 — 팬아웃
+
+알림은 영상을 올린 한 사람이 아니라 그 기기를 **함께 보는 가족 전원**에게 필요하다. 그래서 한 건을 넣는 게 아니라, `device_memberships`에서 그 기기의 활성 구성원을 조회해 사람마다 한 행씩 INSERT한다.
+
+```sql
+INSERT INTO notifications (...)
+SELECT gen_random_uuid(), m.user_id, 'LAUGHTER_VIDEO_READY', ...
+  FROM device_memberships m
+  JOIN users u ON u.id = m.user_id
+ WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'
+   AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+ON CONFLICT (user_id, dedupe_key) DO NOTHING
+```
+
+애플리케이션에서 for 문으로 사람 수만큼 INSERT를 반복하지 않고, `SELECT ... INSERT` 한 문장으로 DB가 팬아웃을 처리한다. 탈퇴했거나 비활성인 구성원은 `WHERE` 조건에서 걸러진다.
+
+### 두 번 눌러도 한 번만 — 멱등성
+
+완료 통지는 네트워크 재시도 등으로 두 번 도착할 수 있다. 그때 같은 영상에 대한 알림이 두 번 쌓이면 안 된다. 이를 막는 장치가 **`dedupe_key`**다.
+
+- 웃음 영상 알림: `dedupe_key = 'laughter-video:{videoId}'`
+- `notifications` 테이블에 `UNIQUE (user_id, dedupe_key)` 제약이 있다.
+- INSERT에 `ON CONFLICT (user_id, dedupe_key) DO NOTHING`을 붙였다.
+
+그래서 같은 영상 완료가 여러 번 들어와도, 사용자별로 알림은 정확히 한 개만 남는다. 5.5의 영상 멱등성과 같은 사고방식을 알림에도 적용한 것이다.
+
+### 같은 알림함을 쓰는 다른 트리거 — 초대
+
+`notifications` 테이블은 웃음 영상 전용이 아니다. 기기 **초대**를 받으면 `INVITATION_RECEIVED` 타입 알림도 같은 테이블에 만들어진다(`dedupe_key = 'invitation:{invitationId}'`). 초대 자체는 시연 MVP 밖의 확장 기능(0.17 참고)이지만, 알림 “생성 방식”은 웃음 영상과 완전히 동일하다. 대상 사용자를 조회해 INSERT하고, `dedupe_key`로 중복을 막는다. 다른 점은 팬아웃 대상뿐이다. 초대는 초대받은 이메일의 사용자 1명에게, 웃음 영상은 기기 구성원 전원에게 간다.
+
+### 만든 알림을 읽는 쪽
+
+생성과 짝을 이루는 조회·읽음 처리 API가 있다. 모두 **자기 것만** 다룰 수 있게 `user_id`로 범위를 제한한다(11.6의 IDOR 방지와 같은 원칙).
+
+| API | 역할 |
+|---|---|
+| `GET /api/notifications?limit=` | 최신순 목록(기본 30, 최대 100) |
+| `GET /api/notifications/unread-count` | 안 읽은 개수 배지용 |
+| `PATCH /api/notifications/{id}/read` | 한 건 읽음 처리 |
+| `PATCH /api/notifications/read-all` | 전부 읽음 처리 |
+
+읽음 처리(`read_at`)는 알림을 지우는 게 아니라 시각을 찍는 방식이다. 한 건 읽음은 `COALESCE(read_at, now())`로 이미 읽은 것을 덮어쓰지 않고, 남의 알림 id를 넣어도 `user_id` 조건에 걸려 아무것도 바뀌지 않으며 “찾을 수 없음”으로 응답한다.
+
+## 5.12 코드 위치
 
 - edge:
   - `ai/yamnet/yamnet_laughter_detect_jetson.py`
@@ -1756,13 +1897,18 @@ UUID와 경로를 안다고 읽을 수 있어서는 안 된다. 버킷은 privat
   - `video/application/VideoDeletionWorker.java`
   - `video/application/RetentionSweepWorker.java`
   - `video/persistence/VideoMapper.java`
+- 알림:
+  - `notification/application/NotificationService.java`
+  - `notification/persistence/NotificationMapper.java`
+  - `notification/api/NotificationController.java`
 - DB:
   - `V4__videos.sql`
   - `V5__video_deletion_jobs.sql`
   - `V18__device_events.sql`
   - `V19__stale_upload_indexes.sql`
+  - `V25__member_password_reset_notifications.sql` (notifications 테이블)
 
-## 5.12 예상 질문
+## 5.13 예상 질문
 
 **Q. ETag가 있으면 SHA-256은 필요 없나요?**  
 A. S3 계열 ETag가 항상 파일 MD5라는 보장은 없다. multipart와 서버 설정에 따라 의미가 달라질 수 있어 프로젝트가 정한 SHA-256 metadata를 별도로 검증한다.
@@ -1778,6 +1924,12 @@ A. 아니다. checksum은 내용이 같은지 확인하는 지문이다. 기밀�
 
 **Q. 네트워크가 끊기면 영상은 사라지나요?**  
 A. 설계 원칙상 로컬 큐에 남아 재연결 후 같은 eventId로 재시도한다. 실제 시연 장비의 디스크 큐와 재시도 worker가 정상 동작하는지는 별도 통합 점검이 필요하다.
+
+**Q. 알림은 휴대폰 푸시(FCM)인가요?**  
+A. 현재 MVP의 알림은 서버 DB에 쌓아 두는 **인앱 알림**이다. 앱이 목록·안 읽은 개수 API를 호출해서 보여 준다. FCM/APNs 같은 실시간 푸시 발송은 확장 지점이고, 그 경우에도 지금의 `notifications` 테이블과 `dedupe_key` 멱등성이 발송 원장 역할을 그대로 할 수 있다.
+
+**Q. 완료 통지가 두 번 오면 알림도 두 번 오나요?**  
+A. 아니다. `dedupe_key = 'laughter-video:{videoId}'`와 `UNIQUE (user_id, dedupe_key)` + `ON CONFLICT DO NOTHING` 덕분에 사용자별로 한 번만 남는다.
 
 ---
 
