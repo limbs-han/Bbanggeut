@@ -341,6 +341,38 @@ and FFmpeg package, so only replace `FFMPEG_VIDEO_ARGS` after checking
 `ffmpeg -encoders` and making a short capture. For a USB webcam, confirm its
 actual modes with `v4l2-ctl --device=/dev/video0 --list-formats-ext`.
 
+### Jetson Orin Nano I2C character LCD test
+
+`lcd_test.py` drives the common PCF8574-backed HD44780 16x2 or 20x4 LCD with
+the local `lgpio` library. On the developer kit's J12 header, use physical pin
+3 for SDA, pin 5 for SCL, and pin 6 for GND. The Jetson signals are 3.3V-only.
+If the LCD backpack is powered from physical pin 2 or 4 (5V), connect SDA and
+SCL through a bidirectional I2C level shifter so the backpack pull-ups cannot
+apply 5V to the Jetson.
+
+Install the tools and inspect the bus before running the test:
+
+```bash
+sudo apt install i2c-tools python3-lgpio
+ls -l /dev/i2c-*
+sudo i2cdetect -y 7
+```
+
+JetPack 6.x commonly exposes J12 pins 3 and 5 as `/dev/i2c-7`, but use the bus
+number and address shown on the target device. Most backpacks respond at
+`0x27` or `0x3f`.
+
+```bash
+cd ai/device_agent
+python3 lcd_test.py
+python3 lcd_test.py --bus 7 --address 0x3f --columns 20 \
+  --line1 "Jetson Orin Nano" --line2 "I2C LCD OK"
+```
+
+The LCD keeps the written text after the command exits. A standard HD44780
+character ROM cannot display Korean, so the test replaces unsupported
+characters with `?`.
+
 ## Operations
 
 ```bash
