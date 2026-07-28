@@ -160,7 +160,15 @@ def parser() -> argparse.ArgumentParser:
     commands = value.add_subparsers(dest="command", required=True)
     enroll = commands.add_parser("enroll", help="일회용 bootstrap 토큰을 운영용으로 교환")
     enroll.add_argument("--bootstrap-token-file", type=Path, required=True)
-    commands.add_parser("registration-code", help="2분짜리 사용자 등록 코드 발급")
+    registration_code = commands.add_parser(
+        "registration-code",
+        help="2분짜리 사용자 등록 코드 발급",
+    )
+    registration_code.add_argument(
+        "--output-format",
+        choices=("text", "json"),
+        default="text",
+    )
     commands.add_parser("rotate", help="현재 운영용 자격증명 교체")
     return value
 
@@ -190,6 +198,17 @@ def main() -> None:
     expires_at = response.get("expiresAt")
     if not isinstance(code, str) or not isinstance(expires_at, str):
         raise RuntimeError("서버가 반환한 등록 코드가 올바르지 않습니다")
+    if args.output_format == "json":
+        print(
+            json.dumps(
+                {
+                    "registrationCode": code,
+                    "expiresAt": expires_at,
+                },
+                separators=(",", ":"),
+            ),
+        )
+        return
     print(f"등록 코드: {code}")
     print(f"만료 시각: {expires_at}")
 
