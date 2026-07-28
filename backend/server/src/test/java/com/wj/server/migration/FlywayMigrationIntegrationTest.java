@@ -91,7 +91,7 @@ class FlywayMigrationIntegrationTest {
         var result = latestFlyway.migrate();
 
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("25");
+        assertThat(result.targetSchemaVersion).isEqualTo("26");
         try (var connection = DriverManager.getConnection(
             jdbcUrl, username, password);
              var statement = connection.prepareStatement(
@@ -102,12 +102,13 @@ class FlywayMigrationIntegrationTest {
                      + "where id = '40000000-0000-0000-0000-000000000001'), "
                      + "(select count(*) from information_schema.tables where table_name in "
                      + "('auth_login_attempts', 'device_credentials', 'device_events', "
-                     + "'membership_request_links', 'password_reset_tokens', 'notifications'))");
+                     + "'membership_request_links', 'password_reset_tokens', 'notifications', "
+                     + "'notification_push_tokens'))");
              var rows = statement.executeQuery()) {
             rows.next();
             assertThat(rows.getString(1)).isEqualTo("MEMBER");
             assertThat(rows.getString(2)).isEqualTo("MEMBER");
-            assertThat(rows.getInt(3)).isEqualTo(6);
+            assertThat(rows.getInt(3)).isEqualTo(7);
         }
     }
 

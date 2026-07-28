@@ -22,7 +22,7 @@
 `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
 `PASSWORD_RESET_FROM`, `PASSWORD_RESET_URL` 환경 변수를 사용한다.
 
-## 인앱 알림
+## 인앱·푸시 알림
 
 다음 시점에 사용자별 알림 레코드를 생성한다.
 
@@ -37,5 +37,30 @@
 - `PATCH /api/notifications/{notificationId}/read`
 - `PATCH /api/notifications/read-all`
 
-현재 구현은 백엔드 인앱 알림 저장·조회까지 포함한다. 운영체제 푸시 알림은
-Flutter의 FCM 토큰 등록 API와 푸시 발송 어댑터를 추가로 연결해야 한다.
+### FCM 토큰
+
+- `PUT /api/notifications/push-tokens`: 현재 설치의 FCM 토큰 등록·갱신
+- `DELETE /api/notifications/push-tokens/{installationId}`: 로그아웃·알림 해제 시 제거
+
+등록 본문은 다음과 같다.
+
+```json
+{
+  "installationId": "앱 설치를 식별하는 안정적인 임의 ID",
+  "token": "Firebase Messaging에서 발급한 FCM 토큰",
+  "platform": "ANDROID"
+}
+```
+
+`platform`은 `ANDROID` 또는 `IOS`다. 동일 설치의 토큰 갱신과 동일 토큰의
+사용자 전환을 처리하며, 사용자 탈퇴 시 토큰도 함께 삭제된다.
+
+새 인앱 알림이 DB에 커밋된 다음 Firebase Admin SDK로 같은 대상에게 푸시한다.
+초대 알림은 초대받은 계정, 웃음 영상 알림은 해당 기기의 모든 활성 구성원이
+대상이다. FCM이 만료·해제 토큰을 반환하면 서버에서 자동 삭제한다. 푸시 발송
+장애는 이미 저장된 인앱 알림을 롤백하지 않는다.
+
+운영 활성화에는 `FCM_ENABLED=true`, `FIREBASE_PROJECT_ID`,
+`GOOGLE_APPLICATION_CREDENTIALS`가 필요하다. 서비스 계정 파일은 서버에만
+보관하며 앱이나 저장소에 넣지 않는다. Flutter는 알림 권한 요청, 토큰 발급·갱신,
+위 API 호출, 수신 메시지와 딥링크 처리를 담당한다.
