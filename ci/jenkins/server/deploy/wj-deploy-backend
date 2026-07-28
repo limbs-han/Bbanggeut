@@ -9,6 +9,47 @@ deployment_root="${application_root}/deployments"
 health_url="http://127.0.0.1:8081/actuator/health"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 
+validate_spring_boot_jar() {
+  local candidate="${1:?JAR path is required}"
+
+  if ! command -v unzip >/dev/null 2>&1; then
+    echo "JAR 검증에 필요한 unzip 명령이 없습니다." >&2
+    return 1
+  fi
+
+  if [[ ! -f "${candidate}" ]]; then
+    echo "검증할 JAR가 없습니다: ${candidate}" >&2
+    return 1
+  fi
+
+  if ! unzip -tq "${candidate}" >/dev/null; then
+    echo "업로드된 파일의 ZIP/JAR 구조가 손상되었습니다." >&2
+    return 1
+  fi
+
+  if ! unzip -Z1 "${candidate}" |
+    awk '
+      $0 == "META-INF/MANIFEST.MF" { manifest = 1 }
+      index($0, "BOOT-INF/classes/") == 1 { classes = 1 }
+      index($0, "BOOT-INF/lib/") == 1 { libraries = 1 }
+      END { exit !(manifest && classes && libraries) }
+    '
+  then
+    echo "업로드된 파일이 실행 가능한 Spring Boot JAR 구조가 아닙니다." >&2
+    return 1
+  fi
+}
+
+if [[ "${1:-}" == "--validate-only" ]]; then
+  if [[ "$#" -ne 2 ]]; then
+    echo "사용법: $0 --validate-only <JAR 경로>" >&2
+    exit 2
+  fi
+  validate_spring_boot_jar "$2"
+  echo "Spring Boot JAR 검증 성공: $2"
+  exit 0
+fi
+
 exec 9>/run/lock/william-james-backend-deploy.lock
 if ! flock -n 9; then
   echo "다른 Backend 배포가 진행 중입니다." >&2
@@ -20,8 +61,7 @@ if [[ ! -f "${incoming}" ]]; then
   exit 1
 fi
 
-if ! /usr/bin/jar --list --file "${incoming}" >/dev/null; then
-  echo "업로드된 파일이 유효한 JAR가 아닙니다." >&2
+if ! validate_spring_boot_jar "${incoming}"; then
   exit 1
 fi
 

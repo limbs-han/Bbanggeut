@@ -144,6 +144,10 @@ S15P11E201/master CI 성공
 운영 PostgreSQL·MinIO·Mosquitto·MediaMTX Compose는 Backend JAR 배포 과정에서 재시작하지
 않습니다. Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
 
+운영 EC2에는 실행용 JRE만 설치합니다. 배포 스크립트는 JDK의 `jar` 명령에 의존하지 않고
+`unzip`으로 압축 손상과 `META-INF/MANIFEST.MF`, `BOOT-INF/classes/`, `BOOT-INF/lib/`
+구조를 확인합니다. Backend CI도 같은 검증기로 실제 빌드 결과물을 검사합니다.
+
 ## GitLab 상태 알림
 
 Jenkins는 테스트와 배포 결과를 GitLab 커밋과 Merge Request 화면에 다음 이름으로 표시합니다.
