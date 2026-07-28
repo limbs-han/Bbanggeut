@@ -373,6 +373,72 @@ The LCD keeps the written text after the command exits. A standard HD44780
 character ROM cannot display Korean, so the test replaces unsupported
 characters with `?`.
 
+### Jetson registration button with LCD
+
+`jetson_registration_button.py` requests the existing two-minute registration
+code and shows it on the LCD. On the current Orin Nano developer kit, physical
+pin 7 is `gpiochip0` line 144 (`PAC.06`). Wire a normally-open button between
+physical pin 7 and GND pin 6. The service requests an internal pull-up; an
+external 10 kohm pull-up from pin 7 to 3.3V is recommended for long wires.
+Never pull the button input up to 5V.
+
+The LCD stays on physical pins 3 and 5. If its backpack uses 5V, put a
+bidirectional I2C level shifter between the LCD and the Jetson's 3.3V-only SDA
+and SCL signals. Confirm the current mapping before enabling the service:
+
+```bash
+gpioinfo | grep PAC.06
+sudo i2cdetect -y -r 7
+```
+
+Install the checked-out code and enable the optional service only after the
+device has an OPERATING bearer token:
+
+```bash
+cd ai/device_agent
+sudo apt install python3-lgpio i2c-tools
+sudo ./install-jetson.sh
+sudo systemctl enable --now wj-registration-button-jetson
+sudo journalctl -u wj-registration-button-jetson -f
+```
+
+The LCD shows `Press button`, then `Requesting code`, followed by the issued
+`XXXX-XXXX` value. A failed or timed-out request displays a short error instead.
+Override `REGISTRATION_BUTTON_CHIP`, `REGISTRATION_BUTTON_LINE`,
+`LCD_I2C_BUS`, `LCD_I2C_ADDRESS`, or `LCD_COLUMNS` in
+`/etc/william-james/device-agent.env` when the target differs.
+
+### Jetson PCA9685 servo test
+
+Use a PCA9685 rather than driving an SG90 directly from a Jetson GPIO. Connect
+PCA9685 `VCC` to Jetson 3.3V, SDA/SCL to physical pins 3/5, and GND to Jetson
+GND. Connect the servo signal to PCA9685 channel 0. Power PCA9685 `V+` and the
+servo from a separate regulated 5V supply, and join that supply's GND to Jetson
+GND. Do not power the servo from the Jetson 3.3V or 5V header.
+
+The LCD and PCA9685 can share the I2C bus because their normal addresses differ:
+
+```text
+LCD      0x27 (sometimes 0x3f)
+PCA9685  0x40
+```
+
+Scan first, disconnect the servo horn or unload the mechanism, and run only the
+conservative 1200-1800 microsecond test range:
+
+```bash
+sudo i2cdetect -y -r 7
+cd ai/device_agent
+sudo python3 servo_test.py \
+  --bus 7 --address 0x40 --channel 0 \
+  --pulses 1500 1200 1500 1800 1500
+```
+
+The script disables channel output when it finishes. Use `--keep-powered` only
+when holding the final position is intentional. Do not expand toward the
+allowed 500-2500 microsecond software limits until the physical mechanism's
+safe endpoints have been measured.
+
 ## Operations
 
 ```bash
