@@ -37,8 +37,10 @@ pipeline {
                         checkout scm
                         sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
                         gitlabCommitStatus(name: 'ci/backend') {
+                            sh 'bash ci/jenkins/scripts/test-deploy-jar-validation.sh'
                             sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
                             sh 'bash ci/jenkins/scripts/package-backend-deploy.sh backend-deploy.tar.gz'
+                            sh 'bash ci/jenkins/server/deploy/wj-deploy-backend --validate-only backend/server/build/libs/server-*.jar'
                             junit allowEmptyResults: false,
                                 testResults: 'backend/server/build/test-results/test/TEST-*.xml'
                             archiveArtifacts artifacts: 'backend/server/build/libs/server-*.jar,backend-deploy.tar.gz,ci/jenkins/commit.txt',

@@ -30,6 +30,9 @@ mybatis:
     map-underscore-to-camel-case: true
 
 management:
+  health:
+    mail:
+      enabled: ${MAIL_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:

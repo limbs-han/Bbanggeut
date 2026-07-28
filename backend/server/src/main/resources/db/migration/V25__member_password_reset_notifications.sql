@@ -1,8 +1,14 @@
 ALTER TABLE device_memberships ALTER COLUMN role DROP DEFAULT;
 ALTER TABLE invitations ALTER COLUMN role DROP DEFAULT;
 
+ALTER TABLE invitations DROP CONSTRAINT IF EXISTS ck_invitations_non_owner_only;
+
 UPDATE device_memberships SET role = 'MEMBER' WHERE role::text IN ('EDITOR', 'VIEWER');
 UPDATE invitations SET role = 'MEMBER' WHERE role::text IN ('EDITOR', 'VIEWER');
+
+-- V2 installs a deferred constraint trigger on device_memberships. Flush the
+-- role-update trigger events before changing that table's default/constraints.
+SET CONSTRAINTS ALL IMMEDIATE;
 
 ALTER TABLE device_memberships ALTER COLUMN role SET DEFAULT 'MEMBER';
 ALTER TABLE invitations ALTER COLUMN role SET DEFAULT 'MEMBER';
@@ -10,7 +16,6 @@ ALTER TABLE invitations ALTER COLUMN role SET DEFAULT 'MEMBER';
 ALTER TABLE device_memberships
     ADD CONSTRAINT ck_device_memberships_owner_or_member
     CHECK (role IN ('OWNER', 'MEMBER'));
-ALTER TABLE invitations DROP CONSTRAINT IF EXISTS ck_invitations_non_owner_only;
 ALTER TABLE invitations
     ADD CONSTRAINT ck_invitations_member_only CHECK (role = 'MEMBER');
 
