@@ -42,8 +42,7 @@ public class InvitationController {
     ) {
         return ResponseEntity.status(201)
             .body(invitationService.createInvitation(
-                userId(jwt), deviceId, request.email(), request.role(),
-                request.membershipRequestToken()));
+                userId(jwt), deviceId, request.email(), request.membershipRequestToken()));
     }
 
     @PostMapping("/membership-request-links")

@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.wj.server.auth.domain.AuthSessionRow;
+import com.wj.server.auth.domain.PasswordResetTokenRow;
 import com.wj.server.auth.domain.UserRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -115,6 +116,61 @@ public interface AuthMapper {
          WHERE user_id = #{userId} AND revoked_at IS NULL
         """)
     int revokeAllSessionsForUser(@Param("userId") UUID userId);
+
+    @Update("""
+        UPDATE auth_sessions
+           SET revoked_at = now()
+         WHERE user_id = #{userId} AND id != #{sessionId} AND revoked_at IS NULL
+        """)
+    int revokeOtherSessionsForUser(
+        @Param("userId") UUID userId,
+        @Param("sessionId") UUID sessionId
+    );
+
+    @Update("""
+        UPDATE users
+           SET password_hash = #{passwordHash}, token_version = token_version + 1,
+               updated_at = now()
+         WHERE id = #{userId} AND status = 'ACTIVE' AND deleted_at IS NULL
+        """)
+    int updatePassword(
+        @Param("userId") UUID userId,
+        @Param("passwordHash") String passwordHash
+    );
+
+    @Update("""
+        UPDATE password_reset_tokens
+           SET used_at = now()
+         WHERE user_id = #{userId} AND used_at IS NULL
+        """)
+    int expirePasswordResetTokens(@Param("userId") UUID userId);
+
+    @Insert("""
+        INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+        VALUES (#{id}, #{userId}, #{tokenHash}, #{expiresAt})
+        """)
+    int insertPasswordResetToken(
+        @Param("id") UUID id,
+        @Param("userId") UUID userId,
+        @Param("tokenHash") String tokenHash,
+        @Param("expiresAt") Instant expiresAt
+    );
+
+    @Select("""
+        SELECT id, user_id, expires_at, used_at
+          FROM password_reset_tokens
+         WHERE token_hash = #{tokenHash}
+         FOR UPDATE
+        """)
+    Optional<PasswordResetTokenRow> lockPasswordResetToken(
+        @Param("tokenHash") String tokenHash
+    );
+
+    @Update("""
+        UPDATE password_reset_tokens SET used_at = now()
+         WHERE id = #{id} AND used_at IS NULL
+        """)
+    int consumePasswordResetToken(@Param("id") UUID id);
 
     @Update("""
         UPDATE users

@@ -14,6 +14,7 @@ import com.wj.server.invitation.domain.InvitationRow;
 import com.wj.server.invitation.domain.MembershipRequestRow;
 import com.wj.server.invitation.domain.MembershipRow;
 import com.wj.server.invitation.persistence.InvitationMapper;
+import com.wj.server.notification.application.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Invite flow: the OWNER invites a specific email address, and only the account
- * that owns that email can accept the invitation in-app as an EDITOR or VIEWER. A
+ * that owns that email can accept the invitation in-app as a MEMBER. A
  * home camera is shared with named people, never through a link that can leak.
  */
 @Service
@@ -30,6 +31,7 @@ public class InvitationService {
     private final InvitationProperties properties;
     private final AuditService auditService;
     private final MembershipRequestService membershipRequestService;
+    private final NotificationService notificationService;
     private final Clock clock;
 
     @Autowired
@@ -37,10 +39,11 @@ public class InvitationService {
         InvitationMapper invitationMapper,
         InvitationProperties properties,
         AuditService auditService,
-        MembershipRequestService membershipRequestService
+        MembershipRequestService membershipRequestService,
+        NotificationService notificationService
     ) {
         this(invitationMapper, properties, auditService,
-            membershipRequestService, Clock.systemUTC());
+            membershipRequestService, notificationService, Clock.systemUTC());
     }
 
     InvitationService(
@@ -48,12 +51,14 @@ public class InvitationService {
         InvitationProperties properties,
         AuditService auditService,
         MembershipRequestService membershipRequestService,
+        NotificationService notificationService,
         Clock clock
     ) {
         this.invitationMapper = invitationMapper;
         this.properties = properties;
         this.auditService = auditService;
         this.membershipRequestService = membershipRequestService;
+        this.notificationService = notificationService;
         this.clock = clock;
     }
 
@@ -63,12 +68,16 @@ public class InvitationService {
         UUID userId,
         UUID deviceId,
         String email,
-        String role,
         String membershipRequestToken
     ) {
         requireOwner(userId, deviceId, "MEMBER_INVITE", "INVITATION", null);
         String inviteeEmail = normalizeEmail(email);
-        String inviteeRole = normalizeInviteRole(role);
+        if (!invitationMapper.activeUserEmailExists(inviteeEmail)) {
+            throw new ApiException(
+                HttpStatus.NOT_FOUND,
+                "INVITEE_ACCOUNT_NOT_FOUND",
+                "가입된 사용자 이메일을 찾을 수 없습니다.");
+        }
         MembershipRequestRow membershipRequest = membershipRequestToken == null
             || membershipRequestToken.isBlank()
             ? null
@@ -82,7 +91,7 @@ public class InvitationService {
         }
         UUID invitationId = UUID.randomUUID();
         invitationMapper.insertInvitation(
-            invitationId, deviceId, userId, inviteeEmail, inviteeRole,
+            invitationId, deviceId, userId, inviteeEmail, "MEMBER",
             clock.instant().plus(properties.ttl()));
         if (membershipRequest != null) {
             membershipRequestService.consume(
@@ -90,6 +99,8 @@ public class InvitationService {
         }
         InvitationRow row = invitationMapper.findScopedInvitation(deviceId, invitationId)
             .orElseThrow(this::notFound);
+        notificationService.invitationReceived(
+            inviteeEmail, deviceId, row.deviceName(), invitationId);
         auditService.success(deviceId, userId, "MEMBER_INVITE", "INVITATION", invitationId);
         return toInvitation(row);
     }
@@ -118,7 +129,7 @@ public class InvitationService {
         return invitationMapper.findReceivedInvitations(email).stream().map(this::toInvitation).toList();
     }
 
-    /** The invited account accepts and receives the role selected by the OWNER. */
+    /** The invited account accepts and becomes a MEMBER. */
     @Transactional
     public DeviceMemberResponse acceptInvitation(UUID userId, UUID invitationId) {
         String email = invitationMapper.findUserEmail(userId).orElseThrow(this::notFound);
@@ -132,7 +143,7 @@ public class InvitationService {
         if (invitationMapper.acceptInvitation(invitationId, userId) != 1) {
             throw conflict("INVITATION_NOT_PENDING", "대기 중인 초대만 수락할 수 있습니다.");
         }
-        invitationMapper.activateMember(invitation.deviceId(), userId, invitation.role());
+        invitationMapper.activateMember(invitation.deviceId(), userId, "MEMBER");
         DeviceMemberResponse response = invitationMapper.findMembership(invitation.deviceId(), userId)
             .map(this::toMember)
             .orElseThrow(this::notFound);
@@ -172,7 +183,7 @@ public class InvitationService {
             throw conflict("OWNER_CANNOT_BE_REVOKED", "OWNER 멤버십은 이 API로 회수할 수 없습니다.");
         }
         if (!"ACTIVE".equals(target.status()) || invitationMapper.revokeMember(membershipId, userId) != 1) {
-            throw conflict("MEMBERSHIP_NOT_ACTIVE", "활성 EDITOR 또는 VIEWER만 회수할 수 있습니다.");
+            throw conflict("MEMBERSHIP_NOT_ACTIVE", "활성 MEMBER만 회수할 수 있습니다.");
         }
         auditService.success(deviceId, userId, "MEMBER_REVOKE", "MEMBERSHIP", membershipId);
     }
@@ -214,14 +225,6 @@ public class InvitationService {
 
     private String normalizeEmail(String email) {
         return email == null ? "" : email.trim().toLowerCase();
-    }
-
-    private String normalizeInviteRole(String role) {
-        String normalized = role == null ? "" : role.trim().toUpperCase();
-        if (!"EDITOR".equals(normalized) && !"VIEWER".equals(normalized)) {
-            throw validation("role은 EDITOR 또는 VIEWER여야 합니다.");
-        }
-        return normalized;
     }
 
     private ApiException notFound() {

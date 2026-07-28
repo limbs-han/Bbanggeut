@@ -169,7 +169,7 @@ class DeviceServiceTest {
         UpdateDeviceRequest request = new UpdateDeviceRequest();
         request.setName("New name");
         when(deviceMapper.lockAccessibleDevice(userId, deviceId))
-            .thenReturn(Optional.of(view(deviceId, "Before", "OFFLINE", "EDITOR")));
+            .thenReturn(Optional.of(view(deviceId, "Before", "OFFLINE", "MEMBER")));
 
         assertThatThrownBy(() -> deviceService.update(userId, deviceId, request))
             .isInstanceOf(ApiException.class)
@@ -185,7 +185,7 @@ class DeviceServiceTest {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.findAccessibleDevice(userId, deviceId))
-            .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "VIEWER")));
+            .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "MEMBER")));
         when(deviceMapper.findAccessibleStatus(userId, deviceId))
             .thenReturn(Optional.of(new DeviceStatusRow(deviceId, "OFFLINE", false, 2, 120, null)));
 
@@ -226,14 +226,14 @@ class DeviceServiceTest {
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
         when(deviceMapper.lockMembership(deviceId, membershipId))
             .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
-                membershipId, memberId, "EDITOR", "ACTIVE")));
-        when(deviceMapper.demoteOwnerToEditor(deviceId, ownerId)).thenReturn(1);
+                membershipId, memberId, "MEMBER", "ACTIVE")));
+        when(deviceMapper.demoteOwnerToMember(deviceId, ownerId)).thenReturn(1);
         when(deviceMapper.promoteNonOwnerToOwner(deviceId, membershipId)).thenReturn(1);
 
         deviceService.transferOwnership(
             ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId));
 
-        verify(deviceMapper).demoteOwnerToEditor(deviceId, ownerId);
+        verify(deviceMapper).demoteOwnerToMember(deviceId, ownerId);
         verify(deviceMapper).promoteNonOwnerToOwner(deviceId, membershipId);
         verify(deviceMapper, never()).markAllVideosDeleting(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
@@ -248,14 +248,14 @@ class DeviceServiceTest {
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
         when(deviceMapper.lockMembership(deviceId, membershipId))
             .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
-                membershipId, UUID.randomUUID(), "VIEWER", "REVOKED")));
+                membershipId, UUID.randomUUID(), "MEMBER", "REVOKED")));
 
         assertThatThrownBy(() -> deviceService.transferOwnership(
             ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId)))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("TRANSFER_TARGET_NOT_ACTIVE_MEMBER");
-        verify(deviceMapper, never()).demoteOwnerToEditor(
+        verify(deviceMapper, never()).demoteOwnerToMember(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 

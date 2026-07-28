@@ -24,7 +24,10 @@ class MqttTopicAclMigrationWorkerTest {
     void migratesEachActiveOperatingIdentityOnlyOnce() {
         UUID first = UUID.randomUUID();
         UUID second = UUID.randomUUID();
-        when(mapper.findActiveOperatingDeviceIds()).thenReturn(List.of(first, second));
+        when(mapper.findActiveOperatingDeviceIds()).thenReturn(List.of(
+            first.toString(),
+            second.toString()
+        ));
         MqttTopicAclMigrationWorker worker =
             new MqttTopicAclMigrationWorker(mapper, identityManager);
 

@@ -3,8 +3,9 @@ pipeline {
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
-        copyArtifactPermission('Production/S15P11E201-backend-deploy')
+        copyArtifactPermission('/Production/S15P11E201-backend-deploy')
         disableConcurrentBuilds(abortPrevious: true)
+        gitLabConnection('s15p11e201-gitlab-api')
         skipDefaultCheckout(true)
         timestamps()
         timeout(time: 45, unit: 'MINUTES')
@@ -25,7 +26,7 @@ pipeline {
                             branch 'master'
                             branch 'develop/backend'
                             branch pattern: 'feat/backend/**', comparator: 'GLOB'
-                            branch 'feat/jenkins-pipeline'
+                            branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
                     agent {
@@ -34,11 +35,14 @@ pipeline {
                     steps {
                         deleteDir()
                         checkout scm
-                        sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
-                        junit allowEmptyResults: false,
-                            testResults: 'backend/server/build/test-results/test/TEST-*.xml'
-                        archiveArtifacts artifacts: 'backend/server/build/libs/server-*.jar',
-                            fingerprint: true
+                        sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
+                        gitlabCommitStatus(name: 'ci/backend') {
+                            sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
+                            junit allowEmptyResults: false,
+                                testResults: 'backend/server/build/test-results/test/TEST-*.xml'
+                            archiveArtifacts artifacts: 'backend/server/build/libs/server-*.jar,ci/jenkins/commit.txt',
+                                fingerprint: true
+                        }
                     }
                     post {
                         cleanup {
@@ -54,7 +58,7 @@ pipeline {
                             branch 'master'
                             branch 'develop/frontend'
                             branch pattern: 'feat/frontend/**', comparator: 'GLOB'
-                            branch 'feat/jenkins-pipeline'
+                            branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
                     agent {
@@ -63,10 +67,12 @@ pipeline {
                     steps {
                         deleteDir()
                         checkout scm
-                        dir('frontend') {
-                            sh 'flutter pub get'
-                            sh 'flutter analyze'
-                            sh 'flutter test --reporter expanded'
+                        gitlabCommitStatus(name: 'ci/frontend') {
+                            dir('frontend') {
+                                sh 'flutter pub get'
+                                sh 'flutter analyze'
+                                sh 'flutter test --reporter expanded'
+                            }
                         }
                     }
                     post {
@@ -83,7 +89,7 @@ pipeline {
                             branch 'master'
                             branch 'develop/device'
                             branch pattern: 'feat/device/**', comparator: 'GLOB'
-                            branch 'feat/jenkins-pipeline'
+                            branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
                     agent {
@@ -92,15 +98,17 @@ pipeline {
                     steps {
                         deleteDir()
                         checkout scm
-                        dir('ai/device_agent') {
-                            sh 'python3 -m venv .venv-ci'
-                            sh '.venv-ci/bin/python -m pip install -r requirements.txt'
-                            sh '.venv-ci/bin/python -m unittest discover -s tests -v'
-                        }
-                        dir('ai/yolo') {
-                            sh 'python3 -m unittest -v test_event_fusion.py test_laughter_clip_uploader.py'
-                            sh 'python3 -m py_compile *.py'
-                            sh 'bash -n run_ai_stack.sh run_edge_ai_mvp.sh'
+                        gitlabCommitStatus(name: 'ci/device') {
+                            dir('ai/device_agent') {
+                                sh 'python3 -m venv .venv-ci'
+                                sh '.venv-ci/bin/python -m pip install -r requirements.txt'
+                                sh '.venv-ci/bin/python -m unittest discover -s tests -v'
+                            }
+                            dir('ai/yolo') {
+                                sh 'python3 -m unittest -v test_event_fusion.py test_laughter_clip_uploader.py'
+                                sh 'python3 -m py_compile *.py'
+                                sh 'bash -n run_ai_stack.sh run_edge_ai_mvp.sh'
+                            }
                         }
                     }
                     post {
