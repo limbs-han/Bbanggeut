@@ -15,7 +15,6 @@ class FamilyScreen extends StatefulWidget {
 
 class _FamilyScreenState extends State<FamilyScreen> {
   final inviteEmail = TextEditingController();
-  String inviteRole = 'VIEWER';
   String? appliedMembershipRequestToken;
 
   AppController get controller => widget.controller;
@@ -79,13 +78,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                         ),
-                        if (device.isOwner)
-                          TextButton(
-                            onPressed: () => _showInviteDialog(context),
-                            child: const Text('초대하기'),
-                          )
-                        else
-                          const SizedBox(width: 70),
+                        const SizedBox(width: 70),
                       ],
                     ),
                     const SizedBox(height: 15),
@@ -218,28 +211,6 @@ class _FamilyScreenState extends State<FamilyScreen> {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            DropdownButtonFormField<String>(
-                              initialValue: inviteRole,
-                              decoration: const InputDecoration(
-                                labelText: '권한',
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'VIEWER',
-                                  child: Text('VIEWER · 영상 보기'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'EDITOR',
-                                  child: Text('EDITOR · 보기 및 편집'),
-                                ),
-                              ],
-                              onChanged: controller.busy
-                                  ? null
-                                  : (value) => setState(
-                                      () => inviteRole = value ?? 'VIEWER',
-                                    ),
-                            ),
-                            const SizedBox(height: 10),
                             if (controller.pendingMembershipRequestPreview !=
                                 null) ...[
                               Container(
@@ -317,49 +288,18 @@ class _FamilyScreenState extends State<FamilyScreen> {
     );
   }
 
-  Future<void> _showInviteDialog(BuildContext context) async {
-    final input = TextEditingController(text: inviteEmail.text);
-    final email = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('가족 초대'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.send,
-          autofillHints: const [AutofillHints.email],
-          decoration: const InputDecoration(
-            labelText: '이메일',
-            hintText: 'family@example.com',
-          ),
-          onSubmitted: (value) => Navigator.pop(context, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, input.text.trim()),
-            child: const Text('초대'),
-          ),
-        ],
-      ),
-    );
-    input.dispose();
-    if (email == null) return;
-    inviteEmail.text = email;
-    await _sendInvitation();
-  }
-
   Future<void> _sendInvitation() async {
+    if (controller.busy) return;
     final email = inviteEmail.text.trim();
+    if (email.isEmpty) {
+      showAppSnack(context, '초대할 가족의 이메일을 입력해 주세요.', error: true);
+      return;
+    }
     if (!_looksLikeEmail(email)) {
       showAppSnack(context, '올바른 이메일 주소를 입력해 주세요.', error: true);
       return;
     }
-    final ok = await controller.createInvitation(email, inviteRole);
+    final ok = await controller.createInvitation(email, 'VIEWER');
     if (!mounted) return;
     if (ok) {
       inviteEmail.clear();

@@ -12,24 +12,24 @@ class AppBackdrop extends StatelessWidget {
   Widget build(BuildContext context) => DecoratedBox(
     decoration: const BoxDecoration(
       color: AppColors.cream,
-      gradient: LinearGradient(
-        begin: Alignment.topRight,
-        end: Alignment.bottomLeft,
-        colors: [Color(0xFFFFFBF1), AppColors.cream, Color(0xFFF1F6E8)],
-        stops: [0, .62, 1],
+      gradient: RadialGradient(
+        center: Alignment(1.05, -1.0),
+        radius: 1.35,
+        colors: [Color(0xFFFFEEDB), AppColors.cream],
+        stops: [0, .72],
       ),
     ),
     child: Stack(
       children: [
         const Positioned(
-          right: -64,
-          top: -70,
-          child: _SoftCircle(size: 210, color: Color(0x3AFFF1C9)),
+          right: -58,
+          top: -54,
+          child: _SoftCircle(size: 190, color: Color(0x55FFD9B8)),
         ),
         const Positioned(
-          left: -80,
-          bottom: 80,
-          child: _SoftCircle(size: 240, color: Color(0x42DFE9CF)),
+          left: -92,
+          bottom: 42,
+          child: _SoftCircle(size: 230, color: Color(0x3FDDE4BD)),
         ),
         child,
       ],
@@ -82,8 +82,8 @@ class SoftCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Material(
     color: color,
-    elevation: 2,
-    shadowColor: const Color(0x18000000),
+    elevation: 3,
+    shadowColor: const Color(0x1C6B4C2D),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(radius),
       side: BorderSide(color: borderColor),
@@ -117,7 +117,7 @@ class RoundIconButton extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             minimumSize: Size.square(size),
             padding: EdgeInsets.zero,
-            backgroundColor: AppColors.surface,
+            backgroundColor: AppColors.surfaceWarm,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -170,10 +170,15 @@ class EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircleAvatar(
-            radius: 36,
-            backgroundColor: AppColors.sageSoft,
-            child: Icon(icon, size: 34, color: AppColors.sageDark),
+          Container(
+            width: 74,
+            height: 74,
+            decoration: BoxDecoration(
+              color: AppColors.coralSoft,
+              borderRadius: BorderRadius.circular(25),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 34, color: AppColors.coral),
           ),
           const SizedBox(height: 18),
           Text(

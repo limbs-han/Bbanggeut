@@ -4,19 +4,31 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import 'content_calendar_screen.dart';
 import 'extra_screens.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
 
-class CalendarScreen extends StatefulWidget {
+class CalendarScreen extends StatelessWidget {
   const CalendarScreen({super.key, required this.controller, this.onBack});
   final AppController controller;
   final VoidCallback? onBack;
+
   @override
-  State<CalendarScreen> createState() => _CalendarScreenState();
+  Widget build(BuildContext context) =>
+      ContentCalendarScreen(controller: controller, onBack: onBack);
 }
 
-class _CalendarScreenState extends State<CalendarScreen> {
+class _LegacyCalendarScreen extends StatefulWidget {
+  const _LegacyCalendarScreen({required this.controller, required this.onBack});
+  final AppController controller;
+  final VoidCallback? onBack;
+
+  @override
+  State<_LegacyCalendarScreen> createState() => _CalendarScreenState();
+}
+
+class _CalendarScreenState extends State<_LegacyCalendarScreen> {
   late DateTime month;
   DateTime? selected;
   bool loading = false;
