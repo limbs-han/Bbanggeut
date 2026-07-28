@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import 'all_memories_screen.dart';
 import 'extra_screens.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
@@ -10,14 +11,24 @@ enum _MemoryCategory { homeCam, laughter, edited }
 
 enum _MemorySort { newest, oldest }
 
-class VideosScreen extends StatefulWidget {
+class VideosScreen extends StatelessWidget {
   const VideosScreen({super.key, required this.controller});
   final AppController controller;
+
   @override
-  State<VideosScreen> createState() => _VideosScreenState();
+  Widget build(BuildContext context) =>
+      AllMemoriesScreen(controller: controller);
 }
 
-class _VideosScreenState extends State<VideosScreen> {
+class _LegacyVideosScreen extends StatefulWidget {
+  const _LegacyVideosScreen({required this.controller});
+  final AppController controller;
+
+  @override
+  State<_LegacyVideosScreen> createState() => _VideosScreenState();
+}
+
+class _VideosScreenState extends State<_LegacyVideosScreen> {
   _MemoryCategory category = _MemoryCategory.homeCam;
   _MemorySort sort = _MemorySort.newest;
   String search = '';

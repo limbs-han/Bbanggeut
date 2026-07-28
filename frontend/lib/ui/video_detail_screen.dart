@@ -6,10 +6,11 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
+import 'content_video_detail_screen.dart';
 import 'local_edit_screen.dart';
 import 'widgets.dart';
 
-class VideoDetailScreen extends StatefulWidget {
+class VideoDetailScreen extends StatelessWidget {
   const VideoDetailScreen({
     super.key,
     required this.controller,
@@ -17,11 +18,25 @@ class VideoDetailScreen extends StatefulWidget {
   });
   final AppController controller;
   final VideoMemory video;
+
   @override
-  State<VideoDetailScreen> createState() => _VideoDetailScreenState();
+  Widget build(BuildContext context) =>
+      ContentVideoDetailScreen(controller: controller, video: video);
 }
 
-class _VideoDetailScreenState extends State<VideoDetailScreen> {
+class _LegacyVideoDetailScreen extends StatefulWidget {
+  const _LegacyVideoDetailScreen({
+    required this.controller,
+    required this.video,
+  });
+  final AppController controller;
+  final VideoMemory video;
+
+  @override
+  State<_LegacyVideoDetailScreen> createState() => _VideoDetailScreenState();
+}
+
+class _VideoDetailScreenState extends State<_LegacyVideoDetailScreen> {
   VideoPlayerController? player;
   late VideoMemory video;
   bool loading = true;

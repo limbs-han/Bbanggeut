@@ -4,18 +4,42 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import 'content_notifications_screen.dart';
+import 'content_state.dart';
+import 'laugh_report_content_screen.dart';
+import 'schedule_editor_screen.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
 
-class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({super.key, required this.controller});
+class NotificationsScreen extends StatelessWidget {
+  const NotificationsScreen({
+    super.key,
+    required this.controller,
+    this.onOpenInvitations,
+    this.onOpenDevices,
+  });
+  final AppController controller;
+  final VoidCallback? onOpenInvitations;
+  final VoidCallback? onOpenDevices;
+
+  @override
+  Widget build(BuildContext context) => ContentNotificationsScreen(
+    controller: controller,
+    onOpenInvitations: onOpenInvitations,
+    onOpenDevices: onOpenDevices,
+  );
+}
+
+class _LegacyNotificationsScreen extends StatefulWidget {
+  const _LegacyNotificationsScreen({required this.controller});
   final AppController controller;
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
+  State<_LegacyNotificationsScreen> createState() =>
+      _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends State<_LegacyNotificationsScreen> {
   int filter = 0;
   bool allRead = false;
   bool dismissed = false;
@@ -137,20 +161,37 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 }
 
-class AnniversaryEditorScreen extends StatefulWidget {
+class AnniversaryEditorScreen extends StatelessWidget {
   const AnniversaryEditorScreen({
     super.key,
     this.initialDate,
     this.screenTitle = '기념일 등록',
+    this.schedule,
   });
   final DateTime? initialDate;
   final String screenTitle;
+  final CalendarSchedule? schedule;
+
   @override
-  State<AnniversaryEditorScreen> createState() =>
+  Widget build(BuildContext context) =>
+      ScheduleEditorScreen(initialDate: initialDate, schedule: schedule);
+}
+
+class _LegacyAnniversaryEditorScreen extends StatefulWidget {
+  const _LegacyAnniversaryEditorScreen({
+    required this.initialDate,
+    required this.screenTitle,
+  });
+  final DateTime? initialDate;
+  final String screenTitle;
+
+  @override
+  State<_LegacyAnniversaryEditorScreen> createState() =>
       _AnniversaryEditorScreenState();
 }
 
-class _AnniversaryEditorScreenState extends State<AnniversaryEditorScreen> {
+class _AnniversaryEditorScreenState
+    extends State<_LegacyAnniversaryEditorScreen> {
   final title = TextEditingController(text: '엄마 생일');
   final memo = TextEditingController(text: '화이트 같은 날에 말해드려요');
   late DateTime date;
@@ -306,14 +347,24 @@ class _AnniversaryEditorScreenState extends State<AnniversaryEditorScreen> {
   );
 }
 
-class LaughReportScreen extends StatefulWidget {
+class LaughReportScreen extends StatelessWidget {
   const LaughReportScreen({super.key, required this.controller});
   final AppController controller;
+
   @override
-  State<LaughReportScreen> createState() => _LaughReportScreenState();
+  Widget build(BuildContext context) =>
+      LaughReportContentScreen(controller: controller);
 }
 
-class _LaughReportScreenState extends State<LaughReportScreen> {
+class _LegacyLaughReportScreen extends StatefulWidget {
+  const _LegacyLaughReportScreen({required this.controller});
+  final AppController controller;
+
+  @override
+  State<_LegacyLaughReportScreen> createState() => _LaughReportScreenState();
+}
+
+class _LaughReportScreenState extends State<_LegacyLaughReportScreen> {
   int tab = 0;
   @override
   Widget build(BuildContext context) => Scaffold(
