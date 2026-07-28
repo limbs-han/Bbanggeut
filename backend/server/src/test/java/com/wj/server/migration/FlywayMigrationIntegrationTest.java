@@ -68,9 +68,9 @@ class FlywayMigrationIntegrationTest {
                     + "('10000000-0000-0000-0000-000000000001', "
                     + "'migration@example.com', 'test-only', 'Migration Test')");
             statement.executeUpdate(
-                "insert into devices (id, serial_number, product_code_hash) values "
+                "insert into devices (id, serial_number) values "
                     + "('20000000-0000-0000-0000-000000000001', "
-                    + "'MIGRATION-TEST-DEVICE', repeat('a', 64))");
+                    + "'MIGRATION-TEST-DEVICE')");
             statement.executeUpdate(
                 "insert into device_memberships (id, device_id, user_id, role) values "
                     + "('30000000-0000-0000-0000-000000000001', "
