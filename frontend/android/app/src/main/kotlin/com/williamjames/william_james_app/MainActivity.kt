@@ -1,14 +1,31 @@
 package com.williamjames.william_james_app
 
 import android.content.ContentValues
+import android.graphics.Typeface
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.BackgroundColorSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.DefaultGainProvider
+import androidx.media3.common.audio.GainProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.HslAdjustment
+import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.RgbFilter
+import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.TextOverlay
+import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
@@ -22,6 +39,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import kotlin.math.roundToInt
 
 @UnstableApi
 class MainActivity : FlutterActivity() {
@@ -45,6 +63,15 @@ class MainActivity : FlutterActivity() {
         result: MethodChannel.Result,
     ) {
         when (call.method) {
+            "generateThumbnails" -> {
+                val inputPath = call.argument<String>("inputPath")
+                val count = call.argument<Int>("count") ?: 8
+                if (inputPath.isNullOrBlank()) {
+                    result.error("INVALID_ARGUMENT", "inputPath is required.", null)
+                    return
+                }
+                generateVideoThumbnails(inputPath, count, result)
+            }
             "fitToPortrait" -> {
                 val inputPath = call.argument<String>("inputPath")
                 val outputPath = call.argument<String>("outputPath")
@@ -64,6 +91,11 @@ class MainActivity : FlutterActivity() {
                 val startMs = call.argument<Int>("startMs") ?: 0
                 val endMs = call.argument<Int>("endMs") ?: 0
                 val aspectRatio = call.argument<Double>("aspectRatio") ?: 1.0
+                val audioVolume = call.argument<Double>("audioVolume") ?: 1.0
+                val captionText = call.argument<String>("captionText").orEmpty()
+                val captionColor = call.argument<Number>("captionColor")?.toInt() ?: 0xFFFFFFFF.toInt()
+                val filter = call.argument<String>("filter") ?: "none"
+                val arSticker = call.argument<String>("arSticker").orEmpty()
                 if (inputPath.isNullOrBlank() || outputPath.isNullOrBlank()) {
                     result.error(
                         "INVALID_ARGUMENT",
@@ -72,7 +104,19 @@ class MainActivity : FlutterActivity() {
                     )
                     return
                 }
-                exportTrimmedVideo(inputPath, outputPath, startMs, endMs, aspectRatio, result)
+                exportTrimmedVideo(
+                    inputPath,
+                    outputPath,
+                    startMs,
+                    endMs,
+                    aspectRatio,
+                    audioVolume,
+                    captionText,
+                    captionColor,
+                    filter,
+                    arSticker,
+                    result,
+                )
             }
             "saveToGallery" -> {
                 val inputPath = call.argument<String>("inputPath")
@@ -89,6 +133,64 @@ class MainActivity : FlutterActivity() {
             }
             else -> result.notImplemented()
         }
+    }
+
+    private fun generateVideoThumbnails(
+        inputPath: String,
+        requestedCount: Int,
+        result: MethodChannel.Result,
+    ) {
+        val inputFile = File(inputPath)
+        if (!inputFile.isFile) {
+            result.error("INPUT_NOT_FOUND", "The source video does not exist.", null)
+            return
+        }
+        val count = requestedCount.coerceIn(1, 16)
+        Thread {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(inputFile.absolutePath)
+                val durationMs = retriever
+                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+                    ?: 0L
+                val outputDirectory = File(
+                    cacheDir,
+                    "video_thumbnails/${System.currentTimeMillis()}",
+                ).apply { mkdirs() }
+                val files = mutableListOf<String>()
+                repeat(count) { index ->
+                    val timeUs = if (durationMs <= 0L) {
+                        0L
+                    } else {
+                        durationMs * 1000L * index / count
+                    }
+                    val bitmap = retriever.getFrameAtTime(
+                        timeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    )
+                    if (bitmap != null) {
+                        val output = File(outputDirectory, "thumb_$index.jpg")
+                        FileOutputStream(output).use { stream ->
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, stream)
+                        }
+                        bitmap.recycle()
+                        files.add(output.absolutePath)
+                    }
+                }
+                runOnUiThread { result.success(files) }
+            } catch (failure: Exception) {
+                runOnUiThread {
+                    result.error(
+                        "THUMBNAIL_FAILED",
+                        failure.message ?: "Video thumbnails could not be generated.",
+                        null,
+                    )
+                }
+            } finally {
+                retriever.release()
+            }
+        }.start()
     }
 
     private fun renderPortraitVideo(
@@ -163,6 +265,11 @@ class MainActivity : FlutterActivity() {
         startMs: Int,
         endMs: Int,
         aspectRatio: Double,
+        audioVolume: Double,
+        captionText: String,
+        captionColor: Int,
+        filter: String,
+        arSticker: String,
         result: MethodChannel.Result,
     ) {
         val inputFile = File(inputPath)
@@ -190,11 +297,21 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        val presentation = if (aspectRatio > 1.0) {
-            Presentation.createForWidthAndHeight(1280, 720, Presentation.LAYOUT_SCALE_TO_FIT)
+        val normalizedRatio = aspectRatio.coerceIn(0.4, 2.5)
+        val targetWidth: Int
+        val targetHeight: Int
+        if (normalizedRatio >= 1.0) {
+            targetWidth = 1280
+            targetHeight = ((1280 / normalizedRatio).roundToInt() / 2 * 2).coerceAtLeast(2)
         } else {
-            Presentation.createForWidthAndHeight(720, 1280, Presentation.LAYOUT_SCALE_TO_FIT)
+            targetHeight = 1280
+            targetWidth = ((1280 * normalizedRatio).roundToInt() / 2 * 2).coerceAtLeast(2)
         }
+        val presentation = Presentation.createForWidthAndHeight(
+            targetWidth,
+            targetHeight,
+            Presentation.LAYOUT_SCALE_TO_FIT,
+        )
 
         val mediaItemBuilder = MediaItem.Builder().setUri(Uri.fromFile(inputFile))
         if (actualStart > 0 || actualEnd > 0) {
@@ -206,9 +323,95 @@ class MainActivity : FlutterActivity() {
             )
         }
 
+        val videoEffects = mutableListOf<Effect>(presentation)
+        when (filter) {
+            "mono" -> videoEffects.add(RgbFilter.createGrayscaleFilter())
+            "warm" -> videoEffects.add(
+                HslAdjustment.Builder()
+                    .adjustHue(6f)
+                    .adjustSaturation(12f)
+                    .adjustLightness(3f)
+                    .build(),
+            )
+            "vivid" -> videoEffects.add(
+                HslAdjustment.Builder()
+                    .adjustSaturation(28f)
+                    .adjustLightness(4f)
+                    .build(),
+            )
+        }
+
+        val overlays = mutableListOf<TextureOverlay>()
+        if (captionText.isNotBlank()) {
+            val caption = SpannableString(captionText).apply {
+                setSpan(
+                    ForegroundColorSpan(captionColor),
+                    0,
+                    length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                setSpan(
+                    BackgroundColorSpan(0x99000000.toInt()),
+                    0,
+                    length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                setSpan(
+                    AbsoluteSizeSpan(54),
+                    0,
+                    length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    0,
+                    length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
+            overlays.add(
+                TextOverlay.createStaticTextOverlay(
+                    caption,
+                    StaticOverlaySettings.Builder()
+                        .setBackgroundFrameAnchor(0f, -0.72f)
+                        .build(),
+                ),
+            )
+        }
+        if (arSticker.isNotBlank()) {
+            val sticker = SpannableString(arSticker).apply {
+                setSpan(
+                    AbsoluteSizeSpan(160),
+                    0,
+                    length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
+            overlays.add(
+                TextOverlay.createStaticTextOverlay(
+                    sticker,
+                    StaticOverlaySettings.Builder()
+                        .setBackgroundFrameAnchor(0f, 0.28f)
+                        .build(),
+                ),
+            )
+        }
+        if (overlays.isNotEmpty()) {
+            videoEffects.add(OverlayEffect(overlays))
+        }
+
+        val audioProcessors = mutableListOf<AudioProcessor>()
+        if (audioVolume < 0.999) {
+            audioProcessors.add(
+                GainProcessor(
+                    DefaultGainProvider.Builder(audioVolume.toFloat().coerceIn(0f, 1f)).build(),
+                ),
+            )
+        }
+
         val editedMediaItem = EditedMediaItem.Builder(
             mediaItemBuilder.build(),
-        ).setEffects(Effects(emptyList(), listOf(presentation))).build()
+        ).setEffects(Effects(audioProcessors, videoEffects)).build()
 
         val transformer = Transformer.Builder(this)
             .setVideoMimeType(MimeTypes.VIDEO_H264)

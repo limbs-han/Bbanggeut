@@ -1,8 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:video_player/video_player.dart';
 
 class VideoExportException implements Exception {
   const VideoExportException(this.message);
@@ -19,24 +17,11 @@ class VideoEditorExporter {
     required String inputPath,
     required int count,
   }) async {
-    final temporary = await getTemporaryDirectory();
-    final outputDirectory = Directory(
-      '${temporary.path}${Platform.pathSeparator}thumbnails${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}',
+    final result = await _channel.invokeListMethod<String>(
+      'generateThumbnails',
+      {'inputPath': inputPath, 'count': count},
     );
-    await outputDirectory.create(recursive: true);
-
-    final controller = VideoPlayerController.file(File(inputPath));
-    await controller.initialize();
-    final duration = controller.value.duration.inMilliseconds;
-    final files = <String>[];
-    for (var index = 0; index < count; index++) {
-      final targetMs = (duration * index / count).round();
-      await controller.seekTo(Duration(milliseconds: targetMs));
-      final file = File('${outputDirectory.path}${Platform.pathSeparator}thumb_$index.jpg');
-      files.add(file.path);
-    }
-    await controller.dispose();
-    return files;
+    return result ?? const <String>[];
   }
 
   Future<String> exportEditedVideo({
@@ -45,6 +30,11 @@ class VideoEditorExporter {
     required int startMs,
     required int endMs,
     required double aspectRatio,
+    double audioVolume = 1,
+    String captionText = '',
+    int captionColor = 0xFFFFFFFF,
+    String filter = 'none',
+    String arSticker = '',
   }) async {
     final outputFile = File(outputPath);
     outputFile.parent.createSync(recursive: true);
@@ -58,6 +48,11 @@ class VideoEditorExporter {
       'startMs': startMs,
       'endMs': endMs,
       'aspectRatio': aspectRatio,
+      'audioVolume': audioVolume,
+      'captionText': captionText,
+      'captionColor': captionColor,
+      'filter': filter,
+      'arSticker': arSticker,
     });
     if (result == null || result.isEmpty) {
       throw const VideoExportException('영상 저장을 완료하지 못했어요.');

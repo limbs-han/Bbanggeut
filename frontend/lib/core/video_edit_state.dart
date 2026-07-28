@@ -1,6 +1,13 @@
 import 'dart:math' as math;
 
-enum VideoEditRatio { original, shortForm }
+enum VideoEditRatio {
+  original,
+  shortForm,
+  square,
+  landscape,
+  classic,
+  portrait,
+}
 
 class VideoEditState {
   VideoEditState({
@@ -23,11 +30,23 @@ class VideoEditState {
 
   bool get isShortForm => selectedRatio == VideoEditRatio.shortForm;
 
-  double get previewAspectRatio => isShortForm ? 9 / 16 : originalAspectRatio;
+  double get previewAspectRatio => switch (selectedRatio) {
+    VideoEditRatio.original => originalAspectRatio,
+    VideoEditRatio.shortForm => 9 / 16,
+    VideoEditRatio.square => 1,
+    VideoEditRatio.landscape => 16 / 9,
+    VideoEditRatio.classic => 4 / 3,
+    VideoEditRatio.portrait => 3 / 4,
+  };
 
   int get clipDurationMs => math.max(0, endMs - startMs);
 
   bool get canSave => !isSaving && durationMs > 0;
+
+  bool get hasTimelineOrRatioChanges =>
+      startMs != 0 ||
+      endMs != durationMs ||
+      selectedRatio != VideoEditRatio.original;
 
   void selectRatio(VideoEditRatio ratio) {
     selectedRatio = ratio;
@@ -36,7 +55,6 @@ class VideoEditState {
 
   void selectTool(String tool) {
     selectedTool = tool;
-    hasUnsavedChanges = true;
   }
 
   void updateTrimRange({required int startMs, required int endMs}) {
@@ -81,6 +99,10 @@ class VideoEditState {
   void markSaved() {
     hasUnsavedChanges = false;
     isSaving = false;
+  }
+
+  void markExternalEditApplied() {
+    hasUnsavedChanges = true;
   }
 
   void markSaving() {
