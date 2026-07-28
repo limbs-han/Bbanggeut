@@ -100,6 +100,18 @@ services:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ${MQTT_TLS_CERT_DIR:?Set MQTT_TLS_CERT_DIR}:/mosquitto/certs:ro
       - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt
+          -h "$${MQTT_TLS_HOST:-i15e201.p.ssafy.io}" -p 8883
+          -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}"
+          dynsec listClients >/dev/null
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 20s
 
   mediamtx:
     image: bluenviron/mediamtx:1

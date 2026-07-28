@@ -135,7 +135,7 @@ pipeline {
                                 copyArtifacts(
                                     projectName: '/S15P11E201/master',
                                     selector: specific("${env.SOURCE_BUILD}"),
-                                    filter: 'backend/server/build/libs/server-*.jar',
+                                    filter: 'backend/server/build/libs/server-*.jar,backend-deploy.tar.gz',
                                     flatten: true,
                                     fingerprintArtifacts: true
                                 )
@@ -144,12 +144,19 @@ pipeline {
                                         set -eu
                                         jar_file="\\$(find . -maxdepth 1 -type f -name 'server-*.jar' -print -quit)"
                                         test -n "\\${jar_file}"
+                                        test -s backend-deploy.tar.gz
                                         scp \
                                           -o BatchMode=yes \
                                           -o StrictHostKeyChecking=yes \
                                           -o UserKnownHostsFile=/run/secrets/production-known-hosts \
                                           "\\${jar_file}" \
                                           jenkins-deploy@host.docker.internal:/home/jenkins-deploy/incoming/server.jar.next
+                                        scp \
+                                          -o BatchMode=yes \
+                                          -o StrictHostKeyChecking=yes \
+                                          -o UserKnownHostsFile=/run/secrets/production-known-hosts \
+                                          backend-deploy.tar.gz \
+                                          jenkins-deploy@host.docker.internal:/home/jenkins-deploy/incoming/backend-deploy.tar.gz
                                         ssh \
                                           -o BatchMode=yes \
                                           -o StrictHostKeyChecking=yes \
