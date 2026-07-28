@@ -133,16 +133,22 @@ NDK를 설치하지 않으며 APK·AAB 생성, 기기 설치, 앱 스토어 업�
 S15P11E201/master CI 성공
   -> Production 작업 자동 생성
   -> 사람의 배포 승인 대기
-  -> master 빌드의 JAR artifact만 복사
+  -> 같은 master 빌드의 JAR와 Backend 인프라 artifact 복사
   -> 전용 jenkins-deploy 계정으로 EC2에 업로드
-  -> 현재 JAR 백업
-  -> Spring Boot systemd 서비스만 재시작
-  -> health 성공 시 완료
-  -> health 실패 시 이전 JAR로 복구
+  -> 현재 JAR와 Compose 설정 백업
+  -> PostgreSQL·MinIO·Mosquitto·MediaMTX 구성 반영과 health 확인
+  -> Spring Boot systemd 서비스 재시작과 health 확인
+  -> 실패 시 이전 JAR와 Compose 설정으로 복구
 ```
 
-운영 PostgreSQL·MinIO·Mosquitto·MediaMTX Compose는 Backend JAR 배포 과정에서 재시작하지
-않습니다. Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+운영 데이터와 비밀정보는 배포 artifact에 포함하지 않습니다. PostgreSQL·MinIO·Mosquitto의
+기존 named volume과 서버의 `infra/.env`, 인증서 디렉터리를 그대로 유지합니다. 자세한 배포
+및 최초 서버 설치 절차는 [`BACKEND_INFRA_DEPLOY.md`](./BACKEND_INFRA_DEPLOY.md)에 있습니다.
+Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+
+운영 EC2에는 실행용 JRE만 설치합니다. 배포 스크립트는 JDK의 `jar` 명령에 의존하지 않고
+`unzip`으로 압축 손상과 `META-INF/MANIFEST.MF`, `BOOT-INF/classes/`, `BOOT-INF/lib/`
+구조를 확인합니다. Backend CI도 같은 검증기로 실제 빌드 결과물을 검사합니다.
 
 ## GitLab 상태 알림
 

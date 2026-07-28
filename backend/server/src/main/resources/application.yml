@@ -30,6 +30,9 @@ mybatis:
     map-underscore-to-camel-case: true
 
 management:
+  health:
+    mail:
+      enabled: ${MAIL_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:
@@ -58,6 +61,9 @@ app:
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
   invitation:
     ttl: ${INVITATION_TTL:7d}
+  push:
+    enabled: ${FCM_ENABLED:false}
+    project-id: ${FIREBASE_PROJECT_ID:}
   subscription:
     premium-retention-days: ${SUBSCRIPTION_PREMIUM_RETENTION_DAYS:365}
     grace: ${SUBSCRIPTION_GRACE:30d}

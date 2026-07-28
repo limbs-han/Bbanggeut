@@ -72,7 +72,7 @@
   - OWNER가 가입 상태가 ACTIVE인 이메일 계정만 초대
   - 초대받은 계정이 앱 받은 초대함에서 수락하면 MEMBER 멤버십 생성·재활성화
   - 존재하지 않거나 탈퇴한 이메일은 `INVITEE_ACCOUNT_NOT_FOUND`로 거절
-  - 초대 생성 시 초대받은 사용자에게 인앱 알림 생성
+  - 초대 생성 시 초대받은 사용자에게 인앱 알림 생성 및 등록 토큰으로 FCM 푸시
 - MEMBER 목록 조회
 - MEMBER 권한 회수
 
@@ -99,7 +99,7 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 - 기기 영상 업로드 URL 발급
 - MinIO 직접 PUT 업로드
 - 객체 크기·SHA-256 검증 후 업로드 완료 확정
-- LAUGHTER 영상이 READY가 되면 해당 기기의 활성 OWNER·MEMBER에게 인앱 알림 생성
+- LAUGHTER 영상이 READY가 되면 해당 기기의 활성 OWNER·MEMBER에게 인앱 알림 생성 및 FCM 푸시
 - 영상 목록·상세·재생·다운로드
 - 제목·설명·즐겨찾기 변경
 - 비동기 영상 삭제 worker
