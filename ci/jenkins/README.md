@@ -39,6 +39,29 @@ Jenkins Controller가 Java 21로 실행되므로 Agent 연결 프로그램도 Ja
 Backend Gradle 설정은 Java 17 toolchain을 요구하므로 공통 Agent에는 Java 17을 별도 경로로
 함께 설치했습니다.
 
+## Agent 프로세스 회수
+
+네 Jenkins Agent는 Compose의 `init: true`를 공통 적용합니다. 컨테이너 안에서 빌드 프로세스가
+비정상 종료되더라도 init 프로세스가 고아·좀비 프로세스를 회수하므로 `pids_limit`이 소진되어
+`Cannot fork` 또는 `unable to create native thread`가 발생하는 것을 방지합니다.
+
+설정 변경 후에는 실행 중인 빌드가 없는지 확인한 다음 서버에서 Agent 컨테이너를 다시 생성해야
+합니다.
+
+```bash
+cd "$(git rev-parse --show-toplevel)/ci/jenkins/server"
+docker compose up -d --force-recreate \
+  backend-agent frontend-agent device-agent deploy-agent
+```
+
+재생성 후 `docker inspect`에서 `Init=true`인지 확인합니다.
+
+```bash
+for agent in backend frontend device deploy; do
+  docker inspect "jenkins-${agent}-agent" --format '{{.Name}} Init={{.HostConfig.Init}}'
+done
+```
+
 ## GitLab 연결과 Webhook
 
 Jenkins에는 `S15P11E201` Multibranch Pipeline이 구성돼 있습니다. GitLab Push 이벤트가 발생하면
@@ -133,16 +156,18 @@ NDK를 설치하지 않으며 APK·AAB 생성, 기기 설치, 앱 스토어 업�
 S15P11E201/master CI 성공
   -> Production 작업 자동 생성
   -> 사람의 배포 승인 대기
-  -> master 빌드의 JAR artifact만 복사
+  -> 같은 master 빌드의 JAR와 Backend 인프라 artifact 복사
   -> 전용 jenkins-deploy 계정으로 EC2에 업로드
-  -> 현재 JAR 백업
-  -> Spring Boot systemd 서비스만 재시작
-  -> health 성공 시 완료
-  -> health 실패 시 이전 JAR로 복구
+  -> 현재 JAR와 Compose 설정 백업
+  -> PostgreSQL·MinIO·Mosquitto·MediaMTX 구성 반영과 health 확인
+  -> Spring Boot systemd 서비스 재시작과 health 확인
+  -> 실패 시 이전 JAR와 Compose 설정으로 복구
 ```
 
-운영 PostgreSQL·MinIO·Mosquitto·MediaMTX Compose는 Backend JAR 배포 과정에서 재시작하지
-않습니다. Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+운영 데이터와 비밀정보는 배포 artifact에 포함하지 않습니다. PostgreSQL·MinIO·Mosquitto의
+기존 named volume과 서버의 `infra/.env`, 인증서 디렉터리를 그대로 유지합니다. 자세한 배포
+및 최초 서버 설치 절차는 [`BACKEND_INFRA_DEPLOY.md`](./BACKEND_INFRA_DEPLOY.md)에 있습니다.
+Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
 
 운영 EC2에는 실행용 JRE만 설치합니다. 배포 스크립트는 JDK의 `jar` 명령에 의존하지 않고
 `unzip`으로 압축 손상과 `META-INF/MANIFEST.MF`, `BOOT-INF/classes/`, `BOOT-INF/lib/`
