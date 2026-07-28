@@ -193,11 +193,6 @@ if [[ ! -s "${infra_env}" ]]; then
   echo "Server-managed infrastructure secret file is missing: ${infra_env}" >&2
   exit 1
 fi
-if ! /usr/bin/jar --list --file "${incoming_jar}" >/dev/null; then
-  echo "Uploaded application artifact is not a valid JAR." >&2
-  exit 1
-fi
-
 if ! validate_spring_boot_jar "${incoming_jar}"; then
   exit 1
 fi

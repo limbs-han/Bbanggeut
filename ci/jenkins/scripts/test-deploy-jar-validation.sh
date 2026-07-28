@@ -6,6 +6,11 @@ validator="${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
 test_root="$(mktemp -d)"
 trap 'rm -rf "${test_root}"' EXIT
 
+if grep -q '/usr/bin/jar' "${validator}"; then
+  echo "배포 래퍼는 운영 JRE에 없는 JDK jar 명령에 의존하면 안 됩니다." >&2
+  exit 1
+fi
+
 python3 - "${test_root}" <<'PY'
 import pathlib
 import sys
