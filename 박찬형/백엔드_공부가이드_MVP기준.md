@@ -1817,9 +1817,9 @@ UUID와 경로를 안다고 읽을 수 있어서는 안 된다. 버킷은 privat
 
 기본 보존 기간은 30일이다. 구독 확장 코드에는 365일과 해지 유예 30일도 있으나 MVP 핵심은 아니다. `RetentionSweepWorker`가 만료 대상을 비동기 삭제 흐름으로 넘긴다.
 
-## 5.11 알림 생성 — 웃음 영상 준비 완료
+## 5.11 알림 생성과 FCM 푸시 — 웃음 영상 준비 완료
 
-이벤트 영상이 그냥 저장만 되면 가족은 새 영상이 생긴 줄 모른다. 그래서 영상이 재생 가능한 상태로 확정되는 순간 **인앱 알림**을 만든다. 여기서 알림은 푸시 메시지나 이메일이 아니라, 서버 DB(`notifications` 테이블)에 쌓아 두고 앱의 알림함에서 조회하는 방식이다.
+이벤트 영상이 그냥 저장만 되면 가족은 새 영상이 생긴 줄 모른다. 그래서 영상이 재생 가능한 상태로 확정되는 순간 서버 DB에 **인앱 알림**을 만들고, FCM 토큰을 등록한 휴대폰에는 **운영체제 푸시 알림**도 보낸다. 두 기능은 서로 대체 관계가 아니다. `notifications` 테이블은 앱 알림함과 중복 방지의 기준이고, FCM은 앱이 백그라운드이거나 종료된 상태에서도 새 소식을 전달하는 통로다.
 
 ### 언제 만들어지나
 
@@ -1879,6 +1879,40 @@ ON CONFLICT (user_id, dedupe_key) DO NOTHING
 
 읽음 처리(`read_at`)는 알림을 지우는 게 아니라 시각을 찍는 방식이다. 한 건 읽음은 `COALESCE(read_at, now())`로 이미 읽은 것을 덮어쓰지 않고, 남의 알림 id를 넣어도 `user_id` 조건에 걸려 아무것도 바뀌지 않으며 “찾을 수 없음”으로 응답한다.
 
+### 휴대폰 푸시는 어떻게 이어지나
+
+FCM 푸시는 프론트만으로 보낼 수 없다. Flutter가 알림 권한을 받고 FCM 등록 토큰을 발급받아 백엔드에 전달하면, 이벤트를 알고 있는 백엔드가 Firebase Admin SDK로 발송한다.
+
+```text
+Flutter 앱
+  → FCM 토큰 발급
+  → PUT /api/notifications/push-tokens
+  → notification_push_tokens에 사용자·앱 설치별 저장
+
+웃음 영상 READY 또는 기기 초대 생성
+  → notifications INSERT
+  → DB 트랜잭션 COMMIT
+  → PushNotificationDispatcher
+  → FirebasePushGateway
+  → FCM
+  → Android/iOS 알림 표시
+```
+
+토큰 API는 다음 두 개다.
+
+| API | 역할 |
+|---|---|
+| `PUT /api/notifications/push-tokens` | 설치 ID, FCM 토큰, 플랫폼(`ANDROID`/`IOS`) 등록·갱신 |
+| `DELETE /api/notifications/push-tokens/{installationId}` | 로그아웃·알림 해제 시 현재 사용자와 설치 연결 제거 |
+
+한 사용자가 휴대폰과 태블릿을 함께 쓸 수 있으므로 토큰은 사용자당 한 개가 아니라 **앱 설치별**로 저장한다. FCM 토큰이 갱신되거나 같은 기기에서 계정이 바뀌는 경우도 upsert와 기존 연결 삭제로 처리한다. 계정이 탈퇴하면 외래 키의 `ON DELETE CASCADE`로 토큰도 함께 삭제된다.
+
+푸시 발송은 반드시 DB 커밋 뒤에 실행한다. 커밋 전에 보내면 휴대폰에는 알림이 도착했는데 DB 트랜잭션은 실패하는 모순이 생길 수 있기 때문이다. 반대로 FCM 장애가 발생해도 이미 커밋된 영상과 인앱 알림은 유지한다. FCM이 `UNREGISTERED`나 유효하지 않은 토큰을 반환하면 서버가 해당 토큰을 정리한다.
+
+중복 알림 INSERT 결과가 0이면 푸시도 다시 보내지 않는다. 따라서 완료 통지가 재시도되어도 인앱 알림과 푸시가 함께 중복 방지된다.
+
+서버에서는 `FCM_ENABLED=true`, `FIREBASE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`를 설정해야 실제 발송이 활성화된다. 서비스 계정 JSON은 서버의 제한된 경로에만 두고 저장소나 Flutter 앱에 포함하면 안 된다. 기본값은 비활성화이므로 로컬 개발과 CI는 Firebase 자격 증명 없이 실행할 수 있다.
+
 ## 5.12 코드 위치
 
 - edge:
@@ -1899,7 +1933,11 @@ ON CONFLICT (user_id, dedupe_key) DO NOTHING
   - `video/persistence/VideoMapper.java`
 - 알림:
   - `notification/application/NotificationService.java`
+  - `notification/application/PushTokenService.java`
+  - `notification/application/PushNotificationDispatcher.java`
+  - `notification/infrastructure/FirebasePushGateway.java`
   - `notification/persistence/NotificationMapper.java`
+  - `notification/persistence/PushTokenMapper.java`
   - `notification/api/NotificationController.java`
 - DB:
   - `V4__videos.sql`
@@ -1907,6 +1945,7 @@ ON CONFLICT (user_id, dedupe_key) DO NOTHING
   - `V18__device_events.sql`
   - `V19__stale_upload_indexes.sql`
   - `V25__member_password_reset_notifications.sql` (notifications 테이블)
+  - `V26__notification_push_tokens.sql` (사용자·앱 설치별 FCM 토큰)
 
 ## 5.13 예상 질문
 
@@ -1926,10 +1965,10 @@ A. 아니다. checksum은 내용이 같은지 확인하는 지문이다. 기밀�
 A. 설계 원칙상 로컬 큐에 남아 재연결 후 같은 eventId로 재시도한다. 실제 시연 장비의 디스크 큐와 재시도 worker가 정상 동작하는지는 별도 통합 점검이 필요하다.
 
 **Q. 알림은 휴대폰 푸시(FCM)인가요?**  
-A. 현재 MVP의 알림은 서버 DB에 쌓아 두는 **인앱 알림**이다. 앱이 목록·안 읽은 개수 API를 호출해서 보여 준다. FCM/APNs 같은 실시간 푸시 발송은 확장 지점이고, 그 경우에도 지금의 `notifications` 테이블과 `dedupe_key` 멱등성이 발송 원장 역할을 그대로 할 수 있다.
+A. 둘 다 구현되어 있다. 서버는 먼저 `notifications`에 인앱 알림을 저장하고, 커밋이 끝나면 등록된 앱 설치 토큰으로 FCM 푸시를 보낸다. 단, 운영 환경에서 Firebase 프로젝트와 서비스 계정 환경변수를 설정해야 실제 발송이 활성화된다. Flutter 쪽에는 알림 권한 요청, 토큰 등록·갱신, 수신 및 딥링크 처리가 별도로 필요하다.
 
 **Q. 완료 통지가 두 번 오면 알림도 두 번 오나요?**  
-A. 아니다. `dedupe_key = 'laughter-video:{videoId}'`와 `UNIQUE (user_id, dedupe_key)` + `ON CONFLICT DO NOTHING` 덕분에 사용자별로 한 번만 남는다.
+A. 아니다. `dedupe_key = 'laughter-video:{videoId}'`와 `UNIQUE (user_id, dedupe_key)` + `ON CONFLICT DO NOTHING` 덕분에 사용자별 인앱 알림은 한 번만 남는다. 새로 INSERT된 행이 없으면 푸시 발송도 예약하지 않으므로 푸시 역시 다시 보내지 않는다.
 
 ---
 
