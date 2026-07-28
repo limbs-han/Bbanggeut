@@ -70,7 +70,36 @@ LL-HLS 전환(87) 전후를 같은 방법으로 재서 비교하기 위한 문�
 
 | 날짜 | 커밋 | variant | 세그먼트 길이 | 구간 노출 지연(중앙) | 플레이리스트 길이 | glass-to-glass(중앙/최대) | 네트워크 | 비고 |
 |---|---|---|---|---|---|---|---|---|
-| (미측정) | | fmp4 | 2s | | | | | **전환 전 baseline — 먼저 채울 것** |
+| (미측정) | | fmp4 | 2s | | | | | **변경 전 baseline — 가능하면 먼저 채울 것** |
+| (미측정) | | fmp4 | 1s | | | | | 세그먼트 1s 적용 후 |
+
+---
+
+## 3.5 젯슨 인코더 실측 사실 (2026-07-28 코드 확인)
+
+지연 계산의 전제라 정확히 남긴다. **운영 젯슨의 라이브 경로는 재인코딩을 하지 않는다.**
+
+```text
+media-source.sh (카메라 → 1회 인코딩 → UDP 4갈래 tee)
+  -c:v libx264 -preset ultrafast -tune zerolatency
+  -g $CAMERA_FPS -keyint_min $CAMERA_FPS   ← CAMERA_FPS=30 이므로 GOP 1초
+  -bf 0 -sc_threshold 0
+        ↓ udp://127.0.0.1:23002
+stream.py (앱 시청 중에만 실행)
+  FFMPEG_VIDEO_ARGS='["-c:v","copy"]'      ← 재인코딩 없음, GOP 그대로 통과
+        ↓ RTSPS
+EC2 MediaMTX
+```
+
+따라서:
+
+- **키프레임 간격은 이미 1초**다. `hlsSegmentDuration`을 1s로 내리는 데 기기 변경이 필요 없다.
+- `wj_device_agent/config.py`의 `-g str(fps*2)`(2초)는 **운영에서 쓰이지 않는다** — `-c:v copy`가 덮어쓴다. 이 값만 보고 GOP를 2초로 판단하면 안 된다.
+- `homecam-publisher.sh`의 GOP 2초는 **라즈베리파이 프로토타입 경로**이며 젯슨 라이브와 무관하다.
+- 세그먼트를 1초 밑으로 더 내리려면 그때는 젯슨 `CAMERA_FPS`/GOP를 함께 낮춰야 한다.
+
+`backend/infra/mediamtx/mediamtx.yml`(로컬 개발용)은 2s로 남겨 뒀다. 데모 소스가
+`-c copy`로 재생하는 기성 MP4라 GOP를 알 수 없어 1s로 자를 수 있다는 보장이 없다.
 
 ---
 

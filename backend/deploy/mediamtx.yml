@@ -22,7 +22,12 @@ hlsAllowOrigins: ["https://i15e201.p.ssafy.io"]
 # first on-demand muxer 404 as a fatal source error instead of retrying it.
 hlsAlwaysRemux: true
 hlsVariant: fmp4
-hlsSegmentDuration: 2s
+# HLS 클라이언트는 규격상 라이브 엣지에서 3 x TARGETDURATION 뒤부터 재생을
+# 시작한다. 2s였을 때 그 hold-back만 6초였다. 젯슨 인코더(media-source.sh)가
+# 이미 -g $CAMERA_FPS 로 1초마다 키프레임을 넣고 stream.py가 -c:v copy 로
+# 그대로 통과시키므로, 기기 변경 없이 세그먼트를 1초로 자를 수 있다.
+# 세그먼트 경계는 키프레임에만 놓이므로 이 값을 GOP 아래로 더 내리면 안 된다.
+hlsSegmentDuration: 1s
 webrtc: false
 srt: false
 moq: false
