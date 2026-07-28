@@ -556,11 +556,11 @@
 
 ## 9. 가족 공유 API
 
-기기 단위로 **OWNER / EDITOR / VIEWER** 3개 역할이 존재한다. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다.
+기기 단위로 **OWNER / MEMBER** 2개 역할이 존재한다. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다. 초대로 만들어지는 역할은 항상 MEMBER다.
 
 ### 사용자 흐름
 
-1. OWNER가 이메일과 역할(EDITOR/VIEWER)을 지정해 초대를 발송한다.
+1. OWNER가 이메일을 지정해 초대를 발송한다.
 2. 초대받은 사용자는 받은 초대함에서 목록을 확인하고 수락 또는 거절한다.
 3. 수락 시점에 실제 멤버십이 생성된다.
 4. 별도로 "내 계정으로 초대해달라"는 요청 링크를 만들어 공유할 수 있지만, 링크 자체는 멤버십을 만들지 않는다.
@@ -573,8 +573,9 @@
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | email | String | 필수 | `@NotBlank @Email @Size≤320` |
-| role | String | 필수 | `@NotBlank @Pattern "EDITOR\|VIEWER"` |
 | membershipRequestToken | String | 옵션 | `@Size≤200` |
+
+> `role` 필드는 받지 않는다. 초대로 만들어지는 역할은 항상 `MEMBER`로 고정된다(DB 제약 `ck_invitations_member_only`).
 
 응답: `201 InvitationResponse`
 
@@ -584,7 +585,7 @@
 | deviceId | UUID | 필수 | 기기 ID |
 | deviceName | String | 필수 | 기기 이름 |
 | inviteeEmail | String | 필수 | 초대받는 이메일 |
-| role | String | 필수 | EDITOR/VIEWER |
+| role | String | 필수 | MEMBER 고정 |
 | inviter.id | UUID | 옵션(nullable) | 초대자 ID |
 | inviter.email | String | 옵션 | 초대자 이메일 |
 | inviter.displayName | String | 옵션 | 초대자 표시이름 |
@@ -592,7 +593,7 @@
 | expiresAt | Instant | 필수 | 만료 시각(초대 유효기간 7일) |
 | createdAt | Instant | 필수 | 생성 시각 |
 
-- 에러: 403 `FORBIDDEN_ROLE`, 422 `VALIDATION_FAILED`(role 아님), 409 `ALREADY_DEVICE_MEMBER`, 409 `INVITATION_PENDING`, 409 `MEMBERSHIP_REQUEST_EMAIL_MISMATCH`, 404 `MEMBERSHIP_REQUEST_NOT_FOUND`
+- 에러: 403 `FORBIDDEN_ROLE`, 422 `VALIDATION_FAILED`(이메일 형식 오류 등), 409 `ALREADY_DEVICE_MEMBER`, 409 `INVITATION_PENDING`, 409 `MEMBERSHIP_REQUEST_EMAIL_MISMATCH`, 404 `MEMBERSHIP_REQUEST_NOT_FOUND`
 
 ### API-15 `POST /api/membership-request-links`
 
@@ -742,6 +743,39 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-48 | `POST /internal/admin/devices/{deviceId}/credentials/rotate` | (내부 관리자 키) 자격증명 강제 회전 |
 | API-49 | `DELETE /internal/admin/devices/{deviceId}/credentials` | (내부 관리자 키) 자격증명 폐기 |
 | API-50 | `GET /api/devices/{deviceId}/access-logs` | 접근 기록 커서 조회 |
+| API-52 | `POST /api/auth/password/change` | 비밀번호 변경(로그인 상태, 현재 비밀번호 확인) |
+| API-53 | `POST /api/auth/password/forgot` | 비밀번호 재설정 링크 발급 요청(공개) |
+| API-54 | `POST /api/auth/password/reset` | 토큰으로 비밀번호 재설정(공개) |
+| API-55 | `GET /api/notifications` | 알림 목록 조회(최신순, limit 기본 30·최대 100) |
+| API-56 | `GET /api/notifications/unread-count` | 안 읽은 알림 개수 |
+| API-57 | `PATCH /api/notifications/{notificationId}/read` | 알림 1건 읽음 처리 |
+| API-58 | `PATCH /api/notifications/read-all` | 전체 읽음 처리 |
+
+#### 비밀번호 API 동작 규칙 (API-52~54)
+
+| 항목 | 변경(API-52) | 재설정(API-53·54) |
+|---|---|---|
+| 인증 | 사용자 JWT + 현재 비밀번호 | 불필요(이메일로 받은 1회용 토큰) |
+| 요청 | `currentPassword`, `newPassword`(10~72자) | 53: `email` / 54: `token`(32~200), `newPassword` |
+| 응답 | `204` | 53: `202` / 54: `204` |
+| 세션 처리 | 현재 세션만 유지, 나머지 폐기 | **전 세션 폐기** |
+| 에러 | 401 `INVALID_CREDENTIALS`, 422 `PASSWORD_UNCHANGED` | 401 `INVALID_PASSWORD_RESET_TOKEN` |
+
+- 재설정 토큰은 **30분 TTL·1회용**이며, DB에는 원문이 아닌 SHA-256 해시만 저장한다(`password_reset_tokens`).
+- API-53은 **가입되지 않은 이메일에도 동일하게 `202`를 반환**한다. 계정 존재 여부를 노출하지 않기 위함이며, 로그인(API-02)의 동일 메시지 원칙과 같은 이유다.
+- 새 forgot 요청은 이전 토큰을 먼저 만료시키므로 항상 최신 링크 1개만 유효하다.
+- 메일 서버(`spring.mail.host`)가 비어 있으면 발송을 건너뛰고 경고 로그만 남긴다(개발 환경 대응).
+
+#### 알림 생성 시점 (API-55~58은 조회·읽음 전용)
+
+알림을 만드는 별도 API는 없다. 서버가 다음 두 시점에 자동으로 생성한다.
+
+| 종류 | 생성 시점 | 대상 | dedupe_key |
+|---|---|---|---|
+| `LAUGHTER_VIDEO_READY` | 영상 업로드 완료(API-26)로 `READY` 확정 + `triggerType=LAUGHTER` | 해당 기기의 활성 구성원 **전원** | `laughter-video:{videoId}` |
+| `INVITATION_RECEIVED` | 초대 발송(API-14) | 초대받은 이메일의 사용자 1명 | `invitation:{invitationId}` |
+
+`notifications` 테이블에 `UNIQUE (user_id, dedupe_key)`가 있고 INSERT에 `ON CONFLICT DO NOTHING`이 붙어 있어, 같은 업로드 완료가 여러 번 들어와도 사용자별 알림은 1건만 남는다.
 
 ### 실험 MQTT(`homecam/v2`, 6개)
 
@@ -783,7 +817,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 - 부록 A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50 — 18개.
 - 합계 31 + 18 = 49개 + API-06(의도적 제외, 위 사유 참고) = as-built 기준 50개 전수 반영. 중복 배치 없음(API-27만 4절·8절에서 의도적으로 재사용 표기, API-32는 6·7절에서 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 3절(01, 04) + 10절(02, 03, 05~09) + 부록 A(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
-- 신규 API-51은 기존 max(API-50) 다음 번호로 부여했다.
+- 신규 API-51(리포트 제안)은 당시 max(API-50) 다음 번호로 부여했다. 이후 비밀번호(API-52~54)·알림(API-55~58)을 추가해 현재 max는 **API-58**이다.
 
 ---
 

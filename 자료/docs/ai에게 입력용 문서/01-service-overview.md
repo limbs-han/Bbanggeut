@@ -99,17 +99,16 @@ flowchart LR
 
 ## 6. 가족 공유 (역할 모델)
 
-기기 단위로 **OWNER / EDITOR / VIEWER** 3개 역할. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다.
+기기 단위로 **OWNER / MEMBER** 2개 역할. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다.
 
 | 역할 | 부여 시점 | 권한(대표 FN/API) | 제약 |
 |---|---|---|---|
 | OWNER | claim 성공 시 자동(FN-S04) | 기기설정변경(FN-A27/API-10), 초대(FN-A22/API-14), 추방(FN-A24/API-24), 영상삭제(부록A, FN-A16/API-30) | 기기당 활성 OWNER 정확히 1명(DB 트리거), 자기 자신 추방 불가(409 `OWNER_CANNOT_BE_REVOKED`) |
-| EDITOR | 초대 시 지정(REQ-F-28) | 영상 메타데이터 수정(부록A, FN-A18/API-29), 즐겨찾기 토글(부록A, FN-A19/API-29) | - |
-| VIEWER | 초대 시 지정 | 조회 전용(영상목록/재생/실시간시청) | 메타수정·삭제·기기설정 불가 |
+| MEMBER | 초대 수락 시 자동(REQ-F-28) | 조회(영상목록/재생/실시간시청), 영상 메타데이터 수정(부록A, FN-A18/API-29), 즐겨찾기 토글(부록A, FN-A19/API-29) | 추방·기기설정변경·영상삭제 불가 |
 
 - 가입 경로: 초대 승인제만 유효(`API-14`→`API-20~22`, 유효기간 7일).
 - 멤버십 요청 링크(`API-15/16/17`)는 미리보기·자동 채움만 하고 그 자체로 멤버십을 생성하지 않음 — OWNER가 정식 초대(API-14)를 별도로 진행해야 한다.
-- 역할 enum 변천(참고): DB 원래 OWNER/MEMBER → V21 `MEMBER`→`EDITOR` rename → V22 `VIEWER` 추가 → V23 기본값/제약 정리.
+- 역할 enum 변천(참고): DB 원래 OWNER/MEMBER → V21 `MEMBER`→`EDITOR` rename → V22 `VIEWER` 추가 → V23 기본값/제약 정리 → **V24 `MEMBER` 재추가 → V25에서 기존 EDITOR/VIEWER를 모두 `MEMBER`로 흡수하고 `CHECK (role IN ('OWNER','MEMBER'))` 적용**. 초대는 `CHECK (role = 'MEMBER')`로 MEMBER만 가능.
 
 ## 7. 부록 A: 향후 확장 (MVP 범위 밖, 기능·문서는 유지)
 
