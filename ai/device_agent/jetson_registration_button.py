@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,18 @@ DEFAULT_I2C_ADDRESS = 0x27
 DEFAULT_COLUMNS = 16
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_DEBOUNCE_SECONDS = 0.3
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Issue a registration code and show it on an I2C LCD.",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="issue and display one code immediately without waiting for a button",
+    )
+    return parser.parse_args(argv)
 
 
 class Lcd(Protocol):
@@ -123,11 +136,12 @@ def request_registration_code(
     return code, expires_at
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     import lgpio
 
     from lcd_test import I2CLcd
 
+    args = parse_args(argv)
     chip = environment_integer("REGISTRATION_BUTTON_CHIP", DEFAULT_GPIO_CHIP)
     line = environment_integer("REGISTRATION_BUTTON_LINE", DEFAULT_GPIO_LINE)
     bus = environment_integer("LCD_I2C_BUS", DEFAULT_I2C_BUS)
@@ -152,6 +166,29 @@ def main() -> None:
 
     lcd = I2CLcd(lgpio, bus=bus, address=address)
     display = RegistrationDisplay(lcd, columns=columns)
+
+    if args.once:
+        try:
+            code, expires_at = request_registration_code(display, timeout=timeout)
+            print(
+                f"Registration code issued: {code}; expires at {expires_at}",
+                flush=True,
+            )
+        except subprocess.TimeoutExpired:
+            display.show_error("Request timeout")
+            print(
+                f"Registration command timed out after {timeout} seconds.",
+                flush=True,
+            )
+            raise SystemExit(1)
+        except Exception as error:
+            display.show_error()
+            print(f"Registration request failed: {error}", flush=True)
+            raise SystemExit(1)
+        finally:
+            display.close()
+        return
+
     execution_lock = threading.Lock()
     debounce_lock = threading.Lock()
     last_press = 0.0
