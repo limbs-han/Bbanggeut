@@ -31,7 +31,9 @@ class SavedBanubaEdit {
 }
 
 class BanubaVideoEditor {
-  BanubaVideoEditor({VeSdkFlutter? sdk}) : _sdk = sdk ?? VeSdkFlutter();
+  BanubaVideoEditor({VeSdkFlutter? sdk, AssetBundle? assetBundle})
+    : _sdk = sdk ?? VeSdkFlutter(),
+      _assetBundle = assetBundle ?? rootBundle;
 
   static const _compiledLicenseToken = String.fromEnvironment(
     'BANUBA_LICENSE_TOKEN',
@@ -71,6 +73,7 @@ class BanubaVideoEditor {
   );
 
   final VeSdkFlutter _sdk;
+  final AssetBundle _assetBundle;
   String? _resolvedLicenseToken;
 
   Future<bool> get isConfigured async =>
@@ -305,7 +308,7 @@ class BanubaVideoEditor {
     }
 
     try {
-      final raw = await rootBundle.loadString(_localConfigAsset);
+      final raw = await _assetBundle.loadString(_localConfigAsset);
       final config = jsonDecode(raw);
       if (config is Map<String, dynamic>) {
         final local = (config['BANUBA_LICENSE_TOKEN'] as String? ?? '').trim();
