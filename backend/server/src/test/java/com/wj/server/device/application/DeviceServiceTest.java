@@ -78,7 +78,7 @@ class DeviceServiceTest {
         verify(deviceMapper).markClaimed(deviceId, userId, "거실");
         verify(registrationCodeMapper).markUsed(codeId, userId);
         verify(deviceMapper).insertOwnerMembership(deviceId, userId);
-        verify(claimAttemptService).recordSuccess(userId, "127.0.0.1");
+        verify(claimAttemptService).clearFailures(userId);
         assertThat(response.status()).isEqualTo("OFFLINE");
         assertThat(response.myRole()).isEqualTo("OWNER");
         assertThat(response.name()).isEqualTo("거실");

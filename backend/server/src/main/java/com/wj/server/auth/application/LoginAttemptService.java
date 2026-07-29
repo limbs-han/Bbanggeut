@@ -3,42 +3,57 @@ package com.wj.server.auth.application;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Clock;
 import java.util.HexFormat;
 import java.util.Locale;
 
 import com.wj.server.auth.persistence.LoginAttemptMapper;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.AuthProperties;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Limits sign-in attempts per account and per address.
+ *
+ * <p>The limit is claimed before the password is verified rather than recorded
+ * after it fails. Verification is deliberately slow, so a check that only
+ * counted earlier failures would let every concurrent request through on the
+ * same count and spend the hashing cost anyway.
+ */
 @Service
 public class LoginAttemptService {
+    private static final String EMAIL_KEY_PREFIX = "rl:login:email:";
+    private static final String IP_KEY_PREFIX = "rl:login:ip:";
+
     private final LoginAttemptMapper mapper;
+    private final SlidingWindowRateLimiter rateLimiter;
     private final AuthProperties properties;
-    private final Clock clock;
 
-    @Autowired
-    public LoginAttemptService(LoginAttemptMapper mapper, AuthProperties properties) {
-        this(mapper, properties, Clock.systemUTC());
-    }
-
-    LoginAttemptService(LoginAttemptMapper mapper, AuthProperties properties, Clock clock) {
+    public LoginAttemptService(
+        LoginAttemptMapper mapper,
+        SlidingWindowRateLimiter rateLimiter,
+        AuthProperties properties
+    ) {
         this.mapper = mapper;
+        this.rateLimiter = rateLimiter;
         this.properties = properties;
-        this.clock = clock;
     }
 
-    @Transactional(readOnly = true)
-    public void ensureAllowed(String email, String ipAddress) {
-        if (mapper.isRateLimited(
-            fingerprint(email), fingerprint(ipAddress),
-            clock.instant().minus(properties.loginFailureWindow()),
-            properties.loginMaxFailures())) {
+    /**
+     * Claims one attempt, or rejects when either bucket is exhausted.
+     *
+     * <p>Callers must invoke this before checking the password.
+     */
+    public void reserveOrReject(String email, String ipAddress) {
+        boolean admitted = rateLimiter.tryAcquire(
+            EMAIL_KEY_PREFIX + fingerprint(email),
+            IP_KEY_PREFIX + fingerprint(ipAddress),
+            properties.loginFailureWindow(),
+            properties.loginMaxFailures());
+        if (!admitted) {
             throw new ApiException(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "LOGIN_RATE_LIMITED",
@@ -46,14 +61,28 @@ public class LoginAttemptService {
         }
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordFailure(String email, String ipAddress) {
-        mapper.insertAttempt(fingerprint(email), fingerprint(ipAddress), false);
+    /**
+     * Releases the account budget after the password was accepted.
+     *
+     * <p>The address budget is intentionally left alone: one valid credential
+     * must not clear the limit that guards every other account behind the same
+     * address.
+     */
+    public void clearFailures(String email) {
+        rateLimiter.reset(EMAIL_KEY_PREFIX + fingerprint(email));
     }
 
-    @Transactional
-    public void recordSuccess(String email, String ipAddress) {
-        mapper.insertAttempt(fingerprint(email), fingerprint(ipAddress), true);
+    /**
+     * Keeps a durable record of a rejected sign-in for later analysis.
+     *
+     * <p>This is no longer what enforces the limit, so it runs only for
+     * attempts that were admitted and then failed rather than for every
+     * request. It stays in its own transaction because the surrounding sign-in
+     * transaction is rolled back by the error that follows.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordFailure(String email, String ipAddress) {
+        mapper.insertFailure(fingerprint(email), fingerprint(ipAddress));
     }
 
     private String fingerprint(String value) {
