@@ -1,0 +1,24 @@
+[Unit]
+Description=William James local auto-framing servo controller
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+User=ssafy
+Group=ssafy
+SupplementaryGroups=williamjames i2c
+Environment=HOME=/home/ssafy
+EnvironmentFile=/etc/william-james/device-agent.env
+Environment=SERVO_MQTT_HOST=127.0.0.1
+Environment=SERVO_MQTT_PORT=1883
+WorkingDirectory=/home/ssafy/ai/yolo
+ExecStart=/home/ssafy/venvs/yolo/bin/python -u /home/ssafy/ai/yolo/servo_controller.py
+Restart=always
+RestartSec=2
+TimeoutStopSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

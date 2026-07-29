@@ -69,6 +69,8 @@ class FramingDecision:
 class CameraCommand:
     state: str
     direction: str
+    command_x: str
+    command_y: str
     target_ids: tuple[int, ...]
     target_count: int
     total_stable_objects: int
@@ -88,7 +90,7 @@ class CameraCommand:
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
-        payload["schema_version"] = "1.0"
+        payload["schema_version"] = "1.1"
         payload["sequence"] = frame_index
         payload["sent_at"] = sent_at
         payload["ttl_ms"] = 500
@@ -214,8 +216,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--command-interval",
         type=float,
-        default=0.20,
-        help="Minimum seconds between JSONL commands (default: 5 Hz).",
+        default=0.10,
+        help="Minimum seconds between JSONL/MQTT commands (default: 10 Hz).",
     )
     parser.add_argument(
         "--control-output",
@@ -509,6 +511,8 @@ class AutoFrameController:
         self.home_after_seconds = home_after_seconds
         self.smoothed_target: Point | None = None
         self.last_target_seen_at: float | None = None
+        self.last_error_x = 0.0
+        self.last_error_y = 0.0
 
     def update(
         self,
@@ -525,21 +529,27 @@ class AutoFrameController:
                 return CameraCommand(
                     state="NO_TARGET_HOLD",
                     direction="HOLD",
+                    command_x="HOLD",
+                    command_y="HOLD",
                     target_ids=(),
                     target_count=0,
                     total_stable_objects=0,
                     center_x=None,
                     center_y=None,
-                    error_x=0.0,
-                    error_y=0.0,
+                    error_x=self.last_error_x,
+                    error_y=self.last_error_y,
                     group_box=None,
                     limited_group=False,
                 )
 
             self.smoothed_target = None
+            self.last_error_x = 0.0
+            self.last_error_y = 0.0
             return CameraCommand(
                 state="RETURN_HOME",
                 direction="HOME",
+                command_x="HOME",
+                command_y="HOME",
                 target_ids=(),
                 target_count=0,
                 total_stable_objects=0,
@@ -582,18 +592,24 @@ class AutoFrameController:
         if move_y:
             vertical = "DOWN" if pixel_error_y > 0 else "UP"
         direction = "_".join(part for part in (horizontal, vertical) if part) or "HOLD"
+        command_x = horizontal or "HOLD"
+        command_y = vertical or "HOLD"
+        self.last_error_x = round(normalized_error_x, 6)
+        self.last_error_y = round(normalized_error_y, 6)
 
         x1, y1, x2, y2 = decision.group_box
         return CameraCommand(
             state="TRACKING",
             direction=direction,
+            command_x=command_x,
+            command_y=command_y,
             target_ids=tuple(item.track_id for item in decision.objects),
             target_count=len(decision.objects),
             total_stable_objects=decision.total_stable_objects,
             center_x=round(smooth_x / max(frame_width, 1), 6),
             center_y=round(smooth_y / max(frame_height, 1), 6),
-            error_x=round(normalized_error_x, 6),
-            error_y=round(normalized_error_y, 6),
+            error_x=self.last_error_x,
+            error_y=self.last_error_y,
             group_box=(
                 round(x1 / max(frame_width, 1), 6),
                 round(y1 / max(frame_height, 1), 6),

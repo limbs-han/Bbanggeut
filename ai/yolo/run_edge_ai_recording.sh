@@ -34,6 +34,10 @@ fi
 : "${EVENT_CLIP_SECONDS:=60}"
 : "${EVENT_MERGE_GAP_SECONDS:=30}"
 : "${DELETE_EVENT_AFTER_UPLOAD:=true}"
+: "${LOCAL_MQTT_HOST:=127.0.0.1}"
+: "${LOCAL_MQTT_PORT:=1883}"
+: "${YOLO_DEADZONE_WIDTH:=0.08}"
+: "${YOLO_DEADZONE_HEIGHT:=0.08}"
 : "${YAMNET_SCORE_AGGREGATION:=mean}"
 : "${YAMNET_THRESHOLD:=0.125}"
 : "${YAMNET_CONSECUTIVE:=3}"
@@ -145,6 +149,11 @@ YOLO_COMMAND=(
     "$YOLO_PYTHON" -u "${SCRIPT_DIR}/yolov8_autoframe_jetson.py"
     --stream-url "$LOCAL_RTSP_AI_URL"
     --device-id "$DEVICE_ID"
+    --mqtt-host "$LOCAL_MQTT_HOST"
+    --mqtt-port "$LOCAL_MQTT_PORT"
+    --command-interval 0.10
+    --deadzone-width "$YOLO_DEADZONE_WIDTH"
+    --deadzone-height "$YOLO_DEADZONE_HEIGHT"
     --control-output "${RUN_DIR}/autoframe_commands.jsonl"
 )
 MQTT_HOST= "${YOLO_COMMAND[@]}" \

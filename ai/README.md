@@ -268,6 +268,7 @@ ai/
 │   ├── yolov8n.pt
 │   ├── yolov8_detect_jetson.py
 │   ├── yolov8_autoframe_jetson.py
+│   ├── servo_controller.py
 │   ├── stream_capture.py
 │   ├── vision_mqtt_publisher.py
 │   ├── event_fusion_service.py
@@ -278,7 +279,9 @@ ai/
 │   ├── run_yolo_rtsp_validation.sh
 │   ├── validate_jetson_release.sh
 │   ├── requirements-autoframe-jetson.txt
+│   ├── requirements-servo-controller.txt
 │   ├── test_autoframe_logic.py
+│   ├── test_servo_controller.py
 │   ├── test_event_fusion.py
 │   ├── test_segment_clip_uploader.py
 │   ├── test_stream_capture.py
@@ -307,9 +310,15 @@ ai/
 - 새 추적 대상과 새 그룹은 여러 프레임 유지될 때만 반영
 - EMA 평활화와 중앙 데드존으로 카메라 떨림 완화
 - 객체 유실 시 5초간 `HOLD` 후 `HOME` 명령 생성
-- `error_x`, `error_y`를 정규화하여 추후 IoT 서보 제어에 제공
+- `command_x`, `command_y`와 정규화된 `error_x`, `error_y`를 10Hz로 제공
+- MQTT 서보 제어기는 설정된 물리 범위 안에서 속도 제한 이동
+- 현재 실물 검증 범위는 PAN `-10°~+10°`, TILT 수평 `0°`~아래 `10°`
+- MQTT/AI 메시지가 끊기면 `HOLD`, 대상 유실 5초 후 `HOME`
 
-현재 `HOME`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `HOLD`는 제어 목표일 뿐 실제 PWM을 발생시키지 않는다.
+실제 PCA9685 출력은 별도 5V 전원과 실물 보정이 완료된 뒤에만 명시적으로
+활성화한다. 기본 실행은 드라이런이다. 연결·보정·정지 절차는
+`SERVO_PCA9685_RUNBOOK.md`를 따르고, 2026-07-29 실물 결과와 인수인계는
+`SERVO_OBJECT_TRACKING_HANDOFF_20260729.txt`를 참고한다.
 
 ### YAMNet 웃음 감지
 
@@ -424,8 +433,9 @@ Jetson용 PyTorch, OpenCV와 Ultralytics가 정상 동작하는 기존 환경에
 ```bash
 source ~/venvs/yolo/bin/activate
 python -m pip install -r ai/yolo/requirements-autoframe-jetson.txt
+python -m pip install -r ai/yolo/requirements-servo-controller.txt
 
-python -c "import cv2, torch, ultralytics, lap, paho.mqtt.client; print('CUDA:', torch.cuda.is_available())"
+python -c "import cv2, torch, ultralytics, lap, paho.mqtt.client, smbus2; print('CUDA:', torch.cuda.is_available())"
 ```
 
 `torch.cuda.is_available()`은 `True`가 되어야 한다. `requirements-autoframe-jetson.txt`는 ByteTrack과 MQTT에 추가로 필요한 패키지만 설치하며 Jetson 전용 PyTorch를 교체하지 않는다.
@@ -448,6 +458,7 @@ YOLO 가상환경에서 하드웨어 독립 로직 테스트를 실행한다.
 ```bash
 source ~/venvs/yolo/bin/activate
 python ai/yolo/test_autoframe_logic.py
+python ai/yolo/test_servo_controller.py
 python ai/yolo/test_event_fusion.py
 python ai/yolo/test_laughter_clip_uploader.py
 python ai/yolo/test_stream_capture.py
@@ -457,10 +468,8 @@ python ai/yamnet/test_ffmpeg_audio_stream.py
 python ai/yamnet/test_laughter_scoring.py
 ```
 
-현재 기준 총 32개 테스트가 통과해야 한다.
-
 Jetson에 전체 릴리스를 별도 폴더로 배치한 뒤에는 서비스를 변경하기 전에
-다음 명령으로 파일 구성, Bash·Python 문법과 32개 테스트를 한 번에 확인한다.
+다음 명령으로 파일 구성, Bash·Python 문법과 전체 테스트를 한 번에 확인한다.
 
 ```bash
 chmod +x ai/yolo/validate_jetson_release.sh
@@ -651,8 +660,9 @@ tail -F \
 
 | 토픽 | QoS | Retain | 발행자 | 용도 |
 |---|---:|---|---|---|
-| `homecam/v2/{device_id}/ai/vision/state` | 0 | false | YOLO | 최신 객체·자동 구도 상태, 5Hz |
-| `homecam/v2/{device_id}/control/framing/target` | 0 | false | YOLO | SG90 제어기가 사용할 정규화 오차 목표, 5Hz |
+| `homecam/v2/{device_id}/ai/vision/state` | 0 | false | YOLO | 최신 객체·자동 구도 상태, 10Hz |
+| `homecam/v2/{device_id}/control/framing/target` | 0 | false | YOLO | SG90 제어기가 사용할 두 축 명령과 정규화 오차 목표, 10Hz |
+| `homecam/v2/{device_id}/control/framing/status` | 0 | false | 서보 제어기 | 논리 각도·상태·거부 메시지 진단 |
 | `homecam/v2/{device_id}/ai/laughter/detected` | 1 | false | YAMNet | 원본 웃음 감지 이벤트 |
 | `homecam/v2/{device_id}/events/memory-candidate` | 1 | false | 결합기 | 백엔드·IoT가 사용할 최종 후보 이벤트 |
 
@@ -745,7 +755,9 @@ RTSP·녹화·기존 UDP AI를 함께 시험할 때는
 ## 현재 한계와 다음 작업
 
 - 웃음 감지는 사람별 차이와 거리·TV 소리에 영향을 받으므로 평가 데이터로 threshold를 계속 조정해야 한다.
-- 현재 자동 구도는 화면 좌표 기반이다. 서보 연동 후 카메라 화각과 현재 각도를 이용한 공간 좌표 추적으로 확장한다.
+- 현재 자동 구도는 화면 좌표와 복수 객체 그룹 중앙 기반이며 PCA9685와
+  SG90 PAN/TILT 실물 추적까지 확인했다. 다음 단계에서 카메라 화각과 현재
+  각도를 이용한 공간 좌표 추적 및 장시간 내구 시험으로 확장한다.
 - YOLO와 YAMNet 동시 실행의 CPU 병목을 장시간 로그로 평가한다.
 - 실제 팬·틸트 제어 전에는 데드존, EMA, 최대 속도와 물리적 각도 제한을 확정한다.
 - 디스크 기반 녹화·클립 경로를 Jetson에서 검증한 뒤 기존 5초 메모리 버퍼를 기본 경로에서 제거한다.
