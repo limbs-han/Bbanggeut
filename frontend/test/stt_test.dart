@@ -192,6 +192,104 @@ void main() {
     });
   });
 
+  group('splitLongLines', () {
+    test('짧은 줄은 그대로 둔다', () {
+      final lines = [
+        CaptionLine(startMs: 0, endMs: 2000, text: '안 만졌는데요'),
+      ];
+      final split = splitLongLines(lines);
+      expect(split, hasLength(1));
+      expect(split.single.text, '안 만졌는데요');
+      expect(split.single.startMs, 0);
+      expect(split.single.endMs, 2000);
+    });
+
+    test('긴 줄을 낱말 경계에서 쪼갠다', () {
+      // 40자를 20자 한도로 → 두 줄
+      final split = splitLongLines([
+        CaptionLine(
+          startMs: 0,
+          endMs: 4000,
+          text: '엄마가 아이에게 말했어요 그거 만지지 마 안 만졌는데요',
+        ),
+      ]);
+
+      expect(split.length, greaterThan(1));
+      for (final line in split) {
+        expect(
+          line.text.length,
+          lessThanOrEqualTo(20),
+          reason: '한 줄이 한도를 넘으면 화면에 안 들어간다: "${line.text}"',
+        );
+      }
+    });
+
+    test('쪼갠 줄들이 원래 구간을 빈틈 없이 채운다', () {
+      final split = splitLongLines([
+        CaptionLine(
+          startMs: 1000,
+          endMs: 5000,
+          text: '엄마가 아이에게 말했어요 그거 만지지 마 안 만졌는데요',
+        ),
+      ]);
+
+      expect(split.first.startMs, 1000);
+      expect(split.last.endMs, 5000);
+      for (var i = 1; i < split.length; i++) {
+        expect(split[i].startMs, split[i - 1].endMs, reason: '구간 사이가 벌어졌다');
+      }
+    });
+
+    test('구간이 아주 짧아도 모든 줄이 길이를 갖는다 — 0ms는 화면에 못 뜬다', () {
+      // 24자를 20자 한도로 나누면 2조각인데 구간이 3ms뿐이다. 비율대로 주면
+      // 앞 조각이 3ms를 다 먹고 뒤 조각이 0ms가 된다.
+      final split = splitLongLines([
+        CaptionLine(startMs: 0, endMs: 3, text: '가나다라마바사아자차카타파하가나다라마바사아자차'),
+      ]);
+
+      for (final line in split) {
+        expect(
+          line.endMs,
+          greaterThan(line.startMs),
+          reason: '길이가 0인 줄: "${line.text}"',
+        );
+      }
+      expect(split.last.endMs, 3, reason: '원래 끝 시각을 넘지 않아야 한다');
+    });
+
+    test('구간이 조각 수보다 짧으면 쪼개지 않는다', () {
+      const long = '가나다라마바사아자차카타파하가나다라마바사아자차';
+      final split = splitLongLines([
+        CaptionLine(startMs: 0, endMs: 1, text: long),
+      ]);
+
+      expect(split, hasLength(1));
+      expect(split.single.text, long);
+    });
+
+    test('낱말 하나가 한도를 넘으면 통째로 자른다', () {
+      final split = splitLongLines([
+        CaptionLine(startMs: 0, endMs: 2000, text: '가나다라마바사아자차카타파하가나다라마바사'),
+      ]);
+
+      expect(split.length, greaterThan(1));
+      for (final line in split) {
+        expect(line.text.length, lessThanOrEqualTo(20));
+      }
+      expect(split.map((l) => l.text).join(), '가나다라마바사아자차카타파하가나다라마바사');
+    });
+
+    test('한도를 바꿀 수 있다', () {
+      final split = splitLongLines([
+        CaptionLine(startMs: 0, endMs: 2000, text: '엄마가 아이에게 말했어요'),
+      ], maxChars: 6);
+
+      for (final line in split) {
+        expect(line.text.length, lessThanOrEqualTo(6));
+      }
+    });
+  });
+
   group('captionsForExport', () {
     List<CaptionLine> lines() => [
       CaptionLine(startMs: 1000, endMs: 3000, text: '그거 만지지 마'),

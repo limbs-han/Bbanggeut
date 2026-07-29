@@ -22,6 +22,79 @@ class CaptionLine {
   String text;
 }
 
+/// 자막 한 줄의 최대 글자 수.
+///
+/// whisper는 문장 단위로 길게 끊어 준다. 실측에서 37초 발화가 **2줄 124자**로
+/// 나왔다 — 한 줄 62자는 화면에 들어가지 않는다. 한국어 자막 관례는 한 줄
+/// 16~20자다.
+const captionMaxChars = 20;
+
+/// 긴 줄을 낱말 경계에서 쪼개고, 시각을 글자 수 비율로 나눠 준다.
+///
+/// 낱말 하나가 [maxChars]를 넘으면(붙여 쓴 긴 말) 통째로 자른다.
+List<CaptionLine> splitLongLines(
+  List<CaptionLine> lines, {
+  int maxChars = captionMaxChars,
+}) {
+  final out = <CaptionLine>[];
+  for (final line in lines) {
+    final chunks = _chunk(line.text.trim(), maxChars);
+    final span = line.endMs - line.startMs;
+    // 구간이 조각 수보다 짧으면 쪼갤 수 없다 — 어느 조각은 길이 0이 되어 화면에
+    // 못 뜨고 내보낼 때도 버려진다. 긴 줄로 두는 편이 낫다.
+    if (chunks.length <= 1 || span < chunks.length) {
+      out.add(line);
+      continue;
+    }
+
+    final totalChars = chunks.fold(0, (sum, chunk) => sum + chunk.length);
+    var at = line.startMs;
+    for (var i = 0; i < chunks.length; i++) {
+      final last = i == chunks.length - 1;
+      var end = last
+          ? line.endMs
+          : at + (span * chunks[i].length / totalChars).round();
+      // 뒤에 남은 조각들이 각각 최소 1ms를 갖도록 자리를 남겨 둔다. 이걸 안 하면
+      // 비율 계산이 앞 조각에 다 주고 마지막 조각이 0ms가 된다 — 그런 줄은
+      // 화면에 못 뜨고 내보낼 때도 버려진다.
+      final maxEnd = line.endMs - (chunks.length - 1 - i);
+      if (end > maxEnd) end = maxEnd;
+      if (end <= at) end = at + 1;
+      out.add(CaptionLine(startMs: at, endMs: end, text: chunks[i]));
+      at = end;
+    }
+  }
+  return out;
+}
+
+List<String> _chunk(String text, int maxChars) {
+  if (text.length <= maxChars) return [text];
+
+  final out = <String>[];
+  var current = '';
+  void flushOversized() {
+    while (current.length > maxChars) {
+      out.add(current.substring(0, maxChars));
+      current = current.substring(maxChars);
+    }
+  }
+
+  for (final word in text.split(' ')) {
+    if (word.isEmpty) continue;
+    if (current.isEmpty) {
+      current = word;
+    } else if (current.length + 1 + word.length <= maxChars) {
+      current = '$current $word';
+    } else {
+      out.add(current);
+      current = word;
+    }
+    flushOversized();
+  }
+  if (current.isNotEmpty) out.add(current);
+  return out;
+}
+
 /// [positionMs]에 보일 자막. 없으면 null.
 ///
 /// 시작 포함·끝 제외로 판정한다 — 끝을 포함하면 붙어 있는 두 줄이 경계에서

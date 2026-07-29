@@ -193,7 +193,9 @@ class WhisperTranscriber {
         ),
       );
     }
-    return out;
+    // whisper는 문장 단위로 길게 끊어 준다. 자막으로 쓰려면 쪼개야 한다 —
+    // 실측에서 37초 발화가 2줄 124자로 나왔다.
+    return splitLongLines(out);
   }
 }
 
