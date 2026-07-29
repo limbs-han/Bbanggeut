@@ -60,6 +60,8 @@ grep -Fq ': "${YAMNET_THRESHOLD:=0.125}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${YAMNET_CONSECUTIVE:=3}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${SERVO_DASHBOARD_HOST:=127.0.0.1}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 
