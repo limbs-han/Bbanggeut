@@ -217,7 +217,7 @@ class DeviceServiceTest {
 
         deviceService.revoke(ownerId, deviceId);
 
-        verify(deviceMapper).cancelPendingInvitations(deviceId);
+        verify(deviceMapper, never()).cancelPendingInvitations(deviceId);
         verify(deviceMapper).revokeAllMemberships(deviceId, ownerId);
         verify(deviceMapper, never()).markAllVideosDeleting(deviceId, ownerId);
         verify(deviceMapper, never()).enqueueDeletionJobsForDevice(deviceId);

@@ -34,6 +34,27 @@ public interface NotificationMapper {
 
     @Insert("""
         INSERT INTO notifications (
+            id, user_id, type, title, body, vault_id, resource_id, dedupe_key
+        )
+        SELECT #{id}, u.id, 'INVITATION_RECEIVED', '새로운 Vault 초대',
+               #{vaultName} || ' Vault에 초대되었습니다.',
+               #{vaultId}, #{invitationId},
+               'invitation:' || CAST(#{invitationId} AS text)
+          FROM users u
+         WHERE lower(u.email) = lower(#{email})
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+        ON CONFLICT (user_id, dedupe_key) DO NOTHING
+        """)
+    int insertVaultInvitationNotification(
+        @Param("id") UUID id,
+        @Param("email") String email,
+        @Param("vaultId") UUID vaultId,
+        @Param("vaultName") String vaultName,
+        @Param("invitationId") UUID invitationId
+    );
+
+    @Insert("""
+        INSERT INTO notifications (
             id, user_id, type, title, body, device_id, resource_id, dedupe_key
         )
         SELECT gen_random_uuid(), m.user_id, 'LAUGHTER_VIDEO_READY',
@@ -52,7 +73,8 @@ public interface NotificationMapper {
     );
 
     @Select("""
-        SELECT id, type::text, title, body, device_id, resource_id, read_at, created_at
+        SELECT id, type::text, title, body, device_id, vault_id,
+               resource_id, read_at, created_at
           FROM notifications
          WHERE user_id = #{userId}
          ORDER BY created_at DESC, id DESC
