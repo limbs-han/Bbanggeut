@@ -1,6 +1,7 @@
 name: william-james-jenkins
 
 x-agent-common: &agent-common
+  init: true
   restart: unless-stopped
   depends_on:
     jenkins:

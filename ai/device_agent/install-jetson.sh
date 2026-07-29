@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR=/opt/william-james/device-agent
 CONFIG_DIR=/etc/william-james
 SERVICE_USER=williamjames
+DEPLOYED_COMMIT_FILE="$INSTALL_DIR/DEPLOYED_COMMIT"
 
 for command in python3 ffmpeg openssl ssh; do
     if ! command -v "$command" >/dev/null 2>&1; then
@@ -38,8 +39,18 @@ install -m 0755 "$SCRIPT_DIR/configure-jetson-rtsps.sh" \
     "$INSTALL_DIR/configure-jetson-rtsps.sh"
 install -m 0755 "$SCRIPT_DIR/verify-mediamtx-rtsps.sh" \
     "$INSTALL_DIR/verify-mediamtx-rtsps.sh"
+install -m 0755 "$SCRIPT_DIR/diagnose-mediamtx-publish.sh" \
+    "$INSTALL_DIR/diagnose-mediamtx-publish.sh"
 install -m 0755 "$SCRIPT_DIR/registration-button.sh" "$INSTALL_DIR/registration-button.sh"
 install -m 0644 "$SCRIPT_DIR/registration_button.py" "$INSTALL_DIR/registration_button.py"
+
+if [[ -s "$DEPLOYED_COMMIT_FILE" ]]; then
+    install -m 0644 "$DEPLOYED_COMMIT_FILE" "$INSTALL_DIR/PREVIOUS_DEPLOYED_COMMIT"
+fi
+if deployed_commit="$(git -C "$SCRIPT_DIR" rev-parse --verify HEAD 2>/dev/null)"; then
+    printf '%s\n' "$deployed_commit" >"$DEPLOYED_COMMIT_FILE"
+    chmod 0644 "$DEPLOYED_COMMIT_FILE"
+fi
 
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install --disable-pip-version-check \
@@ -67,8 +78,11 @@ Installed, but services were not started because credentials must be supplied.
 
 1. Edit /etc/william-james/device-agent.env.
 2. Install the MQTT CA and verified MediaMTX CA certificate.
-3. Run configure-jetson-rtsps.sh to enter the publish credential without shell history.
+3. Run configure-jetson-rtsps.sh with the protected credentials env file.
 4. Keep the SSH key and known_hosts files only for rollback.
 5. Run: sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
-6. Run: sudo systemctl start wj-media-source wj-device-agent
+6. Run diagnose-mediamtx-publish.sh before restarting the agent.
+7. Start or restart wj-device-agent only after MQTT v2 ACL validation.
+DEPLOYED_COMMIT records the installed Git revision; PREVIOUS_DEPLOYED_COMMIT
+records the prior one for an explicit checkout-and-reinstall rollback.
 EOF

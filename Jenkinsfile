@@ -6,6 +6,7 @@ pipeline {
         copyArtifactPermission('/Production/S15P11E201-backend-deploy')
         disableConcurrentBuilds(abortPrevious: true)
         gitLabConnection('s15p11e201-gitlab-api')
+        parallelsAlwaysFailFast()
         skipDefaultCheckout(true)
         timestamps()
         timeout(time: 45, unit: 'MINUTES')
@@ -33,10 +34,10 @@ pipeline {
                         label 'backend'
                     }
                     steps {
-                        deleteDir()
-                        checkout scm
-                        sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
                         gitlabCommitStatus(name: 'ci/backend') {
+                            deleteDir()
+                            checkout scm
+                            sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
                             sh 'bash ci/jenkins/scripts/test-deploy-jar-validation.sh'
                             sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
                             sh 'bash ci/jenkins/scripts/package-backend-deploy.sh backend-deploy.tar.gz'
@@ -68,9 +69,9 @@ pipeline {
                         label 'frontend'
                     }
                     steps {
-                        deleteDir()
-                        checkout scm
                         gitlabCommitStatus(name: 'ci/frontend') {
+                            deleteDir()
+                            checkout scm
                             dir('frontend') {
                                 sh 'flutter pub get'
                                 sh 'flutter analyze'
@@ -99,9 +100,9 @@ pipeline {
                         label 'device'
                     }
                     steps {
-                        deleteDir()
-                        checkout scm
                         gitlabCommitStatus(name: 'ci/device') {
+                            deleteDir()
+                            checkout scm
                             dir('ai/device_agent') {
                                 sh 'python3 -m venv .venv-ci'
                                 sh '.venv-ci/bin/python -m pip install -r requirements.txt'
