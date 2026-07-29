@@ -21,6 +21,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 class InvitationMapperIntegrationTest {
+    private static final String TEST_SCHEMA = "invitation_mapper_test";
     private static final UUID USER_ID =
         UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID VAULT_ID =
@@ -51,9 +52,11 @@ class InvitationMapperIntegrationTest {
             username = postgres.getUsername();
             password = postgres.getPassword();
         }
+        jdbcUrl = withCurrentSchema(jdbcUrl, TEST_SCHEMA);
 
         Flyway.configure()
             .dataSource(jdbcUrl, username, password)
+            .schemas(TEST_SCHEMA)
             .load()
             .migrate();
 
@@ -115,5 +118,9 @@ class InvitationMapperIntegrationTest {
             throw new IllegalStateException(name + " must be set");
         }
         return value;
+    }
+
+    private static String withCurrentSchema(String url, String schema) {
+        return url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema;
     }
 }
