@@ -215,7 +215,8 @@ public interface InvitationMapper {
 
     @Select("""
         SELECT m.id, m.device_id, m.user_id, u.email, u.display_name,
-               m.role::text, m.status::text, m.joined_at
+               m.role::text, m.status::text, m.joined_at,
+               NULL::uuid AS vault_id
           FROM device_memberships m
           JOIN users u ON u.id = m.user_id
          WHERE m.device_id = #{deviceId} AND m.user_id = #{userId}
@@ -227,7 +228,8 @@ public interface InvitationMapper {
 
     @Select("""
         SELECT m.id, m.device_id, m.user_id, u.email, u.display_name,
-               m.role::text, m.status::text, m.joined_at
+               m.role::text, m.status::text, m.joined_at,
+               NULL::uuid AS vault_id
           FROM device_memberships m
           JOIN users u ON u.id = m.user_id
          WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'
@@ -237,7 +239,8 @@ public interface InvitationMapper {
 
     @Select("""
         SELECT m.id, m.device_id, m.user_id, u.email, u.display_name,
-               m.role::text, m.status::text, m.joined_at
+               m.role::text, m.status::text, m.joined_at,
+               NULL::uuid AS vault_id
           FROM device_memberships m
           JOIN users u ON u.id = m.user_id
          WHERE m.id = #{membershipId} AND m.device_id = #{deviceId}
