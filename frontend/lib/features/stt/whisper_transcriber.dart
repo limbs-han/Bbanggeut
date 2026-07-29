@@ -25,7 +25,7 @@ class WhisperTranscriber {
   WhisperTranscriber({
     required this.modelPath,
     this.localeTag = 'ko',
-    this.threads = 4,
+    this.threads = 6,
     Whisper? whisper,
   }) : _whisper = whisper ?? const Whisper(model: WhisperModel.small);
 
@@ -36,15 +36,16 @@ class WhisperTranscriber {
   /// whisper 언어 코드 — 지역 접미사 없이 'ko'.
   final String localeTag;
 
-  /// 추론 스레드 수.
+  /// 추론 스레드 수. 갤럭시 S24에서 같은 영상(발화 37초)으로 실측했다:
   ///
-  /// **올리지 말 것.** 갤럭시 S24에서 같은 영상으로 실측했다:
+  ///   4개 → 73초 / 68초
+  ///   6개 → 56초              ← 약 18% 빠르다
   ///
-  ///   4개 → 73초, 124자
-  ///   6개 → 56초,  63자   ← 23% 빨라지지만 대사를 절반 놓친다
+  /// **알아듣는 양은 스레드와 무관했다.** 6개에서 글자가 줄어 스레드를 의심했지만,
+  /// 4개로 되돌려도 같은 글자 수가 나왔다. 그 변화의 원인은 따로 있다(미해결).
   ///
-  /// 속도보다 알아듣는 양이 중요하다. 값을 바꾸면 **같은 영상으로 글자 수까지**
-  /// 다시 재야 한다 — 시간만 보면 개선으로 착각한다.
+  /// 값을 바꿀 때는 **같은 영상으로 시간과 글자 수를 함께** 재라. 시간만 보면
+  /// 개선으로 착각한다 — 실제로 한 번 그렇게 잘못 짚었다.
   final int threads;
 
   final Whisper _whisper;
