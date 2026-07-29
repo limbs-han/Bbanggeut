@@ -6,6 +6,11 @@ set -euo pipefail
 : "${TEST_POSTGRES_ADMIN_DATABASE:?TEST_POSTGRES_ADMIN_DATABASE is required}"
 : "${TEST_POSTGRES_ADMIN_USER:?TEST_POSTGRES_ADMIN_USER is required}"
 : "${TEST_POSTGRES_PASSWORD_FILE:?TEST_POSTGRES_PASSWORD_FILE is required}"
+# 없으면 로그인 시도 제한 통합 테스트가 실패가 아니라 건너뛰기로 지나갑니다.
+# 동시 요청 우회를 막았다는 보장이 조용히 검증되지 않는 상태가 되므로
+# 선택 사항으로 두지 않습니다.
+: "${TEST_REDIS_HOST:?TEST_REDIS_HOST is required}"
+: "${TEST_REDIS_PORT:?TEST_REDIS_PORT is required}"
 : "${BUILD_NUMBER:?BUILD_NUMBER is required}"
 : "${JOB_NAME:?JOB_NAME is required}"
 

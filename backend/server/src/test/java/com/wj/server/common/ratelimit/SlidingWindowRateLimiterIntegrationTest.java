@@ -41,8 +41,9 @@ class SlidingWindowRateLimiterIntegrationTest {
     static void startRedis() {
         String externalHost = System.getenv("TEST_REDIS_HOST");
         if (externalHost != null && !externalHost.isBlank()) {
-            connectionFactory = connectionFactory(
-                externalHost, Integer.parseInt(requiredEnvironment("TEST_REDIS_PORT")));
+            int externalPort = Integer.parseInt(requiredEnvironment("TEST_REDIS_PORT"));
+            connectionFactory = connectionFactory(externalHost, externalPort);
+            requireReachable(externalHost, externalPort);
             limiter = new SlidingWindowRateLimiter(template(connectionFactory));
             return;
         }
@@ -55,6 +56,20 @@ class SlidingWindowRateLimiterIntegrationTest {
         redis.start();
         connectionFactory = connectionFactory(redis.getHost(), redis.getMappedPort(6379));
         limiter = new SlidingWindowRateLimiter(template(connectionFactory));
+    }
+
+    /**
+     * The limiter deliberately allows an attempt it cannot check, so a CI Redis
+     * that is simply unreachable would surface here as a puzzling count
+     * mismatch further down. Fail on the actual cause instead.
+     */
+    private static void requireReachable(String host, int port) {
+        try (var connection = connectionFactory.getConnection()) {
+            connection.ping();
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException(
+                "TEST_REDIS_HOST=%s:%d 에 연결할 수 없습니다.".formatted(host, port), exception);
+        }
     }
 
     /**
