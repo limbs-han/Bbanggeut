@@ -132,8 +132,9 @@ SELECT d.id, d.id, 1,
             THEN 'ACTIVE'::device_binding_status
             ELSE 'DISCONNECTED'::device_binding_status END,
        COALESCE(d.claimed_at, d.created_at),
-       CASE WHEN d.status = 'REVOKED'
-            THEN COALESCE(d.revoked_at, d.updated_at) ELSE NULL END,
+       CASE WHEN d.status IN ('ONLINE', 'OFFLINE')
+            THEN NULL
+            ELSE COALESCE(d.revoked_at, d.updated_at) END,
        d.created_at, now()
   FROM devices d
  WHERE EXISTS (SELECT 1 FROM memory_vaults v WHERE v.id = d.id)

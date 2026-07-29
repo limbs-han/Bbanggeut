@@ -91,7 +91,7 @@ class FlywayMigrationIntegrationTest {
         var result = latestFlyway.migrate();
 
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("28");
+        assertThat(result.targetSchemaVersion).isEqualTo("29");
         try (var connection = DriverManager.getConnection(
             jdbcUrl, username, password);
              var statement = connection.prepareStatement(
