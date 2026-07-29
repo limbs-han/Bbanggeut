@@ -6,14 +6,15 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Locale;
 
-import com.wj.server.auth.persistence.LoginAttemptMapper;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.AuthProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.TransactionException;
 
 /**
  * Limits sign-in attempts per account and per address.
@@ -25,19 +26,21 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class LoginAttemptService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LoginAttemptService.class);
+
     private static final String EMAIL_KEY_PREFIX = "rl:login:email:";
     private static final String IP_KEY_PREFIX = "rl:login:ip:";
 
-    private final LoginAttemptMapper mapper;
+    private final LoginAttemptAuditWriter auditWriter;
     private final SlidingWindowRateLimiter rateLimiter;
     private final AuthProperties properties;
 
     public LoginAttemptService(
-        LoginAttemptMapper mapper,
+        LoginAttemptAuditWriter auditWriter,
         SlidingWindowRateLimiter rateLimiter,
         AuthProperties properties
     ) {
-        this.mapper = mapper;
+        this.auditWriter = auditWriter;
         this.rateLimiter = rateLimiter;
         this.properties = properties;
     }
@@ -75,21 +78,27 @@ public class LoginAttemptService {
     /**
      * Keeps a durable record of a rejected sign-in for later analysis.
      *
-     * <p>This is no longer what enforces the limit, so it runs only for
-     * attempts that were admitted and then failed rather than for every
-     * request. It stays in its own transaction because the surrounding sign-in
-     * transaction is rolled back by the error that follows.
+     * <p>Best effort on purpose. The limit is already enforced by this point,
+     * so a database that cannot take the audit row must not turn a rejected
+     * password into a server error for the user.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordFailure(String email, String ipAddress) {
-        mapper.insertFailure(fingerprint(email), fingerprint(ipAddress));
+        try {
+            auditWriter.write(digest(email), digest(ipAddress));
+        } catch (DataAccessException | TransactionException exception) {
+            LOGGER.warn("Could not record a failed sign-in attempt", exception);
+        }
     }
 
     private String fingerprint(String value) {
+        return HexFormat.of().formatHex(digest(value));
+    }
+
+    private byte[] digest(String value) {
         String normalized = value == null ? "unknown" : value.trim().toLowerCase(Locale.ROOT);
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest(normalized.getBytes(StandardCharsets.UTF_8)));
+            return MessageDigest.getInstance("SHA-256")
+                .digest(normalized.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }

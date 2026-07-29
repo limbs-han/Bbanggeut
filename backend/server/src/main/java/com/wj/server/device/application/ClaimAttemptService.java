@@ -10,11 +10,12 @@ import java.util.UUID;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.DeviceClaimProperties;
-import com.wj.server.device.persistence.ClaimAttemptMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.TransactionException;
 
 /**
  * Rate limits claim attempts per account and per IP. A wrong registration code
@@ -26,19 +27,21 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ClaimAttemptService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClaimAttemptService.class);
+
     private static final String USER_KEY_PREFIX = "rl:claim:user:";
     private static final String IP_KEY_PREFIX = "rl:claim:ip:";
 
-    private final ClaimAttemptMapper mapper;
+    private final ClaimAttemptAuditWriter auditWriter;
     private final SlidingWindowRateLimiter rateLimiter;
     private final DeviceClaimProperties properties;
 
     public ClaimAttemptService(
-        ClaimAttemptMapper mapper,
+        ClaimAttemptAuditWriter auditWriter,
         SlidingWindowRateLimiter rateLimiter,
         DeviceClaimProperties properties
     ) {
-        this.mapper = mapper;
+        this.auditWriter = auditWriter;
         this.rateLimiter = rateLimiter;
         this.properties = properties;
     }
@@ -67,21 +70,27 @@ public class ClaimAttemptService {
     }
 
     /**
-     * Durable record of a rejected claim, kept for incident analysis rather
-     * than for enforcement. Runs in its own transaction because the claim
-     * transaction is rolled back by the rejection that follows.
+     * Best effort audit record. The limit has already been enforced, so a
+     * database that cannot take this row must not change the answer the caller
+     * receives.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordFailure(UUID userId, String ipAddress) {
-        mapper.insertFailure(userId, fingerprint(ipAddress));
+        try {
+            auditWriter.write(userId, digest(ipAddress));
+        } catch (DataAccessException | TransactionException exception) {
+            LOGGER.warn("Could not record a failed device claim attempt", exception);
+        }
     }
 
     private String fingerprint(String value) {
+        return HexFormat.of().formatHex(digest(value));
+    }
+
+    private byte[] digest(String value) {
         String normalized = value == null ? "unknown" : value.trim().toUpperCase(Locale.ROOT);
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
+            return MessageDigest.getInstance("SHA-256")
                 .digest(normalized.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
