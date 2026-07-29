@@ -11,6 +11,19 @@ public record MembershipRow(
     String displayName,
     String role,
     String status,
-    Instant joinedAt
+    Instant joinedAt,
+    UUID vaultId
 ) {
+    public MembershipRow(
+        UUID id,
+        UUID deviceId,
+        UUID userId,
+        String email,
+        String displayName,
+        String role,
+        String status,
+        Instant joinedAt
+    ) {
+        this(id, deviceId, userId, email, displayName, role, status, joinedAt, null);
+    }
 }

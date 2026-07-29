@@ -17,7 +17,8 @@ public class AuditWriter {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void write(AuditEvent event) {
         mapper.insert(
-            event.deviceId(), event.actorUserId(), event.actorDeviceId(), event.action(),
+            event.deviceId(), event.vaultId(), event.actorUserId(),
+            event.actorDeviceId(), event.action(),
             event.targetType(), event.targetId(), event.outcome(), event.reasonCode(),
             event.ipAddress(), event.userAgent(), event.requestId());
     }

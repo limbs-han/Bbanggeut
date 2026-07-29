@@ -98,7 +98,9 @@ public class DeviceService {
                 vaultId = UUID.randomUUID();
                 vaultMapper.insertVault(
                     vaultId,
-                    requestedName == null ? "나의 추억" : requestedName);
+                    request.vaultName() == null
+                        ? "나의 추억"
+                        : request.vaultName().trim());
                 vaultMapper.insertOwner(vaultId, userId);
             } else {
                 String role = vaultMapper.findActiveRole(userId, vaultId)
@@ -216,7 +218,6 @@ public class DeviceService {
             || deviceMapper.markUnclaimed(deviceId) != 1) {
             throw notFound();
         }
-        deviceMapper.cancelPendingInvitations(deviceId);
         deviceMapper.revokeAllMemberships(deviceId, userId);
         auditService.success(deviceId, userId, "DEVICE_REVOKE", "DEVICE", deviceId);
     }
