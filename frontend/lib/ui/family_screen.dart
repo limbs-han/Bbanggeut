@@ -54,7 +54,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final device = controller.selectedDevice!;
+    final vault = controller.selectedVault!;
+    final device = controller.selectedDevice;
     return AppBackdrop(
       child: CustomScrollView(
         key: const PageStorageKey('family-scroll'),
@@ -72,10 +73,40 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         const Spacer(),
                         Expanded(
                           flex: 4,
-                          child: Text(
-                            '우리 가족',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleLarge,
+                          child: PopupMenuButton<String>(
+                            key: const Key('family-vault-selector'),
+                            initialValue: vault.id,
+                            tooltip: '관리할 Vault 변경',
+                            onSelected: (vaultId) {
+                              final next = controller.vaults.firstWhere(
+                                (item) => item.id == vaultId,
+                              );
+                              controller.selectVault(next);
+                            },
+                            itemBuilder: (_) => controller.vaults
+                                .map(
+                                  (item) => PopupMenuItem(
+                                    value: item.id,
+                                    child: Text(item.name),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    vault.name,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
+                                  ),
+                                ),
+                                if (controller.vaults.length > 1)
+                                  const Icon(Icons.swap_horiz_rounded),
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(width: 70),
@@ -106,9 +137,9 @@ class _FamilyScreenState extends State<FamilyScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'HOME CAMERA',
-                                  style: TextStyle(
+                                Text(
+                                  device == null ? 'MEMORY VAULT' : 'HOME CAMERA',
+                                  style: const TextStyle(
                                     fontSize: 9,
                                     color: AppColors.inkSoft,
                                     fontWeight: FontWeight.w900,
@@ -116,14 +147,16 @@ class _FamilyScreenState extends State<FamilyScreen> {
                                   ),
                                 ),
                                 Text(
-                                  device.name,
+                                  device?.name ?? vault.name,
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
                                 Text(
-                                  '● ${controller.deviceStatus?.isOnline == true ? '온라인' : '오프라인'} · ${device.model}',
+                                  device == null
+                                      ? '● 기기 연결 없음 · 과거 영상과 구성원은 유지됩니다'
+                                      : '● ${controller.deviceStatus?.isOnline == true ? '온라인' : '오프라인'} · ${device.model}',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: AppColors.inkSoft,
@@ -170,7 +203,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         }).toList(),
                       ),
                     ),
-                    if (device.isOwner &&
+                    if (vault.isOwner &&
                         controller.sentInvitations.isNotEmpty) ...[
                       const SizedBox(height: 18),
                       const Text(
@@ -189,7 +222,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         ),
                       ),
                     ],
-                    if (device.isOwner) ...[
+                    if (vault.isOwner) ...[
                       const SizedBox(height: 18),
                       SoftCard(
                         color: AppColors.greenCard,
@@ -299,7 +332,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
       showAppSnack(context, '올바른 이메일 주소를 입력해 주세요.', error: true);
       return;
     }
-    final ok = await controller.createInvitation(email, 'VIEWER');
+    final ok = await controller.createInvitation(email, 'MEMBER');
     if (!mounted) return;
     if (ok) {
       inviteEmail.clear();
@@ -360,12 +393,14 @@ class _MemberTile extends StatelessWidget {
           StatusPill(
             label: switch (member.role) {
               'OWNER' => '소유자',
+              'MEMBER' => '구성원',
               'EDITOR' => '편집자',
               _ => '뷰어',
             },
             color: AppColors.sageSoft,
           ),
-          if (member.role != 'OWNER' && controller.selectedDevice!.isOwner)
+          if (member.role != 'OWNER' &&
+              controller.selectedVault?.isOwner == true)
             PopupMenuButton<String>(
               onSelected: (action) =>
                   action == 'transfer' ? _transfer(context) : _revoke(context),
@@ -385,7 +420,7 @@ class _MemberTile extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('소유권을 넘길까요?'),
         content: Text(
-          '${member.user.displayName}님이 새 OWNER가 되고 나는 EDITOR가 됩니다.',
+          '${member.user.displayName}님이 새 OWNER가 되고 나는 MEMBER가 됩니다.',
         ),
         actions: [
           TextButton(
@@ -401,11 +436,10 @@ class _MemberTile extends StatelessWidget {
     );
     if (confirmed == true) {
       try {
-        await controller.api.transferOwnership(
-          controller.selectedDevice!.id,
-          member.id,
-        );
-        await controller.refreshAll();
+        final ok = await controller.transferOwnership(member);
+        if (!ok) {
+          throw controller.errorMessage ?? '소유권을 이전하지 못했어요.';
+        }
         if (context.mounted) showAppSnack(context, '소유권을 이전했어요.');
       } catch (failure) {
         if (context.mounted) showAppSnack(context, '$failure', error: true);

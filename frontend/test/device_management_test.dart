@@ -143,6 +143,35 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('기기 등록 전에 기존 Vault와 새 Vault를 명시적으로 선택한다', (
+    tester,
+  ) async {
+    final controller = AppController()
+      ..vaults = const [_ReleaseApiClient.vaultWithoutDevice]
+      ..selectedVault = _ReleaseApiClient.vaultWithoutDevice;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: DeviceRegistrationScreen(controller: controller),
+      ),
+    );
+
+    expect(find.byKey(const Key('vault-connection-choice')), findsOneWidget);
+    expect(find.text('기존 구성원과 과거 영상을 그대로 함께 사용해요.'), findsOneWidget);
+    expect(find.byKey(const Key('existing-vault-selector')), findsOneWidget);
+
+    await tester.tap(find.text('새 Vault'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('new-vault-name')), findsOneWidget);
+    expect(find.text('기존 Vault와 완전히 분리된 새 공간을 만들어요.'), findsOneWidget);
+    expect(
+      find.textContaining('연결 중에는 Vault를 바꿀 수 없어요'),
+      findsOneWidget,
+    );
+    controller.dispose();
+  });
+
   test('이메일 초대 응답을 기기와 초대한 사람 정보까지 파싱한다', () {
     final invitation = Invitation.fromJson({
       'id': 'invitation-1',
@@ -203,6 +232,10 @@ void main() {
         'archived-memory',
       ]);
       expect(api.requestedVaultIds, {'archived-vault', 'connected-vault'});
+
+      await controller.selectVault(controller.vaults.first);
+      expect(controller.selectedVault?.id, 'archived-vault');
+      expect(controller.selectedDevice, isNull);
       controller.dispose();
     },
   );
@@ -301,6 +334,14 @@ class _MultipleVaultApiClient extends ApiClient {
       const [];
 
   @override
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
+      const [];
+
+  @override
+  Future<List<Invitation>> listVaultInvitations(String vaultId) async =>
+      const [];
+
+  @override
   Future<HomeSummary> getHomeSummary(String id) async =>
       const HomeSummary(captureCount: 1, savedCount: 1, memoCount: 0);
 }
@@ -363,6 +404,14 @@ class _ReleaseApiClient extends ApiClient {
       favorite: false,
     ),
   ];
+
+  @override
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
+      const [];
+
+  @override
+  Future<List<Invitation>> listVaultInvitations(String vaultId) async =>
+      const [];
 }
 
 class _FailingLogoutApiClient extends ApiClient {
@@ -455,6 +504,10 @@ class _AcceptInvitationApiClient extends ApiClient {
 
   @override
   Future<List<DeviceMember>> listMembers(String deviceId) async => const [];
+
+  @override
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
+      const [];
 
   @override
   Future<HomeSummary> getHomeSummary(String id) async =>
