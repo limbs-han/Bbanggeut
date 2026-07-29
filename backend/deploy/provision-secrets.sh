@@ -72,5 +72,9 @@ FFMPEG_PATH=/usr/bin/ffmpeg
 EOF
 fi
 
+if ! grep -q '^WEBRTC_BASE_URL=' "$APP_ENV"; then
+  printf '%s\n' 'WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live' >>"$APP_ENV"
+fi
+
 chmod 600 "$INFRA_ENV" "$APP_ENV"
 echo "Secret files are present with mode 600; values were not printed."
