@@ -38,6 +38,11 @@ fi
 : "${LOCAL_MQTT_PORT:=1883}"
 : "${YOLO_DEADZONE_WIDTH:=0.08}"
 : "${YOLO_DEADZONE_HEIGHT:=0.08}"
+: "${SERVO_DASHBOARD_HOST:=0.0.0.0}"
+: "${SERVO_DASHBOARD_PORT:=8765}"
+: "${SERVO_DASHBOARD_FRAME_WIDTH:=960}"
+: "${SERVO_DASHBOARD_JPEG_QUALITY:=72}"
+: "${SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS:=0.2}"
 : "${YAMNET_SCORE_AGGREGATION:=mean}"
 : "${YAMNET_THRESHOLD:=0.125}"
 : "${YAMNET_CONSECUTIVE:=3}"
@@ -155,6 +160,12 @@ YOLO_COMMAND=(
     --deadzone-width "$YOLO_DEADZONE_WIDTH"
     --deadzone-height "$YOLO_DEADZONE_HEIGHT"
     --control-output "${RUN_DIR}/autoframe_commands.jsonl"
+    --dashboard-host "$SERVO_DASHBOARD_HOST"
+    --dashboard-port "$SERVO_DASHBOARD_PORT"
+    --dashboard-log "${RUN_DIR}/servo_dashboard.jsonl"
+    --dashboard-frame-width "$SERVO_DASHBOARD_FRAME_WIDTH"
+    --dashboard-jpeg-quality "$SERVO_DASHBOARD_JPEG_QUALITY"
+    --dashboard-frame-interval "$SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS"
 )
 MQTT_HOST= "${YOLO_COMMAND[@]}" \
     > >(sed -u 's/^/[YOLO] /' | tee -a "${RUN_DIR}/yolo.log") 2>&1 &
