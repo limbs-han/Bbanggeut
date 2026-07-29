@@ -188,6 +188,121 @@ void main() {
     expect(controller.selectedDevice?.id, invitation.deviceId);
     controller.dispose();
   });
+  test(
+    'refresh selects a connected vault and combines every accessible vault',
+    () async {
+      final api = _MultipleVaultApiClient();
+      final controller = AppController(api: api);
+
+      await controller.refreshVaults();
+
+      expect(controller.selectedVault?.id, 'connected-vault');
+      expect(controller.selectedDevice?.id, 'current-device');
+      expect(controller.videos.map((video) => video.id), [
+        'current-memory',
+        'archived-memory',
+      ]);
+      expect(api.requestedVaultIds, {'archived-vault', 'connected-vault'});
+      controller.dispose();
+    },
+  );
+}
+
+class _MultipleVaultApiClient extends ApiClient {
+  final Set<String> requestedVaultIds = {};
+
+  static const currentDevice = DeviceSummary(
+    id: 'current-device',
+    name: 'Current camera',
+    model: 'test',
+    status: 'ONLINE',
+    myRole: 'OWNER',
+    retentionDays: 30,
+  );
+
+  @override
+  Future<List<MemoryVault>> listVaults() async => const [
+    MemoryVault(
+      id: 'archived-vault',
+      name: 'Archive',
+      status: 'ACTIVE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+      subscriptionActive: false,
+      devices: [],
+    ),
+    MemoryVault(
+      id: 'connected-vault',
+      name: 'Current',
+      status: 'ACTIVE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+      subscriptionActive: false,
+      devices: [
+        VaultDevice(
+          bindingId: 'current-binding',
+          generation: 1,
+          device: currentDevice,
+        ),
+      ],
+    ),
+  ];
+
+  @override
+  Future<DeviceStatus> getDeviceStatus(String id) async => const DeviceStatus(
+    status: 'ONLINE',
+    recording: false,
+    uploadQueueDepth: 0,
+  );
+
+  @override
+  Future<VideoStats> getVideoStats(String id) async =>
+      const VideoStats(totalCount: 1, byTriggerType: {});
+
+  @override
+  Future<List<VideoMemory>> listAllVaultVideos(
+    String vaultId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    requestedVaultIds.add(vaultId);
+    if (vaultId == 'connected-vault') {
+      return [
+        VideoMemory(
+          id: 'current-memory',
+          deviceId: 'current-device',
+          triggerType: 'MANUAL',
+          title: 'Current memory',
+          status: 'READY',
+          favorite: false,
+          capturedStartAt: DateTime.utc(2026, 7, 29),
+        ),
+      ];
+    }
+    return [
+      VideoMemory(
+        id: 'archived-memory',
+        deviceId: 'old-device',
+        triggerType: 'MANUAL',
+        title: 'Archived memory',
+        status: 'READY',
+        favorite: false,
+        capturedStartAt: DateTime.utc(2026, 7, 28),
+      ),
+    ];
+  }
+
+  @override
+  Future<List<DeviceMember>> listMembers(String deviceId) async => const [];
+
+  @override
+  Future<List<Invitation>> listDeviceInvitations(String deviceId) async =>
+      const [];
+
+  @override
+  Future<HomeSummary> getHomeSummary(String id) async =>
+      const HomeSummary(captureCount: 1, savedCount: 1, memoCount: 0);
 }
 
 class _ReleaseApiClient extends ApiClient {
@@ -306,11 +421,7 @@ class _AcceptInvitationApiClient extends ApiClient {
       retentionDays: 30,
       subscriptionActive: false,
       devices: [
-        VaultDevice(
-          bindingId: 'binding-1',
-          generation: 1,
-          device: device,
-        ),
+        VaultDevice(bindingId: 'binding-1', generation: 1, device: device),
       ],
     ),
   ];
