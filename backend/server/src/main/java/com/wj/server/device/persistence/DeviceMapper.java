@@ -41,19 +41,35 @@ public interface DeviceMapper {
     @Insert("""
         INSERT INTO device_memberships (device_id, user_id, role, status)
         VALUES (#{deviceId}, #{userId}, 'OWNER', 'ACTIVE')
+        ON CONFLICT (device_id, user_id) DO UPDATE
+            SET role = 'OWNER', status = 'ACTIVE', joined_at = now(),
+                revoked_at = NULL, revoked_by = NULL, updated_at = now()
         """)
     int insertOwnerMembership(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
+
+    @Insert("""
+        INSERT INTO device_memberships (device_id, user_id, role, status, joined_at)
+        SELECT #{deviceId}, vm.user_id, vm.role, 'ACTIVE', vm.joined_at
+          FROM device_bindings b
+          JOIN vault_memberships vm ON vm.vault_id = b.vault_id
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+           AND vm.status = 'ACTIVE'
+        ON CONFLICT (device_id, user_id) DO UPDATE
+            SET role = EXCLUDED.role, status = 'ACTIVE',
+                revoked_at = NULL, revoked_by = NULL, updated_at = now()
+        """)
+    int syncMembershipsFromVault(@Param("deviceId") UUID deviceId);
 
     @Select("""
         SELECT d.id, d.name, d.model, d.status, m.role AS my_role,
                d.retention_days, d.last_seen_at, d.serial_number,
                d.firmware_version, d.claimed_at
           FROM devices d
-          JOIN device_memberships m ON m.device_id = d.id
-         WHERE m.user_id = #{userId}
-           AND m.status = 'ACTIVE'
-           AND d.status <> 'REVOKED'
-         ORDER BY m.joined_at DESC, d.id DESC
+          JOIN device_bindings b ON b.device_id = d.id AND b.status = 'ACTIVE'
+          JOIN vault_memberships m ON m.vault_id = b.vault_id
+         WHERE m.user_id = #{userId} AND m.status = 'ACTIVE'
+           AND d.status IN ('ONLINE', 'OFFLINE')
+         ORDER BY b.bound_at DESC, d.id DESC
         """)
     List<DeviceViewRow> findAccessibleDevices(@Param("userId") UUID userId);
 
@@ -62,11 +78,12 @@ public interface DeviceMapper {
                d.retention_days, d.last_seen_at, d.serial_number,
                d.firmware_version, d.claimed_at
           FROM devices d
-          JOIN device_memberships m ON m.device_id = d.id
+          JOIN device_bindings b ON b.device_id = d.id AND b.status = 'ACTIVE'
+          JOIN vault_memberships m ON m.vault_id = b.vault_id
          WHERE d.id = #{deviceId}
            AND m.user_id = #{userId}
            AND m.status = 'ACTIVE'
-           AND d.status <> 'REVOKED'
+           AND d.status IN ('ONLINE', 'OFFLINE')
         """)
     Optional<DeviceViewRow> findAccessibleDevice(
         @Param("userId") UUID userId,
@@ -78,9 +95,10 @@ public interface DeviceMapper {
                d.retention_days, d.last_seen_at, d.serial_number,
                d.firmware_version, d.claimed_at
           FROM devices d
-          JOIN device_memberships m ON m.device_id = d.id
+          JOIN device_bindings b ON b.device_id = d.id AND b.status = 'ACTIVE'
+          JOIN vault_memberships m ON m.vault_id = b.vault_id
          WHERE d.id = #{deviceId} AND m.user_id = #{userId}
-           AND m.status = 'ACTIVE' AND d.status != 'REVOKED'
+           AND m.status = 'ACTIVE' AND d.status IN ('ONLINE', 'OFFLINE')
          FOR UPDATE OF d
         """)
     Optional<DeviceViewRow> lockAccessibleDevice(
@@ -115,9 +133,10 @@ public interface DeviceMapper {
         SELECT d.id AS device_id, d.status, d.recording,
                d.upload_queue_depth, d.buffer_seconds, d.person_count
           FROM devices d
-          JOIN device_memberships m ON m.device_id = d.id
+          JOIN device_bindings b ON b.device_id = d.id AND b.status = 'ACTIVE'
+          JOIN vault_memberships m ON m.vault_id = b.vault_id
          WHERE d.id = #{deviceId} AND m.user_id = #{userId}
-           AND m.status = 'ACTIVE' AND d.status != 'REVOKED'
+           AND m.status = 'ACTIVE' AND d.status IN ('ONLINE', 'OFFLINE')
         """)
     Optional<DeviceStatusRow> findAccessibleStatus(
         @Param("userId") UUID userId,
@@ -130,6 +149,15 @@ public interface DeviceMapper {
          WHERE id = #{deviceId} AND status IN ('ONLINE', 'OFFLINE')
         """)
     int markRevoked(@Param("deviceId") UUID deviceId);
+
+    @Update("""
+        UPDATE devices
+           SET status = 'UNCLAIMED', claimed_at = NULL, claimed_by = NULL,
+               revoked_at = NULL, registration_mode_expires_at = NULL,
+               recording = false, person_count = NULL, updated_at = now()
+         WHERE id = #{deviceId} AND status IN ('ONLINE', 'OFFLINE')
+        """)
+    int markUnclaimed(@Param("deviceId") UUID deviceId);
 
     @Update("""
         UPDATE device_memberships

@@ -112,10 +112,8 @@ public interface AuthMapper {
     @Select("""
         SELECT EXISTS (
             SELECT 1
-              FROM device_memberships m
-              JOIN devices d ON d.id = m.device_id
-             WHERE m.user_id = #{userId} AND m.role = 'OWNER' AND m.status = 'ACTIVE'
-               AND d.status != 'REVOKED'
+              FROM vault_memberships
+             WHERE user_id = #{userId} AND role = 'OWNER' AND status = 'ACTIVE'
         )
         """)
     boolean hasActiveOwnerMembership(@Param("userId") UUID userId);
@@ -126,6 +124,14 @@ public interface AuthMapper {
          WHERE user_id = #{userId} AND status = 'ACTIVE'
         """)
     int revokeAllMembershipsForUser(@Param("userId") UUID userId);
+
+    @Update("""
+        UPDATE vault_memberships
+           SET status = 'REVOKED', revoked_at = now(),
+               revoked_by = #{userId}, updated_at = now()
+         WHERE user_id = #{userId} AND status = 'ACTIVE'
+        """)
+    int revokeAllVaultMembershipsForUser(@Param("userId") UUID userId);
 
     @Update("""
         UPDATE auth_sessions
