@@ -12,7 +12,6 @@
 library;
 
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
@@ -20,12 +19,6 @@ import 'package:whisper_ggml_plus/whisper_ggml_plus.dart';
 import 'caption_line.dart';
 import 'pcm_wav.dart';
 import 'speech_analysis.dart';
-
-/// 진단용 — 침묵 제거를 끄고 원본 전체를 넘긴다.
-///
-/// 이어붙인 오디오가 인식률을 깎는지 확인할 때 쓴다. 같은 영상으로 켠 채와 끈
-/// 채의 **글자 수**를 비교한다. 느려지므로 평소에는 끈다.
-const sttSkipCondense = bool.fromEnvironment('STT_SKIP_CONDENSE');
 
 class WhisperTranscriber {
   WhisperTranscriber({
@@ -42,16 +35,12 @@ class WhisperTranscriber {
   /// whisper 언어 코드 — 지역 접미사 없이 'ko'.
   final String localeTag;
 
-  /// 추론 스레드 수. 갤럭시 S24에서 같은 영상(발화 37초)으로 실측했다:
-  ///
-  ///   4개 → 73초 / 68초
-  ///   6개 → 56초              ← 약 18% 빠르다
-  ///
-  /// **알아듣는 양은 스레드와 무관했다.** 6개에서 글자가 줄어 스레드를 의심했지만,
-  /// 4개로 되돌려도 같은 글자 수가 나왔다. 그 변화의 원인은 따로 있다(미해결).
+  /// 추론 스레드 수. 갤럭시 S24에서 같은 영상으로 실측했다 — 4개 68~73초,
+  /// 6개 56초로 약 18% 빠르다. **알아듣는 양은 스레드와 무관했다.**
   ///
   /// 값을 바꿀 때는 **같은 영상으로 시간과 글자 수를 함께** 재라. 시간만 보면
-  /// 개선으로 착각한다 — 실제로 한 번 그렇게 잘못 짚었다.
+  /// 개선으로 착각한다 — 한 번 그렇게 잘못 짚었다. 글자가 줄어든 것을 스레드
+  /// 탓으로 봤는데 진짜 원인은 발화 구간 이어붙이기였다(_hasSpeech 주석 참조).
   final int threads;
 
   final Whisper _whisper;
@@ -75,29 +64,27 @@ class WhisperTranscriber {
       throw StateError('whisper 모델 파일이 없습니다: $modelPath');
     }
 
-    // 침묵을 빼고 발화 구간만 이어붙여 넘긴다 — 처리량이 발화 비율만큼 줄고,
-    // 결과 시각을 원본 시간축으로 되돌릴 수 있게 매핑을 함께 만든다.
-    //
-    // 다만 이어붙인 오디오는 이음새마다 파형이 끊기고 문맥이 엉켜 인식률을
-    // 떨어뜨릴 수 있다. STT_SKIP_CONDENSE로 끄고 글자 수를 비교해 확인한다.
-    final condensed = sttSkipCondense ? null : await _condense(wavPath);
-    if (sttSkipCondense) {
-      debugPrint('[stt] 침묵 제거를 껐다 — 원본 전체를 넘긴다 (진단용)');
+    // 말소리가 아예 없으면 whisper를 돌리지 않는다. 120초 영상에 90초 넘게 걸리는
+    // 일을 헛되게 하지 않는다.
+    if (!await _hasSpeech(wavPath)) {
+      debugPrint('[stt] 말소리가 없어 전사를 건너뜁니다');
+      return const [];
     }
-    final target = condensed?.path ?? wavPath;
 
     final stopwatch = Stopwatch()..start();
     final WhisperTranscribeResponse response;
     try {
       response = await _whisper.transcribe(
         transcribeRequest: TranscribeRequest(
-          audio: target,
+          // 원본 전체를 넘긴다. 발화 구간만 잘라 이어붙이면 문맥이 끊겨 인식률이
+          // 무너진다 (아래 실측 참조).
+          audio: wavPath,
           language: localeTag,
           threads: threads,
           // 구간 시각이 필요하다 — 자막을 시각에 맞춰 띄워야 한다.
           isNoTimestamps: false,
           isTranslate: false,
-          // 우리가 이미 발화 구간을 골랐으므로 패키지 VAD는 끈다.
+          // 패키지 VAD는 끈다 — 우리가 말소리 유무만 미리 보고 통과시킨다.
           vadMode: WhisperVadMode.disabled,
           // ⚠ disabled일 때 패키지가 vadModelPath를 null로 남기는데
           // (bundled_vad_model_resolver.dart:19-20) 네이티브는 그 필드를
@@ -113,86 +100,44 @@ class WhisperTranscriber {
         '[stt] whisper 스택: ${stack.toString().split('\n').take(4).join(' | ')}',
       );
       rethrow;
-    } finally {
-      if (condensed != null && condensed.file.existsSync()) {
-        await condensed.file.delete();
-      }
     }
     stopwatch.stop();
 
-    final lines = _toLines(response, condensed);
+    final lines = _toLines(response);
     debugPrint(
       '[stt] whisper ${stopwatch.elapsed.inSeconds}초 줄=${lines.length} '
-      '글자=${lines.fold(0, (n, l) => n + l.text.length)}'
-      '${condensed == null ? "" : " (발화만 ${condensed.speechSeconds}s/${condensed.totalSeconds}s)"}',
+      '글자=${lines.fold(0, (n, l) => n + l.text.length)}',
     );
     return lines;
   }
 
-  /// 발화 구간만 이어붙인 WAV를 만든다. 실패하면 null — 원본으로 진행한다.
+  /// 말소리가 조금이라도 있는지 본다. 없으면 whisper를 돌릴 이유가 없다.
   ///
-  /// 왜 필요한가: 120초 클립 전체를 넘기면 갤럭시 S24에서 168초가 걸렸다.
-  /// 침묵을 빼면 109초로 줄었다. 잘라 붙이면 결과 시각이 원본과 달라지므로
-  /// 되돌릴 매핑을 함께 들고 나온다.
-  Future<_Condensed?> _condense(String wavPath) async {
+  /// **발화 구간만 잘라 이어붙이지는 않는다.** 갤럭시 S24에서 같은 영상으로
+  /// 실측했다:
+  ///
+  ///   이어붙임(발화 37s)  75초 → 원문 65자,  구간 2개
+  ///   원본 그대로(120s)   93초 → 원문 143자, 구간 5개
+  ///
+  /// 시간은 24% 늘지만 알아듣는 양이 2.2배다. whisper는 30초 창 단위로 처리하고
+  /// 침묵은 토큰이 거의 안 나와 빠르게 지나간다 — 미리 걷어내도 아끼는 시간이
+  /// 얼마 없는데, 이음새마다 파형이 끊기고 문맥이 엉켜 인식이 무너진다.
+  Future<bool> _hasSpeech(String wavPath) async {
     try {
       final wav = PcmWav.parse(await File(wavPath).readAsBytes());
-      final regions = detectSpeechRegions(wav);
-      if (regions.isEmpty) return null;
-
-      final pieces = <PcmWav>[];
-      final spans = <_Span>[];
-      var offset = Duration.zero;
-      for (final region in regions) {
-        // 경계에서 음절이 잘리면 인식이 무너진다. 앞뒤로 조금 넉넉히 잡는다.
-        final from = region.start - _pad < Duration.zero
-            ? Duration.zero
-            : region.start - _pad;
-        final to = region.end + _pad > wav.duration
-            ? wav.duration
-            : region.end + _pad;
-        final piece = sliceWav(wav, from, to);
-        if (piece.frameCount == 0) continue;
-        pieces.add(piece);
-        spans.add(_Span(condensedStart: offset, originalStart: from));
-        offset += piece.duration;
-      }
-      if (pieces.isEmpty) return null;
-
-      final merged = Int16List(pieces.fold(0, (n, p) => n + p.samples.length));
-      var at = 0;
-      for (final piece in pieces) {
-        merged.setRange(at, at + piece.samples.length, piece.samples);
-        at += piece.samples.length;
-      }
-      final condensedWav = PcmWav(
-        samples: merged,
-        sampleRate: wav.sampleRate,
-        channels: 1,
-      );
-
-      final out = File('$wavPath.speech.wav');
-      await out.writeAsBytes(encodeWav(condensedWav));
-      return _Condensed(
-        file: out,
-        spans: spans,
-        speechSeconds: condensedWav.duration.inSeconds,
-        totalSeconds: wav.duration.inSeconds,
-      );
+      return detectSpeechRegions(wav).isNotEmpty;
     } catch (error) {
-      debugPrint('[stt] 발화 구간 추출 실패, 원본으로 진행: $error');
-      return null;
+      // 판정에 실패하면 통과시킨다 — 여기서 막으면 멀쩡한 영상의 자막을 잃는다.
+      debugPrint('[stt] 말소리 판정 실패, 그대로 전사합니다: $error');
+      return true;
     }
   }
 
   /// whisper 응답을 자막 줄로 옮긴다.
   ///
   /// 구간 목록이 비어 있으면(모델이 시각을 안 준 경우) 빈 목록을 돌려준다.
-  /// 시각 없는 자막은 띄울 자리가 없어 쓸 수 없다 — 4컷 만화와 다른 점이다.
-  List<CaptionLine> _toLines(
-    WhisperTranscribeResponse response,
-    _Condensed? condensed,
-  ) {
+  /// 시각 없는 자막은 띄울 자리가 없어 쓸 수 없다.
+  List<CaptionLine> _toLines(WhisperTranscribeResponse response) {
     final raw = response.segments;
     if (raw == null || raw.isEmpty) {
       debugPrint('[stt] whisper가 구간 시각을 주지 않았습니다: "${response.text.trim()}"');
@@ -202,9 +147,8 @@ class WhisperTranscriber {
     for (final segment in raw) {
       final text = segment.text.trim();
       if (text.isEmpty) continue;
-      // 발화만 이어붙였다면 시각을 원본 시간축으로 되돌린다.
-      final start = condensed?.toOriginal(segment.fromTs) ?? segment.fromTs;
-      final end = condensed?.toOriginal(segment.toTs) ?? segment.toTs;
+      final start = segment.fromTs;
+      final end = segment.toTs;
       if (end <= start) continue;
       out.add(
         CaptionLine(
@@ -222,49 +166,5 @@ class WhisperTranscriber {
 
     // whisper는 문장 단위로 길게 끊어 준다. 자막으로 쓰려면 쪼개야 한다.
     return splitIntoLines(out);
-  }
-}
-
-/// 발화 구간 경계에서 음절이 잘리지 않도록 앞뒤로 두는 여유.
-const _pad = Duration(milliseconds: 200);
-
-/// 이어붙인 오디오의 한 조각이 원본에서 어디였는지.
-class _Span {
-  const _Span({required this.condensedStart, required this.originalStart});
-  final Duration condensedStart;
-  final Duration originalStart;
-}
-
-/// 발화만 모은 WAV와 원본 시간축 복원 정보.
-class _Condensed {
-  const _Condensed({
-    required this.file,
-    required this.spans,
-    required this.speechSeconds,
-    required this.totalSeconds,
-  });
-
-  final File file;
-  final List<_Span> spans;
-  final int speechSeconds;
-  final int totalSeconds;
-
-  String get path => file.path;
-
-  /// 이어붙인 시각을 원본 시각으로 되돌린다.
-  ///
-  /// 해당 시각이 속한 조각을 찾아, 그 조각 안에서의 상대 위치를 원본 시작점에
-  /// 더한다. 조각을 못 찾으면(경계 반올림 등) 첫 조각 기준으로 계산한다.
-  Duration toOriginal(Duration condensedAt) {
-    if (spans.isEmpty) return condensedAt;
-    var chosen = spans.first;
-    for (final span in spans) {
-      if (span.condensedStart <= condensedAt) {
-        chosen = span;
-      } else {
-        break;
-      }
-    }
-    return chosen.originalStart + (condensedAt - chosen.condensedStart);
   }
 }
