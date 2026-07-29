@@ -1,6 +1,12 @@
+from pathlib import Path
+import tempfile
 import unittest
 
-from wj_device_agent.configure_media import build_publish_url
+from wj_device_agent.configure_media import (
+    build_publish_url,
+    read_credentials_environment,
+    read_sha256_fingerprint,
+)
 
 
 class ConfigureMediaTest(unittest.TestCase):
@@ -40,6 +46,51 @@ class ConfigureMediaTest(unittest.TestCase):
             value,
             "rtsp://jetson:secret@127.0.0.1:18554/live/{stream_id}",
         )
+
+    def test_protected_credentials_environment_is_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            credentials = Path(directory) / "jetson-mediamtx-credentials.env"
+            credentials.write_text(
+                "MEDIAMTX_JETSON_PUBLISH_USER=wj-jetson-001\n"
+                "MEDIAMTX_JETSON_PUBLISH_PASSWORD=p@ss/word\n",
+                encoding="utf-8",
+            )
+            credentials.chmod(0o600)
+
+            self.assertEqual(
+                read_credentials_environment(credentials),
+                ("wj-jetson-001", "p@ss/word"),
+            )
+
+    def test_credentials_environment_requires_both_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            credentials = Path(directory) / "jetson-mediamtx-credentials.env"
+            credentials.write_text(
+                "MEDIAMTX_JETSON_PUBLISH_USER=wj-jetson-001\n",
+                encoding="utf-8",
+            )
+            credentials.chmod(0o600)
+
+            with self.assertRaisesRegex(ValueError, "must contain"):
+                read_credentials_environment(credentials)
+
+    def test_ca_fingerprint_file_is_normalized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fingerprint = Path(directory) / "mediamtx-ca.sha256"
+            fingerprint.write_text("ab" * 32 + "\n", encoding="utf-8")
+
+            self.assertEqual(
+                read_sha256_fingerprint(fingerprint),
+                ":".join(["AB"] * 32),
+            )
+
+    def test_invalid_ca_fingerprint_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fingerprint = Path(directory) / "mediamtx-ca.sha256"
+            fingerprint.write_text("not-a-fingerprint\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                read_sha256_fingerprint(fingerprint)
 
 
 if __name__ == "__main__":

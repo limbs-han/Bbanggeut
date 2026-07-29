@@ -3,37 +3,40 @@ import 'package:flutter/services.dart';
 
 /// Product palette sampled from the final Memory Home boards.
 abstract final class AppColors {
-  static const ink = Color(0xFF2D312B);
-  static const inkSoft = Color(0xFF353D34);
-  static const muted = Color(0xFF515B4E);
-  static const sage = Color(0xFFAEBB9C);
-  static const sageDark = Color(0xFF465F43);
-  static const sageSoft = Color(0xFFE9EFE3);
-  static const greenCard = Color(0xFFDDE8C9);
-  static const yellow = Color(0xFFF4CF63);
-  static const yellowSoft = Color(0xFFFFE9A7);
-  static const coral = Color(0xFFEB7772);
-  static const pink = Color(0xFFF7D9D5);
-  static const pinkSoft = Color(0xFFFFEFEC);
-  static const cream = Color(0xFFFBFAF4);
-  static const surface = Color(0xFFFFFEFA);
-  static const line = Color(0xFFE4E5DC);
-  static const danger = Color(0xFFDE6B68);
-  static const live = Color(0xFFFF6868);
-  static const online = Color(0xFF70AE69);
+  static const ink = Color(0xFF33291F);
+  static const inkSoft = Color(0xFF51473C);
+  static const muted = Color(0xFF81766A);
+  static const sage = Color(0xFFB8C38E);
+  static const sageDark = Color(0xFF6E7F45);
+  static const sageSoft = Color(0xFFF0F2DF);
+  static const greenCard = Color(0xFFE4E8C8);
+  static const yellow = Color(0xFFF3C36B);
+  static const yellowSoft = Color(0xFFFFE8B7);
+  static const coral = Color(0xFFF47B61);
+  static const coralDark = Color(0xFFDF634C);
+  static const coralSoft = Color(0xFFFFE3D9);
+  static const pink = Color(0xFFF8DAD0);
+  static const pinkSoft = Color(0xFFFFF0EA);
+  static const cream = Color(0xFFFFFAF1);
+  static const surface = Color(0xFFFFFDF8);
+  static const surfaceWarm = Color(0xFFFFF7EA);
+  static const line = Color(0xFFEDE2D3);
+  static const danger = Color(0xFFD95F54);
+  static const live = Color(0xFFFF665B);
+  static const online = Color(0xFF789652);
 
   // Compatibility aliases used by existing feature widgets.
-  static const primary = sageDark;
-  static const primaryDark = Color(0xFF50624C);
+  static const primary = coral;
+  static const primaryDark = coralDark;
   static const mint = sageSoft;
   static const peach = yellowSoft;
 }
 
 ThemeData buildTheme() {
   final scheme = ColorScheme.fromSeed(
-    seedColor: AppColors.sage,
+    seedColor: AppColors.coral,
     brightness: Brightness.light,
-    primary: AppColors.sageDark,
+    primary: AppColors.coral,
     surface: AppColors.surface,
     error: AppColors.danger,
   );
@@ -67,10 +70,10 @@ ThemeData buildTheme() {
     ),
     textTheme: const TextTheme(
       displaySmall: TextStyle(
-        fontSize: 38,
+        fontSize: 37,
         height: 1.12,
         fontWeight: FontWeight.w900,
-        letterSpacing: -2.2,
+        letterSpacing: -1.8,
         color: AppColors.ink,
       ),
       headlineMedium: TextStyle(
@@ -117,11 +120,11 @@ ThemeData buildTheme() {
     ),
     cardTheme: const CardThemeData(
       color: AppColors.surface,
-      elevation: 0,
-      shadowColor: Color(0x15000000),
+      elevation: 1,
+      shadowColor: Color(0x170D0905),
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(22)),
+        borderRadius: BorderRadius.all(Radius.circular(24)),
         side: BorderSide(color: AppColors.line),
       ),
     ),
@@ -137,7 +140,7 @@ ThemeData buildTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: radius,
-        borderSide: const BorderSide(color: AppColors.sageDark, width: 1.7),
+        borderSide: const BorderSide(color: AppColors.coral, width: 1.7),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: radius,
@@ -146,10 +149,10 @@ ThemeData buildTheme() {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.yellow,
-        foregroundColor: AppColors.ink,
+        backgroundColor: AppColors.coral,
+        foregroundColor: Colors.white,
         disabledBackgroundColor: AppColors.line,
-        minimumSize: const Size.fromHeight(54),
+        minimumSize: const Size.fromHeight(56),
         elevation: 0,
         shape: const RoundedRectangleBorder(borderRadius: radius),
         textStyle: const TextStyle(
@@ -174,16 +177,16 @@ ThemeData buildTheme() {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: AppColors.sageDark,
+        foregroundColor: AppColors.coralDark,
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      height: 82,
+      height: 76,
       backgroundColor: AppColors.surface,
       elevation: 0,
       surfaceTintColor: Colors.transparent,
-      indicatorColor: AppColors.sage,
+      indicatorColor: AppColors.coralSoft,
       indicatorShape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
@@ -191,7 +194,7 @@ ThemeData buildTheme() {
         (states) => IconThemeData(
           size: 27,
           color: states.contains(WidgetState.selected)
-              ? AppColors.ink
+              ? AppColors.coral
               : AppColors.muted,
         ),
       ),
@@ -201,14 +204,14 @@ ThemeData buildTheme() {
           fontSize: 11,
           fontWeight: FontWeight.w800,
           color: states.contains(WidgetState.selected)
-              ? AppColors.ink
+              ? AppColors.coralDark
               : AppColors.muted,
         ),
       ),
     ),
     dividerTheme: const DividerThemeData(color: AppColors.line, thickness: 1),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
-      color: AppColors.sageDark,
+      color: AppColors.coral,
     ),
   );
 }

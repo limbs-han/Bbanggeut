@@ -39,6 +39,29 @@ Jenkins Controller가 Java 21로 실행되므로 Agent 연결 프로그램도 Ja
 Backend Gradle 설정은 Java 17 toolchain을 요구하므로 공통 Agent에는 Java 17을 별도 경로로
 함께 설치했습니다.
 
+## Agent 프로세스 회수
+
+네 Jenkins Agent는 Compose의 `init: true`를 공통 적용합니다. 컨테이너 안에서 빌드 프로세스가
+비정상 종료되더라도 init 프로세스가 고아·좀비 프로세스를 회수하므로 `pids_limit`이 소진되어
+`Cannot fork` 또는 `unable to create native thread`가 발생하는 것을 방지합니다.
+
+설정 변경 후에는 실행 중인 빌드가 없는지 확인한 다음 서버에서 Agent 컨테이너를 다시 생성해야
+합니다.
+
+```bash
+cd "$(git rev-parse --show-toplevel)/ci/jenkins/server"
+docker compose up -d --force-recreate \
+  backend-agent frontend-agent device-agent deploy-agent
+```
+
+재생성 후 `docker inspect`에서 `Init=true`인지 확인합니다.
+
+```bash
+for agent in backend frontend device deploy; do
+  docker inspect "jenkins-${agent}-agent" --format '{{.Name}} Init={{.HostConfig.Init}}'
+done
+```
+
 ## GitLab 연결과 Webhook
 
 Jenkins에는 `S15P11E201` Multibranch Pipeline이 구성돼 있습니다. GitLab Push 이벤트가 발생하면
