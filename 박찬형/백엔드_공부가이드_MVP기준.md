@@ -1,7 +1,7 @@
 # ChanHyeong 백엔드 공부 가이드 — MVP 7개 흐름으로 코드 읽기
 
 > 대상: 백엔드를 처음 공부하는 팀원  
-> 기준일: 2026-07-27  
+> 기준일: 2026-07-30
 > 기준 브랜치: `codex/chanhyeong-study`  
 > 가장 중요한 기준 문서: `자료/docs/사람이 읽을 문서/01-서비스기획.md`의 **8. MVP 정의**  
 > 성격: 설계 희망사항이 아니라, 현재 저장소의 문서와 구현 코드를 함께 확인한 **공부용 as-built 가이드**
@@ -2949,3 +2949,202 @@ SSE-KMS/KES는 불필요하다는 뜻이 아니다. 키 생성·권한·회전·
 - `develop/device`: LCD에 등록 코드를 한 번 표시하는 흐름
 
 이 항목은 코드를 미리 공부할 수는 있지만 운영 반영 완료로 발표하면 안 된다. 역할별 develop에서 `master`로 Merge Request가 병합된 뒤 최신 구현 상태를 다시 갱신한다.
+
+---
+
+# 24. Memory Vault와 기기 수명주기
+
+## 24.1 왜 계정 → 기기 → 영상 구조를 바꿨나
+
+처음 구조에서는 계정 권한, 멤버, 영상이 모두 물리 기기를 중심으로
+연결됐다. 그래서 기기 등록 해제를 “소유 관계 삭제”로 처리하면 다음
+문제가 한꺼번에 생겼다.
+
+- 기기를 고장으로 교체했을 뿐인데 과거 영상까지 사라진다.
+- 중고 기기의 새 구매자와 이전 사용자의 영상을 안전하게 분리하기 어렵다.
+- 기기가 없는 동안에는 사용자가 자신의 과거 영상을 볼 수 없다.
+- 멤버 초대와 회수 권한이 기기 상태에 끌려다닌다.
+
+이를 해결하기 위해 데이터 소유 단위를 물리 기기가 아닌
+`Memory Vault`로 분리했다.
+
+```text
+사용자 ── VaultMembership(OWNER/MEMBER) ── Memory Vault ── 영상
+                                               │
+                                      DeviceBinding 이력
+                                               │
+                                            물리 기기
+```
+
+각 요소의 역할은 다음처럼 외우면 된다.
+
+- **Memory Vault**: 영상과 구성원 권한이 계속 남는 보관함
+- **VaultMembership**: 누가 이 보관함을 볼 수 있는지 결정하는 권한
+- **Physical Device**: 영상을 촬영한 교체 가능한 장치
+- **DeviceBinding**: 특정 기간에 어느 기기가 어느 보관함에 연결됐는지
+  남기는 변경 불가능한 이력
+- **Video의 `device_id`**: 촬영 출처
+- **Video의 `vault_id`**: 소유와 접근 제어 경계
+
+면접식 한 문장:
+
+> 물리 기기의 수명과 사용자 데이터의 수명을 분리하기 위해 영상 소유권은
+> Vault에, 촬영 출처는 device에, 기간별 연결은 DeviceBinding에
+> 저장했습니다.
+
+## 24.2 단일 OWNER를 택한 이유
+
+활성 Vault에는 OWNER가 정확히 한 명만 있다. MEMBER는 여러 명일 수
+있지만 기기 연결·해제, 구성원 관리, 소유권 양도 같은 최종 결정은
+OWNER가 한다.
+
+다중 OWNER는 한 명이 실수로 연결을 끊거나 구성원을 제거했을 때 책임
+주체가 모호하고, 마지막 OWNER 탈퇴와 동시 요청을 방어하기 복잡하다.
+단일 OWNER와 명시적 양도를 사용하면 다음 불변식이 단순해진다.
+
+- OWNER는 자기 자신을 탈퇴시키거나 내보낼 수 없다.
+- 떠나려면 먼저 활성 MEMBER 한 명에게 OWNER를 양도한다.
+- 양도는 하나의 트랜잭션에서 기존 OWNER와 새 OWNER의 역할을 바꾼다.
+- 기기가 없어도 OWNER와 MEMBER, 과거 영상은 유지된다.
+- MEMBER가 탈퇴하거나 회수되면 그 Vault의 과거 영상 접근도 잃는다.
+
+## 24.3 연결 해제와 재등록 상태 머신
+
+가장 헷갈리기 쉬운 부분은 “연결 해제 후 무조건 새 Vault가 생기는가?”다.
+정답은 **아니다**. 연결 해제는 기기를 새로 등록할 수 있는 상태로 만들
+뿐이고, 재등록 사용자가 기존 Vault와 새 Vault 중 하나를 명시적으로
+선택한다.
+
+```text
+활성 기기(ONLINE/OFFLINE)
+  + ACTIVE Binding
+          │ OWNER가 연결 해제
+          ▼
+기기 UNCLAIMED
+  + 기존 Binding DISCONNECTED
+  + 기존 Vault/멤버/영상은 그대로 유지
+          │
+          ├─ claim(vaultId 있음)
+          │    → 내가 OWNER인 기존 Vault에 새 generation Binding
+          │
+          └─ claim(vaultId 없음, vaultName은 선택)
+               → 새 Vault 생성, 내가 OWNER
+               → 새 generation Binding
+```
+
+한 번 만들어진 활성 Binding의 `vault_id`는 바꿀 수 없다. 이미 합친
+연결을 그 자리에서 분리하거나, 새 Vault에 연결한 Binding을 그 자리에서
+다른 Vault와 합칠 수 없다는 의미다. 바꾸려면 반드시 현재 Binding을
+종료하고 증가한 generation의 새 Binding을 만든다. 종료된 Binding을
+복구하거나 수정하지 않으므로 중고 거래의 이전·이후 이력도 섞이지 않는다.
+
+`ONLINE`과 `OFFLINE`은 활성 연결이 있는 기기의 현재 접속 여부다.
+새 등록 코드는 `UNCLAIMED` 기기에만 발급한다. V29/V30 이전에 이미
+해제된 레거시 행은 `REVOKED`로 남을 수 있으므로 운영 데이터를 볼 때
+새 상태 모델과 과거 상태를 구분해야 한다.
+
+## 24.4 코드를 읽는 순서
+
+아래 순서로 읽으면 HTTP 요청에서 데이터베이스 불변식까지 한 흐름으로
+연결된다.
+
+1. `DeviceController`의 claim과 연결 해제 API
+2. `DeviceService.claim`, `DeviceService.revoke`
+3. `DeviceMapper`의 기기 상태 변경
+4. `VaultMapper`의 활성 Binding 생성·종료와 generation 계산
+5. `VideoQueryService`와 `VideoCommandService`의 Vault 멤버십 기반
+   권한 검사
+6. `InvitationService`의 Vault 초대·회수·OWNER 양도
+7. Flyway `V29__memory_vaults_and_device_bindings.sql`
+8. Flyway `V30__vault_lifecycle_and_vault_invitations.sql`
+9. Flutter의 기기 등록 선택 화면과 기기 없는 Vault 보관함 화면
+
+코드를 읽으며 다음 질문에 답할 수 있으면 구조를 이해한 것이다.
+
+- 같은 기기에 활성 Binding 두 개가 생기지 않는가?
+- OWNER가 아닌 사용자가 기기를 다른 Vault에 붙일 수 없는가?
+- 연결 해제 뒤에도 영상 목록 권한은 VaultMembership으로 유지되는가?
+- 새 구매자가 이전 generation 영상에 접근할 수 없는가?
+- OWNER가 0명이나 2명이 되는 트랜잭션 경로가 없는가?
+
+---
+
+# 25. 운영 영상 복구와 MyBatis 장애에서 배운 점
+
+## 25.1 영상 복구는 파일이 먼저, 데이터베이스가 나중
+
+기존 기기 해제 로직은 단순한 숨김이 아니라 다음과 같은 실제 삭제
+파이프라인이었다.
+
+```text
+영상 상태 DELETING
+  → video_deletion_jobs 등록
+  → 워커가 MinIO 객체 삭제
+  → 영상 상태 DELETED
+```
+
+따라서 데이터베이스의 상태만 `READY`로 되돌리면 앱 목록에는 나타날 수
+있지만 MinIO 파일이 없어 재생이 실패한다. 올바른 복구 순서는 다음과
+같다.
+
+1. 복구 직전 PostgreSQL과 MinIO 전체 백업 및 체크섬 생성
+2. 삭제 전 백업에서 대상 객체만 MinIO에 복원
+3. 모든 객체의 존재와 실제 바이트 읽기 확인
+4. 하나의 DB 트랜잭션에서 대상 행만 Vault에 연결하고 `READY` 전환
+5. 예상 행 수가 정확한지 확인한 뒤 커밋
+6. API 목록, 스트리밍 응답, 실제 앱 재생 순으로 검증
+
+복구할 때 `device_id`는 촬영 당시 장치 출처이므로 바꾸지 않고
+`created_by`도 유지한다. 접근할 보관함만 `vault_id`로 연결한다. 이는
+일반 비즈니스 로직에서 영상 소유 Vault를 바꿀 수 있다는 뜻이 아니라,
+백업 객체가 확인된 승인된 운영 복구의 예외다.
+
+2026-07-29 작업에서는 삭제 전 백업의 영상 객체 20개를 복원해 각각
+조회와 바이트 읽기를 확인한 뒤, DB의 20개 행을 대상 Vault의 `READY`로
+전환했다. 대상 Vault의 활성 OWNER가 한 명인 것도 확인했다. 서버와
+데이터 검증은 끝났지만, 실제 앱 목록·재생의 마지막 확인은 대상 계정으로
+다시 로그인한 기기에서 수행해야 한다. “DB 20행 성공”과 “사용자 체감
+복구 완료”를 같은 의미로 보고하면 안 된다.
+
+## 25.2 MyBatis record 생성자 매핑 장애
+
+운영에서 `/api/vaults/{vaultId}/members`가 500을 반환한 원인은 SQL
+데이터가 없어서가 아니라 MyBatis 생성자 선택이었다. 조인 결과의
+`joined_at`은 PostgreSQL JDBC에서 `Timestamp`로 오는데,
+`MembershipRow` record에 여러 생성자 후보가 있으면 MyBatis가 맞는
+생성자를 자동으로 고르지 못할 수 있다.
+
+수정 원칙:
+
+- record의 정식 생성자에 `@AutomapConstructor` 지정
+- 관련 쿼리 projection을 같은 9개 컬럼과 타입으로 통일
+- 실제 PostgreSQL과 MyBatis를 사용하는 통합 테스트 추가
+- 다른 Flyway 통합 테스트와 병렬 실행해도 충돌하지 않도록 전용 테스트
+  스키마 사용
+
+여기서 배운 핵심은 단위 테스트 통과만으로 DB 프레임워크 매핑을 보장할
+수 없다는 점이다. SQL 컬럼 순서, JDBC 반환 타입, 생성자 선택까지
+검증하려면 실제 PostgreSQL 기반 매퍼 통합 테스트가 필요하다.
+
+또한 Flutter가 Vault·구성원·기기를 한 번에 집계해 초기화하면 구성원 API
+하나의 500이 화면에서는 빈 영상이나 기기 `OFFLINE`처럼 보일 수 있다.
+겉으로 보이는 증상만 보고 기기 연결 문제라고 단정하지 말고 같은 시각의
+API별 상태 코드와 Backend 로그를 먼저 분리해서 봐야 한다.
+
+## 25.3 이번 변경에서 익혀야 할 운영 원칙
+
+- 데이터 복구는 먼저 되돌릴 수 있는 새 백업을 만든다.
+- 파일 저장소와 DB 메타데이터가 모두 맞아야 영상이 복구된 것이다.
+- 마이그레이션 성공 여부는 Flyway 이력뿐 아니라 핵심 불변식 쿼리로도
+  확인한다.
+- CI 성공과 운영 배포 승인은 별개다. 사용자의 명시적 승인 없이 배포
+  대기 작업을 실행하지 않는다.
+- 긴급 수정도 기능 브랜치 → `develop/backend` → `master` 순서와 CI를
+  생략하지 않는다.
+- 최종 보고에서는 자동 검증, 서버 검증, 실제 단말 검증을 구분한다.
+
+면접식 한 문장:
+
+> 삭제 영상 복구에서 MinIO 객체를 먼저 검증하고 DB를 마지막에
+> `READY`로 바꿨으며, MyBatis 장애는 실제 PostgreSQL 통합 테스트로
+> JDBC 타입과 record 생성자 매핑까지 재현해 회귀를 막았습니다.
