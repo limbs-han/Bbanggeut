@@ -1,44 +1,342 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-incoming="/home/jenkins-deploy/incoming/server.jar.next"
+incoming_root="/home/jenkins-deploy/incoming"
+incoming_jar="${incoming_root}/server.jar.next"
+incoming_bundle="${incoming_root}/backend-deploy.tar.gz"
 application_root="/home/ubuntu/william-james"
 current_jar="${application_root}/app/server.jar"
+infra_root="${application_root}/infra"
+infra_env="${infra_root}/.env"
+infra_compose="${infra_root}/docker-compose.yml"
+app_env="${application_root}/secrets/app.env"
+nginx_config="/etc/nginx/sites-available/william-james"
 release_root="${application_root}/releases/backend"
 deployment_root="${application_root}/deployments"
 health_url="http://127.0.0.1:8081/actuator/health"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+staging=""
+backup_root="${release_root}/${timestamp}"
+required_infra_files=(docker-compose.yml mediamtx.yml mosquitto.conf)
+required_bundle_files=("${required_infra_files[@]}" nginx-william-james.conf)
+previous_jar=""
+had_current_jar=false
+infra_replaced=false
+jar_replaced=false
+nginx_replaced=false
+had_nginx_config=false
+mediamtx_config_changed=false
+mosquitto_config_changed=false
+
+cleanup() {
+  if [[ -n "${staging}" && "${staging}" == "${application_root}"/.backend-deploy.* ]]; then
+    rm -rf -- "${staging}"
+  fi
+}
+trap cleanup EXIT
+
+compose() {
+  docker compose --env-file "${infra_env}" --file "${infra_compose}" "$@"
+}
+
+wait_for_healthy_service() {
+  local service="$1"
+  local container_id state health
+
+  for _ in $(seq 1 60); do
+    container_id="$(compose ps --all --quiet "${service}")"
+    if [[ -n "${container_id}" ]]; then
+      state="$(docker inspect --format '{{.State.Status}}' "${container_id}")"
+      health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${container_id}")"
+      if [[ "${state}" == "running" && "${health}" == "healthy" ]]; then
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+
+  echo "Infrastructure service did not become healthy: ${service}" >&2
+  compose ps >&2 || true
+  compose logs --tail 100 "${service}" >&2 || true
+  return 1
+}
+
+wait_for_mediamtx() {
+  local container_id state
+
+  for _ in $(seq 1 60); do
+    container_id="$(compose ps --all --quiet mediamtx)"
+    if [[ -n "${container_id}" ]]; then
+      state="$(docker inspect --format '{{.State.Status}}' "${container_id}")"
+      if [[ "${state}" == "running" ]] &&
+        timeout 2 bash -c '</dev/tcp/127.0.0.1/8888' 2>/dev/null
+      then
+        if grep -Eq '^[[:space:]]*webrtc:[[:space:]]*true([[:space:]]|$)' \
+          "${infra_root}/mediamtx.yml"
+        then
+          if timeout 2 bash -c '</dev/tcp/127.0.0.1/8889' 2>/dev/null; then
+            return 0
+          fi
+        else
+          return 0
+        fi
+      fi
+    fi
+    sleep 2
+  done
+
+  echo "MediaMTX did not become reachable on loopback port 8888." >&2
+  compose logs --tail 100 mediamtx >&2 || true
+  return 1
+}
+
+deploy_infrastructure() {
+  # 로그인 시도 제한이 Redis 로 판정한다. 응답이 없으면 애플리케이션은
+  # 시도를 허용하도록 되어 있어, 빠뜨리면 기동과 헬스 점검은 모두 정상인데
+  # 제한만 걸리지 않는 상태로 서비스된다. 눈에 띄지 않는 실패라 다른 의존
+  # 서비스와 같이 올리고 헬스까지 기다린다.
+  compose up --detach --pull missing --remove-orphans postgres redis minio
+  if [[ "${mosquitto_config_changed}" == "true" ]]; then
+    compose up --detach --pull missing --force-recreate mosquitto
+  else
+    compose up --detach --pull missing mosquitto
+  fi
+  if [[ "${mediamtx_config_changed}" == "true" ]]; then
+    compose up --detach --pull missing --force-recreate mediamtx
+  else
+    compose up --detach --pull missing mediamtx
+  fi
+  wait_for_healthy_service postgres
+  wait_for_healthy_service redis
+  wait_for_healthy_service minio
+  wait_for_healthy_service mosquitto
+  wait_for_mediamtx
+  compose run --rm minio-init
+}
+
+restore_release() {
+  trap - ERR
+  set +e
+  local rollback_ok=true
+
+  echo "Deployment failed; restoring the previous backend release." >&2
+  if [[ "${infra_replaced}" == "true" ]]; then
+    for file in "${required_infra_files[@]}"; do
+      if [[ -f "${backup_root}/infra/${file}" ]]; then
+        install -o ubuntu -g ubuntu -m 0644 \
+          "${backup_root}/infra/${file}" "${infra_root}/${file}" || rollback_ok=false
+      else
+        rm -f -- "${infra_root}/${file}" || rollback_ok=false
+      fi
+    done
+    if compose config --quiet; then
+      compose up --detach --pull missing --remove-orphans postgres redis minio ||
+        rollback_ok=false
+      compose up --detach --pull missing --force-recreate mosquitto ||
+        rollback_ok=false
+      compose up --detach --pull missing --force-recreate mediamtx ||
+        rollback_ok=false
+      wait_for_healthy_service postgres || rollback_ok=false
+      wait_for_healthy_service redis || rollback_ok=false
+      wait_for_healthy_service minio || rollback_ok=false
+      wait_for_healthy_service mosquitto || rollback_ok=false
+      wait_for_mediamtx || rollback_ok=false
+      compose run --rm minio-init || rollback_ok=false
+    else
+      rollback_ok=false
+    fi
+  fi
+
+  if [[ "${nginx_replaced}" == "true" ]]; then
+    if [[ "${had_nginx_config}" == "true" ]]; then
+      install -o root -g root -m 0644 \
+        "${backup_root}/nginx-william-james.conf" "${nginx_config}" ||
+        rollback_ok=false
+    else
+      rm -f -- "${nginx_config}" || rollback_ok=false
+    fi
+    nginx -t || rollback_ok=false
+    systemctl reload nginx || rollback_ok=false
+  fi
+
+  if [[ "${jar_replaced}" == "true" ]]; then
+    if [[ "${had_current_jar}" == "true" && -n "${previous_jar}" && -f "${previous_jar}" ]]; then
+      install -o ubuntu -g ubuntu -m 0644 \
+        "${previous_jar}" "${current_jar}.rollback" || rollback_ok=false
+      mv -f "${current_jar}.rollback" "${current_jar}" || rollback_ok=false
+      systemctl restart william-james || rollback_ok=false
+    else
+      rm -f -- "${current_jar}" || rollback_ok=false
+      systemctl stop william-james || rollback_ok=false
+    fi
+  fi
+
+  if [[ "${rollback_ok}" == "true" ]]; then
+    printf '%s status=ROLLED_BACK backup=%s\n' "${timestamp}" "${backup_root}" \
+      >>"${deployment_root}/backend.log"
+  else
+    printf '%s status=ROLLBACK_FAILED backup=%s\n' "${timestamp}" "${backup_root}" \
+      >>"${deployment_root}/backend.log"
+    echo "Automatic rollback did not fully recover the previous release." >&2
+  fi
+}
+
+validate_spring_boot_jar() {
+  local candidate="${1:?JAR path is required}"
+
+  if ! command -v unzip >/dev/null 2>&1; then
+    echo "JAR 검증에 필요한 unzip 명령이 없습니다." >&2
+    return 1
+  fi
+
+  if [[ ! -f "${candidate}" ]]; then
+    echo "검증할 JAR가 없습니다: ${candidate}" >&2
+    return 1
+  fi
+
+  if ! unzip -tq "${candidate}" >/dev/null; then
+    echo "업로드된 파일의 ZIP/JAR 구조가 손상되었습니다." >&2
+    return 1
+  fi
+
+  if ! unzip -Z1 "${candidate}" |
+    awk '
+      $0 == "META-INF/MANIFEST.MF" { manifest = 1 }
+      index($0, "BOOT-INF/classes/") == 1 { classes = 1 }
+      index($0, "BOOT-INF/lib/") == 1 { libraries = 1 }
+      END { exit !(manifest && classes && libraries) }
+    '
+  then
+    echo "업로드된 파일이 실행 가능한 Spring Boot JAR 구조가 아닙니다." >&2
+    return 1
+  fi
+}
+
+if [[ "${1:-}" == "--validate-only" ]]; then
+  if [[ "$#" -ne 2 ]]; then
+    echo "사용법: $0 --validate-only <JAR 경로>" >&2
+    exit 2
+  fi
+  validate_spring_boot_jar "$2"
+  echo "Spring Boot JAR 검증 성공: $2"
+  exit 0
+fi
+
+staging="$(mktemp -d "${application_root}/.backend-deploy.XXXXXX")"
 
 exec 9>/run/lock/william-james-backend-deploy.lock
 if ! flock -n 9; then
-  echo "다른 Backend 배포가 진행 중입니다." >&2
+  echo "Another backend deployment is already running." >&2
   exit 1
 fi
 
-if [[ ! -f "${incoming}" ]]; then
-  echo "배포할 JAR가 없습니다: ${incoming}" >&2
+if [[ ! -f "${incoming_jar}" ]]; then
+  echo "Deployment JAR is missing: ${incoming_jar}" >&2
+  exit 1
+fi
+if [[ ! -s "${incoming_bundle}" ]]; then
+  echo "Infrastructure deployment artifact is missing: ${incoming_bundle}" >&2
+  exit 1
+fi
+if [[ ! -s "${infra_env}" ]]; then
+  echo "Server-managed infrastructure secret file is missing: ${infra_env}" >&2
+  exit 1
+fi
+if [[ ! -s "${app_env}" ]]; then
+  echo "Server-managed application environment file is missing: ${app_env}" >&2
+  exit 1
+fi
+if ! validate_spring_boot_jar "${incoming_jar}"; then
   exit 1
 fi
 
-if ! /usr/bin/jar --list --file "${incoming}" >/dev/null; then
-  echo "업로드된 파일이 유효한 JAR가 아닙니다." >&2
+bundle_entries="$(tar --list --gzip --file "${incoming_bundle}" | LC_ALL=C sort)"
+expected_entries="$(printf '%s\n' "${required_bundle_files[@]}" | LC_ALL=C sort)"
+if [[ "${bundle_entries}" != "${expected_entries}" ]]; then
+  echo "Infrastructure artifact contains an unexpected file set." >&2
+  printf 'Expected:\n%s\nActual:\n%s\n' "${expected_entries}" "${bundle_entries}" >&2
   exit 1
 fi
+tar --extract --gzip --file "${incoming_bundle}" \
+  --directory "${staging}" --no-same-owner --no-same-permissions
 
-install -d -o ubuntu -g ubuntu -m 0750 "${release_root}" "${deployment_root}"
+for file in "${required_bundle_files[@]}"; do
+  if [[ ! -s "${staging}/${file}" ]]; then
+    echo "Infrastructure artifact file is missing or empty: ${file}" >&2
+    exit 1
+  fi
+done
 
-incoming_sha="$(sha256sum "${incoming}" | awk '{print $1}')"
-previous_jar=""
+# Validate the candidate Compose model against server-owned secrets before
+# replacing any live file. Relative bind mounts resolve inside staging.
+docker compose --env-file "${infra_env}" \
+  --file "${staging}/docker-compose.yml" config --quiet
+
+if [[ ! -f "${infra_root}/mediamtx.yml" ]] ||
+  ! cmp --silent "${staging}/mediamtx.yml" "${infra_root}/mediamtx.yml"
+then
+  mediamtx_config_changed=true
+fi
+if [[ ! -f "${infra_root}/mosquitto.conf" ]] ||
+  ! cmp --silent "${staging}/mosquitto.conf" "${infra_root}/mosquitto.conf"
+then
+  mosquitto_config_changed=true
+fi
+
+install -d -o ubuntu -g ubuntu -m 0750 \
+  "${release_root}" "${deployment_root}" "${backup_root}/infra"
+
+for file in "${required_infra_files[@]}"; do
+  if [[ -f "${infra_root}/${file}" ]]; then
+    install -o ubuntu -g ubuntu -m 0644 \
+      "${infra_root}/${file}" "${backup_root}/infra/${file}"
+  fi
+done
+
+if [[ -f "${nginx_config}" ]]; then
+  had_nginx_config=true
+  install -o root -g root -m 0644 \
+    "${nginx_config}" "${backup_root}/nginx-william-james.conf"
+fi
+
+infra_replaced=true
+trap restore_release ERR
+for file in "${required_infra_files[@]}"; do
+  install -o ubuntu -g ubuntu -m 0644 \
+    "${staging}/${file}" "${infra_root}/${file}.next"
+  mv -f "${infra_root}/${file}.next" "${infra_root}/${file}"
+done
+
+install -o root -g root -m 0644 \
+  "${staging}/nginx-william-james.conf" "${nginx_config}.next"
+mv -f "${nginx_config}.next" "${nginx_config}"
+nginx_replaced=true
+nginx -t
+systemctl reload nginx
+
+if grep -q '^WEBRTC_BASE_URL=' "${app_env}"; then
+  sed -i \
+    's|^WEBRTC_BASE_URL=.*$|WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live|' \
+    "${app_env}"
+else
+  printf '%s\n' \
+    'WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live' >>"${app_env}"
+fi
+chmod 600 "${app_env}"
+
+incoming_sha="$(sha256sum "${incoming_jar}" | awk '{print $1}')"
 if [[ -f "${current_jar}" ]]; then
+  had_current_jar=true
   previous_sha="$(sha256sum "${current_jar}" | awk '{print $1}')"
-  previous_jar="${release_root}/server-${timestamp}-${previous_sha:0:12}.jar"
+  previous_jar="${backup_root}/server-${previous_sha:0:12}.jar"
   install -o ubuntu -g ubuntu -m 0644 "${current_jar}" "${previous_jar}"
 fi
 
-install -o ubuntu -g ubuntu -m 0644 "${incoming}" "${current_jar}.next"
-mv -f "${current_jar}.next" "${current_jar}"
-rm -f "${incoming}"
+deploy_infrastructure
 
+install -o ubuntu -g ubuntu -m 0644 "${incoming_jar}" "${current_jar}.next"
+mv -f "${current_jar}.next" "${current_jar}"
+jar_replaced=true
 systemctl restart william-james
 
 healthy=false
@@ -49,41 +347,18 @@ for _ in $(seq 1 30); do
   fi
   sleep 2
 done
-
-if [[ "${healthy}" == "true" ]]; then
-  printf '%s status=SUCCESS sha256=%s backup=%s\n' \
-    "${timestamp}" "${incoming_sha}" "${previous_jar:-none}" \
-    >>"${deployment_root}/backend.log"
-  echo "Backend 배포 성공: ${incoming_sha}"
-  exit 0
+if [[ "${healthy}" != "true" ]]; then
+  echo "Spring Boot health check failed after deployment." >&2
+  false
 fi
 
-printf '%s status=FAILED sha256=%s backup=%s\n' \
-  "${timestamp}" "${incoming_sha}" "${previous_jar:-none}" \
+rm -f -- "${incoming_jar}" "${incoming_bundle}"
+infra_replaced=false
+jar_replaced=false
+nginx_replaced=false
+trap - ERR
+
+printf '%s status=SUCCESS sha256=%s backup=%s services=postgres,minio,mosquitto,mediamtx,nginx\n' \
+  "${timestamp}" "${incoming_sha}" "${backup_root}" \
   >>"${deployment_root}/backend.log"
-
-if [[ -z "${previous_jar}" || ! -f "${previous_jar}" ]]; then
-  echo "Health 확인 실패이며 복구할 이전 JAR가 없습니다." >&2
-  exit 1
-fi
-
-install -o ubuntu -g ubuntu -m 0644 "${previous_jar}" "${current_jar}.rollback"
-mv -f "${current_jar}.rollback" "${current_jar}"
-systemctl restart william-james
-
-for _ in $(seq 1 30); do
-  if curl --fail --silent --max-time 3 "${health_url}" >/dev/null; then
-    printf '%s status=ROLLED_BACK restored=%s\n' \
-      "${timestamp}" "${previous_jar}" \
-      >>"${deployment_root}/backend.log"
-    echo "새 배포의 Health 확인이 실패해 이전 JAR로 복구했습니다." >&2
-    exit 1
-  fi
-  sleep 2
-done
-
-printf '%s status=ROLLBACK_FAILED restored=%s\n' \
-  "${timestamp}" "${previous_jar}" \
-  >>"${deployment_root}/backend.log"
-echo "새 배포와 이전 JAR 복구가 모두 실패했습니다." >&2
-exit 1
+echo "Backend application and infrastructure deployment succeeded: ${incoming_sha}"

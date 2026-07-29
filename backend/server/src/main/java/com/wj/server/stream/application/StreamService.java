@@ -160,6 +160,7 @@ public class StreamService {
 
     private StreamSessionResponse toResponse(StreamSessionRow row) {
         String playUrl = null;
+        String whepUrl = null;
         if ("READY".equals(row.status()) && row.viewerExpiresAt().isAfter(clock.instant())) {
             String token = liveTokenService.issue(row.id(), row.userId(), row.deviceId(), row.streamId());
             String configuredDemoUrl = demoProperties.liveHlsUrl();
@@ -172,9 +173,20 @@ public class StreamService {
                 baseUrl += (baseUrl.contains("?") ? "&" : "?") + "streamId=" + row.streamId();
             }
             playUrl = baseUrl + (baseUrl.contains("?") ? "&" : "?") + "token=" + token;
+
+            String configuredDemoWhepUrl = demoProperties.liveWhepUrl();
+            boolean explicitDemoWhepUrl = demoProperties.enabled()
+                && configuredDemoWhepUrl != null && !configuredDemoWhepUrl.isBlank();
+            String whepBaseUrl = explicitDemoWhepUrl
+                ? configuredDemoWhepUrl
+                : properties.webrtcBaseUrl().replaceAll("/$", "") + "/" + row.streamId() + "/whep";
+            if (explicitDemoWhepUrl) {
+                whepBaseUrl += (whepBaseUrl.contains("?") ? "&" : "?") + "streamId=" + row.streamId();
+            }
+            whepUrl = whepBaseUrl + (whepBaseUrl.contains("?") ? "&" : "?") + "token=" + token;
         }
         return new StreamSessionResponse(
-            row.id(), row.streamId(), row.deviceId(), row.status(), playUrl,
+            row.id(), row.streamId(), row.deviceId(), row.status(), playUrl, whepUrl,
             Math.toIntExact(properties.heartbeatInterval().toSeconds()),
             row.viewerExpiresAt(), row.edgeHardExpiresAt(), row.failureCode(), row.createdAt());
     }

@@ -36,14 +36,14 @@ public class MqttTopicAclMigrationWorker {
         }
         int migrated = 0;
         try {
-            for (UUID deviceId : mapper.findActiveOperatingDeviceIds()) {
-                identityManager.migrateTopicAcl(deviceId);
+            for (String deviceId : mapper.findActiveOperatingDeviceIds()) {
+                identityManager.migrateTopicAcl(UUID.fromString(deviceId));
                 migrated++;
             }
             completed = true;
             log.info("MQTT topic ACL migration to wj/v2 completed for {} devices", migrated);
         } catch (RuntimeException exception) {
-            log.warn("MQTT topic ACL migration deferred: {}", exception.getClass().getSimpleName());
+            log.warn("MQTT topic ACL migration deferred", exception);
         }
     }
 }

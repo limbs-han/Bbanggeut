@@ -11,6 +11,7 @@ public record StreamProperties(
     Duration edgeLease,
     Duration heartbeatInterval,
     String mediaBaseUrl,
+    String webrtcBaseUrl,
     Duration liveTokenTtl
 ) {
     public StreamProperties {
@@ -20,6 +21,9 @@ public record StreamProperties(
         }
         if (mediaBaseUrl == null || mediaBaseUrl.isBlank()) {
             throw new IllegalArgumentException("app.stream.media-base-url is required");
+        }
+        if (webrtcBaseUrl == null || webrtcBaseUrl.isBlank()) {
+            throw new IllegalArgumentException("app.stream.webrtc-base-url is required");
         }
     }
 }

@@ -16,11 +16,11 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface InvitationMapper {
     @Select("""
-        SELECT m.role::text
-          FROM device_memberships m
-          JOIN devices d ON d.id = m.device_id
-         WHERE m.device_id = #{deviceId} AND m.user_id = #{userId}
-           AND m.status = 'ACTIVE' AND d.status != 'REVOKED'
+        SELECT vm.role::text
+          FROM device_bindings b
+          JOIN vault_memberships vm ON vm.vault_id = b.vault_id
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+           AND vm.user_id = #{userId} AND vm.status = 'ACTIVE'
         """)
     Optional<String> findActiveRole(@Param("userId") UUID userId, @Param("deviceId") UUID deviceId);
 
@@ -31,9 +31,21 @@ public interface InvitationMapper {
 
     @Select("""
         SELECT EXISTS (
-            SELECT 1 FROM device_memberships m
+            SELECT 1 FROM users
+             WHERE lower(email) = lower(#{email})
+               AND status = 'ACTIVE' AND deleted_at IS NULL
+        )
+        """)
+    boolean activeUserEmailExists(@Param("email") String email);
+
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1
+              FROM device_bindings b
+              JOIN vault_memberships m ON m.vault_id = b.vault_id
               JOIN users u ON u.id = m.user_id
-             WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'
+             WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+               AND m.status = 'ACTIVE'
                AND lower(u.email) = lower(#{email})
         )
         """)
@@ -163,6 +175,21 @@ public interface InvitationMapper {
         @Param("role") String role
     );
 
+    @Insert("""
+        INSERT INTO vault_memberships (vault_id, user_id, role, status, joined_at)
+        SELECT b.vault_id, #{userId}, CAST(#{role} AS device_role), 'ACTIVE', now()
+          FROM device_bindings b
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+        ON CONFLICT (vault_id, user_id) DO UPDATE
+            SET role = EXCLUDED.role, status = 'ACTIVE', joined_at = now(),
+                revoked_at = NULL, revoked_by = NULL, updated_at = now()
+        """)
+    int activateVaultMember(
+        @Param("deviceId") UUID deviceId,
+        @Param("userId") UUID userId,
+        @Param("role") String role
+    );
+
     @Select("""
         SELECT m.id, m.device_id, m.user_id, u.email, u.display_name,
                m.role::text, m.status::text, m.joined_at
@@ -201,7 +228,22 @@ public interface InvitationMapper {
     @Update("""
         UPDATE device_memberships
            SET status = 'REVOKED', revoked_at = now(), revoked_by = #{ownerId}, updated_at = now()
-         WHERE id = #{membershipId} AND role IN ('EDITOR', 'VIEWER') AND status = 'ACTIVE'
+         WHERE id = #{membershipId} AND role = 'MEMBER' AND status = 'ACTIVE'
         """)
     int revokeMember(@Param("membershipId") UUID membershipId, @Param("ownerId") UUID ownerId);
+
+    @Update("""
+        UPDATE vault_memberships vm
+           SET status = 'REVOKED', revoked_at = now(),
+               revoked_by = #{ownerId}, updated_at = now()
+          FROM device_bindings b
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+           AND vm.vault_id = b.vault_id AND vm.user_id = #{memberUserId}
+           AND vm.role = 'MEMBER' AND vm.status = 'ACTIVE'
+        """)
+    int revokeVaultMember(
+        @Param("deviceId") UUID deviceId,
+        @Param("memberUserId") UUID memberUserId,
+        @Param("ownerId") UUID ownerId
+    );
 }
