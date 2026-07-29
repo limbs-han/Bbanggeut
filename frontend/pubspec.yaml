@@ -43,6 +43,7 @@ dependencies:
   path_provider: ^2.1.6
   app_links: ^7.2.1
   ve_sdk_flutter: ^0.44.0
+  flutter_webrtc: ^1.5.2
 
 dev_dependencies:
   flutter_test:
