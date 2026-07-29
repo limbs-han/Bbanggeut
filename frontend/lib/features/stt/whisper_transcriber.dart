@@ -21,6 +21,12 @@ import 'caption_line.dart';
 import 'pcm_wav.dart';
 import 'speech_analysis.dart';
 
+/// 진단용 — 침묵 제거를 끄고 원본 전체를 넘긴다.
+///
+/// 이어붙인 오디오가 인식률을 깎는지 확인할 때 쓴다. 같은 영상으로 켠 채와 끈
+/// 채의 **글자 수**를 비교한다. 느려지므로 평소에는 끈다.
+const sttSkipCondense = bool.fromEnvironment('STT_SKIP_CONDENSE');
+
 class WhisperTranscriber {
   WhisperTranscriber({
     required this.modelPath,
@@ -71,7 +77,13 @@ class WhisperTranscriber {
 
     // 침묵을 빼고 발화 구간만 이어붙여 넘긴다 — 처리량이 발화 비율만큼 줄고,
     // 결과 시각을 원본 시간축으로 되돌릴 수 있게 매핑을 함께 만든다.
-    final condensed = await _condense(wavPath);
+    //
+    // 다만 이어붙인 오디오는 이음새마다 파형이 끊기고 문맥이 엉켜 인식률을
+    // 떨어뜨릴 수 있다. STT_SKIP_CONDENSE로 끄고 글자 수를 비교해 확인한다.
+    final condensed = sttSkipCondense ? null : await _condense(wavPath);
+    if (sttSkipCondense) {
+      debugPrint('[stt] 침묵 제거를 껐다 — 원본 전체를 넘긴다 (진단용)');
+    }
     final target = condensed?.path ?? wavPath;
 
     final stopwatch = Stopwatch()..start();

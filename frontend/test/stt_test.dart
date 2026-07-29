@@ -204,7 +204,7 @@ void main() {
       expect(split.single.endMs, 2000);
     });
 
-    test('문장이 끝나는 곳에서 나눈다 — 길이는 대사에 따라 가변적이다', () {
+    test('구두점이 없으면 낱말 경계에서 글자 수로 나눈다', () {
       final split = splitIntoLines([
         CaptionLine(
           startMs: 0,
@@ -213,9 +213,10 @@ void main() {
         ),
       ]);
 
+      // 한도(20자)를 넘지 않게 낱말 단위로 담는다. 낱말 중간을 자르지 않는다.
       expect(split.map((l) => l.text), [
-        '엄마가 아이에게 말했어요',
-        '그거 만지지 마 안 만졌는데요',
+        '엄마가 아이에게 말했어요 그거 만지지',
+        '마 안 만졌는데요',
       ]);
     });
 
@@ -227,35 +228,27 @@ void main() {
       expect(split.map((l) => l.text), ['그거 만지지 마.', '왜?', '안 만졌어!']);
     });
 
-    test('"만지지"의 지에서는 끊지 않는다 — 종결어미로 착각하면 대사가 부서진다', () {
+    test('한국어 어미로는 끊지 않는다 — 낱말 안의 글자와 구분할 수 없다', () {
+      // 종결어미 목록(요·다·죠·까·네)으로 나눠 봤지만 "만지지"의 지처럼 낱말
+      // 안의 글자를 문장 끝으로 착각해 대사가 부서졌다. 구두점만 본다.
       final split = splitIntoLines([
-        CaptionLine(startMs: 0, endMs: 2000, text: '그거 만지지 마'),
+        CaptionLine(startMs: 0, endMs: 2000, text: '그거 만지지 마 다 먹었어'),
       ]);
 
       expect(split, hasLength(1));
-      expect(split.single.text, '그거 만지지 마');
+      expect(split.single.text, '그거 만지지 마 다 먹었어');
     });
 
-    test('한 글자 낱말에서는 끊지 않는다 — "다 먹었어"의 다', () {
-      final split = splitIntoLines([
-        CaptionLine(startMs: 0, endMs: 2000, text: '다 먹었어'),
-      ]);
-
-      expect(split, hasLength(1));
-      expect(split.single.text, '다 먹었어');
-    });
-
-    test('한 문장이 한도를 넘으면 그때만 낱말 경계로 더 나눈다', () {
+    test('구두점으로 나눈 뒤에도 길면 글자 수로 더 나눈다', () {
       final split = splitIntoLines([
         CaptionLine(
           startMs: 0,
           endMs: 4000,
-          // 구두점도 종결어미도 없는 한 문장 (35자)
-          text: '어제 우리 가족이 함께 놀이터에 가서 정말 재미있게 놀았던 그런 날',
+          text: '어제 우리 가족이 함께 놀이터에 가서 정말 재미있게 놀았어. 좋았다.',
         ),
       ]);
 
-      expect(split.length, greaterThan(1));
+      expect(split.length, greaterThan(2), reason: '구두점 2개 + 글자 수 나눔');
       for (final line in split) {
         expect(
           line.text.length,
@@ -263,6 +256,13 @@ void main() {
           reason: '한 줄이 한도를 넘으면 화면에 안 들어간다: "${line.text}"',
         );
       }
+      // 문장 경계를 넘는 줄이 없어야 한다 — 어느 줄도 두 문장에 걸치지 않는다.
+      expect(
+        split.any((l) => l.text.endsWith('놀았어.')),
+        isTrue,
+        reason: '첫 문장이 그 자리에서 끝나야 한다',
+      );
+      expect(split.last.text, '좋았다.');
     });
 
     test('쪼갠 줄들이 원래 구간을 빈틈 없이 채운다', () {

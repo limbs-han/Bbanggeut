@@ -22,25 +22,20 @@ class CaptionLine {
   String text;
 }
 
-/// 문장이 이보다 길면 낱말 경계에서 한 번 더 나눈다.
-///
-/// 문장 단위가 먼저다 — 줄 길이는 대사에 따라 가변적이어야 자연스럽다. 이 값은
-/// "그래도 화면을 넘칠 때"만 쓰는 안전장치다.
-const captionMaxChars = 30;
+/// 자막 한 줄의 최대 글자 수. 한국어 자막 관례가 한 줄 16~20자다.
+const captionMaxChars = 20;
 
-/// 문장 끝을 알리는 부호.
-const _enders = {'.', '?', '!', '…'};
-
-/// 부호 없이 문장이 끝나는 한국어 종결어미.
+/// 문장 끝을 알리는 부호. **언어에 매이지 않는 유일한 신호다.**
 ///
-/// whisper는 구두점을 잘 안 붙인다 — "그거 만지지 마 안 만졌는데요"처럼 한 줄로
-/// 준다. 낱말의 **마지막 글자**가 여기 있으면 문장이 끝난 것으로 본다.
-///
-/// `지`는 넣지 않는다 — "만지지"가 잘려 버린다. 한 글자 낱말도 제외한다 —
-/// "다 먹었어"의 "다"에서 끊기면 안 된다.
-const _endings = {'요', '다', '죠', '까', '네'};
+/// 한국어 종결어미 목록(요·다·죠·까·네)으로 나눠 봤지만 브리틀했다 — "만지지"의
+/// `지`처럼 낱말 안의 글자와 구분할 수 없고, 언어가 바뀌면 통째로 못 쓴다.
+/// 구두점만 보고, 나머지는 글자 수로 나눈다.
+const _enders = {'.', '?', '!', '…', '。', '！', '？'};
 
-/// 전사 한 덩이를 자막 줄들로 나눈다. 문장 단위가 먼저, 그래도 길면 낱말 경계.
+/// 전사 한 덩이를 자막 줄들로 나눈다.
+///
+/// 구두점이 있으면 그 뒤에서, 그래도 [maxChars]를 넘으면 낱말 경계에서 나눈다.
+/// whisper는 구두점을 자주 빼므로 실제로는 글자 수 나눔이 주로 쓰인다.
 ///
 /// 시각은 글자 수 비율로 나눠 주고, 모든 줄이 최소 1ms를 갖게 한다.
 List<CaptionLine> splitIntoLines(
@@ -81,7 +76,7 @@ List<CaptionLine> splitIntoLines(
   return out;
 }
 
-/// 문장 단위로 자른다. 문장 부호 뒤, 또는 종결어미로 끝나는 낱말 뒤에서 끊는다.
+/// 구두점으로 끝나는 낱말 뒤에서 자른다. 구두점이 없으면 전체가 한 덩이다.
 List<String> _sentences(String text) {
   if (text.isEmpty) return const [];
 
@@ -91,11 +86,7 @@ List<String> _sentences(String text) {
     if (word.isEmpty) continue;
     current.add(word);
 
-    final last = word.substring(word.length - 1);
-    final endsSentence =
-        _enders.contains(last) ||
-        (word.length >= 2 && _endings.contains(last));
-    if (endsSentence) {
+    if (_enders.contains(word.substring(word.length - 1))) {
       out.add(current.join(' '));
       current = <String>[];
     }
