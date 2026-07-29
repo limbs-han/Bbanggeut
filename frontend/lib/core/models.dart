@@ -95,6 +95,84 @@ class DeviceSummary {
   );
 }
 
+class VaultDevice {
+  const VaultDevice({
+    required this.bindingId,
+    required this.generation,
+    required this.device,
+  });
+
+  final String bindingId;
+  final int generation;
+  final DeviceSummary device;
+
+  factory VaultDevice.fromJson(
+    Map<String, dynamic> json, {
+    required String myRole,
+    required int retentionDays,
+  }) => VaultDevice(
+    bindingId: json['bindingId'] as String,
+    generation: (json['generation'] as num?)?.toInt() ?? 1,
+    device: DeviceSummary(
+      id: json['deviceId'] as String,
+      name: json['name'] as String? ?? '내 카메라',
+      model: json['model'] as String? ?? '',
+      status: json['status'] as String? ?? 'OFFLINE',
+      myRole: myRole,
+      retentionDays: retentionDays,
+      lastSeenAt: parseDate(json['lastSeenAt']),
+    ),
+  );
+}
+
+class MemoryVault {
+  const MemoryVault({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.myRole,
+    required this.retentionDays,
+    required this.subscriptionActive,
+    required this.devices,
+    this.subscriptionGraceUntil,
+  });
+
+  final String id;
+  final String name;
+  final String status;
+  final String myRole;
+  final int retentionDays;
+  final bool subscriptionActive;
+  final DateTime? subscriptionGraceUntil;
+  final List<VaultDevice> devices;
+
+  bool get isOwner => myRole == 'OWNER';
+  bool get hasConnectedDevice => devices.isNotEmpty;
+
+  factory MemoryVault.fromJson(Map<String, dynamic> json) {
+    final role = json['myRole'] as String? ?? 'MEMBER';
+    final retention = (json['retentionDays'] as num?)?.toInt() ?? 30;
+    return MemoryVault(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '나의 추억',
+      status: json['status'] as String? ?? 'ACTIVE',
+      myRole: role,
+      retentionDays: retention,
+      subscriptionActive: json['subscriptionActive'] as bool? ?? false,
+      subscriptionGraceUntil: parseDate(json['subscriptionGraceUntil']),
+      devices: (json['devices'] as List? ?? const [])
+          .map(
+            (item) => VaultDevice.fromJson(
+              item as Map<String, dynamic>,
+              myRole: role,
+              retentionDays: retention,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
 class DeviceStatus {
   const DeviceStatus({
     required this.status,
