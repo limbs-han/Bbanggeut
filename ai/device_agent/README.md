@@ -403,7 +403,10 @@ sudo journalctl -u wj-registration-button-jetson -f
 ```
 
 The LCD shows `Press button`, then `Requesting code`, followed by the issued
-`XXXX-XXXX` value. A failed or timed-out request displays a short error instead.
+`XXXX-XXXX` value. At the server-provided expiry time (normally two minutes),
+the LCD replaces the stale code with `Code expired` / `Press button`. Issuing a
+new code cancels the previous expiry timer. A failed or timed-out request
+displays a short error instead.
 Override `REGISTRATION_BUTTON_CHIP`, `REGISTRATION_BUTTON_LINE`,
 `LCD_I2C_BUS`, `LCD_I2C_ADDRESS`, or `LCD_COLUMNS` in
 `/etc/william-james/device-agent.env` when the target differs.
@@ -417,6 +420,9 @@ sudo /usr/bin/python3 \
   /opt/william-james/device-agent/jetson_registration_button.py --once
 sudo systemctl start wj-registration-button-jetson
 ```
+
+In `--once` mode the process remains active until the code expires, updates the
+LCD to the expired message, and then exits.
 
 ### Jetson PCA9685 servo test
 
