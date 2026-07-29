@@ -67,6 +67,7 @@ MQTT_USERNAME=$MQTT_USERNAME
 MQTT_PASSWORD=$MQTT_PASSWORD
 MQTT_ENV=prod
 MEDIA_BASE_URL=https://i15e201.p.ssafy.io/live
+WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live
 FFMPEG_PATH=/usr/bin/ffmpeg
 EOF
 fi
