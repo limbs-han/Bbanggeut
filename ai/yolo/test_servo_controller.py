@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 import sys
 import types
 import unittest
@@ -12,6 +13,8 @@ from servo_controller import (
     AxisConfig,
     Pca9685ServoOutput,
     ServoController,
+    build_axis_configs,
+    parse_args,
     parse_framing_target,
 )
 
@@ -154,6 +157,28 @@ class FramingTargetValidationTests(unittest.TestCase):
                 expected_device_id="different-device",
                 received_epoch=100.1,
             )
+
+
+class AxisConfigurationTests(unittest.TestCase):
+    def test_tilt_supports_symmetric_limits_around_home(self) -> None:
+        environment = {
+            "DEVICE_ID": DEVICE_ID,
+            "SERVO_TILT_MIN_DEG": "-20",
+            "SERVO_TILT_MAX_DEG": "20",
+            "SERVO_TILT_PULSE_DIRECTION": "1",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=False),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            _, tilt = build_axis_configs(parse_args())
+
+        self.assertEqual(tilt.minimum_deg, -20.0)
+        self.assertEqual(tilt.home_deg, 0.0)
+        self.assertEqual(tilt.maximum_deg, 20.0)
+        self.assertEqual(tilt.pulse_direction, 1)
+        self.assertAlmostEqual(tilt.pulse_for_position(-20.0), 1388.88888)
+        self.assertAlmostEqual(tilt.pulse_for_position(20.0), 1611.11112)
 
 
 class Pca9685OutputTests(unittest.TestCase):
