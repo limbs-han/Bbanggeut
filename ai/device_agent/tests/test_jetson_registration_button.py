@@ -1,15 +1,19 @@
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
 from jetson_registration_button import (
+    CodeExpiryTimer,
     RegistrationDisplay,
     environment_integer,
     parse_args,
     parse_registration_response,
     request_registration_code,
+    seconds_until_expiry,
+    wait_until_expired,
 )
 
 
@@ -31,6 +35,28 @@ class FakeResult:
         self.stdout = stdout
 
 
+class FakeTimer:
+    instances = []
+
+    def __init__(self, delay, callback, args=()):
+        self.delay = delay
+        self.callback = callback
+        self.args = args
+        self.daemon = False
+        self.started = False
+        self.cancelled = False
+        self.__class__.instances.append(self)
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+    def fire(self):
+        self.callback(*self.args)
+
+
 class JetsonRegistrationButtonTest(unittest.TestCase):
     def test_once_argument_requests_immediate_registration(self):
         self.assertTrue(parse_args(["--once"]).once)
@@ -43,6 +69,7 @@ class JetsonRegistrationButtonTest(unittest.TestCase):
         display.show_ready()
         display.show_requesting()
         display.show_code("ABCD-1234")
+        display.show_expired()
 
         self.assertEqual(
             lcd.lines,
@@ -53,6 +80,8 @@ class JetsonRegistrationButtonTest(unittest.TestCase):
                 (1, "Please wait...", 16),
                 (0, "Registration", 16),
                 (1, "ABCD-1234", 16),
+                (0, "Code expired", 16),
+                (1, "Press button", 16),
             ],
         )
 
@@ -104,6 +133,74 @@ class JetsonRegistrationButtonTest(unittest.TestCase):
             parse_registration_response(
                 '{"registrationCode":"bad code","expiresAt":"later"}',
             )
+
+    def test_expiry_delay_uses_server_timestamp_and_never_goes_negative(self):
+        now = datetime(2026, 7, 29, 6, 0, 0, tzinfo=timezone.utc)
+
+        self.assertAlmostEqual(
+            seconds_until_expiry(
+                "2026-07-29T06:02:00.123456789Z",
+                now=now,
+            ),
+            120.123456,
+        )
+        self.assertEqual(
+            seconds_until_expiry("2026-07-29T05:59:00Z", now=now),
+            0.0,
+        )
+        with self.assertRaises(ValueError):
+            seconds_until_expiry("2026-07-29T06:02:00", now=now)
+
+    @patch(
+        "jetson_registration_button.seconds_until_expiry",
+        side_effect=[120.0, 180.0],
+    )
+    def test_expiry_timer_replaces_old_timer_and_shows_expired(
+        self,
+        expiry_delay,
+    ):
+        FakeTimer.instances = []
+        lcd = FakeLcd()
+        timer = CodeExpiryTimer(
+            RegistrationDisplay(lcd),
+            timer_factory=FakeTimer,
+        )
+
+        timer.schedule("2026-07-29T06:02:00Z")
+        first = FakeTimer.instances[-1]
+        timer.schedule("2026-07-29T06:03:00Z")
+        second = FakeTimer.instances[-1]
+
+        self.assertTrue(first.cancelled)
+        self.assertTrue(second.started)
+        self.assertTrue(second.daemon)
+        self.assertEqual(second.delay, 180.0)
+        self.assertEqual(expiry_delay.call_count, 2)
+        first.fire()
+        self.assertEqual(lcd.lines, [])
+        second.fire()
+        self.assertEqual(
+            lcd.lines,
+            [
+                (0, "Code expired", 16),
+                (1, "Press button", 16),
+            ],
+        )
+
+    def test_once_waits_until_expiry_then_updates_display(self):
+        lcd = FakeLcd()
+        display = RegistrationDisplay(lcd)
+        delays = []
+        now = datetime.now(timezone.utc)
+        expires_at = now.isoformat()
+
+        wait_until_expired(display, expires_at, sleep=delays.append)
+
+        self.assertEqual(delays, [0.0])
+        self.assertEqual(lcd.lines[-2:], [
+            (0, "Code expired", 16),
+            (1, "Press button", 16),
+        ])
 
     def test_environment_integer_accepts_hex_and_checks_range(self):
         with patch.dict(os.environ, {"LCD_ADDRESS": "0x3f"}):

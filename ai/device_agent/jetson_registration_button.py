@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -48,10 +49,12 @@ class RegistrationDisplay:
             raise ValueError(f"LCD columns must be 16 or 20: {columns}")
         self._lcd = lcd
         self._columns = columns
+        self._lock = threading.Lock()
 
     def _show(self, line1: str, line2: str) -> None:
-        self._lcd.write_line(0, line1, width=self._columns)
-        self._lcd.write_line(1, line2, width=self._columns)
+        with self._lock:
+            self._lcd.write_line(0, line1, width=self._columns)
+            self._lcd.write_line(1, line2, width=self._columns)
 
     def show_ready(self) -> None:
         self._show("Press button", "to register")
@@ -61,6 +64,9 @@ class RegistrationDisplay:
 
     def show_code(self, code: str) -> None:
         self._show("Registration", code)
+
+    def show_expired(self) -> None:
+        self._show("Code expired", "Press button")
 
     def show_error(self, message: str = "Request failed") -> None:
         self._show("Registration", message)
@@ -85,6 +91,82 @@ def environment_integer(
         limit = f"{minimum}..{maximum}" if maximum is not None else f">={minimum}"
         raise ValueError(f"{name} must be in {limit}: {value}")
     return value
+
+
+def seconds_until_expiry(
+    expires_at: str,
+    *,
+    now: datetime | None = None,
+) -> float:
+    normalized = (
+        f"{expires_at[:-1]}+00:00"
+        if expires_at.endswith(("Z", "z"))
+        else expires_at
+    )
+    try:
+        expiry = datetime.fromisoformat(normalized)
+    except ValueError as error:
+        raise ValueError(f"Invalid registration expiry: {expires_at}") from error
+    if expiry.tzinfo is None:
+        raise ValueError("Registration expiry must include a timezone")
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("Current time must include a timezone")
+    return max((expiry - current).total_seconds(), 0.0)
+
+
+class CodeExpiryTimer:
+    def __init__(
+        self,
+        display: RegistrationDisplay,
+        *,
+        timer_factory: Callable[..., Any] = threading.Timer,
+    ) -> None:
+        self._display = display
+        self._timer_factory = timer_factory
+        self._lock = threading.Lock()
+        self._timer: Any | None = None
+        self._generation = 0
+
+    def schedule(self, expires_at: str) -> None:
+        delay = seconds_until_expiry(expires_at)
+        with self._lock:
+            self._generation += 1
+            generation = self._generation
+            if self._timer is not None:
+                self._timer.cancel()
+            timer = self._timer_factory(
+                delay,
+                self._expire,
+                args=(generation,),
+            )
+            timer.daemon = True
+            self._timer = timer
+            timer.start()
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._generation += 1
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+
+    def _expire(self, generation: int) -> None:
+        with self._lock:
+            if generation != self._generation:
+                return
+            self._timer = None
+        self._display.show_expired()
+
+
+def wait_until_expired(
+    display: RegistrationDisplay,
+    expires_at: str,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    sleep(seconds_until_expiry(expires_at))
+    display.show_expired()
 
 
 def parse_registration_response(output: str) -> tuple[str, str]:
@@ -174,6 +256,8 @@ def main(argv: list[str] | None = None) -> None:
                 f"Registration code issued: {code}; expires at {expires_at}",
                 flush=True,
             )
+            wait_until_expired(display, expires_at)
+            print("Registration code expired.", flush=True)
         except subprocess.TimeoutExpired:
             display.show_error("Request timeout")
             print(
@@ -191,6 +275,7 @@ def main(argv: list[str] | None = None) -> None:
 
     execution_lock = threading.Lock()
     debounce_lock = threading.Lock()
+    expiry_timer = CodeExpiryTimer(display)
     last_press = 0.0
 
     def run_request() -> None:
@@ -198,7 +283,9 @@ def main(argv: list[str] | None = None) -> None:
             print("Registration request is already running; ignoring press.", flush=True)
             return
         try:
+            expiry_timer.cancel()
             code, expires_at = request_registration_code(display, timeout=timeout)
+            expiry_timer.schedule(expires_at)
             print(
                 f"Registration code issued: {code}; expires at {expires_at}",
                 flush=True,
@@ -246,6 +333,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         signal.pause()
     finally:
+        expiry_timer.cancel()
         if callback is not None:
             callback.cancel()
         try:
