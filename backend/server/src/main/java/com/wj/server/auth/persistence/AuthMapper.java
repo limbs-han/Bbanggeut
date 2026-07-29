@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.wj.server.auth.domain.AuthSessionRow;
 import com.wj.server.auth.domain.PasswordResetTokenRow;
+import com.wj.server.auth.domain.SessionAuthStateRow;
 import com.wj.server.auth.domain.UserRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -72,6 +73,22 @@ public interface AuthMapper {
            AND expires_at > now()
         """)
     Optional<AuthSessionRow> findActiveSession(@Param("refreshTokenHash") String refreshTokenHash);
+
+    /**
+     * Looked up on every authenticated request so that a revoked session or a
+     * bumped token version invalidates an access token immediately, instead of
+     * only when it expires.
+     */
+    @Select("""
+        SELECT s.user_id, u.token_version, u.status
+          FROM auth_sessions s
+          JOIN users u ON u.id = s.user_id
+         WHERE s.id = #{sessionId}
+           AND s.revoked_at IS NULL
+           AND s.expires_at > now()
+           AND u.deleted_at IS NULL
+        """)
+    Optional<SessionAuthStateRow> findSessionAuthState(@Param("sessionId") UUID sessionId);
 
     @Update("""
         UPDATE auth_sessions
