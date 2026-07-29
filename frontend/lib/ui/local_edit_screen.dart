@@ -549,6 +549,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         captionColor: _captionColor.toARGB32(),
         filter: _selectedFilter,
         arSticker: _arSticker,
+        // 자른 구간 밖은 버리고 시각을 클립 기준으로 옮긴다. 전사가 실패했으면
+        // 빈 목록이 되어 종전과 똑같이 저장된다.
+        captions: _autoCaptions.forExport(
+          startMs: _editState.startMs,
+          endMs: _editState.endMs,
+        ),
       );
       final file = File(outputPath);
       if (!await file.exists() || (await file.length()) == 0) {

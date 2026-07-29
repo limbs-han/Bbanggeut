@@ -97,6 +97,8 @@ class MainActivity : FlutterActivity() {
                 val captionColor = call.argument<Number>("captionColor")?.toInt() ?: 0xFFFFFFFF.toInt()
                 val filter = call.argument<String>("filter") ?: "none"
                 val arSticker = call.argument<String>("arSticker").orEmpty()
+                val segments = call.argument<List<Map<String, Any?>>>("segments")
+                    ?: emptyList()
                 if (inputPath.isNullOrBlank() || outputPath.isNullOrBlank()) {
                     result.error(
                         "INVALID_ARGUMENT",
@@ -116,6 +118,7 @@ class MainActivity : FlutterActivity() {
                     captionColor,
                     filter,
                     arSticker,
+                    segments,
                     result,
                 )
             }
@@ -271,6 +274,7 @@ class MainActivity : FlutterActivity() {
         captionColor: Int,
         filter: String,
         arSticker: String,
+        rawSegments: List<Map<String, Any?>>,
         result: MethodChannel.Result,
     ) {
         val inputFile = File(inputPath)
@@ -291,8 +295,19 @@ class MainActivity : FlutterActivity() {
         val actualStart = if (end > start) start else 0
         val actualEnd = if (end > start) end else start
 
+        // 들린 대사로 만든 시각별 자막. 손 자막이 있으면 얹지 않는다 — 자리가
+        // 같아서 겹치면 읽을 수 없다.
+        val subtitles = if (captionText.isBlank()) {
+            SubtitleOverlay.of(rawSegments, captionColor)
+        } else {
+            null
+        }
+
         val trimmedFile = File(outputPath)
-        if (actualStart == 0 && actualEnd <= 0) {
+        // 그릴 것이 있으면 복사로 빠질 수 없다.
+        if (actualStart == 0 && actualEnd <= 0 &&
+            captionText.isBlank() && arSticker.isBlank() && subtitles == null
+        ) {
             inputFile.copyTo(trimmedFile, overwrite = true)
             result.success(trimmedFile.absolutePath)
             return
@@ -397,6 +412,7 @@ class MainActivity : FlutterActivity() {
                 ),
             )
         }
+        subtitles?.let(overlays::add)
         if (overlays.isNotEmpty()) {
             videoEffects.add(OverlayEffect(overlays))
         }
