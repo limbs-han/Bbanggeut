@@ -14,10 +14,8 @@ class VaultArchiveScreen extends StatelessWidget {
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) => DeviceRegistrationScreen(
-          controller: controller,
-          canGoBack: true,
-        ),
+        builder: (_) =>
+            DeviceRegistrationScreen(controller: controller, canGoBack: true),
       ),
     );
   }
@@ -27,7 +25,7 @@ class VaultArchiveScreen extends StatelessWidget {
     final vault = controller.selectedVault!;
     return Scaffold(
       appBar: AppBar(
-        title: Text(vault.name),
+        title: Text(controller.vaults.length > 1 ? '모든 추억' : vault.name),
         actions: [
           IconButton(
             key: const Key('vault-archive-refresh'),

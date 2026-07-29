@@ -200,10 +200,25 @@ class AppController extends ChangeNotifier {
 
     final previousVaultId = selectedVault?.id;
     final previousDeviceId = selectedDevice?.id;
-    selectedVault = vaults.firstWhere(
-      (item) => item.id == previousVaultId,
-      orElse: () => vaults.first,
-    );
+    MemoryVault? previousVault;
+    for (final vault in vaults) {
+      if (vault.id == previousVaultId) {
+        previousVault = vault;
+        break;
+      }
+    }
+    MemoryVault? connectedVault;
+    for (final vault in vaults) {
+      if (vault.hasConnectedDevice) {
+        connectedVault = vault;
+        break;
+      }
+    }
+    selectedVault =
+        previousVault != null &&
+            (previousVault.hasConnectedDevice || connectedVault == null)
+        ? previousVault
+        : connectedVault ?? vaults.first;
     devices = selectedVault!.devices
         .map((binding) => binding.device)
         .toList(growable: false);
@@ -228,7 +243,7 @@ class AppController extends ChangeNotifier {
   Future<void> refreshVaultData() async {
     final vault = selectedVault;
     if (vault == null) return;
-    videos = await api.listAllVaultVideos(vault.id);
+    videos = await _loadAccessibleVideos();
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;
@@ -281,9 +296,7 @@ class AppController extends ChangeNotifier {
     final results = await Future.wait<Object?>([
       api.getDeviceStatus(device.id),
       api.getVideoStats(device.id),
-      vault == null
-          ? api.listAllVideos(device.id)
-          : api.listAllVaultVideos(vault.id),
+      vault == null ? api.listAllVideos(device.id) : _loadAccessibleVideos(),
       api.listMembers(device.id),
       if (device.isOwner)
         api.listDeviceInvitations(device.id)
@@ -299,6 +312,28 @@ class AppController extends ChangeNotifier {
     sentInvitations = results[4] as List<Invitation>;
     homeSummary = results[5] as HomeSummary?;
     notifyListeners();
+  }
+
+  Future<List<VideoMemory>> _loadAccessibleVideos() async {
+    final pages = await Future.wait(
+      vaults.map((vault) => api.listAllVaultVideos(vault.id)),
+    );
+    final videosById = <String, VideoMemory>{};
+    for (final page in pages) {
+      for (final video in page) {
+        videosById[video.id] = video;
+      }
+    }
+    final result = videosById.values.toList();
+    result.sort((left, right) {
+      final leftAt = left.capturedStartAt ?? left.createdAt;
+      final rightAt = right.capturedStartAt ?? right.createdAt;
+      if (leftAt == null && rightAt == null) return 0;
+      if (leftAt == null) return 1;
+      if (rightAt == null) return -1;
+      return rightAt.compareTo(leftAt);
+    });
+    return result;
   }
 
   Future<bool> claimDevice(String code) async => _guard(() async {
