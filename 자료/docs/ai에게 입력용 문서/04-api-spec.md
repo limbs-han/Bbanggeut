@@ -5,7 +5,7 @@
 
 ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 제외) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
 
-**API-51은 `[제안]` — 신규 리포트 화면(FN-A38/FN-S26, `03-기능명세서.md` 8절)을 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
+**API-51은 `[제안]` — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
 
 ---
 
@@ -187,7 +187,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 {
   "sessionId": "uuid", "streamId": "uuid", "deviceId": "uuid",
   "status": "PENDING|READY|FAILED|CLOSED|EXPIRED",
-  "playUrl": null,                     // READY일 때만 값 존재, HLS URL
+  "playUrl": null,                     // READY일 때만 값 존재, HLS 폴백 URL
+  "whepUrl": null,                     // READY일 때만 값 존재, WebRTC/WHEP 우선 URL
   "heartbeatIntervalSeconds": 15,
   "viewerExpiresAt": "2026-07-27T00:00:45Z",
   "edgeHardExpiresAt": "2026-07-27T00:02:00Z",
@@ -196,7 +197,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `DEVICE_OFFLINE`(기기 오프라인이면 세션 생성 거부)
-- 실사용: `EmbeddedLivePlayer._start`(`HomeScreen`); `LiveScreen._start`는 도달 불가 화면(부록A FN-A12)
+- 실사용: `EmbeddedLivePlayer`와 전체화면 라이브. `WhepPlayerController`로 WHEP 우선 연결 후 HLS 폴백
 
 ### API-36 `GET /api/stream-sessions/{sessionId}`
 - 인증: 사용자 JWT
@@ -241,8 +242,10 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ### 미디어 경로
 
 - **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. ffmpeg: `-f v4l2` 입력→`-c:v libx264 -preset ultrafast -tune zerolatency`(기본 2500kbps)→`-f rtsp -rtsp_transport tcp`. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`
-- **HLS 재생(앱)**: 세션 생성(API-35)의 `playUrl`을 그대로 사용. 구성: `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`. 타이밍: 뷰어TTL45초/유휴60초/엣지하드만료120초/하트비트15초/HLS토큰30초. 상태 폴링 2초 간격(API-36), 토큰 20초마다 선제 재조회, 종료 시 API-37 호출
-- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — MediaMTX가 재생 시점마다 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다. 호출 주체는 ⚠️ 미확인(MediaMTX 추정).
+- **WebRTC/WHEP 우선(앱)**: `whepUrl`에 recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
+- **HLS 폴백(앱)**: WHEP/ICE 실패 또는 `whepUrl` 부재 시 `playUrl` 사용. `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
+- **운영 경로**: Nginx HTTPS 443 `/webrtc/.../whep`→MediaMTX loopback 8889, WebRTC media/ICE UDP 8189. 8889 직접 외부 노출 금지
+- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP/HLS 접근 인가에 사용. 앱/젯슨 직접 호출 금지
 - 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신.
 
 ---
@@ -375,7 +378,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 ### API-51 `GET /api/devices/{deviceId}/laugh-report` **[제안·미구현]**
 
-> 신규 리포트 화면(FN-A38/FN-S26, `03-기능명세서.md` 8절)을 위한 초안이다. **코드 없음.** 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**(이 API 응답 자체는 재생 URL을 담지 않음).
+> 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이다. **API-51 서버 코드 없음.** 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**(이 API 응답 자체는 재생 URL을 담지 않음).
 
 - 인증: 사용자 JWT **[제안]**
 - Query **[제안]**:
@@ -624,14 +627,14 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | API-01~03 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | API-08, 43~45, 07, 11 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS/HLS 미디어 경로 포함 전체 동작 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WHEP/WebRTC 우선·HLS 폴백 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |
-| 7 | 통계 / 리포트 | 부분 구현 | API-27, 33은 구현됨. **API-51(리포트 집계 API)은 미구현(제안 초안)** |
+| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 FN-A38 Flutter 단말 집계 구현. **API-51 서버 집계는 미구현** |
 | 가족 공유 | API-14~24 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작 |
 
-**유일한 미구현 항목은 API-51(리포트 집계, 제안)이다.**
+MVP 7단계의 신규 API 중 **API-51 서버 집계는 미구현**이다. FN-A38 Flutter 리포트 화면 자체는 기존 영상 목록으로 동작한다.
 
 ### API-06 제외 사유
 
