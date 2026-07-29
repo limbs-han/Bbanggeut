@@ -22,6 +22,7 @@ import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
 import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
+import com.wj.server.vault.persistence.VaultMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +43,8 @@ class DeviceServiceTest {
     private AuditService auditService;
     @Mock
     private DeviceMqttIdentityManager mqttIdentityManager;
+    @Mock
+    private VaultMapper vaultMapper;
 
     private RegistrationCodeHasher registrationCodeHasher;
     private DeviceService deviceService;
@@ -51,7 +54,7 @@ class DeviceServiceTest {
         registrationCodeHasher = new RegistrationCodeHasher();
         deviceService = new DeviceService(
             deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, mqttIdentityManager,
+            claimAttemptService, auditService, mqttIdentityManager, vaultMapper,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -60,6 +63,7 @@ class DeviceServiceTest {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UUID codeId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
         RegistrationCodeRow code = new RegistrationCodeRow(
             codeId, deviceId, NOW.plusSeconds(30), null, "UNCLAIMED");
         DeviceViewRow claimed = new DeviceViewRow(
@@ -69,16 +73,18 @@ class DeviceServiceTest {
             .thenReturn(Optional.of(code));
         when(deviceMapper.markClaimed(deviceId, userId, "거실")).thenReturn(1);
         when(registrationCodeMapper.markUsed(codeId, userId)).thenReturn(1);
+        when(vaultMapper.findActiveRole(userId, vaultId)).thenReturn(Optional.of("OWNER"));
         when(deviceMapper.insertOwnerMembership(deviceId, userId)).thenReturn(1);
         when(deviceMapper.findAccessibleDevice(userId, deviceId)).thenReturn(Optional.of(claimed));
 
         var response = deviceService.claim(
-            userId, new ClaimDeviceRequest(" 7f3k-9xqm ", " 거실 "), "127.0.0.1");
+            userId, new ClaimDeviceRequest(" 7f3k-9xqm ", " 거실 ", vaultId), "127.0.0.1");
 
         verify(deviceMapper).markClaimed(deviceId, userId, "거실");
         verify(registrationCodeMapper).markUsed(codeId, userId);
+        verify(vaultMapper).insertActiveBinding(deviceId, vaultId);
         verify(deviceMapper).insertOwnerMembership(deviceId, userId);
-        verify(claimAttemptService).recordSuccess(userId, "127.0.0.1");
+        verify(claimAttemptService).clearFailures(userId);
         assertThat(response.status()).isEqualTo("OFFLINE");
         assertThat(response.myRole()).isEqualTo("OWNER");
         assertThat(response.name()).isEqualTo("거실");
@@ -169,7 +175,7 @@ class DeviceServiceTest {
         UpdateDeviceRequest request = new UpdateDeviceRequest();
         request.setName("New name");
         when(deviceMapper.lockAccessibleDevice(userId, deviceId))
-            .thenReturn(Optional.of(view(deviceId, "Before", "OFFLINE", "EDITOR")));
+            .thenReturn(Optional.of(view(deviceId, "Before", "OFFLINE", "MEMBER")));
 
         assertThatThrownBy(() -> deviceService.update(userId, deviceId, request))
             .isInstanceOf(ApiException.class)
@@ -185,7 +191,7 @@ class DeviceServiceTest {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.findAccessibleDevice(userId, deviceId))
-            .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "VIEWER")));
+            .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "MEMBER")));
         when(deviceMapper.findAccessibleStatus(userId, deviceId))
             .thenReturn(Optional.of(new DeviceStatusRow(deviceId, "OFFLINE", false, 2, 120, null)));
 
@@ -199,21 +205,23 @@ class DeviceServiceTest {
     }
 
     @Test
-    void ownerRevocationClosesDataAndMqttIdentityWithoutCreatingGhostDevice() {
+    void ownerDisconnectPreservesVaultAndMemories() {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.lockAccessibleDevice(ownerId, deviceId))
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
-        when(deviceMapper.markRevoked(deviceId)).thenReturn(1);
+        UUID vaultId = UUID.randomUUID();
+        when(vaultMapper.lockActiveVaultId(deviceId)).thenReturn(Optional.of(vaultId));
+        when(vaultMapper.endActiveBinding(deviceId, ownerId, "DISCONNECTED")).thenReturn(1);
+        when(deviceMapper.markUnclaimed(deviceId)).thenReturn(1);
 
         deviceService.revoke(ownerId, deviceId);
 
-        verify(deviceMapper).revokeActiveCredentials(deviceId);
         verify(deviceMapper).cancelPendingInvitations(deviceId);
         verify(deviceMapper).revokeAllMemberships(deviceId, ownerId);
-        verify(deviceMapper).markAllVideosDeleting(deviceId, ownerId);
-        verify(deviceMapper).enqueueDeletionJobsForDevice(deviceId);
-        verify(mqttIdentityManager).revoke(deviceId);
+        verify(deviceMapper, never()).markAllVideosDeleting(deviceId, ownerId);
+        verify(deviceMapper, never()).enqueueDeletionJobsForDevice(deviceId);
+        verify(mqttIdentityManager, never()).revoke(deviceId);
     }
 
     @Test
@@ -226,14 +234,16 @@ class DeviceServiceTest {
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
         when(deviceMapper.lockMembership(deviceId, membershipId))
             .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
-                membershipId, memberId, "EDITOR", "ACTIVE")));
-        when(deviceMapper.demoteOwnerToEditor(deviceId, ownerId)).thenReturn(1);
+                membershipId, memberId, "MEMBER", "ACTIVE")));
+        when(vaultMapper.demoteOwnerForDevice(deviceId, ownerId)).thenReturn(1);
+        when(vaultMapper.promoteMemberForDevice(deviceId, membershipId)).thenReturn(1);
+        when(deviceMapper.demoteOwnerToMember(deviceId, ownerId)).thenReturn(1);
         when(deviceMapper.promoteNonOwnerToOwner(deviceId, membershipId)).thenReturn(1);
 
         deviceService.transferOwnership(
             ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId));
 
-        verify(deviceMapper).demoteOwnerToEditor(deviceId, ownerId);
+        verify(deviceMapper).demoteOwnerToMember(deviceId, ownerId);
         verify(deviceMapper).promoteNonOwnerToOwner(deviceId, membershipId);
         verify(deviceMapper, never()).markAllVideosDeleting(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
@@ -248,14 +258,14 @@ class DeviceServiceTest {
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
         when(deviceMapper.lockMembership(deviceId, membershipId))
             .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
-                membershipId, UUID.randomUUID(), "VIEWER", "REVOKED")));
+                membershipId, UUID.randomUUID(), "MEMBER", "REVOKED")));
 
         assertThatThrownBy(() -> deviceService.transferOwnership(
             ownerId, deviceId, new com.wj.server.device.api.TransferOwnershipRequest(membershipId)))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("TRANSFER_TARGET_NOT_ACTIVE_MEMBER");
-        verify(deviceMapper, never()).demoteOwnerToEditor(
+        verify(deviceMapper, never()).demoteOwnerToMember(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 

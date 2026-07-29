@@ -9,6 +9,7 @@ public record StreamSessionResponse(
     UUID deviceId,
     String status,
     String playUrl,
+    String whepUrl,
     int heartbeatIntervalSeconds,
     Instant viewerExpiresAt,
     Instant edgeHardExpiresAt,
