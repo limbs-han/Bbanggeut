@@ -1017,7 +1017,7 @@ Spring Boot = 우리 비즈니스 로직을 실행하는 프로그램 기반
 
 앞의 정의를 바탕으로 처음 문장을 다시 풀면 다음과 같다.
 
-> Flutter 앱은 HTTP라는 요청·응답 규칙으로 Nginx라는 외부 정문에 요청한다. Nginx는 API 요청을 Spring Boot 프로그램에 넘긴다. Spring은 사용자와 권한을 확인하고 PostgreSQL에 metadata를 저장한다. 홈캠과 Spring 사이의 작은 비동기 상태·명령은 MQTT 규칙을 사용하고 Mosquitto가 중개한다. 완성된 MP4는 파일 전문 저장소인 MinIO에 보관한다. 라이브 H.264/AAC stream은 홈캠에서 MediaMTX로 들어가고, MediaMTX가 앱이 재생하기 쉬운 HLS로 내보낸다.
+> Flutter 앱은 HTTP라는 요청·응답 규칙으로 Nginx라는 외부 정문에 요청한다. Nginx는 API 요청을 Spring Boot 프로그램에 넘긴다. Spring은 사용자와 권한을 확인하고 PostgreSQL에 metadata를 저장한다. 홈캠과 Spring 사이의 작은 비동기 상태·명령은 MQTT 규칙을 사용하고 Mosquitto가 중개한다. 완성된 MP4는 파일 전문 저장소인 MinIO에 보관한다. 라이브 H.264/AAC stream은 홈캠에서 MediaMTX로 들어가고, 앱은 지연이 짧은 WebRTC/WHEP를 먼저 시도하며 실패하면 HLS로 재생한다.
 
 이 문장을 자기 말로 설명할 수 있으면 뒤의 MVP 흐름을 읽을 준비가 된 것이다.
 
@@ -2085,9 +2085,10 @@ A. 객체 저장소의 서명 검증 시점과 연결 동작에 따라 달라질
 - REQ-F-36 웃음/영상 통계: 구현
 - API-33 `VideoStatsService`: 프론트가 실제 사용
 - API-46 `EventStatsService`: 백엔드 구현은 있으나 현재 클라이언트 사용 경로는 사실상 없음
-- REQ-F-42 이벤트 전용 신규 리포트 화면: 미구현, 개발 예정
+- REQ-F-42 이벤트 전용 리포트 화면: Flutter UI 구현. 기존 영상 목록의 `LAUGHTER` 항목을 단말에서 날짜별 집계
+- FN-S26/API-51 주간·월간 서버 집계 API: 미구현, 제안 계약만 존재
 
-따라서 시연은 현행 캘린더와 웃음 통계로 충족하고, 신규 전용 리포트를 이미 완성된 것처럼 말하지 않는다.
+따라서 시연에서는 Flutter 리포트 화면을 보여줄 수 있지만, 전용 서버 집계 API까지 완성됐다고 말하면 안 된다. 화면 구현과 서버 집계 구현을 분리해서 설명한다.
 
 ## 8.2 영상 통계와 이벤트 통계 차이
 
@@ -2487,7 +2488,7 @@ Docker 내부 주소 `http://minio:9000`으로 서명된 URL을 휴대폰에 주
 
 ## 14.3 저장 시 암호화
 
-운영 compose는 MinIO SSE-KMS와 KES 설정을 요구한다. TLS는 이동 중 암호화, SSE는 디스크에 저장된 객체 암호화다.
+현재 운영 compose는 준비되지 않은 KES를 강제하지 않는다. MinIO 버킷은 anonymous access를 끄고 presigned URL로만 접근한다. TLS는 이동 중 암호화이고 SSE-KMS는 디스크 저장 객체 암호화를 위한 별도 운영 강화 항목이므로, KES·키 백업·복구 절차가 함께 준비된 뒤 활성화해야 한다.
 
 - TLS가 있어도 디스크가 유출되면 저장 데이터 보호는 별도 문제
 - SSE key 수명주기와 백업이 중요
@@ -2562,7 +2563,7 @@ MQTT 기기 연결이 필요하면 TLS 8883을 공개하되 기기별 인증·AC
 | Mosquitto 중단 | 상태·명령 유실/지연, 로컬 클립 생성은 계속 | broker, 재연결 backoff |
 | MinIO 중단 | presigned/stat 실패, 업로드 queue 재시도 | 503, MinIO health |
 | PostgreSQL 중단 | 권한·상태 판단 불가, API 실패 | DB health, connection |
-| MediaMTX 중단 | 로그인·목록은 되지만 라이브 불가 | HLS/RTSP health |
+| MediaMTX 중단 | 로그인·목록은 되지만 라이브 불가 | WHEP/HLS/RTSP health |
 | 앱 강제 종료 | viewer heartbeat 만료 후 stream 정리 | lifecycle worker |
 | 서버+MQTT 동시 중단 | edge hard lease 후 라이브 자체 종료 | device stream agent |
 | PUT 성공, complete 유실 | DB는 UPLOADING, 같은 eventId complete 재시도 | idempotency |
@@ -2575,11 +2576,11 @@ MQTT 기기 연결이 필요하면 TLS 8883을 공개하되 기기별 인증·AC
 
 1. Banuba 편집은 Android 전용이며 라이선스 token이 필요하다.
 2. 편집 결과 서버 재업로드는 MVP 요구가 아니고 현재 제품 흐름에 없다.
-3. REQ-F-42 전용 이벤트 리포트 화면은 미구현이다.
+3. REQ-F-42 Flutter 리포트 화면은 구현됐지만, FN-S26/API-51 서버 집계는 미구현이다.
 4. API-46 원시 이벤트 통계는 백엔드 구현이 있지만 프론트가 현재 실사용하지 않는다.
 5. 기기 status 응답의 `recording`, `uploadQueueDepth`는 실제 edge 연동에서 스텁 값일 수 있다.
 6. 과거 문서와 migration에 서버 편집·확장 기능 흔적이 있어도 최신 MVP와 구분한다.
-7. 라이브 준비는 기기 `STREAM_READY`뿐 아니라 실제 HLS playlist/segment 준비와 함께 봐야 한다.
+7. 라이브 준비는 기기 `STREAM_READY`뿐 아니라 WHEP 연결 가능 여부와 HLS 폴백 playlist/segment 준비를 함께 봐야 한다.
 8. presigned URL은 권한을 영구 위임하는 것이 아니지만 만료 전 유출 위험은 있다.
 9. MQTT QoS 1은 중복 가능하므로 eventId/requestId 멱등 처리가 필수다.
 10. DB와 MinIO/MQTT 사이에는 단일 ACID 트랜잭션이 없으므로 worker와 상태 머신이 필요하다.
@@ -2742,6 +2743,8 @@ cd server
 - MQTTS: 8883
 - MediaMTX RTSP: 8554
 - MediaMTX HLS: 8888
+- MediaMTX WHEP/WebRTC signaling: 8889
+- MediaMTX WebRTC media/ICE: UDP 8189
 
 로컬 포트가 열려 있다는 것과 운영에서 인터넷에 공개해도 된다는 것은 전혀 다르다.
 
@@ -2787,7 +2790,8 @@ claim 성공 → OWNER membership
 REST: viewer session
 MQTT: START/EXTEND/STOP + STREAM_READY
 RTSP(S): 기기 → MediaMTX
-HLS: MediaMTX → 앱
+WebRTC/WHEP: MediaMTX → 앱 우선 재생
+HLS: WebRTC 실패 시 폴백
 Spring은 제어 평면
 
 [4 이벤트 영상]
@@ -2811,7 +2815,8 @@ Banuba Android 로컬 편집
 영상 통계 = READY videos
 이벤트 통계 = raw device_events
 Asia/Seoul 날짜를 UTC instant 범위로 변환
-REQ-F-42 전용 화면은 아직 미구현
+REQ-F-42 Flutter 화면 = 기존 LAUGHTER 영상 단말 집계
+FN-S26/API-51 서버 집계 = 아직 미구현
 
 [공통]
 PostgreSQL = 관계·권한·상태·통계
@@ -2845,3 +2850,102 @@ Docker = 실행 환경 재현
 - 운영 인프라: `backend/deploy`
 
 이 문서에서 이해가 안 되는 용어가 나오면 첨부 자료 `배경지식_통신_인증_저장소.md`의 네트워크, 인증, 저장소, 인프라, mTLS 장을 먼저 읽고 해당 MVP 절로 돌아오면 된다.
+
+---
+
+# 23. 2026-07-29 최신 변경 학습 노트
+
+## 23.1 왜 WebRTC를 추가하고 HLS를 남겼나
+
+HLS는 HTTP 기반이라 프록시·CDN·방화벽과 잘 맞고 재생 호환성이 좋다. 대신 인코더가 segment를 완성하고 playlist를 갱신한 뒤 앱이 내려받으므로 지연이 누적된다. 운영 설정에서 segment를 1초로 낮춰도 여러 segment를 버퍼링하면 체감 지연은 그보다 커진다.
+
+WebRTC는 ICE 연결 뒤 실시간 RTP 미디어를 받아 지연이 짧다. 이 프로젝트는 MediaMTX가 지원하는 **WHEP(WebRTC-HTTP Egress Protocol)**를 사용한다. WHEP는 “MediaMTX에서 앱으로 WebRTC를 꺼내는 HTTP 기반 시그널링 규칙”이다. 별도 WebSocket 시그널링 서버를 만들지 않아도 된다.
+
+현재 재생 순서는 다음과 같다.
+
+```text
+1. 앱이 기존 stream session API 호출
+2. Spring이 READY 세션에 playUrl + whepUrl + 같은 권한 토큰 발급
+3. 앱이 whepUrl에 SDP offer POST
+4. MediaMTX가 SDP answer와 session Location 반환
+5. ICE 연결 성공 → WebRTC 영상 재생
+6. WHEP/ICE 실패 → 기존 playUrl(HLS)로 폴백
+7. 화면 종료 → WHEP session URI DELETE + 기존 viewer session 종료
+```
+
+중요한 코드:
+
+- `StreamSessionResponse`: `whepUrl` 응답 필드
+- `StreamService.toResponse`: READY·만료 전일 때만 HLS/WHEP 토큰 URL 생성
+- `WhepPlayerController`: recv-only peer connection, non-trickle SDP 교환, WHEP 세션 삭제
+- `LiveScreen`: WHEP 우선 연결과 HLS 폴백
+- `nginx-william-james.conf`: `/webrtc/.../whep` 요청의 토큰 검증과 MediaMTX 프록시
+- `mediamtx.yml`: TCP 8889 시그널링, UDP 8189 ICE 미디어
+
+### 보안 관점
+
+8889를 공인망에 직접 열지 않는다. 사용자는 HTTPS 443의 Nginx로 접근하고 Nginx가 loopback 8889로 전달한다. 실제 WebRTC 미디어는 UDP 8189를 사용한다. WHEP URL에도 HLS와 같은 짧은 수명의 라이브 토큰이 붙으며, Nginx introspection으로 현재 세션·멤버십을 확인한다.
+
+면접식 한 문장:
+
+> Spring은 누가 언제 라이브를 볼 수 있는지 결정하고 토큰을 발급하는 제어 평면이고, MediaMTX는 WHEP/WebRTC를 우선 제공하되 연결 실패에 대비해 HLS도 유지하는 데이터 평면이다.
+
+## 23.2 웃음 리포트의 “화면 구현”과 “서버 집계 구현”
+
+`LaughReportContentScreen`은 이미 존재한다. 화면은 `AppController.videos`에 로드된 영상 중 `triggerType == 'LAUGHTER'`만 골라 다음을 단말에서 계산한다.
+
+- 전체 웃음 감지 영상 수
+- 웃음이 있었던 날짜 수
+- 최근 14개 날짜의 횟수
+- 올해 날짜별 웃음 잔디
+- 선택한 날짜의 영상 목록
+
+하지만 API-51은 없다. 즉 서버가 주간/월간 범위, 시간대별 분포, 베스트 클립을 한 응답으로 집계해 주는 구조는 아직 제안 단계다.
+
+```text
+현재: 기존 영상 목록 API → Flutter 메모리 집계 → 리포트 UI
+미구현: GET /api/devices/{deviceId}/laugh-report → 서버 집계 DTO
+```
+
+데이터가 적은 MVP에서는 현재 방식이 단순하다. 데이터가 많아지면 모든 영상을 앱에 내려받아 집계하는 비용이 커지고, 사용자마다 로드한 페이지 범위에 따라 통계가 달라질 수 있다. 그때 API-51 같은 서버 집계가 필요하다.
+
+## 23.3 운영 배포 계약
+
+Backend 운영 릴리스는 실행 JAR 하나만 바꾸지 않는다. 애플리케이션과 맞물린 Compose·MediaMTX·Nginx·secret provisioning을 `backend-deploy.tar.gz`로 함께 묶는다.
+
+```text
+master Backend CI 성공
+  → JAR + backend-deploy.tar.gz 보관
+  → 운영 배포 승인 대기
+  → 승인된 경우 전용 jenkins-deploy 계정으로 업로드
+  → 제한된 sudo 명령 wj-deploy-backend 실행
+  → JAR/인프라 계약 검증
+  → 서비스 활성화 및 health 확인
+```
+
+배포 래퍼는 운영 서버에 JRE만 있어도 동작해야 하므로 JDK의 `jar` 명령을 사용하지 않는다. ZIP/JAR 구조 검증은 사용 가능한 런타임 도구로 수행한다. 기존 PostgreSQL·MinIO named volume은 보존하고, 인프라 변경 때문에 영속 데이터를 지우지 않는다.
+
+사용자 요청 없이 운영 배포 승인 작업을 누르면 안 된다. CI 성공은 “배포 가능한 산출물”을 뜻하며 “지금 운영에 반영하라”는 뜻이 아니다.
+
+## 23.4 MinIO/KES 상태 보정
+
+이전 학습 내용에는 운영 compose가 KES를 반드시 요구한다고 적혀 있었지만 현재 구성은 그렇지 않다. 준비되지 않은 KES를 강제하면 MinIO 자체가 기동하지 않아 전체 영상 업로드가 막힐 수 있어 강제 의존성을 제거했다.
+
+현재 필수 원칙:
+
+- 강한 root credential
+- private bucket
+- anonymous access 차단
+- 앱·기기에는 root credential을 주지 않고 presigned URL만 발급
+- PostgreSQL metadata와 MinIO object를 함께 백업
+
+SSE-KMS/KES는 불필요하다는 뜻이 아니다. 키 생성·권한·회전·백업·복구까지 운영 준비가 끝났을 때 별도로 활성화할 보안 강화 항목이다.
+
+## 23.5 역할별 develop에만 있는 후속 변경
+
+2026-07-29 확인 기준으로 다음 변경은 역할별 develop에는 있지만 이 학습 문서가 병합한 `master` 기준 코드에는 아직 없다.
+
+- `develop/frontend`: 온디바이스 Whisper 기반 STT와 FN-A39 자동 자막
+- `develop/device`: LCD에 등록 코드를 한 번 표시하는 흐름
+
+이 항목은 코드를 미리 공부할 수는 있지만 운영 반영 완료로 발표하면 안 된다. 역할별 develop에서 `master`로 Merge Request가 병합된 뒤 최신 구현 상태를 다시 갱신한다.
