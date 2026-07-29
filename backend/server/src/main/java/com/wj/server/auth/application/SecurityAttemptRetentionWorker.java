@@ -8,6 +8,7 @@ import java.util.List;
 import com.wj.server.auth.persistence.AttemptRetentionMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,7 @@ public class SecurityAttemptRetentionWorker {
     private final AttemptRetentionMapper mapper;
     private final Clock clock;
 
+    @Autowired
     public SecurityAttemptRetentionWorker(AttemptRetentionMapper mapper) {
         this(mapper, Clock.systemUTC());
     }
