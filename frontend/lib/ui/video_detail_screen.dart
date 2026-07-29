@@ -4,12 +4,13 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
+import 'content_video_detail_screen.dart';
 import 'local_edit_screen.dart';
-import 'media_player_surface.dart';
 import 'widgets.dart';
 
-class VideoDetailScreen extends StatefulWidget {
+class VideoDetailScreen extends StatelessWidget {
   const VideoDetailScreen({
     super.key,
     required this.controller,
@@ -17,16 +18,29 @@ class VideoDetailScreen extends StatefulWidget {
   });
   final AppController controller;
   final VideoMemory video;
+
   @override
-  State<VideoDetailScreen> createState() => _VideoDetailScreenState();
+  Widget build(BuildContext context) =>
+      ContentVideoDetailScreen(controller: controller, video: video);
 }
 
-class _VideoDetailScreenState extends State<VideoDetailScreen> {
+class _LegacyVideoDetailScreen extends StatefulWidget {
+  const _LegacyVideoDetailScreen({
+    required this.controller,
+    required this.video,
+  });
+  final AppController controller;
+  final VideoMemory video;
+
+  @override
+  State<_LegacyVideoDetailScreen> createState() => _VideoDetailScreenState();
+}
+
+class _VideoDetailScreenState extends State<_LegacyVideoDetailScreen> {
   VideoPlayerController? player;
   late VideoMemory video;
   bool loading = true;
   String? error;
-  bool get canEdit => widget.controller.selectedDevice?.canEditVideos == true;
 
   @override
   void initState() {
@@ -86,21 +100,16 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
     }
   }
 
-  Future<void> _openVideoEditor({bool drafts = false}) async {
-    await player?.pause();
-    if (!mounted) return;
-    final result = await Navigator.push(
+  Future<void> _openVideoEditor() async {
+    final result = await Navigator.push<SavedBanubaEdit>(
       context,
       MaterialPageRoute(
-        builder: (_) => LocalEditScreen(
-          controller: widget.controller,
-          video: video,
-          openDrafts: drafts,
-        ),
+        builder: (_) =>
+            LocalEditScreen(controller: widget.controller, video: video),
       ),
     );
     if (mounted && result != null) {
-      showAppSnack(context, '편집 영상을 앱 저장소에 보관했어요.');
+      showAppSnack(context, '편집 영상을 저장했어요.');
     }
   }
 
@@ -181,42 +190,41 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
               ),
             ),
             actions: [
-              if (canEdit)
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: CircleAvatar(
-                    backgroundColor: const Color(0x9B2D312B),
-                    child: IconButton(
-                      onPressed: () async {
-                        await widget.controller.toggleFavorite(video);
-                        if (mounted) {
-                          setState(
-                            () => video = VideoMemory(
-                              id: video.id,
-                              deviceId: video.deviceId,
-                              triggerType: video.triggerType,
-                              sourceType: video.sourceType,
-                              title: video.title,
-                              status: video.status,
-                              favorite: !video.favorite,
-                              description: video.description,
-                              durationMs: video.durationMs,
-                              thumbnailUrl: video.thumbnailUrl,
-                              capturedStartAt: video.capturedStartAt,
-                              createdAt: video.createdAt,
-                            ),
-                          );
-                        }
-                      },
-                      icon: Icon(
-                        video.favorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: Colors.white,
-                      ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: CircleAvatar(
+                  backgroundColor: const Color(0x9B2D312B),
+                  child: IconButton(
+                    onPressed: () async {
+                      await widget.controller.toggleFavorite(video);
+                      if (mounted) {
+                        setState(
+                          () => video = VideoMemory(
+                            id: video.id,
+                            deviceId: video.deviceId,
+                            triggerType: video.triggerType,
+                            sourceType: video.sourceType,
+                            title: video.title,
+                            status: video.status,
+                            favorite: !video.favorite,
+                            description: video.description,
+                            durationMs: video.durationMs,
+                            thumbnailUrl: video.thumbnailUrl,
+                            capturedStartAt: video.capturedStartAt,
+                            createdAt: video.createdAt,
+                          ),
+                        );
+                      }
+                    },
+                    icon: Icon(
+                      video.favorite
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: Colors.white,
                     ),
                   ),
                 ),
+              ),
             ],
             flexibleSpace: FlexibleSpaceBar(background: _media()),
           ),
@@ -233,12 +241,11 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                         color: triggerColor(video.triggerType),
                       ),
                       const Spacer(),
-                      if (canEdit)
-                        RoundIconButton(
-                          icon: Icons.edit_outlined,
-                          size: 42,
-                          onPressed: _editMetadata,
-                        ),
+                      RoundIconButton(
+                        icon: Icons.edit_outlined,
+                        size: 42,
+                        onPressed: _editMetadata,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -275,16 +282,36 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  if (canEdit) ...[
-                    FilledButton.icon(
-                      onPressed: video.status == 'READY'
-                          ? _openVideoEditor
-                          : null,
-                      icon: const Icon(Icons.auto_awesome_rounded),
-                      label: const Text('영상 편집하기'),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '함께한 사람',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      Text(
+                        '가족 공유',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Row(
+                    children: [
+                      _PersonAvatar(label: '엄', color: AppColors.yellowSoft),
+                      _PersonAvatar(label: '아', color: AppColors.greenCard),
+                      _PersonAvatar(label: '나', color: AppColors.pink),
+                      _PersonAvatar(label: '동', color: AppColors.sageSoft),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _openVideoEditor,
+                    icon: const Icon(Icons.video_settings_outlined),
+                    label: const Text('영상 편집하기'),
+                  ),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
@@ -294,18 +321,14 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
                           label: const Text('저장'),
                         ),
                       ),
-                      if (canEdit) ...[
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: video.status == 'READY'
-                                ? () => _openVideoEditor(drafts: true)
-                                : null,
-                            icon: const Icon(Icons.edit_note_rounded),
-                            label: const Text('저장된 초안'),
-                          ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _editMetadata,
+                          icon: const Icon(Icons.edit_note_rounded),
+                          label: const Text('제목·메모'),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -320,7 +343,38 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
 
   Widget _media() {
     if (player != null) {
-      return MediaPlayerSurface(controller: player!);
+      return GestureDetector(
+        onTap: () => setState(
+          () => player!.value.isPlaying ? player!.pause() : player!.play(),
+        ),
+        child: ColoredBox(
+          color: Colors.black,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(
+                child: AspectRatio(
+                  aspectRatio: player!.value.aspectRatio,
+                  child: VideoPlayer(player!),
+                ),
+              ),
+              Center(
+                child: CircleAvatar(
+                  radius: 28,
+                  backgroundColor: const Color(0x802D312B),
+                  child: Icon(
+                    player!.value.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     return Stack(
       fit: StackFit.expand,
@@ -339,4 +393,34 @@ class _VideoDetailScreenState extends State<VideoDetailScreen> {
       ],
     );
   }
+}
+
+class _PersonAvatar extends StatelessWidget {
+  const _PersonAvatar({required this.label, required this.color});
+  final String label;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(right: 12),
+    child: Column(
+      children: [
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: color,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: AppColors.inkSoft,
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: AppColors.muted),
+        ),
+      ],
+    ),
+  );
 }

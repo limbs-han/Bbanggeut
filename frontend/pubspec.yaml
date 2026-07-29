@@ -41,9 +41,9 @@ dependencies:
   url_launcher: ^6.3.2
   share_plus: ^13.2.1
   path_provider: ^2.1.6
-  mobile_scanner: ^7.4.0
   app_links: ^7.2.1
   ve_sdk_flutter: ^0.44.0
+  flutter_webrtc: ^1.5.2
 
 dev_dependencies:
   flutter_test:
@@ -69,6 +69,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/config/
 
   fonts:
     - family: NotoSansKR

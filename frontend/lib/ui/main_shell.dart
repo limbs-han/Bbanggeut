@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
+import '../app/app_theme.dart';
 import 'calendar_screen.dart';
 import 'device_registration_screen.dart';
 import 'family_screen.dart';
@@ -16,40 +17,28 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int index = 0;
-  String? handledMembershipRequestToken;
+  int index = 2;
 
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_openMembershipRequest);
+    if (widget.controller.consumeOpenFamilyAfterDeviceClaim() ||
+        widget.controller.pendingMembershipRequestPreview != null) {
+      index = 3;
+    }
+    widget.controller.addListener(_handleRequestedRoute);
   }
 
-  @override
-  void didUpdateWidget(covariant MainShell oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_openMembershipRequest);
-      widget.controller.addListener(_openMembershipRequest);
-    }
-  }
-
-  void _openMembershipRequest() {
-    final token = widget.controller.pendingMembershipRequestToken;
-    final preview = widget.controller.pendingMembershipRequestPreview;
-    if (!mounted ||
-        token == null ||
-        preview == null ||
-        token == handledMembershipRequestToken) {
-      return;
-    }
-    handledMembershipRequestToken = token;
-    setState(() => index = 3);
+  void _handleRequestedRoute() {
+    final openFamily =
+        widget.controller.consumeOpenFamilyAfterDeviceClaim() ||
+        widget.controller.pendingMembershipRequestPreview != null;
+    if (mounted && openFamily && index != 3) setState(() => index = 3);
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_openMembershipRequest);
+    widget.controller.removeListener(_handleRequestedRoute);
     super.dispose();
   }
 
@@ -62,16 +51,16 @@ class _MainShellState extends State<MainShell> {
       );
     }
     final pages = [
-      HomeScreen(
-        controller: widget.controller,
-        openVideos: () => setState(() => index = 2),
-        openCalendar: () => setState(() => index = 1),
-      ),
       CalendarScreen(
         controller: widget.controller,
-        onBack: () => setState(() => index = 0),
+        onBack: () => setState(() => index = 2),
       ),
       VideosScreen(controller: widget.controller),
+      HomeScreen(
+        controller: widget.controller,
+        openVideos: () => setState(() => index = 1),
+        openCalendar: () => setState(() => index = 0),
+      ),
       FamilyScreen(controller: widget.controller),
       SettingsScreen(controller: widget.controller),
     ];
@@ -80,41 +69,52 @@ class _MainShellState extends State<MainShell> {
         onRefresh: widget.controller.refreshDeviceData,
         child: IndexedStack(index: index, children: pages),
       ),
-      bottomNavigationBar: DecoratedBox(
+      bottomNavigationBar: Container(
         decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: Color(0xFFE4E5DC))),
-        ),
-        child: NavigationBar(
-          key: const ValueKey('main-bottom-navigation'),
-          selectedIndex: index,
-          onDestinationSelected: (value) => setState(() => index = value),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: '홈',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined),
-              selectedIcon: Icon(Icons.calendar_today_rounded),
-              label: '캘린더',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bookmark_border_rounded),
-              selectedIcon: Icon(Icons.bookmark_rounded),
-              label: '추억',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.group_outlined),
-              selectedIcon: Icon(Icons.group_rounded),
-              label: '가족',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.tune_outlined),
-              selectedIcon: Icon(Icons.tune_rounded),
-              label: '설정',
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.line)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x176B4C2D),
+              blurRadius: 18,
+              offset: Offset(0, -4),
             ),
           ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: NavigationBar(
+            key: const ValueKey('main-bottom-navigation'),
+            selectedIndex: index,
+            onDestinationSelected: (value) => setState(() => index = value),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.calendar_month_outlined),
+                selectedIcon: Icon(Icons.calendar_month_rounded),
+                label: '캘린더',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.play_circle_outline_rounded),
+                selectedIcon: Icon(Icons.play_circle_fill_rounded),
+                label: '추억',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: '홈',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.family_restroom_outlined),
+                selectedIcon: Icon(Icons.family_restroom_rounded),
+                label: '가족',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings_rounded),
+                label: '설정',
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: widget.controller.busy
