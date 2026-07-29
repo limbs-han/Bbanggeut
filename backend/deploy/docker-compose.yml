@@ -135,10 +135,14 @@ services:
       # optional preserves the existing plaintext loopback tunnel as rollback.
       # Change only this secret-file value to strict after migration validation.
       MTX_RTSPENCRYPTION: ${MEDIAMTX_RTSP_ENCRYPTION:-optional}
+      # ICE candidates must advertise a host reachable by mobile clients.
+      MTX_WEBRTCADDITIONALHOSTS: ${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-i15e201.p.ssafy.io}
     ports:
       - "127.0.0.1:8554:8554"
       - "8322:8322"
       - "127.0.0.1:8888:8888"
+      - "127.0.0.1:8889:8889"
+      - "8189:8189/udp"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - ${MEDIAMTX_TLS_CERT_DIR:?Set MEDIAMTX_TLS_CERT_DIR}:/certs:ro

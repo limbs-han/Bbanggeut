@@ -28,7 +28,10 @@ hlsVariant: fmp4
 # 그대로 통과시키므로, 기기 변경 없이 세그먼트를 1초로 자를 수 있다.
 # 세그먼트 경계는 키프레임에만 놓이므로 이 값을 GOP 아래로 더 내리면 안 된다.
 hlsSegmentDuration: 1s
-webrtc: false
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["https://i15e201.p.ssafy.io"]
+webrtcLocalUDPAddress: :8189
 srt: false
 moq: false
 playback: false

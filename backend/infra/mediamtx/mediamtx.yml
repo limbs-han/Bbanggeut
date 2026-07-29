@@ -11,7 +11,10 @@ hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: true
 hlsVariant: fmp4
 hlsSegmentDuration: 2s
-webrtc: false
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["*"]
+webrtcLocalUDPAddress: :8189
 srt: false
 playback: false
 api: false
