@@ -133,7 +133,13 @@ class TranscriptStore {
       }
       await write(videoId, fresh);
       job.value = TranscriptReady(fresh);
-    } catch (error) {
+    } catch (error, stack) {
+      // 사유를 반드시 남긴다. 상태만 바꾸면 화면에는 "못 알아들었어요" 한 줄만
+      // 뜨고, 진짜 무발화인지 오디오 추출이 깨진 것인지 구분할 수 없다.
+      debugPrint('[stt] 전사 실패 ${error.runtimeType}: $error');
+      debugPrint(
+        '[stt] 스택: ${stack.toString().split('\n').take(3).join(' | ')}',
+      );
       // 실패는 캐시하지 않는다 — 다음에 다시 부르면 재시도해야 한다.
       _jobs.remove(videoId);
       job.value = TranscriptFailed('$error');
