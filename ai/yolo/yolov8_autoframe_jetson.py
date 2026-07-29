@@ -1,8 +1,8 @@
 """Track people, cats, and dogs and calculate a pan/tilt framing target.
 
-This first-stage controller does not move a physical motor. It uses YOLO and
-ByteTrack, draws the chosen group and camera command on the video, and can
-write normalized control commands as JSON Lines for later IoT integration.
+This process does not write PWM directly. It uses YOLO and ByteTrack, draws the
+chosen group and camera command on the video, and publishes normalized control
+commands for the separate local servo controller.
 """
 
 from __future__ import annotations
