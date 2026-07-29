@@ -75,12 +75,18 @@ class Pca9685Servo:
         if not 3 <= prescale <= 255:
             raise ValueError(f"Calculated PCA9685 prescale is invalid: {prescale}")
 
-        old_mode = self._read(self.MODE1) & ~self.RESTART
-        self._write(self.MODE1, old_mode | self.SLEEP)
+        old_mode = self._read(self.MODE1)
+        sleep_mode = (old_mode & ~self.RESTART) | self.SLEEP
+        wake_mode = (
+            old_mode
+            & ~(self.RESTART | self.SLEEP)
+            | self.AUTO_INCREMENT
+        )
+        self._write(self.MODE1, sleep_mode)
         self._write(self.PRESCALE, prescale)
-        self._write(self.MODE1, old_mode)
+        self._write(self.MODE1, wake_mode)
         self._sleep(0.005)
-        self._write(self.MODE1, old_mode | self.RESTART | self.AUTO_INCREMENT)
+        self._write(self.MODE1, wake_mode | self.RESTART)
 
     @staticmethod
     def _channel_register(channel: int) -> int:

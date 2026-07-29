@@ -17,6 +17,10 @@ required_files=(
     "$YAMNET_PYTHON"
     "${SCRIPT_DIR}/yolov8n.pt"
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py"
+    "${SCRIPT_DIR}/servo_controller.py"
+    "${SCRIPT_DIR}/requirements-servo-controller.txt"
+    "${SCRIPT_DIR}/test_servo_controller.py"
+    "${SCRIPT_DIR}/wj-servo-controller.service"
     "${SCRIPT_DIR}/stream_capture.py"
     "${SCRIPT_DIR}/run_ai_stack.sh"
     "${SCRIPT_DIR}/run_edge_ai_mvp.sh"
@@ -57,6 +61,7 @@ grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
 echo "[2/4] Python syntax"
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py" \
+    "${SCRIPT_DIR}/servo_controller.py" \
     "${SCRIPT_DIR}/stream_capture.py" \
     "${SCRIPT_DIR}/event_fusion_service.py" \
     "${SCRIPT_DIR}/laughter_clip_uploader.py" \
@@ -76,6 +81,7 @@ echo "[3/4] YOLO-side tests"
     PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
         -m unittest \
         test_autoframe_logic \
+        test_servo_controller \
         test_event_fusion \
         test_laughter_clip_uploader \
         test_stream_capture \
@@ -93,4 +99,4 @@ echo "[4/4] YAMNet stream tests"
         test_laughter_scoring
 )
 
-echo "PASS: staged Jetson AI release validation completed (44 tests)."
+echo "PASS: staged Jetson AI release validation completed."

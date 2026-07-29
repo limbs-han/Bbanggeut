@@ -4,11 +4,12 @@ from servo_test import Pca9685Servo, integer, parse_args
 
 
 class FakeLgpio:
-    def __init__(self):
+    def __init__(self, mode1=0x01):
         self.open_calls = []
         self.reads = []
         self.writes = []
         self.close_calls = []
+        self.mode1 = mode1
 
     def i2c_open(self, bus, address, flags):
         self.open_calls.append((bus, address, flags))
@@ -16,7 +17,7 @@ class FakeLgpio:
 
     def i2c_read_byte_data(self, handle, register):
         self.reads.append((handle, register))
-        return 0x01
+        return self.mode1
 
     def i2c_write_byte_data(self, handle, register, value):
         self.writes.append((handle, register, value))
@@ -49,6 +50,26 @@ class Pca9685ServoTest(unittest.TestCase):
         self.servo.close()
 
         self.assertEqual(self.lgpio.close_calls, [52])
+
+    def test_wakes_controller_when_mode1_starts_asleep(self):
+        sleeping_lgpio = FakeLgpio(mode1=0x11)
+        sleeping_servo = Pca9685Servo(
+            sleeping_lgpio,
+            bus=7,
+            address=0x60,
+            frequency=50,
+            sleep=lambda _seconds: None,
+        )
+        self.addCleanup(sleeping_servo.close)
+
+        mode1_writes = [
+            value
+            for _handle, register, value in sleeping_lgpio.writes
+            if register == sleeping_servo.MODE1
+        ]
+
+        self.assertEqual(mode1_writes, [0x11, 0x21, 0xA1])
+        self.assertEqual(mode1_writes[-1] & sleeping_servo.SLEEP, 0)
 
     def test_writes_1500_microsecond_pulse_to_channel_zero(self):
         self.lgpio.writes.clear()
