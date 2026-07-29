@@ -3,7 +3,8 @@
 The controller keeps camera-space positions separate from raw servo pulses:
 
 * PAN uses -40 degrees (left) through +40 degrees (right).
-* TILT uses 0 degrees (horizontal HOME) through +80 degrees (down).
+* TILT limits are configurable around 0 degrees (HOME); negative/positive
+  limits allow equal travel in both directions when the linkage permits it.
 * Pulse direction and calibration remain deployment settings because linkage
   orientation and individual SG90 endpoints vary.
 
@@ -610,7 +611,7 @@ def build_axis_configs(args: argparse.Namespace) -> tuple[AxisConfig, AxisConfig
     tilt = AxisConfig(
         name="TILT",
         channel=args.tilt_channel,
-        minimum_deg=0.0,
+        minimum_deg=args.tilt_min_deg,
         home_deg=0.0,
         maximum_deg=args.tilt_max_deg,
         home_pulse_us=args.tilt_home_pulse_us,
@@ -697,6 +698,11 @@ def parse_args() -> argparse.Namespace:
         "--pan-max-deg",
         type=float,
         default=float(os.getenv("SERVO_PAN_MAX_DEG", "40")),
+    )
+    parser.add_argument(
+        "--tilt-min-deg",
+        type=float,
+        default=float(os.getenv("SERVO_TILT_MIN_DEG", "0")),
     )
     parser.add_argument(
         "--tilt-max-deg",
