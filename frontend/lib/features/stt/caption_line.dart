@@ -22,23 +22,37 @@ class CaptionLine {
   String text;
 }
 
-/// 자막 한 줄의 최대 글자 수.
+/// 문장이 이보다 길면 낱말 경계에서 한 번 더 나눈다.
 ///
-/// whisper는 문장 단위로 길게 끊어 준다. 실측에서 37초 발화가 **2줄 124자**로
-/// 나왔다 — 한 줄 62자는 화면에 들어가지 않는다. 한국어 자막 관례는 한 줄
-/// 16~20자다.
-const captionMaxChars = 20;
+/// 문장 단위가 먼저다 — 줄 길이는 대사에 따라 가변적이어야 자연스럽다. 이 값은
+/// "그래도 화면을 넘칠 때"만 쓰는 안전장치다.
+const captionMaxChars = 30;
 
-/// 긴 줄을 낱말 경계에서 쪼개고, 시각을 글자 수 비율로 나눠 준다.
+/// 문장 끝을 알리는 부호.
+const _enders = {'.', '?', '!', '…'};
+
+/// 부호 없이 문장이 끝나는 한국어 종결어미.
 ///
-/// 낱말 하나가 [maxChars]를 넘으면(붙여 쓴 긴 말) 통째로 자른다.
-List<CaptionLine> splitLongLines(
+/// whisper는 구두점을 잘 안 붙인다 — "그거 만지지 마 안 만졌는데요"처럼 한 줄로
+/// 준다. 낱말의 **마지막 글자**가 여기 있으면 문장이 끝난 것으로 본다.
+///
+/// `지`는 넣지 않는다 — "만지지"가 잘려 버린다. 한 글자 낱말도 제외한다 —
+/// "다 먹었어"의 "다"에서 끊기면 안 된다.
+const _endings = {'요', '다', '죠', '까', '네'};
+
+/// 전사 한 덩이를 자막 줄들로 나눈다. 문장 단위가 먼저, 그래도 길면 낱말 경계.
+///
+/// 시각은 글자 수 비율로 나눠 주고, 모든 줄이 최소 1ms를 갖게 한다.
+List<CaptionLine> splitIntoLines(
   List<CaptionLine> lines, {
   int maxChars = captionMaxChars,
 }) {
   final out = <CaptionLine>[];
   for (final line in lines) {
-    final chunks = _chunk(line.text.trim(), maxChars);
+    final chunks = <String>[
+      for (final sentence in _sentences(line.text.trim()))
+        ..._chunk(sentence, maxChars),
+    ];
     final span = line.endMs - line.startMs;
     // 구간이 조각 수보다 짧으면 쪼갤 수 없다 — 어느 조각은 길이 0이 되어 화면에
     // 못 뜨고 내보낼 때도 버려진다. 긴 줄로 두는 편이 낫다.
@@ -64,6 +78,29 @@ List<CaptionLine> splitLongLines(
       at = end;
     }
   }
+  return out;
+}
+
+/// 문장 단위로 자른다. 문장 부호 뒤, 또는 종결어미로 끝나는 낱말 뒤에서 끊는다.
+List<String> _sentences(String text) {
+  if (text.isEmpty) return const [];
+
+  final out = <String>[];
+  var current = <String>[];
+  for (final word in text.split(' ')) {
+    if (word.isEmpty) continue;
+    current.add(word);
+
+    final last = word.substring(word.length - 1);
+    final endsSentence =
+        _enders.contains(last) ||
+        (word.length >= 2 && _endings.contains(last));
+    if (endsSentence) {
+      out.add(current.join(' '));
+      current = <String>[];
+    }
+  }
+  if (current.isNotEmpty) out.add(current.join(' '));
   return out;
 }
 

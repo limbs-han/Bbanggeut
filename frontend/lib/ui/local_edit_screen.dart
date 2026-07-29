@@ -62,6 +62,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   /// 들린 대사로 만드는 자동 자막. 상태와 편집 로직은 전부 이쪽에 있다.
   final _autoCaptions = CaptionController();
 
+  /// 자막 입력칸 컨트롤러는 화면이 소유한다.
+  ///
+  /// 시트가 열릴 때 만들어 닫힌 직후 dispose하면 안 된다 — showModalBottomSheet의
+  /// Future는 Navigator.pop 시점에 끝나지만 **닫히는 애니메이션은 그 뒤에도
+  /// 재생된다.** 그 사이 키보드가 내려가며(autofocus로 올라와 있다)
+  /// MediaQuery.viewInsetsOf가 바뀌어 시트가 다시 그려지고, 죽은 컨트롤러를
+  /// 만져 빨간 화면이 뜬다. 실기기에서 확인한 예외:
+  /// "A TextEditingController was used after being disposed."
+  final _captionField = TextEditingController();
+
   bool get _editorReady =>
       _sourcePath != null && _preview?.value.isInitialized == true;
 
@@ -212,7 +222,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   Future<void> _showCaptionEditor() async {
-    final textController = TextEditingController(text: _captionText);
+    _captionField.text = _captionText;
     var pendingColor = _captionColor;
     final applied = await showModalBottomSheet<bool>(
       context: context,
@@ -236,7 +246,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
               const _EditorSheetHeader(title: '자막'),
               const SizedBox(height: 16),
               TextField(
-                controller: textController,
+                controller: _captionField,
                 autofocus: true,
                 maxLength: 60,
                 style: const TextStyle(color: AppColors.ink),
@@ -287,7 +297,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     );
     if (applied == true && mounted) {
       setState(() {
-        _captionText = textController.text.trim();
+        _captionText = _captionField.text.trim();
         _captionColor = pendingColor;
         _editState.markExternalEditApplied();
         if (_captionText.isEmpty) {
@@ -297,7 +307,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         }
       });
     }
-    textController.dispose();
   }
 
   Future<void> _showAudioEditor() async {
@@ -615,6 +624,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       preview.removeListener(_onPreviewChanged);
       preview.dispose();
     }
+    _captionField.dispose();
     _autoCaptions
       ..removeListener(_onCaptionsChanged)
       ..dispose();

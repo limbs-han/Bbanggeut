@@ -192,21 +192,20 @@ void main() {
     });
   });
 
-  group('splitLongLines', () {
+  group('splitIntoLines', () {
     test('짧은 줄은 그대로 둔다', () {
       final lines = [
         CaptionLine(startMs: 0, endMs: 2000, text: '안 만졌는데요'),
       ];
-      final split = splitLongLines(lines);
+      final split = splitIntoLines(lines);
       expect(split, hasLength(1));
       expect(split.single.text, '안 만졌는데요');
       expect(split.single.startMs, 0);
       expect(split.single.endMs, 2000);
     });
 
-    test('긴 줄을 낱말 경계에서 쪼갠다', () {
-      // 40자를 20자 한도로 → 두 줄
-      final split = splitLongLines([
+    test('문장이 끝나는 곳에서 나눈다 — 길이는 대사에 따라 가변적이다', () {
+      final split = splitIntoLines([
         CaptionLine(
           startMs: 0,
           endMs: 4000,
@@ -214,18 +213,60 @@ void main() {
         ),
       ]);
 
+      expect(split.map((l) => l.text), [
+        '엄마가 아이에게 말했어요',
+        '그거 만지지 마 안 만졌는데요',
+      ]);
+    });
+
+    test('구두점에서도 나눈다', () {
+      final split = splitIntoLines([
+        CaptionLine(startMs: 0, endMs: 3000, text: '그거 만지지 마. 왜? 안 만졌어!'),
+      ]);
+
+      expect(split.map((l) => l.text), ['그거 만지지 마.', '왜?', '안 만졌어!']);
+    });
+
+    test('"만지지"의 지에서는 끊지 않는다 — 종결어미로 착각하면 대사가 부서진다', () {
+      final split = splitIntoLines([
+        CaptionLine(startMs: 0, endMs: 2000, text: '그거 만지지 마'),
+      ]);
+
+      expect(split, hasLength(1));
+      expect(split.single.text, '그거 만지지 마');
+    });
+
+    test('한 글자 낱말에서는 끊지 않는다 — "다 먹었어"의 다', () {
+      final split = splitIntoLines([
+        CaptionLine(startMs: 0, endMs: 2000, text: '다 먹었어'),
+      ]);
+
+      expect(split, hasLength(1));
+      expect(split.single.text, '다 먹었어');
+    });
+
+    test('한 문장이 한도를 넘으면 그때만 낱말 경계로 더 나눈다', () {
+      final split = splitIntoLines([
+        CaptionLine(
+          startMs: 0,
+          endMs: 4000,
+          // 구두점도 종결어미도 없는 한 문장 (35자)
+          text: '어제 우리 가족이 함께 놀이터에 가서 정말 재미있게 놀았던 그런 날',
+        ),
+      ]);
+
       expect(split.length, greaterThan(1));
       for (final line in split) {
         expect(
           line.text.length,
-          lessThanOrEqualTo(20),
+          lessThanOrEqualTo(captionMaxChars),
           reason: '한 줄이 한도를 넘으면 화면에 안 들어간다: "${line.text}"',
         );
       }
     });
 
     test('쪼갠 줄들이 원래 구간을 빈틈 없이 채운다', () {
-      final split = splitLongLines([
+      final split = splitIntoLines([
         CaptionLine(
           startMs: 1000,
           endMs: 5000,
@@ -243,7 +284,7 @@ void main() {
     test('구간이 아주 짧아도 모든 줄이 길이를 갖는다 — 0ms는 화면에 못 뜬다', () {
       // 24자를 20자 한도로 나누면 2조각인데 구간이 3ms뿐이다. 비율대로 주면
       // 앞 조각이 3ms를 다 먹고 뒤 조각이 0ms가 된다.
-      final split = splitLongLines([
+      final split = splitIntoLines([
         CaptionLine(startMs: 0, endMs: 3, text: '가나다라마바사아자차카타파하가나다라마바사아자차'),
       ]);
 
@@ -259,7 +300,7 @@ void main() {
 
     test('구간이 조각 수보다 짧으면 쪼개지 않는다', () {
       const long = '가나다라마바사아자차카타파하가나다라마바사아자차';
-      final split = splitLongLines([
+      final split = splitIntoLines([
         CaptionLine(startMs: 0, endMs: 1, text: long),
       ]);
 
@@ -267,20 +308,32 @@ void main() {
       expect(split.single.text, long);
     });
 
-    test('낱말 하나가 한도를 넘으면 통째로 자른다', () {
-      final split = splitLongLines([
-        CaptionLine(startMs: 0, endMs: 2000, text: '가나다라마바사아자차카타파하가나다라마바사'),
+    test('낱말 하나가 한도를 넘으면 통째로 자르되 글자를 버리지 않는다', () {
+      const glued = '가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바';
+      final split = splitIntoLines([
+        CaptionLine(startMs: 0, endMs: 2000, text: glued),
       ]);
 
       expect(split.length, greaterThan(1));
       for (final line in split) {
-        expect(line.text.length, lessThanOrEqualTo(20));
+        expect(line.text.length, lessThanOrEqualTo(captionMaxChars));
       }
-      expect(split.map((l) => l.text).join(), '가나다라마바사아자차카타파하가나다라마바사');
+      expect(split.map((l) => l.text).join(), glued);
+    });
+
+    test('나누어도 글자가 사라지지 않는다 — 공백만 경계에서 줄어든다', () {
+      const text = '엄마가 아이에게 말했어요 그거 만지지 마 안 만졌는데요';
+      final split = splitIntoLines([
+        CaptionLine(startMs: 0, endMs: 4000, text: text),
+      ]);
+
+      final before = text.replaceAll(' ', '');
+      final after = split.map((l) => l.text).join().replaceAll(' ', '');
+      expect(after, before, reason: '공백을 뺀 글자는 그대로여야 한다');
     });
 
     test('한도를 바꿀 수 있다', () {
-      final split = splitLongLines([
+      final split = splitIntoLines([
         CaptionLine(startMs: 0, endMs: 2000, text: '엄마가 아이에게 말했어요'),
       ], maxChars: 6);
 

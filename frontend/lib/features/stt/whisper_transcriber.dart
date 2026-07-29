@@ -36,7 +36,15 @@ class WhisperTranscriber {
   /// whisper 언어 코드 — 지역 접미사 없이 'ko'.
   final String localeTag;
 
-  /// 추론 스레드 수. 기기 코어를 다 쓰면 UI가 끊기므로 여유를 둔다.
+  /// 추론 스레드 수.
+  ///
+  /// **올리지 말 것.** 갤럭시 S24에서 같은 영상으로 실측했다:
+  ///
+  ///   4개 → 73초, 124자
+  ///   6개 → 56초,  63자   ← 23% 빨라지지만 대사를 절반 놓친다
+  ///
+  /// 속도보다 알아듣는 양이 중요하다. 값을 바꾸면 **같은 영상으로 글자 수까지**
+  /// 다시 재야 한다 — 시간만 보면 개선으로 착각한다.
   final int threads;
 
   final Whisper _whisper;
@@ -193,9 +201,14 @@ class WhisperTranscriber {
         ),
       );
     }
-    // whisper는 문장 단위로 길게 끊어 준다. 자막으로 쓰려면 쪼개야 한다 —
-    // 실측에서 37초 발화가 2줄 124자로 나왔다.
-    return splitLongLines(out);
+    // 쪼개기 전 원문을 재 둔다. 쪼개기가 글자를 버리는지, whisper가 애초에 덜
+    // 알아들었는지 이 줄 하나로 갈린다 — 없으면 구분할 수 없다.
+    debugPrint(
+      '[stt] whisper 원문 구간=${out.length} 글자=${out.fold(0, (n, l) => n + l.text.length)}',
+    );
+
+    // whisper는 문장 단위로 길게 끊어 준다. 자막으로 쓰려면 쪼개야 한다.
+    return splitIntoLines(out);
   }
 }
 
