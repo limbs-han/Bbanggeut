@@ -204,11 +204,22 @@ class ApiClient {
 
   Future<List<DeviceSummary>> listDevices() async =>
       (await _getList('/api/devices')).map(DeviceSummary.fromJson).toList();
-  Future<DeviceSummary> claimDevice(String registrationCode) async =>
+  Future<List<MemoryVault>> listVaults() async =>
+      (await _getList('/api/vaults')).map(MemoryVault.fromJson).toList();
+  Future<MemoryVault> createVault(String name) async => MemoryVault.fromJson(
+    await _post('/api/vaults', data: {'name': name.trim()}),
+  );
+  Future<DeviceSummary> claimDevice(
+    String registrationCode, {
+    String? vaultId,
+  }) async =>
       DeviceSummary.fromJson(
         await _post(
           '/api/devices/claim',
-          data: {'registrationCode': registrationCode.trim()},
+          data: {
+            'registrationCode': registrationCode.trim(),
+            'vaultId': ?vaultId,
+          },
         ),
       );
   Future<DeviceStatus> getDeviceStatus(String id) async =>
@@ -378,6 +389,34 @@ class ApiClient {
         from: from,
         to: to,
         size: 100,
+      );
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
+  }
+
+  Future<List<VideoMemory>> listAllVaultVideos(
+    String vaultId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final result = <VideoMemory>[];
+    String? cursor;
+    do {
+      final page = VideoPage.fromJson(
+        await _get(
+          '/api/videos',
+          query: {
+            'vaultId': vaultId,
+            'triggerType': ?triggerType,
+            'cursor': ?cursor,
+            'from': ?from?.toUtc().toIso8601String(),
+            'to': ?to?.toUtc().toIso8601String(),
+            'size': 100,
+          },
+        ),
       );
       result.addAll(page.items);
       cursor = page.hasNext ? page.nextCursor : null;

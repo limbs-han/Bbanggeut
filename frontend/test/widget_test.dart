@@ -208,15 +208,31 @@ void main() {
 
   testWidgets('메인 화면에 다섯 개 하단 네비게이션을 표시한다', (tester) async {
     final api = _FakeApiClient();
+    const device = DeviceSummary(
+      id: 'test-device',
+      name: '테스트 홈캠',
+      model: 'test',
+      status: 'ONLINE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+    );
     final controller = AppController(api: api)
-      ..selectedDevice = const DeviceSummary(
-        id: 'test-device',
-        name: '테스트 홈캠',
-        model: 'test',
-        status: 'ONLINE',
+      ..selectedVault = const MemoryVault(
+        id: 'vault-1',
+        name: '우리 집',
+        status: 'ACTIVE',
         myRole: 'OWNER',
         retentionDays: 30,
+        subscriptionActive: false,
+        devices: [
+          VaultDevice(
+            bindingId: 'binding-1',
+            generation: 1,
+            device: device,
+          ),
+        ],
       )
+      ..selectedDevice = device
       ..deviceStatus = const DeviceStatus(
         status: 'ONLINE',
         recording: true,
@@ -249,6 +265,42 @@ void main() {
     expect(find.text('웃음 감지'), findsOneWidget);
     expect(find.text('편집 완료'), findsOneWidget);
     expect(find.text('최신순'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('연결 기기가 없어도 추억 금고와 과거 영상을 표시한다', (tester) async {
+    final controller = AppController(api: _FakeApiClient())
+      ..selectedVault = const MemoryVault(
+        id: 'vault-archive',
+        name: '우리 집 추억',
+        status: 'ACTIVE',
+        myRole: 'OWNER',
+        retentionDays: 30,
+        subscriptionActive: false,
+        devices: [],
+      )
+      ..videos = const [
+        VideoMemory(
+          id: 'memory-1',
+          deviceId: 'old-device',
+          triggerType: 'LAUGHTER',
+          title: '기기 해제 전 추억',
+          status: 'READY',
+          favorite: false,
+        ),
+      ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: MainShell(controller: controller),
+      ),
+    );
+
+    expect(find.byKey(const Key('device-free-vault-banner')), findsOneWidget);
+    expect(find.text('현재 연결된 기기가 없어요'), findsOneWidget);
+    expect(find.text('기기 해제 전 추억'), findsOneWidget);
+    expect(find.byKey(const Key('connect-device-to-vault')), findsOneWidget);
     controller.dispose();
   });
 
