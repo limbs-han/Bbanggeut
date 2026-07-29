@@ -26,6 +26,7 @@ class AppController extends ChangeNotifier {
   List<Invitation> receivedInvitations = const [];
   String? pendingMembershipRequestToken;
   MembershipRequestPreview? pendingMembershipRequestPreview;
+  bool openFamilyAfterDeviceClaim = false;
 
   Future<void> initialize() async {
     if (devHomeCam && devHlsUrl.isNotEmpty) {
@@ -85,17 +86,23 @@ class AppController extends ChangeNotifier {
     String email,
     String password, {
     bool persistSession = true,
-  }) async => _guard(() async {
-    final session = await api.login(
-      email,
-      password,
-      persistSession: persistSession,
-    );
-    user = session.user;
-    authenticated = true;
-    await refreshAll();
-    await resolvePendingMembershipRequest();
-  });
+  }) async => _guard(
+    () async {
+      final session = await api.login(
+        email,
+        password,
+        persistSession: persistSession,
+      );
+      user = session.user;
+      authenticated = true;
+      await refreshAll();
+      await resolvePendingMembershipRequest();
+    },
+    failureMessage: (error) =>
+        error.code == 'INVALID_CREDENTIALS' || error.statusCode == 401
+        ? '아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.'
+        : error.message,
+  );
 
   Future<bool> signUp(
     String name,
@@ -140,6 +147,17 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   });
 
+  Future<bool> requestPasswordReset(String email) async => _guard(() async {
+    await api.requestPasswordReset(email);
+  });
+
+  Future<bool> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async => _guard(() async {
+    await api.changePassword(currentPassword, newPassword);
+  });
+
   Future<void> refreshAll() async {
     receivedInvitations = await api.listMyInvitations();
     await refreshDevices();
@@ -175,9 +193,25 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> selectDevice(DeviceSummary device) async {
+    if (selectedDevice?.id == device.id) return;
     selectedDevice = device;
+    deviceStatus = null;
+    videoStats = null;
+    homeSummary = null;
+    videos = const [];
+    members = const [];
+    sentInvitations = const [];
     notifyListeners();
-    await refreshDeviceData();
+    try {
+      await refreshDeviceData();
+      errorMessage = null;
+    } on ApiFailure catch (error) {
+      errorMessage = error.message;
+      notifyListeners();
+    } catch (_) {
+      errorMessage = '기기 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
+      notifyListeners();
+    }
   }
 
   Future<void> refreshDeviceData() async {
@@ -212,8 +246,15 @@ class AppController extends ChangeNotifier {
     final claimed = await api.claimDevice(code);
     devices = [...devices, claimed];
     selectedDevice = claimed;
+    openFamilyAfterDeviceClaim = true;
     await refreshDeviceData();
   });
+
+  bool consumeOpenFamilyAfterDeviceClaim() {
+    if (!openFamilyAfterDeviceClaim) return false;
+    openFamilyAfterDeviceClaim = false;
+    return true;
+  }
 
   Future<bool> updateSelectedDevice({String? name, int? retentionDays}) async =>
       _guard(() async {
@@ -423,7 +464,11 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> _guard(Future<void> Function() action) async {
+  Future<bool> _guard(
+    Future<void> Function() action, {
+    String Function(ApiFailure error)? failureMessage,
+  }) async {
+    if (busy) return false;
     busy = true;
     errorMessage = null;
     notifyListeners();
@@ -431,7 +476,7 @@ class AppController extends ChangeNotifier {
       await action();
       return true;
     } on ApiFailure catch (error) {
-      errorMessage = error.message;
+      errorMessage = failureMessage?.call(error) ?? error.message;
       return false;
     } catch (_) {
       errorMessage = '예상하지 못한 문제가 생겼어요. 잠시 후 다시 시도해 주세요.';
@@ -453,6 +498,7 @@ class AppController extends ChangeNotifier {
     receivedInvitations = const [];
     pendingMembershipRequestToken = null;
     pendingMembershipRequestPreview = null;
+    openFamilyAfterDeviceClaim = false;
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;

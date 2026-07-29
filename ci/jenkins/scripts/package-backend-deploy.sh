@@ -8,6 +8,7 @@ required_files=(
   docker-compose.yml
   mediamtx.yml
   mosquitto.conf
+  nginx-william-james.conf
 )
 
 for file in "${required_files[@]}"; do

@@ -61,7 +61,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 |---|---|---|---|
 | REQ-F-19 | 월별 캘린더 일자별 영상 개수·목록 | FN-A13, FN-S12 | API-27(`from`/`to` 월범위) |
 | REQ-F-36 | 기간별 웃음 통계(월평균·전체포착수·주간추이)·연간 히트맵 | FN-A36, FN-S15, FN-S22 | API-33(`VideoStatsService`); API-46(`EventStatsService`)는 서버 구현되었으나 클라이언트 미사용 |
-| REQ-F-42 | 이벤트 영상 기반 전용 리포트 화면(주간/월간 웃음횟수·시간대분포·베스트클립) | FN-A38, FN-S26 (신규 **[제안·미구현]**) | 대응 코드 없음 — API-51 **[제안]** 초안(`04-api-spec.md` 8절) |
+| REQ-F-42 | 이벤트 영상 기반 웃음 리포트. 현재 앱은 로드된 `LAUGHTER` 영상을 날짜별 단말 집계하며 주간/월간·시간대분포·베스트클립 서버 집계는 확장 목표 | FN-A38 **[구현]**, FN-S26 **[제안·미구현]** | `ui/laugh_report_content_screen.dart`; API-51 **[제안·미구현]** |
 
 ### 1.8 가족 공유
 
@@ -90,7 +90,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 | REQ-NF-09 | 운영 | 앱/프록시/컨테이너 상태·디스크 헬스체크 | `management.endpoints.web.exposure.include: health,info,metrics`, `check-william-james.sh`, `william-james-monitor.timer` |
 | REQ-NF-10 | 운영 | 테스트→빌드→배포 CI/CD | `.gitlab-ci.yml`(`test-backend`,`test-device-agent`,`package-backend`,`deploy-production`) |
 | REQ-NF-11 | 미디어 | H.264+AAC 인코딩 | MQTT `START_STREAM.payload.profile:"LIVE_720P_H264_AAC"`, `stream.py`(ffmpeg) |
-| REQ-NF-12 | 미디어 | HLS(m3u8) 스트리밍, 토큰 30초 만료 전 선제 갱신 | `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`, `StreamProperties.live-token-ttl`, `frontend/lib/ui/live_screen.dart`(20초 주기) |
+| REQ-NF-12 | 미디어 | WHEP/WebRTC 우선 재생, 연결 실패 시 HLS 폴백. 두 URL 모두 짧은 라이브 토큰 사용 | `StreamSessionResponse.whepUrl/playUrl`, `WhepPlayerController`, `live_screen.dart` |
 
 ---
 
@@ -145,6 +145,6 @@ MVP 7단계 관련 REQ만 간추린 구현 현황이다.
 | REQ-F-26 | 구현됨 | API-32(다운로드 URL) |
 | REQ-F-19 | 구현됨 | API-27(월 범위 조회) |
 | REQ-F-36 | 구현됨 | API-33. 별도 이벤트 전용 통계 API(API-46)는 구현돼 있으나 클라이언트 미사용 |
-| REQ-F-42 | 미구현 | 신규 계획 항목(개발 예정). 시연은 REQ-F-19·REQ-F-36으로 대체 가능 |
+| REQ-F-42 | 부분 구현 | FN-A38 Flutter 단말 집계 화면 구현. FN-S26/API-51 서버 집계는 제안·미구현 |
 
 **ID 검증**: 본문(1.1~1.8절) 고유 REQ-F ID = 01,02,03,04,05,10,12,13,18,41,37,21,22,27,26,19,36,42,28,29,30,31,11 = 23개(REQ-F-27은 1.5·1.6절에 중복 표기되나 동일 ID). 부록 A 고유 REQ-F ID = 06,07,08,09,14,15,16,17,20,23,24,25,32,33,34,35,38,39,40 = 19개. 23+19=42, REQ-F-01~42 전수 반영(결번 없음, 중복 없음). REQ-NF-01~12 전부 2절에 존재(12개). FN 78개·API 51개(06 제외)·MQTT 15개는 각각 `03-features.md`, `04-api-spec.md`에서 확인.

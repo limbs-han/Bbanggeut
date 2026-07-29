@@ -9,6 +9,8 @@ current_jar="${application_root}/app/server.jar"
 infra_root="${application_root}/infra"
 infra_env="${infra_root}/.env"
 infra_compose="${infra_root}/docker-compose.yml"
+app_env="${application_root}/secrets/app.env"
+nginx_config="/etc/nginx/sites-available/william-james"
 release_root="${application_root}/releases/backend"
 deployment_root="${application_root}/deployments"
 health_url="http://127.0.0.1:8081/actuator/health"
@@ -16,10 +18,15 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 staging=""
 backup_root="${release_root}/${timestamp}"
 required_infra_files=(docker-compose.yml mediamtx.yml mosquitto.conf)
+required_bundle_files=("${required_infra_files[@]}" nginx-william-james.conf)
 previous_jar=""
 had_current_jar=false
 infra_replaced=false
 jar_replaced=false
+nginx_replaced=false
+had_nginx_config=false
+mediamtx_config_changed=false
+mosquitto_config_changed=false
 
 cleanup() {
   if [[ -n "${staging}" && "${staging}" == "${application_root}"/.backend-deploy.* ]]; then
@@ -61,8 +68,18 @@ wait_for_mediamtx() {
     container_id="$(compose ps --all --quiet mediamtx)"
     if [[ -n "${container_id}" ]]; then
       state="$(docker inspect --format '{{.State.Status}}' "${container_id}")"
-      if [[ "${state}" == "running" ]] && timeout 2 bash -c '</dev/tcp/127.0.0.1/8888' 2>/dev/null; then
-        return 0
+      if [[ "${state}" == "running" ]] &&
+        timeout 2 bash -c '</dev/tcp/127.0.0.1/8888' 2>/dev/null
+      then
+        if grep -Eq '^[[:space:]]*webrtc:[[:space:]]*true([[:space:]]|$)' \
+          "${infra_root}/mediamtx.yml"
+        then
+          if timeout 2 bash -c '</dev/tcp/127.0.0.1/8889' 2>/dev/null; then
+            return 0
+          fi
+        else
+          return 0
+        fi
       fi
     fi
     sleep 2
@@ -74,7 +91,17 @@ wait_for_mediamtx() {
 }
 
 deploy_infrastructure() {
-  compose up --detach --pull missing --remove-orphans postgres minio mosquitto mediamtx
+  compose up --detach --pull missing --remove-orphans postgres minio
+  if [[ "${mosquitto_config_changed}" == "true" ]]; then
+    compose up --detach --pull missing --force-recreate mosquitto
+  else
+    compose up --detach --pull missing mosquitto
+  fi
+  if [[ "${mediamtx_config_changed}" == "true" ]]; then
+    compose up --detach --pull missing --force-recreate mediamtx
+  else
+    compose up --detach --pull missing mediamtx
+  fi
   wait_for_healthy_service postgres
   wait_for_healthy_service minio
   wait_for_healthy_service mosquitto
@@ -98,8 +125,12 @@ restore_release() {
       fi
     done
     if compose config --quiet; then
-      compose up --detach --pull missing --remove-orphans \
-        postgres minio mosquitto mediamtx || rollback_ok=false
+      compose up --detach --pull missing --remove-orphans postgres minio ||
+        rollback_ok=false
+      compose up --detach --pull missing --force-recreate mosquitto ||
+        rollback_ok=false
+      compose up --detach --pull missing --force-recreate mediamtx ||
+        rollback_ok=false
       wait_for_healthy_service postgres || rollback_ok=false
       wait_for_healthy_service minio || rollback_ok=false
       wait_for_healthy_service mosquitto || rollback_ok=false
@@ -108,6 +139,18 @@ restore_release() {
     else
       rollback_ok=false
     fi
+  fi
+
+  if [[ "${nginx_replaced}" == "true" ]]; then
+    if [[ "${had_nginx_config}" == "true" ]]; then
+      install -o root -g root -m 0644 \
+        "${backup_root}/nginx-william-james.conf" "${nginx_config}" ||
+        rollback_ok=false
+    else
+      rm -f -- "${nginx_config}" || rollback_ok=false
+    fi
+    nginx -t || rollback_ok=false
+    systemctl reload nginx || rollback_ok=false
   fi
 
   if [[ "${jar_replaced}" == "true" ]]; then
@@ -193,12 +236,16 @@ if [[ ! -s "${infra_env}" ]]; then
   echo "Server-managed infrastructure secret file is missing: ${infra_env}" >&2
   exit 1
 fi
+if [[ ! -s "${app_env}" ]]; then
+  echo "Server-managed application environment file is missing: ${app_env}" >&2
+  exit 1
+fi
 if ! validate_spring_boot_jar "${incoming_jar}"; then
   exit 1
 fi
 
 bundle_entries="$(tar --list --gzip --file "${incoming_bundle}" | LC_ALL=C sort)"
-expected_entries="$(printf '%s\n' "${required_infra_files[@]}" | LC_ALL=C sort)"
+expected_entries="$(printf '%s\n' "${required_bundle_files[@]}" | LC_ALL=C sort)"
 if [[ "${bundle_entries}" != "${expected_entries}" ]]; then
   echo "Infrastructure artifact contains an unexpected file set." >&2
   printf 'Expected:\n%s\nActual:\n%s\n' "${expected_entries}" "${bundle_entries}" >&2
@@ -207,7 +254,7 @@ fi
 tar --extract --gzip --file "${incoming_bundle}" \
   --directory "${staging}" --no-same-owner --no-same-permissions
 
-for file in "${required_infra_files[@]}"; do
+for file in "${required_bundle_files[@]}"; do
   if [[ ! -s "${staging}/${file}" ]]; then
     echo "Infrastructure artifact file is missing or empty: ${file}" >&2
     exit 1
@@ -219,6 +266,17 @@ done
 docker compose --env-file "${infra_env}" \
   --file "${staging}/docker-compose.yml" config --quiet
 
+if [[ ! -f "${infra_root}/mediamtx.yml" ]] ||
+  ! cmp --silent "${staging}/mediamtx.yml" "${infra_root}/mediamtx.yml"
+then
+  mediamtx_config_changed=true
+fi
+if [[ ! -f "${infra_root}/mosquitto.conf" ]] ||
+  ! cmp --silent "${staging}/mosquitto.conf" "${infra_root}/mosquitto.conf"
+then
+  mosquitto_config_changed=true
+fi
+
 install -d -o ubuntu -g ubuntu -m 0750 \
   "${release_root}" "${deployment_root}" "${backup_root}/infra"
 
@@ -229,6 +287,12 @@ for file in "${required_infra_files[@]}"; do
   fi
 done
 
+if [[ -f "${nginx_config}" ]]; then
+  had_nginx_config=true
+  install -o root -g root -m 0644 \
+    "${nginx_config}" "${backup_root}/nginx-william-james.conf"
+fi
+
 infra_replaced=true
 trap restore_release ERR
 for file in "${required_infra_files[@]}"; do
@@ -236,6 +300,23 @@ for file in "${required_infra_files[@]}"; do
     "${staging}/${file}" "${infra_root}/${file}.next"
   mv -f "${infra_root}/${file}.next" "${infra_root}/${file}"
 done
+
+install -o root -g root -m 0644 \
+  "${staging}/nginx-william-james.conf" "${nginx_config}.next"
+mv -f "${nginx_config}.next" "${nginx_config}"
+nginx_replaced=true
+nginx -t
+systemctl reload nginx
+
+if grep -q '^WEBRTC_BASE_URL=' "${app_env}"; then
+  sed -i \
+    's|^WEBRTC_BASE_URL=.*$|WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live|' \
+    "${app_env}"
+else
+  printf '%s\n' \
+    'WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live' >>"${app_env}"
+fi
+chmod 600 "${app_env}"
 
 incoming_sha="$(sha256sum "${incoming_jar}" | awk '{print $1}')"
 if [[ -f "${current_jar}" ]]; then
@@ -268,9 +349,10 @@ fi
 rm -f -- "${incoming_jar}" "${incoming_bundle}"
 infra_replaced=false
 jar_replaced=false
+nginx_replaced=false
 trap - ERR
 
-printf '%s status=SUCCESS sha256=%s backup=%s services=postgres,minio,mosquitto,mediamtx\n' \
+printf '%s status=SUCCESS sha256=%s backup=%s services=postgres,minio,mosquitto,mediamtx,nginx\n' \
   "${timestamp}" "${incoming_sha}" "${backup_root}" \
   >>"${deployment_root}/backend.log"
 echo "Backend application and infrastructure deployment succeeded: ${incoming_sha}"

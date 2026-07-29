@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import 'password_reset_screen.dart';
 import 'widgets.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
   bool obscure = true;
   bool remember = true;
   bool keyboardVisible = false;
+  String? submissionError;
 
   @override
   void initState() {
@@ -88,7 +90,9 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
   }
 
   Future<void> submit() async {
+    if (widget.controller.busy) return;
     FocusScope.of(context).unfocus();
+    if (mounted) setState(() => submissionError = null);
     final ok = signUp
         ? await widget.controller.signUp(
             name.text,
@@ -102,11 +106,9 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
             persistSession: remember,
           );
     if (!ok && mounted) {
-      showAppSnack(
-        context,
-        widget.controller.errorMessage ?? '입력한 정보를 다시 확인해 주세요.',
-        error: true,
-      );
+      final message = widget.controller.errorMessage ?? '입력한 정보를 다시 확인해 주세요.';
+      setState(() => submissionError = message);
+      showAppSnack(context, message, error: true);
     }
   }
 
@@ -136,8 +138,22 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _BrandMark(horizontalOffset: signUp ? 0 : -16),
-                    if (!signUp) ...[
+                    if (signUp)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Expanded(child: _BrandMark()),
+                          Image.asset(
+                            'assets/images/bbanggeut_mascot.png',
+                            width: 96,
+                            height: 104,
+                            fit: BoxFit.contain,
+                            semanticLabel: '빵긋 캐릭터',
+                          ),
+                        ],
+                      )
+                    else ...[
+                      const _BrandMark(horizontalOffset: -16),
                       const SizedBox(height: 12),
                       Text(
                         '웃음이 머무는 우리 집',
@@ -145,27 +161,49 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                             ?.copyWith(color: AppColors.muted, fontSize: 15),
                       ),
                       const SizedBox(height: 8),
-                      RichText(
-                        text: TextSpan(
-                          style: Theme.of(context).textTheme.displaySmall
-                              ?.copyWith(fontSize: 28, height: 1.25),
-                          children: const [
-                            TextSpan(text: '지나간 웃음도,\n'),
-                            TextSpan(
-                              text: '추억',
-                              style: TextStyle(color: Color(0xFFD98522)),
-                            ),
-                            TextSpan(text: '이 됩니다. '),
-                            WidgetSpan(
-                              alignment: PlaceholderAlignment.middle,
-                              child: Icon(
-                                Icons.favorite_rounded,
-                                size: 17,
-                                color: AppColors.coral,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: RichText(
+                                maxLines: 2,
+                                softWrap: false,
+                                text: TextSpan(
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .displaySmall
+                                      ?.copyWith(fontSize: 34),
+                                  children: const [
+                                    TextSpan(text: '지나간 웃음도,\n'),
+                                    TextSpan(
+                                      text: '추억',
+                                      style: TextStyle(color: AppColors.coral),
+                                    ),
+                                    TextSpan(text: '이 됩니다. '),
+                                    WidgetSpan(
+                                      alignment: PlaceholderAlignment.middle,
+                                      child: Icon(
+                                        Icons.favorite_rounded,
+                                        size: 17,
+                                        color: AppColors.coral,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          Image.asset(
+                            'assets/images/bbanggeut_mascot.png',
+                            width: 122,
+                            height: 142,
+                            fit: BoxFit.contain,
+                            semanticLabel: '빵긋 캐릭터',
+                          ),
+                        ],
                       ),
                     ],
                     const SizedBox(height: 14),
@@ -211,7 +249,7 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                       autofillHints: const [AutofillHints.password],
                       decoration: InputDecoration(
                         prefixIcon: const Icon(Icons.lock_outline_rounded),
-                        hintText: signUp ? '10자 이상 입력해 주세요' : '비밀번호를 입력해주세요',
+                        hintText: signUp ? '10자 이상 입력해 주세요' : '비밀번호를 입력하세요',
                         hintStyle: signUp
                             ? null
                             : const TextStyle(
@@ -222,8 +260,8 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                           onPressed: () => setState(() => obscure = !obscure),
                           icon: Icon(
                             obscure
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
                           ),
                         ),
                       ),
@@ -247,15 +285,43 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                         const Spacer(),
                         if (!signUp)
                           TextButton(
-                            onPressed: () => showAppSnack(
-                              context,
-                              '비밀번호 찾기 API가 아직 백엔드에 없어요.',
-                              error: true,
-                            ),
+                            onPressed: widget.controller.busy
+                                ? null
+                                : () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PasswordResetScreen(
+                                        controller: widget.controller,
+                                        initialEmail: email.text.trim(),
+                                      ),
+                                    ),
+                                  ),
                             child: const Text('비밀번호 찾기'),
                           ),
                       ],
                     ),
+                    if (submissionError != null) ...[
+                      Container(
+                        key: const Key('auth-error-message'),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 13,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.pink,
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: Text(
+                          submissionError!,
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                     FilledButton(
                       onPressed: widget.controller.busy ? null : submit,
                       child: widget.controller.busy
@@ -278,19 +344,15 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                     const _SocialDivider(),
                     const SizedBox(height: 10),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _SocialButton(
-                          label: 'Apple',
-                          mark: '●',
-                          onTap: () => unavailable('Apple'),
-                        ),
                         _SocialButton(
                           label: 'Google',
                           mark: 'G',
                           color: const Color(0xFF4285F4),
                           onTap: () => unavailable('Google'),
                         ),
+                        const SizedBox(width: 42),
                         _SocialButton(
                           label: '카카오',
                           mark: 'TALK',
@@ -428,8 +490,8 @@ class _SocialButton extends StatelessWidget {
     child: Column(
       children: [
         Container(
-          width: 44,
-          height: 44,
+          width: 56,
+          height: 56,
           alignment: Alignment.center,
           decoration: const BoxDecoration(
             color: AppColors.surface,
@@ -437,27 +499,27 @@ class _SocialButton extends StatelessWidget {
             boxShadow: [
               BoxShadow(
                 color: Color(0x17000000),
-                blurRadius: 10,
-                offset: Offset(0, 3),
+                blurRadius: 14,
+                offset: Offset(0, 5),
               ),
             ],
           ),
           child: Text(
             mark,
             style: TextStyle(
-              fontSize: mark.length > 1 ? 7 : 18,
+              fontSize: mark.length > 1 ? 9 : 24,
               fontWeight: FontWeight.w900,
               color: color,
             ),
           ),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 7),
         Text(
           label,
           style: const TextStyle(
             fontWeight: FontWeight.w700,
             color: AppColors.inkSoft,
-            fontSize: 11,
+            fontSize: 12,
           ),
         ),
       ],

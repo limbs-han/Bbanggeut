@@ -87,7 +87,9 @@ class ApiClient {
   bool _isPublicAuthPath(String path) =>
       path.contains('/api/auth/login') ||
       path.contains('/api/auth/signup') ||
-      path.contains('/api/auth/refresh');
+      path.contains('/api/auth/refresh') ||
+      path.contains('/api/auth/password/forgot') ||
+      path.contains('/api/auth/password/reset');
 
   Future<bool> get hasSession async {
     _memoryAccessToken = await _storage.read(key: _accessKey);
@@ -139,6 +141,22 @@ class ApiClient {
     );
     await _saveSession(session, persistSession: persistSession);
     return session;
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 실제 환경 응답을 검증한다.
+    await _post('/api/auth/password/forgot', data: {'email': email.trim()});
+  }
+
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 세션 유지 정책을 검증한다.
+    await _post(
+      '/api/auth/password/change',
+      data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+    );
   }
 
   Future<void> logout() async {

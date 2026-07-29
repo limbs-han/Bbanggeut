@@ -6,7 +6,8 @@ The production deployment job deploys one release composed of:
 - PostgreSQL 16;
 - MinIO and the idempotent bucket initializer;
 - Eclipse Mosquitto and `mosquitto.conf`;
-- MediaMTX and `mediamtx.yml`.
+- MediaMTX and `mediamtx.yml`;
+- the production Nginx HLS/WHEP proxy configuration.
 
 The four infrastructure services remain defined by
 `backend/deploy/docker-compose.yml`. PostgreSQL, MinIO, and Mosquitto data stay
@@ -15,8 +16,8 @@ or removes a volume.
 
 ## Pipeline
 
-Backend CI creates `backend-deploy.tar.gz` from the three version-controlled
-Compose inputs and archives it beside the JAR. After `master` CI succeeds, the
+Backend CI creates `backend-deploy.tar.gz` from the four version-controlled
+deployment inputs and archives it beside the JAR. After `master` CI succeeds, the
 trusted Production job:
 
 1. waits for explicit deployment approval;
@@ -27,10 +28,16 @@ trusted Production job:
 The server-side command validates the JAR, validates the exact archive file
 list, and runs `docker compose config` against the server-owned
 `/home/ubuntu/william-james/infra/.env`. It then backs up the current JAR and
-Compose inputs, applies the candidate configuration, starts all four services,
-runs their health checks and the MinIO initializer, and finally restarts Spring
-Boot. A failed infrastructure or application health check restores the previous
-configuration and JAR.
+Compose inputs, applies the candidate configuration, validates and reloads
+Nginx, starts all four services, runs their health checks and the MinIO
+initializer, and finally restarts Spring Boot. Existing application
+environments receive the public `WEBRTC_BASE_URL` without rotating any secret.
+A failed infrastructure, Nginx, or application health check restores the
+previous configuration and JAR.
+
+MediaMTX and Mosquitto use bind-mounted configuration files. When either file
+changes, the wrapper explicitly recreates the matching container so an atomic
+host-file replacement cannot leave the old process on stale configuration.
 
 Only an image that is missing for the configured image reference is pulled.
 Changing an image reference in the Compose file therefore deploys that image,
