@@ -5,7 +5,7 @@
 
 ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호. 앱38(A01~A38) + 서버26(S01~S26) + 엣지10(E01~10) + 하드웨어4(H01~04) = **78개**(기존 76 + 신규 FN-A38, FN-S26). 배치는 MVP 7단계 순서(사람용 원본과 동일 구조).
 
-**신규 FN-A38·FN-S26은 `[제안·미구현]`이다 — 아래 표에서 코드 경로가 없는 항목은 실제로 존재하지 않는 코드다.**
+**FN-A38 Flutter 리포트 화면은 구현됐다. FN-S26 서버 집계만 `[제안·미구현]`이다. 코드 경로가 없는 FN-S26/API-51을 존재하는 코드로 가정하지 말 것.**
 
 ---
 
@@ -46,7 +46,7 @@ ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호
 | `ui/settings_screen.dart` | FN-A26~A34 |
 | `ui/extra_screens.dart`(NotificationsScreen, LaughReportScreen) | FN-A35~A36 |
 | `ui/media_player_surface.dart` | FN-A37 |
-| **`ReportScreen`(신규, 코드 없음) [제안·미구현]** | **FN-A38** |
+| `ui/laugh_report_content_screen.dart`(`LaughReportContentScreen`) | **FN-A38 [구현]** |
 | `core/api_client.dart` | (전 화면 공용 API 호출 지점) |
 | `core/banuba_video_editor.dart`, `core/portrait_video_canvas.dart` | FN-A21 보조 |
 
@@ -92,7 +92,7 @@ flowchart TD
     Calendar --> VideoDetail
     Videos --> VideoDetail
     Videos --> LaughReport["LaughReportScreen\n웃음 통계 (FN-A36)"]
-    LaughReport --> ReportScreen["ReportScreen (신규, 미구현)\n주간/월간 리포트 (FN-A38)"]
+    LaughReport --> ReportScreen["LaughReportContentScreen\n날짜별 단말 집계 리포트 (FN-A38)"]
     ReportScreen --> VideoDetail
 
     VideoDetail --> LocalEdit["LocalEditScreen\nBanuba 수동 편집 (FN-A21)"]
@@ -107,7 +107,7 @@ flowchart TD
 
 - 탭 순서(인덱스 0~4): 홈 / 캘린더 / 추억 / 가족 / 설정.
 - 미사용 `LiveScreen`(FN-A12, 부록A)은 실제 진입 경로가 없어 다이어그램에서 제외(항목 자체는 부록A 유지). 기념일 편집(`AnniversaryEditorScreen`), 알림 목록(`NotificationsScreen`) 등 MVP·가족공유 밖 보조 화면도 생략(부록A 참고).
-- **`ReportScreen`(FN-A38)은 코드가 없다** — 위 다이어그램의 위치는 기획 의도(진입 경로)만 나타낸다.
+- **`LaughReportContentScreen`(FN-A38)은 구현됐다** — `AppController.videos`의 `LAUGHTER` 항목을 날짜별로 단말 집계한다. 주간/월간 서버 집계는 FN-S26/API-51 범위다.
 
 ---
 
@@ -147,11 +147,11 @@ flowchart TD
 | FN ID | 기능 | 담당 | 동작 규칙 | 관련 REQ·API | 코드 경로 |
 |---|---|---|---|---|---|
 | FN-A06 | 하단 탭 내비게이션 및 새로고침 | 폰 | 5개 탭 전환, 당겨서 새로고침 | REQ-F-41 | `ui/main_shell.dart`(`IndexedStack`+`RefreshIndicator`) |
-| FN-A10 | 임베디드 라이브 미리보기 | 폰+서버+젯슨 | 세션생성→상태폴링→재생시작→하트비트 유지→토큰 선제 갱신→화면 이탈 시 종료 | REQ-F-18 / API-35~38 | `ui/live_screen.dart`(`EmbeddedLivePlayer`), `ui/home_screen.dart` — 2초폴링, 20초 토큰재조회, 15초 하트비트 (실사용 경로) |
+| FN-A10 | 임베디드 라이브 미리보기 | 폰+서버+젯슨 | 세션생성→상태폴링→WHEP/WebRTC 우선→실패 시 HLS 폴백→하트비트→종료 | REQ-F-18 / API-35~38 | `core/whep_player_controller.dart`, `ui/live_screen.dart`, `ui/home_screen.dart` |
 | FN-A11 | 전체화면 라이브 보기 | 폰 | 가로 모드 전체화면 재생, 일정 시간 후 컨트롤 자동 숨김 | REQ-F-18 | `ui/live_screen.dart`(`FullscreenLiveView`) — 3초 후 컨트롤 자동숨김 |
 | FN-A37 | 재생 컨트롤(공용) | 폰 | 저장 영상/라이브 겸용 재생 UI | REQ-F-18,22 | `ui/media_player_surface.dart` — isLive 여부로 컨트롤 분기 |
 | FN-S16 | 라이브 재생 인가 확인 | 서버 | 재생 토큰 서명 검증해 재생 허용 여부 응답 | REQ-F-18 / API-34 | `stream/api/LiveIntrospectionController.java`, `LiveTokenService.java` — 공개(permitAll), 호출주체 ⚠️미확인(MediaMTX 추정) |
-| FN-S17 | 라이브 세션 생성/조회/종료/하트비트 | 서버 | 오프라인 거부, 뷰어TTL45s/유휴60s/엣지lease120s/하트비트15s/토큰30s | REQ-F-18 / API-35~38 | `stream/api/StreamController.java`, `StreamService.java`, `StreamProperties` — 오프라인 409 `DEVICE_OFFLINE`, MQTT-01 발행 |
+| FN-S17 | 라이브 세션 생성/조회/종료/하트비트 | 서버 | READY 응답에 토큰 포함 `whepUrl`+`playUrl`, 오프라인 거부, 뷰어TTL45s/유휴60s/엣지lease120s/하트비트15s/토큰30s | REQ-F-18 / API-35~38 | `StreamSessionResponse.java`, `StreamService.java`, `StreamProperties` |
 | FN-S25 | 기기 상태/명령/이벤트 MQTT 채널 | 서버+젯슨 | 스트림 시작/연장/종료 명령(15초 만료) 전달, 상태·하트비트 수신 | REQ-F-12,18 / MQTT-01~05 | `iot/mqtt/PahoMqttGateway.java`, `iot/telemetry/MqttInboundHandler.java`, `stream/application/StreamCommandPublisher.java`, `StreamEventService.java`, `iot/event/DeviceEventService.java` — 상세는 10절 |
 | FN-E04 | 원격 명령 수신/ACK | 젯슨 | `START_STREAM`/`EXTEND_STREAM`/`STOP_STREAM` 처리 후 ACK 발행 | REQ-F-18 / MQTT-01,03 | `agent.py:103,133,237-262` — PING 분기는 죽은 코드 |
 | FN-E05 | 라이브 스트림 송출(RTSPS) | 젯슨 | ffmpeg로 RTSPS 송출, 하드 만료 검사로 자동 종료, 기기당 스트림 1개 | REQ-F-18 / MQTT-04 | `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py` |
@@ -201,7 +201,7 @@ flowchart TD
 | FN-A36 | 웃음 리포트/웃음 잔디 | 폰 | 월평균·전체포착수·주간추이 막대, 연간 히트맵을 탭으로 전환 | REQ-F-36 / API-33 | `ui/extra_screens.dart`(`LaughReportScreen`) |
 | FN-S15 | 영상 통계 | 서버 | 기간별 트리거타입/일별 집계, 최다 요일·시간대 통계 | REQ-F-36 / API-33 | `video/api/VideoStatsController.java`, `VideoStatsService.java` |
 | FN-S22 | 이벤트 통계 | 서버 | 기간별 감지 이벤트/업로드 영상 수 집계. FN-A38/FN-S26 확장 시 기반 로직 후보 | REQ-F-36 / API-46 | `iot/event/EventStatsController.java`, `EventStatsService.java` — 서버 정교히 구현되었으나 `LaughReportScreen`은 API-33만 사용 |
-| **FN-A38** `[제안·미구현]` | 리포트 화면 | 폰+서버 | 주간/월간 기간 토글, 웃음 횟수 추이, 시간대별(0~23시) 분포, 베스트 클립(상위N개) 목록. 베스트 클립 탭 시 영상 상세(FN-A17)로 이동 | REQ-F-42 / API-51 [제안] | **경로 없음 — 신규 화면(`ReportScreen`), 미구현** |
+| **FN-A38** `[구현]` | 웃음 리포트 화면 | 폰 | 로드된 `LAUGHTER` 영상을 날짜별 단말 집계. 전체 횟수·웃음 날짜 수·최근 날짜별 횟수·연간 잔디·선택 날짜 영상 제공 | REQ-F-42 / 기존 영상 목록 | `ui/laugh_report_content_screen.dart` |
 | **FN-S26** `[제안·미구현]` | 리포트 집계 API | 서버 | 기간(주간/월간) 파라미터로 웃음 횟수 합계·시간대별 분포·베스트 클립 목록 집계. FN-S15/FN-S22 로직·`device_events` 데이터를 확장 기반으로 검토 가능(정렬 기준·개수는 상세 설계 시 확정) | REQ-F-42 / API-51 [제안] | **경로 없음 — 미구현, 신규 개발 필요** |
 
 ---
@@ -308,16 +308,16 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 
 ## 12. 부록 B: 현재 구현 현황
 
-MVP 7단계 기준. 유일한 미구현 항목은 신규 리포트 화면/API(FN-A38, FN-S26)다.
+MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 집계는 제안·미구현이다.
 
 | # | MVP 단계 | 상태 | 비고 |
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | FN-A01~03, A32, A33, S01, S02 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | QR/8자리 코드 claim, 자격증명 발급/회전 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면 전환 포함 전체 동작 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 우선·HLS 폴백 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지 → 자동 업로드 → 목록/재생 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 폰 내 수동 편집(Banuba) 동작 |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장+공유, 원본 서버 다운로드 동작 |
-| 7 | 통계 / 리포트 | 부분 구현 | 캘린더 집계·웃음 통계(FN-A13, A36, S12, S15, S22)는 구현됨. **신규 리포트 화면(FN-A38)·리포트 집계 API(FN-S26)는 미구현(개발 예정)** |
+| 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-51 서버 집계는 제안·미구현** |
 
 **ID 검증**: 본문(2~9절) 고유 FN 개수 = 앱23(A01,A02,A03,A06,A07,A08,A10,A11,A13,A15,A17,A20,A21,A22,A23,A24,A25,A27,A32,A33,A36,A37,A38) + 서버20(S01,S02,S03,S04,S05,S07,S08,S09,S10,S11,S12,S14,S15,S16,S17,S20,S21,S22,S25,S26) + 엣지7(E01~E07) = 50. 부록A 고유 FN 개수 = 앱15(A04,A05,A09,A12,A14,A16,A18,A19,A26,A28,A29,A30,A31,A34,A35) + 서버6(S06,S13,S18,S19,S23,S24) + 엣지3(E08,E09,E10) + 하드웨어4(H01~H04) = 28. 50+28=78, FN-A01~38·FN-S01~26·FN-E01~10·FN-H01~04 전수 반영(결번·중복 없음, FN-A21/FN-S12/FN-S14는 6·7절 또는 5·8절에서 의도적 재사용 표기). MQTT-01~15 전수는 10절에서 확인(4절 2개 + 10절 13개).
