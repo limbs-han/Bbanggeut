@@ -23,7 +23,10 @@ hlsAllowOrigins: ["https://i15e201.p.ssafy.io"]
 hlsAlwaysRemux: true
 hlsVariant: fmp4
 hlsSegmentDuration: 2s
-webrtc: false
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["https://i15e201.p.ssafy.io"]
+webrtcLocalUDPAddress: :8189
 srt: false
 moq: false
 playback: false
