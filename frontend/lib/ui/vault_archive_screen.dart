@@ -4,6 +4,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'all_memories_screen.dart';
 import 'device_registration_screen.dart';
+import 'family_screen.dart';
 
 class VaultArchiveScreen extends StatelessWidget {
   const VaultArchiveScreen({super.key, required this.controller});
@@ -20,13 +21,68 @@ class VaultArchiveScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _openFamily(BuildContext context) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Vault 구성원')),
+          body: FamilyScreen(controller: controller),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final vault = controller.selectedVault!;
     return Scaffold(
       appBar: AppBar(
-        title: Text(controller.vaults.length > 1 ? '모든 추억' : vault.name),
+        title: controller.vaults.length > 1
+            ? PopupMenuButton<String>(
+                key: const Key('vault-archive-selector'),
+                initialValue: vault.id,
+                tooltip: 'Vault 변경',
+                onSelected: (vaultId) {
+                  final next = controller.vaults.firstWhere(
+                    (item) => item.id == vaultId,
+                  );
+                  controller.selectVault(next);
+                },
+                itemBuilder: (_) => controller.vaults
+                    .map(
+                      (item) => PopupMenuItem(
+                        value: item.id,
+                        child: Row(
+                          children: [
+                            Icon(
+                              item.id == vault.id
+                                  ? Icons.check_rounded
+                                  : Icons.inventory_2_outlined,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(item.name)),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(child: Text(vault.name)),
+                    const Icon(Icons.arrow_drop_down_rounded),
+                  ],
+                ),
+              )
+            : Text(vault.name),
         actions: [
+          IconButton(
+            key: const Key('vault-family-management'),
+            tooltip: 'Vault 구성원 관리',
+            onPressed: controller.busy ? null : () => _openFamily(context),
+            icon: const Icon(Icons.family_restroom_rounded),
+          ),
           IconButton(
             key: const Key('vault-archive-refresh'),
             tooltip: '새로고침',

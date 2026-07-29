@@ -243,12 +243,20 @@ class AppController extends ChangeNotifier {
   Future<void> refreshVaultData() async {
     final vault = selectedVault;
     if (vault == null) return;
-    videos = await _loadAccessibleVideos();
+    final results = await Future.wait<Object?>([
+      _loadAccessibleVideos(),
+      api.listVaultMembers(vault.id),
+      if (vault.isOwner)
+        api.listVaultInvitations(vault.id)
+      else
+        Future.value(<Invitation>[]),
+    ]);
+    videos = results[0] as List<VideoMemory>;
+    members = results[1] as List<DeviceMember>;
+    sentInvitations = results[2] as List<Invitation>;
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;
-    members = const [];
-    sentInvitations = const [];
     notifyListeners();
   }
 
@@ -282,6 +290,34 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> selectVault(MemoryVault vault) async {
+    if (selectedVault?.id == vault.id) return;
+    selectedVault = vault;
+    devices = vault.devices
+        .map((binding) => binding.device)
+        .toList(growable: false);
+    selectedDevice = devices.isEmpty ? null : devices.first;
+    deviceStatus = null;
+    videoStats = null;
+    homeSummary = null;
+    videos = const [];
+    members = const [];
+    sentInvitations = const [];
+    notifyListeners();
+    try {
+      await (selectedDevice == null
+          ? refreshVaultData()
+          : refreshDeviceData());
+      errorMessage = null;
+    } on ApiFailure catch (error) {
+      errorMessage = error.message;
+      notifyListeners();
+    } catch (_) {
+      errorMessage = 'Vault 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
+      notifyListeners();
+    }
+  }
+
   Future<void> refreshDeviceData() async {
     if (devHomeCam && devHlsUrl.isNotEmpty) {
       notifyListeners();
@@ -297,9 +333,13 @@ class AppController extends ChangeNotifier {
       api.getDeviceStatus(device.id),
       api.getVideoStats(device.id),
       vault == null ? api.listAllVideos(device.id) : _loadAccessibleVideos(),
-      api.listMembers(device.id),
-      if (device.isOwner)
-        api.listDeviceInvitations(device.id)
+      vault == null
+          ? api.listMembers(device.id)
+          : api.listVaultMembers(vault.id),
+      if (vault?.isOwner ?? device.isOwner)
+        vault == null
+            ? api.listDeviceInvitations(device.id)
+            : api.listVaultInvitations(vault.id)
       else
         Future.value(<Invitation>[]),
       // Home summary is best-effort so a summary hiccup never blanks the tab.
@@ -336,8 +376,16 @@ class AppController extends ChangeNotifier {
     return result;
   }
 
-  Future<bool> claimDevice(String code) async => _guard(() async {
-    await api.claimDevice(code, vaultId: selectedVault?.id);
+  Future<bool> claimDevice(
+    String code, {
+    String? vaultId,
+    String? newVaultName,
+  }) async => _guard(() async {
+    await api.claimDevice(
+      code,
+      vaultId: vaultId,
+      vaultName: vaultId == null ? newVaultName : null,
+    );
     await refreshVaults();
     openFamilyAfterDeviceClaim = true;
   });
@@ -403,24 +451,23 @@ class AppController extends ChangeNotifier {
 
   Future<bool> createInvitation(String email, String role) async =>
       _guard(() async {
-        final device = selectedDevice;
-        if (device == null || !device.isOwner) return;
+        final vault = selectedVault;
+        if (vault == null || !vault.isOwner) return;
         final requestToken =
             pendingMembershipRequestPreview?.email.toLowerCase() ==
                 email.trim().toLowerCase()
             ? pendingMembershipRequestToken
             : null;
-        await api.createInvitation(
-          device.id,
+        await api.createVaultInvitation(
+          vault.id,
           email,
-          role,
           membershipRequestToken: requestToken,
         );
         if (requestToken != null) {
           pendingMembershipRequestToken = null;
           pendingMembershipRequestPreview = null;
         }
-        sentInvitations = await api.listDeviceInvitations(device.id);
+        sentInvitations = await api.listVaultInvitations(vault.id);
         notifyListeners();
       });
 
@@ -458,17 +505,23 @@ class AppController extends ChangeNotifier {
   Future<void> resolvePendingMembershipRequest() async {
     final token = pendingMembershipRequestToken;
     if (!authenticated || token == null) return;
-    final ownerDevices = devices.where((device) => device.isOwner);
-    final ownerDevice = ownerDevices.isEmpty ? null : ownerDevices.first;
-    if (ownerDevice == null) {
-      errorMessage = '기기를 소유한 계정만 멤버 요청 링크를 열 수 있어요.';
+    final ownerVaults = vaults.where((vault) => vault.isOwner);
+    final ownerVault = ownerVaults.isEmpty ? null : ownerVaults.first;
+    if (ownerVault == null) {
+      errorMessage = 'Vault를 소유한 계정만 멤버 요청 링크를 열 수 있어요.';
       notifyListeners();
       return;
     }
     try {
-      if (selectedDevice?.id != ownerDevice.id) {
-        selectedDevice = ownerDevice;
-        await refreshDeviceData();
+      if (selectedVault?.id != ownerVault.id) {
+        selectedVault = ownerVault;
+        devices = ownerVault.devices
+            .map((binding) => binding.device)
+            .toList(growable: false);
+        selectedDevice = devices.isEmpty ? null : devices.first;
+        await (selectedDevice == null
+            ? refreshVaultData()
+            : refreshDeviceData());
       }
       pendingMembershipRequestPreview = await api.previewMembershipRequest(
         token,
@@ -484,9 +537,9 @@ class AppController extends ChangeNotifier {
 
   Future<bool> revokeInvitation(Invitation invitation) async =>
       _guard(() async {
-        final device = selectedDevice;
-        if (device == null || !device.isOwner) return;
-        await api.revokeInvitation(device.id, invitation.id);
+        final vault = selectedVault;
+        if (vault == null || !vault.isOwner) return;
+        await api.revokeVaultInvitation(vault.id, invitation.id);
         sentInvitations = sentInvitations
             .where((item) => item.id != invitation.id)
             .toList(growable: false);
@@ -518,8 +571,12 @@ class AppController extends ChangeNotifier {
 
   Future<bool> revokeMemberAccess(DeviceMember member) async =>
       _guard(() async {
-        await api.revokeMember(selectedDevice!.id, member.id);
-        await refreshDeviceData();
+        final vault = selectedVault;
+        if (vault == null || !vault.isOwner) return;
+        await api.revokeVaultMember(vault.id, member.id);
+        await (selectedDevice == null
+            ? refreshVaultData()
+            : refreshDeviceData());
       });
 
   @Deprecated('Use revokeMemberAccess')
@@ -528,7 +585,9 @@ class AppController extends ChangeNotifier {
   }
 
   Future<bool> transferOwnership(DeviceMember member) async => _guard(() async {
-    await api.transferOwnership(selectedDevice!.id, member.id);
+    final vault = selectedVault;
+    if (vault == null || !vault.isOwner) return;
+    await api.transferVaultOwnership(vault.id, member.id);
     await refreshAll();
   });
 

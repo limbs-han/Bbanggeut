@@ -385,6 +385,8 @@ class Invitation {
     this.inviter,
     this.expiresAt,
     this.createdAt,
+    this.vaultId,
+    this.vaultName,
   });
   final String id;
   final String deviceId;
@@ -395,6 +397,8 @@ class Invitation {
   final String status;
   final DateTime? expiresAt;
   final DateTime? createdAt;
+  final String? vaultId;
+  final String? vaultName;
   bool get isPending => status == 'PENDING';
   factory Invitation.fromJson(Map<String, dynamic> json) => Invitation(
     id: json['id'] as String? ?? '',
@@ -408,6 +412,8 @@ class Invitation {
     status: json['status'] as String? ?? 'PENDING',
     expiresAt: parseDate(json['expiresAt']),
     createdAt: parseDate(json['createdAt']),
+    vaultId: json['vaultId'] as String?,
+    vaultName: json['vaultName'] as String?,
   );
 }
 
