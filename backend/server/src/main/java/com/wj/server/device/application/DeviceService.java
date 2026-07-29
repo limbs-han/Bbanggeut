@@ -18,6 +18,7 @@ import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
 import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
+import com.wj.server.vault.persistence.VaultMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ public class DeviceService {
     private final ClaimAttemptService claimAttemptService;
     private final AuditService auditService;
     private final DeviceMqttIdentityManager mqttIdentityManager;
+    private final VaultMapper vaultMapper;
     private final Clock clock;
 
     @Autowired
@@ -40,10 +42,12 @@ public class DeviceService {
         RegistrationCodeHasher registrationCodeHasher,
         ClaimAttemptService claimAttemptService,
         AuditService auditService,
-        DeviceMqttIdentityManager mqttIdentityManager
+        DeviceMqttIdentityManager mqttIdentityManager,
+        VaultMapper vaultMapper
     ) {
         this(deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, mqttIdentityManager, Clock.systemUTC());
+            claimAttemptService, auditService, mqttIdentityManager, vaultMapper,
+            Clock.systemUTC());
     }
 
     DeviceService(
@@ -53,6 +57,7 @@ public class DeviceService {
         ClaimAttemptService claimAttemptService,
         AuditService auditService,
         DeviceMqttIdentityManager mqttIdentityManager,
+        VaultMapper vaultMapper,
         Clock clock
     ) {
         this.deviceMapper = deviceMapper;
@@ -61,6 +66,7 @@ public class DeviceService {
         this.claimAttemptService = claimAttemptService;
         this.auditService = auditService;
         this.mqttIdentityManager = mqttIdentityManager;
+        this.vaultMapper = vaultMapper;
         this.clock = clock;
     }
 
@@ -87,7 +93,21 @@ public class DeviceService {
                 || registrationCodeMapper.markUsed(code.id(), userId) != 1) {
                 throw claimRejected();
             }
+            UUID vaultId = request.vaultId();
+            if (vaultId == null) {
+                vaultId = UUID.randomUUID();
+                vaultMapper.insertVault(
+                    vaultId,
+                    requestedName == null ? "나의 추억" : requestedName);
+                vaultMapper.insertOwner(vaultId, userId);
+            } else {
+                String role = vaultMapper.findActiveRole(userId, vaultId)
+                    .orElseThrow(this::notFound);
+                requireOwner(role, userId, code.deviceId(), "DEVICE_CLAIM");
+            }
+            vaultMapper.insertActiveBinding(code.deviceId(), vaultId);
             deviceMapper.insertOwnerMembership(code.deviceId(), userId);
+            deviceMapper.syncMembershipsFromVault(code.deviceId());
             DeviceResponse response = deviceMapper.findAccessibleDevice(userId, code.deviceId())
                 .map(this::toDeviceResponse)
                 .orElseThrow(() -> new IllegalStateException("Claimed device is not accessible to its owner"));
@@ -132,6 +152,8 @@ public class DeviceService {
             deviceId,
             request.namePresent(), request.namePresent() ? request.name().trim() : null,
             request.retentionDaysPresent(), request.retentionDays());
+        vaultMapper.updateRetentionForDevice(
+            deviceId, request.retentionDaysPresent(), request.retentionDays());
         DeviceResponse response = deviceMapper.findAccessibleDevice(userId, deviceId)
             .map(this::toDeviceResponse)
             .orElseThrow(this::notFound);
@@ -167,6 +189,8 @@ public class DeviceService {
         }
         if (!"MEMBER".equals(target.role())
             || !"ACTIVE".equals(target.status())
+            || vaultMapper.demoteOwnerForDevice(deviceId, userId) != 1
+            || vaultMapper.promoteMemberForDevice(deviceId, target.id()) != 1
             || deviceMapper.demoteOwnerToMember(deviceId, userId) != 1
             || deviceMapper.promoteNonOwnerToOwner(deviceId, target.id()) != 1) {
             throw new ApiException(
@@ -178,24 +202,22 @@ public class DeviceService {
     }
 
     /**
-     * Releases a device and closes every server-side access path. Reusing the
-     * physical unit requires explicit provisioning so a fresh device identity
-     * and bootstrap credential can be delivered to it.
+     * Disconnects the physical camera from its vault. Memories, subscription
+     * and vault membership survive; only live-device access is closed. The
+     * stable physical row returns to UNCLAIMED so it can be paired again.
      */
     @Transactional
     public void revoke(UUID userId, UUID deviceId) {
         DeviceViewRow device = deviceMapper.lockAccessibleDevice(userId, deviceId)
             .orElseThrow(this::notFound);
         requireOwner(device.myRole(), userId, deviceId, "DEVICE_REVOKE");
-        if (deviceMapper.markRevoked(deviceId) != 1) {
+        vaultMapper.lockActiveVaultId(deviceId).orElseThrow(this::notFound);
+        if (vaultMapper.endActiveBinding(deviceId, userId, "DISCONNECTED") != 1
+            || deviceMapper.markUnclaimed(deviceId) != 1) {
             throw notFound();
         }
-        deviceMapper.revokeActiveCredentials(deviceId);
         deviceMapper.cancelPendingInvitations(deviceId);
         deviceMapper.revokeAllMemberships(deviceId, userId);
-        deviceMapper.markAllVideosDeleting(deviceId, userId);
-        deviceMapper.enqueueDeletionJobsForDevice(deviceId);
-        mqttIdentityManager.revoke(deviceId);
         auditService.success(deviceId, userId, "DEVICE_REVOKE", "DEVICE", deviceId);
     }
 

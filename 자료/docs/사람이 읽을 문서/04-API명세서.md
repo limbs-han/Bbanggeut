@@ -131,6 +131,7 @@
 |---|---|---|---|
 | registrationCode | String | 필수 | `@NotBlank @Size 8~12` |
 | name | String | 옵션 | `@Size 1~80`, 공백만 불가 |
+| vaultId | UUID | 옵션 | 기존 추억 금고에 기기를 추가할 때 사용. 생략하면 새 금고를 생성 |
 
 응답: `201 DeviceResponse`
 
@@ -148,7 +149,28 @@
 | claimedAt | Instant | 필수 | 등록(claim) 시각 |
 
 - 에러: 429 `CLAIM_RATE_LIMITED`(5회/10분), 409 `DEVICE_CLAIM_REJECTED`
-- 비고: claim된 기기는 활성 OWNER가 정확히 1명이 되도록 보장된다.
+- 비고: claim은 물리 기기와 추억 금고 사이의 활성 Binding을 생성한다. 새 금고에는 요청 계정이 OWNER가 되며, 기존 금고에는 OWNER만 기기를 추가할 수 있다.
+
+### Vault API `GET/POST /api/vaults`
+
+- 인증: 사용자 JWT
+- `GET /api/vaults`: 사용자가 참여 중인 추억 금고와 현재 연결 기기 목록 조회
+- `GET /api/vaults/{vaultId}`: 추억 금고 단건 조회
+- `POST /api/vaults`: 기기 없이도 독립적인 추억 금고 생성
+
+`VaultResponse` 핵심 필드:
+
+| 필드명 | 타입 | 설명 |
+|---|---|---|
+| id | UUID | 추억 금고 ID |
+| name | String | 사용자에게 표시할 금고 이름 |
+| status | String | ACTIVE/CLOSING/CLOSED |
+| myRole | String | OWNER/MEMBER |
+| retentionDays | int | 금고 공통 영상 보관 기간 |
+| subscriptionActive | boolean | 금고 구독 상태 |
+| devices | List | 활성 Device Binding과 물리 기기 정보. 연결 기기가 없으면 빈 배열 |
+
+- 비고: 금고는 기기가 없어도 유지된다. 멤버십·구독·영상 접근 권한은 기기가 아니라 금고에 귀속된다.
 
 ### API-43 `POST /api/iot/registration-codes`
 
@@ -174,7 +196,8 @@
 
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
-| deviceId | UUID | 필수 | 기기 ID |
+| deviceId | UUID | 조건부 필수 | 특정 기기로 촬영한 영상 조회 |
+| vaultId | UUID | 조건부 필수 | 기기 연결 여부와 무관하게 금고 전체 영상 조회 |
 | serialNumber | String | 옵션(nullable) | 시리얼 번호 |
 | keyId | String | 필수 | 자격증명 키 ID |
 | bearerToken | String | 필수 | `{keyId}.{secret}` 형식 |
@@ -431,7 +454,8 @@
 | thumbnailUrl | String | 옵션(nullable) | 썸네일 URL |
 | createdAt | Instant | 필수 | 생성 시각 |
 
-- 에러: 422 `VALIDATION_FAILED`(size 범위/triggerType 미지원/from≥to), 404 `RESOURCE_NOT_FOUND`, 422 `INVALID_CURSOR`
+- `deviceId`와 `vaultId` 중 정확히 하나만 전달한다.
+- 에러: 422 `VALIDATION_FAILED`(조회 기준 중복/누락, size 범위/triggerType 미지원/from≥to), 404 `RESOURCE_NOT_FOUND`, 422 `INVALID_CURSOR`
 
 ### API-31 `POST /api/videos/{videoId}/play-url`
 
@@ -733,7 +757,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-09 | `GET /api/devices/{deviceId}` | 기기 단건 조회 |
 | API-10 | `PATCH /api/devices/{deviceId}` | 기기 이름/보관기간 변경(OWNER) |
 | API-12 | `POST /api/devices/{deviceId}/transfer-ownership` | 기기 소유권 이전 |
-| API-13 | `DELETE /api/devices/{deviceId}` | 기기 해제 |
+| API-13 | `DELETE /api/devices/{deviceId}` | 금고에서 물리 기기 연결 해제. 금고·영상·구독·금고 멤버십은 보존 |
 | API-28 | `GET /api/videos/{videoId}` | 영상 단건 상세 조회 |
 | API-29 | `PATCH /api/videos/{videoId}` | 영상 메타데이터(제목/메모/즐겨찾기) 수정 |
 | API-30 | `DELETE /api/videos/{videoId}` | 영상 삭제(OWNER, 비동기) |
