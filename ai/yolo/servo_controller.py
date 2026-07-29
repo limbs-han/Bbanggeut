@@ -569,6 +569,18 @@ class ServoController:
                 "tilt_deg": round(self.current_tilt_deg, 3),
                 "target_pan_deg": round(self.target_pan_deg, 3),
                 "target_tilt_deg": round(self.target_tilt_deg, 3),
+                "pan_minimum_deg": self.pan.minimum_deg,
+                "pan_maximum_deg": self.pan.maximum_deg,
+                "tilt_minimum_deg": self.tilt.minimum_deg,
+                "tilt_maximum_deg": self.tilt.maximum_deg,
+                "pan_pulse_us": round(
+                    self.pan.pulse_for_position(self.current_pan_deg),
+                    3,
+                ),
+                "tilt_pulse_us": round(
+                    self.tilt.pulse_for_position(self.current_tilt_deg),
+                    3,
+                ),
                 "error_x": self.last_error_x,
                 "error_y": self.last_error_y,
                 "accepted_messages": self.accepted_messages,

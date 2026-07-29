@@ -328,6 +328,25 @@ class ServoControllerTests(unittest.TestCase):
         )
         self.assertEqual(self.controller.timeout_holds, 1)
 
+    def test_status_includes_dashboard_limits_and_current_pulses(self) -> None:
+        self.accept(payload(), received_epoch=100.1, received_monotonic=10.0)
+        self.controller.tick(10.1)
+
+        status = self.controller.status_payload(hardware_enabled=False)
+
+        self.assertEqual(status["pan_minimum_deg"], -40.0)
+        self.assertEqual(status["pan_maximum_deg"], 40.0)
+        self.assertEqual(status["tilt_minimum_deg"], 0.0)
+        self.assertEqual(status["tilt_maximum_deg"], 80.0)
+        self.assertAlmostEqual(
+            status["pan_pulse_us"],
+            1500.0 + status["pan_deg"] * 5.0,
+        )
+        self.assertAlmostEqual(
+            status["tilt_pulse_us"],
+            1500.0 + status["tilt_deg"] * 5.0,
+        )
+
     def test_rejects_out_of_order_message(self) -> None:
         message = payload()
         self.accept(message, received_epoch=100.1, received_monotonic=10.0)

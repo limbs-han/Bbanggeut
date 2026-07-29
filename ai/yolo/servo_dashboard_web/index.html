@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>William James · Servo Vision Console</title>
+    <meta
+      name="description"
+      content="카메라 객체 위치와 팬·틸트 서보 움직임을 실시간으로 확인하는 로컬 대시보드"
+    >
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">WILLIAM JAMES · EDGE TELEMETRY</p>
+        <h1>Servo Vision Console</h1>
+      </div>
+      <div class="connection" aria-live="polite">
+        <span id="connection-dot" class="connection-dot"></span>
+        <span id="connection-label">연결 확인 중</span>
+        <time id="server-time">--:--:--</time>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero-grid">
+        <article class="panel camera-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">LIVE CAMERA</p>
+              <h2>객체 추적 화면</h2>
+            </div>
+            <div class="legend" aria-label="영상 표시 범례">
+              <span><i class="legend-center"></i>화면 중앙</span>
+              <span><i class="legend-target"></i>객체 중심</span>
+              <span><i class="legend-vector"></i>이동 오차</span>
+            </div>
+          </div>
+          <div class="video-stage">
+            <img id="camera-stream" src="/stream.mjpg" alt="YOLO 객체 추적 카메라 영상">
+            <div id="video-empty" class="video-empty">
+              <span class="loader"></span>
+              카메라 프레임 대기 중
+            </div>
+            <div class="video-hud">
+              <span id="frame-size">— × —</span>
+              <span id="frame-index">FRAME —</span>
+            </div>
+          </div>
+        </article>
+
+        <aside class="panel telemetry-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">DECISION ENGINE</p>
+              <h2>추적 판단</h2>
+            </div>
+            <span id="tracking-state" class="state-pill neutral">대기</span>
+          </div>
+
+          <div class="command-block">
+            <p>현재 명령</p>
+            <strong id="direction">HOLD</strong>
+            <span id="target-summary">선택 객체 없음</span>
+          </div>
+
+          <div class="coordinate-grid">
+            <div>
+              <span>화면 중앙</span>
+              <strong id="frame-center">—</strong>
+              <small>고정 기준점</small>
+            </div>
+            <div>
+              <span>객체 중심</span>
+              <strong id="object-center">—</strong>
+              <small id="normalized-center">normalized —</small>
+            </div>
+          </div>
+
+          <div class="error-vector">
+            <div class="error-header">
+              <span>정규화 오차</span>
+              <strong id="error-magnitude">0.000</strong>
+            </div>
+            <div class="error-axis">
+              <label for="error-x-bar">X <b id="error-x">+0.000</b></label>
+              <div class="axis-track"><i id="error-x-bar"></i><em></em></div>
+            </div>
+            <div class="error-axis">
+              <label for="error-y-bar">Y <b id="error-y">+0.000</b></label>
+              <div class="axis-track"><i id="error-y-bar"></i><em></em></div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="servo-grid">
+        <article class="panel servo-card" data-axis="pan">
+          <div class="servo-card-header">
+            <div>
+              <p class="section-label">PAN · 좌우</p>
+              <h2>수평 서보</h2>
+            </div>
+            <span id="pan-delta" class="delta">Δ 0.00°</span>
+          </div>
+          <div class="angle-readout">
+            <strong id="pan-angle">0.00</strong><sup>°</sup>
+            <span>목표 <b id="pan-target">0.00°</b></span>
+          </div>
+          <div class="servo-scale">
+            <div class="scale-track">
+              <i id="pan-current-marker" class="current-marker"></i>
+              <i id="pan-target-marker" class="target-marker"></i>
+            </div>
+            <div class="scale-labels">
+              <span id="pan-min">-10°</span><span>HOME</span><span id="pan-max">+10°</span>
+            </div>
+          </div>
+          <div class="pulse-row">
+            <span>출력 펄스</span><strong id="pan-pulse">— µs</strong>
+          </div>
+        </article>
+
+        <article class="panel servo-card" data-axis="tilt">
+          <div class="servo-card-header">
+            <div>
+              <p class="section-label">TILT · 상하</p>
+              <h2>수직 서보</h2>
+            </div>
+            <span id="tilt-delta" class="delta">Δ 0.00°</span>
+          </div>
+          <div class="angle-readout">
+            <strong id="tilt-angle">0.00</strong><sup>°</sup>
+            <span>목표 <b id="tilt-target">0.00°</b></span>
+          </div>
+          <div class="servo-scale">
+            <div class="scale-track">
+              <i id="tilt-current-marker" class="current-marker"></i>
+              <i id="tilt-target-marker" class="target-marker"></i>
+            </div>
+            <div class="scale-labels">
+              <span id="tilt-min">0°</span><span>HOME</span><span id="tilt-max">+10°</span>
+            </div>
+          </div>
+          <div class="pulse-row">
+            <span>출력 펄스</span><strong id="tilt-pulse">— µs</strong>
+          </div>
+        </article>
+
+        <article class="panel hardware-card">
+          <p class="section-label">HARDWARE OUTPUT</p>
+          <div class="hardware-status">
+            <span id="hardware-icon">○</span>
+            <div>
+              <h2 id="hardware-label">상태 확인 중</h2>
+              <p id="hardware-description">서보 컨트롤러 응답 대기 중</p>
+            </div>
+          </div>
+          <dl>
+            <div><dt>제어 상태</dt><dd id="servo-state">—</dd></div>
+            <div><dt>수신 메시지</dt><dd id="accepted-messages">—</dd></div>
+            <div><dt>거부 메시지</dt><dd id="rejected-messages">—</dd></div>
+            <div><dt>타임아웃 HOLD</dt><dd id="timeout-holds">—</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="panel timeline-panel">
+        <div class="panel-heading timeline-heading">
+          <div>
+            <p class="section-label">MOVEMENT TIMELINE</p>
+            <h2>각도·오차 변화</h2>
+          </div>
+          <div class="chart-legend">
+            <span><i class="pan-line"></i>PAN</span>
+            <span><i class="tilt-line"></i>TILT</span>
+            <span><i class="error-line"></i>오차 크기 × 10</span>
+          </div>
+        </div>
+        <canvas id="movement-chart" height="210" aria-label="서보 각도와 오차 변화 차트"></canvas>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-label">EVENT LOG</p>
+            <h2>추적·서보 로그</h2>
+          </div>
+          <div class="log-actions">
+            <button id="pause-log" type="button">일시정지</button>
+            <button id="download-log" type="button">JSON 저장</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>시간</th>
+                <th>소스</th>
+                <th>상태 / 명령</th>
+                <th>객체 중심</th>
+                <th>오차 X · Y</th>
+                <th>PAN</th>
+                <th>TILT</th>
+              </tr>
+            </thead>
+            <tbody id="event-rows">
+              <tr class="empty-row"><td colspan="7">텔레메트리 대기 중</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>로컬 네트워크 전용 진단 화면</span>
+      <span id="dashboard-uptime">시작 시간 —</span>
+    </footer>
+  </body>
+</html>

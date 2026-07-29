@@ -251,6 +251,40 @@ def parse_args() -> argparse.Namespace:
         help="Optional servo-target topic override.",
     )
     parser.add_argument(
+        "--dashboard-host",
+        default=os.getenv("SERVO_DASHBOARD_HOST", "127.0.0.1"),
+        help="Servo dashboard bind address (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--dashboard-port",
+        type=int,
+        default=int(os.getenv("SERVO_DASHBOARD_PORT", "0")),
+        help="Servo dashboard HTTP port. Set 0 to disable (default: 0).",
+    )
+    parser.add_argument(
+        "--dashboard-log",
+        type=Path,
+        help="Optional JSON Lines path for combined vision and servo dashboard logs.",
+    )
+    parser.add_argument(
+        "--dashboard-frame-width",
+        type=int,
+        default=int(os.getenv("SERVO_DASHBOARD_FRAME_WIDTH", "960")),
+        help="Maximum dashboard JPEG width (default: 960).",
+    )
+    parser.add_argument(
+        "--dashboard-jpeg-quality",
+        type=int,
+        default=int(os.getenv("SERVO_DASHBOARD_JPEG_QUALITY", "72")),
+        help="Dashboard JPEG quality from 30 through 95 (default: 72).",
+    )
+    parser.add_argument(
+        "--dashboard-frame-interval",
+        type=float,
+        default=float(os.getenv("SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS", "0.2")),
+        help="Minimum seconds between dashboard frames (default: 0.2).",
+    )
+    parser.add_argument(
         "--display",
         action="store_true",
         help="Show an OpenCV window. Do not use over plain headless SSH.",
@@ -299,6 +333,16 @@ def parse_args() -> argparse.Namespace:
         parser.error("--command-interval must be positive")
     if not 1 <= args.mqtt_port <= 65_535:
         parser.error("--mqtt-port must be between 1 and 65535")
+    if not 0 <= args.dashboard_port <= 65_535:
+        parser.error("--dashboard-port must be between 0 and 65535")
+    if args.dashboard_port and not args.mqtt_host:
+        parser.error("--dashboard-port requires --mqtt-host")
+    if args.dashboard_frame_width < 160:
+        parser.error("--dashboard-frame-width must be at least 160")
+    if not 30 <= args.dashboard_jpeg_quality <= 95:
+        parser.error("--dashboard-jpeg-quality must be between 30 and 95")
+    if args.dashboard_frame_interval <= 0:
+        parser.error("--dashboard-frame-interval must be positive")
     if not args.device_id.strip():
         parser.error("--device-id cannot be empty")
     if args.max_frames < 0:
@@ -952,6 +996,24 @@ def run(args: argparse.Namespace) -> None:
             topic=args.mqtt_topic,
             control_topic=args.control_mqtt_topic,
         )
+    dashboard = None
+    if args.dashboard_port:
+        from servo_dashboard import ServoDashboard
+
+        dashboard = ServoDashboard(
+            host=args.dashboard_host,
+            port=args.dashboard_port,
+            device_id=args.device_id,
+            mqtt_host=args.mqtt_host,
+            mqtt_port=args.mqtt_port,
+            mqtt_username=args.mqtt_username,
+            mqtt_password=args.mqtt_password,
+            log_path=args.dashboard_log,
+            jpeg_width=args.dashboard_frame_width,
+            jpeg_quality=args.dashboard_jpeg_quality,
+            frame_interval_seconds=args.dashboard_frame_interval,
+        )
+        dashboard.start()
     histories: dict[int, TrackLife] = {}
     selector = StableGroupSelector(args.switch_frames)
     controller = AutoFrameController(
@@ -1099,11 +1161,17 @@ def run(args: argparse.Namespace) -> None:
             )
 
             if (
-                (control_output is not None or vision_publisher is not None)
+                (
+                    control_output is not None
+                    or vision_publisher is not None
+                    or dashboard is not None
+                )
                 and timeline_now - last_command_at >= args.command_interval
             ):
                 command_payload = command.as_payload(frame_count)
                 command_payload["device_id"] = args.device_id
+                command_payload["frame_width"] = width
+                command_payload["frame_height"] = height
                 command_payload["object_counts"] = {
                     class_name: sum(
                         item.class_name == class_name for item in stable_objects
@@ -1112,6 +1180,22 @@ def run(args: argparse.Namespace) -> None:
                 }
                 command_payload["track_ids"] = [
                     item.track_id for item in stable_objects
+                ]
+                command_payload["objects"] = [
+                    {
+                        "track_id": item.track_id,
+                        "class_name": item.class_name,
+                        "confidence": round(item.confidence, 4),
+                        "center_x": round(item.center[0] / max(width, 1), 6),
+                        "center_y": round(item.center[1] / max(height, 1), 6),
+                        "box": [
+                            round(item.box[0] / max(width, 1), 6),
+                            round(item.box[1] / max(height, 1), 6),
+                            round(item.box[2] / max(width, 1), 6),
+                            round(item.box[3] / max(height, 1), 6),
+                        ],
+                    }
+                    for item in stable_objects
                 ]
                 if control_output is not None:
                     control_output.write(
@@ -1124,6 +1208,12 @@ def run(args: argparse.Namespace) -> None:
                     )
                 if vision_publisher is not None:
                     vision_publisher.publish_state(command_payload)
+                if dashboard is not None:
+                    dashboard.update(
+                        command_payload,
+                        annotated_frame,
+                        now_monotonic=wall_now,
+                    )
                 last_command_at = timeline_now
 
             if args.output is not None:
@@ -1157,6 +1247,8 @@ def run(args: argparse.Namespace) -> None:
             control_output.close()
         if vision_publisher is not None:
             vision_publisher.close()
+        if dashboard is not None:
+            dashboard.close()
         cv2.destroyAllWindows()
 
     elapsed = max(time.monotonic() - started_at, 1e-6)
