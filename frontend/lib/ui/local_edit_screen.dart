@@ -13,6 +13,8 @@ import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
+import '../features/stt/caption_auto_section.dart';
+import '../features/stt/caption_controller.dart';
 import 'widgets.dart';
 
 const _editorBackground = Color(0xFF1E1B18);
@@ -57,6 +59,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   late VideoEditState _editState;
   String _selectedTool = 'cut';
 
+  /// 들린 대사로 만드는 자동 자막. 상태와 편집 로직은 전부 이쪽에 있다.
+  final _autoCaptions = CaptionController();
+
   bool get _editorReady =>
       _sourcePath != null && _preview?.value.isInitialized == true;
 
@@ -64,7 +69,14 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   void initState() {
     super.initState();
     _editState = VideoEditState(durationMs: 0, originalAspectRatio: 16 / 9);
+    // 전사가 끝나면 미리보기 겹쳐보기가 바로 나타나야 한다. 이걸 안 걸면
+    // 다음 재생 위치 갱신 때까지 자막이 안 보인다.
+    _autoCaptions.addListener(_onCaptionsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
+  }
+
+  void _onCaptionsChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _prepare() async {
@@ -96,6 +108,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           originalAspectRatio: aspectRatio,
         );
         _status = null;
+        // 영상이 기기에 내려온 직후 한 번. 캐시가 있으면 즉시 끝난다.
+        _autoCaptions.start(widget.video.id, sourcePath);
       });
       await _loadThumbnails();
     } catch (failure) {
@@ -249,6 +263,17 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                           ),
                         )
                         .toList(),
+              ),
+              CaptionAutoSection(
+                controller: _autoCaptions,
+                // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
+                // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
+                estimateSeconds: _editState.durationMs > 0
+                    ? (_editState.durationMs / 1000 * 0.9).round()
+                    : null,
+                // 자막 수정도 저장 안 된 변경이다.
+                onChanged: () =>
+                    setState(() => _editState.markExternalEditApplied()),
               ),
               const SizedBox(height: 18),
               _SheetApplyButton(
@@ -584,6 +609,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       preview.removeListener(_onPreviewChanged);
       preview.dispose();
     }
+    _autoCaptions
+      ..removeListener(_onCaptionsChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -777,6 +805,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                       captionColor: _captionColor,
                       filter: _selectedFilter,
                       arSticker: _arSticker,
+                      autoCaptionText: autoCaptionAt(
+                        _autoCaptions,
+                        preview.value.position.inMilliseconds,
+                      ),
                     ),
                   ),
                 ),
@@ -1100,6 +1132,7 @@ class _PreviewSurface extends StatelessWidget {
     required this.captionColor,
     required this.filter,
     required this.arSticker,
+    this.autoCaptionText,
   });
 
   final VideoPlayerController controller;
@@ -1108,6 +1141,17 @@ class _PreviewSurface extends StatelessWidget {
   final Color captionColor;
   final String filter;
   final String arSticker;
+
+  /// 지금 재생 위치의 자동 자막. 손 자막이 있으면 그리지 않는다 — 같은 자리라
+  /// 겹치면 읽을 수 없다.
+  final String? autoCaptionText;
+
+  /// 화면에 실제로 그릴 자막. 손 자막이 우선이다.
+  String? get _captionOnScreen {
+    if (captionText.isNotEmpty) return captionText;
+    final auto = autoCaptionText;
+    return auto != null && auto.isNotEmpty ? auto : null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1169,7 +1213,9 @@ class _PreviewSurface extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (captionText.isNotEmpty)
+                    // 손 자막이 있으면 그것을, 없으면 자동 자막을 그린다.
+                    // 자리가 같아서 둘을 겹치면 읽을 수 없다.
+                    if (_captionOnScreen != null)
                       Align(
                         alignment: const Alignment(0, 0.74),
                         child: Container(
@@ -1183,7 +1229,7 @@ class _PreviewSurface extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            captionText,
+                            _captionOnScreen!,
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: captionColor,
