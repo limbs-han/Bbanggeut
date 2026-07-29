@@ -1,18 +1,20 @@
 package com.wj.server.device.application;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.matches;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.DeviceClaimProperties;
 import com.wj.server.device.persistence.ClaimAttemptMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,32 +25,53 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class ClaimAttemptServiceTest {
-    private static final Instant NOW = Instant.parse("2026-07-17T10:00:00Z");
-
     @Mock
     private ClaimAttemptMapper mapper;
+
+    @Mock
+    private SlidingWindowRateLimiter rateLimiter;
 
     private ClaimAttemptService service;
 
     @BeforeEach
     void setUp() {
         service = new ClaimAttemptService(
-            mapper,
-            new DeviceClaimProperties(5, Duration.ofMinutes(10)),
-            Clock.fixed(NOW, ZoneOffset.UTC));
+            mapper, rateLimiter, new DeviceClaimProperties(5, Duration.ofMinutes(10)));
     }
 
     @Test
     void rejectsWhenAccountOrIpReachedMaximumFailures() {
         UUID userId = UUID.randomUUID();
-        when(mapper.isRateLimited(
-            eq(userId), anyString(), eq(NOW.minus(Duration.ofMinutes(10))), eq(5)))
-            .thenReturn(true);
+        when(rateLimiter.tryAcquire(anyString(), anyString(), any(), anyInt())).thenReturn(false);
 
-        assertThatThrownBy(() -> service.ensureAllowed(userId, "127.0.0.1"))
+        assertThatThrownBy(() -> service.reserveOrReject(userId, "127.0.0.1"))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("CLAIM_RATE_LIMITED");
+    }
+
+    @Test
+    void limitsTheGuessingPartyRatherThanTheCodeOrDevice() {
+        UUID userId = UUID.randomUUID();
+        when(rateLimiter.tryAcquire(anyString(), anyString(), any(), anyInt())).thenReturn(true);
+
+        service.reserveOrReject(userId, "127.0.0.1");
+
+        verify(rateLimiter).tryAcquire(
+            eq("rl:claim:user:" + userId),
+            matches("rl:claim:ip:[0-9a-f]{64}"),
+            eq(Duration.ofMinutes(10)),
+            eq(5));
+    }
+
+    @Test
+    void releasesOnlyTheAccountBudgetOnSuccess() {
+        UUID userId = UUID.randomUUID();
+
+        service.clearFailures(userId);
+
+        verify(rateLimiter).reset("rl:claim:user:" + userId);
+        verify(rateLimiter, never()).reset(matches("rl:claim:ip:.*"));
     }
 
     @Test
@@ -57,7 +80,6 @@ class ClaimAttemptServiceTest {
 
         service.recordFailure(userId, "127.0.0.1");
 
-        verify(mapper).insertAttempt(eq(userId),
-            org.mockito.ArgumentMatchers.matches("[0-9a-f]{64}"), eq(false));
+        verify(mapper).insertFailure(eq(userId), matches("[0-9a-f]{64}"));
     }
 }

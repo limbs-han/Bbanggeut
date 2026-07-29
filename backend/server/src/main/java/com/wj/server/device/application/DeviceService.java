@@ -66,7 +66,7 @@ public class DeviceService {
 
     @Transactional
     public DeviceResponse claim(UUID userId, ClaimDeviceRequest request, String ipAddress) {
-        claimAttemptService.ensureAllowed(userId, ipAddress);
+        claimAttemptService.reserveOrReject(userId, ipAddress);
         UUID attemptedDeviceId = null;
         try {
             // The submitted code identifies the device: the hash lookup is the
@@ -91,7 +91,7 @@ public class DeviceService {
             DeviceResponse response = deviceMapper.findAccessibleDevice(userId, code.deviceId())
                 .map(this::toDeviceResponse)
                 .orElseThrow(() -> new IllegalStateException("Claimed device is not accessible to its owner"));
-            claimAttemptService.recordSuccess(userId, ipAddress);
+            claimAttemptService.clearFailures(userId);
             auditService.success(code.deviceId(), userId, "DEVICE_CLAIM", "DEVICE", code.deviceId());
             return response;
         } catch (ApiException exception) {

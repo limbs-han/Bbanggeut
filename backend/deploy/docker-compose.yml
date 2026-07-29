@@ -18,6 +18,27 @@ services:
       timeout: 5s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # noeviction is deliberate. Under an "allkeys" policy Redis would be free to
+    # discard rate limit counters when memory tightens, which hands an attacker
+    # a way to clear their own record by inflating memory pressure.
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   minio:
     image: quay.io/minio/minio:latest
     restart: unless-stopped
@@ -149,5 +170,6 @@ services:
 
 volumes:
   postgres-data:
+  redis-data:
   minio-data:
   mosquitto-data:

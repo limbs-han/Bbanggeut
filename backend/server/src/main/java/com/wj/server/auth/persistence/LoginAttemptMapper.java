@@ -6,35 +6,24 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 
+/**
+ * Durable record of rejected sign-ins, kept for incident analysis.
+ *
+ * <p>Enforcement moved to the Redis limiter, so nothing here is on the sign-in
+ * decision path any more. Successful sign-ins are no longer written: no query
+ * read those rows, and {@code users.last_login} already records them.
+ */
 @Mapper
 public interface LoginAttemptMapper {
 
-    @Select("""
-        SELECT (
-            (SELECT count(*) FROM auth_login_attempts
-              WHERE email_hash = #{emailHash} AND succeeded = false AND attempted_at >= #{since}) >= #{maxFailures}
-            OR
-            (SELECT count(*) FROM auth_login_attempts
-              WHERE ip_hash = #{ipHash} AND succeeded = false AND attempted_at >= #{since}) >= #{maxFailures}
-        )
-        """)
-    boolean isRateLimited(
-        @Param("emailHash") String emailHash,
-        @Param("ipHash") String ipHash,
-        @Param("since") Instant since,
-        @Param("maxFailures") int maxFailures
-    );
-
     @Insert("""
         INSERT INTO auth_login_attempts (email_hash, ip_hash, succeeded)
-        VALUES (#{emailHash}, #{ipHash}, #{succeeded})
+        VALUES (#{emailHash}, #{ipHash}, false)
         """)
-    int insertAttempt(
+    int insertFailure(
         @Param("emailHash") String emailHash,
-        @Param("ipHash") String ipHash,
-        @Param("succeeded") boolean succeeded
+        @Param("ipHash") String ipHash
     );
 
     @Delete("DELETE FROM auth_login_attempts WHERE attempted_at < #{before}")
