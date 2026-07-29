@@ -56,6 +56,7 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             VIDEO_CANVAS_CHANNEL,
         ).setMethodCallHandler(::handleVideoCanvasCall)
+        SttChannel.register(flutterEngine)
     }
 
     private fun handleVideoCanvasCall(
