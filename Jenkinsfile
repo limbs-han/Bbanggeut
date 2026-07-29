@@ -38,6 +38,7 @@ pipeline {
                             deleteDir()
                             checkout scm
                             sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
+                            sh 'bash ci/jenkins/scripts/test-backend-deploy-contract.sh'
                             sh 'bash ci/jenkins/scripts/test-deploy-jar-validation.sh'
                             sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
                             sh 'bash ci/jenkins/scripts/package-backend-deploy.sh backend-deploy.tar.gz'

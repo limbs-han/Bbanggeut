@@ -114,10 +114,9 @@ void main() {
         ),
       ),
     );
-    expect(find.text('QR 코드를 자동으로 인식해요'), findsNothing);
-
-    await tester.tap(find.text('직접 코드 입력하기'));
-    await tester.pumpAndSettle();
+    expect(find.textContaining('QR'), findsNothing);
+    expect(find.text('Owner'), findsOneWidget);
+    expect(find.text('Member'), findsOneWidget);
     final codeField = find.byKey(const Key('registration-code-prefix'));
     expect(codeField, findsOneWidget);
 
