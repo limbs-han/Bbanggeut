@@ -518,6 +518,24 @@ class ApiClient {
     }
   }
 
+  /// 전사문으로 4컷 구성을 받는다. 서버가 키를 들고 LLM을 대신 부른다.
+  ///
+  /// **글만 보낸다** — 영상·오디오·프레임은 보내지 않는다.
+  Future<Map<String, dynamic>> createComicScript(
+    String videoId,
+    List<Map<String, Object>> lines,
+  ) => _post('/api/videos/$videoId/comic/script', data: {'lines': lines});
+
+  /// 4컷 구성으로 만화 그림 한 장(2x2 격자)을 받는다. 응답은 base64 PNG다.
+  Future<Map<String, dynamic>> createComicImage(
+    String videoId, {
+    required List<Map<String, Object?>> cuts,
+    required String style,
+  }) => _post(
+    '/api/videos/$videoId/comic/image',
+    data: {'cuts': cuts, 'style': style},
+  );
+
   Future<Map<String, dynamic>> _get(
     String path, {
     Map<String, dynamic>? query,
