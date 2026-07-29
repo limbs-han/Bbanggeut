@@ -38,7 +38,7 @@ void main() {
     expect(format('abcd12').text, 'ABCD');
   });
 
-  test('기기 해제 성공 시 선택 기기와 연결 데이터를 즉시 비운다', () async {
+  test('기기 연결 해제 후에도 추억 금고와 과거 영상을 유지한다', () async {
     final api = _ReleaseApiClient();
     const device = DeviceSummary(
       id: 'device-1',
@@ -49,6 +49,8 @@ void main() {
       retentionDays: 30,
     );
     final controller = AppController(api: api)
+      ..vaults = const [_ReleaseApiClient.vaultWithDevice]
+      ..selectedVault = _ReleaseApiClient.vaultWithDevice
       ..devices = const [device]
       ..selectedDevice = device
       ..deviceStatus = const DeviceStatus(
@@ -61,6 +63,8 @@ void main() {
     expect(api.releasedDeviceId, device.id);
     expect(controller.devices, isEmpty);
     expect(controller.selectedDevice, isNull);
+    expect(controller.selectedVault?.id, 'vault-1');
+    expect(controller.videos.single.id, 'memory-1');
     expect(controller.deviceStatus, isNull);
     controller.dispose();
   });
@@ -187,12 +191,63 @@ void main() {
 }
 
 class _ReleaseApiClient extends ApiClient {
+  static const vaultWithDevice = MemoryVault(
+    id: 'vault-1',
+    name: '우리 집',
+    status: 'ACTIVE',
+    myRole: 'OWNER',
+    retentionDays: 30,
+    subscriptionActive: false,
+    devices: [
+      VaultDevice(
+        bindingId: 'binding-1',
+        generation: 1,
+        device: DeviceSummary(
+          id: 'device-1',
+          name: '거실 카메라',
+          model: 'test',
+          status: 'ONLINE',
+          myRole: 'OWNER',
+          retentionDays: 30,
+        ),
+      ),
+    ],
+  );
+  static const vaultWithoutDevice = MemoryVault(
+    id: 'vault-1',
+    name: '우리 집',
+    status: 'ACTIVE',
+    myRole: 'OWNER',
+    retentionDays: 30,
+    subscriptionActive: false,
+    devices: [],
+  );
   String? releasedDeviceId;
 
   @override
   Future<void> releaseDevice(String deviceId) async {
     releasedDeviceId = deviceId;
   }
+
+  @override
+  Future<List<MemoryVault>> listVaults() async => const [vaultWithoutDevice];
+
+  @override
+  Future<List<VideoMemory>> listAllVaultVideos(
+    String vaultId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async => const [
+    VideoMemory(
+      id: 'memory-1',
+      deviceId: 'device-1',
+      triggerType: 'LAUGHTER',
+      title: '남아 있는 추억',
+      status: 'READY',
+      favorite: false,
+    ),
+  ];
 }
 
 class _FailingLogoutApiClient extends ApiClient {
@@ -242,7 +297,23 @@ class _AcceptInvitationApiClient extends ApiClient {
   }
 
   @override
-  Future<List<DeviceSummary>> listDevices() async => const [device];
+  Future<List<MemoryVault>> listVaults() async => const [
+    MemoryVault(
+      id: 'vault-1',
+      name: '우리 집',
+      status: 'ACTIVE',
+      myRole: 'MEMBER',
+      retentionDays: 30,
+      subscriptionActive: false,
+      devices: [
+        VaultDevice(
+          bindingId: 'binding-1',
+          generation: 1,
+          device: device,
+        ),
+      ],
+    ),
+  ];
 
   @override
   Future<DeviceStatus> getDeviceStatus(String id) async => const DeviceStatus(
@@ -258,6 +329,14 @@ class _AcceptInvitationApiClient extends ApiClient {
   @override
   Future<List<VideoMemory>> listAllVideos(
     String deviceId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async => const [];
+
+  @override
+  Future<List<VideoMemory>> listAllVaultVideos(
+    String vaultId, {
     String? triggerType,
     DateTime? from,
     DateTime? to,
