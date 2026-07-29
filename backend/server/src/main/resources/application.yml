@@ -18,6 +18,16 @@ spring:
           auth: ${SMTP_AUTH:true}
           starttls:
             enable: ${SMTP_STARTTLS:true}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # Kept short on purpose. Sign-in falls back to allowing the attempt when
+      # the limiter cannot answer, so a stalled Redis must fail fast instead of
+      # holding the request open.
+      timeout: ${REDIS_TIMEOUT:500ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -33,6 +43,11 @@ management:
   health:
     mail:
       enabled: ${MAIL_HEALTH_ENABLED:false}
+    # The application keeps serving sign-in without Redis, so its absence is a
+    # degraded limiter rather than an unhealthy instance. Watch the limiter
+    # warning logs instead of failing the health probe.
+    redis:
+      enabled: ${REDIS_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:

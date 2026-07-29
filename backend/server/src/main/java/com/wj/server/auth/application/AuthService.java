@@ -88,13 +88,14 @@ public class AuthService {
     @Transactional
     public AuthTokenResponse login(LoginRequest request, ClientContext context) {
         String email = normalizeEmail(request.email());
-        loginAttemptService.ensureAllowed(email, context.ipAddress());
+        // Claimed before the hash comparison below, which is deliberately slow.
+        loginAttemptService.reserveOrReject(email, context.ipAddress());
         UserRow user = authMapper.findUserByEmail(email).filter(this::isActive).orElse(null);
         if (user == null || !passwordEncoder.matches(request.password(), user.passwordHash())) {
             loginAttemptService.recordFailure(email, context.ipAddress());
             throw invalidCredentials();
         }
-        loginAttemptService.recordSuccess(email, context.ipAddress());
+        loginAttemptService.clearFailures(email);
         authMapper.updateLastLogin(user.id());
         return issueTokens(user, context);
     }

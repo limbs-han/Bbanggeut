@@ -1,6 +1,6 @@
 # 윌리엄 제임스 백엔드 로컬 개발 환경
 # 사용법: docker compose up -d  (Docker Desktop 실행 필요)
-# 구성: PostgreSQL 16 + MinIO(S3 호환) + Mosquitto(MQTT)
+# 구성: PostgreSQL 16 + Redis 7 + MinIO(S3 호환) + Mosquitto(MQTT)
 # 주의: 모든 계정/비밀번호는 로컬 개발 전용. 배포 환경에서는 반드시 교체.
 
 services:
@@ -17,6 +17,27 @@ services:
       - wj-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wj -d wj"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: wj-redis
+    # noeviction 이유: 메모리가 빠듯해질 때 Redis 가 임의로 키를 버리면
+    # 로그인 시도 제한 카운터가 사라진다. 공격자가 메모리를 부풀려 자기
+    # 기록을 지우는 경로가 되므로 저장 실패를 택한다.
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy noeviction
+    ports:
+      - "6379:6379"
+    volumes:
+      - wj-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -103,5 +124,6 @@ services:
 
 volumes:
   wj-pgdata:
+  wj-redis:
   wj-minio:
   wj-mosquitto:

@@ -11,10 +11,11 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 | `frontend-agent` | JDK 21, Flutter 3.44.7, Dart 3.12.2 | `frontend/` |
 | `device-agent` | JDK 21, Python 3, venv, Bash | `ai/device_agent/`와 `ai/yolo/` |
 | `postgres-ci` | PostgreSQL 16 | Backend 통합 테스트 전용 |
+| `redis-ci` | Redis 7 | 로그인 시도 제한 통합 테스트 전용 |
 
 서버 구성 파일은 `ci/jenkins/server/`에 있습니다.
 
-- `compose.yml`: Controller, 네 Agent, `postgres-ci`, 전용 네트워크 정의
+- `compose.yml`: Controller, 네 Agent, `postgres-ci`, `redis-ci`, 전용 네트워크 정의
 - `Dockerfile.controller`: Jenkins Controller와 플러그인
 - `Dockerfile.agent`: Backend·IoT·AI 공통 Agent
 - `Dockerfile.frontend-agent`: Flutter Agent
@@ -26,10 +27,11 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 ## 보안 및 격리
 
 - Controller와 Agent에는 `/var/run/docker.sock`을 연결하지 않습니다.
-- Agent와 `postgres-ci`는 `william-james-jenkins-agents` 네트워크만 사용합니다.
+- Agent와 `postgres-ci`, `redis-ci`는 `william-james-jenkins-agents` 네트워크만 사용합니다.
 - 운영 서비스가 사용하는 `william-james_default` 네트워크에는 들어가지 않습니다.
-- `postgres-ci`의 5432 포트는 호스트에 공개하지 않습니다.
+- `postgres-ci`의 5432 포트와 `redis-ci`의 6379 포트는 호스트에 공개하지 않습니다.
 - `postgres-ci` 데이터 디렉터리는 메모리 기반 `tmpfs`입니다.
+- `redis-ci`는 영속화를 끄고 실행하므로 빌드 데이터가 디스크에 남지 않습니다.
 - GitLab 저장소는 만료일이 있는 `read_repository` 전용 Deploy Token으로 읽습니다.
 - Deploy Token은 Jenkins Credentials에 저장하고 작업에는 Credential ID만 기록합니다.
 - GitLab 상태 기록은 프로젝트 전용 `api` 토큰을 별도 사용하며
@@ -117,6 +119,7 @@ Jenkins Agent에는 운영 Docker를 제어할 수 있는 Docker 소켓이 없�
 Jenkins Backend Agent
   -> Docker 소켓 없음
   -> postgres-ci에 빌드별 임시 데이터베이스 생성
+  -> redis-ci로 로그인 시도 제한 테스트 실행
   -> Flyway 통합 테스트 실행
   -> 테스트가 끝나면 임시 데이터베이스 삭제
 ```
