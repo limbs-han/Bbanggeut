@@ -185,6 +185,7 @@ public class AuthService {
                 HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다.");
         }
         authMapper.revokeAllMembershipsForUser(userId);
+        authMapper.revokeAllVaultMembershipsForUser(userId);
         authMapper.revokeAllSessionsForUser(userId);
     }
 

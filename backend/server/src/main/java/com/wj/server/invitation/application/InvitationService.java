@@ -144,6 +144,7 @@ public class InvitationService {
             throw conflict("INVITATION_NOT_PENDING", "대기 중인 초대만 수락할 수 있습니다.");
         }
         invitationMapper.activateMember(invitation.deviceId(), userId, "MEMBER");
+        invitationMapper.activateVaultMember(invitation.deviceId(), userId, "MEMBER");
         DeviceMemberResponse response = invitationMapper.findMembership(invitation.deviceId(), userId)
             .map(this::toMember)
             .orElseThrow(this::notFound);
@@ -185,6 +186,7 @@ public class InvitationService {
         if (!"ACTIVE".equals(target.status()) || invitationMapper.revokeMember(membershipId, userId) != 1) {
             throw conflict("MEMBERSHIP_NOT_ACTIVE", "활성 MEMBER만 회수할 수 있습니다.");
         }
+        invitationMapper.revokeVaultMember(deviceId, target.userId(), userId);
         auditService.success(deviceId, userId, "MEMBER_REVOKE", "MEMBERSHIP", membershipId);
     }
 

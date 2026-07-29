@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.ResponseEntity;
 import jakarta.validation.Valid;
 import com.wj.server.video.application.VideoCommandService;
+import com.wj.server.common.api.ApiException;
+import org.springframework.http.HttpStatus;
 
 @RestController
 @RequestMapping("/api/videos")
@@ -36,14 +38,25 @@ public class VideoController {
     @GetMapping
     public VideoPageResponse list(
         @AuthenticationPrincipal Jwt jwt,
-        @RequestParam UUID deviceId,
+        @RequestParam(required = false) UUID deviceId,
+        @RequestParam(required = false) UUID vaultId,
         @RequestParam(required = false) String triggerType,
         @RequestParam(required = false) Instant from,
         @RequestParam(required = false) Instant to,
         @RequestParam(required = false) String cursor,
         @RequestParam(defaultValue = "20") int size
     ) {
-        return videoQueryService.list(userId(jwt), deviceId, triggerType, from, to, cursor, size);
+        if ((deviceId == null) == (vaultId == null)) {
+            throw new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "VALIDATION_FAILED",
+                "deviceId 또는 vaultId 중 하나만 입력해야 합니다.");
+        }
+        return vaultId == null
+            ? videoQueryService.list(
+                userId(jwt), deviceId, triggerType, from, to, cursor, size)
+            : videoQueryService.listByVault(
+                userId(jwt), vaultId, triggerType, from, to, cursor, size);
     }
 
     @GetMapping("/{videoId}")
