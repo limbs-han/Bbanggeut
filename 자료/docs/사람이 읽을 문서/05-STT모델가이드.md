@@ -300,8 +300,18 @@ q8_0은 크기가 71MB 더 큰데 잡음 두 조건에서 모두 뒤진다. **"�
 **절대값을 CER과 비교하면 안 된다** — 분모가 2~3배라 항상 낮게 나온다. 모델 간 상대 비교에만
 쓴다. 한국어 ASR 평가에서 쓰이는 지표라 특정 데이터셋에 맞춘 조정이 아니다.
 
-**이 데이터에서 자모 CER은 순위를 바꾸지 않았다.** 절대값이 4~5%p 낮아지지만 서열은 그대로다.
-즉 **모델 간 격차는 발음이 비슷한 오류가 아니라 누락·다른 낱말에서 온다.**
+**자모 CER은 순위도, 판정도 바꾸지 않았다.** 절대값이 2~5%p 낮아지지만 서열은 그대로다.
+meeting에서 핵심 비교를 다시 재봤다.
+
+| 모델 | CER | 자모 CER |
+|---|---|---|
+| `small-ko` q5_1 | 16.3% | 14.1% |
+| `SenseVoiceSmall` int8 | 13.9% | 11.7% |
+| **격차** | **2.4%p** | **2.4%p** |
+
+**격차가 두 지표에서 정확히 같다.** 발음 유사 오류를 참작해도 채택 기준 3%p에 미달하므로
+**SenseVoice 보류 판정이 유지된다.** 즉 **모델 간 격차는 발음이 비슷한 오류가 아니라
+누락·다른 낱말에서 온다** — 홈캠 클립에서 순위가 안 바뀐 것과 같은 결론이다.
 
 ## 한계
 
@@ -474,6 +484,10 @@ python fetch_dataset.py --name phone  --minutes 5 --out dataset/phone \
 python fetch_dataset.py --name meeting --minutes 5 --out dataset/meeting \
   --labels-zip "<464>/2.Validation/라벨링데이터_260312_add/VL1.zip" \
   --audio-zip  "<464>/2.Validation/원천데이터/VS1.zip"
+
+# 직접 녹음한 파일에서 클립 자르기 (ffmpeg 불필요 — PyAV가 들고 있다)
+python prepare_clips.py --input <녹화.mp4> --at 0:15 --at 1:20 \
+  --out dataset/homecam --prefix homecam
 
 python run_benchmark.py --dir dataset/zeroth            # 전체
 python run_benchmark.py --dir dataset/kspon --only small-ko   # 라벨로 선별
