@@ -8,6 +8,7 @@ import 'family_screen.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'videos_screen.dart';
+import 'vault_archive_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.controller});
@@ -44,11 +45,14 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.controller.selectedDevice == null) {
+    if (widget.controller.selectedVault == null) {
       return DeviceRegistrationScreen(
         controller: widget.controller,
         canGoBack: false,
       );
+    }
+    if (widget.controller.selectedDevice == null) {
+      return VaultArchiveScreen(controller: widget.controller);
     }
     final pages = [
       CalendarScreen(
