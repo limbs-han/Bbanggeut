@@ -20,6 +20,21 @@ def base_environment(mqtt_ca: Path) -> dict[str, str]:
 
 
 class AgentConfigTest(unittest.TestCase):
+    def test_jetson_live_relay_uses_webrtc_compatible_opus(self):
+        example_path = Path(__file__).resolve().parents[1] / (
+            "device-agent.jetson.env.example"
+        )
+        example = example_path.read_text(encoding="utf-8")
+
+        self.assertIn(
+            (
+                "FFMPEG_AUDIO_ARGS='[\"-c:a\",\"libopus\",\"-b:a\",\"64k\","
+                "\"-ar\",\"48000\",\"-ac\",\"1\",\"-application\","
+                "\"lowdelay\"]'"
+            ),
+            example,
+        )
+
     def test_plaintext_loopback_rollback_does_not_add_tls_options(self):
         with tempfile.TemporaryDirectory() as directory:
             mqtt_ca = Path(directory) / "mqtt-ca.crt"

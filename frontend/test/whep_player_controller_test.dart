@@ -26,9 +26,58 @@ void main() {
     );
     expect(
       WhepPlayerController.hasActiveAudioMedia(
+        'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n'
+        'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=inactive\r\n',
+      ),
+      isFalse,
+    );
+    expect(
+      WhepPlayerController.hasActiveAudioMedia(
+        'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n'
+        'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=recvonly\r\n',
+      ),
+      isFalse,
+    );
+    expect(
+      WhepPlayerController.hasActiveAudioMedia(
+        'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n'
+        'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=sendonly\r\n',
+      ),
+      isTrue,
+    );
+    expect(
+      WhepPlayerController.hasActiveAudioMedia(
         'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n',
       ),
       isFalse,
+    );
+  });
+
+  test('WHEP playback requires inbound audio RTP packets', () {
+    expect(
+      WhepPlayerController.hasInboundAudioPackets([
+        StatsReport('video', 'inbound-rtp', 0, {
+          'kind': 'video',
+          'packetsReceived': 120,
+          'bytesReceived': 2048,
+        }),
+        StatsReport('audio', 'inbound-rtp', 0, {
+          'kind': 'audio',
+          'packetsReceived': 0,
+          'bytesReceived': 0,
+        }),
+      ]),
+      isFalse,
+    );
+    expect(
+      WhepPlayerController.hasInboundAudioPackets([
+        StatsReport('audio', 'inbound-rtp', 0, {
+          'mediaType': 'audio',
+          'packetsReceived': '4',
+          'bytesReceived': '512',
+        }),
+      ]),
+      isTrue,
     );
   });
 

@@ -37,6 +37,7 @@ class DashboardTelemetry:
         self._vision: dict[str, Any] | None = None
         self._servo: dict[str, Any] | None = None
         self._laughter: dict[str, Any] | None = None
+        self._yamnet: dict[str, Any] | None = None
         self._events: deque[dict[str, Any]] = deque(maxlen=max_events)
         self._jpeg: bytes | None = None
         self._frame_sequence = 0
@@ -137,6 +138,11 @@ class DashboardTelemetry:
             self._append_event("laughter", merged)
             self._condition.notify_all()
 
+    def update_yamnet(self, payload: dict[str, Any]) -> None:
+        with self._condition:
+            self._yamnet = dict(payload)
+            self._condition.notify_all()
+
     def snapshot(self) -> dict[str, Any]:
         with self._condition:
             return {
@@ -146,6 +152,9 @@ class DashboardTelemetry:
                 "servo": dict(self._servo) if self._servo is not None else None,
                 "laughter": (
                     dict(self._laughter) if self._laughter is not None else None
+                ),
+                "yamnet": (
+                    dict(self._yamnet) if self._yamnet is not None else None
                 ),
                 "events": list(self._events),
                 "frame_sequence": self._frame_sequence,
@@ -309,6 +318,88 @@ class LaughterEventDirectoryMonitor:
             self._thread.join(timeout=max(1.0, self.poll_seconds * 2))
 
 
+class YamnetDiagnosticsMonitor:
+    """Tail YAMNet inference JSONL and expose its latest score."""
+
+    def __init__(
+        self,
+        path: Path,
+        telemetry: DashboardTelemetry,
+        *,
+        poll_seconds: float = 0.25,
+    ) -> None:
+        self.path = path.expanduser().resolve()
+        self.telemetry = telemetry
+        self.poll_seconds = poll_seconds
+        self._offset = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="yamnet-diagnostics-monitor",
+            daemon=True,
+        )
+
+    @staticmethod
+    def _normalize(payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "observed_at": payload.get("observedAt"),
+            "status": payload.get("status") or "READY",
+            "detail": payload.get("detail"),
+            "top_class": payload.get("topClass"),
+            "top_score": payload.get("topScore"),
+            "score": payload.get("selectedScore"),
+            "class_name": payload.get("selectedClass"),
+            "aggregation": payload.get("selectedAggregation"),
+            "threshold": payload.get("threshold"),
+            "positive_streak": payload.get("positiveStreak"),
+            "would_trigger": payload.get("wouldTrigger"),
+            "rms": payload.get("rms"),
+            "inference_ms": payload.get("inferenceMs"),
+        }
+
+    def scan_once(self) -> None:
+        try:
+            size = self.path.stat().st_size
+            if size < self._offset:
+                self._offset = 0
+            with self.path.open("r", encoding="utf-8") as stream:
+                stream.seek(self._offset)
+                lines = []
+                while True:
+                    line_start = stream.tell()
+                    line = stream.readline()
+                    if not line:
+                        break
+                    if not line.endswith("\n"):
+                        self._offset = line_start
+                        break
+                    lines.append(line)
+                    self._offset = stream.tell()
+        except (OSError, UnicodeDecodeError):
+            return
+
+        for line in lines:
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                self.telemetry.update_yamnet(self._normalize(payload))
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.poll_seconds):
+            self.scan_once()
+
+    def start(self) -> None:
+        self.scan_once()
+        self._thread.start()
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=max(1.0, self.poll_seconds * 2))
+
+
 class DashboardRequestHandler(BaseHTTPRequestHandler):
     server_version = "WilliamJamesServoDashboard/1.0"
 
@@ -397,12 +488,23 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json(self.telemetry.snapshot())
         elif path == "/healthz":
             snapshot = self.telemetry.snapshot()
+            yamnet = snapshot["yamnet"]
             self._send_json(
                 {
                     "status": "ok",
                     "vision_available": snapshot["vision"] is not None,
                     "servo_available": snapshot["servo"] is not None,
                     "laughter_available": snapshot["laughter"] is not None,
+                    "yamnet_available": (
+                        yamnet is not None
+                        and str(yamnet.get("status", "READY")).upper()
+                        == "READY"
+                    ),
+                    "yamnet_status": (
+                        str(yamnet.get("status", "UNAVAILABLE")).upper()
+                        if yamnet is not None
+                        else "UNAVAILABLE"
+                    ),
                 }
             )
         elif path == "/stream.mjpg":
@@ -426,6 +528,7 @@ class ServoDashboard:
         mqtt_password: str | None = None,
         log_path: Path | None = None,
         event_dir: Path | None = None,
+        yamnet_diagnostics_path: Path | None = None,
         jpeg_width: int = 960,
         jpeg_quality: int = 72,
         frame_interval_seconds: float = 0.2,
@@ -447,6 +550,11 @@ class ServoDashboard:
         self._laughter_monitor = (
             LaughterEventDirectoryMonitor(event_dir, self.telemetry)
             if event_dir is not None
+            else None
+        )
+        self._yamnet_monitor = (
+            YamnetDiagnosticsMonitor(yamnet_diagnostics_path, self.telemetry)
+            if yamnet_diagnostics_path is not None
             else None
         )
         static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
@@ -521,6 +629,8 @@ class ServoDashboard:
         self._mqtt.loop_start()
         if self._laughter_monitor is not None:
             self._laughter_monitor.start()
+        if self._yamnet_monitor is not None:
+            self._yamnet_monitor.start()
         self._http_thread.start()
         print(f"Servo dashboard: http://{self.host}:{self.port}")
 
@@ -566,6 +676,8 @@ class ServoDashboard:
         self._http.server_close()
         if self._laughter_monitor is not None:
             self._laughter_monitor.close()
+        if self._yamnet_monitor is not None:
+            self._yamnet_monitor.close()
         self._mqtt.disconnect()
         self._mqtt.loop_stop()
         self.telemetry.close()

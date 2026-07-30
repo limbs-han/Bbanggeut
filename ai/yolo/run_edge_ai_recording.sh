@@ -50,6 +50,8 @@ fi
 : "${YAMNET_CONSECUTIVE:=3}"
 : "${YAMNET_COOLDOWN:=12}"
 : "${YAMNET_GAIN:=1.5}"
+: "${YAMNET_READY_TIMEOUT_SECONDS:=90}"
+: "${YAMNET_RESTART_DELAY_SECONDS:=5}"
 : "${YAMNET_CLAP_ENABLED:=false}"
 : "${YAMNET_CLAP_THRESHOLD:=0.30}"
 : "${YAMNET_CLAP_CONSECUTIVE:=2}"
@@ -80,6 +82,14 @@ case "$YAMNET_SCORE_AGGREGATION" in
 esac
 if [[ ! "$YAMNET_CONSECUTIVE" =~ ^[1-9][0-9]*$ ]]; then
     echo "YAMNET_CONSECUTIVE must be a positive integer" >&2
+    exit 2
+fi
+if [[ ! "$YAMNET_READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "YAMNET_READY_TIMEOUT_SECONDS must be a positive integer" >&2
+    exit 2
+fi
+if [[ ! "$YAMNET_RESTART_DELAY_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "YAMNET_RESTART_DELAY_SECONDS must be a positive integer" >&2
     exit 2
 fi
 
@@ -120,15 +130,78 @@ esac
 mkdir -p "$EVENT_DIR"
 RUN_DIR="${EVENT_DIR}/logs/$(date '+%Y%m%d_%H%M%S')"
 mkdir -p "$RUN_DIR"
+YAMNET_DIAGNOSTICS_PATH="${RUN_DIR}/yamnet_diagnostics.jsonl"
 
 declare -a PIDS=()
+YAMNET_PID=""
+YAMNET_RESTART_AT=0
+
+child_is_running() {
+    local pid="$1"
+    local state
+    state="$(ps -o stat= -p "$pid" 2>/dev/null)" || return 1
+    [[ -n "$state" && "${state:0:1}" != "Z" ]]
+}
+
+remove_managed_pid() {
+    local removed_pid="$1"
+    local pid
+    local -a remaining=()
+    for pid in "${PIDS[@]}"; do
+        if [[ "$pid" != "$removed_pid" ]]; then
+            remaining+=("$pid")
+        fi
+    done
+    PIDS=("${remaining[@]}")
+}
+
+wait_for_children_to_stop() {
+    local attempts="$1"
+    local attempt
+    local pid
+    local any_running
+    for ((attempt = 0; attempt < attempts; attempt += 1)); do
+        any_running=false
+        for pid in "${PIDS[@]}"; do
+            if child_is_running "$pid"; then
+                any_running=true
+                break
+            fi
+        done
+        if [[ "$any_running" == false ]]; then
+            return 0
+        fi
+        sleep 0.25
+    done
+    return 1
+}
+
 cleanup() {
     local status="$?"
+    local pid
     trap - EXIT INT TERM
-    for pid in "${PIDS[@]}"; do
-        kill -INT "$pid" 2>/dev/null || true
-    done
-    wait 2>/dev/null || true
+    if ((${#PIDS[@]} > 0)); then
+        for pid in "${PIDS[@]}"; do
+            kill -INT "$pid" 2>/dev/null || true
+        done
+        if ! wait_for_children_to_stop 20; then
+            echo "Escalating AI child shutdown to SIGTERM" >&2
+            for pid in "${PIDS[@]}"; do
+                kill -TERM "$pid" 2>/dev/null || true
+            done
+            if ! wait_for_children_to_stop 8; then
+                echo "Escalating AI child shutdown to SIGKILL" >&2
+                for pid in "${PIDS[@]}"; do
+                    kill -KILL "$pid" 2>/dev/null || true
+                done
+            fi
+        fi
+        for pid in "${PIDS[@]}"; do
+            if ! child_is_running "$pid"; then
+                wait "$pid" 2>/dev/null || true
+            fi
+        done
+    fi
     exit "$status"
 }
 trap cleanup EXIT INT TERM
@@ -154,31 +227,6 @@ echo \
     "Upload retry: initial=${UPLOAD_RETRY_INITIAL_SECONDS}s " \
     "maximum=${UPLOAD_RETRY_MAX_SECONDS}s; terminal 4xx is quarantined"
 
-UPLOADER_COMMAND=(
-    "$YOLO_PYTHON" -u "${SCRIPT_DIR}/segment_clip_uploader.py"
-    --event-dir "$EVENT_DIR"
-    --recording-dir "$RECORDING_DIR"
-    --api-base-url "$API_BASE_URL"
-    --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
-    --segment-seconds "$RECORDING_SEGMENT_SECONDS"
-    --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
-    --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"
-)
-case "${DELETE_EVENT_AFTER_UPLOAD,,}" in
-    true|1|yes)
-        UPLOADER_COMMAND+=(--delete-after-upload)
-        ;;
-    false|0|no)
-        ;;
-    *)
-        echo "DELETE_EVENT_AFTER_UPLOAD must be true or false" >&2
-        exit 2
-        ;;
-esac
-"${UPLOADER_COMMAND[@]}" \
-    > >(sed -u 's/^/[UPLOAD] /' | tee -a "${RUN_DIR}/uploader.log") 2>&1 &
-PIDS+=("$!")
-
 YAMNET_COMMAND=(
     "$YAMNET_PYTHON" -u "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py"
     --device-id "$DEVICE_ID"
@@ -190,6 +238,7 @@ YAMNET_COMMAND=(
     --consecutive "$YAMNET_CONSECUTIVE"
     --cooldown "$YAMNET_COOLDOWN"
     --gain "$YAMNET_GAIN"
+    --diagnostics-jsonl "$YAMNET_DIAGNOSTICS_PATH"
     --event-dir "$EVENT_DIR"
     --clip-seconds "$EVENT_CLIP_SECONDS"
     --trigger-only
@@ -213,8 +262,126 @@ case "${YAMNET_CLAP_ENABLED,,}" in
         exit 2
         ;;
 esac
-"${YAMNET_COMMAND[@]}" \
-    > >(sed -u 's/^/[YAMNET] /' | tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
+
+write_yamnet_status() {
+    local status="$1"
+    local detail="$2"
+    local observed_at
+    observed_at="$(date -u '+%Y-%m-%dT%H:%M:%S.000Z')"
+    printf \
+        '{"observedAt":"%s","status":"%s","detail":"%s"}\n' \
+        "$observed_at" "$status" "$detail" \
+        >> "$YAMNET_DIAGNOSTICS_PATH"
+}
+
+yamnet_has_inference() {
+    grep -q '"selectedScore"' "$YAMNET_DIAGNOSTICS_PATH" 2>/dev/null
+}
+
+start_yamnet() {
+    "${YAMNET_COMMAND[@]}" \
+        > >(sed -u 's/^/[YAMNET] /' |
+            tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
+    YAMNET_PID="$!"
+    PIDS+=("$YAMNET_PID")
+}
+
+write_yamnet_status "STARTING" "Waiting for first inference"
+start_yamnet
+
+echo \
+    "Waiting up to ${YAMNET_READY_TIMEOUT_SECONDS}s for YAMNet first inference"
+# Use a wall-clock deadline (date +%s) rather than bash's $SECONDS. $SECONDS
+# is relative to when *this shell* started, which is normally fine, but it is
+# an easy thing to get wrong (e.g. it does not survive `exec`, and it is easy
+# to accidentally read it from a different shell/subshell than the one that
+# set the baseline). A plain epoch-seconds comparison has no such surprises
+# and matches what an operator sees in `date`/journal timestamps.
+yamnet_wait_started="$(date +%s)"
+yamnet_ready_deadline=$((yamnet_wait_started + YAMNET_READY_TIMEOUT_SECONDS))
+yamnet_initial_ready=false
+while ! yamnet_has_inference; do
+    if ! child_is_running "$YAMNET_PID"; then
+        if wait "$YAMNET_PID"; then
+            yamnet_status=0
+        else
+            yamnet_status="$?"
+        fi
+        remove_managed_pid "$YAMNET_PID"
+        YAMNET_PID=""
+        YAMNET_RESTART_AT=$((
+            $(date +%s) + YAMNET_RESTART_DELAY_SECONDS
+        ))
+        echo \
+            "YAMNet exited before readiness (status=${yamnet_status})." \
+            "Continuing in degraded mode; YAMNet will restart independently." \
+            "Last log lines:" \
+            >&2
+        tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
+        write_yamnet_status \
+            "UNAVAILABLE" \
+            "Exited before readiness; restart scheduled"
+        break
+    fi
+    now="$(date +%s)"
+    if (( now >= yamnet_ready_deadline )); then
+        if yamnet_has_inference; then
+            yamnet_initial_ready=true
+            break
+        fi
+        echo \
+            "YAMNet readiness timed out after " \
+            "$((now - yamnet_wait_started))s " \
+            "(limit ${YAMNET_READY_TIMEOUT_SECONDS}s). " \
+            "Continuing in degraded mode while YAMNet keeps running. " \
+            "Last log lines:" \
+            >&2
+        tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
+        write_yamnet_status \
+            "UNAVAILABLE" \
+            "Readiness timed out; detector still running"
+        break
+    fi
+    sleep 0.25
+done
+if yamnet_has_inference; then
+    yamnet_initial_ready=true
+fi
+if [[ "$yamnet_initial_ready" == true ]]; then
+    echo \
+        "YAMNet ready: first inference telemetry received after " \
+        "$(( $(date +%s) - yamnet_wait_started ))s"
+else
+    echo \
+        "YAMNet is not ready; starting the remaining AI stack in degraded mode"
+fi
+
+# Give YAMNet a bounded head start to reduce TensorFlow/PyTorch startup
+# contention. Readiness is observational, not fatal: uploader, wake-name,
+# YOLO, and the dashboard still start if YAMNet is slow or temporarily down.
+UPLOADER_COMMAND=(
+    "$YOLO_PYTHON" -u "${SCRIPT_DIR}/segment_clip_uploader.py"
+    --event-dir "$EVENT_DIR"
+    --recording-dir "$RECORDING_DIR"
+    --api-base-url "$API_BASE_URL"
+    --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
+    --segment-seconds "$RECORDING_SEGMENT_SECONDS"
+    --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
+    --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"
+)
+case "${DELETE_EVENT_AFTER_UPLOAD,,}" in
+    true|1|yes)
+        UPLOADER_COMMAND+=(--delete-after-upload)
+        ;;
+    false|0|no)
+        ;;
+    *)
+        echo "DELETE_EVENT_AFTER_UPLOAD must be true or false" >&2
+        exit 2
+        ;;
+esac
+"${UPLOADER_COMMAND[@]}" \
+    > >(sed -u 's/^/[UPLOAD] /' | tee -a "${RUN_DIR}/uploader.log") 2>&1 &
 PIDS+=("$!")
 
 case "${WAKE_NAME_ENABLED,,}" in
@@ -254,6 +421,7 @@ YOLO_COMMAND=(
     --dashboard-port "$SERVO_DASHBOARD_PORT"
     --dashboard-log "${RUN_DIR}/servo_dashboard.jsonl"
     --dashboard-event-dir "$EVENT_DIR"
+    --dashboard-yamnet-diagnostics "$YAMNET_DIAGNOSTICS_PATH"
     --dashboard-frame-width "$SERVO_DASHBOARD_FRAME_WIDTH"
     --dashboard-jpeg-quality "$SERVO_DASHBOARD_JPEG_QUALITY"
     --dashboard-frame-interval "$SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS"
@@ -263,7 +431,34 @@ MQTT_HOST= "${YOLO_COMMAND[@]}" \
 PIDS+=("$!")
 
 while true; do
+    now="$(date +%s)"
+    if [[ -n "$YAMNET_PID" ]] &&
+        ! child_is_running "$YAMNET_PID"; then
+        if wait "$YAMNET_PID"; then
+            yamnet_status=0
+        else
+            yamnet_status="$?"
+        fi
+        remove_managed_pid "$YAMNET_PID"
+        YAMNET_PID=""
+        YAMNET_RESTART_AT=$((now + YAMNET_RESTART_DELAY_SECONDS))
+        echo \
+            "YAMNet exited (status=${yamnet_status}); restarting only YAMNet " \
+            "in ${YAMNET_RESTART_DELAY_SECONDS}s" \
+            >&2
+        write_yamnet_status \
+            "UNAVAILABLE" \
+            "Detector exited; restart scheduled"
+    fi
+    if [[ -z "$YAMNET_PID" ]] && (( now >= YAMNET_RESTART_AT )); then
+        echo "Restarting YAMNet detector" >&2
+        write_yamnet_status "RESTARTING" "Launching detector"
+        start_yamnet
+    fi
     for pid in "${PIDS[@]}"; do
+        if [[ "$pid" == "$YAMNET_PID" ]]; then
+            continue
+        fi
         if ! kill -0 "$pid" 2>/dev/null; then
             wait "$pid"
             exit $?

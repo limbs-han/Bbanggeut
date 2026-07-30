@@ -3,12 +3,13 @@ logLevel: info
 rtsp: yes
 rtspAddress: :8554
 
-hls: yes
-hlsAddress: :8888
-hlsAllowOrigins: ['*']
-hlsVariant: mpegts
-hlsSegmentCount: 4
-hlsSegmentDuration: 1s
+# 운영과 동일하게 WebRTC/WHEP 전용입니다. HLS는 지원하지 않습니다.
+# 로컬 확인은 http://<pi>:8889/homecam/whep 로 합니다.
+hls: no
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigins: ['*']
+webrtcLocalUDPAddress: :8189
 
 paths:
   homecam:

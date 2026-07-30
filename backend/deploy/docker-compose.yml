@@ -144,11 +144,9 @@ services:
       MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: publish
       MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
-      # HLS is reachable only from host-loopback Nginx, which authenticates app
-      # viewers before proxying requests to MediaMTX.
+      # WHEP read access is limited to Nginx through the host loopback mapping.
       MTX_AUTHINTERNALUSERS_2_USER: any
-      # HLS reaches the container through the host-side loopback mapping and
-      # Docker bridge. Public RTSPS clients must not inherit this read identity.
+      # Public RTSPS clients must not inherit this read identity.
       MTX_AUTHINTERNALUSERS_2_IPS: "127.0.0.1/32,::1/128,172.16.0.0/12"
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
@@ -161,7 +159,6 @@ services:
     ports:
       - "127.0.0.1:8554:8554"
       - "8322:8322"
-      - "127.0.0.1:8888:8888"
       - "127.0.0.1:8889:8889"
       - "8189:8189/udp"
     volumes:

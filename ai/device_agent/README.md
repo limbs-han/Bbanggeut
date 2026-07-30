@@ -11,8 +11,8 @@ Flutter POST stream session
   -> Spring publishes START_STREAM over MQTT
   -> agent starts FFmpeg at .../live/{streamId}
   -> agent publishes STREAM_READY
-  -> Spring returns the protected HLS URL
-  -> Flutter plays HLS and sends viewer heartbeats
+  -> Spring returns the protected WebRTC/WHEP URL
+  -> Flutter plays WHEP and sends viewer heartbeats
   -> STOP_STREAM or hardExpiresAt terminates FFmpeg
 ```
 

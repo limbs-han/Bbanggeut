@@ -11,7 +11,7 @@ from pathlib import Path
 import platform
 import statistics
 import time
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from benchmark_dataset import load_dataset, validate_dataset
 
@@ -87,6 +87,66 @@ class FrameMeasurement:
 
 def rounded(value: float | None) -> float | None:
     return round(value, 3) if value is not None else None
+
+
+def build_progress_payload(
+    *,
+    run_id: str,
+    status: str,
+    model_name: str,
+    runtime: str,
+    dataset_name: str,
+    completed_frames: int,
+    total_frames: int | None,
+    completed_tasks: int,
+    total_tasks: int,
+    repeat: int | None = None,
+    sample_id: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    if status == "completed":
+        percent = 100.0
+    elif total_frames is not None and total_frames > 0:
+        percent = min(100.0, completed_frames / total_frames * 100.0)
+    elif total_tasks > 0:
+        percent = min(100.0, completed_tasks / total_tasks * 100.0)
+    else:
+        percent = None
+
+    current = (
+        {"repeat": repeat, "sampleId": sample_id}
+        if repeat is not None or sample_id is not None
+        else None
+    )
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "runId": run_id,
+        "updatedAt": utc_now(),
+        "status": status,
+        "component": "vision",
+        "model": model_name,
+        "runtime": runtime,
+        "dataset": dataset_name,
+        "progress": {
+            "completedFrames": completed_frames,
+            "totalFrames": total_frames,
+            "completedTasks": completed_tasks,
+            "totalTasks": total_tasks,
+            "percent": rounded(percent),
+        },
+        "current": current,
+        "error": error,
+    }
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def summarize_measurements(
@@ -199,6 +259,7 @@ def run_sample(
     imgsz: int,
     warmup_frames: int,
     max_frames: int,
+    progress_callback: Callable[[int], None] | None = None,
 ) -> list[FrameMeasurement]:
     results = model.predict(
         source=str(media_path),
@@ -230,6 +291,8 @@ def run_sample(
                 class_counts=class_counts,
             )
         )
+        if progress_callback is not None and len(measurements) % 25 == 0:
+            progress_callback(len(measurements))
         if max_frames and len(measurements) >= max_frames:
             break
     return measurements
@@ -310,17 +373,69 @@ def main() -> int:
     runtime = infer_runtime(model_path)
     model = YOLO(str(model_path))
     measurements: list[FrameMeasurement] = []
+    output_dir.mkdir(parents=True, exist_ok=True)
+    progress_path = output_dir / "progress.json"
+    dataset_name = str(dataset.get("name"))
+    total_tasks = len(dataset["samples"]) * args.repeats
+    total_frames = (
+        total_tasks * args.max_frames
+        if args.max_frames > 0
+        else None
+    )
+    completed_tasks = 0
 
-    for repeat in range(1, args.repeats + 1):
-        for sample in dataset["samples"]:
-            sample_id = sample["sampleId"]
-            media_path = (dataset_root / sample["media"]).resolve()
-            print(
-                f"[{repeat}/{args.repeats}] "
-                f"model={model_name} sample={sample_id}"
-            )
-            measurements.extend(
-                run_sample(
+    def persist_progress(
+        status: str,
+        *,
+        completed_frames: int,
+        repeat: int | None = None,
+        sample_id: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        effective_total_frames = (
+            completed_frames
+            if status == "completed"
+            else total_frames
+        )
+        write_json(
+            progress_path,
+            build_progress_payload(
+                run_id=run_id,
+                status=status,
+                model_name=model_name,
+                runtime=runtime,
+                dataset_name=dataset_name,
+                completed_frames=completed_frames,
+                total_frames=effective_total_frames,
+                completed_tasks=completed_tasks,
+                total_tasks=total_tasks,
+                repeat=repeat,
+                sample_id=sample_id,
+                error=error,
+            ),
+        )
+
+    persist_progress("running", completed_frames=0)
+    try:
+        for repeat in range(1, args.repeats + 1):
+            for sample in dataset["samples"]:
+                sample_id = sample["sampleId"]
+                media_path = (dataset_root / sample["media"]).resolve()
+                print(
+                    f"[{repeat}/{args.repeats}] "
+                    f"model={model_name} sample={sample_id}"
+                )
+                completed_before_sample = len(measurements)
+
+                def update_sample_progress(sample_frames: int) -> None:
+                    persist_progress(
+                        "running",
+                        completed_frames=completed_before_sample + sample_frames,
+                        repeat=repeat,
+                        sample_id=sample_id,
+                    )
+
+                sample_measurements = run_sample(
                     model,
                     sample_id=sample_id,
                     media_path=media_path,
@@ -329,10 +444,24 @@ def main() -> int:
                     imgsz=args.imgsz,
                     warmup_frames=args.warmup_frames,
                     max_frames=args.max_frames,
+                    progress_callback=update_sample_progress,
                 )
-            )
+                measurements.extend(sample_measurements)
+                completed_tasks += 1
+                persist_progress(
+                    "running",
+                    completed_frames=len(measurements),
+                    repeat=repeat,
+                    sample_id=sample_id,
+                )
+    except Exception as error:
+        persist_progress(
+            "failed",
+            completed_frames=len(measurements),
+            error=str(error),
+        )
+        raise
 
-    output_dir.mkdir(parents=True, exist_ok=True)
     write_jsonl(
         output_dir / "frames.jsonl",
         measurements,
@@ -346,15 +475,19 @@ def main() -> int:
         model_name=model_name,
         runtime=runtime,
         model_path=model_path,
-        dataset_name=str(dataset.get("name")),
+        dataset_name=dataset_name,
         warmup_frames=args.warmup_frames,
         repeats=args.repeats,
         imgsz=args.imgsz,
         device=args.device,
     )
-    (output_dir / "summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    write_json(
+        output_dir / "summary.json",
+        summary,
+    )
+    persist_progress(
+        "completed",
+        completed_frames=len(measurements),
     )
     print(f"PASS: wrote {len(measurements)} frame measurements to {output_dir}")
     return 0
