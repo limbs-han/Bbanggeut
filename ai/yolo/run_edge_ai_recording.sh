@@ -50,6 +50,7 @@ fi
 : "${YAMNET_CONSECUTIVE:=3}"
 : "${YAMNET_COOLDOWN:=12}"
 : "${YAMNET_GAIN:=1.5}"
+: "${YAMNET_READY_TIMEOUT_SECONDS:=90}"
 : "${YAMNET_CLAP_ENABLED:=false}"
 : "${YAMNET_CLAP_THRESHOLD:=0.30}"
 : "${YAMNET_CLAP_CONSECUTIVE:=2}"
@@ -80,6 +81,10 @@ case "$YAMNET_SCORE_AGGREGATION" in
 esac
 if [[ ! "$YAMNET_CONSECUTIVE" =~ ^[1-9][0-9]*$ ]]; then
     echo "YAMNET_CONSECUTIVE must be a positive integer" >&2
+    exit 2
+fi
+if [[ ! "$YAMNET_READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "YAMNET_READY_TIMEOUT_SECONDS must be a positive integer" >&2
     exit 2
 fi
 
@@ -120,6 +125,7 @@ esac
 mkdir -p "$EVENT_DIR"
 RUN_DIR="${EVENT_DIR}/logs/$(date '+%Y%m%d_%H%M%S')"
 mkdir -p "$RUN_DIR"
+YAMNET_DIAGNOSTICS_PATH="${RUN_DIR}/yamnet_diagnostics.jsonl"
 
 declare -a PIDS=()
 cleanup() {
@@ -190,6 +196,7 @@ YAMNET_COMMAND=(
     --consecutive "$YAMNET_CONSECUTIVE"
     --cooldown "$YAMNET_COOLDOWN"
     --gain "$YAMNET_GAIN"
+    --diagnostics-jsonl "$YAMNET_DIAGNOSTICS_PATH"
     --event-dir "$EVENT_DIR"
     --clip-seconds "$EVENT_CLIP_SECONDS"
     --trigger-only
@@ -215,7 +222,37 @@ case "${YAMNET_CLAP_ENABLED,,}" in
 esac
 "${YAMNET_COMMAND[@]}" \
     > >(sed -u 's/^/[YAMNET] /' | tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
-PIDS+=("$!")
+YAMNET_PID="$!"
+PIDS+=("$YAMNET_PID")
+
+echo \
+    "Waiting up to ${YAMNET_READY_TIMEOUT_SECONDS}s for YAMNet first inference"
+yamnet_ready_deadline=$((SECONDS + YAMNET_READY_TIMEOUT_SECONDS))
+while [[ ! -s "$YAMNET_DIAGNOSTICS_PATH" ]]; do
+    if ! kill -0 "$YAMNET_PID" 2>/dev/null; then
+        if wait "$YAMNET_PID"; then
+            yamnet_status=0
+        else
+            yamnet_status="$?"
+        fi
+        if (( yamnet_status == 0 )); then
+            yamnet_status=1
+        fi
+        echo \
+            "YAMNet exited before readiness (status=${yamnet_status})" \
+            >&2
+        exit "$yamnet_status"
+    fi
+    if (( SECONDS >= yamnet_ready_deadline )); then
+        echo \
+            "YAMNet readiness timed out after " \
+            "${YAMNET_READY_TIMEOUT_SECONDS}s" \
+            >&2
+        exit 1
+    fi
+    sleep 0.25
+done
+echo "YAMNet ready: first inference telemetry received"
 
 case "${WAKE_NAME_ENABLED,,}" in
     true|1|yes)
@@ -254,6 +291,7 @@ YOLO_COMMAND=(
     --dashboard-port "$SERVO_DASHBOARD_PORT"
     --dashboard-log "${RUN_DIR}/servo_dashboard.jsonl"
     --dashboard-event-dir "$EVENT_DIR"
+    --dashboard-yamnet-diagnostics "$YAMNET_DIAGNOSTICS_PATH"
     --dashboard-frame-width "$SERVO_DASHBOARD_FRAME_WIDTH"
     --dashboard-jpeg-quality "$SERVO_DASHBOARD_JPEG_QUALITY"
     --dashboard-frame-interval "$SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS"

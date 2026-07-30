@@ -12,6 +12,7 @@ from servo_dashboard import (
     DashboardTelemetry,
     LaughterEventDirectoryMonitor,
     ThreadingHTTPServer,
+    YamnetDiagnosticsMonitor,
 )
 from functools import partial
 
@@ -163,8 +164,80 @@ class DashboardTelemetryTests(unittest.TestCase):
             monitor.close()
             telemetry.close()
 
+    def test_yamnet_diagnostics_monitor_exposes_latest_inference(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            diagnostics_path = Path(temp_dir) / "yamnet.jsonl"
+            telemetry = DashboardTelemetry()
+            monitor = YamnetDiagnosticsMonitor(diagnostics_path, telemetry)
+            diagnostics_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "observedAt": "2026-07-30T03:00:00.000Z",
+                                "topClass": "Speech",
+                                "topScore": 0.61,
+                                "selectedAggregation": "mean",
+                                "selectedScore": 0.008,
+                                "selectedClass": "Laughter",
+                                "threshold": 0.125,
+                                "positiveStreak": 0,
+                                "wouldTrigger": False,
+                                "rms": 0.0748,
+                                "inferenceMs": 58.0,
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "observedAt": "2026-07-30T03:00:00.480Z",
+                                "topClass": "Laughter",
+                                "topScore": 0.71,
+                                "selectedAggregation": "mean",
+                                "selectedScore": 0.13,
+                                "selectedClass": "Laughter",
+                                "threshold": 0.125,
+                                "positiveStreak": 1,
+                                "wouldTrigger": False,
+                                "rms": 0.0912,
+                                "inferenceMs": 52.0,
+                            }
+                        ),
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            monitor.scan_once()
+            yamnet = telemetry.snapshot()["yamnet"]
+
+            self.assertEqual(yamnet["top_class"], "Laughter")
+            self.assertEqual(yamnet["score"], 0.13)
+            self.assertEqual(yamnet["threshold"], 0.125)
+            self.assertEqual(yamnet["positive_streak"], 1)
+            self.assertEqual(yamnet["rms"], 0.0912)
+            monitor.close()
+            telemetry.close()
+
 
 class DashboardHttpTests(unittest.TestCase):
+    def test_static_dashboard_exposes_yamnet_live_fields(self) -> None:
+        static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
+        html = (static_dir / "index.html").read_text(encoding="utf-8")
+        script = (static_dir / "app.js").read_text(encoding="utf-8")
+
+        for element_id in (
+            "yamnet-score",
+            "yamnet-threshold",
+            "yamnet-rms",
+            "yamnet-top-class",
+            "yamnet-streak",
+            "yamnet-inference",
+        ):
+            self.assertIn(f'id="{element_id}"', html)
+            self.assertIn(f'"{element_id}"', script)
+        self.assertIn("updateYamnet(payload.yamnet)", script)
+
     def test_health_and_state_endpoints(self) -> None:
         telemetry = DashboardTelemetry()
         static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
@@ -198,7 +271,9 @@ class DashboardHttpTests(unittest.TestCase):
         self.assertEqual(health["status"], "ok")
         self.assertFalse(health["vision_available"])
         self.assertFalse(health["laughter_available"])
+        self.assertFalse(health["yamnet_available"])
         self.assertIsNone(state["servo"])
+        self.assertIsNone(state["yamnet"])
 
 
 if __name__ == "__main__":
