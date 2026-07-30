@@ -281,6 +281,11 @@ def parse_args() -> argparse.Namespace:
         help="Watch laughter trigger and upload markers without capturing clips.",
     )
     parser.add_argument(
+        "--dashboard-yamnet-diagnostics",
+        type=Path,
+        help="Tail YAMNet inference JSONL for live score and RMS telemetry.",
+    )
+    parser.add_argument(
         "--dashboard-frame-width",
         type=int,
         default=int(os.getenv("SERVO_DASHBOARD_FRAME_WIDTH", "960")),
@@ -1034,6 +1039,7 @@ def run(args: argparse.Namespace) -> None:
             mqtt_password=args.mqtt_password,
             log_path=args.dashboard_log,
             event_dir=args.dashboard_event_dir,
+            yamnet_diagnostics_path=args.dashboard_yamnet_diagnostics,
             jpeg_width=args.dashboard_frame_width,
             jpeg_quality=args.dashboard_jpeg_quality,
             frame_interval_seconds=args.dashboard_frame_interval,
