@@ -141,6 +141,22 @@ button {
   animation: pulse 1.9s ease-in-out infinite;
 }
 
+.live-chip.partial .live-dot {
+  background: #f1a436;
+  box-shadow: 0 0 0 4px rgba(241, 164, 54, 0.14);
+}
+
+.live-chip.offline .live-dot {
+  background: var(--coral);
+  box-shadow: 0 0 0 4px rgba(228, 90, 69, 0.14);
+  animation: none;
+}
+
+.live-chip.connecting .live-dot {
+  background: #a7aaa0;
+  box-shadow: 0 0 0 4px rgba(167, 170, 160, 0.14);
+}
+
 .import-button {
   display: inline-flex;
   min-height: 36px;
@@ -480,6 +496,32 @@ button {
   height: 220px;
 }
 
+.empty-state {
+  display: grid;
+  min-height: 112px;
+  place-items: center;
+  padding: 1.2rem;
+  color: #74776e;
+  font-size: 0.72rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.chart-area > .empty-state {
+  position: relative;
+  z-index: 1;
+  min-height: 235px;
+}
+
+.result-count {
+  color: #6b6e66;
+  font-size: 0.63rem;
+}
+
+.comparison-table td > .empty-state {
+  min-height: 150px;
+}
+
 .comparison-wrap {
   overflow-x: auto;
 }
@@ -587,7 +629,7 @@ button {
 }
 
 .progress-fill {
-  width: 72%;
+  width: 0;
   height: 100%;
   background: var(--coral);
 }

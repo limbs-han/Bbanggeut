@@ -4,6 +4,7 @@ import unittest
 
 from vision_benchmark_runner import (
     FrameMeasurement,
+    build_progress_payload,
     infer_runtime,
     percentile,
     summarize_measurements,
@@ -66,6 +67,36 @@ class VisionBenchmarkTests(unittest.TestCase):
         self.assertEqual(summary["metrics"]["inferenceMeanMs"], 32.5)
         self.assertEqual(summary["metrics"]["classCounts"], {"person": 3})
         self.assertEqual(summary["accuracy"]["status"], "not-computed")
+
+    def test_progress_uses_measured_frames_and_completes_at_100_percent(self):
+        running = build_progress_payload(
+            run_id="vision-test",
+            status="running",
+            model_name="YOLO11n",
+            runtime="tensorrt",
+            dataset_name="office-mix-v1",
+            completed_frames=50,
+            total_frames=200,
+            completed_tasks=1,
+            total_tasks=4,
+            repeat=1,
+            sample_id="office-one",
+        )
+        completed = build_progress_payload(
+            run_id="vision-test",
+            status="completed",
+            model_name="YOLO11n",
+            runtime="tensorrt",
+            dataset_name="office-mix-v1",
+            completed_frames=180,
+            total_frames=200,
+            completed_tasks=4,
+            total_tasks=4,
+        )
+
+        self.assertEqual(running["progress"]["percent"], 25.0)
+        self.assertEqual(running["current"]["sampleId"], "office-one")
+        self.assertEqual(completed["progress"]["percent"], 100.0)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 
 
 SCHEMA_VERSION = "0.1"
+DEFAULT_PORT = 18765
+DEFAULT_STALE_AFTER_SECONDS = 10.0
 DEFAULT_ALLOWED_ORIGINS = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -250,55 +252,245 @@ def load_benchmark_results(
                     else None
                 ),
                 "metrics": metrics,
+                "accuracy": (
+                    payload.get("accuracy")
+                    if isinstance(payload.get("accuracy"), dict)
+                    else None
+                ),
             }
         )
     return results
 
 
+def load_benchmark_progress(
+    results_dir: Path | None,
+) -> dict[str, Any] | None:
+    if results_dir is None or not results_dir.is_dir():
+        return None
+
+    candidates = sorted(
+        results_dir.glob("**/progress.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        return {
+            "schemaVersion": payload.get("schemaVersion"),
+            "runId": payload.get("runId"),
+            "updatedAt": payload.get("updatedAt"),
+            "status": payload.get("status"),
+            "component": payload.get("component"),
+            "model": payload.get("model"),
+            "runtime": payload.get("runtime"),
+            "dataset": payload.get("dataset"),
+            "progress": (
+                payload.get("progress")
+                if isinstance(payload.get("progress"), dict)
+                else {}
+            ),
+            "current": (
+                payload.get("current")
+                if isinstance(payload.get("current"), dict)
+                else None
+            ),
+        }
+    return None
+
+
+def file_mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime if path.is_file() else None
+    except OSError:
+        return None
+
+
+def latest_run_directory(logs_root: Path) -> Path:
+    if not logs_root.is_dir():
+        return logs_root
+
+    candidates = [path for path in logs_root.iterdir() if path.is_dir()]
+    if not candidates:
+        return logs_root
+    timestamped = [
+        path
+        for path in candidates
+        if re.fullmatch(r"\d{8}_\d{6}", path.name)
+    ]
+    if timestamped:
+        return max(timestamped, key=lambda path: path.name)
+
+    def activity_time(path: Path) -> float:
+        source_times = [
+            value
+            for value in (
+                file_mtime(path / "resources.log"),
+                file_mtime(path / "yolo.log"),
+                file_mtime(path / "yamnet_diagnostics.jsonl"),
+                file_mtime(path / "yamnet.jsonl"),
+                file_mtime(path / "diagnostics.jsonl"),
+            )
+            if value is not None
+        ]
+        if source_times:
+            return max(source_times)
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    return max(candidates, key=activity_time)
+
+
 @dataclass(frozen=True)
 class CollectorPaths:
-    run_dir: Path
+    run_dir: Path | None = None
     event_dir: Path | None = None
     results_dir: Path | None = None
+    logs_root: Path | None = None
+
+    def resolve_run_dir(self) -> Path:
+        if self.logs_root is not None:
+            return latest_run_directory(self.logs_root)
+        if self.run_dir is None:
+            raise ValueError("run_dir or logs_root is required")
+        return self.run_dir
 
     @property
     def resources(self) -> Path:
-        return self.run_dir / "resources.log"
+        return self.resolve_run_dir() / "resources.log"
 
     @property
     def yolo(self) -> Path:
-        return self.run_dir / "yolo.log"
+        return self.resolve_run_dir() / "yolo.log"
 
     @property
     def yamnet_diagnostics(self) -> Path:
+        run_dir = self.resolve_run_dir()
         candidates = (
-            self.run_dir / "yamnet_diagnostics.jsonl",
-            self.run_dir / "yamnet.jsonl",
-            self.run_dir / "diagnostics.jsonl",
+            run_dir / "yamnet_diagnostics.jsonl",
+            run_dir / "yamnet.jsonl",
+            run_dir / "diagnostics.jsonl",
         )
         return next((path for path in candidates if path.is_file()), candidates[0])
 
 
 class BenchmarkCollector:
-    def __init__(self, paths: CollectorPaths) -> None:
+    def __init__(
+        self,
+        paths: CollectorPaths,
+        stale_after_seconds: float = DEFAULT_STALE_AFTER_SECONDS,
+    ) -> None:
         self.paths = paths
+        self.stale_after_seconds = stale_after_seconds
+
+    def freshness(
+        self,
+        *,
+        resources: Path,
+        yolo: Path,
+        yamnet_diagnostics: Path,
+    ) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        source_paths = {
+            "resources": resources,
+            "vision": yolo,
+            "audio": yamnet_diagnostics,
+        }
+        sources: dict[str, dict[str, Any]] = {}
+        available_times: list[float] = []
+        for name, path in source_paths.items():
+            modified_at = file_mtime(path)
+            if modified_at is None:
+                sources[name] = {
+                    "available": False,
+                    "updatedAt": None,
+                    "ageSeconds": None,
+                    "stale": True,
+                }
+                continue
+
+            available_times.append(modified_at)
+            age_seconds = max(0.0, now.timestamp() - modified_at)
+            sources[name] = {
+                "available": True,
+                "updatedAt": (
+                    datetime.fromtimestamp(modified_at, timezone.utc)
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z")
+                ),
+                "ageSeconds": round(age_seconds, 3),
+                "stale": age_seconds > self.stale_after_seconds,
+            }
+
+        latest = max(available_times) if available_times else None
+        latest_age = (
+            max(0.0, now.timestamp() - latest)
+            if latest is not None
+            else None
+        )
+        return {
+            "available": bool(available_times),
+            "latestSourceAt": (
+                datetime.fromtimestamp(latest, timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z")
+                if latest is not None
+                else None
+            ),
+            "ageSeconds": round(latest_age, 3)
+            if latest_age is not None
+            else None,
+            "stale": (
+                latest_age is None
+                or latest_age > self.stale_after_seconds
+            ),
+            "staleAfterSeconds": self.stale_after_seconds,
+            "sources": sources,
+        }
 
     def snapshot(self) -> dict[str, Any]:
-        resource_line = last_matching_line(self.paths.resources, RAM_PATTERN)
-        yolo_line = last_matching_line(self.paths.yolo, YOLO_PATTERN)
-        audio_rows = load_jsonl_tail(self.paths.yamnet_diagnostics)
+        run_dir = self.paths.resolve_run_dir()
+        resources = run_dir / "resources.log"
+        yolo = run_dir / "yolo.log"
+        diagnostic_candidates = (
+            run_dir / "yamnet_diagnostics.jsonl",
+            run_dir / "yamnet.jsonl",
+            run_dir / "diagnostics.jsonl",
+        )
+        yamnet_diagnostics = next(
+            (path for path in diagnostic_candidates if path.is_file()),
+            diagnostic_candidates[0],
+        )
+        resource_line = last_matching_line(resources, RAM_PATTERN)
+        yolo_line = last_matching_line(yolo, YOLO_PATTERN)
+        audio_rows = load_jsonl_tail(yamnet_diagnostics)
 
         return {
             "schemaVersion": SCHEMA_VERSION,
             "collectedAt": utc_now(),
             "source": "jetson-local",
-            "runId": self.paths.run_dir.name,
-            "runDirectory": str(self.paths.run_dir),
+            "runId": run_dir.name,
+            "runDirectory": str(run_dir),
+            "freshness": self.freshness(
+                resources=resources,
+                yolo=yolo,
+                yamnet_diagnostics=yamnet_diagnostics,
+            ),
             "system": parse_tegrastats_line(resource_line),
             "vision": parse_yolo_line(yolo_line),
             "audio": summarize_audio(audio_rows),
             "events": load_recent_events(self.paths.event_dir),
             "comparisons": load_benchmark_results(self.paths.results_dir),
+            "benchmarkProgress": load_benchmark_progress(
+                self.paths.results_dir
+            ),
         }
 
 
@@ -392,11 +584,19 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Serve a read-only local snapshot of Jetson AI logs.",
     )
-    parser.add_argument(
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
         "--run-dir",
         type=Path,
-        required=True,
         help="Directory containing resources.log, yolo.log and YAMNet JSONL.",
+    )
+    source_group.add_argument(
+        "--logs-root",
+        type=Path,
+        help=(
+            "Directory containing run subdirectories. The newest active run "
+            "is selected for every snapshot."
+        ),
     )
     parser.add_argument(
         "--event-dir",
@@ -409,7 +609,13 @@ def parse_args() -> argparse.Namespace:
         help="Optional directory containing benchmark */summary.json files.",
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--stale-after-seconds",
+        type=float,
+        default=DEFAULT_STALE_AFTER_SECONDS,
+        help="Mark source data stale after this many seconds.",
+    )
     parser.add_argument(
         "--allow-lan",
         action="store_true",
@@ -431,7 +637,16 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    run_dir = args.run_dir.expanduser().resolve()
+    run_dir = (
+        args.run_dir.expanduser().resolve()
+        if args.run_dir is not None
+        else None
+    )
+    logs_root = (
+        args.logs_root.expanduser().resolve()
+        if args.logs_root is not None
+        else None
+    )
     event_dir = (
         args.event_dir.expanduser().resolve()
         if args.event_dir is not None
@@ -442,8 +657,12 @@ def main() -> int:
         if args.results_dir is not None
         else None
     )
-    if not run_dir.is_dir():
+    if run_dir is not None and not run_dir.is_dir():
         raise SystemExit(f"run directory does not exist: {run_dir}")
+    if logs_root is not None and not logs_root.is_dir():
+        raise SystemExit(f"logs root does not exist: {logs_root}")
+    if args.stale_after_seconds <= 0:
+        raise SystemExit("--stale-after-seconds must be positive")
     if args.host not in {"127.0.0.1", "::1", "localhost"} and not args.allow_lan:
         raise SystemExit("non-loopback bind requires --allow-lan")
 
@@ -452,7 +671,9 @@ def main() -> int:
             run_dir=run_dir,
             event_dir=event_dir,
             results_dir=results_dir,
-        )
+            logs_root=logs_root,
+        ),
+        stale_after_seconds=args.stale_after_seconds,
     )
     if args.snapshot:
         print(json.dumps(collector.snapshot(), ensure_ascii=False, indent=2))
@@ -464,7 +685,10 @@ def main() -> int:
         build_handler(collector, origins),
     )
     print(f"Benchmark snapshot API: http://{args.host}:{args.port}/api/snapshot")
-    print(f"Run directory: {run_dir}")
+    if logs_root is not None:
+        print(f"Following newest run below: {logs_root}")
+    else:
+        print(f"Run directory: {run_dir}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
