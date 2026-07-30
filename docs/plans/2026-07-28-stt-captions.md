@@ -22,7 +22,7 @@
 | `features/stt/caption_line.dart` | `CaptionLine`, `captionAt`, `captionsForExport` |
 | `features/stt/transcript_store.dart` | videoId 캐시 + 백그라운드 작업 |
 | `android/.../SttChannel.kt`, `AudioDecoder.kt` | 네이티브 오디오 추출 |
-| `docs/whisper-model.md` | 모델을 만들고 기기에 넣는 절차 — **모델 파일은 저장소에 없다** |
+| `자료/docs/사람이 읽을 문서/05-STT모델가이드.md` | 모델을 만들고 기기에 넣는 절차 — **모델 파일은 저장소에 없다** |
 
 상대 파일 접촉은 지금까지 **두 줄**이다 — `MainActivity.kt`에 `SttChannel.register(flutterEngine)` 한 줄, `pubspec.yaml`에 `whisper_ggml_plus` 한 줄.
 
@@ -1242,7 +1242,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 - 앱을 완전히 닫으면 전사가 중단되고 다음에 처음부터 돈다 (전경 서비스 없음)
 - whisper가 실시간과 비슷한 속도다. 10분 영상이면 10분 대기다
-- whisper 모델(167MiB)이 저장소와 APK에 들어 있다. 저장소가 그만큼 커졌고 히스토리에 영구히 남는다. 설치 용량도 늘어난다 — 줄이려면 첫 사용 시 내려받는 경로가 필요하다 (`docs/whisper-model.md`)
+- whisper 모델(167MiB)이 저장소와 APK에 들어 있다. 저장소가 그만큼 커졌고 히스토리에 영구히 남는다. 설치 용량도 늘어난다 — 줄이려면 첫 사용 시 내려받는 경로가 필요하다 (`자료/docs/사람이 읽을 문서/05-STT모델가이드.md`)
 - 에셋 복사가 167MiB를 한 번에 메모리에 올린다. 저사양 기기에서 문제가 되면 네이티브 `AssetManager` 스트리밍이 필요하다
 - 자막 글자 크기·위치는 `SubtitleOverlay`에 고정값이다. 실기기에서 눈으로 맞춘다
 - 미리보기 겹쳐보기와 실제 굽기가 서로 다른 코드다(Flutter 글자 / Android Spannable). 크기·여백이 완전히 같지는 않다
