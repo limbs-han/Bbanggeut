@@ -85,13 +85,32 @@ class FlywayMigrationIntegrationTest {
                     + "'invitee@example.com', 'VIEWER', now() + interval '1 day')");
         }
 
+        Flyway v30Flyway = Flyway.configure()
+            .dataSource(jdbcUrl, username, password)
+            .target("30")
+            .load();
+        var v30Result = v30Flyway.migrate();
+        assertThat(v30Result.success).isTrue();
+        assertThat(v30Result.targetSchemaVersion).isEqualTo("30");
+
+        try (var connection = DriverManager.getConnection(jdbcUrl, username, password);
+             var statement = connection.createStatement()) {
+            statement.executeUpdate(
+                "insert into devices "
+                    + "(id, serial_number, product_code_hash, name, status, claimed_at, claimed_by) "
+                    + "values ('20000000-0000-0000-0000-000000000031', "
+                    + "'MISSING-BINDING-DEVICE', '" + "3".repeat(64) + "', "
+                    + "'Missing Binding Camera', 'ONLINE', now(), "
+                    + "'10000000-0000-0000-0000-000000000001')");
+        }
+
         Flyway latestFlyway = Flyway.configure()
             .dataSource(jdbcUrl, username, password)
             .load();
         var result = latestFlyway.migrate();
 
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("30");
+        assertThat(result.targetSchemaVersion).isEqualTo("31");
         try (var connection = DriverManager.getConnection(
             jdbcUrl, username, password);
              var statement = connection.prepareStatement(
@@ -104,12 +123,21 @@ class FlywayMigrationIntegrationTest {
                      + "where table_schema = 'public' and table_name in "
                      + "('auth_login_attempts', 'device_credentials', 'device_events', "
                      + "'membership_request_links', 'password_reset_tokens', 'notifications', "
-                     + "'notification_push_tokens'))");
-             var rows = statement.executeQuery()) {
+                     + "'notification_push_tokens')), "
+                     + "(select count(*) from device_bindings "
+                     + "where device_id = '20000000-0000-0000-0000-000000000031' "
+                     + "and status = 'ACTIVE'), "
+                     + "(select count(*) from vault_memberships "
+                     + "where vault_id = '20000000-0000-0000-0000-000000000031' "
+                     + "and user_id = '10000000-0000-0000-0000-000000000001' "
+                     + "and role = 'OWNER' and status = 'ACTIVE')");
+            var rows = statement.executeQuery()) {
             rows.next();
             assertThat(rows.getString(1)).isEqualTo("MEMBER");
             assertThat(rows.getString(2)).isEqualTo("MEMBER");
             assertThat(rows.getInt(3)).isEqualTo(7);
+            assertThat(rows.getInt(4)).isEqualTo(1);
+            assertThat(rows.getInt(5)).isEqualTo(1);
         }
     }
 

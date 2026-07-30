@@ -124,18 +124,24 @@ public class IotVideoService {
                 "업로드된 객체의 크기 또는 체크섬이 일치하지 않습니다.");
         }
 
-        videoMapper.markReady(deviceId, video.id(), subscriptionProperties.premiumRetentionDays());
-        VideoResponse response = videoMapper.findOwnedVideo(deviceId, video.id())
-            .map(this::toResponse)
+        int updated = videoMapper.markReady(
+            deviceId, video.id(), subscriptionProperties.premiumRetentionDays());
+        VideoRow completed = videoMapper.findOwnedVideo(deviceId, video.id())
             .orElseThrow(() -> new IllegalStateException("Completed video disappeared"));
+        if (updated != 1 && !"READY".equals(completed.status())) {
+            throw new ApiException(
+                HttpStatus.CONFLICT,
+                "VIDEO_STATE_CONFLICT",
+                "활성 추억 금고 연결을 확인할 수 없어 업로드를 완료하지 못했습니다.");
+        }
         deviceEventService.linkUpload(
             deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
             video.capturedStartAt(), video.id(), "READY");
-        if ("LAUGHTER".equals(video.triggerType())) {
+        if ("LAUGHTER".equals(completed.triggerType())) {
             notificationService.laughterVideoReady(
-                video.deviceId(), video.id(), video.title());
+                completed.deviceId(), completed.id(), completed.title());
         }
-        return response;
+        return toResponse(completed);
     }
 
     private void notifyLaughterVideo(VideoRow video) {
@@ -148,12 +154,20 @@ public class IotVideoService {
     private VideoRow createVideo(UUID deviceId, IotUploadUrlRequest request) {
         UUID videoId = UUID.randomUUID();
         String storageKey = "private/" + deviceId + "/events/" + videoId + ".mp4";
-        videoMapper.insertIotVideo(
+        int inserted = videoMapper.insertIotVideo(
             videoId, deviceId, request.triggerType(), request.sourceEventId(), request.title().trim(),
             storageKey, request.contentType(), request.sizeBytes(), request.checksumSha256(),
             request.durationMs(), request.capturedStartAt(), request.capturedEndAt());
         return videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
-            .orElseThrow(() -> new IllegalStateException("Video insert did not produce a row"));
+            .orElseThrow(() -> {
+                if (inserted == 0) {
+                    return new ApiException(
+                        HttpStatus.CONFLICT,
+                        "DEVICE_VAULT_BINDING_MISSING",
+                        "기기에 연결된 활성 추억 금고가 없습니다. 기기를 다시 등록해 주세요.");
+                }
+                return new IllegalStateException("Video insert did not produce a row");
+            });
     }
 
     private void verifySameUpload(VideoRow video, IotUploadUrlRequest request) {

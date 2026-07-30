@@ -295,7 +295,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "expiresAt": "2026-07-27T00:15:00Z"
 }
 ```
-- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `DEVICE_VAULT_BINDING_MISSING`(ACTIVE `device_bindings` 없음), 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- `V31__repair_missing_initial_vault_bindings.sql`: binding 이력이 전혀 없는 ONLINE/OFFLINE 레거시 기기만 device UUID 기반 Vault·OWNER membership·generation 1 ACTIVE binding으로 안전 복구. binding 이력이 있으면 소유 Vault 오판 방지를 위해 자동 복구하지 않음.
 - 호출부: `ai/yolo/laughter_clip_uploader.py`, `ai/yolo/segment_clip_uploader.py`
 
 ### API-26 `POST /api/iot/videos/complete`
@@ -303,7 +304,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 { "videoId": "uuid", "objectETag": "string" }   // objectETag optional, @Size<=200
 ```
-- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
+- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`(Vault 기반 READY 전환 0건 포함), 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
 
 ### API-27 `GET /api/videos`
 - 인증: 사용자 JWT

@@ -133,6 +133,49 @@ class IotVideoServiceTest {
             Instant.parse("2026-07-17T10:00:00Z"), VIDEO_ID, "UPLOADING");
     }
 
+    @Test
+    void uploadReturnsDomainConflictWhenActiveVaultBindingIsMissing() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(videoMapper.findByDeviceEvent(DEVICE_ID, EVENT_ID))
+            .thenReturn(Optional.empty(), Optional.empty());
+        when(videoMapper.insertIotVideo(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(DEVICE_ID),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(EVENT_ID),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+            .thenReturn(0);
+
+        assertThatThrownBy(() -> service.createUploadUrl(
+            DEVICE_ID, EVENT_ID, request(100)))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("DEVICE_VAULT_BINDING_MISSING");
+        verify(objectStorageService, never()).createUploadUrl(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void completionRejectsVaultStateTransitionFailure() {
+        VideoRow uploading = video("UPLOADING");
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
+            .thenReturn(Optional.of(uploading), Optional.of(uploading));
+        when(objectStorageService.stat(uploading.storageKey()))
+            .thenReturn(new ObjectStorageService.StoredObject(100, CHECKSUM, "etag"));
+        when(videoMapper.markReady(DEVICE_ID, VIDEO_ID, 365)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.complete(
+            DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null)))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("VIDEO_STATE_CONFLICT");
+        verify(notificationService, never()).laughterVideoReady(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+    }
+
     private IotUploadUrlRequest request(long size) {
         return new IotUploadUrlRequest(
             EVENT_ID, "TOUCH", "영상", Instant.parse("2026-07-17T10:00:00Z"),
