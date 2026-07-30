@@ -173,6 +173,28 @@
 - 비고: 금고는 기기가 없어도 유지된다. 멤버십·구독·영상 접근 권한은 기기가 아니라 금고에 귀속된다.
 - 앱 연동: 로그인 직후 목록을 조회해 `selectedVault`를 복원한다. `devices`가 비어 있으면 `VaultArchiveScreen`에서 `GET /api/videos?vaultId=...`로 과거 영상을 조회하고, 새 기기 연결 시 claim 요청에 이 금고의 `id`를 넣는다.
 
+### Vault 구독 API `/api/vaults/{vaultId}/subscription`
+
+- 인증: 사용자 JWT
+- `GET`: 금고 구성원이 구독 상태 조회
+- `PUT`: OWNER가 구독 활성화
+- `DELETE`: OWNER가 구독 해지
+
+응답은 기기 기준 API-39~41과 같은 `SubscriptionResponse`이며, 금고 경로로
+조회하면 `deviceId`가 `null`이고 `vaultId`가 채워진다.
+
+- 에러: 403 `FORBIDDEN_ROLE`, 404 `RESOURCE_NOT_FOUND`, 409 `SUBSCRIPTION_NOT_ACTIVE`
+- 비고: 구독은 금고에 귀속되므로 연결된 기기가 한 대도 없어도 조회·변경할 수
+  있다. 기기 기준 API-39~41은 호환을 위해 유지하며 같은 금고 행을 갱신한다.
+
+### Vault 접근 기록 API `GET /api/vaults/{vaultId}/access-logs`
+
+- 인증: 사용자 JWT, 금고 OWNER만 허용
+- 요청: `cursor`(선택), `size`(기본 20, 1~100)
+- 응답: API-50과 같은 커서 페이지
+- 비고: V30 이전에 기록되어 `vault_id`가 비어 있는 행은 그 금고에 Binding된
+  적이 있는 기기의 `device_id`로도 함께 조회한다.
+
 ### API-43 `POST /api/iot/registration-codes`
 
 - 인증: 기기 credential(Bearer, ROLE_DEVICE_OPERATING)
@@ -773,6 +795,10 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-48 | `POST /internal/admin/devices/{deviceId}/credentials/rotate` | (내부 관리자 키) 자격증명 강제 회전 |
 | API-49 | `DELETE /internal/admin/devices/{deviceId}/credentials` | (내부 관리자 키) 자격증명 폐기 |
 | API-50 | `GET /api/devices/{deviceId}/access-logs` | 접근 기록 커서 조회 |
+| API-51 | `GET /api/vaults/{vaultId}/subscription` | 금고 구독 상태 조회 |
+| API-52 | `PUT /api/vaults/{vaultId}/subscription` | 금고 구독 활성화 |
+| API-53 | `DELETE /api/vaults/{vaultId}/subscription` | 금고 구독 해지 |
+| API-54 | `GET /api/vaults/{vaultId}/access-logs` | 금고 접근 기록 커서 조회 |
 
 ### 실험 MQTT(`homecam/v2`, 6개)
 

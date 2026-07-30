@@ -1256,6 +1256,97 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/vaults/{vaultId}/subscription:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultSubscription
+      summary: 금고 구독 상태 조회
+      description: 구독은 금고에 귀속되므로 연결된 기기가 없어도 조회할 수 있다.
+      responses:
+        '200':
+          description: 구독 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    put:
+      tags: [Vaults]
+      operationId: activateVaultSubscription
+      summary: 금고 구독 시작
+      description: |
+        금고의 활성 OWNER만 수행한다. 기기 기준 API와 같은 금고 행을 갱신하며
+        금고 영상의 보관 만료를 프리미엄 보관 기간으로 연장한다.
+      responses:
+        '200':
+          description: 구독 활성화
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    delete:
+      tags: [Vaults]
+      operationId: cancelVaultSubscription
+      summary: 금고 구독 해지
+      description: 해지해도 영상을 즉시 삭제하지 않고 유예 기간을 보장한다.
+      responses:
+        '200':
+          description: 구독 해지(유예 시작)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 활성 구독이 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/vaults/{vaultId}/access-logs:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: listVaultAccessLogs
+      summary: 금고 접근 감사 로그
+      description: |
+        금고의 활성 OWNER만 조회할 수 있다. V30 이전에 기록되어 vaultId가 비어 있는
+        행은 그 금고에 Binding된 적이 있는 기기의 deviceId로도 함께 조회한다.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 감사 로그
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessLogPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
 components:
   securitySchemes:
     UserBearerAuth:
@@ -1272,6 +1363,13 @@ components:
   parameters:
     DeviceId:
       name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VaultId:
+      name: vaultId
       in: path
       required: true
       schema:
@@ -1861,11 +1959,18 @@ components:
 
     Subscription:
       type: object
-      required: [deviceId, active, premiumRetentionDays]
+      required: [active, premiumRetentionDays]
       properties:
         deviceId:
           type: string
           format: uuid
+          nullable: true
+          description: 금고 경로로 조회하면 null이다.
+        vaultId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 기기 경로로 조회하면 null이다.
         active:
           type: boolean
         graceUntil:

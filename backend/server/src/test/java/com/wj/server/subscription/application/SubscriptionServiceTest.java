@@ -107,6 +107,52 @@ class SubscriptionServiceTest {
         verify(subscriptionMapper, never()).activate(any());
     }
 
+    @Test
+    void vaultOwnerActivatesSubscriptionWithoutAnyConnectedDevice() {
+        UUID ownerId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
+        when(subscriptionMapper.lockVaultRole(ownerId, vaultId))
+            .thenReturn(Optional.of("OWNER"));
+
+        var response = service.activateForVault(ownerId, vaultId);
+
+        verify(subscriptionMapper).activateVault(vaultId);
+        verify(subscriptionMapper).extendVaultRetentionToPremium(vaultId, 365);
+        assertThat(response.vaultId()).isEqualTo(vaultId);
+        assertThat(response.deviceId()).isNull();
+        assertThat(response.active()).isTrue();
+    }
+
+    @Test
+    void vaultCancellationKeepsGraceWindow() {
+        UUID ownerId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
+        Instant graceUntil = NOW.plus(Duration.ofDays(30));
+        when(subscriptionMapper.lockVaultRole(ownerId, vaultId))
+            .thenReturn(Optional.of("OWNER"));
+        when(subscriptionMapper.cancelVault(vaultId, graceUntil)).thenReturn(1);
+
+        var response = service.cancelForVault(ownerId, vaultId);
+
+        verify(subscriptionMapper).resetVaultRetentionToBaseline(vaultId, graceUntil);
+        assertThat(response.active()).isFalse();
+        assertThat(response.graceUntil()).isEqualTo(graceUntil);
+    }
+
+    @Test
+    void vaultMemberCannotChangeSubscription() {
+        UUID userId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
+        when(subscriptionMapper.lockVaultRole(userId, vaultId))
+            .thenReturn(Optional.of("MEMBER"));
+
+        assertThatThrownBy(() -> service.activateForVault(userId, vaultId))
+            .isInstanceOf(ApiException.class)
+            .satisfies(exception ->
+                assertThat(((ApiException) exception).status().value()).isEqualTo(403));
+        verify(subscriptionMapper, never()).activateVault(any());
+    }
+
     private DeviceViewRow view(UUID deviceId, String role) {
         return new DeviceViewRow(
             deviceId, "거실", "WJ-DEV-01", "OFFLINE", role, 30,

@@ -14,6 +14,19 @@ master와 develop 브랜치에는 직접 push하지 않는다.
 항상 Merge Request를 사용한다.
 master와 develop 브랜치는 삭제하지 않는다.
 
+### develop 브랜치의 출처
+
+develop 브랜치는 master에서만 갈라진다.
+develop 브랜치를 다른 develop 브랜치에서 만들지 않는다.
+
+develop을 다른 develop에서 만들면 그 시점의 타 파트 커밋이
+자기 브랜치 이력에 섞여 들어온다. 이후 master로 병합할 때
+자기가 만들지 않은 변경까지 함께 올라가고, 어느 파트가
+무엇을 바꿨는지 이력에서 구분할 수 없게 된다.
+
+develop 브랜치를 새로 만들거나 다시 만들어야 하면
+반드시 최신 master에서 만든다.
+
 ## 기능 브랜치
 
 Frontend:
@@ -31,6 +44,10 @@ feat/device/<기능명>
 Jenkins와 CI/CD:
 
 feat/jenkins-<기능명>
+
+저장소 전역 문서와 규칙(AGENTS.md, 브랜치 규칙, 루트 README 등):
+
+docs/<주제>
 
 브랜치 이름에 codex, 사용자 이름, 의미 없는 숫자를 사용하지 않는다.
 
@@ -59,12 +76,18 @@ git switch -c feat/device/<기능명>
 
 기능 브랜치는 반드시 자신의 역할별 develop 브랜치에서 만든다.
 
+기능 브랜치를 만들기 전에 해당 develop이 master를 역머지한
+상태인지 확인한다. 뒤처져 있으면 아래 "master 역머지"를
+먼저 수행한다. 뒤처진 develop에서 작업을 시작하면
+병합 시점에 공유 문서 충돌이 반복된다.
+
 ## Merge Request 대상
 
 - feat/frontend/* → develop/frontend
 - feat/backend/* → develop/backend
 - feat/device/* → develop/device
 - feat/jenkins-* → 별도 지시가 없다면 master
+- docs/* → master
 
 일반 기능 브랜치를 master에 바로 병합하지 않는다.
 다른 역할의 develop 브랜치로 병합하지 않는다.
@@ -108,6 +131,7 @@ Delete source branch when merge request is accepted
 - feat/backend/*
 - feat/device/*
 - feat/jenkins-*
+- docs/*
 
 삭제하면 안 되는 브랜치:
 
@@ -128,6 +152,110 @@ Merge Request를 만든다.
 - develop/device → master
 
 develop에서 master로 병합할 때는 source branch 삭제 옵션을 끈다.
+
+## master 역머지
+
+develop에서 master로 병합한 뒤에는 master를 세 develop 모두에
+다시 내려보낸다. 이것을 생략하면 안 된다.
+
+- master → develop/frontend
+- master → develop/backend
+- master → develop/device
+
+develop에도 직접 push할 수 없으므로 역머지도 Merge Request로 만든다.
+
+git fetch origin --prune
+git switch -c chore/sync-<역할>-from-master origin/develop/<역할>
+git merge origin/master
+# 충돌이 있으면 아래 "공유 파일과 충돌" 규칙에 따라 해결한다
+git push -u origin chore/sync-<역할>-from-master
+# chore/sync-<역할>-from-master → develop/<역할> 로 MR을 만든다
+
+역머지를 하지 않으면 각 develop은 다른 파트가 무엇을 바꿨는지
+모르는 상태로 남는다. 다음 번 develop에서 master로 병합할 때
+같은 파일의 같은 줄에서 똑같은 충돌이 다시 발생한다.
+
+## 공유 파일과 충돌
+
+다음 파일은 세 파트가 모두 수정한다.
+
+- 자료/docs/** (전체 문서)
+- 자료/api/openapi.yaml
+
+master는 세 파트의 편집이 모두 쌓인 상태이고, 각 develop은
+자기 편집만 있는 상태다. 그래서 이 파일들에서 충돌이 발생한다.
+
+충돌을 해결할 때 한쪽을 통째로 선택하지 않는다.
+양쪽에 서로 다른 사실이 들어 있어 한쪽을 버리면 내용이 사라진다.
+
+충돌 해결 절차:
+
+1. 충돌 구간의 양쪽을 모두 읽는다.
+2. 각 항목이 어느 파트의 실제 코드 변경을 설명하는지 확인한다.
+3. 코드와 일치하는 쪽을 항목 단위로 고른다.
+4. 양쪽 모두 유효한 사실이면 두 줄을 모두 남긴다.
+5. 해결 후 문서 서술이 실제 코드와 맞는지 다시 확인한다.
+
+문서 한 줄에 여러 사실을 몰아 쓰지 않는다.
+표 한 행이나 불릿 하나에 담긴 사실이 많을수록,
+서로 다른 파트가 서로 다른 사실을 고쳐도 같은 줄이 되어
+충돌이 발생한다. 사실 단위로 줄을 나눈다.
+
+## master MR이 충돌해 병합할 수 없을 때
+
+master는 보호 브랜치라 직접 push할 수 없고,
+GitLab MR 화면에서는 충돌을 해결할 수 없는 경우가 있다.
+이때는 로컬에서 해결한 결과를 별도 브랜치로 올려 MR을 만든다.
+
+git fetch origin --prune
+git switch -c chore/integrate-<주제> origin/master
+git merge origin/develop/backend    # 충돌 해결 후 commit
+git merge origin/develop/frontend   # 충돌 해결 후 commit
+git merge origin/develop/device     # 충돌 해결 후 commit
+# 로컬 검증(각 파트 CI 항목)을 수행한다
+git push -u origin chore/integrate-<주제>
+# chore/integrate-<주제> → master 로 MR을 만든다
+
+이 브랜치는 master 위에 쌓은 것이라 MR에서 충돌이 발생하지 않는다.
+병합 순서는 backend, frontend, device 순으로 한다.
+API 계약이 먼저 확정되어야 나머지 파트의 문서 서술이 그 위에 얹힌다.
+
+병합이 끝나면 반드시 "master 역머지"를 수행한다.
+
+## 문서 동기화
+
+코드 변경 사항이 master에 반영될 예정이라면, 자신이 변경한 기능과
+관련된 문서를 반드시 함께 수정한다.
+
+문서 경로:
+
+S15P11E201\자료\docs
+
+문서에는 다음 내용을 실제 변경 사항에 맞게 반영한다.
+
+- 추가하거나 변경한 기능
+- API, 설정값, 실행 방법의 변경
+- 구조 또는 동작 방식의 변경
+- 사용자가 알아야 할 주의 사항
+- 기존 문서와 코드가 달라진 부분
+
+관련 문서가 이미 있으면 해당 문서를 수정한다.
+관련 문서가 없으면 적절한 이름의 문서를 새로 작성한다.
+변경과 관계없는 문서는 수정하지 않는다.
+
+문서 변경은 코드 변경과 같은 기능 브랜치에서 수행하고
+같은 커밋 또는 Merge Request에 포함한다.
+문서가 필요한 변경인데 문서가 갱신되지 않았다면
+push하거나 Merge Request를 만들지 않는다.
+
+master에는 직접 push하지 않는다.
+기능 브랜치에서 역할별 develop으로 병합한 뒤, develop에서 master로
+Merge Request를 만드는 기존 규칙을 따른다.
+develop에서 master로 반영하기 전에도 S15P11E201\자료\docs의
+관련 문서가 최신 상태인지 다시 확인한다.
+
+문서에서 다른 파트의 서술을 지우지 않는다.
+자신이 바꾼 기능에 해당하는 줄만 수정한다.
 
 ## 배포
 
@@ -150,16 +278,29 @@ Backend:
 
 ## LLM 작업 절차
 
-1. git status와 현재 브랜치를 확인한다.
-2. git fetch origin --prune을 실행한다.
-3. 역할에 맞는 develop에서 기능 브랜치를 만든다.
-4. 관련 코드와 테스트를 작성한다.
-5. 로컬 검증을 수행한다.
-6. 변경 파일과 diff를 확인한다.
-7. 기능 브랜치에만 commit과 push를 수행한다.
-8. 같은 역할의 develop을 대상으로 MR을 만든다.
-9. CI 결과를 확인한다.
-10. CI 성공 후에만 병합한다.
-11. 병합 후 기능 브랜치를 삭제한다.
-12. 사용자 요청 없이 운영 배포를 승인하지 않는다.
-13. 각 단계 결과를 한국어로 쉽게 보고한다.
+1. 저장소 루트의 AGENTS.md를 읽는다.
+2. git status와 현재 브랜치를 확인한다.
+3. git fetch origin --prune을 실행한다.
+4. 역할에 맞는 develop이 master를 역머지한 상태인지 확인한다.
+   뒤처져 있으면 역머지를 먼저 제안한다.
+5. 역할에 맞는 develop에서 기능 브랜치를 만든다.
+6. 관련 코드와 테스트를 작성한다.
+7. 자신이 변경한 내용과 관련된 S15P11E201\자료\docs 문서를
+   수정하거나 새로 작성한다.
+8. 로컬 검증을 수행한다.
+9. 코드와 문서의 내용이 서로 일치하는지 확인한다.
+10. 변경 파일과 diff를 확인한다.
+11. 기능 브랜치에만 commit과 push를 수행한다.
+12. 같은 역할의 develop을 대상으로 Merge Request를 만든다.
+13. CI 결과를 확인한다.
+14. CI 성공 후에만 병합한다.
+15. 병합 후 기능 브랜치를 삭제한다.
+16. develop에서 master로 반영하기 전에 관련 문서가 최신 상태인지
+    다시 확인한다.
+17. master 병합 후 master를 세 develop에 역머지한다.
+18. 사용자 요청 없이 운영 배포를 승인하지 않는다.
+19. 각 단계의 코드 변경과 문서 변경 결과를 한국어로 쉽게 보고한다.
+
+사용자가 master로 바로 병합해 달라고 요청하더라도,
+기능 브랜치에서 역할별 develop을 거치는 절차를 먼저 안내한다.
+master에 직접 커밋하거나 push하지 않는다.
