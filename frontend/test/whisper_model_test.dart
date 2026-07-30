@@ -26,7 +26,7 @@ void main() {
       ByteData.sublistView(Uint8List.fromList(List.filled(bytes, 7)));
 
   File copied() => File(
-    '${temporary.path}${Platform.pathSeparator}ggml-small-ko-q5_0.bin',
+    '${temporary.path}${Platform.pathSeparator}ggml-small-ko-q5_1.bin',
   );
 
   test('dart-define 경로가 있으면 에셋을 건드리지 않는다', () async {
@@ -98,7 +98,7 @@ void main() {
         isA<StateError>().having(
           (error) => error.message,
           '안내 문구',
-          allOf(contains('whisper-model.md'), contains('WHISPER_MODEL_PATH')),
+          allOf(contains('05-STT모델가이드.md'), contains('WHISPER_MODEL_PATH')),
         ),
       ),
     );
