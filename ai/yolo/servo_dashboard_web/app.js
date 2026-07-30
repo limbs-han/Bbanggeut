@@ -111,6 +111,25 @@ function updateServo(servo) {
   text("timeout-holds", servo.timeout_holds ?? "—");
 }
 
+function updateLaughter(laughter) {
+  if (!laughter) return;
+  const status = String(laughter.upload_status || laughter.state || "DETECTED");
+  const statusNode = byId("laughter-status");
+  statusNode.className = `state-pill laughter-${status.toLowerCase().replaceAll("_", "-")}`;
+  statusNode.textContent = status;
+  text("laughter-time", formatTime(laughter.occurred_at || laughter.updated_at));
+  text(
+    "laughter-confidence",
+    laughter.confidence == null ? "—" : fixed(laughter.confidence, 3),
+  );
+  text("laughter-event-id", laughter.event_id || "—");
+  text("laughter-video-id", laughter.video_id || "—");
+  const retry = laughter.attempts
+    ? ` · ${laughter.attempts}회차${laughter.retry_delay_seconds ? ` / ${laughter.retry_delay_seconds}초 후` : ""}`
+    : "";
+  text("laughter-detail", `${laughter.detail || status}${retry}`);
+}
+
 function formatTime(value) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("ko-KR", {
@@ -134,16 +153,27 @@ function renderEvents(events) {
     ...events.slice(-80).reverse().map((event) => {
       const row = document.createElement("tr");
       row.dataset.source = event.source;
-      const values = [
-        formatTime(event.recorded_at),
-        event.source.toUpperCase(),
-        [event.state, event.direction || `${event.command_x || ""} ${event.command_y || ""}`]
-          .filter(Boolean).join(" · "),
-        event.center_x == null ? "—" : `${fixed(event.center_x, 3)}, ${fixed(event.center_y, 3)}`,
-        event.error_x == null ? "—" : `${signed(event.error_x)} · ${signed(event.error_y)}`,
-        event.pan_deg == null ? "—" : `${signed(event.pan_deg, 2)}°`,
-        event.tilt_deg == null ? "—" : `${signed(event.tilt_deg, 2)}°`,
-      ];
+      const laughter = event.source === "laughter";
+      const values = laughter
+        ? [
+            formatTime(event.recorded_at),
+            "LAUGHTER",
+            event.upload_status || event.state || "DETECTED",
+            event.event_id || "—",
+            event.confidence == null ? "—" : fixed(event.confidence, 3),
+            event.http_status == null ? "—" : `HTTP ${event.http_status}`,
+            event.video_id || event.detail || "—",
+          ]
+        : [
+            formatTime(event.recorded_at),
+            event.source.toUpperCase(),
+            [event.state, event.direction || `${event.command_x || ""} ${event.command_y || ""}`]
+              .filter(Boolean).join(" · "),
+            event.center_x == null ? "—" : `${fixed(event.center_x, 3)}, ${fixed(event.center_y, 3)}`,
+            event.error_x == null ? "—" : `${signed(event.error_x)} · ${signed(event.error_y)}`,
+            event.pan_deg == null ? "—" : `${signed(event.pan_deg, 2)}°`,
+            event.tilt_deg == null ? "—" : `${signed(event.tilt_deg, 2)}°`,
+          ];
       values.forEach((value) => {
         const cell = document.createElement("td");
         cell.textContent = value;
@@ -222,6 +252,7 @@ async function refresh() {
     text("dashboard-uptime", `시작 시간 ${formatTime(payload.started_at)}`);
     updateVision(payload.vision);
     updateServo(payload.servo);
+    updateLaughter(payload.laughter);
     renderEvents(payload.events || []);
     drawChart(payload.events || []);
     if (payload.frame_sequence > 0) byId("video-empty").hidden = true;
@@ -242,7 +273,7 @@ byId("download-log").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `servo-telemetry-${new Date().toISOString().replaceAll(":", "-")}.json`;
+  link.download = `edge-telemetry-${new Date().toISOString().replaceAll(":", "-")}.json`;
   link.click();
   URL.revokeObjectURL(url);
 });

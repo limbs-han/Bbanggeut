@@ -6,7 +6,7 @@
     <title>William James · Servo Vision Console</title>
     <meta
       name="description"
-      content="카메라 객체 위치와 팬·틸트 서보 움직임을 실시간으로 확인하는 로컬 대시보드"
+      content="카메라 객체 위치, 서보 움직임, 웃음 감지와 영상 업로드 상태를 확인하는 로컬 대시보드"
     >
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
@@ -165,6 +165,23 @@
             <div><dt>타임아웃 HOLD</dt><dd id="timeout-holds">—</dd></div>
           </dl>
         </article>
+
+        <article class="panel laughter-card">
+          <div class="servo-card-header">
+            <div>
+              <p class="section-label">LAUGHTER PIPELINE</p>
+              <h2>웃음 감지·업로드</h2>
+            </div>
+            <span id="laughter-status" class="state-pill neutral">대기</span>
+          </div>
+          <dl>
+            <div><dt>감지 시각</dt><dd id="laughter-time">—</dd></div>
+            <div><dt>감지 점수</dt><dd id="laughter-confidence">—</dd></div>
+            <div><dt>이벤트 ID</dt><dd id="laughter-event-id">—</dd></div>
+            <div><dt>영상 ID</dt><dd id="laughter-video-id">—</dd></div>
+          </dl>
+          <p id="laughter-detail" class="laughter-detail">웃음 신호 대기 중</p>
+        </article>
       </section>
 
       <section class="panel timeline-panel">
@@ -186,7 +203,7 @@
         <div class="panel-heading">
           <div>
             <p class="section-label">EVENT LOG</p>
-            <h2>추적·서보 로그</h2>
+            <h2>추적·서보·웃음 로그</h2>
           </div>
           <div class="log-actions">
             <button id="pause-log" type="button">일시정지</button>
@@ -200,10 +217,10 @@
                 <th>시간</th>
                 <th>소스</th>
                 <th>상태 / 명령</th>
-                <th>객체 중심</th>
-                <th>오차 X · Y</th>
+                <th>객체 / 이벤트</th>
+                <th>오차 / 감지 점수</th>
                 <th>PAN</th>
-                <th>TILT</th>
+                <th>TILT / 업로드</th>
               </tr>
             </thead>
             <tbody id="event-rows">

@@ -267,6 +267,56 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def write_upload_status(
+    args: argparse.Namespace,
+    group: list[Trigger],
+    status: str,
+    detail: str,
+    **fields: Any,
+) -> None:
+    """Persist the latest safe-to-display upload state for the dashboard."""
+
+    canonical = group[0]
+    path = args.event_dir / f"{canonical.event_id}.upload-status.json"
+    updated_at = instant(datetime.now(timezone.utc))
+    payload = {
+        "eventId": canonical.event_id,
+        "canonicalEventId": canonical.event_id,
+        "mergedEventIds": [trigger.event_id for trigger in group[1:]],
+        "status": status,
+        "detail": detail,
+        "updatedAt": updated_at,
+        **fields,
+    }
+    try:
+        previous: dict[str, Any] = {}
+        if path.exists():
+            previous = json.loads(path.read_text(encoding="utf-8"))
+            comparable = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"updatedAt", "history"}
+            }
+            if all(previous.get(key) == value for key, value in comparable.items()):
+                return
+        history = previous.get("history", [])
+        if not isinstance(history, list):
+            history = []
+        payload["history"] = [
+            *history[-99:],
+            {
+                "status": status,
+                "detail": detail,
+                "updatedAt": updated_at,
+                **fields,
+            },
+        ]
+        write_json_atomic(path, payload)
+    except (OSError, json.JSONDecodeError):
+        # Status reporting must never block the actual upload pipeline.
+        return
+
+
 def safe_endpoint(url: str) -> str:
     """Return an HTTP endpoint without credentials, query, or fragment."""
 
@@ -360,6 +410,12 @@ def upload_group(
         "checksumSha256": checksum,
     }
     base_url = args.api_base_url.rstrip("/")
+    write_upload_status(
+        args,
+        group,
+        "REQUESTING_UPLOAD",
+        "백엔드 업로드 URL 요청 중",
+    )
     response, _ = request_json(
         f"{base_url}/api/iot/videos/upload-url",
         "POST",
@@ -368,6 +424,13 @@ def upload_group(
         canonical.event_id,
     )
     if not response.get("alreadyCompleted"):
+        write_upload_status(
+            args,
+            group,
+            "UPLOADING",
+            "오브젝트 스토리지로 영상 전송 중",
+            videoId=response["videoId"],
+        )
         etag = upload_file(
             response["uploadUrl"],
             output_path,
@@ -375,6 +438,13 @@ def upload_group(
                 str(key): str(value)
                 for key, value in response["requiredHeaders"].items()
             },
+        )
+        write_upload_status(
+            args,
+            group,
+            "COMPLETING",
+            "백엔드 업로드 완료 처리 중",
+            videoId=response["videoId"],
         )
         request_json(
             f"{base_url}/api/iot/videos/complete",
@@ -404,6 +474,12 @@ def process_group(
     canonical = group[0]
     output_path = args.event_dir / f"{canonical.event_id}.mp4"
     if not output_path.exists():
+        write_upload_status(
+            args,
+            group,
+            "BUILDING_CLIP",
+            "녹화 세그먼트에서 웃음 영상을 생성 중",
+        )
         mux_segments(
             args.ffmpeg,
             segments,
@@ -431,6 +507,13 @@ def process_group(
             "uploadedAt": uploaded_at,
             "mergedEventIds": [trigger.event_id for trigger in group[1:]],
         },
+    )
+    write_upload_status(
+        args,
+        group,
+        "UPLOADED",
+        "영상 업로드 완료",
+        videoId=response["videoId"],
     )
     print(
         f"Uploaded rolling laughter clip: event={canonical.event_id} "
@@ -506,6 +589,12 @@ def run(args: argparse.Namespace) -> None:
                 process_group(args, group, datetime.now(timezone.utc))
                 retry_states.pop(canonical_id, None)
             except SegmentCoverageError as error:
+                write_upload_status(
+                    args,
+                    group,
+                    "WAITING_RECORDING",
+                    str(error),
+                )
                 print(f"Rolling clip pending for {group[0].event_id}: {error}")
             except HTTPError as error:
                 body = http_error_body(error)
@@ -528,6 +617,16 @@ def run(args: argparse.Namespace) -> None:
                         attempts=attempts,
                         retry_at=time.monotonic() + delay,
                     )
+                    write_upload_status(
+                        args,
+                        group,
+                        "RETRYING",
+                        detail,
+                        attempts=attempts,
+                        retryDelaySeconds=delay,
+                        httpStatus=error.code,
+                        endpoint=endpoint,
+                    )
                     print(
                         f"Rolling clip retry scheduled for {canonical_id}: "
                         f"{detail} attempt={attempts} delay={delay:.1f}s"
@@ -541,6 +640,14 @@ def run(args: argparse.Namespace) -> None:
                         endpoint=endpoint,
                         response_body=body,
                     )
+                    write_upload_status(
+                        args,
+                        group,
+                        "BLOCKED",
+                        detail,
+                        httpStatus=error.code,
+                        endpoint=endpoint,
+                    )
                     retry_states.pop(canonical_id, None)
                     print(
                         f"Rolling clip upload blocked for {canonical_id}: "
@@ -551,6 +658,12 @@ def run(args: argparse.Namespace) -> None:
                     args,
                     group,
                     reason=f"{type(error).__name__}: {error}",
+                )
+                write_upload_status(
+                    args,
+                    group,
+                    "BLOCKED",
+                    f"{type(error).__name__}: {error}",
                 )
                 retry_states.pop(canonical_id, None)
                 print(
@@ -570,6 +683,14 @@ def run(args: argparse.Namespace) -> None:
                 retry_states[canonical_id] = RetryState(
                     attempts=attempts,
                     retry_at=time.monotonic() + delay,
+                )
+                write_upload_status(
+                    args,
+                    group,
+                    "RETRYING",
+                    f"{type(error).__name__}: {error}",
+                    attempts=attempts,
+                    retryDelaySeconds=delay,
                 )
                 print(
                     f"Rolling clip retry scheduled for {canonical_id}: "
