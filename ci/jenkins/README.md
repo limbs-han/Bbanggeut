@@ -90,9 +90,30 @@ SHA를 지정해 특정 빌드를 직접 실행하는 요청은 HTTP 401로 차�
 | `develop/backend`, `feat/backend/**` | Backend |
 | `develop/frontend`, `feat/frontend/**` | Frontend |
 | `develop/device`, `feat/device/**` | IoT와 AI |
+| 모든 `feat/**`, `develop/**`, `docs/**` | API Contract |
 
 Jenkins 자체 구성을 바꾸는 검증 브랜치에서는 Backend, Frontend, Device 전체 CI를 실행하도록
 해당 브랜치 이름을 `Jenkinsfile`에 명시합니다.
+
+## API Contract
+
+`자료/api/openapi.yaml`은 손으로 유지하는 계약이며 세 역할이 함께 편집합니다.
+그동안 이 파일을 검사하는 유일한 설정이 `자료/.github/workflows/ci.yml`, 즉 GitHub
+Actions 워크플로였습니다. 이 저장소는 GitLab이므로 그 워크플로는 한 번도 실행되지
+않았고, Memory Vault 전환에서 추가된 경로 7개가 계약에 빠진 채로 병합됐습니다.
+
+`ci/jenkins/scripts/run-api-contract-ci.sh`가 두 가지를 확인합니다.
+
+1. `자료/tools/check_api_spec_coverage.py` — 컨트롤러의 `@RequestMapping`·
+   `@GetMapping` 계열을 모아 계약의 `paths`와 대조합니다. 누락이 있으면 실패합니다.
+   표준 라이브러리만 사용하므로 Agent에 PyYAML이나 Node가 없어도 동작합니다.
+2. Redocly CLI lint — `npx`가 있을 때만 실행하고, 없으면 경고를 남기고 계속합니다.
+   경로 누락 검사는 어느 경우에도 건너뛰지 않습니다.
+
+공개 계약에 싣지 않는 경로는 검사 스크립트의 `UNDOCUMENTED_ON_PURPOSE`에 사유와
+함께 적습니다. 내부 관리자 경로처럼 존재 자체를 404로 숨기는 엔드포인트가 여기
+해당합니다. 컨트롤러에서 사라진 경로가 목록에 남아 있어도 실패하므로 목록이 낡지
+않습니다.
 
 현재 GitLab의 `master`나 `develop/*` 브랜치는 자동으로 생성하거나 변경하지 않습니다.
 브랜치 정책 적용은 별도의 GitLab 관리 단계에서 진행합니다.
