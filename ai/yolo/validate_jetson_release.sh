@@ -71,6 +71,8 @@ grep -Fq ': "${YAMNET_CONSECUTIVE:=3}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${YAMNET_READY_TIMEOUT_SECONDS:=90}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${YAMNET_RESTART_DELAY_SECONDS:=5}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${YAMNET_CLAP_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${WAKE_NAME_ENABLED:=false}"' \
@@ -88,6 +90,10 @@ grep -Fq 'YAMNet ready: first inference telemetry received' \
 grep -Fq 'Escalating AI child shutdown to SIGTERM' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq 'Escalating AI child shutdown to SIGKILL' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'Continuing in degraded mode' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'restarting only YAMNet' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 
 echo "[2/5] Python syntax"
@@ -122,6 +128,7 @@ echo "[3/5] YOLO-side tests"
     PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
         -m unittest \
         test_autoframe_logic \
+        test_edge_ai_recording_startup \
         test_servo_controller \
         test_servo_dashboard \
         test_event_fusion \
@@ -141,6 +148,7 @@ echo "[4/5] YAMNet stream tests"
         test_laughter_scoring \
         test_audio_event_detection \
         test_audio_event_trigger \
+        test_startup_packages \
         test_wake_name_profile \
         test_mqtt_event_publisher
 )
