@@ -1,0 +1,23 @@
+[Unit]
+Description=William James Jetson registration button and LCD
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=REGISTRATION_BUTTON_CHIP=0
+Environment=REGISTRATION_BUTTON_LINE=144
+Environment=LCD_I2C_BUS=7
+Environment=LCD_I2C_ADDRESS=0x27
+Environment=LCD_COLUMNS=16
+EnvironmentFile=-/etc/william-james/device-agent.env
+WorkingDirectory=/opt/william-james/device-agent
+ExecStart=/usr/bin/python3 /opt/william-james/device-agent/jetson_registration_button.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

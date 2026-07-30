@@ -135,17 +135,19 @@ class VaultArchiveScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 104,
-                  child: FilledButton(
-                    key: const Key('connect-device-to-vault'),
-                    onPressed: controller.busy
-                        ? null
-                        : () => _openRegistration(context),
-                    child: const Text('기기 연결'),
+                if (controller.canRegisterDevice) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 104,
+                    child: FilledButton(
+                      key: const Key('connect-device-to-vault'),
+                      onPressed: controller.busy
+                          ? null
+                          : () => _openRegistration(context),
+                      child: const Text('기기 연결'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

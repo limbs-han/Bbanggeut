@@ -93,15 +93,26 @@ class FlywayMigrationIntegrationTest {
         assertThat(v30Result.success).isTrue();
         assertThat(v30Result.targetSchemaVersion).isEqualTo("30");
 
-        try (var connection = DriverManager.getConnection(jdbcUrl, username, password);
-             var statement = connection.createStatement()) {
-            statement.executeUpdate(
-                "insert into devices "
-                    + "(id, serial_number, product_code_hash, name, status, claimed_at, claimed_by) "
-                    + "values ('20000000-0000-0000-0000-000000000031', "
-                    + "'MISSING-BINDING-DEVICE', '" + "3".repeat(64) + "', "
-                    + "'Missing Binding Camera', 'ONLINE', now(), "
-                    + "'10000000-0000-0000-0000-000000000001')");
+        // A claimed device needs its OWNER membership in the same transaction:
+        // trg_devices_exactly_one_owner is a deferred constraint trigger that
+        // fires at commit for ONLINE/OFFLINE rows.
+        try (var connection = DriverManager.getConnection(jdbcUrl, username, password)) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.createStatement()) {
+                statement.executeUpdate(
+                    "insert into devices "
+                        + "(id, serial_number, name, status, claimed_at, claimed_by) "
+                        + "values ('20000000-0000-0000-0000-000000000031', "
+                        + "'MISSING-BINDING-DEVICE', "
+                        + "'Missing Binding Camera', 'ONLINE', now(), "
+                        + "'10000000-0000-0000-0000-000000000001')");
+                statement.executeUpdate(
+                    "insert into device_memberships (id, device_id, user_id, role) values "
+                        + "('30000000-0000-0000-0000-000000000031', "
+                        + "'20000000-0000-0000-0000-000000000031', "
+                        + "'10000000-0000-0000-0000-000000000001', 'OWNER')");
+            }
+            connection.commit();
         }
 
         Flyway latestFlyway = Flyway.configure()

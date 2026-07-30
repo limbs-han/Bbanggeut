@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../core/api_client.dart';
 import '../core/models.dart';
 
-const devHlsUrl = String.fromEnvironment('DEV_HLS_URL');
 const devHomeCam = bool.fromEnvironment('DEV_HOME_CAM');
 
 class AppController extends ChangeNotifier {
@@ -13,7 +12,9 @@ class AppController extends ChangeNotifier {
   bool initialized = false;
   bool authenticated = false;
   bool busy = false;
+  bool videosLoading = false;
   String? errorMessage;
+  String? videosError;
   UserProfile? user;
   List<MemoryVault> vaults = const [];
   MemoryVault? selectedVault;
@@ -30,8 +31,13 @@ class AppController extends ChangeNotifier {
   MembershipRequestPreview? pendingMembershipRequestPreview;
   bool openFamilyAfterDeviceClaim = false;
 
+  bool get isOwner =>
+      selectedVault?.isOwner ?? selectedDevice?.isOwner ?? false;
+  bool get isMember => selectedVault != null && !selectedVault!.isOwner;
+  bool get canRegisterDevice => selectedVault == null || isOwner;
+
   Future<void> initialize() async {
-    if (devHomeCam && devHlsUrl.isNotEmpty) {
+    if (devHomeCam) {
       const demoDevice = DeviceSummary(
         id: 'local-raspberry-pi',
         name: '거실 홈캠 (개발용)',
@@ -243,21 +249,31 @@ class AppController extends ChangeNotifier {
   Future<void> refreshVaultData() async {
     final vault = selectedVault;
     if (vault == null) return;
-    final results = await Future.wait<Object?>([
-      _loadAccessibleVideos(),
-      api.listVaultMembers(vault.id),
-      if (vault.isOwner)
-        api.listVaultInvitations(vault.id)
-      else
-        Future.value(<Invitation>[]),
-    ]);
-    videos = results[0] as List<VideoMemory>;
-    members = results[1] as List<DeviceMember>;
-    sentInvitations = results[2] as List<Invitation>;
-    deviceStatus = null;
-    videoStats = null;
-    homeSummary = null;
+    videosLoading = true;
+    videosError = null;
     notifyListeners();
+    try {
+      final results = await Future.wait<Object?>([
+        _loadAccessibleVideos(),
+        api.listVaultMembers(vault.id),
+        if (vault.isOwner)
+          api.listVaultInvitations(vault.id)
+        else
+          Future.value(<Invitation>[]),
+      ]);
+      videos = results[0] as List<VideoMemory>;
+      members = results[1] as List<DeviceMember>;
+      sentInvitations = results[2] as List<Invitation>;
+      deviceStatus = null;
+      videoStats = null;
+      homeSummary = null;
+    } on ApiFailure catch (error) {
+      videosError = error.message;
+      rethrow;
+    } finally {
+      videosLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<HomeSummary?> _loadHomeSummary(String deviceId) async {
@@ -305,9 +321,7 @@ class AppController extends ChangeNotifier {
     sentInvitations = const [];
     notifyListeners();
     try {
-      await (selectedDevice == null
-          ? refreshVaultData()
-          : refreshDeviceData());
+      await (selectedDevice == null ? refreshVaultData() : refreshDeviceData());
       errorMessage = null;
     } on ApiFailure catch (error) {
       errorMessage = error.message;
@@ -319,7 +333,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshDeviceData() async {
-    if (devHomeCam && devHlsUrl.isNotEmpty) {
+    if (devHomeCam) {
       notifyListeners();
       return;
     }
@@ -329,29 +343,39 @@ class AppController extends ChangeNotifier {
       return;
     }
     final vault = selectedVault;
-    final results = await Future.wait<Object?>([
-      api.getDeviceStatus(device.id),
-      api.getVideoStats(device.id),
-      vault == null ? api.listAllVideos(device.id) : _loadAccessibleVideos(),
-      vault == null
-          ? api.listMembers(device.id)
-          : api.listVaultMembers(vault.id),
-      if (vault?.isOwner ?? device.isOwner)
-        vault == null
-            ? api.listDeviceInvitations(device.id)
-            : api.listVaultInvitations(vault.id)
-      else
-        Future.value(<Invitation>[]),
-      // Home summary is best-effort so a summary hiccup never blanks the tab.
-      _loadHomeSummary(device.id),
-    ]);
-    deviceStatus = results[0] as DeviceStatus;
-    videoStats = results[1] as VideoStats;
-    videos = results[2] as List<VideoMemory>;
-    members = results[3] as List<DeviceMember>;
-    sentInvitations = results[4] as List<Invitation>;
-    homeSummary = results[5] as HomeSummary?;
+    videosLoading = true;
+    videosError = null;
     notifyListeners();
+    try {
+      final results = await Future.wait<Object?>([
+        api.getDeviceStatus(device.id),
+        api.getVideoStats(device.id),
+        vault == null ? api.listAllVideos(device.id) : _loadAccessibleVideos(),
+        vault == null
+            ? api.listMembers(device.id)
+            : api.listVaultMembers(vault.id),
+        if (vault?.isOwner ?? device.isOwner)
+          vault == null
+              ? api.listDeviceInvitations(device.id)
+              : api.listVaultInvitations(vault.id)
+        else
+          Future.value(<Invitation>[]),
+        // Home summary is best-effort so a summary hiccup never blanks the tab.
+        _loadHomeSummary(device.id),
+      ]);
+      deviceStatus = results[0] as DeviceStatus;
+      videoStats = results[1] as VideoStats;
+      videos = results[2] as List<VideoMemory>;
+      members = results[3] as List<DeviceMember>;
+      sentInvitations = results[4] as List<Invitation>;
+      homeSummary = results[5] as HomeSummary?;
+    } on ApiFailure catch (error) {
+      videosError = error.message;
+      rethrow;
+    } finally {
+      videosLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<List<VideoMemory>> _loadAccessibleVideos() async {
@@ -381,6 +405,9 @@ class AppController extends ChangeNotifier {
     String? vaultId,
     String? newVaultName,
   }) async => _guard(() async {
+    if (!canRegisterDevice) {
+      throw const ApiFailure('OWNER만 새 기기를 등록할 수 있어요.', statusCode: 403);
+    }
     await api.claimDevice(
       code,
       vaultId: vaultId,
@@ -557,7 +584,9 @@ class AppController extends ChangeNotifier {
         receivedInvitations = receivedInvitations
             .where((item) => item.id != invitation.id)
             .toList(growable: false);
-        await refreshDevices();
+        await refreshVaults();
+        receivedInvitations = await api.listMyInvitations();
+        notifyListeners();
       });
 
   Future<bool> declineInvitation(Invitation invitation) async =>
@@ -569,15 +598,14 @@ class AppController extends ChangeNotifier {
         notifyListeners();
       });
 
-  Future<bool> revokeMemberAccess(DeviceMember member) async =>
-      _guard(() async {
-        final vault = selectedVault;
-        if (vault == null || !vault.isOwner) return;
-        await api.revokeVaultMember(vault.id, member.id);
-        await (selectedDevice == null
-            ? refreshVaultData()
-            : refreshDeviceData());
-      });
+  Future<bool> revokeMemberAccess(DeviceMember member) async => _guard(
+    () async {
+      final vault = selectedVault;
+      if (vault == null || !vault.isOwner) return;
+      await api.revokeVaultMember(vault.id, member.id);
+      await (selectedDevice == null ? refreshVaultData() : refreshDeviceData());
+    },
+  );
 
   @Deprecated('Use revokeMemberAccess')
   Future<bool> revoke(DeviceMember member) async {

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
-import 'all_memories_screen.dart';
 import 'content_notifications_screen.dart';
 import 'device_registration_screen.dart';
 import 'favorite_videos_screen.dart';
@@ -26,7 +25,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final device = controller.selectedDevice!;
+    final device = controller.selectedDevice;
     final status = controller.deviceStatus;
     final summary = controller.homeSummary;
     final latest = summary?.latestHighlight ?? controller.videos.firstOrNull;
@@ -53,11 +52,10 @@ class HomeScreen extends StatelessWidget {
                       icon: Icons.cottage_rounded,
                     ),
                     const SizedBox(height: 12),
-                    _LivePreviewCard(
-                      controller: controller,
-                      device: device,
-                      status: status,
-                    ),
+                    if (device == null)
+                      _NoDeviceLiveCard(controller: controller)
+                    else
+                      _LiveDevicePager(controller: controller),
                     const SizedBox(height: 26),
                     const _HomeSectionTitle(
                       title: '오늘의 기록',
@@ -73,13 +71,7 @@ class HomeScreen extends StatelessWidget {
                             value: '${summary?.captureCount ?? 0}',
                             unit: '회',
                             color: AppColors.yellowSoft,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    AllMemoriesScreen(controller: controller),
-                              ),
-                            ),
+                            onTap: openVideos,
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -218,7 +210,7 @@ class _HomeHeader extends StatelessWidget {
     required this.status,
   });
   final AppController controller;
-  final DeviceSummary device;
+  final DeviceSummary? device;
   final DeviceStatus? status;
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -259,7 +251,7 @@ class _HomeHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                device.name,
+                device?.name ?? '연결된 기기가 없습니다',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -279,7 +271,9 @@ class _HomeHeader extends StatelessWidget {
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
-                      status?.isOnline == true
+                      device == null
+                          ? '기기를 연결하면 라이브를 볼 수 있어요'
+                          : status?.isOnline == true
                           ? '온라인 · 안전하게 연결됨'
                           : '오프라인 · 연결 확인 필요',
                       maxLines: 1,
@@ -325,13 +319,16 @@ class _HomeHeader extends StatelessWidget {
                           InvitationInboxScreen(controller: controller),
                     ),
                   ),
-                  onOpenDevices: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          DeviceRegistrationScreen(controller: controller),
-                    ),
-                  ),
+                  onOpenDevices: controller.canRegisterDevice
+                      ? () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DeviceRegistrationScreen(
+                              controller: controller,
+                            ),
+                          ),
+                        )
+                      : null,
                 ),
               ),
             ),
@@ -348,6 +345,165 @@ class _HomeHeader extends StatelessWidget {
   );
 }
 
+class _NoDeviceLiveCard extends StatelessWidget {
+  const _NoDeviceLiveCard({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) => SoftCard(
+    padding: EdgeInsets.zero,
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: Column(
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: ColoredBox(
+              color: const Color(0xFF4D493F),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.videocam_off_outlined,
+                      color: Colors.white70,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '연결된 기기가 없습니다',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (controller.canRegisterDevice) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DeviceRegistrationScreen(
+                              controller: controller,
+                            ),
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                        ),
+                        child: const Text('기기 연결하기'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _LiveDevicePager extends StatefulWidget {
+  const _LiveDevicePager({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_LiveDevicePager> createState() => _LiveDevicePagerState();
+}
+
+class _LiveDevicePagerState extends State<_LiveDevicePager> {
+  late final PageController _pageController;
+
+  AppController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    final selectedId = controller.selectedDevice?.id;
+    final initial = controller.devices.indexWhere(
+      (device) => device.id == selectedId,
+    );
+    _pageController = PageController(initialPage: initial < 0 ? 0 : initial);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final devices = controller.devices;
+    if (devices.isEmpty) return const SizedBox.shrink();
+    final selectedIndex = devices.indexWhere(
+      (device) => device.id == controller.selectedDevice?.id,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The live player includes its device/status footer below the 16:9
+        // surface. Keep a small responsive allowance for text scaling.
+        final cardHeight = constraints.maxWidth * 9 / 16 + 78;
+        return Column(
+          children: [
+            SizedBox(
+              height: cardHeight,
+              child: PageView.builder(
+                controller: _pageController,
+                physics: devices.length > 1
+                    ? const PageScrollPhysics()
+                    : const NeverScrollableScrollPhysics(),
+                itemCount: devices.length,
+                onPageChanged: (index) =>
+                    controller.selectDevice(devices[index]),
+                itemBuilder: (_, index) {
+                  final device = devices[index];
+                  return _LivePreviewCard(
+                    controller: controller,
+                    device: device,
+                    status: device.id == controller.selectedDevice?.id
+                        ? controller.deviceStatus
+                        : null,
+                  );
+                },
+              ),
+            ),
+            if (devices.length > 1) ...[
+              const SizedBox(height: 9),
+              Semantics(
+                label: '${selectedIndex + 1}/${devices.length}번째 기기',
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    devices.length,
+                    (index) => AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: index == selectedIndex ? 20 : 7,
+                      height: 7,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: index == selectedIndex
+                            ? AppColors.coral
+                            : AppColors.line,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _LivePreviewCard extends StatelessWidget {
   const _LivePreviewCard({
     required this.controller,
@@ -358,42 +514,29 @@ class _LivePreviewCard extends StatelessWidget {
   final DeviceSummary device;
   final DeviceStatus? status;
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onHorizontalDragEnd: (details) {
-      final velocity = details.primaryVelocity ?? 0;
-      if (velocity.abs() < 250 || controller.devices.length < 2) return;
-      final currentIndex = controller.devices.indexWhere(
-        (item) => item.id == device.id,
-      );
-      final nextIndex = velocity < 0 ? currentIndex + 1 : currentIndex - 1;
-      if (nextIndex < 0 || nextIndex >= controller.devices.length) return;
-      controller.selectDevice(controller.devices[nextIndex]);
-    },
-    child: DecoratedBox(
-      decoration: const BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x329D6A32),
-            blurRadius: 24,
-            offset: Offset(0, 11),
-          ),
-        ],
-      ),
-      child: CustomPaint(
-        painter: const _HouseBorderPainter(),
-        foregroundPainter: const _HouseAccentPainter(),
-        child: Padding(
-          padding: const EdgeInsets.all(7),
-          child: ClipPath(
-            clipper: const _HouseFrameClipper(),
-            child: EmbeddedLivePlayer(
-              key: ValueKey('live-${device.id}'),
-              controller: controller,
-              device: device,
-              status: status,
-              houseMode: true,
-            ),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(
+      boxShadow: [
+        BoxShadow(
+          color: Color(0x329D6A32),
+          blurRadius: 24,
+          offset: Offset(0, 11),
+        ),
+      ],
+    ),
+    child: CustomPaint(
+      painter: const _HouseBorderPainter(),
+      foregroundPainter: const _HouseAccentPainter(),
+      child: Padding(
+        padding: const EdgeInsets.all(7),
+        child: ClipPath(
+          clipper: const _HouseFrameClipper(),
+          child: EmbeddedLivePlayer(
+            key: ValueKey('live-${device.id}'),
+            controller: controller,
+            device: device,
+            status: status,
+            houseMode: true,
           ),
         ),
       ),

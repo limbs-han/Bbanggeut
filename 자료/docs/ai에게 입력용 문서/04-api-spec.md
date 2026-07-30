@@ -249,10 +249,11 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 ### 미디어 경로
 
-- **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. ffmpeg: `-f v4l2` 입력→`-c:v libx264 -preset ultrafast -tune zerolatency`(기본 2500kbps)→`-f rtsp -rtsp_transport tcp`. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`
-- **WebRTC/WHEP 전용(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
-- **연결 성공 조건**: 원격 video/audio track과 inbound audio RTP 수신이 모두 확인되어야 함. 실패 시 HLS 전환 없이 오류·재시도 표시
-- **오디오 코덱**: Jetson publish는 H.264+Opus 필수. AAC-only publish는 운영 재생에서 지원하지 않음
+- **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. 로컬 공유 스트림의 H.264는 `-c:v copy`, AAC 원본 오디오는 WebRTC 호환 Opus 48kHz 모노·64kbps(`-c:a libopus -application lowdelay`)로 변환해 `-f rtsp -rtsp_transport tcp`로 송출한다. 이 변환은 앱 Live View 릴레이에만 적용하며 로컬 AI·녹화 AAC는 유지한다. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`, `device-agent.jetson.env.example`
+- **WebRTC/WHEP 전용(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 원격 audio/video track을 동일 renderer stream에 연결하고 `setMuted`로 볼륨 제어. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
+- **연결 성공 조건**: answer의 audio `m=` section이 non-zero이고 원격 송신 방향(`sendonly`/`sendrecv`)이어야 하며, 원격 video/audio track 수신 후 2초 안에 inbound audio RTP 패킷이 확인되어야 함. 하나라도 실패하면 HLS 전환 없이 오류·재시도 표시. 소스: `frontend/lib/core/whep_player_controller.dart`
+- **오디오 코덱**: Jetson publish는 H.264+Opus 필수. AAC-only publish는 MediaMTX가 WebRTC 오디오를 건너뛸 수 있어 운영 재생에서 지원하지 않음
+- **HLS 범위**: 없음. 운영 API는 `playUrl`을 반환하지 않고(`StreamSessionResponse`에서 제거) 앱에도 HLS 재생 코드가 없다
 - **운영 경로**: Nginx HTTPS 443 `/webrtc/.../whep`→MediaMTX loopback 8889, WebRTC media/ICE UDP 8189. 8889 직접 외부 노출 금지
 - **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP 접근 인가에 사용. 앱/젯슨 직접 호출 금지
 - 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신.

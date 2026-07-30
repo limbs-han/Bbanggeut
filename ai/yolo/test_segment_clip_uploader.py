@@ -19,6 +19,7 @@ from segment_clip_uploader import (
     group_triggers,
     http_error_body,
     is_retryable_http_status,
+    parse_trigger,
     parse_segment,
     retry_delay,
     run,
@@ -31,17 +32,60 @@ from segment_clip_uploader import (
 UTC = timezone.utc
 
 
-def trigger(name: str, second: int) -> Trigger:
+def trigger(
+    name: str,
+    second: int,
+    event_type: str = "LAUGHTER",
+) -> Trigger:
     return Trigger(
         path=Path(f"{name}.trigger.json"),
         event_id=name,
         occurred_at=datetime(2026, 7, 23, 12, 0, second, tzinfo=UTC),
         pre_seconds=60,
         post_seconds=60,
+        event_type=event_type,
     )
 
 
 class SegmentClipUploaderTests(unittest.TestCase):
+    def test_parses_versioned_audio_event_type(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "clap-1.trigger.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "1.1",
+                        "eventId": "clap-1",
+                        "type": "CLAP",
+                        "occurredAt": "2026-07-30T00:00:00.000Z",
+                        "preSeconds": 60,
+                        "postSeconds": 60,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            parsed = parse_trigger(path)
+
+            self.assertEqual(parsed.event_type, "CLAP")
+
+    def test_rejects_unknown_audio_event_type(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "noise-1.trigger.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "eventId": "noise-1",
+                        "type": "NOISE",
+                        "occurredAt": "2026-07-30T00:00:00.000Z",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError):
+                parse_trigger(path)
+
     def test_groups_consecutive_laughter_within_thirty_seconds(self) -> None:
         items = [
             trigger("first", 0),
@@ -54,6 +98,20 @@ class SegmentClipUploaderTests(unittest.TestCase):
         self.assertEqual(
             [[item.event_id for item in group] for group in groups],
             [["first", "second"], ["third"]],
+        )
+
+    def test_different_audio_event_types_are_not_merged(self) -> None:
+        items = [
+            trigger("laugh-first", 0, "LAUGHTER"),
+            trigger("clap", 10, "CLAP"),
+            trigger("laugh-second", 20, "LAUGHTER"),
+        ]
+
+        groups = group_triggers(items, 30)
+
+        self.assertEqual(
+            [[item.event_id for item in group] for group in groups],
+            [["laugh-first", "laugh-second"], ["clap"]],
         )
 
     def test_clip_uses_first_pre_and_last_post_boundaries(self) -> None:
@@ -202,6 +260,13 @@ class SegmentClipUploaderTests(unittest.TestCase):
             )
             self.assertEqual(marker["httpStatus"], 409)
             self.assertFalse(marker["retryable"])
+            status = json.loads(
+                (event_dir / "blocked.upload-status.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(status["status"], "BLOCKED")
+            self.assertEqual(status["httpStatus"], 409)
 
 
 if __name__ == "__main__":

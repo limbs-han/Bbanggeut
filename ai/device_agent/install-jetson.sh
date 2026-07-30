@@ -43,6 +43,10 @@ install -m 0755 "$SCRIPT_DIR/diagnose-mediamtx-publish.sh" \
     "$INSTALL_DIR/diagnose-mediamtx-publish.sh"
 install -m 0755 "$SCRIPT_DIR/registration-button.sh" "$INSTALL_DIR/registration-button.sh"
 install -m 0644 "$SCRIPT_DIR/registration_button.py" "$INSTALL_DIR/registration_button.py"
+install -m 0644 "$SCRIPT_DIR/lcd_test.py" "$INSTALL_DIR/lcd_test.py"
+install -m 0644 "$SCRIPT_DIR/jetson_registration_button.py" \
+    "$INSTALL_DIR/jetson_registration_button.py"
+install -m 0644 "$SCRIPT_DIR/servo_test.py" "$INSTALL_DIR/servo_test.py"
 
 if [[ -s "$DEPLOYED_COMMIT_FILE" ]]; then
     install -m 0644 "$DEPLOYED_COMMIT_FILE" "$INSTALL_DIR/PREVIOUS_DEPLOYED_COMMIT"
@@ -63,6 +67,8 @@ install -m 0644 "$SCRIPT_DIR/wj-media-tunnel.service" \
     /etc/systemd/system/wj-media-tunnel.service
 install -m 0644 "$SCRIPT_DIR/wj-media-source.service" \
     /etc/systemd/system/wj-media-source.service
+install -m 0644 "$SCRIPT_DIR/wj-registration-button-jetson.service" \
+    /etc/systemd/system/wj-registration-button-jetson.service
 
 if [[ ! -e "$CONFIG_DIR/device-agent.env" ]]; then
     install -m 0640 -o root -g "$SERVICE_USER" \
@@ -83,6 +89,8 @@ Installed, but services were not started because credentials must be supplied.
 5. Run: sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
 6. Run diagnose-mediamtx-publish.sh before restarting the agent.
 7. Start or restart wj-device-agent only after MQTT v2 ACL validation.
+8. After wiring the button and LCD, optionally enable:
+   sudo systemctl enable --now wj-registration-button-jetson
 DEPLOYED_COMMIT records the installed Git revision; PREVIOUS_DEPLOYED_COMMIT
 records the prior one for an explicit checkout-and-reinstall rollback.
 EOF
