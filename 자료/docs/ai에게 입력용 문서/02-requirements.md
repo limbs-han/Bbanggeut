@@ -23,8 +23,8 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 
 | ID | 요구사항 | 관련 FN | 근거(코드 경로) |
 |---|---|---|---|
-| REQ-F-10 | QR/8자리 코드로 홈캠 기기 등록 | FN-A07, FN-S04, FN-S20, FN-S21, FN-E01, FN-E02 | API-08(claim), API-43(코드발급), API-44/45(자격증명); 코드 TTL 120초·sha256 해시, claim 5회/10분 레이트리밋 |
-| REQ-F-12 | 접근 가능 기기 목록·온라인상태 확인 | FN-S03, FN-S05, FN-S25, FN-E03 | API-07/11; `recording`/`uploadQueueDepth`는 항상 스텁(`false`/`0`) |
+| REQ-F-10 | QR/8자리 코드로 홈캠 기기 등록 | FN-A07, FN-S04, FN-S20, FN-S21, FN-E01, FN-E02 | API-08(claim), API-43(코드발급), API-44/45(자격증명); `vaultId` 생략 시 새 금고+OWNER, 지정 시 OWNER 검증 후 기존 금고 binding 생성; 코드 TTL 120초·sha256 해시, claim 5회/10분 레이트리밋 |
+| REQ-F-12 | 접근 가능한 금고·기기 목록과 온라인상태 확인 | FN-S03, FN-S05, FN-S25, FN-E03 | Vault API/API-07/11; 금고는 기기가 없어도 반환. MQTT heartbeat 상태는 Redis `presence:device:{id}`에 90초 TTL로 저장되어 목록·상태·금고·라이브 시작 판정에 반영 |
 | REQ-F-13 | (OWNER) 기기 이름·보관기간(1~3650일) 변경 | FN-A27, FN-S05 | API-10, 422 `VALIDATION_FAILED` |
 
 ### 1.3 홈에서 라이브 스트리밍 시청
@@ -46,7 +46,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 
 | ID | 요구사항 | 관련 FN | 근거(코드 경로) |
 |---|---|---|---|
-| REQ-F-27 | 폰 내 편집기(Banuba)로 화면 비율 변환 등 수동 편집 | FN-A21 | Banuba 연동(Android 전용), 로컬 편집+기기 저장 기준 충족. 서버 재업로드 여부는 ⚠️ 미확인이나 MVP 판정에는 불요 |
+| REQ-F-27 | 폰에서 자르기·비율·효과·자막을 편집하고 온디바이스 음성 인식으로 자동 자막 생성 | FN-A21, FN-A39 | 오디오·전사문 외부 전송 없음. 자동 자막은 수정 가능하며 저장 시 편집 효과와 한 번에 인코딩. 서버 API 불요 |
 
 ### 1.6 편집 영상 다운로드
 
@@ -83,7 +83,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 | REQ-NF-02 | 보안 | JWT HS256 액세스(15분)+리프레시(14일, rotate-on-use) | `config/JwtConfig.java`, `application.yml`(`access-token-ttl`,`refresh-token-ttl`), `auth/application/AuthService.java` |
 | REQ-NF-03 | 보안 | 리프레시토큰·등록코드 sha256 해시 저장(평문 미저장) | `auth_sessions.refresh_token_hash`, `registration_codes.code_hash`(둘다 unique) |
 | REQ-NF-04 | 보안 | 기기 자격증명 BOOTSTRAP(15분)/OPERATING(30일) 분리, 기기당 1개 | `device-credential.bootstrap-ttl`/`operating-ttl`, `device_credentials` 부분 unique index |
-| REQ-NF-05 | 보안 | 로그인/claim 실패 5회/10분 레이트리밋(이메일·IP 지문) | `LoginAttemptService`/`auth_login_attempts`, `ClaimAttemptService`/`device_claim_attempts` |
+| REQ-NF-05 | 보안 | 로그인/claim 실패는 Redis 슬라이딩 윈도우에서 계정·IP 지문 기준 5회/10분 레이트리밋. 성공 예약은 IP 버킷에서 제거하며, 실패 해시는 PostgreSQL 감사 이력으로 별도 보관 | `SlidingWindowRateLimiter`, `LoginAttemptService`/`auth_login_attempts`, `ClaimAttemptService`/`device_claim_attempts` |
 | REQ-NF-06 | 프라이버시 | 웃음감지는 엣지 전용(YAMNet), 트리거 시에만 업로드 | `ai/yamnet/yamnet_laughter_detect_jetson.py`(임계값0.25/연속2윈도우), `ai/yolo/laughter_clip_uploader.py` |
 | REQ-NF-07 | 프라이버시 | 라이브는 명시적 요청 시만, 유휴60s/뷰어45s/엣지120s 자동중단 | `stream/application/StreamService.java`, `StreamProperties`(`viewer-ttl`,`idle-timeout`,`edge-lease`) |
 | REQ-NF-08 | 운영 | PostgreSQL/MinIO 일 03:30 KST 자동 백업, 14일 보관 | `backup-william-james.sh`(`pg_dump -Fc`), `WJ_BACKUP_RETENTION_DAYS:-14`, `william-james-backup.timer` |
@@ -105,7 +105,7 @@ MVP 7단계·가족공유 밖이지만 문서·기능 자체는 유지하는 항
 | REQ-F-08 | 비밀번호 재설정(찾기) | FN-A05 | 향후 확장(스텁) — 로컬 스낵바만, 양쪽 다 없음(`auth_screen.dart:249-256`) |
 | REQ-F-09 | 로그인 상태에서 비밀번호 변경 | FN-A29 | 향후 확장(스텁) — 로컬 스낵바만, 양쪽 다 없음(`settings_screen.dart:271-274`) |
 | REQ-F-14 | (OWNER) 기기 소유권 이전 | FN-A24, FN-S06 | 확장 — API-12, 이전대상 ACTIVE 멤버 필요(409 `ALREADY_OWNER`) |
-| REQ-F-15 | (OWNER) 기기 계정 완전 해제 | FN-A34, FN-S06 | 확장 — API-13 |
+| REQ-F-15 | (OWNER) 금고에서 물리 기기 연결 해제 | FN-A34, FN-S06 | API-13은 활성 `device_bindings`만 종료. 금고·영상·구독·금고 멤버십은 보존 |
 | REQ-F-16 | (운영자) 신규 기기 등록, 자격증명 회전/폐기 | FN-S23 | 확장/운영 프로비저닝 — API-47~49, 내부 관리자 키+loopback(`ProvisioningController`) |
 | REQ-F-17 | 홈 화면 오늘의 통계·최근 하이라이트 | FN-A09, FN-S19 | 확장 — API-42, `HomeSummaryService` |
 | REQ-F-20 | 기념일 등록·수정·반복/알림시간 설정 | FN-A14 | 향후 확장(스텁) — `AnniversaryEditorScreen` UI만, 서버 anniversary 코드 0건 |
@@ -134,17 +134,17 @@ MVP 7단계 관련 REQ만 간추린 구현 현황이다.
 | REQ-F-04 | 구현됨 | API-04 |
 | REQ-F-05 | 구현됨 | API-05(소유 기기 있으면 거부) |
 | REQ-F-10 | 구현됨 | API-08, 코드 TTL 120초 + claim 레이트리밋 |
-| REQ-F-12 | 부분 구현 | `recording`/`uploadQueueDepth`는 항상 스텁 값만 반환 |
+| REQ-F-12 | 구현됨 | Redis TTL 기반 ONLINE/OFFLINE 및 heartbeat telemetry를 API-07/11·금고·라이브 판정에 반영 |
 | REQ-F-13 | 구현됨 | API-10 |
 | REQ-F-18 | 구현됨 | API-35~38, MQTT-01/04. `LiveScreen`은 미사용 코드지만 `EmbeddedLivePlayer`로 실제 구현됨 |
 | REQ-F-41 | 구현됨 | `main_shell.dart` |
 | REQ-F-37 | 구현됨 | YAMNet 임계값 판정 → presigned 업로드, systemd 상시 구동 |
 | REQ-F-21 | 구현됨 | API-27 커서 페이지네이션 |
 | REQ-F-22 | 구현됨 | API-31, 재생 URL TTL 5분 |
-| REQ-F-27 | 부분 구현 | Banuba 연동은 동작(Android 전용). 로컬 편집+기기 저장 기준은 충족. 서버 재업로드 여부는 ⚠️ 미확인이나 MVP 판정에는 불요 |
+| REQ-F-27 | 구현됨 | 로컬 편집·온디바이스 자동 자막·기기 저장 동작. 서버 API 불요 |
 | REQ-F-26 | 구현됨 | API-32(다운로드 URL) |
 | REQ-F-19 | 구현됨 | API-27(월 범위 조회) |
 | REQ-F-36 | 구현됨 | API-33. 별도 이벤트 전용 통계 API(API-46)는 구현돼 있으나 클라이언트 미사용 |
 | REQ-F-42 | 부분 구현 | FN-A38 Flutter 단말 집계 화면 구현. FN-S26/API-51 서버 집계는 제안·미구현 |
 
-**ID 검증**: 본문(1.1~1.8절) 고유 REQ-F ID = 01,02,03,04,05,10,12,13,18,41,37,21,22,27,26,19,36,42,28,29,30,31,11 = 23개(REQ-F-27은 1.5·1.6절에 중복 표기되나 동일 ID). 부록 A 고유 REQ-F ID = 06,07,08,09,14,15,16,17,20,23,24,25,32,33,34,35,38,39,40 = 19개. 23+19=42, REQ-F-01~42 전수 반영(결번 없음, 중복 없음). REQ-NF-01~12 전부 2절에 존재(12개). FN 78개·API 51개(06 제외)·MQTT 15개는 각각 `03-features.md`, `04-api-spec.md`에서 확인.
+**ID 검증**: 본문(1.1~1.8절) 고유 REQ-F ID = 01,02,03,04,05,10,12,13,18,41,37,21,22,27,26,19,36,42,28,29,30,31,11 = 23개(REQ-F-27은 1.5·1.6절에 중복 표기되나 동일 ID). 부록 A 고유 REQ-F ID = 06,07,08,09,14,15,16,17,20,23,24,25,32,33,34,35,38,39,40 = 19개. 23+19=42, REQ-F-01~42 전수 반영(결번 없음, 중복 없음). REQ-NF-01~12 전부 2절에 존재(12개). FN 79개·API 51개(06 제외)·MQTT 15개는 각각 `03-features.md`, `04-api-spec.md`에서 확인.

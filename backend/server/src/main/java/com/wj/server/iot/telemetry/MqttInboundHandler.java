@@ -20,6 +20,7 @@ public class MqttInboundHandler {
     private static final Logger log = LoggerFactory.getLogger(MqttInboundHandler.class);
     private final ObjectMapper objectMapper;
     private final DeviceTelemetryMapper telemetryMapper;
+    private final DeviceTelemetryService telemetryService;
     private final StreamEventService streamEventService;
     private final DeviceEventService deviceEventService;
     private final Clock clock;
@@ -28,21 +29,25 @@ public class MqttInboundHandler {
     public MqttInboundHandler(
         ObjectMapper objectMapper,
         DeviceTelemetryMapper telemetryMapper,
+        DeviceTelemetryService telemetryService,
         StreamEventService streamEventService,
         DeviceEventService deviceEventService
     ) {
-        this(objectMapper, telemetryMapper, streamEventService, deviceEventService, Clock.systemUTC());
+        this(objectMapper, telemetryMapper, telemetryService,
+            streamEventService, deviceEventService, Clock.systemUTC());
     }
 
     MqttInboundHandler(
         ObjectMapper objectMapper,
         DeviceTelemetryMapper telemetryMapper,
+        DeviceTelemetryService telemetryService,
         StreamEventService streamEventService,
         DeviceEventService deviceEventService,
         Clock clock
     ) {
         this.objectMapper = objectMapper;
         this.telemetryMapper = telemetryMapper;
+        this.telemetryService = telemetryService;
         this.streamEventService = streamEventService;
         this.deviceEventService = deviceEventService;
         this.clock = clock;
@@ -83,7 +88,7 @@ public class MqttInboundHandler {
         Integer personCount = body.hasNonNull("personCount")
             ? nonNegativeInt(body, "personCount", 0) : null;
         String firmware = boundedText(body, "firmwareVersion", 40);
-        telemetryMapper.recordHeartbeat(deviceId, body.path("recording").asBoolean(false),
+        telemetryService.recordHeartbeat(deviceId, body.path("recording").asBoolean(false),
             queueDepth, bufferSeconds, personCount, firmware);
     }
 
@@ -105,7 +110,7 @@ public class MqttInboundHandler {
     private void status(UUID deviceId, JsonNode body) {
         String state = text(body, "state");
         if ("ONLINE".equals(state) || "OFFLINE".equals(state)) {
-            telemetryMapper.recordConnectionState(deviceId, "ONLINE".equals(state),
+            telemetryService.recordConnectionState(deviceId, "ONLINE".equals(state),
                 boundedText(body, "firmwareVersion", 40));
         }
     }

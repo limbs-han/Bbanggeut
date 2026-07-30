@@ -41,6 +41,8 @@ API 계약은 [`../../자료/api/openapi.yaml`](../../자료/api/openapi.yaml), 
 실제 값은 `.env`나 배포 서버의 secret 환경 파일에 두고 Git에 커밋하지 않는다. 전체 목록은 [`.env.example`](.env.example)을 참고한다.
 
 - `DB_URL`, `DB_USER`, `DB_PASSWORD`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`: 로그인/claim 제한과 기기 presence 저장소
+- `DEVICE_PRESENCE_TTL`: heartbeat 기반 ONLINE 유지 시간, 기본 90초
 - `JWT_SIGNING_KEY`: 32바이트 이상 임의 문자열
 - `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
 - `MQTT_BROKER_URL`, `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_ENV`

@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.device.api.ClaimDeviceRequest;
 import com.wj.server.device.api.DeviceResponse;
 import com.wj.server.device.api.DeviceSummaryResponse;
@@ -18,6 +19,8 @@ import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
 import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
+import com.wj.server.iot.telemetry.DevicePresenceSnapshot;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.vault.persistence.VaultMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -33,6 +36,7 @@ public class DeviceService {
     private final AuditService auditService;
     private final DeviceMqttIdentityManager mqttIdentityManager;
     private final VaultMapper vaultMapper;
+    private final DevicePresenceStore presenceStore;
     private final Clock clock;
 
     @Autowired
@@ -43,10 +47,11 @@ public class DeviceService {
         ClaimAttemptService claimAttemptService,
         AuditService auditService,
         DeviceMqttIdentityManager mqttIdentityManager,
-        VaultMapper vaultMapper
+        VaultMapper vaultMapper,
+        DevicePresenceStore presenceStore
     ) {
         this(deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, mqttIdentityManager, vaultMapper,
+            claimAttemptService, auditService, mqttIdentityManager, vaultMapper, presenceStore,
             Clock.systemUTC());
     }
 
@@ -58,6 +63,7 @@ public class DeviceService {
         AuditService auditService,
         DeviceMqttIdentityManager mqttIdentityManager,
         VaultMapper vaultMapper,
+        DevicePresenceStore presenceStore,
         Clock clock
     ) {
         this.deviceMapper = deviceMapper;
@@ -67,12 +73,14 @@ public class DeviceService {
         this.auditService = auditService;
         this.mqttIdentityManager = mqttIdentityManager;
         this.vaultMapper = vaultMapper;
+        this.presenceStore = presenceStore;
         this.clock = clock;
     }
 
     @Transactional
     public DeviceResponse claim(UUID userId, ClaimDeviceRequest request, String ipAddress) {
-        claimAttemptService.reserveOrReject(userId, ipAddress);
+        SlidingWindowRateLimiter.Reservation reservation =
+            claimAttemptService.reserveOrReject(userId, ipAddress);
         UUID attemptedDeviceId = null;
         try {
             // The submitted code identifies the device: the hash lookup is the
@@ -111,9 +119,9 @@ public class DeviceService {
             deviceMapper.insertOwnerMembership(code.deviceId(), userId);
             deviceMapper.syncMembershipsFromVault(code.deviceId());
             DeviceResponse response = deviceMapper.findAccessibleDevice(userId, code.deviceId())
-                .map(this::toDeviceResponse)
+                .map(this::toCurrentDeviceResponse)
                 .orElseThrow(() -> new IllegalStateException("Claimed device is not accessible to its owner"));
-            claimAttemptService.clearFailures(userId);
+            claimAttemptService.completeSuccess(reservation);
             auditService.success(code.deviceId(), userId, "DEVICE_CLAIM", "DEVICE", code.deviceId());
             return response;
         } catch (ApiException exception) {
@@ -131,15 +139,19 @@ public class DeviceService {
 
     @Transactional(readOnly = true)
     public List<DeviceSummaryResponse> list(UUID userId) {
-        return deviceMapper.findAccessibleDevices(userId).stream()
-            .map(this::toSummaryResponse)
+        List<DeviceViewRow> rows = deviceMapper.findAccessibleDevices(userId);
+        DevicePresenceStore.BatchLookup presence =
+            presenceStore.findAll(rows.stream().map(DeviceViewRow::id).toList());
+        return rows.stream()
+            .map(row -> toSummaryResponse(
+                row, presence.storeAvailable(), presence.snapshots().get(row.id())))
             .toList();
     }
 
     @Transactional(readOnly = true)
     public DeviceResponse get(UUID userId, UUID deviceId) {
         return deviceMapper.findAccessibleDevice(userId, deviceId)
-            .map(this::toDeviceResponse)
+            .map(this::toCurrentDeviceResponse)
             .orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다."));
     }
@@ -157,7 +169,7 @@ public class DeviceService {
         vaultMapper.updateRetentionForDevice(
             deviceId, request.retentionDaysPresent(), request.retentionDays());
         DeviceResponse response = deviceMapper.findAccessibleDevice(userId, deviceId)
-            .map(this::toDeviceResponse)
+            .map(this::toCurrentDeviceResponse)
             .orElseThrow(this::notFound);
         auditService.success(deviceId, userId, "DEVICE_UPDATE", "DEVICE", deviceId);
         return response;
@@ -166,6 +178,17 @@ public class DeviceService {
     @Transactional
     public DeviceStatusResponse status(UUID userId, UUID deviceId) {
         deviceMapper.findAccessibleDevice(userId, deviceId).orElseThrow(this::notFound);
+        DevicePresenceStore.Lookup presence = presenceStore.find(deviceId);
+        if (presence.storeAvailable()) {
+            DevicePresenceSnapshot snapshot = presence.snapshot();
+            return snapshot == null
+                ? new DeviceStatusResponse(deviceId, "OFFLINE", false, 0, null, null, clock.instant())
+                : new DeviceStatusResponse(
+                    deviceId, "ONLINE", snapshot.recording(), snapshot.uploadQueueDepth(),
+                    snapshot.bufferSeconds(), snapshot.personCount(), clock.instant());
+        }
+
+        // Redis outages fall back to the previous durable last-seen behavior.
         deviceMapper.markOfflineIfStale(deviceId);
         var status = deviceMapper.findAccessibleStatus(userId, deviceId).orElseThrow(this::notFound);
         return new DeviceStatusResponse(
@@ -244,17 +267,34 @@ public class DeviceService {
         }
     }
 
-    private DeviceSummaryResponse toSummaryResponse(DeviceViewRow row) {
+    private DeviceSummaryResponse toSummaryResponse(
+        DeviceViewRow row,
+        boolean storeAvailable,
+        DevicePresenceSnapshot snapshot
+    ) {
+        String status = storeAvailable ? (snapshot == null ? "OFFLINE" : "ONLINE") : row.status();
+        java.time.Instant lastSeenAt =
+            storeAvailable && snapshot != null ? snapshot.lastSeenAt() : row.lastSeenAt();
         return new DeviceSummaryResponse(
-            row.id(), row.name(), row.model(), row.status(), row.myRole(),
-            row.retentionDays(), row.lastSeenAt());
+            row.id(), row.name(), row.model(), status, row.myRole(),
+            row.retentionDays(), lastSeenAt);
     }
 
-    private DeviceResponse toDeviceResponse(DeviceViewRow row) {
+    private DeviceResponse toCurrentDeviceResponse(DeviceViewRow row) {
+        DevicePresenceStore.Lookup presence = presenceStore.find(row.id());
+        DevicePresenceSnapshot snapshot = presence.snapshot();
+        String status = presence.storeAvailable()
+            ? (snapshot == null ? "OFFLINE" : "ONLINE")
+            : row.status();
+        java.time.Instant lastSeenAt =
+            presence.storeAvailable() && snapshot != null ? snapshot.lastSeenAt() : row.lastSeenAt();
+        String firmwareVersion = presence.storeAvailable() && snapshot != null
+            && snapshot.firmwareVersion() != null
+            ? snapshot.firmwareVersion() : row.firmwareVersion();
         return new DeviceResponse(
-            row.id(), row.name(), row.model(), row.status(), row.myRole(),
-            row.retentionDays(), row.lastSeenAt(), row.serialNumber(),
-            row.firmwareVersion(), row.claimedAt());
+            row.id(), row.name(), row.model(), status, row.myRole(),
+            row.retentionDays(), lastSeenAt, row.serialNumber(),
+            firmwareVersion, row.claimedAt());
     }
 
     private ApiException claimRejected() {

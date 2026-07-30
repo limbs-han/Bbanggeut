@@ -32,6 +32,8 @@ public class SlidingWindowRateLimiter {
 
     private static final RedisScript<Long> SLIDING_WINDOW = RedisScript.of(
         new ClassPathResource("redis/sliding-window.lua"), Long.class);
+    private static final RedisScript<Long> COMPLETE_SUCCESS = RedisScript.of(
+        new ClassPathResource("redis/complete-successful-attempt.lua"), Long.class);
 
     private final StringRedisTemplate redis;
 
@@ -49,35 +51,57 @@ public class SlidingWindowRateLimiter {
      *
      * @return true when the attempt may proceed
      */
-    public boolean tryAcquire(String identityKey, String addressKey, Duration window, int limit) {
+    public Reservation reserve(String identityKey, String addressKey, Duration window, int limit) {
+        String memberId = UUID.randomUUID().toString();
+        Reservation reservation = new Reservation(identityKey, addressKey, memberId);
         try {
             Long admitted = redis.execute(
                 SLIDING_WINDOW,
                 List.of(identityKey, addressKey),
                 Long.toString(window.toMillis()),
                 Integer.toString(limit),
-                UUID.randomUUID().toString());
-            return !Long.valueOf(0L).equals(admitted);
+                memberId);
+            return Long.valueOf(0L).equals(admitted) ? null : reservation;
         } catch (DataAccessException exception) {
             LOGGER.warn(
                 "Rate limiter unavailable, allowing attempt identityKey={} addressKey={}",
                 identityKey, addressKey, exception);
-            return true;
+            return reservation;
         }
     }
 
     /**
-     * Forgets the attempts recorded for one bucket.
-     *
-     * <p>Only ever called for an identity bucket. Clearing the address bucket
-     * would let anyone holding a single valid credential wipe the budget that
-     * limits guessing against every other account from that address.
+     * Convenience API for callers that do not need to undo a successful
+     * reservation.
      */
-    public void reset(String key) {
+    public boolean tryAcquire(String identityKey, String addressKey, Duration window, int limit) {
+        return reserve(identityKey, addressKey, window, limit) != null;
+    }
+
+    /**
+     * Clears earlier failures for the accepted identity and removes only the
+     * successful request from the shared address bucket.
+     *
+     * <p>The address bucket may contain failed attempts against other accounts,
+     * so deleting the whole key would let one valid credential erase another
+     * user's guessing history. The Lua script performs both operations
+     * atomically and removes the address member associated with this exact
+     * reservation.
+     */
+    public void completeSuccess(Reservation reservation) {
         try {
-            redis.delete(key);
+            redis.execute(
+                COMPLETE_SUCCESS,
+                List.of(reservation.identityKey(), reservation.addressKey()),
+                reservation.memberId());
         } catch (DataAccessException exception) {
-            LOGGER.warn("Rate limiter unavailable, keeping recorded attempts key={}", key, exception);
+            LOGGER.warn(
+                "Rate limiter unavailable, could not complete successful reservation "
+                    + "identityKey={} addressKey={}",
+                reservation.identityKey(), reservation.addressKey(), exception);
         }
+    }
+
+    public record Reservation(String identityKey, String addressKey, String memberId) {
     }
 }

@@ -171,6 +171,7 @@
 | devices | List | 활성 Device Binding과 물리 기기 정보. 연결 기기가 없으면 빈 배열 |
 
 - 비고: 금고는 기기가 없어도 유지된다. 멤버십·구독·영상 접근 권한은 기기가 아니라 금고에 귀속된다.
+- 앱 연동: 로그인 직후 목록을 조회해 `selectedVault`를 복원한다. `devices`가 비어 있으면 `VaultArchiveScreen`에서 `GET /api/videos?vaultId=...`로 과거 영상을 조회하고, 새 기기 연결 시 claim 요청에 이 금고의 `id`를 넣는다.
 
 ### API-43 `POST /api/iot/registration-codes`
 
@@ -247,8 +248,8 @@
 |---|---|---|---|
 | deviceId | UUID | 필수 | 기기 ID |
 | status | String | 필수 | 상태 |
-| recording | boolean | 필수 | 녹화 중 여부(MQTT heartbeat 기반, 기기 측 항상 false 스텁) |
-| uploadQueueDepth | int | 필수 | 업로드 대기열 깊이(기기 측 항상 0 스텁) |
+| recording | boolean | 필수 | 최근 MQTT heartbeat가 보고한 녹화 중 여부 |
+| uploadQueueDepth | int | 필수 | 최근 MQTT heartbeat가 보고한 업로드 대기열 깊이 |
 | bufferSeconds | Integer | 옵션(nullable) | 버퍼 초 |
 | personCount | Integer | 옵션(nullable) | 인원 수 |
 | checkedAt | Instant | 필수 | 조회 시각 |
@@ -734,7 +735,7 @@
 |---|---|---|---|---|
 | MQTT-02 | `{base}/devices/+/status` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, state: ONLINE\|OFFLINE, firmwareVersion?}`. 연결(ONLINE)/LWT(OFFLINE)/정상 종료 시 발행 |
 | MQTT-03 | `{base}/devices/+/commands/ack` | 기기→백엔드 | 1 | `{schemaVersion, requestId, deviceId, status: ACCEPTED\|SUCCEEDED\|FAILED\|REJECTED\|EXPIRED, ...}`. 명령 수신·처리마다 발행 |
-| MQTT-05 | `{base}/devices/+/heartbeat` | 기기→백엔드 | 0 | `{schemaVersion, deviceId, recording, uploadQueueDepth, bufferSeconds?, personCount?, firmwareVersion}`. 30초 주기 |
+| MQTT-05 | `{base}/devices/+/heartbeat` | 기기→백엔드 | 0 | `{schemaVersion, deviceId, recording, uploadQueueDepth, bufferSeconds?, personCount?, firmwareVersion}`. 30초 주기이며 서버는 Redis presence를 90초 TTL로 갱신한다. TTL 만료는 별도 DB sweep 없이 OFFLINE을 뜻한다. |
 | MQTT-06 | `{base}/devices/+/registration` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, mode: ENABLED\|DISABLED, expiresAt?}`. 등록 코드 발급은 실제로 API-43(HTTP)으로만 이루어진다 |
 | MQTT-07 | `{base}/devices/+/events` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, eventId, type, occurredAt, confidence?, localClip, source}`. 웃음 감지→업로드 흐름은 실제로 API-25/26(HTTP)으로만 동작한다 |
 | MQTT-08 | `$CONTROL/dynamic-security/v1` | 백엔드→브로커 | 1 | 기기별 MQTT 계정/ACL 생성·회전·비활성화(Mosquitto dynamic-security 관리 채널) |

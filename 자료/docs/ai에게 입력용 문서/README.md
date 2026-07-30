@@ -18,7 +18,7 @@
 |---|---|---|
 | [`01-service-overview.md`](./01-service-overview.md) | - | 서비스 정의, 타겟, 핵심가치, MVP 7단계 개요, 아키텍처, 가족 공유 역할모델 |
 | [`02-requirements.md`](./02-requirements.md) | REQ-F-01~42, REQ-NF-01~12 | 기능/비기능 요구사항 (MVP 7단계 + 가족공유 본문, 확장 항목 부록) |
-| [`03-features.md`](./03-features.md) | FN-A01~38, FN-S01~26, FN-E01~10, FN-H01~04 (계 78개) | 화면/도메인/엣지/하드웨어별 기능, **경로 매핑 총람**(화면↔dart, 도메인↔패키지, MQTT↔양쪽 코드) |
+| [`03-features.md`](./03-features.md) | FN-A01~39, FN-S01~26, FN-E01~10, FN-H01~04 (계 79개) | 화면/도메인/엣지/하드웨어별 기능, **경로 매핑 총람**(화면↔dart, 도메인↔패키지, MQTT↔양쪽 코드) |
 | [`04-api-spec.md`](./04-api-spec.md) | API-01~51(06 제외), MQTT-01~15 | 엔드포인트/토픽별 요청·응답 JSON 예시(복사 가능), 에러코드 |
 
 ## "이럴 때 이 파일을 붙여라"

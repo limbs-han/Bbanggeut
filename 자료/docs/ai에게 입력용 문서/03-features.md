@@ -3,7 +3,7 @@
 > 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 5979279
 > 사람용 원본: [../사람이 읽을 문서/03-기능명세서.md](../사람이%20읽을%20문서/03-기능명세서.md)
 
-ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호. 앱38(A01~A38) + 서버26(S01~S26) + 엣지10(E01~10) + 하드웨어4(H01~04) = **78개**(기존 76 + 신규 FN-A38, FN-S26). 배치는 MVP 7단계 순서(사람용 원본과 동일 구조).
+ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호. 앱39(A01~A39) + 서버26(S01~S26) + 엣지10(E01~10) + 하드웨어4(H01~04) = **79개**. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조).
 
 **FN-A38 Flutter 리포트 화면은 구현됐다. FN-S26 서버 집계만 `[제안·미구현]`이다. 코드 경로가 없는 FN-S26/API-51을 존재하는 코드로 가정하지 말 것.**
 
@@ -72,11 +72,15 @@ ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호
 ```mermaid
 flowchart TD
     Splash["스플래시 / 딥링크 처리\napp.dart (FN-A01)"] -->|미인증| Auth["AuthScreen\n로그인·회원가입 (FN-A02, A03)"]
-    Splash -->|인증됨| Shell["MainShell (FN-A06)"]
+    Splash -->|인증됨| VaultLoad["GET /api/vaults\nselectedVault 복원"]
 
-    Auth -->|로그인/회원가입 성공| Shell
-    Shell -->|기기 없음| DeviceReg["DeviceRegistrationScreen\nQR/코드 등록 (FN-A07)"]
-    DeviceReg -->|등록 성공| Shell
+    Auth -->|로그인/회원가입 성공| VaultLoad
+    VaultLoad -->|금고 없음| DeviceReg["DeviceRegistrationScreen\nQR/코드 등록 (FN-A07)"]
+    VaultLoad -->|금고 있음 + 활성 기기| Shell["MainShell (FN-A06)"]
+    VaultLoad -->|금고 있음 + 기기 없음| VaultArchive["VaultArchiveScreen\n금고 과거 영상 조회"]
+    VaultArchive -->|GET /api/videos?vaultId=...| VideoDetail
+    VaultArchive -->|새 기기 연결, vaultId 포함| DeviceReg
+    DeviceReg -->|등록 성공| VaultLoad
     DeviceReg --> InvInbox["InvitationInboxScreen\n받은 초대함 (FN-A25)"]
     DeviceReg -->|로그아웃| Auth
 
@@ -96,7 +100,7 @@ flowchart TD
     LaughReport --> ReportScreen["LaughReportContentScreen\n날짜별 단말 집계 리포트 (FN-A38)"]
     ReportScreen --> VideoDetail
 
-    VideoDetail --> LocalEdit["LocalEditScreen\nBanuba 수동 편집 (FN-A21)"]
+    VideoDetail --> LocalEdit["LocalEditScreen\n로컬 편집 + 자동 자막 (FN-A21, A39)"]
     LocalEdit -->|편집 완료| Gallery["갤러리 저장 + SNS/메신저 공유"]
 
     Settings --> InvInbox
@@ -107,6 +111,7 @@ flowchart TD
 ```
 
 - 탭 순서(인덱스 0~4): 홈 / 캘린더 / 추억 / 가족 / 설정.
+- 앱 최상위 선택 상태는 물리 기기(`selectedDevice`)가 아니라 추억 금고(`selectedVault`)다. 기기 해제 후에도 금고·영상·멤버십·구독은 유지되며, `GET /api/vaults` 재조회 결과에 따라 `VaultArchiveScreen` 또는 5탭 화면으로 이동한다.
 - 미사용 `LiveScreen`(FN-A12, 부록A)은 실제 진입 경로가 없어 다이어그램에서 제외(항목 자체는 부록A 유지). 기념일 편집(`AnniversaryEditorScreen`), 알림 목록(`NotificationsScreen`) 등 MVP·가족공유 밖 보조 화면도 생략(부록A 참고).
 - **`LaughReportContentScreen`(FN-A38)은 구현됐다** — `AppController.videos`의 `LAUGHTER` 항목을 날짜별로 단말 집계한다. 주간/월간 서버 집계는 FN-S26/API-51 범위다.
 
@@ -162,7 +167,7 @@ flowchart TD
 | FN-A01 | 앱 진입/세션 확인/딥링크 처리 | 폰 | 로컬 세션 토큰 유무로 `AuthScreen`/`MainShell` 분기. `bbanggeut://membership-request/{token}` 딥링크는 대기열 저장 후 처리 | REQ-F-03 | `app/app.dart`, `app/app_controller.dart` |
 | FN-A02 | 로그인 | 폰+서버 | 이메일/비밀번호 검증 후 로그인. 실패 5회/10분 초과 시 일시 차단 | REQ-F-02 / API-02 | `ui/auth_screen.dart` — 401 `INVALID_CREDENTIALS`, 429 `LOGIN_RATE_LIMITED` |
 | FN-A03 | 회원가입 | 폰+서버 | 이메일/비밀번호/표시 이름으로 계정 생성, 성공 시 즉시 토큰 발급 | REQ-F-01 / API-01 | `ui/auth_screen.dart` — 409 `EMAIL_ALREADY_EXISTS` |
-| FN-S01 | 회원가입/로그인/토큰 갱신 | 서버 | 액세스15분/리프레시14일(rotate-on-use), 해시 저장, 로그인 5회/10분 레이트리밋 | REQ-F-01,02 / API-01,02,03 | `auth/api/AuthController.java`, `auth/application/AuthService.java`, `LoginAttemptService.java` |
+| FN-S01 | 회원가입/로그인/토큰 갱신 | 서버 | 액세스15분/리프레시14일(rotate-on-use), 해시 저장. 로그인 실패는 Redis 슬라이딩 윈도우에서 이메일+IP 지문 기준 5회/10분 제한하며 성공 예약은 IP 버킷에서 제거. 실패 해시는 PostgreSQL 감사 이력으로 보관 | REQ-F-01,02 / API-01,02,03 | `auth/api/AuthController.java`, `auth/application/AuthService.java`, `LoginAttemptService.java`, `common/ratelimit/SlidingWindowRateLimiter.java` |
 | FN-A32 | 로그아웃 | 폰+서버 | 세션 종료 후 로컬 세션 삭제, 로그인 화면 이동 | REQ-F-04 / API-04 | `ui/settings_screen.dart`, `ui/device_registration_screen.dart` |
 | FN-A33 | 회원 탈퇴 | 폰+서버 | 소유 기기가 있으면 탈퇴 불가 | REQ-F-05 / API-05 | `ui/settings_screen.dart` — 409 `OWNER_MEMBERSHIP_EXISTS` |
 | FN-S02 | 로그아웃/회원 탈퇴 처리 | 서버 | 로그아웃=세션 단위 무효화, 탈퇴는 소유 기기 있으면 거부 | REQ-F-04,05 / API-04,05 | `auth/api/AuthController.java`, `auth/application/AuthService.java` |
@@ -176,12 +181,12 @@ flowchart TD
 | FN-E02 | 등록 코드 발급 요청/표시 | 젯슨 | 등록 버튼 입력 시 서버에 등록 코드 요청해 화면(⚠️ 물리 LCD 아님, `print()`만) 표시 | REQ-F-10 / API-43 | `ai/device_agent/registration_button.py`, `registration-button.sh`, `wj_device_agent/provision.py` |
 | FN-S20 | 등록 코드 발급 | 서버 | TTL 120초, 해시 저장, 이미 claim된 기기는 재발급 거부, 코드 중복 시 최대 5회 재생성 | REQ-F-10 / API-43 | `device/api/IotRegistrationController.java`, `RegistrationCodeService.java` |
 | FN-A07 | QR/코드 기기 등록 | 폰+서버 | QR 스캔 또는 8자리 코드 입력으로 claim 요청 | REQ-F-10 / API-08 | `ui/device_registration_screen.dart` — 429 `CLAIM_RATE_LIMITED`, 409 `DEVICE_CLAIM_REJECTED` |
-| FN-S04 | 기기 등록(claim) | 서버 | claim 실패 5회/10분 초과 시 429, 활성 OWNER 정확히 1명 보장 | REQ-F-10 / API-08 | `device/api/DeviceController.java`, `ClaimAttemptService.java` |
+| FN-S04 | 기기 등록(claim) | 서버 | claim 실패 5회/10분 초과 시 429. `vaultId`가 없으면 새 금고와 OWNER 멤버십을 만들고, 있으면 해당 금고 OWNER 권한을 검증해 활성 Device Binding을 생성한다. 기기별 binding generation 이력을 보존한다 | REQ-F-10 / API-08 | `device/api/DeviceController.java`, `DeviceService.java`, `ClaimAttemptService.java` |
 | FN-E01 | 기기 프로비저닝(자격증명 발급/회전) | 젯슨+서버 | BOOTSTRAP(TTL15분) 토큰을 OPERATING(TTL30일) 자격증명으로 교환·회전 | REQ-F-10 / API-44,45 | `ai/device_agent/wj_device_agent/provision.py`(`DeviceApi.enroll`/`rotate`) |
 | FN-S21 | 기기 자격증명 발급/회전 | 서버 | BOOTSTRAP15분/OPERATING30일, 기기당 활성 자격증명 1개 | REQ-F-10 / API-44,45 | `iot/auth/DeviceCredentialController.java`, `provisioning/application/ProvisioningService.java` |
 | FN-E03 | 상태·하트비트 보고 | 젯슨 | 연결/종료 시 상태 발행(LWT 포함), 30초 주기 하트비트 | REQ-F-12 / MQTT-02,05 | `ai/device_agent/wj_device_agent/agent.py:71-76,92,104,211-225`(⚠️ 일부 필드 스텁) |
-| FN-S03 | 기기 목록/단건 조회 | 서버 | 호출자의 활성 멤버십 기준으로 접근 가능한 기기만 필터링 | REQ-F-12 / API-07 | `device/api/DeviceController.java`, `DeviceService.java` — API-09는 클라이언트 미사용(죽은 경로) |
-| FN-S05 | 기기 설정 변경/상태 조회 | 서버 | 이름·보관기간(1~3650일) 변경은 OWNER만, `recording`/`uploadQueueDepth`는 MQTT-05 스텁값 그대로 노출 | REQ-F-12,13 / API-10,11 | `device/api/DeviceController.java` |
+| FN-S03 | 금고·기기 목록/단건 조회 | 서버 | `vault_memberships`를 접근권한 기준으로 금고와 활성 `device_bindings`를 조회한다. 기기가 없는 금고도 반환하며, Redis presence를 batch 조회해 연결 기기의 현재 상태를 합성한다 | REQ-F-12 / Vault API, API-07 | `vault/api/VaultController.java`, `vault/application/VaultService.java`, `device/api/DeviceController.java`, `DeviceService.java`, `iot/telemetry/DevicePresenceStore.java` |
+| FN-S05 | 기기 설정 변경/상태 조회 | 서버 | 이름·보관기간(1~3650일) 변경은 OWNER만. 상태 조회는 Redis heartbeat의 ONLINE·recording·uploadQueueDepth·bufferSeconds·personCount를 반환하고 장애 시 DB 폴백 | REQ-F-12,13 / API-10,11 | `device/api/DeviceController.java`, `DeviceService.java` |
 | FN-A27 | 기기 이름/보관기간 변경 | 폰+서버 | OWNER가 기기 표시 이름과 영상 보관 기간(일)을 변경 | REQ-F-13 / API-10 | `ui/settings_screen.dart` — 422, 403 |
 
 ---
@@ -196,7 +201,7 @@ flowchart TD
 | FN-A37 | 재생 컨트롤(공용) | 폰 | 저장 영상/라이브 겸용 재생 UI | REQ-F-18,22 | `ui/media_player_surface.dart` — isLive 여부로 컨트롤 분기 |
 | FN-S16 | 라이브 재생 인가 확인 | 서버 | 재생 토큰 서명 검증해 재생 허용 여부 응답 | REQ-F-18 / API-34 | `stream/api/LiveIntrospectionController.java`, `LiveTokenService.java` — 공개(permitAll), 호출주체 ⚠️미확인(MediaMTX 추정) |
 | FN-S17 | 라이브 세션 생성/조회/종료/하트비트 | 서버 | READY 응답에 토큰 포함 `whepUrl`+`playUrl`, 오프라인 거부, 뷰어TTL45s/유휴60s/엣지lease120s/하트비트15s/토큰30s | REQ-F-18 / API-35~38 | `StreamSessionResponse.java`, `StreamService.java`, `StreamProperties` |
-| FN-S25 | 기기 상태/명령/이벤트 MQTT 채널 | 서버+젯슨 | 스트림 시작/연장/종료 명령(15초 만료) 전달, 상태·하트비트 수신 | REQ-F-12,18 / MQTT-01~05 | `iot/mqtt/PahoMqttGateway.java`, `iot/telemetry/MqttInboundHandler.java`, `stream/application/StreamCommandPublisher.java`, `StreamEventService.java`, `iot/event/DeviceEventService.java` — 상세는 10절 |
+| FN-S25 | 기기 상태/명령/이벤트 MQTT 채널 | 서버+젯슨 | 스트림 명령 전달, 상태·하트비트 수신. heartbeat는 Redis `presence:device:{id}` 90초 TTL을 갱신하고 Redis 장애 시에만 PostgreSQL UPDATE 폴백 | REQ-F-12,18 / MQTT-01~05 | `iot/mqtt/PahoMqttGateway.java`, `iot/telemetry/MqttInboundHandler.java`, `DeviceTelemetryService.java`, `DevicePresenceStore.java`, `stream/application/StreamCommandPublisher.java` |
 | FN-E04 | 원격 명령 수신/ACK | 젯슨 | `START_STREAM`/`EXTEND_STREAM`/`STOP_STREAM` 처리 후 ACK 발행 | REQ-F-18 / MQTT-01,03 | `agent.py:103,133,237-262` — PING 분기는 죽은 코드 |
 | FN-E05 | 라이브 스트림 송출(RTSPS) | 젯슨 | ffmpeg로 RTSPS 송출, 하드 만료 검사로 자동 종료, 기기당 스트림 1개 | REQ-F-18 / MQTT-04 | `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py` |
 
@@ -220,9 +225,10 @@ flowchart TD
 
 | FN ID | 기능 | 담당 | 동작 규칙 | 관련 REQ·API | 코드 경로 |
 |---|---|---|---|---|---|
-| FN-A21 | 로컬 영상 편집(Banuba) | 폰 | 서명 다운로드 URL로 원본을 내려받아 Banuba 편집기(9:16 변환 등, Android 전용)로 수동 편집, 결과는 로컬 저장 | REQ-F-27 / API-32(재사용) | `ui/local_edit_screen.dart`, `core/banuba_video_editor.dart`, `core/portrait_video_canvas.dart` — ⚠️ 서버 재업로드 API 호출 코드 미발견 |
+| FN-A21 | 로컬 영상 편집 | 폰 | 서명 다운로드 URL로 원본을 내려받아 자르기·비율 변환·자막·효과를 적용하고 결과를 갤러리에 저장 | REQ-F-27 / API-32(재사용) | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt` |
+| FN-A39 | 온디바이스 자동 자막 | 폰 | 원본을 내려받은 직후 기기에서 음성을 분석해 시각별 자막을 만들고 줄마다 수정할 수 있게 한다. 오디오·전사문은 외부로 전송하지 않으며 저장 시 다른 편집 효과와 한 번에 인코딩한다 | REQ-F-27 / 서버 API 없음 | `features/stt/*`, `SttChannel.kt`, `SubtitleOverlay.kt` |
 
-별도 서버 API는 필요하지 않다 — 편집은 전적으로 폰에서 이루어지고, 원본 다운로드는 6절과 같은 API-32를 재사용한다.
+별도 서버 API는 필요하지 않다. 편집과 자막 생성은 전적으로 폰에서 이루어지고, 원본 다운로드는 6절과 같은 API-32를 재사용한다. 음성 인식 모델 `frontend/assets/models/ggml-small-ko-q5_0.bin`은 약 167MiB이며, 전사 실패나 무음 판정은 자르기·저장을 막지 않는다. 직접 입력한 한 줄 자막이 있으면 자동 자막보다 우선한다.
 
 ---
 
@@ -364,4 +370,4 @@ MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 �
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장+공유, 원본 서버 다운로드 동작 |
 | 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-51 서버 집계는 제안·미구현** |
 
-**ID 검증**: 본문(2~9절) 고유 FN 개수 = 앱23(A01,A02,A03,A06,A07,A08,A10,A11,A13,A15,A17,A20,A21,A22,A23,A24,A25,A27,A32,A33,A36,A37,A38) + 서버20(S01,S02,S03,S04,S05,S07,S08,S09,S10,S11,S12,S14,S15,S16,S17,S20,S21,S22,S25,S26) + 엣지7(E01~E07) = 50. 부록A 고유 FN 개수 = 앱15(A04,A05,A09,A12,A14,A16,A18,A19,A26,A28,A29,A30,A31,A34,A35) + 서버6(S06,S13,S18,S19,S23,S24) + 엣지3(E08,E09,E10) + 하드웨어4(H01~H04) = 28. 50+28=78, FN-A01~38·FN-S01~26·FN-E01~10·FN-H01~04 전수 반영(결번·중복 없음, FN-A21/FN-S12/FN-S14는 6·7절 또는 5·8절에서 의도적 재사용 표기). MQTT-01~15 전수는 10절에서 확인(4절 2개 + 10절 13개).
+**ID 검증**: 본문(2~9절) 고유 FN 개수 = 앱24(A01,A02,A03,A06,A07,A08,A10,A11,A13,A15,A17,A20,A21,A22,A23,A24,A25,A27,A32,A33,A36,A37,A38,A39) + 서버20(S01,S02,S03,S04,S05,S07,S08,S09,S10,S11,S12,S14,S15,S16,S17,S20,S21,S22,S25,S26) + 엣지7(E01~E07) = 51. 부록A 고유 FN 개수 = 앱15(A04,A05,A09,A12,A14,A16,A18,A19,A26,A28,A29,A30,A31,A34,A35) + 서버6(S06,S13,S18,S19,S23,S24) + 엣지3(E08,E09,E10) + 하드웨어4(H01~H04) = 28. 51+28=79, FN-A01~39·FN-S01~26·FN-E01~10·FN-H01~04 전수 반영(결번·중복 없음, FN-A21/FN-S12/FN-S14는 여러 단계에서 의도적으로 재사용 표기). MQTT-01~15 전수는 10절에서 확인.

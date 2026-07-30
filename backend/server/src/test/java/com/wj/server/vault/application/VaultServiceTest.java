@@ -3,6 +3,7 @@ package com.wj.server.vault.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 import java.time.Instant;
 import java.util.List;
@@ -10,6 +11,8 @@ import java.util.UUID;
 
 import com.wj.server.vault.domain.VaultViewRow;
 import com.wj.server.vault.persistence.VaultMapper;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -19,6 +22,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class VaultServiceTest {
     @Mock
     private VaultMapper mapper;
+    @Mock
+    private DevicePresenceStore presenceStore;
+    private VaultService service;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(presenceStore.findAll(org.mockito.ArgumentMatchers.anyList()))
+            .thenReturn(new DevicePresenceStore.BatchLookup(false, java.util.Map.of()));
+        service = new VaultService(mapper, presenceStore);
+    }
 
     @Test
     void listsVaultWithoutDeviceSoMemoriesRemainReachableAfterDisconnect() {
@@ -29,7 +42,7 @@ class VaultServiceTest {
                 vaultId, "우리 집", "ACTIVE", "OWNER", 30, true, null,
                 null, 0, null, null, null, null, null)));
 
-        var response = new VaultService(mapper).list(userId);
+        var response = service.list(userId);
 
         assertThat(response).hasSize(1);
         assertThat(response.get(0).id()).isEqualTo(vaultId);
@@ -48,7 +61,7 @@ class VaultServiceTest {
             row(vaultId, firstDevice, "거실", now),
             row(vaultId, secondDevice, "부모님 댁", now)));
 
-        var response = new VaultService(mapper).list(userId);
+        var response = service.list(userId);
 
         assertThat(response).hasSize(1);
         assertThat(response.get(0).devices())
@@ -68,7 +81,7 @@ class VaultServiceTest {
                     30, false, null, null, 0,
                     null, null, null, null, null)));
 
-        var response = new VaultService(mapper).create(userId, " 새 금고 ");
+        var response = service.create(userId, " 새 금고 ");
 
         verify(mapper).insertVault(response.id(), "새 금고");
         verify(mapper).insertOwner(response.id(), userId);
