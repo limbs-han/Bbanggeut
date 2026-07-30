@@ -27,7 +27,7 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
     AuthProperties.class, DeviceClaimProperties.class, StorageProperties.class,
     InvitationProperties.class, MqttProperties.class, StreamProperties.class,
     SubscriptionProperties.class, ProvisioningProperties.class, DeviceCredentialProperties.class,
-    DemoProperties.class, PushProperties.class
+    DemoProperties.class, PushProperties.class, DevicePresenceProperties.class
 })
 public class SecurityConfig {
 
