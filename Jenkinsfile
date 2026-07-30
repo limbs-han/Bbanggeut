@@ -87,6 +87,33 @@ pipeline {
                     }
                 }
 
+                stage('API Contract') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            branch 'master'
+                            branch pattern: 'develop/**', comparator: 'GLOB'
+                            branch pattern: 'feat/**', comparator: 'GLOB'
+                            branch pattern: 'docs/**', comparator: 'GLOB'
+                        }
+                    }
+                    agent {
+                        label 'backend'
+                    }
+                    steps {
+                        gitlabCommitStatus(name: 'ci/api-contract') {
+                            deleteDir()
+                            checkout scm
+                            sh 'bash ci/jenkins/scripts/run-api-contract-ci.sh'
+                        }
+                    }
+                    post {
+                        cleanup {
+                            cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+                        }
+                    }
+                }
+
                 stage('Device (IoT + AI)') {
                     when {
                         beforeAgent true
