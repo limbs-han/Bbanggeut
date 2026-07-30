@@ -66,4 +66,49 @@ public interface AccessLogMapper {
         @Param("cursorId") Long cursorId,
         @Param("limit") int limit
     );
+
+    // --- vault-scoped API (works while no device is connected) ---
+
+    @Select("""
+        SELECT m.role::text
+          FROM vault_memberships m
+          JOIN memory_vaults v ON v.id = m.vault_id
+         WHERE m.vault_id = #{vaultId} AND m.user_id = #{userId}
+           AND m.status = 'ACTIVE' AND v.status <> 'CLOSED'
+        """)
+    Optional<String> findActiveVaultRole(
+        @Param("userId") UUID userId,
+        @Param("vaultId") UUID vaultId
+    );
+
+    /**
+     * Rows written before V30 carry only a device_id, so the vault view also
+     * matches through the bindings that device ever had.
+     */
+    @Select("""
+        <script>
+        SELECT l.id, l.device_id, l.actor_user_id, l.actor_device_id,
+               l.action::text, l.target_type, l.target_id, l.outcome::text,
+               l.reason_code, l.created_at
+          FROM access_logs l
+         WHERE (
+                   l.vault_id = #{vaultId}
+                OR (l.vault_id IS NULL AND l.device_id IN (
+                       SELECT b.device_id FROM device_bindings b
+                        WHERE b.vault_id = #{vaultId}
+                   ))
+               )
+        <if test="cursorCreatedAt != null">
+           AND (l.created_at, l.id) &lt; (#{cursorCreatedAt}, #{cursorId})
+        </if>
+         ORDER BY l.created_at DESC, l.id DESC
+         LIMIT #{limit}
+        </script>
+        """)
+    List<AccessLogRow> findVaultPage(
+        @Param("vaultId") UUID vaultId,
+        @Param("cursorCreatedAt") Instant cursorCreatedAt,
+        @Param("cursorId") Long cursorId,
+        @Param("limit") int limit
+    );
 }

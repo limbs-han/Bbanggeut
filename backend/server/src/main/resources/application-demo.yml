@@ -20,5 +20,4 @@ app:
     environment: ${MQTT_ENV:prod}
     tls-ca-path: ${MQTT_TLS_CA_PATH}
   stream:
-    media-base-url: ${MEDIA_BASE_URL}
     webrtc-base-url: ${WEBRTC_BASE_URL:http://localhost:8889/live}

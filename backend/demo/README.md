@@ -8,8 +8,8 @@ Run from the repository root:
 
 The script creates three overlapping two-minute clips from the supplied source
 video, starts PostgreSQL/MinIO/MediaMTX and the Spring backend, uploads the clips,
-seeds frontend fixtures, and publishes the source video as an endless RTSP/HLS
-stream.
+seeds frontend fixtures, and publishes the source video as an endless
+H.264/Opus RTSP stream for WHEP/WebRTC playback.
 
 ## Publish the Windows laptop webcam to production
 
@@ -61,10 +61,9 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080
 ```
 
 Use `http://localhost:8080` for Flutter Web or a Windows desktop build. On a
-physical phone, replace `10.0.2.2` with the development PC's LAN IP. The HLS URL
-returned by the backend also needs to use an address reachable by that phone;
-pass `-DemoLiveHlsUrl http://<PC-LAN-IP>:8888/demo-live/index.m3u8` when testing
-physically. For Flutter Web/Windows, pass the same option with `localhost`.
+physical phone, replace `10.0.2.2` with the development PC's LAN IP and pass
+`-DemoLiveWhepUrl http://<PC-LAN-IP>:8889/demo-live/whep`. Production exposes
+WHEP through HTTPS Nginx; port 8889 is loopback-only there.
 
 Stop only the demo processes:
 

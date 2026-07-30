@@ -25,3 +25,8 @@ __pycache__/
 *.py[cod]
 ai/model_benchmark/cache/
 ai/model_benchmark/data/
+
+# STT 벤치마크가 내려받는 음성 샘플·모델. 저장소에 넣지 않는다 —
+# fetch_dataset.py로 다시 받을 수 있고, AI Hub 데이터는 재배포 조건이 있다.
+ai/stt_benchmark/dataset/
+ai/stt_benchmark/models/

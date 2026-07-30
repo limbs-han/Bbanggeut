@@ -83,6 +83,59 @@ public class SubscriptionService {
         return toResponse(deviceId, false, graceUntil);
     }
 
+    @Transactional(readOnly = true)
+    public SubscriptionResponse getForVault(UUID userId, UUID vaultId) {
+        SubscriptionRow row = subscriptionMapper
+            .findAccessibleVaultSubscription(userId, vaultId)
+            .orElseThrow(this::notFound);
+        return toVaultResponse(
+            vaultId, row.subscriptionActive(), row.subscriptionGraceUntil());
+    }
+
+    @Transactional
+    public SubscriptionResponse activateForVault(UUID userId, UUID vaultId) {
+        requireVaultOwner(userId, vaultId);
+        subscriptionMapper.activateVault(vaultId);
+        subscriptionMapper.extendVaultRetentionToPremium(
+            vaultId, properties.premiumRetentionDays());
+        auditService.successForVault(
+            vaultId, null, userId, "VAULT_UPDATE", "SUBSCRIPTION", vaultId);
+        return toVaultResponse(vaultId, true, null);
+    }
+
+    @Transactional
+    public SubscriptionResponse cancelForVault(UUID userId, UUID vaultId) {
+        requireVaultOwner(userId, vaultId);
+        var graceUntil = clock.instant().plus(properties.grace());
+        if (subscriptionMapper.cancelVault(vaultId, graceUntil) != 1) {
+            throw new ApiException(
+                HttpStatus.CONFLICT, "SUBSCRIPTION_NOT_ACTIVE", "활성 구독이 없습니다.");
+        }
+        subscriptionMapper.resetVaultRetentionToBaseline(vaultId, graceUntil);
+        auditService.successForVault(
+            vaultId, null, userId, "VAULT_UPDATE", "SUBSCRIPTION", vaultId);
+        return toVaultResponse(vaultId, false, graceUntil);
+    }
+
+    private void requireVaultOwner(UUID userId, UUID vaultId) {
+        String role = subscriptionMapper.lockVaultRole(userId, vaultId)
+            .orElseThrow(this::notFound);
+        if (!"OWNER".equals(role)) {
+            auditService.deniedForVault(
+                vaultId, null, userId, "VAULT_UPDATE", "SUBSCRIPTION", vaultId,
+                "FORBIDDEN_ROLE");
+            throw new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "OWNER 권한이 필요합니다.");
+        }
+    }
+
+    private SubscriptionResponse toVaultResponse(
+        UUID vaultId, boolean active, java.time.Instant graceUntil
+    ) {
+        return new SubscriptionResponse(
+            null, vaultId, active, graceUntil, properties.premiumRetentionDays());
+    }
+
     private void requireOwner(UUID userId, UUID deviceId) {
         DeviceViewRow device = deviceMapper.lockAccessibleDevice(userId, deviceId)
             .orElseThrow(this::notFound);

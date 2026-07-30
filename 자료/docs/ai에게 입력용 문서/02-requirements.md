@@ -31,7 +31,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 
 | ID | 요구사항 | 관련 FN | 근거(코드 경로) |
 |---|---|---|---|
-| REQ-F-18 | 요청 시점에만 홈캠 라이브(카드/전체화면) | FN-A10, FN-A11, FN-A37, FN-S16, FN-S17, FN-S25, FN-E04, FN-E05 | API-35~38, MQTT-01/04, `stream.py`; 실사용은 `EmbeddedLivePlayer`(FN-A10), `LiveScreen`(FN-A12, 부록A)은 도달 불가 코드 |
+| REQ-F-18 | 요청 시점에만 홈캠 라이브(카드/전체화면) | FN-A10, FN-A11, FN-A37, FN-S16, FN-S17, FN-S25, FN-E04, FN-E05 | API-35~38, MQTT-01/04, `stream.py`; 실사용은 `EmbeddedLivePlayer`(FN-A10). 도달 불가 코드였던 `LiveScreen`(FN-A12, 부록A)은 WebRTC 전용 전환에서 삭제 |
 | REQ-F-41 | 홈/캘린더/추억/가족/설정 탭 이동, 당겨서 새로고침 | FN-A06 | `main_shell.dart`(`IndexedStack`, `RefreshIndicator`) |
 
 ### 1.4 이벤트(웃음) 감지 영상 확인
@@ -89,8 +89,8 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 | REQ-NF-08 | 운영 | PostgreSQL/MinIO 일 03:30 KST 자동 백업, 14일 보관 | `backup-william-james.sh`(`pg_dump -Fc`), `WJ_BACKUP_RETENTION_DAYS:-14`, `william-james-backup.timer` |
 | REQ-NF-09 | 운영 | 앱/프록시/컨테이너 상태·디스크 헬스체크 | `management.endpoints.web.exposure.include: health,info,metrics`, `check-william-james.sh`, `william-james-monitor.timer` |
 | REQ-NF-10 | 운영 | 테스트→빌드→배포 CI/CD | `.gitlab-ci.yml`(`test-backend`,`test-device-agent`,`package-backend`,`deploy-production`) |
-| REQ-NF-11 | 미디어 | H.264+AAC 인코딩 | MQTT `START_STREAM.payload.profile:"LIVE_720P_H264_AAC"`, `stream.py`(ffmpeg) |
-| REQ-NF-12 | 미디어 | WHEP/WebRTC 우선 재생, 연결 실패 시 HLS 폴백. 두 URL 모두 짧은 라이브 토큰 사용 | `StreamSessionResponse.whepUrl/playUrl`, `WhepPlayerController`, `live_screen.dart` |
+| REQ-NF-11 | 미디어 | 실시간 송출 H.264+Opus 인코딩 | MQTT `START_STREAM.payload.profile:"LIVE_720P_H264_OPUS"`, `stream.py`(ffmpeg) |
+| REQ-NF-12 | 미디어 | 운영 WHEP/WebRTC 전용 재생. video/audio track과 inbound audio RTP를 모두 확인하며 실패 시 HLS 폴백 없이 오류·재시도 표시 | `StreamSessionResponse.whepUrl`, `WhepPlayerController`, `live_screen.dart` |
 
 ---
 
@@ -136,7 +136,7 @@ MVP 7단계 관련 REQ만 간추린 구현 현황이다.
 | REQ-F-10 | 구현됨 | API-08, 코드 TTL 120초 + claim 레이트리밋 |
 | REQ-F-12 | 구현됨 | Redis TTL 기반 ONLINE/OFFLINE 및 heartbeat telemetry를 API-07/11·금고·라이브 판정에 반영 |
 | REQ-F-13 | 구현됨 | API-10 |
-| REQ-F-18 | 구현됨 | API-35~38, MQTT-01/04. `LiveScreen`은 미사용 코드지만 `EmbeddedLivePlayer`로 실제 구현됨 |
+| REQ-F-18 | 구현됨 | API-35~38, MQTT-01/04. `EmbeddedLivePlayer`로 구현됨(미사용 `LiveScreen`은 삭제) |
 | REQ-F-41 | 구현됨 | `main_shell.dart` |
 | REQ-F-37 | 구현됨 | YAMNet 임계값 판정 → presigned 업로드, systemd 상시 구동 |
 | REQ-F-21 | 구현됨 | API-27 커서 페이지네이션 |

@@ -1,7 +1,6 @@
 param(
     [string]$SourceVideo = "C:\Users\SSAFY\Downloads\YTDown.com_YouTube_Media_6Ycn9qZK09I_001_1080p.mp4",
     [string]$AdminPassword = "WjDemo!2026",
-    [string]$DemoLiveHlsUrl = "http://10.0.2.2:8888/demo-live/index.m3u8",
     [string]$DemoLiveWhepUrl = "http://10.0.2.2:8889/demo-live/whep",
     [switch]$RebuildClips
 )
@@ -93,7 +92,6 @@ try {
     $env:S3_SECRET_KEY = "minioadmin"
     $env:S3_BUCKET = "wj-videos"
     $env:DEMO_MODE_ENABLED = "true"
-    $env:DEMO_LIVE_HLS_URL = $DemoLiveHlsUrl
     $env:DEMO_LIVE_WHEP_URL = $DemoLiveWhepUrl
     $env:MQTT_BROKER_URL = "tcp://127.0.0.1:1"
 
@@ -231,7 +229,8 @@ mc cp /clips/demo-clip-03.mp4 local/wj-videos/private/10000000-0000-0000-0000-00
     $streamLog = Join-Path $runtimeDirectory "stream-error.log"
     $streamArguments = @(
         "-hide_banner", "-loglevel", "warning", "-re", "-stream_loop", "-1",
-        "-i", "`"$SourceVideo`"", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+        "-i", "`"$SourceVideo`"", "-map", "0:v:0", "-map", "0:a:0?",
+        "-c:v", "copy", "-c:a", "libopus", "-b:a", "64k", "-ar", "48000",
         "-f", "rtsp", "-rtsp_transport", "tcp", "rtsp://127.0.0.1:8554/demo-live"
     )
     $stream = Start-Process -FilePath $ffmpeg -ArgumentList $streamArguments -WindowStyle Hidden `
@@ -246,7 +245,7 @@ mc cp /clips/demo-clip-03.mp4 local/wj-videos/private/10000000-0000-0000-0000-00
     Write-Host "                passwords WjAdmin01!2026 .. WjAdmin06!2026"
     Write-Host "                codes WJ01-2026 .. WJ06-2026"
     Write-Host "  API         : http://localhost:8080"
-    Write-Host "  Live HLS    : $DemoLiveHlsUrl"
+    Write-Host "  Live WHEP   : $DemoLiveWhepUrl"
     Write-Host "  Clips       : $clipDirectory"
     Write-Host ""
     Write-Host "Flutter Android emulator:"

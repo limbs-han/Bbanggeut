@@ -196,8 +196,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 {
   "sessionId": "uuid", "streamId": "uuid", "deviceId": "uuid",
   "status": "PENDING|READY|FAILED|CLOSED|EXPIRED",
-  "playUrl": null,                     // READY일 때만 값 존재, HLS 폴백 URL
-  "whepUrl": null,                     // READY일 때만 값 존재, WebRTC/WHEP 우선 URL
+  "whepUrl": null,                     // READY일 때만 값 존재, 운영 WebRTC/WHEP 전용 URL
   "heartbeatIntervalSeconds": 15,
   "viewerExpiresAt": "2026-07-27T00:00:45Z",
   "edgeHardExpiresAt": "2026-07-27T00:02:00Z",
@@ -206,7 +205,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `DEVICE_OFFLINE`(기기 오프라인이면 세션 생성 거부)
-- 실사용: `EmbeddedLivePlayer`와 전체화면 라이브. `WhepPlayerController`로 WHEP 우선 연결 후 HLS 폴백
+- 실사용: `EmbeddedLivePlayer`와 전체화면 라이브. 운영 앱은 `WhepPlayerController`로 WHEP/WebRTC만 연결하며 HLS로 폴백하지 않음
 
 ### API-36 `GET /api/stream-sessions/{sessionId}`
 - 인증: 사용자 JWT
@@ -228,7 +227,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "issuedAt": "2026-07-27T00:00:00Z", "expiresAt": "2026-07-27T00:00:15Z",
   "payload": {
     "sessionId": "uuid", "streamId": "uuid",
-    "profile": "LIVE_720P_H264_AAC", "segmentDurationSeconds": 2,
+    "profile": "LIVE_720P_H264_OPUS",
     "hardExpiresAt": "2026-07-27T00:02:00Z"
   }
 }
@@ -251,10 +250,12 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ### 미디어 경로
 
 - **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. 로컬 공유 스트림의 H.264는 `-c:v copy`, AAC 원본 오디오는 WebRTC 호환 Opus 48kHz 모노·64kbps(`-c:a libopus -application lowdelay`)로 변환해 `-f rtsp -rtsp_transport tcp`로 송출한다. 이 변환은 앱 Live View 릴레이에만 적용하며 로컬 AI·녹화 AAC는 유지한다. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`, `device-agent.jetson.env.example`
-- **WebRTC/WHEP 우선(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 원격 audio/video track을 동일 renderer stream에 연결하고 `setMuted`로 볼륨 제어. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
-- **HLS 폴백(앱)**: WHEP/ICE 실패, `whepUrl` 부재, SDP answer의 활성 `m=audio` 부재 또는 원격 audio/video track 수신 실패 시 `playUrl` 사용. 정상 Jetson Live View는 Opus를 송출하므로 WHEP answer에 활성 `m=audio`가 있어야 한다. `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
+- **WebRTC/WHEP 전용(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 원격 audio/video track을 동일 renderer stream에 연결하고 `setMuted`로 볼륨 제어. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
+- **연결 성공 조건**: answer의 audio `m=` section이 non-zero이고 원격 송신 방향(`sendonly`/`sendrecv`)이어야 하며, 원격 video/audio track 수신 후 2초 안에 inbound audio RTP 패킷이 확인되어야 함. 하나라도 실패하면 HLS 전환 없이 오류·재시도 표시. 소스: `frontend/lib/core/whep_player_controller.dart`
+- **오디오 코덱**: Jetson publish는 H.264+Opus 필수. AAC-only publish는 MediaMTX가 WebRTC 오디오를 건너뛸 수 있어 운영 재생에서 지원하지 않음
+- **HLS 범위**: 없음. 운영 API는 `playUrl`을 반환하지 않고(`StreamSessionResponse`에서 제거) 앱에도 HLS 재생 코드가 없다
 - **운영 경로**: Nginx HTTPS 443 `/webrtc/.../whep`→MediaMTX loopback 8889, WebRTC media/ICE UDP 8189. 8889 직접 외부 노출 금지
-- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP/HLS 접근 인가에 사용. 앱/젯슨 직접 호출 금지
+- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP 접근 인가에 사용. 앱/젯슨 직접 호출 금지
 - 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신.
 
 ---
@@ -295,7 +296,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "expiresAt": "2026-07-27T00:15:00Z"
 }
 ```
-- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `DEVICE_VAULT_BINDING_MISSING`(ACTIVE `device_bindings` 없음), 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- `V31__repair_missing_initial_vault_bindings.sql`: binding 이력이 전혀 없는 ONLINE/OFFLINE 레거시 기기만 device UUID 기반 Vault·OWNER membership·generation 1 ACTIVE binding으로 안전 복구. binding 이력이 있으면 소유 Vault 오판 방지를 위해 자동 복구하지 않음.
 - 호출부: `ai/yolo/laughter_clip_uploader.py`, `ai/yolo/segment_clip_uploader.py`
 
 ### API-26 `POST /api/iot/videos/complete`
@@ -303,7 +305,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 { "videoId": "uuid", "objectETag": "string" }   // objectETag optional, @Size<=200
 ```
-- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
+- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`(Vault 기반 READY 전환 0건 포함), 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
 
 ### API-27 `GET /api/videos`
 - 인증: 사용자 JWT
@@ -636,7 +638,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | API-01~03 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | API-08, 43~45, 07, 11 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WHEP/WebRTC 우선·HLS 폴백 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |

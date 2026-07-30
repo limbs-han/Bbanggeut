@@ -95,7 +95,7 @@ public class StreamService {
                 || "STOP_PENDING".equals(stream.status());
             // A RUNNING database row does not prove that the edge publisher
             // survived a reboot or network loss. Production viewers wait for
-            // a fresh idempotent START/READY handshake before receiving HLS.
+            // a fresh idempotent START/READY handshake before receiving WHEP.
             sessionStatus = demoProperties.enabled() && reusableSourceWasReady
                 ? "READY" : "PENDING";
         }
@@ -169,21 +169,9 @@ public class StreamService {
     }
 
     private StreamSessionResponse toResponse(StreamSessionRow row) {
-        String playUrl = null;
         String whepUrl = null;
         if ("READY".equals(row.status()) && row.viewerExpiresAt().isAfter(clock.instant())) {
             String token = liveTokenService.issue(row.id(), row.userId(), row.deviceId(), row.streamId());
-            String configuredDemoUrl = demoProperties.liveHlsUrl();
-            boolean explicitDemoUrl = demoProperties.enabled()
-                && configuredDemoUrl != null && !configuredDemoUrl.isBlank();
-            String baseUrl = explicitDemoUrl
-                ? configuredDemoUrl
-                : properties.mediaBaseUrl().replaceAll("/$", "") + "/" + row.streamId() + "/index.m3u8";
-            if (explicitDemoUrl) {
-                baseUrl += (baseUrl.contains("?") ? "&" : "?") + "streamId=" + row.streamId();
-            }
-            playUrl = baseUrl + (baseUrl.contains("?") ? "&" : "?") + "token=" + token;
-
             String configuredDemoWhepUrl = demoProperties.liveWhepUrl();
             boolean explicitDemoWhepUrl = demoProperties.enabled()
                 && configuredDemoWhepUrl != null && !configuredDemoWhepUrl.isBlank();
@@ -196,7 +184,7 @@ public class StreamService {
             whepUrl = whepBaseUrl + (whepBaseUrl.contains("?") ? "&" : "?") + "token=" + token;
         }
         return new StreamSessionResponse(
-            row.id(), row.streamId(), row.deviceId(), row.status(), playUrl, whepUrl,
+            row.id(), row.streamId(), row.deviceId(), row.status(), whepUrl,
             Math.toIntExact(properties.heartbeatInterval().toSeconds()),
             row.viewerExpiresAt(), row.edgeHardExpiresAt(), row.failureCode(), row.createdAt());
     }
