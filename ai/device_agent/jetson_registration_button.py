@@ -318,7 +318,7 @@ def main(argv: list[str] | None = None) -> None:
     gpio_handle = lgpio.gpiochip_open(chip)
     callback = None
     try:
-        lgpio.gpio_claim_input(gpio_handle, line, lgpio.SET_BIAS_PULL_UP)
+        lgpio.gpio_claim_alert(gpio_handle, line, lgpio.FALLING_EDGE)
         callback = lgpio.callback(
             gpio_handle,
             line,
