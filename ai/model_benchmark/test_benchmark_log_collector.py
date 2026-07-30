@@ -1,13 +1,23 @@
+import http.client
+from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
+import socket
+import subprocess
+import sys
 import tempfile
+import threading
+import time
 import unittest
 
 from benchmark_log_collector import (
     BenchmarkCollector,
     CollectorPaths,
+    SCHEMA_VERSION,
+    build_handler,
     load_jsonl_tail,
     load_benchmark_results,
+    parse_request_route,
     parse_tegrastats_line,
     parse_yolo_line,
     percentile,
@@ -143,6 +153,149 @@ class CollectorIntegrationTests(unittest.TestCase):
             self.assertEqual(rows[0]["model"], "YOLO11n")
             self.assertEqual(rows[0]["metrics"]["fps"], 31.7)
             self.assertNotIn("path", rows[0])
+
+
+class RequestRouteTests(unittest.TestCase):
+    def test_allows_query_string_without_changing_exact_route(self):
+        self.assertEqual(
+            parse_request_route("/api/snapshot?refresh=1"),
+            "/api/snapshot",
+        )
+
+    def test_rejects_non_origin_form_and_backslash_paths(self):
+        for target in (
+            "//api/snapshot",
+            "https://example.test/api/snapshot",
+            "/api\\snapshot",
+            "/api/snapshot#fragment",
+        ):
+            with self.subTest(target=target):
+                with self.assertRaises(ValueError):
+                    parse_request_route(target)
+
+
+class CollectorServerTests(unittest.TestCase):
+    class StubCollector:
+        def snapshot(self):
+            return {
+                "schemaVersion": SCHEMA_VERSION,
+                "source": "test",
+            }
+
+    def setUp(self):
+        handler = build_handler(self.StubCollector(), ())
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.thread = threading.Thread(
+            target=self.server.serve_forever,
+            daemon=True,
+        )
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+
+    def request(self, target):
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            self.server.server_port,
+            timeout=2,
+        )
+        try:
+            connection.request("GET", target)
+            response = connection.getresponse()
+            body = json.loads(response.read().decode("utf-8"))
+            return response.status, body
+        finally:
+            connection.close()
+
+    def test_serves_health_and_snapshot_with_query_strings(self):
+        health_status, health = self.request("/api/health?probe=1")
+        snapshot_status, snapshot = self.request("/api/snapshot?refresh=1")
+
+        self.assertEqual(health_status, 200)
+        self.assertEqual(health["status"], "ok")
+        self.assertEqual(snapshot_status, 200)
+        self.assertEqual(snapshot["source"], "test")
+
+    def test_rejects_trailing_and_ambiguous_slashes(self):
+        trailing_status, trailing = self.request("/api/snapshot/")
+        ambiguous_status, ambiguous = self.request(
+            "https://example.test/api/snapshot"
+        )
+
+        self.assertEqual(trailing_status, 404)
+        self.assertEqual(trailing["error"], "not found")
+        self.assertEqual(ambiguous_status, 400)
+        self.assertEqual(ambiguous["error"], "invalid request target")
+
+
+class CollectorCliTests(unittest.TestCase):
+    def test_snapshot_option_prints_valid_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("benchmark_log_collector.py")),
+                    "--run-dir",
+                    directory,
+                    "--snapshot",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schemaVersion"], SCHEMA_VERSION)
+        self.assertEqual(payload["source"], "jetson-local")
+
+    def test_http_server_mode_serves_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                port = reservation.getsockname()[1]
+
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("benchmark_log_collector.py")),
+                    "--run-dir",
+                    directory,
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        connection = http.client.HTTPConnection(
+                            "127.0.0.1",
+                            port,
+                            timeout=1,
+                        )
+                        connection.request("GET", "/api/snapshot?refresh=1")
+                        response = connection.getresponse()
+                        payload = json.loads(response.read().decode("utf-8"))
+                        connection.close()
+                        break
+                    except OSError:
+                        if time.monotonic() >= deadline:
+                            self.fail("collector HTTP server did not start")
+                        time.sleep(0.05)
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["schemaVersion"], SCHEMA_VERSION)
+        self.assertEqual(payload["source"], "jetson-local")
 
 
 if __name__ == "__main__":

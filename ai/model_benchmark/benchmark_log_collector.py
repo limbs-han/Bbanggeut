@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any, Iterable
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 
 SCHEMA_VERSION = "0.1"
@@ -302,6 +302,25 @@ class BenchmarkCollector:
         }
 
 
+def parse_request_route(request_target: str) -> str:
+    """Return a strict origin-form path while allowing a query string."""
+    try:
+        parsed = urlsplit(request_target)
+    except ValueError as error:
+        raise ValueError("invalid request target") from error
+
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+        or "\\" in parsed.path
+        or "\x00" in parsed.path
+    ):
+        raise ValueError("invalid request target")
+    return parsed.path
+
+
 def build_handler(
     collector: BenchmarkCollector,
     allowed_origins: tuple[str, ...],
@@ -310,12 +329,26 @@ def build_handler(
         server_version = "WJBenchmarkCollector/0.1"
 
         def do_GET(self) -> None:  # noqa: N802
-            route = urlparse(self.path).path
+            try:
+                route = parse_request_route(self.path)
+            except ValueError:
+                self.send_json({"error": "invalid request target"}, status=400)
+                return
+
             if route == "/api/health":
                 self.send_json({"status": "ok", "schemaVersion": SCHEMA_VERSION})
                 return
             if route == "/api/snapshot":
-                self.send_json(collector.snapshot())
+                try:
+                    snapshot = collector.snapshot()
+                except (OSError, UnicodeError) as error:
+                    self.log_error("snapshot collection failed: %s", error)
+                    self.send_json(
+                        {"error": "snapshot temporarily unavailable"},
+                        status=503,
+                    )
+                    return
+                self.send_json(snapshot)
                 return
             self.send_json({"error": "not found"}, status=404)
 
