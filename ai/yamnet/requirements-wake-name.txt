@@ -1,0 +1,5 @@
+# Install in a dedicated Jetson virtual environment after measuring resources.
+# The runtime requires a pre-downloaded local CTranslate2 model directory.
+numpy==1.26.4
+faster-whisper>=1.1,<2
+paho-mqtt>=2,<3

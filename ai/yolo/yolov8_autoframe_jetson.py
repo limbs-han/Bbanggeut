@@ -1,8 +1,8 @@
 """Track people, cats, and dogs and calculate a pan/tilt framing target.
 
-This first-stage controller does not move a physical motor. It uses YOLO and
-ByteTrack, draws the chosen group and camera command on the video, and can
-write normalized control commands as JSON Lines for later IoT integration.
+This process does not write PWM directly. It uses YOLO and ByteTrack, draws the
+chosen group and camera command on the video, and publishes normalized control
+commands for the separate local servo controller.
 """
 
 from __future__ import annotations
@@ -69,6 +69,8 @@ class FramingDecision:
 class CameraCommand:
     state: str
     direction: str
+    command_x: str
+    command_y: str
     target_ids: tuple[int, ...]
     target_count: int
     total_stable_objects: int
@@ -88,7 +90,7 @@ class CameraCommand:
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         )
-        payload["schema_version"] = "1.0"
+        payload["schema_version"] = "1.1"
         payload["sequence"] = frame_index
         payload["sent_at"] = sent_at
         payload["ttl_ms"] = 500
@@ -200,6 +202,15 @@ def parse_args() -> argparse.Namespace:
         help="Center dead-zone height as a frame ratio.",
     )
     parser.add_argument(
+        "--subject-y-ratio",
+        type=float,
+        default=0.35,
+        help=(
+            "Vertical tracking point inside the selected subject box: "
+            "0 is top, 0.5 is center, 1 is bottom (default: 0.35)."
+        ),
+    )
+    parser.add_argument(
         "--ema-alpha",
         type=float,
         default=0.25,
@@ -214,8 +225,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--command-interval",
         type=float,
-        default=0.20,
-        help="Minimum seconds between JSONL commands (default: 5 Hz).",
+        default=0.10,
+        help="Minimum seconds between JSONL/MQTT commands (default: 10 Hz).",
     )
     parser.add_argument(
         "--control-output",
@@ -247,6 +258,45 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--control-mqtt-topic",
         help="Optional servo-target topic override.",
+    )
+    parser.add_argument(
+        "--dashboard-host",
+        default=os.getenv("SERVO_DASHBOARD_HOST", "127.0.0.1"),
+        help="Servo dashboard bind address (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--dashboard-port",
+        type=int,
+        default=int(os.getenv("SERVO_DASHBOARD_PORT", "0")),
+        help="Servo dashboard HTTP port. Set 0 to disable (default: 0).",
+    )
+    parser.add_argument(
+        "--dashboard-log",
+        type=Path,
+        help="Optional JSON Lines path for vision, servo, and laughter logs.",
+    )
+    parser.add_argument(
+        "--dashboard-event-dir",
+        type=Path,
+        help="Watch laughter trigger and upload markers without capturing clips.",
+    )
+    parser.add_argument(
+        "--dashboard-frame-width",
+        type=int,
+        default=int(os.getenv("SERVO_DASHBOARD_FRAME_WIDTH", "960")),
+        help="Maximum dashboard JPEG width (default: 960).",
+    )
+    parser.add_argument(
+        "--dashboard-jpeg-quality",
+        type=int,
+        default=int(os.getenv("SERVO_DASHBOARD_JPEG_QUALITY", "72")),
+        help="Dashboard JPEG quality from 30 through 95 (default: 72).",
+    )
+    parser.add_argument(
+        "--dashboard-frame-interval",
+        type=float,
+        default=float(os.getenv("SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS", "0.2")),
+        help="Minimum seconds between dashboard frames (default: 0.2).",
     )
     parser.add_argument(
         "--display",
@@ -289,6 +339,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--deadzone-width must be between 0 and 1")
     if not 0.0 <= args.deadzone_height < 1.0:
         parser.error("--deadzone-height must be between 0 and 1")
+    if not 0.0 <= args.subject_y_ratio <= 1.0:
+        parser.error("--subject-y-ratio must be between 0 and 1")
     if not 0.0 < args.ema_alpha <= 1.0:
         parser.error("--ema-alpha must be greater than 0 and at most 1")
     if args.home_after_seconds < 0:
@@ -297,6 +349,16 @@ def parse_args() -> argparse.Namespace:
         parser.error("--command-interval must be positive")
     if not 1 <= args.mqtt_port <= 65_535:
         parser.error("--mqtt-port must be between 1 and 65535")
+    if not 0 <= args.dashboard_port <= 65_535:
+        parser.error("--dashboard-port must be between 0 and 65535")
+    if args.dashboard_port and not args.mqtt_host:
+        parser.error("--dashboard-port requires --mqtt-host")
+    if args.dashboard_frame_width < 160:
+        parser.error("--dashboard-frame-width must be at least 160")
+    if not 30 <= args.dashboard_jpeg_quality <= 95:
+        parser.error("--dashboard-jpeg-quality must be between 30 and 95")
+    if args.dashboard_frame_interval <= 0:
+        parser.error("--dashboard-frame-interval must be positive")
     if not args.device_id.strip():
         parser.error("--device-id cannot be empty")
     if args.max_frames < 0:
@@ -501,14 +563,20 @@ class AutoFrameController:
         ema_alpha: float,
         deadzone_width: float,
         deadzone_height: float,
+        subject_y_ratio: float,
         home_after_seconds: float,
     ) -> None:
+        if not 0.0 <= subject_y_ratio <= 1.0:
+            raise ValueError("subject_y_ratio must be between 0 and 1")
         self.ema_alpha = ema_alpha
         self.deadzone_width = deadzone_width
         self.deadzone_height = deadzone_height
+        self.subject_y_ratio = subject_y_ratio
         self.home_after_seconds = home_after_seconds
         self.smoothed_target: Point | None = None
         self.last_target_seen_at: float | None = None
+        self.last_error_x = 0.0
+        self.last_error_y = 0.0
 
     def update(
         self,
@@ -525,21 +593,27 @@ class AutoFrameController:
                 return CameraCommand(
                     state="NO_TARGET_HOLD",
                     direction="HOLD",
+                    command_x="HOLD",
+                    command_y="HOLD",
                     target_ids=(),
                     target_count=0,
                     total_stable_objects=0,
                     center_x=None,
                     center_y=None,
-                    error_x=0.0,
-                    error_y=0.0,
+                    error_x=self.last_error_x,
+                    error_y=self.last_error_y,
                     group_box=None,
                     limited_group=False,
                 )
 
             self.smoothed_target = None
+            self.last_error_x = 0.0
+            self.last_error_y = 0.0
             return CameraCommand(
                 state="RETURN_HOME",
                 direction="HOME",
+                command_x="HOME",
+                command_y="HOME",
                 target_ids=(),
                 target_count=0,
                 total_stable_objects=0,
@@ -551,7 +625,11 @@ class AutoFrameController:
                 limited_group=False,
             )
 
-        raw_x, raw_y = decision.raw_center
+        raw_x, _ = decision.raw_center
+        _, subject_top, _, subject_bottom = decision.group_box
+        raw_y = subject_top + (
+            subject_bottom - subject_top
+        ) * self.subject_y_ratio
         if self.smoothed_target is None:
             smooth_x, smooth_y = raw_x, raw_y
         else:
@@ -582,18 +660,24 @@ class AutoFrameController:
         if move_y:
             vertical = "DOWN" if pixel_error_y > 0 else "UP"
         direction = "_".join(part for part in (horizontal, vertical) if part) or "HOLD"
+        command_x = horizontal or "HOLD"
+        command_y = vertical or "HOLD"
+        self.last_error_x = round(normalized_error_x, 6)
+        self.last_error_y = round(normalized_error_y, 6)
 
         x1, y1, x2, y2 = decision.group_box
         return CameraCommand(
             state="TRACKING",
             direction=direction,
+            command_x=command_x,
+            command_y=command_y,
             target_ids=tuple(item.track_id for item in decision.objects),
             target_count=len(decision.objects),
             total_stable_objects=decision.total_stable_objects,
             center_x=round(smooth_x / max(frame_width, 1), 6),
             center_y=round(smooth_y / max(frame_height, 1), 6),
-            error_x=round(normalized_error_x, 6),
-            error_y=round(normalized_error_y, 6),
+            error_x=self.last_error_x,
+            error_y=self.last_error_y,
             group_box=(
                 round(x1 / max(frame_width, 1), 6),
                 round(y1 / max(frame_height, 1), 6),
@@ -936,12 +1020,32 @@ def run(args: argparse.Namespace) -> None:
             topic=args.mqtt_topic,
             control_topic=args.control_mqtt_topic,
         )
+    dashboard = None
+    if args.dashboard_port:
+        from servo_dashboard import ServoDashboard
+
+        dashboard = ServoDashboard(
+            host=args.dashboard_host,
+            port=args.dashboard_port,
+            device_id=args.device_id,
+            mqtt_host=args.mqtt_host,
+            mqtt_port=args.mqtt_port,
+            mqtt_username=args.mqtt_username,
+            mqtt_password=args.mqtt_password,
+            log_path=args.dashboard_log,
+            event_dir=args.dashboard_event_dir,
+            jpeg_width=args.dashboard_frame_width,
+            jpeg_quality=args.dashboard_jpeg_quality,
+            frame_interval_seconds=args.dashboard_frame_interval,
+        )
+        dashboard.start()
     histories: dict[int, TrackLife] = {}
     selector = StableGroupSelector(args.switch_frames)
     controller = AutoFrameController(
         ema_alpha=args.ema_alpha,
         deadzone_width=args.deadzone_width,
         deadzone_height=args.deadzone_height,
+        subject_y_ratio=args.subject_y_ratio,
         home_after_seconds=args.home_after_seconds,
     )
 
@@ -1083,11 +1187,17 @@ def run(args: argparse.Namespace) -> None:
             )
 
             if (
-                (control_output is not None or vision_publisher is not None)
+                (
+                    control_output is not None
+                    or vision_publisher is not None
+                    or dashboard is not None
+                )
                 and timeline_now - last_command_at >= args.command_interval
             ):
                 command_payload = command.as_payload(frame_count)
                 command_payload["device_id"] = args.device_id
+                command_payload["frame_width"] = width
+                command_payload["frame_height"] = height
                 command_payload["object_counts"] = {
                     class_name: sum(
                         item.class_name == class_name for item in stable_objects
@@ -1096,6 +1206,22 @@ def run(args: argparse.Namespace) -> None:
                 }
                 command_payload["track_ids"] = [
                     item.track_id for item in stable_objects
+                ]
+                command_payload["objects"] = [
+                    {
+                        "track_id": item.track_id,
+                        "class_name": item.class_name,
+                        "confidence": round(item.confidence, 4),
+                        "center_x": round(item.center[0] / max(width, 1), 6),
+                        "center_y": round(item.center[1] / max(height, 1), 6),
+                        "box": [
+                            round(item.box[0] / max(width, 1), 6),
+                            round(item.box[1] / max(height, 1), 6),
+                            round(item.box[2] / max(width, 1), 6),
+                            round(item.box[3] / max(height, 1), 6),
+                        ],
+                    }
+                    for item in stable_objects
                 ]
                 if control_output is not None:
                     control_output.write(
@@ -1108,6 +1234,12 @@ def run(args: argparse.Namespace) -> None:
                     )
                 if vision_publisher is not None:
                     vision_publisher.publish_state(command_payload)
+                if dashboard is not None:
+                    dashboard.update(
+                        command_payload,
+                        annotated_frame,
+                        now_monotonic=wall_now,
+                    )
                 last_command_at = timeline_now
 
             if args.output is not None:
@@ -1141,6 +1273,8 @@ def run(args: argparse.Namespace) -> None:
             control_output.close()
         if vision_publisher is not None:
             vision_publisher.close()
+        if dashboard is not None:
+            dashboard.close()
         cv2.destroyAllWindows()
 
     elapsed = max(time.monotonic() - started_at, 1e-6)

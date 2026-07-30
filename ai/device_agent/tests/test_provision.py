@@ -3,13 +3,32 @@ import os
 import tempfile
 import unittest
 
-from wj_device_agent.provision import DeviceApi, read_environment, update_environment, validate_credential
+from wj_device_agent.provision import (
+    DeviceApi,
+    parser,
+    read_environment,
+    update_environment,
+    validate_credential,
+)
 
 
 DEVICE_ID = "11111111-1111-4111-8111-111111111111"
 
 
 class ProvisionTest(unittest.TestCase):
+    def test_registration_code_supports_machine_readable_output(self):
+        args = parser().parse_args(
+            [
+                "--api-base-url",
+                "https://example.test",
+                "registration-code",
+                "--output-format",
+                "json",
+            ],
+        )
+
+        self.assertEqual(args.output_format, "json")
+
     def test_api_uses_expected_enrollment_contract(self):
         calls = []
 

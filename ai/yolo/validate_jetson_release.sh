@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 AI_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 YAMNET_DIR="${AI_DIR}/yamnet"
 DEVICE_AGENT_DIR="${AI_DIR}/device_agent"
+MODEL_BENCHMARK_DIR="${AI_DIR}/model_benchmark"
 
 YOLO_PYTHON="${YOLO_PYTHON:-${HOME}/venvs/yolo/bin/python}"
 YAMNET_PYTHON="${YAMNET_PYTHON:-${HOME}/venvs/yamnet/bin/python}"
@@ -17,6 +18,15 @@ required_files=(
     "$YAMNET_PYTHON"
     "${SCRIPT_DIR}/yolov8n.pt"
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py"
+    "${SCRIPT_DIR}/servo_controller.py"
+    "${SCRIPT_DIR}/servo_dashboard.py"
+    "${SCRIPT_DIR}/servo_dashboard_web/index.html"
+    "${SCRIPT_DIR}/servo_dashboard_web/styles.css"
+    "${SCRIPT_DIR}/servo_dashboard_web/app.js"
+    "${SCRIPT_DIR}/requirements-servo-controller.txt"
+    "${SCRIPT_DIR}/test_servo_controller.py"
+    "${SCRIPT_DIR}/test_servo_dashboard.py"
+    "${SCRIPT_DIR}/wj-servo-controller.service"
     "${SCRIPT_DIR}/stream_capture.py"
     "${SCRIPT_DIR}/run_ai_stack.sh"
     "${SCRIPT_DIR}/run_edge_ai_mvp.sh"
@@ -26,7 +36,15 @@ required_files=(
     "${YAMNET_DIR}/ffmpeg_audio_stream.py"
     "${YAMNET_DIR}/laughter_eval_dataset.py"
     "${YAMNET_DIR}/laughter_scoring.py"
+    "${YAMNET_DIR}/audio_event_detection.py"
+    "${YAMNET_DIR}/audio_event_trigger.py"
+    "${YAMNET_DIR}/wake_name_profile.py"
+    "${YAMNET_DIR}/local_wake_name_detect_jetson.py"
+    "${YAMNET_DIR}/requirements-wake-name.txt"
     "${YAMNET_DIR}/mqtt_event_publisher.py"
+    "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py"
+    "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py"
+    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
 )
 
 for required_file in "${required_files[@]}"; do
@@ -36,7 +54,7 @@ for required_file in "${required_files[@]}"; do
     fi
 done
 
-echo "[1/4] Bash syntax"
+echo "[1/5] Bash syntax"
 bash -n \
     "${SCRIPT_DIR}/run_ai_stack.sh" \
     "${SCRIPT_DIR}/run_edge_ai_mvp.sh" \
@@ -51,31 +69,49 @@ grep -Fq ': "${YAMNET_THRESHOLD:=0.125}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${YAMNET_CONSECUTIVE:=3}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${YAMNET_CLAP_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${WAKE_NAME_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${SERVO_DASHBOARD_HOST:=127.0.0.1}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 
-echo "[2/4] Python syntax"
+echo "[2/5] Python syntax"
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py" \
+    "${SCRIPT_DIR}/servo_controller.py" \
+    "${SCRIPT_DIR}/servo_dashboard.py" \
     "${SCRIPT_DIR}/stream_capture.py" \
     "${SCRIPT_DIR}/event_fusion_service.py" \
     "${SCRIPT_DIR}/laughter_clip_uploader.py" \
     "${SCRIPT_DIR}/segment_clip_uploader.py" \
     "${SCRIPT_DIR}/summarize_yolo_validation.py" \
     "${SCRIPT_DIR}/vision_mqtt_publisher.py"
+PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
+    "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py" \
+    "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py" \
+    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
 PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" -m py_compile \
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py" \
     "${YAMNET_DIR}/ffmpeg_audio_stream.py" \
     "${YAMNET_DIR}/laughter_eval_dataset.py" \
     "${YAMNET_DIR}/laughter_scoring.py" \
+    "${YAMNET_DIR}/audio_event_detection.py" \
+    "${YAMNET_DIR}/audio_event_trigger.py" \
+    "${YAMNET_DIR}/wake_name_profile.py" \
+    "${YAMNET_DIR}/local_wake_name_detect_jetson.py" \
     "${YAMNET_DIR}/mqtt_event_publisher.py"
 
-echo "[3/4] YOLO-side tests"
+echo "[3/5] YOLO-side tests"
 (
     cd -- "$SCRIPT_DIR"
     PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
         -m unittest \
         test_autoframe_logic \
+        test_servo_controller \
+        test_servo_dashboard \
         test_event_fusion \
         test_laughter_clip_uploader \
         test_stream_capture \
@@ -83,14 +119,27 @@ echo "[3/4] YOLO-side tests"
         test_summarize_yolo_validation
 )
 
-echo "[4/4] YAMNet stream tests"
+echo "[4/5] YAMNet stream tests"
 (
     cd -- "$YAMNET_DIR"
     PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" \
         -m unittest \
         test_ffmpeg_audio_stream \
         test_laughter_eval_dataset \
-        test_laughter_scoring
+        test_laughter_scoring \
+        test_audio_event_detection \
+        test_audio_event_trigger \
+        test_wake_name_profile \
+        test_mqtt_event_publisher
 )
 
-echo "PASS: staged Jetson AI release validation completed (44 tests)."
+echo "[5/5] Model benchmark tests"
+(
+    cd -- "$MODEL_BENCHMARK_DIR"
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        -m unittest discover \
+        -s . \
+        -p 'test_*benchmark*.py'
+)
+
+echo "PASS: staged Jetson AI release validation completed."

@@ -306,6 +306,19 @@ MQTT-10~15는 운영 배포 스크립트(`ai/yolo/run_edge_ai_mvp.sh`, `run_edge
 
 MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이다. 실험 단계 기능(젯슨 E08~E10, 하드웨어 H01~H04)을 포함한다.
 
+| ID | 기능 | 상태 | 관련 API/MQTT | 소스 파일 |
+|---|---|---|---|---|
+| FN-E01 | 기기 프로비저닝(enrollment/자격증명회전) | ✅ 운영 | API-44, API-45 | `ai/device_agent/wj_device_agent/provision.py`(`DeviceApi.enroll`/`rotate`) |
+| FN-E02 | 등록코드 발급요청/표시 | ✅ 운영(젯슨 I2C LCD 표시, 서버 `expiresAt` 이후 만료 안내로 교체) | API-43 | `ai/device_agent/jetson_registration_button.py`, `lcd_test.py`, `registration-button.sh`, `wj_device_agent/provision.py` |
+| FN-E03 | 상태·하트비트 보고 | ⚠️ 일부 스텁 | MQTT-02, MQTT-05 | `ai/device_agent/wj_device_agent/agent.py:71-76,92,104,211-225` |
+| FN-E04 | 원격 명령 수신/ACK | ✅ 운영(PING분기는 죽은코드) | MQTT-01, MQTT-03 | `agent.py:103,133,237-262` |
+| FN-E05 | 라이브 스트림 송출(RTSPS) | ✅ 운영 | MQTT-04 | `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py` |
+| FN-E06 | 웃음(오디오) 감지 | ✅ 운영(임계값0.25/연속2윈도우) | (트리거→FN-E07) | `ai/yamnet/yamnet_laughter_detect_jetson.py`, `laughter_scoring.py` |
+| FN-E07 | 이벤트 클립 업로드 | ✅ 운영(systemd Restart=always) | API-25, API-26 | `ai/yolo/laughter_clip_uploader.py`, `ai/yolo/segment_clip_uploader.py` |
+| FN-E08 | YOLO 사람/반려동물 추적·프레이밍 계산 | 🔴 실험단계(운영 비활성) | MQTT-10, MQTT-11, MQTT-12 | `ai/yolo/yolov8_autoframe_jetson.py`, `ai/yolo/vision_mqtt_publisher.py` |
+| FN-E09 | 이벤트 퓨전(웃음+비전) | 🔴 실험단계(운영 비활성) | MQTT-13, MQTT-14, MQTT-15 | `ai/yolo/event_fusion_service.py` |
+| FN-E10 | 라즈베리파이 프로토타입 송출 | 🔴 실험단계(초기검증용) | 없음 | `ai/pi_homecam_dev/homecam-publisher.sh`, `mediamtx.yml` |
+
 ### 앱(App)
 
 | FN ID | 기능(한 줄) | 비고(코드 경로) |
