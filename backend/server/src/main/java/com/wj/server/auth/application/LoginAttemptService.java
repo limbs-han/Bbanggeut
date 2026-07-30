@@ -50,29 +50,31 @@ public class LoginAttemptService {
      *
      * <p>Callers must invoke this before checking the password.
      */
-    public void reserveOrReject(String email, String ipAddress) {
-        boolean admitted = rateLimiter.tryAcquire(
+    public SlidingWindowRateLimiter.Reservation reserveOrReject(String email, String ipAddress) {
+        SlidingWindowRateLimiter.Reservation reservation = rateLimiter.reserve(
             EMAIL_KEY_PREFIX + fingerprint(email),
             IP_KEY_PREFIX + fingerprint(ipAddress),
             properties.loginFailureWindow(),
             properties.loginMaxFailures());
-        if (!admitted) {
+        if (reservation == null) {
             throw new ApiException(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "LOGIN_RATE_LIMITED",
                 "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.");
         }
+        return reservation;
     }
 
     /**
      * Releases the account budget after the password was accepted.
      *
-     * <p>The address budget is intentionally left alone: one valid credential
-     * must not clear the limit that guards every other account behind the same
-     * address.
+     * <p>Earlier failures in the address budget are intentionally left alone:
+     * one valid credential must not clear the limit that guards every other
+     * account behind the same address. Only this successful reservation is
+     * removed from that shared bucket.
      */
-    public void clearFailures(String email) {
-        rateLimiter.reset(EMAIL_KEY_PREFIX + fingerprint(email));
+    public void completeSuccess(SlidingWindowRateLimiter.Reservation reservation) {
+        rateLimiter.completeSuccess(reservation);
     }
 
     /**

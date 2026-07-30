@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.StreamProperties;
 import com.wj.server.config.DemoProperties;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
 import com.wj.server.stream.persistence.StreamMapper;
@@ -35,6 +37,7 @@ class StreamServiceTest {
     @Mock private StreamCommandPublisher publisher;
     @Mock private LiveTokenService liveTokenService;
     @Mock private AuditService auditService;
+    @Mock private DevicePresenceStore presenceStore;
     private StreamService service;
 
     @BeforeEach
@@ -43,8 +46,10 @@ class StreamServiceTest {
             Duration.ofSeconds(45), Duration.ofSeconds(60), Duration.ofSeconds(120),
             Duration.ofSeconds(15), "https://media.example/live/",
             "https://media.example/webrtc/live/", Duration.ofSeconds(30));
+        lenient().when(presenceStore.find(any()))
+            .thenReturn(new DevicePresenceStore.Lookup(false, null));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
-            new DemoProperties(false, null, null),
+            new DemoProperties(false, null, null), presenceStore,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -65,6 +70,28 @@ class StreamServiceTest {
 
         assertThat(response.status()).isEqualTo("PENDING");
         verify(publisher).start(eq(deviceId), eq(response.sessionId()), any(), eq(NOW.plusSeconds(120)));
+    }
+
+    @Test
+    void redisPresenceAllowsStreamingWithoutReadingDurableDeviceStatus() {
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(presenceStore.find(deviceId))
+            .thenReturn(new DevicePresenceStore.Lookup(
+                true,
+                new com.wj.server.iot.telemetry.DevicePresenceSnapshot(
+                    NOW, false, 0, null, null, "0.4.0")));
+        when(mapper.findReusableStream(deviceId)).thenReturn(Optional.empty());
+        when(publisher.start(eq(deviceId), any(), any(), eq(NOW.plusSeconds(120)))).thenReturn(true);
+        when(mapper.findAccessibleSession(eq(userId), any())).thenAnswer(invocation -> {
+            UUID sessionId = invocation.getArgument(1);
+            return Optional.of(row(sessionId, UUID.randomUUID(), deviceId, userId, "PENDING"));
+        });
+
+        service.create(userId, deviceId);
+
+        verify(mapper, never()).findAccessibleDeviceStatus(userId, deviceId);
     }
 
     @Test
@@ -97,7 +124,7 @@ class StreamServiceTest {
             Duration.ofSeconds(15), "https://media.example/live/",
             "https://media.example/webrtc/live/", Duration.ofSeconds(30));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
-            new DemoProperties(true, "", ""), Clock.fixed(NOW, ZoneOffset.UTC));
+            new DemoProperties(true, "", ""), presenceStore, Clock.fixed(NOW, ZoneOffset.UTC));
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UUID streamId = UUID.randomUUID();

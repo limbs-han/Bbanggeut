@@ -20,6 +20,7 @@ import com.wj.server.auth.domain.AuthSessionRow;
 import com.wj.server.auth.domain.UserRow;
 import com.wj.server.auth.persistence.AuthMapper;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.AuthProperties;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -89,13 +90,14 @@ public class AuthService {
     public AuthTokenResponse login(LoginRequest request, ClientContext context) {
         String email = normalizeEmail(request.email());
         // Claimed before the hash comparison below, which is deliberately slow.
-        loginAttemptService.reserveOrReject(email, context.ipAddress());
+        SlidingWindowRateLimiter.Reservation reservation =
+            loginAttemptService.reserveOrReject(email, context.ipAddress());
         UserRow user = authMapper.findUserByEmail(email).filter(this::isActive).orElse(null);
         if (user == null || !passwordEncoder.matches(request.password(), user.passwordHash())) {
             loginAttemptService.recordFailure(email, context.ipAddress());
             throw invalidCredentials();
         }
-        loginAttemptService.clearFailures(email);
+        loginAttemptService.completeSuccess(reservation);
         authMapper.updateLastLogin(user.id());
         return issueTokens(user, context);
     }

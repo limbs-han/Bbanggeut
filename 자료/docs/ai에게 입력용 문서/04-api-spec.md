@@ -98,7 +98,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "registrationCode": "string",   // required, @Size 8~12
-  "name": "string"                 // optional, @Size 1~80, 공백만 불가
+  "name": "string",                // optional, @Size 1~80, 공백만 불가
+  "vaultId": "uuid"                // optional, 기존 금고에 연결할 때 지정
 }
 ```
 - 응답 201:
@@ -110,7 +111,15 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - 에러: 429 `CLAIM_RATE_LIMITED`(5회/10분), 409 `DEVICE_CLAIM_REJECTED`
-- 비고: claim된 기기는 활성 OWNER가 정확히 1명이 되도록 보장된다.
+- 비고: `vaultId` 생략 시 새 추억 금고와 요청 사용자의 OWNER 멤버십을 만든다. 지정 시 해당 금고의 OWNER 권한을 확인하고 활성 Device Binding을 생성한다. 물리 기기의 연결 이력은 generation별로 보존된다.
+
+### Vault API `GET/POST /api/vaults`
+- 인증: 사용자 JWT
+- `GET /api/vaults`: `vault_memberships` 기준 참여 금고와 활성 연결 기기 목록 조회
+- `GET /api/vaults/{vaultId}`: 접근권한을 검증한 추억 금고 단건 조회
+- `POST /api/vaults`: 물리 기기 없이 독립적인 추억 금고 생성
+- 응답 핵심 필드: `id`, `name`, `status`, `myRole`, `retentionDays`, `subscriptionActive`, `devices[]`
+- 비고: `devices`가 빈 배열이어도 금고는 유효하다. 영상·구독·가족 권한은 물리 기기가 아니라 금고에 귀속된다. 연결 기기의 온라인 상태는 Redis presence를 합성하고 Redis 장애 시 PostgreSQL 값으로 폴백한다.
 
 ### API-43 `POST /api/iot/registration-codes`
 - 인증: 기기 credential(Bearer, ROLE_DEVICE_OPERATING) / 요청 본문 없음(`DevicePrincipal`만 사용)
@@ -165,8 +174,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "deviceId": "uuid", "status": "string",
-  "recording": false,            // MQTT-05 heartbeat 기반, 기기측 항상 false 스텁
-  "uploadQueueDepth": 0,          // 기기측 항상 0 스텁
+  "recording": false,            // 최근 MQTT-05 heartbeat 보고값
+  "uploadQueueDepth": 0,          // 최근 MQTT-05 heartbeat 보고값
   "bufferSeconds": null,          // nullable
   "personCount": null,            // nullable
   "checkedAt": "2026-07-27T00:00:00Z"
@@ -298,7 +307,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 ### API-27 `GET /api/videos`
 - 인증: 사용자 JWT
-- Query: `deviceId`(필수,uuid), `triggerType?`, `from?`(Instant), `to?`(Instant), `cursor?`, `size?`(기본20, 1~100)
+- Query: `deviceId` 또는 `vaultId` 중 정확히 하나(필수, uuid), `triggerType?`, `from?`(Instant), `to?`(Instant), `cursor?`, `size?`(기본20, 1~100)
 - 응답 200:
 ```json
 {
@@ -306,7 +315,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "nextCursor": "string", "hasNext": false
 }
 ```
-- 에러: 422 `VALIDATION_FAILED`, 404, 422 `INVALID_CURSOR`
+- 에러: 422 `VALIDATION_FAILED`(조회 기준 중복/누락 포함), 404, 422 `INVALID_CURSOR`
 
 `VideoResponse` 스키마(API-26/27/28/29 공통):
 ```json
@@ -542,7 +551,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "streaming": false
 }
 ```
-- 30초 주기. `recording`/`uploadQueueDepth`는 `DeviceStatusResponse`(API-11)에 실제 상태 미반영.
+- 30초 주기. 서버는 전체 heartbeat payload를 Redis `presence:device:{deviceId}`에 90초 TTL로 저장하고 API-07/11·금고 목록·라이브 시작 판정에 반영한다. TTL 만료는 OFFLINE이며 Redis 장애 시 PostgreSQL heartbeat 기록으로 폴백한다.
 - 발행: `agent.py:211-225` / 구독: `MqttInboundHandler.java`(heartbeat())
 
 #### MQTT-06 `{base}/devices/+/registration` — 구독(설계상, 실제 발행자 없음), QoS1

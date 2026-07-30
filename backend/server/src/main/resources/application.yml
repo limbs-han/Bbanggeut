@@ -75,6 +75,10 @@ app:
   device-claim:
     max-failures: ${DEVICE_CLAIM_MAX_FAILURES:5}
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
+  device-presence:
+    # Heartbeats arrive much more often than this. Missing the TTL means the
+    # device is offline without a database sweep or stale-row update.
+    ttl: ${DEVICE_PRESENCE_TTL:90s}
   invitation:
     ttl: ${INVITATION_TTL:7d}
   push:

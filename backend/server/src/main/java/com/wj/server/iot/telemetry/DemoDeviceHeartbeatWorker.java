@@ -12,14 +12,14 @@ import org.springframework.stereotype.Component;
 public class DemoDeviceHeartbeatWorker {
     static final UUID DEMO_DEVICE_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
 
-    private final DeviceTelemetryMapper telemetryMapper;
+    private final DeviceTelemetryService telemetryService;
 
-    public DemoDeviceHeartbeatWorker(DeviceTelemetryMapper telemetryMapper) {
-        this.telemetryMapper = telemetryMapper;
+    public DemoDeviceHeartbeatWorker(DeviceTelemetryService telemetryService) {
+        this.telemetryService = telemetryService;
     }
 
     @Scheduled(initialDelay = 0, fixedDelay = 30_000)
     public void heartbeat() {
-        telemetryMapper.recordHeartbeat(DEMO_DEVICE_ID, true, 0, 30, 2, "demo-1.0.0");
+        telemetryService.recordHeartbeat(DEMO_DEVICE_ID, true, 0, 30, 2, "demo-1.0.0");
     }
 }

@@ -14,6 +14,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wj.server.config.DevicePresenceProperties;
+import com.wj.server.iot.telemetry.DevicePresenceSnapshot;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -36,6 +40,7 @@ class SlidingWindowRateLimiterIntegrationTest {
     private static GenericContainer<?> redis;
     private static LettuceConnectionFactory connectionFactory;
     private static SlidingWindowRateLimiter limiter;
+    private static DevicePresenceStore presenceStore;
 
     @BeforeAll
     static void startRedis() {
@@ -45,6 +50,7 @@ class SlidingWindowRateLimiterIntegrationTest {
             connectionFactory = connectionFactory(externalHost, externalPort);
             requireReachable(externalHost, externalPort);
             limiter = new SlidingWindowRateLimiter(template(connectionFactory));
+            presenceStore = presenceStore(template(connectionFactory));
             return;
         }
 
@@ -56,6 +62,7 @@ class SlidingWindowRateLimiterIntegrationTest {
         redis.start();
         connectionFactory = connectionFactory(redis.getHost(), redis.getMappedPort(6379));
         limiter = new SlidingWindowRateLimiter(template(connectionFactory));
+        presenceStore = presenceStore(template(connectionFactory));
     }
 
     /**
@@ -191,20 +198,53 @@ class SlidingWindowRateLimiterIntegrationTest {
     }
 
     @Test
-    void resetReleasesTheIdentityBudgetButLeavesTheAddressBudget() {
-        String identity = key("identity");
+    void successfulReservationsDoNotConsumeTheSharedAddressBudget() {
         String address = key("address");
-        for (int i = 0; i < LIMIT; i++) {
-            assertThat(limiter.tryAcquire(identity, address, Duration.ofSeconds(30), LIMIT)).isTrue();
+
+        for (int i = 0; i < LIMIT + 3; i++) {
+            SlidingWindowRateLimiter.Reservation reservation = limiter.reserve(
+                key("identity"), address, Duration.ofSeconds(30), LIMIT);
+            assertThat(reservation).isNotNull();
+            limiter.completeSuccess(reservation);
         }
 
-        limiter.reset(identity);
+        assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
+            .isTrue();
+    }
 
-        // The address bucket still holds every attempt recorded above.
+    @Test
+    void successDoesNotEraseOtherFailuresFromTheSharedAddress() {
+        String address = key("address");
+        for (int i = 0; i < LIMIT - 1; i++) {
+            assertThat(limiter.tryAcquire(key("failed-identity"), address, Duration.ofSeconds(30), LIMIT))
+                .isTrue();
+        }
+        SlidingWindowRateLimiter.Reservation successful = limiter.reserve(
+            key("successful-identity"), address, Duration.ofSeconds(30), LIMIT);
+        assertThat(successful).isNotNull();
+
+        limiter.completeSuccess(successful);
+
+        assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
+            .isTrue();
         assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
             .isFalse();
-        assertThat(limiter.tryAcquire(identity, key("address"), Duration.ofSeconds(30), LIMIT))
-            .isTrue();
+    }
+
+    @Test
+    void devicePresenceExpiresWithoutADatabaseSweep() throws Exception {
+        UUID deviceId = UUID.randomUUID();
+        DevicePresenceSnapshot snapshot = new DevicePresenceSnapshot(
+            java.time.Instant.parse("2026-07-30T01:00:00Z"),
+            true, 2, 120, 3, "0.4.0");
+
+        assertThat(presenceStore.put(deviceId, snapshot)).isTrue();
+        assertThat(presenceStore.find(deviceId).snapshot()).isEqualTo(snapshot);
+
+        Thread.sleep(500);
+
+        assertThat(presenceStore.find(deviceId).storeAvailable()).isTrue();
+        assertThat(presenceStore.find(deviceId).online()).isFalse();
     }
 
     /**
@@ -241,6 +281,13 @@ class SlidingWindowRateLimiterIntegrationTest {
         StringRedisTemplate template = new StringRedisTemplate(factory);
         template.afterPropertiesSet();
         return template;
+    }
+
+    private static DevicePresenceStore presenceStore(StringRedisTemplate template) {
+        return new DevicePresenceStore(
+            template,
+            new ObjectMapper().findAndRegisterModules(),
+            new DevicePresenceProperties(Duration.ofMillis(300)));
     }
 
     /** Fresh key per use so the cases stay independent of each other. */

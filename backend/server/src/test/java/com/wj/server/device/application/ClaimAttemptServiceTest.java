@@ -9,7 +9,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.matches;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -46,7 +45,7 @@ class ClaimAttemptServiceTest {
     @Test
     void rejectsWhenAccountOrIpReachedMaximumFailures() {
         UUID userId = UUID.randomUUID();
-        when(rateLimiter.tryAcquire(anyString(), anyString(), any(), anyInt())).thenReturn(false);
+        when(rateLimiter.reserve(anyString(), anyString(), any(), anyInt())).thenReturn(null);
 
         assertThatThrownBy(() -> service.reserveOrReject(userId, "127.0.0.1"))
             .isInstanceOf(ApiException.class)
@@ -57,11 +56,12 @@ class ClaimAttemptServiceTest {
     @Test
     void limitsTheGuessingPartyRatherThanTheCodeOrDevice() {
         UUID userId = UUID.randomUUID();
-        when(rateLimiter.tryAcquire(anyString(), anyString(), any(), anyInt())).thenReturn(true);
+        SlidingWindowRateLimiter.Reservation reservation = reservation();
+        when(rateLimiter.reserve(anyString(), anyString(), any(), anyInt())).thenReturn(reservation);
 
-        service.reserveOrReject(userId, "127.0.0.1");
+        assertThat(service.reserveOrReject(userId, "127.0.0.1")).isSameAs(reservation);
 
-        verify(rateLimiter).tryAcquire(
+        verify(rateLimiter).reserve(
             eq("rl:claim:user:" + userId),
             matches("rl:claim:ip:[0-9a-f]{64}"),
             eq(Duration.ofMinutes(10)),
@@ -69,13 +69,12 @@ class ClaimAttemptServiceTest {
     }
 
     @Test
-    void releasesOnlyTheAccountBudgetOnSuccess() {
-        UUID userId = UUID.randomUUID();
+    void completesTheExactReservationOnSuccess() {
+        SlidingWindowRateLimiter.Reservation reservation = reservation();
 
-        service.clearFailures(userId);
+        service.completeSuccess(reservation);
 
-        verify(rateLimiter).reset("rl:claim:user:" + userId);
-        verify(rateLimiter, never()).reset(matches("rl:claim:ip:.*"));
+        verify(rateLimiter).completeSuccess(reservation);
     }
 
     @Test
@@ -97,5 +96,10 @@ class ClaimAttemptServiceTest {
 
         assertThatCode(() -> service.recordFailure(userId, "127.0.0.1"))
             .doesNotThrowAnyException();
+    }
+
+    private static SlidingWindowRateLimiter.Reservation reservation() {
+        return new SlidingWindowRateLimiter.Reservation(
+            "rl:claim:user:test", "rl:claim:ip:test", "member-id");
     }
 }

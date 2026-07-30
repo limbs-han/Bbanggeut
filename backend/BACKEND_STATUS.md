@@ -41,6 +41,9 @@
 - refresh token 해시 저장 및 rotation
 - 로그아웃 시 소유 세션 회수
 - 사용자·세션 상태 검증
+- 로그인 실패 제한
+  - Redis 슬라이딩 윈도우로 이메일·IP 지문 기준 5회/10분 제한
+  - 정상 로그인 예약은 IP 버킷에서 제거하고, 실제 실패 해시는 PostgreSQL 감사 이력으로 별도 보관
 - **비밀번호 변경·재설정** (2026-07-27)
   - 로그인 사용자는 현재 비밀번호를 확인한 뒤 변경하고 다른 세션을 회수
   - 비밀번호 찾기는 계정 존재 여부를 노출하지 않는 202 응답
@@ -58,11 +61,14 @@
 - claim 성공 시 OWNER 멤버십 생성
 - **소유권 이전** (2026-07-20): 현 OWNER가 같은 기기의 활성 MEMBER에게 `POST /transfer-ownership` — 강등+승격 한 트랜잭션, 영상·구성원·구독 유지. 외부 양도는 기기 해제 경로 사용
 - **회원 탈퇴** (2026-07-20): `DELETE /api/auth/me` — 활성 OWNER 멤버십이 있으면 409로 차단, 통과 시 멤버십·세션 회수 후 `WITHDRAWN` 처리
-- claim 실패 계정·IP당 5회/10분 제한 (코드는 기기에 귀속되지 않으므로 추측 주체 기준)
+- claim 실패 계정·IP당 Redis 슬라이딩 윈도우 5회/10분 제한 (코드는 기기에 귀속되지 않으므로 추측 주체 기준, 성공 예약은 IP 버킷에서 제거)
 - 사용자 기기 목록·상세·상태 조회
+  - MQTT heartbeat의 온라인·녹화·업로드 큐·버퍼·인원수·펌웨어 상태는 Redis 90초 TTL로 관리
+  - 목록·상세·금고·라이브 시작 판정은 Redis presence 우선, Redis 장애 시 PostgreSQL 마지막 상태로 폴백
+  - 정상 heartbeat는 DB 행을 갱신하지 않아 30초 주기 고빈도 UPDATE와 stale OFFLINE UPDATE를 제거
 - 기기 이름·영상 보존 일수 변경
 - 기기 해제·양도: 기존 행 REVOKED 종결 + credential·초대·멤버십 회수 + 영상 삭제 작업 등록 + 같은 시리얼의 새 UNCLAIMED 행 생성
-- heartbeat가 오래된 기기의 OFFLINE 판정
+- Redis presence TTL 만료로 별도 sweep 없이 OFFLINE 판정
 
 ### 2.3 초대와 구성원
 
