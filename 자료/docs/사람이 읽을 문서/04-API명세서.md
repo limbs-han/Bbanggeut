@@ -396,7 +396,8 @@
 | requiredHeaders | Map<String,String> | 옵션(nullable) | 업로드 시 필요한 헤더(`x-amz-meta-sha256` 등) |
 | expiresAt | Instant | 옵션(nullable) | URL 만료 시각(TTL 15분) |
 
-- 에러: 413 `VIDEO_TOO_LARGE`(500MiB 초과), 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 413 `VIDEO_TOO_LARGE`(500MiB 초과), 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `DEVICE_VAULT_BINDING_MISSING`(기기는 등록 상태지만 활성 추억 금고 바인딩이 없음), 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- Vault 전환 복구: `V31__repair_missing_initial_vault_bindings.sql`은 바인딩 이력이 전혀 없는 활성 레거시 기기에 한해 초기 Vault·OWNER·ACTIVE 바인딩을 복구한다. 이전 바인딩 이력이 있는 기기는 잘못된 가정으로 다른 가족 Vault에 연결하지 않도록 자동 복구하지 않으며 재등록이 필요하다.
 
 ### API-26 `POST /api/iot/videos/complete`
 
@@ -409,7 +410,7 @@
 | objectETag | String | 옵션 | `@Size≤200` |
 
 - 응답: `200 VideoResponse` (API-27 목록의 개별 항목과 동일 스키마, 아래 참고)
-- 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_STATE_CONFLICT`(Vault 기반 READY 전환 실패 포함), 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503 `OBJECT_STORAGE_UNAVAILABLE`
 
 ### API-27 `GET /api/videos`
 
