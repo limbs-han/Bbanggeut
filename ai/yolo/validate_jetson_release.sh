@@ -85,6 +85,10 @@ grep -Fq -- '--dashboard-yamnet-diagnostics "$YAMNET_DIAGNOSTICS_PATH"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq 'YAMNet ready: first inference telemetry received' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'Escalating AI child shutdown to SIGTERM' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'Escalating AI child shutdown to SIGKILL' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 
 echo "[2/5] Python syntax"
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
