@@ -1,5 +1,8 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
@@ -28,6 +31,9 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   late VideoMemory _video;
   VideoPlayerController? _player;
   bool _loading = true;
+  bool _downloading = false;
+  bool _deleting = false;
+  double? _downloadProgress;
   String? _error;
 
   @override
@@ -133,17 +139,47 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _saveVideo() async {
+    if (_downloading) return;
+    setState(() {
+      _downloading = true;
+      _downloadProgress = null;
+    });
     try {
       final download = await widget.controller.api.createDownloadUrl(_video.id);
-      final launched = await launchUrl(
-        Uri.parse(download.url),
-        mode: LaunchMode.externalApplication,
-      );
-      if (mounted && !launched) {
-        showAppSnack(context, '영상을 저장할 앱을 열지 못했어요.', error: true);
+      final directory = Platform.isAndroid
+          ? await getExternalStorageDirectory()
+          : await getApplicationDocumentsDirectory();
+      if (directory == null) {
+        throw StateError('저장할 폴더를 찾지 못했어요.');
       }
-    } catch (failure) {
-      if (mounted) showAppSnack(context, '$failure', error: true);
+      final safeTitle = _video.title
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+          .trim();
+      final fileName =
+          '${safeTitle.isEmpty ? '빵긋_영상' : safeTitle}_${_video.id}.mp4';
+      final filePath = '${directory.path}${Platform.pathSeparator}$fileName';
+      await Dio().download(
+        download.url,
+        filePath,
+        onReceiveProgress: (received, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _downloadProgress = received / total);
+        },
+      );
+      if (mounted) {
+        showAppSnack(context, '영상 저장을 완료했어요.');
+      }
+    } catch (_) {
+      if (mounted) {
+        showAppSnack(context, '영상을 저장하지 못했어요. 다시 시도해 주세요.', error: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _downloadProgress = null;
+        });
+      }
     }
   }
 
@@ -154,6 +190,26 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
         builder: (_) =>
             LocalEditScreen(controller: widget.controller, video: _video),
       ),
+    );
+  }
+
+  Future<void> _deleteVideo() async {
+    if (_deleting || widget.controller.busy) return;
+    final confirmed = await confirmVideoDeletion(context);
+    if (!mounted || !confirmed) return;
+    setState(() => _deleting = true);
+    final ok = await widget.controller.removeVideo(_video);
+    if (!mounted) return;
+    if (ok) {
+      showAppSnack(context, '영상을 삭제했어요.');
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _deleting = false);
+    showAppSnack(
+      context,
+      widget.controller.errorMessage ?? '영상을 삭제하지 못했어요.',
+      error: true,
     );
   }
 
@@ -191,6 +247,19 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                           ? AppColors.coral
                           : AppColors.muted,
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '영상 삭제',
+                    onPressed: _deleting ? null : _deleteVideo,
+                    icon: _deleting
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.delete_outline_rounded,
+                            color: AppColors.danger,
+                          ),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -253,14 +322,24 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                   ),
                   const SizedBox(height: 28),
                   OutlinedButton.icon(
-                    onPressed: _saveVideo,
-                    icon: const Icon(Icons.download_rounded),
-                    label: const Text('저장'),
+                    onPressed: _downloading ? null : _saveVideo,
+                    icon: _downloading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_rounded),
+                    label: Text(
+                      _downloading
+                          ? _downloadProgress == null
+                                ? '저장 준비 중'
+                                : '저장 중 ${(_downloadProgress! * 100).round()}%'
+                          : '저장',
+                    ),
                   ),
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _openEditor,
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
                     icon: const Icon(Icons.content_cut_rounded),
                     label: const Text('영상 편집하기'),
                   ),

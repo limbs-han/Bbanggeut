@@ -42,6 +42,29 @@ void main() {
     expect(api.newPassword, 'new-password');
     controller.dispose();
   });
+
+  test('신규 회원은 연결 기기가 없으면 최초 기기 등록이 필요하다', () async {
+    final controller = AppController(api: _AccountApiClient());
+
+    expect(
+      await controller.signUp('새 사용자', 'new@example.com', 'password-10'),
+      isTrue,
+    );
+    expect(controller.authenticated, isTrue);
+    expect(controller.selectedDevice, isNull);
+    expect(controller.requiresInitialDeviceRegistration, isTrue);
+    controller.dispose();
+  });
+
+  test('기존 계정은 연결 기기가 없어도 홈 화면으로 진입한다', () async {
+    final controller = AppController(api: _AccountApiClient());
+
+    expect(await controller.login('member@example.com', 'password-10'), isTrue);
+    expect(controller.authenticated, isTrue);
+    expect(controller.selectedDevice, isNull);
+    expect(controller.requiresInitialDeviceRegistration, isFalse);
+    controller.dispose();
+  });
 }
 
 class _AccountApiClient extends ApiClient {
@@ -65,7 +88,34 @@ class _AccountApiClient extends ApiClient {
         statusCode: 401,
       );
     }
-    throw UnimplementedError();
+    return _session(email);
+  }
+
+  @override
+  Future<AuthSession> signUp(
+    String name,
+    String email,
+    String password, {
+    bool persistSession = true,
+  }) async => _session(email, displayName: name);
+
+  @override
+  Future<List<Invitation>> listMyInvitations() async => const [];
+
+  @override
+  Future<List<MemoryVault>> listVaults() async => const [];
+
+  AuthSession _session(String email, {String displayName = '사용자'}) {
+    return AuthSession(
+      accessToken: 'access',
+      refreshToken: 'refresh',
+      expiresIn: 3600,
+      user: UserProfile(
+        id: 'user-1',
+        email: email.trim(),
+        displayName: displayName,
+      ),
+    );
   }
 
   @override

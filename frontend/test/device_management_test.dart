@@ -5,6 +5,8 @@ import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
 import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/device_registration_screen.dart';
+import 'package:william_james_app/ui/home_screen.dart';
+import 'package:william_james_app/ui/widgets.dart';
 
 void main() {
   testWidgets('MEMBER는 기기 등록 화면에 직접 접근해도 차단된다', (tester) async {
@@ -168,7 +170,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('기기 등록 전에 기존 Vault와 새 Vault를 명시적으로 선택한다', (tester) async {
+  testWidgets('기기 등록 화면에 Vault 관련 내용을 표시하지 않는다', (tester) async {
     final controller = AppController()
       ..vaults = const [_ReleaseApiClient.vaultWithoutDevice]
       ..selectedVault = _ReleaseApiClient.vaultWithoutDevice;
@@ -179,17 +181,186 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('vault-connection-choice')), findsOneWidget);
-    expect(find.text('기존 구성원과 과거 영상을 그대로 함께 사용해요.'), findsOneWidget);
-    expect(find.byKey(const Key('existing-vault-selector')), findsOneWidget);
+    expect(find.byKey(const Key('vault-connection-choice')), findsNothing);
+    expect(find.byKey(const Key('existing-vault-selector')), findsNothing);
+    expect(find.byKey(const Key('new-vault-name')), findsNothing);
+    expect(find.textContaining('Vault'), findsNothing);
+    expect(find.byKey(const Key('registration-code-prefix')), findsOneWidget);
+    expect(find.byKey(const Key('place-category-selector')), findsOneWidget);
+    controller.dispose();
+  });
 
-    await tester.tap(find.text('새 Vault'));
+  testWidgets('Member 화면에 받은 요청함 메뉴를 항상 표시한다', (tester) async {
+    final controller = AppController()
+      ..vaults = const [_ReleaseApiClient.vaultWithoutDevice]
+      ..selectedVault = _ReleaseApiClient.vaultWithoutDevice;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: DeviceRegistrationScreen(controller: controller),
+      ),
+    );
+
+    await tester.tap(find.text('Member'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('new-vault-name')), findsOneWidget);
-    expect(find.text('기존 Vault와 완전히 분리된 새 공간을 만들어요.'), findsOneWidget);
-    expect(find.textContaining('연결 중에는 Vault를 바꿀 수 없어요'), findsOneWidget);
+    expect(find.byKey(const Key('member-request-inbox')), findsOneWidget);
+    expect(find.text('받은 요청함'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('member-request-inbox')));
+    await tester.pumpAndSettle();
+    expect(find.text('받은 요청함'), findsOneWidget);
+    expect(find.text('받은 요청이 없어요'), findsOneWidget);
     controller.dispose();
+  });
+
+  testWidgets('장소 기본값을 표시하고 새로운 장소를 추가해 즉시 선택한다', (tester) async {
+    final controller = AppController();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: DeviceRegistrationScreen(controller: controller),
+      ),
+    );
+
+    expect(find.byKey(const Key('place-category-selector')), findsOneWidget);
+    expect(find.text('집'), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
+
+    final placeSelector = find.descendant(
+      of: find.byKey(const Key('place-category-selector')),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    await tester.drag(find.byType(ListView), const Offset(0, -320));
+    await tester.pumpAndSettle();
+    await tester.tap(placeSelector);
+    await tester.pumpAndSettle();
+    expect(find.text('+ 새로운 장소 추가하기'), findsOneWidget);
+
+    await tester.tap(find.text('+ 새로운 장소 추가하기'));
+    await tester.pumpAndSettle();
+    expect(find.text('새로운 장소 추가'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('new-place-name-input')),
+      ' 카페 ',
+    );
+    await tester.tap(find.byKey(const Key('add-place-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(controller.placeNames, ['집', '카페']);
+    expect(controller.selectedPlaceName, '카페');
+    expect(find.text('카페'), findsOneWidget);
+    controller.dispose();
+  });
+
+  test('장소 이름의 빈 값, 중복, 길이를 검증한다', () {
+    expect(validatePlaceName('   ', const ['집']), '장소 이름을 입력해 주세요.');
+    expect(validatePlaceName(' 집 ', const ['집']), '이미 등록된 장소입니다.');
+    expect(
+      validatePlaceName('열여섯글자가넘어가는장소이름입니다', const ['집']),
+      '장소 이름은 15자 이내로 입력해 주세요.',
+    );
+    expect(validatePlaceName('카페', const ['집']), isNull);
+  });
+
+  test('장소명 받침에 맞춰 홈 화면 문구를 만든다', () {
+    expect(placeHomeQuestion('집'), '지금 우리 집은?');
+    expect(placeHomeQuestion('카페'), '지금 우리 카페는?');
+    expect(placeHomeQuestion('사무실'), '지금 우리 사무실은?');
+  });
+
+  testWidgets('홈에서 장소 선택 목록을 열고 홈 문구를 변경한다', (tester) async {
+    final controller = AppController()..addPlace('카페');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: Scaffold(
+          body: AnimatedBuilder(
+            animation: controller,
+            builder: (context, _) => HomeScreen(
+              controller: controller,
+              isActive: true,
+              openVideos: () {},
+              openCalendar: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('지금 우리 카페는?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('home-place-device-selector')));
+    await tester.pumpAndSettle();
+    expect(find.text('장소와 기기 선택'), findsOneWidget);
+
+    await tester.tap(find.text('집').last);
+    await tester.pumpAndSettle();
+    expect(controller.selectedPlaceName, '집');
+    expect(find.text('지금 우리 집은?'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('새로 시작하기는 최종 확인을 한 번 더 요구한다', (tester) async {
+    MemoryConnectionChoice? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                result = await showMemoryConnectionChoice(context);
+              },
+              child: const Text('기기 연결'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('기기 연결'));
+    await tester.pumpAndSettle();
+    expect(find.text('이전 기기의 추억을 유지하시겠습니까?'), findsOneWidget);
+    expect(find.text('새로 시작할 경우 이전에 저장된 추억이 삭제됩니다.'), findsOneWidget);
+
+    await tester.tap(find.text('새로 시작하기'));
+    await tester.pumpAndSettle();
+    expect(find.text('정말 새로 시작할까요?'), findsOneWidget);
+
+    await tester.tap(find.text('새로 시작'));
+    await tester.pumpAndSettle();
+    expect(result, MemoryConnectionChoice.restart);
+  });
+
+  testWidgets('영상 삭제 확인은 안전한 취소와 위험 삭제를 구분한다', (tester) async {
+    bool? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async {
+                result = await confirmVideoDeletion(context);
+              },
+              child: const Text('휴지통'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('휴지통'));
+    await tester.pumpAndSettle();
+    expect(find.text('영상을 삭제할까요?'), findsOneWidget);
+    expect(find.text('취소'), findsOneWidget);
+    expect(find.text('삭제'), findsOneWidget);
+
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+    expect(result, isFalse);
   });
 
   test('이메일 초대 응답을 기기와 초대한 사람 정보까지 파싱한다', () {

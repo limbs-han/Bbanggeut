@@ -96,13 +96,7 @@ class NoDeviceSettingsScreen extends StatelessWidget {
                   leading: const Icon(Icons.add_to_photos_outlined),
                   title: const Text('새 기기 연결'),
                   trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          DeviceRegistrationScreen(controller: controller),
-                    ),
-                  ),
+                  onTap: () => _openDeviceRegistration(context),
                 ),
               ],
               const Divider(height: 1),
@@ -120,4 +114,21 @@ class NoDeviceSettingsScreen extends StatelessWidget {
       ],
     ),
   );
+
+  Future<void> _openDeviceRegistration(BuildContext context) async {
+    if (controller.videos.isNotEmpty) {
+      final choice = await showMemoryConnectionChoice(context);
+      if (!context.mounted || choice == null) return;
+      if (choice == MemoryConnectionChoice.restart) {
+        showAppSnack(context, '새로 시작 선택을 저장했어요. 실제 추억 삭제는 서버 API 연결 후 처리됩니다.');
+      }
+    }
+    if (!context.mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DeviceRegistrationScreen(controller: controller),
+      ),
+    );
+  }
 }
