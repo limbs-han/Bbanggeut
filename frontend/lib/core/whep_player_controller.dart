@@ -56,6 +56,15 @@ class WhepPlayerController extends ChangeNotifier {
       _rendererInitialized = true;
     }
 
+    // WHEP playback is receive-only, so the plugin's default communication
+    // profile is wrong for it. That profile puts Android in
+    // MODE_IN_COMMUNICATION with USAGE_VOICE_COMMUNICATION, which routes
+    // Bluetooth output over the SCO call channel instead of A2DP: audio breaks
+    // up while video stays clean. It also engages the mic and ties playback to
+    // the call volume stream. Media mode uses A2DP and the music stream.
+    // No-op off Android.
+    await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration.media);
+
     final endpointUri = Uri.parse(endpoint);
     final videoTrackReady = Completer<void>();
     final audioTrackReady = Completer<void>();
