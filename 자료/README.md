@@ -27,7 +27,7 @@
 - [프로젝트 기획서](윌리엄_제임스_프로젝트_기획서.md)
 - [요구사항 명세서](docs/01_요구사항_명세서.md)
 - [사용자 스토리·유스케이스](docs/02_사용자_스토리_및_유스케이스.md)
-- [ERD·데이터 사전](docs/03_ERD_데이터사전.md)
+- [ERD](docs/사람이%20읽을%20문서/빵긋%20ERD.png)
 - [OpenAPI 명세](api/openapi.yaml)
 - [API 문서 웹 페이지](docs/api/index.html)
 - [테스트 계획서](docs/08_테스트_계획서.md)
@@ -39,7 +39,6 @@
 
 - [앱 와이어프레임](https://www.figma.com/design/kDAk0NTRltBHJsaIeyyXQd)
 - [시스템 아키텍처](https://www.figma.com/board/eQtOYa4DFb7SpEO0E4fPjf)
-- [ERD](https://www.figma.com/board/MwP9nmFiDu8MQFTEN5PGER)
 
 ![앱 와이어프레임 현재본 미리보기](docs/wireframes/app-wireframe-preview.png)
 
