@@ -35,6 +35,18 @@ public class NotificationService {
     }
 
     @Transactional
+    public void vaultInvitationReceived(
+        String email, UUID vaultId, String vaultName, UUID invitationId
+    ) {
+        int inserted = mapper.insertVaultInvitationNotification(
+            UUID.randomUUID(), email, vaultId, vaultName, invitationId);
+        if (inserted > 0) {
+            pushDispatcher.vaultInvitationReceived(
+                email, vaultId, vaultName, invitationId);
+        }
+    }
+
+    @Transactional
     public void laughterVideoReady(UUID deviceId, UUID videoId, String title) {
         int inserted = mapper.insertLaughterVideoNotifications(deviceId, videoId, title);
         if (inserted > 0) {
@@ -48,7 +60,7 @@ public class NotificationService {
         return mapper.findForUser(userId, safeLimit).stream()
             .map(row -> new NotificationResponse(
                 row.id(), row.type(), row.title(), row.body(), row.deviceId(),
-                row.resourceId(), row.readAt(), row.createdAt()))
+                row.vaultId(), row.resourceId(), row.readAt(), row.createdAt()))
             .toList();
     }
 

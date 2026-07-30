@@ -22,14 +22,18 @@ public interface VideoMapper {
 
     @Insert("""
         INSERT INTO videos (
-            id, device_id, source_type, trigger_type, source_event_id, title,
+            id, device_id, vault_id, device_binding_id,
+            source_type, trigger_type, source_event_id, title,
             storage_key, content_type, size_bytes, checksum_sha256, duration_ms,
             captured_start_at, captured_end_at, status
-        ) VALUES (
-            #{id}, #{deviceId}, 'IOT_CAPTURE', CAST(#{triggerType} AS video_trigger_type), #{sourceEventId}, #{title},
+        )
+        SELECT
+            #{id}, #{deviceId}, b.vault_id, b.id,
+            'IOT_CAPTURE', CAST(#{triggerType} AS video_trigger_type), #{sourceEventId}, #{title},
             #{storageKey}, #{contentType}, #{sizeBytes}, #{checksumSha256}, #{durationMs},
             #{capturedStartAt}, #{capturedEndAt}, 'UPLOADING'
-        )
+          FROM device_bindings b
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
         ON CONFLICT (device_id, source_event_id) WHERE source_event_id IS NOT NULL DO NOTHING
         """)
     int insertIotVideo(
@@ -79,9 +83,9 @@ public interface VideoMapper {
                retention_until = now() + make_interval(days =>
                    CASE WHEN d.subscription_active THEN #{premiumRetentionDays} ELSE d.retention_days END),
                updated_at = now()
-          FROM devices d
+          FROM memory_vaults d
          WHERE v.id = #{videoId} AND v.device_id = #{deviceId}
-           AND d.id = v.device_id AND v.status = 'UPLOADING'
+           AND d.id = v.vault_id AND v.status = 'UPLOADING'
         """)
     int markReady(
         @Param("deviceId") UUID deviceId,
@@ -160,11 +164,23 @@ public interface VideoMapper {
 
     @Select("""
         SELECT EXISTS (
-            SELECT 1 FROM device_memberships
-             WHERE user_id = #{userId} AND device_id = #{deviceId} AND status = 'ACTIVE'
+            SELECT 1
+              FROM device_bindings b
+              JOIN vault_memberships vm ON vm.vault_id = b.vault_id
+             WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+               AND vm.user_id = #{userId} AND vm.status = 'ACTIVE'
         )
         """)
     boolean hasActiveMembership(@Param("userId") UUID userId, @Param("deviceId") UUID deviceId);
+
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1 FROM vault_memberships
+             WHERE user_id = #{userId} AND vault_id = #{vaultId}
+               AND status = 'ACTIVE'
+        )
+        """)
+    boolean hasVaultMembership(@Param("userId") UUID userId, @Param("vaultId") UUID vaultId);
 
     @Select("""
         <script>
@@ -173,7 +189,7 @@ public interface VideoMapper {
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at
           FROM videos v
-          JOIN device_memberships m ON m.device_id = v.device_id
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.device_id = #{deviceId}
            AND m.user_id = #{userId}
            AND m.status = 'ACTIVE'
@@ -197,6 +213,44 @@ public interface VideoMapper {
     java.util.List<VideoRow> findAccessibleVideos(
         @Param("userId") UUID userId,
         @Param("deviceId") UUID deviceId,
+        @Param("triggerType") String triggerType,
+        @Param("from") Instant from,
+        @Param("to") Instant to,
+        @Param("cursorCreatedAt") Instant cursorCreatedAt,
+        @Param("cursorId") UUID cursorId,
+        @Param("limit") int limit
+    );
+
+    @Select("""
+        <script>
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+               v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
+               v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
+               v.is_favorite AS favorite, v.created_at
+          FROM videos v
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
+         WHERE v.vault_id = #{vaultId}
+           AND m.user_id = #{userId} AND m.status = 'ACTIVE'
+           AND v.status NOT IN ('DELETING', 'DELETED')
+        <if test="triggerType != null">
+           AND v.trigger_type = CAST(#{triggerType} AS video_trigger_type)
+        </if>
+        <if test="from != null">
+           AND v.captured_start_at &gt;= #{from}
+        </if>
+        <if test="to != null">
+           AND v.captured_start_at &lt; #{to}
+        </if>
+        <if test="cursorCreatedAt != null">
+           AND (v.created_at, v.id) &lt; (#{cursorCreatedAt}, #{cursorId})
+        </if>
+         ORDER BY v.created_at DESC, v.id DESC
+         LIMIT #{limit}
+        </script>
+        """)
+    List<VideoRow> findAccessibleVideosByVault(
+        @Param("userId") UUID userId,
+        @Param("vaultId") UUID vaultId,
         @Param("triggerType") String triggerType,
         @Param("from") Instant from,
         @Param("to") Instant to,
@@ -236,7 +290,7 @@ public interface VideoMapper {
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at
           FROM videos v
-          JOIN device_memberships m ON m.device_id = v.device_id
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.device_id = #{deviceId}
            AND m.user_id = #{userId}
            AND m.status = 'ACTIVE'
@@ -316,7 +370,7 @@ public interface VideoMapper {
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at
           FROM videos v
-          JOIN device_memberships m ON m.device_id = v.device_id
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.id = #{videoId}
            AND m.user_id = #{userId}
            AND m.status = 'ACTIVE'
@@ -333,7 +387,7 @@ public interface VideoMapper {
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at
           FROM videos v
-          JOIN device_memberships m ON m.device_id = v.device_id
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.id = #{videoId}
            AND m.user_id = #{userId}
            AND m.status = 'ACTIVE'
@@ -348,7 +402,7 @@ public interface VideoMapper {
     @Select("""
         SELECT m.role::text
           FROM videos v
-          JOIN device_memberships m ON m.device_id = v.device_id
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.id = #{videoId} AND m.user_id = #{userId} AND m.status = 'ACTIVE'
         """)
     Optional<String> findActiveRole(

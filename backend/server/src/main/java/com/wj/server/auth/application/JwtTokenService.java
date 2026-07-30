@@ -16,6 +16,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Component
 public class JwtTokenService {
+    /** Distinguishes user access tokens from live-stream tokens ({@code wj-live}). */
+    public static final String ISSUER = "wj-server";
+
     private final JwtEncoder jwtEncoder;
     private final AuthProperties properties;
     private final Clock clock;
@@ -34,7 +37,7 @@ public class JwtTokenService {
     public String createAccessToken(UserRow user, UUID sessionId) {
         Instant now = clock.instant();
         JwtClaimsSet claims = JwtClaimsSet.builder()
-            .issuer("wj-server")
+            .issuer(ISSUER)
             .issuedAt(now)
             .expiresAt(now.plus(properties.accessTokenTtl()))
             .subject(user.id().toString())

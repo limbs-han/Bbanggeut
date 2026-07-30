@@ -38,6 +38,20 @@ public class PushNotificationDispatcher {
                     "resourceId", invitationId.toString())));
     }
 
+    public void vaultInvitationReceived(
+        String email, UUID vaultId, String vaultName, UUID invitationId
+    ) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByEmail(email),
+            new PushMessage(
+                "새로운 Vault 초대",
+                vaultName + " Vault에 초대되었습니다.",
+                Map.of(
+                    "type", "INVITATION_RECEIVED",
+                    "vaultId", vaultId.toString(),
+                    "resourceId", invitationId.toString())));
+    }
+
     public void laughterVideoReady(UUID deviceId, UUID videoId, String title) {
         dispatchAfterCommit(
             () -> tokenMapper.findActiveTokensByDevice(deviceId),

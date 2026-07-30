@@ -3,49 +3,56 @@ package com.wj.server.device.application;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Clock;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.DeviceClaimProperties;
-import com.wj.server.device.persistence.ClaimAttemptMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.TransactionException;
 
 /**
  * Rate limits claim attempts per account and per IP. A wrong registration code
  * does not belong to any device, so the limit is applied to the guessing party
  * (account/IP), never to a code or device.
+ *
+ * <p>As with sign-in, the attempt is claimed before the submitted code is
+ * looked up so that concurrent requests cannot share one pre-limit count.
  */
 @Service
 public class ClaimAttemptService {
-    private final ClaimAttemptMapper mapper;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClaimAttemptService.class);
+
+    private static final String USER_KEY_PREFIX = "rl:claim:user:";
+    private static final String IP_KEY_PREFIX = "rl:claim:ip:";
+
+    private final ClaimAttemptAuditWriter auditWriter;
+    private final SlidingWindowRateLimiter rateLimiter;
     private final DeviceClaimProperties properties;
-    private final Clock clock;
 
-    @Autowired
-    public ClaimAttemptService(ClaimAttemptMapper mapper, DeviceClaimProperties properties) {
-        this(mapper, properties, Clock.systemUTC());
-    }
-
-    ClaimAttemptService(ClaimAttemptMapper mapper, DeviceClaimProperties properties, Clock clock) {
-        this.mapper = mapper;
+    public ClaimAttemptService(
+        ClaimAttemptAuditWriter auditWriter,
+        SlidingWindowRateLimiter rateLimiter,
+        DeviceClaimProperties properties
+    ) {
+        this.auditWriter = auditWriter;
+        this.rateLimiter = rateLimiter;
         this.properties = properties;
-        this.clock = clock;
     }
 
-    @Transactional(readOnly = true)
-    public void ensureAllowed(UUID userId, String ipAddress) {
-        if (mapper.isRateLimited(
-            userId,
-            fingerprint(ipAddress),
-            clock.instant().minus(properties.failureWindow()),
-            properties.maxFailures())) {
+    public void reserveOrReject(UUID userId, String ipAddress) {
+        boolean admitted = rateLimiter.tryAcquire(
+            USER_KEY_PREFIX + userId,
+            IP_KEY_PREFIX + fingerprint(ipAddress),
+            properties.failureWindow(),
+            properties.maxFailures());
+        if (!admitted) {
             throw new ApiException(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "CLAIM_RATE_LIMITED",
@@ -53,22 +60,37 @@ public class ClaimAttemptService {
         }
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordFailure(UUID userId, String ipAddress) {
-        mapper.insertAttempt(userId, fingerprint(ipAddress), false);
+    /**
+     * Releases the account budget after a code was accepted. The address budget
+     * is left alone so that one successful claim cannot clear the limit that
+     * guards guessing from the same address.
+     */
+    public void clearFailures(UUID userId) {
+        rateLimiter.reset(USER_KEY_PREFIX + userId);
     }
 
-    @Transactional
-    public void recordSuccess(UUID userId, String ipAddress) {
-        mapper.insertAttempt(userId, fingerprint(ipAddress), true);
+    /**
+     * Best effort audit record. The limit has already been enforced, so a
+     * database that cannot take this row must not change the answer the caller
+     * receives.
+     */
+    public void recordFailure(UUID userId, String ipAddress) {
+        try {
+            auditWriter.write(userId, digest(ipAddress));
+        } catch (DataAccessException | TransactionException exception) {
+            LOGGER.warn("Could not record a failed device claim attempt", exception);
+        }
     }
 
     private String fingerprint(String value) {
+        return HexFormat.of().formatHex(digest(value));
+    }
+
+    private byte[] digest(String value) {
         String normalized = value == null ? "unknown" : value.trim().toUpperCase(Locale.ROOT);
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
+            return MessageDigest.getInstance("SHA-256")
                 .digest(normalized.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }

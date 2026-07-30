@@ -9,6 +9,7 @@ public record NotificationResponse(
     String title,
     String body,
     UUID deviceId,
+    UUID vaultId,
     UUID resourceId,
     Instant readAt,
     Instant createdAt

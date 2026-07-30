@@ -468,7 +468,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('정말 탈퇴할까요?'),
         content: const Text(
-          '소유 중인 기기가 있다면 서버가 탈퇴를 차단합니다. 먼저 소유권을 이전하거나 기기를 해제해 주세요.',
+          '소유 중인 Vault가 있다면 탈퇴할 수 없습니다. 먼저 다른 구성원에게 소유권을 이전해 주세요.',
         ),
         actions: [
           TextButton(
@@ -498,7 +498,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('기기 등록을 해제할까요?'),
         content: const Text(
-          '멤버십과 영상 접근이 종료되고 저장된 영상은 삭제 작업에 들어갑니다. 되돌릴 수 없습니다.',
+          '라이브 스트리밍과 영상 감지가 중단됩니다. Vault의 구성원과 과거 영상은 그대로 유지돼요. 이 연결은 되돌릴 수 없으며, 다시 연결하려면 기기를 새로 등록하면서 기존 Vault 또는 새 Vault를 선택해야 합니다.',
         ),
         actions: [
           TextButton(

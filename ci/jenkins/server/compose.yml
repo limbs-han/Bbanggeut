@@ -86,6 +86,8 @@ services:
       TEST_POSTGRES_ADMIN_DATABASE: jenkins
       TEST_POSTGRES_ADMIN_USER: jenkins
       TEST_POSTGRES_PASSWORD_FILE: /run/secrets/postgres-ci-password
+      TEST_REDIS_HOST: redis-ci
+      TEST_REDIS_PORT: "6379"
     secrets:
       - source: backend_agent_secret
         target: jenkins-agent-secret
@@ -178,6 +180,35 @@ services:
       - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jenkins -d jenkins"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 로그인 시도 제한 통합 테스트 전용입니다. 검증 대상이 "동시 요청이
+  # 서로를 관측하는가"이므로 모의 클라이언트로는 대체할 수 없고 실제
+  # 인스턴스가 필요합니다.
+  redis-ci:
+    image: redis:7-alpine
+    container_name: jenkins-redis-ci
+    restart: unless-stopped
+    # 테스트 키는 모두 만료 시간을 갖고 빌드마다 임의 이름을 쓰므로
+    # 영속화가 필요 없습니다. 남는 데이터도 없습니다.
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy noeviction
+    networks:
+      - agents
+    cpus: 0.25
+    mem_limit: 256m
+    mem_reservation: 64m
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
