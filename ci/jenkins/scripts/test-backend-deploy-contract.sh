@@ -20,7 +20,8 @@ expected_entries="$(
     docker-compose.yml \
     mediamtx.yml \
     mosquitto.conf \
-    nginx-william-james.conf |
+    nginx-william-james.conf \
+    wj-deploy-backend |
     LC_ALL=C sort
 )"
 
