@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 AI_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 YAMNET_DIR="${AI_DIR}/yamnet"
 DEVICE_AGENT_DIR="${AI_DIR}/device_agent"
+MODEL_BENCHMARK_DIR="${AI_DIR}/model_benchmark"
 
 YOLO_PYTHON="${YOLO_PYTHON:-${HOME}/venvs/yolo/bin/python}"
 YAMNET_PYTHON="${YAMNET_PYTHON:-${HOME}/venvs/yamnet/bin/python}"
@@ -36,6 +37,9 @@ required_files=(
     "${YAMNET_DIR}/laughter_eval_dataset.py"
     "${YAMNET_DIR}/laughter_scoring.py"
     "${YAMNET_DIR}/mqtt_event_publisher.py"
+    "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py"
+    "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py"
+    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
 )
 
 for required_file in "${required_files[@]}"; do
@@ -45,7 +49,7 @@ for required_file in "${required_files[@]}"; do
     fi
 done
 
-echo "[1/4] Bash syntax"
+echo "[1/5] Bash syntax"
 bash -n \
     "${SCRIPT_DIR}/run_ai_stack.sh" \
     "${SCRIPT_DIR}/run_edge_ai_mvp.sh" \
@@ -65,7 +69,7 @@ grep -Fq ': "${SERVO_DASHBOARD_HOST:=127.0.0.1}"' \
 grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 
-echo "[2/4] Python syntax"
+echo "[2/5] Python syntax"
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py" \
     "${SCRIPT_DIR}/servo_controller.py" \
@@ -76,6 +80,10 @@ PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${SCRIPT_DIR}/segment_clip_uploader.py" \
     "${SCRIPT_DIR}/summarize_yolo_validation.py" \
     "${SCRIPT_DIR}/vision_mqtt_publisher.py"
+PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
+    "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py" \
+    "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py" \
+    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
 PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" -m py_compile \
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py" \
     "${YAMNET_DIR}/ffmpeg_audio_stream.py" \
@@ -83,7 +91,7 @@ PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" -m py_compile \
     "${YAMNET_DIR}/laughter_scoring.py" \
     "${YAMNET_DIR}/mqtt_event_publisher.py"
 
-echo "[3/4] YOLO-side tests"
+echo "[3/5] YOLO-side tests"
 (
     cd -- "$SCRIPT_DIR"
     PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
@@ -98,7 +106,7 @@ echo "[3/4] YOLO-side tests"
         test_summarize_yolo_validation
 )
 
-echo "[4/4] YAMNet stream tests"
+echo "[4/5] YAMNet stream tests"
 (
     cd -- "$YAMNET_DIR"
     PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" \
@@ -106,6 +114,15 @@ echo "[4/4] YAMNet stream tests"
         test_ffmpeg_audio_stream \
         test_laughter_eval_dataset \
         test_laughter_scoring
+)
+
+echo "[5/5] Model benchmark tests"
+(
+    cd -- "$MODEL_BENCHMARK_DIR"
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        -m unittest discover \
+        -s . \
+        -p 'test_*benchmark*.py'
 )
 
 echo "PASS: staged Jetson AI release validation completed."
