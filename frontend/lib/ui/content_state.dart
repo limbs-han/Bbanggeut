@@ -29,6 +29,7 @@ class CalendarSchedule {
     required this.date,
     this.memo = '',
     this.yearly = false,
+    this.emoji = '❤️',
   });
 
   final String id;
@@ -36,20 +37,25 @@ class CalendarSchedule {
   final DateTime date;
   final String memo;
   final bool yearly;
+  final String emoji;
 
   CalendarSchedule copyWith({
     String? title,
     DateTime? date,
     String? memo,
     bool? yearly,
+    String? emoji,
   }) => CalendarSchedule(
     id: id,
     title: title ?? this.title,
     date: date ?? this.date,
     memo: memo ?? this.memo,
     yearly: yearly ?? this.yearly,
+    emoji: emoji ?? this.emoji,
   );
 }
+
+const calendarScheduleEmojis = ['❤️', '🎂', '🍚', '☎️', '📷', '⭐', '🎁', '🌸'];
 
 /// 콘텐츠 API가 준비되기 전 화면 간 상태를 공유하는 임시 저장소입니다.
 ///
