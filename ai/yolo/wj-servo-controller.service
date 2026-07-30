@@ -8,6 +8,8 @@ Type=simple
 User=ssafy
 Group=ssafy
 SupplementaryGroups=williamjames i2c
+StateDirectory=william-james-servo
+StateDirectoryMode=0750
 Environment=HOME=/home/ssafy
 EnvironmentFile=/etc/william-james/device-agent.env
 Environment=SERVO_MQTT_HOST=127.0.0.1
