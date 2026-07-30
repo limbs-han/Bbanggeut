@@ -31,6 +31,7 @@ cd server
 - 감지 이벤트 멱등 저장과 영상 업로드 상태 연결
 - 완료되지 않은 업로드의 `FAILED` 전환과 동일 이벤트 재시도
 - 공유 라이브 송출 세션, 시청자 heartbeat/TTL, START·EXTEND·STOP 명령
+- 사용자별 FCM 토큰 등록·해제와 초대·웃음 영상 운영체제 푸시
 - 주요 접근·변경 감사 로그
 
 API 계약은 [`../../자료/api/openapi.yaml`](../../자료/api/openapi.yaml), MQTT 계약은 [`../../자료/api/mqtt-contract.md`](../../자료/api/mqtt-contract.md)에서 관리한다.
@@ -40,6 +41,8 @@ API 계약은 [`../../자료/api/openapi.yaml`](../../자료/api/openapi.yaml), 
 실제 값은 `.env`나 배포 서버의 secret 환경 파일에 두고 Git에 커밋하지 않는다. 전체 목록은 [`.env.example`](.env.example)을 참고한다.
 
 - `DB_URL`, `DB_USER`, `DB_PASSWORD`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`: 로그인/claim 제한과 기기 presence 저장소
+- `DEVICE_PRESENCE_TTL`: heartbeat 기반 ONLINE 유지 시간, 기본 90초
 - `JWT_SIGNING_KEY`: 32바이트 이상 임의 문자열
 - `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
 - `MQTT_BROKER_URL`, `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_ENV`
@@ -47,6 +50,13 @@ API 계약은 [`../../자료/api/openapi.yaml`](../../자료/api/openapi.yaml), 
 - `DEVICE_PROVISIONING_ENABLED`, `DEVICE_PROVISIONING_ADMIN_KEY`: loopback 운영 API 활성화와 32자 이상 관리자 키
 - `LOGIN_MAX_FAILURES`, `LOGIN_FAILURE_WINDOW`: 기본 5회/10분 로그인 제한
 - `UPLOAD_STALE_AFTER`, `UPLOAD_SWEEP_DELAY_MS`: 중단 업로드 실패 전환 기준과 점검 주기
+- `FCM_ENABLED`, `FIREBASE_PROJECT_ID`: FCM 푸시 활성화와 Firebase 프로젝트 ID
+- `GOOGLE_APPLICATION_CREDENTIALS`: 서버에만 저장한 Firebase 서비스 계정 JSON의 절대 경로
+
+FCM은 기본적으로 비활성화되어 로컬·CI에서 Google 자격 증명을 요구하지 않는다.
+운영에서 서비스 계정 JSON을 `/home/ubuntu/william-james/secrets`처럼 저장소 밖의
+읽기 제한 경로에 두고 위 세 환경변수를 설정하면 활성화된다. 서비스 계정 JSON과
+서버 키는 저장소나 Flutter 앱에 포함하지 않는다.
 
 ## 라이브 미디어 경계
 

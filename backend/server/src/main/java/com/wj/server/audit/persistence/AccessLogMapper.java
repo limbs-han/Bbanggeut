@@ -15,16 +15,17 @@ import org.apache.ibatis.annotations.Select;
 public interface AccessLogMapper {
     @Insert("""
         INSERT INTO access_logs (
-            device_id, actor_user_id, actor_device_id, action, target_type, target_id,
+            device_id, vault_id, actor_user_id, actor_device_id, action, target_type, target_id,
             outcome, reason_code, ip_address, user_agent, request_id
         ) VALUES (
-            #{deviceId}, #{actorUserId}, #{actorDeviceId}, CAST(#{action} AS audit_action),
+            #{deviceId}, #{vaultId}, #{actorUserId}, #{actorDeviceId}, CAST(#{action} AS audit_action),
             #{targetType}, #{targetId}, CAST(#{outcome} AS audit_outcome), #{reasonCode},
             CAST(#{ipAddress} AS inet), #{userAgent}, #{requestId}
         )
         """)
     int insert(
         @Param("deviceId") UUID deviceId,
+        @Param("vaultId") UUID vaultId,
         @Param("actorUserId") UUID actorUserId,
         @Param("actorDeviceId") UUID actorDeviceId,
         @Param("action") String action,

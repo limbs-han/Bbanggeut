@@ -6,7 +6,7 @@
 
 - API/MQTT ID는 기존 as-built 문서(API-01~50, MQTT-01~15)의 번호를 그대로 재사용한다. 문서 배치는 MVP 7단계 순서로 재구성했지만 번호 자체는 바뀌지 않았다.
 - 프로토콜 사실(경로·요청/응답 필드·에러 코드·MQTT 토픽·미디어 경로)은 코드에서 직접 검증된 as-built본(git 이력 `723bdbc`)에서 그대로 가져온 것이며, 이번 재작성에서 재검증하지 않았다.
-- **신규 API-51**(`GET /api/devices/{deviceId}/laugh-report`)은 리포트 화면(FN-A38/FN-S26, `03-기능명세서.md` 8절)을 위한 **초안**이다. 표·본문 전체에 **[제안]** 배지를 붙여 기존 구현 API와 구분한다.
+- **신규 API-51**(`GET /api/devices/{deviceId}/laugh-report`)은 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 **초안**이다. 표·본문 전체에 **[제안]** 배지를 붙여 기존 구현 API와 구분한다.
 - MVP 7단계·가족 공유 밖의 API는 **부록 A**에 표 하나로 축약했다. 구현 상태는 본문에 넣지 않고 **부록 B**에서만 요약한다.
 - as-built본의 "사용 상태(✅/🔶/🔴)" 열과 교차검증 절은 이 문서(to-be 기획서)의 성격에 맞지 않아 제거했다. 필요 시 git 이력의 as-built본을 참조한다.
 
@@ -131,6 +131,7 @@
 |---|---|---|---|
 | registrationCode | String | 필수 | `@NotBlank @Size 8~12` |
 | name | String | 옵션 | `@Size 1~80`, 공백만 불가 |
+| vaultId | UUID | 옵션 | 기존 추억 금고에 기기를 추가할 때 사용. 생략하면 새 금고를 생성 |
 
 응답: `201 DeviceResponse`
 
@@ -148,7 +149,29 @@
 | claimedAt | Instant | 필수 | 등록(claim) 시각 |
 
 - 에러: 429 `CLAIM_RATE_LIMITED`(5회/10분), 409 `DEVICE_CLAIM_REJECTED`
-- 비고: claim된 기기는 활성 OWNER가 정확히 1명이 되도록 보장된다.
+- 비고: claim은 물리 기기와 추억 금고 사이의 활성 Binding을 생성한다. 새 금고에는 요청 계정이 OWNER가 되며, 기존 금고에는 OWNER만 기기를 추가할 수 있다.
+
+### Vault API `GET/POST /api/vaults`
+
+- 인증: 사용자 JWT
+- `GET /api/vaults`: 사용자가 참여 중인 추억 금고와 현재 연결 기기 목록 조회
+- `GET /api/vaults/{vaultId}`: 추억 금고 단건 조회
+- `POST /api/vaults`: 기기 없이도 독립적인 추억 금고 생성
+
+`VaultResponse` 핵심 필드:
+
+| 필드명 | 타입 | 설명 |
+|---|---|---|
+| id | UUID | 추억 금고 ID |
+| name | String | 사용자에게 표시할 금고 이름 |
+| status | String | ACTIVE/CLOSING/CLOSED |
+| myRole | String | OWNER/MEMBER |
+| retentionDays | int | 금고 공통 영상 보관 기간 |
+| subscriptionActive | boolean | 금고 구독 상태 |
+| devices | List | 활성 Device Binding과 물리 기기 정보. 연결 기기가 없으면 빈 배열 |
+
+- 비고: 금고는 기기가 없어도 유지된다. 멤버십·구독·영상 접근 권한은 기기가 아니라 금고에 귀속된다.
+- 앱 연동: 로그인 직후 목록을 조회해 `selectedVault`를 복원한다. `devices`가 비어 있으면 `VaultArchiveScreen`에서 `GET /api/videos?vaultId=...`로 과거 영상을 조회하고, 새 기기 연결 시 claim 요청에 이 금고의 `id`를 넣는다.
 
 ### API-43 `POST /api/iot/registration-codes`
 
@@ -174,7 +197,8 @@
 
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
-| deviceId | UUID | 필수 | 기기 ID |
+| deviceId | UUID | 조건부 필수 | 특정 기기로 촬영한 영상 조회 |
+| vaultId | UUID | 조건부 필수 | 기기 연결 여부와 무관하게 금고 전체 영상 조회 |
 | serialNumber | String | 옵션(nullable) | 시리얼 번호 |
 | keyId | String | 필수 | 자격증명 키 ID |
 | bearerToken | String | 필수 | `{keyId}.{secret}` 형식 |
@@ -224,8 +248,8 @@
 |---|---|---|---|
 | deviceId | UUID | 필수 | 기기 ID |
 | status | String | 필수 | 상태 |
-| recording | boolean | 필수 | 녹화 중 여부(MQTT heartbeat 기반, 기기 측 항상 false 스텁) |
-| uploadQueueDepth | int | 필수 | 업로드 대기열 깊이(기기 측 항상 0 스텁) |
+| recording | boolean | 필수 | 최근 MQTT heartbeat가 보고한 녹화 중 여부 |
+| uploadQueueDepth | int | 필수 | 최근 MQTT heartbeat가 보고한 업로드 대기열 깊이 |
 | bufferSeconds | Integer | 옵션(nullable) | 버퍼 초 |
 | personCount | Integer | 옵션(nullable) | 인원 수 |
 | checkedAt | Instant | 필수 | 조회 시각 |
@@ -255,7 +279,8 @@
 | streamId | UUID | 필수 | 스트림 ID |
 | deviceId | UUID | 필수 | 기기 ID |
 | status | String | 필수 | PENDING/READY/FAILED/CLOSED/EXPIRED |
-| playUrl | String | 옵션(nullable) | 재생 URL(HLS, `READY` 상태에서 값 존재) |
+| playUrl | String | 옵션(nullable) | HLS 폴백 URL(`READY` 상태에서 값 존재) |
+| whepUrl | String | 옵션(nullable) | WebRTC/WHEP 우선 재생 URL(`READY` 상태에서 값 존재) |
 | heartbeatIntervalSeconds | int | 필수 | 하트비트 주기(초, 기본 15초) |
 | viewerExpiresAt | Instant | 필수 | 뷰어 세션 만료 시각(TTL 45초) |
 | edgeHardExpiresAt | Instant | 필수 | 기기측 하드 만료 시각(TTL 120초) |
@@ -313,15 +338,17 @@
 - **ffmpeg 구성**: `-f v4l2` 카메라 입력 → `-c:v libx264 -preset ultrafast -tune zerolatency` 인코딩(기본 2500kbps) → `-f rtsp -rtsp_transport tcp {publish_url}` 출력
 - **수명 관리**: 준비 지연(기본 3초) 후 `STREAM_READY`/`STREAM_ERROR` 발행(MQTT-04). 1초 주기로 하드 만료(`hard_expires_at`) 검사 후 초과 시 자동 종료(`STREAM_HARD_EXPIRED`). 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신
 
-#### HLS 재생(앱)
+#### WebRTC/WHEP 우선 재생 + HLS 폴백(앱)
 
-- 세션 생성(API-35) → `StreamSessionResponse.playUrl`을 그대로 플레이어에 사용
-- 재생 URL 구성: `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
-- 타이밍: 뷰어 TTL 45초, 유휴 타임아웃 60초, 기기측 하드 만료(edge-lease) 120초, 하트비트 주기 15초, HLS 재생 토큰 TTL 30초
+- 세션이 `READY`가 되면 앱은 `StreamSessionResponse.whepUrl`을 먼저 사용한다.
+- WHEP 연결: 앱이 영상과 오디오를 모두 포함한 recv-only SDP offer를 `POST application/sdp`로 보내고 MediaMTX의 SDP answer를 적용한다. 수신된 원격 오디오 트랙은 영상과 같은 `RTCVideoRenderer`에 연결하며 음소거 버튼으로 볼륨을 제어한다. 별도 WebSocket 시그널링 서버는 없다.
+- WHEP/ICE 연결이 실패하거나 `whepUrl`이 없거나 SDP answer에 활성 오디오 미디어가 없으면 `playUrl`의 HLS를 사용한다. 따라서 AAC처럼 WebRTC에서 직접 전달할 수 없는 오디오로 송출되더라도 HLS 폴백을 통해 소리를 유지한다.
+- URL 구성: WHEP `{webrtc-base-url}/{streamId}/whep?token={liveToken}`, HLS `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
+- 타이밍: 뷰어 TTL 45초, 유휴 타임아웃 60초, 기기측 하드 만료(edge-lease) 120초, 하트비트 주기 15초, 라이브 토큰 TTL 30초
 - 상태 폴링: 세션 생성 후 2초 간격으로 API-36 재조회, `READY`면 재생 시작, `FAILED/CLOSED/EXPIRED`면 에러 표시
-- 재생 토큰 갱신: `READY` 진입 후 20초마다 API-36 재호출 + 플레이어 재생성(30초 만료 전 선제 교체)
-- 종료: 화면 이탈 시 API-37 호출
-- 재생 인가 확인: **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명 검증 → `204`/`401`) — MediaMTX가 재생 시점마다 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다.
+- 종료: 화면 이탈 시 WHEP 세션 `Location`에 `DELETE`한 뒤 API-37 호출
+- 재생 인가 확인: **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명 검증 → `204`/`401`) — Nginx가 WHEP/HLS 접근 시 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다.
+- 운영 경로: HTTPS 443의 Nginx `/webrtc/.../whep` → host loopback MediaMTX 8889, WebRTC 미디어/ICE는 UDP 8189. 8889는 외부에 직접 공개하지 않는다.
 
 ---
 
@@ -428,7 +455,8 @@
 | thumbnailUrl | String | 옵션(nullable) | 썸네일 URL |
 | createdAt | Instant | 필수 | 생성 시각 |
 
-- 에러: 422 `VALIDATION_FAILED`(size 범위/triggerType 미지원/from≥to), 404 `RESOURCE_NOT_FOUND`, 422 `INVALID_CURSOR`
+- `deviceId`와 `vaultId` 중 정확히 하나만 전달한다.
+- 에러: 422 `VALIDATION_FAILED`(조회 기준 중복/누락, size 범위/triggerType 미지원/from≥to), 404 `RESOURCE_NOT_FOUND`, 422 `INVALID_CURSOR`
 
 ### API-31 `POST /api/videos/{videoId}/play-url`
 
@@ -488,7 +516,8 @@
 
 1. 캘린더에서 날짜별 저장 영상 개수를 확인한다(API-27 재사용).
 2. 웃음 통계 화면에서 월평균·전체 포착 수·주간 추이·연간 히트맵(웃음 잔디)을 확인한다(API-33).
-3. (신규) 리포트 화면에서 주간/월간 단위 웃음 횟수, 시간대별 분포, 베스트 클립을 확인한다(**API-51, 제안**).
+3. Flutter 리포트 화면은 기존 영상 목록에서 `LAUGHTER` 영상을 단말 집계해 전체 횟수, 최근 날짜별 횟수, 웃음 잔디와 날짜별 영상을 표시한다.
+4. 주간/월간·시간대 분포·베스트 클립을 서버에서 집계하는 기능은 **API-51 제안·미구현** 범위다.
 
 ### API-27 `GET /api/videos` — 캘린더 범위 조회로 재사용
 
@@ -518,7 +547,7 @@
 
 ### API-51 `GET /api/devices/{deviceId}/laugh-report` **[제안]**
 
-> **[제안]** — FN-A38(리포트 화면)/FN-S26(리포트 집계 API, `03-기능명세서.md` 8절)을 위한 신규 API 초안이다. 미구현 상태이며, 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**한다(이 API의 응답에는 재생 URL을 직접 담지 않는다).
+> **[제안]** — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 API 초안이다. 서버 endpoint·DTO·service는 미구현 상태이며, 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**한다(이 API의 응답에는 재생 URL을 직접 담지 않는다).
 
 - 인증: 사용자 JWT **[제안]**
 - 요청: PathVariable `deviceId` + RequestParam **[제안]**
@@ -706,7 +735,7 @@
 |---|---|---|---|---|
 | MQTT-02 | `{base}/devices/+/status` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, state: ONLINE\|OFFLINE, firmwareVersion?}`. 연결(ONLINE)/LWT(OFFLINE)/정상 종료 시 발행 |
 | MQTT-03 | `{base}/devices/+/commands/ack` | 기기→백엔드 | 1 | `{schemaVersion, requestId, deviceId, status: ACCEPTED\|SUCCEEDED\|FAILED\|REJECTED\|EXPIRED, ...}`. 명령 수신·처리마다 발행 |
-| MQTT-05 | `{base}/devices/+/heartbeat` | 기기→백엔드 | 0 | `{schemaVersion, deviceId, recording, uploadQueueDepth, bufferSeconds?, personCount?, firmwareVersion}`. 30초 주기 |
+| MQTT-05 | `{base}/devices/+/heartbeat` | 기기→백엔드 | 0 | `{schemaVersion, deviceId, recording, uploadQueueDepth, bufferSeconds?, personCount?, firmwareVersion}`. 30초 주기이며 서버는 Redis presence를 90초 TTL로 갱신한다. TTL 만료는 별도 DB sweep 없이 OFFLINE을 뜻한다. |
 | MQTT-06 | `{base}/devices/+/registration` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, mode: ENABLED\|DISABLED, expiresAt?}`. 등록 코드 발급은 실제로 API-43(HTTP)으로만 이루어진다 |
 | MQTT-07 | `{base}/devices/+/events` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, eventId, type, occurredAt, confidence?, localClip, source}`. 웃음 감지→업로드 흐름은 실제로 API-25/26(HTTP)으로만 동작한다 |
 | MQTT-08 | `$CONTROL/dynamic-security/v1` | 백엔드→브로커 | 1 | 기기별 MQTT 계정/ACL 생성·회전·비활성화(Mosquitto dynamic-security 관리 채널) |
@@ -729,7 +758,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-09 | `GET /api/devices/{deviceId}` | 기기 단건 조회 |
 | API-10 | `PATCH /api/devices/{deviceId}` | 기기 이름/보관기간 변경(OWNER) |
 | API-12 | `POST /api/devices/{deviceId}/transfer-ownership` | 기기 소유권 이전 |
-| API-13 | `DELETE /api/devices/{deviceId}` | 기기 해제 |
+| API-13 | `DELETE /api/devices/{deviceId}` | 금고에서 물리 기기 연결 해제. 금고·영상·구독·금고 멤버십은 보존 |
 | API-28 | `GET /api/videos/{videoId}` | 영상 단건 상세 조회 |
 | API-29 | `PATCH /api/videos/{videoId}` | 영상 메타데이터(제목/메모/즐겨찾기) 수정 |
 | API-30 | `DELETE /api/videos/{videoId}` | 영상 삭제(OWNER, 비동기) |
@@ -764,14 +793,14 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | API-01~03 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | API-08, 43~45, 07, 11 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS/HLS 미디어 경로 포함 전체 동작 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WebRTC/WHEP 우선·HLS 폴백 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |
-| 7 | 통계 / 리포트 | 부분 구현 | API-27, 33은 구현됨. **API-51(리포트 집계 API)은 미구현(제안 초안)** |
+| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 Flutter 단말 집계 화면은 구현. **API-51 서버 집계는 미구현(제안 초안)** |
 | 가족 공유 | API-14~24 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작 |
 
-**유일한 미구현 항목은 API-51(리포트 집계, 제안)이다.**
+MVP 7단계의 API 중 새로 제안된 **API-51(리포트 서버 집계)**은 미구현이다. Flutter 리포트 화면 자체는 기존 영상 목록 데이터로 동작한다.
 
 ### API-06 제외 사유
 

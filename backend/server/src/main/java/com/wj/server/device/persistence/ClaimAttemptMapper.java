@@ -1,43 +1,25 @@
 package com.wj.server.device.persistence;
 
-import java.time.Instant;
 import java.util.UUID;
 
 import org.apache.ibatis.annotations.Insert;
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 
+/**
+ * Durable record of rejected device claims, kept for incident analysis.
+ * Enforcement lives in the Redis limiter and retention is handled by dropping
+ * partitions, so neither a lookup nor a delete belongs here.
+ */
 @Mapper
 public interface ClaimAttemptMapper {
 
-    @Select("""
-        SELECT (
-            (SELECT count(*) FROM device_claim_attempts
-              WHERE user_id = #{userId} AND succeeded = false AND attempted_at >= #{since}) >= #{maxFailures}
-            OR
-            (SELECT count(*) FROM device_claim_attempts
-              WHERE ip_hash = #{ipHash} AND succeeded = false AND attempted_at >= #{since}) >= #{maxFailures}
-        )
-        """)
-    boolean isRateLimited(
-        @Param("userId") UUID userId,
-        @Param("ipHash") String ipHash,
-        @Param("since") Instant since,
-        @Param("maxFailures") int maxFailures
-    );
-
     @Insert("""
-        INSERT INTO device_claim_attempts (user_id, ip_hash, succeeded)
-        VALUES (#{userId}, #{ipHash}, #{succeeded})
+        INSERT INTO device_claim_attempts (user_id, ip_hash)
+        VALUES (#{userId}, #{ipHash})
         """)
-    int insertAttempt(
+    int insertFailure(
         @Param("userId") UUID userId,
-        @Param("ipHash") String ipHash,
-        @Param("succeeded") boolean succeeded
+        @Param("ipHash") byte[] ipHash
     );
-
-    @Delete("DELETE FROM device_claim_attempts WHERE attempted_at < #{before}")
-    int deleteOlderThan(@Param("before") Instant before);
 }

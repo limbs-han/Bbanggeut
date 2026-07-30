@@ -27,12 +27,12 @@ public class VideoCommandService {
         validate(request);
         VideoRow video = videoMapper.lockAccessibleVideo(userId, videoId).orElseThrow(this::notFound);
         String role = videoMapper.findActiveRole(userId, videoId).orElseThrow(this::notFound);
-        if (!"OWNER".equals(role) && !"EDITOR".equals(role)) {
+        if (!"OWNER".equals(role) && !"MEMBER".equals(role)) {
             auditService.denied(
                 video.deviceId(), userId, "VIDEO_UPDATE", "VIDEO", videoId, "FORBIDDEN_ROLE");
             throw new ApiException(
                 HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
-                "OWNER 또는 EDITOR 권한이 필요합니다.");
+                "OWNER 또는 MEMBER 권한이 필요합니다.");
         }
         videoMapper.updateMetadata(
             videoId, request.titlePresent(), normalizedTitle(request),

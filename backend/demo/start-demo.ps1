@@ -2,6 +2,7 @@ param(
     [string]$SourceVideo = "C:\Users\SSAFY\Downloads\YTDown.com_YouTube_Media_6Ycn9qZK09I_001_1080p.mp4",
     [string]$AdminPassword = "WjDemo!2026",
     [string]$DemoLiveHlsUrl = "http://10.0.2.2:8888/demo-live/index.m3u8",
+    [string]$DemoLiveWhepUrl = "http://10.0.2.2:8889/demo-live/whep",
     [switch]$RebuildClips
 )
 
@@ -93,6 +94,7 @@ try {
     $env:S3_BUCKET = "wj-videos"
     $env:DEMO_MODE_ENABLED = "true"
     $env:DEMO_LIVE_HLS_URL = $DemoLiveHlsUrl
+    $env:DEMO_LIVE_WHEP_URL = $DemoLiveWhepUrl
     $env:MQTT_BROKER_URL = "tcp://127.0.0.1:1"
 
     $backendLog = Join-Path $runtimeDirectory "backend.log"

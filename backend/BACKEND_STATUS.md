@@ -41,6 +41,13 @@
 - refresh token 해시 저장 및 rotation
 - 로그아웃 시 소유 세션 회수
 - 사용자·세션 상태 검증
+- 로그인 실패 제한
+  - Redis 슬라이딩 윈도우로 이메일·IP 지문 기준 5회/10분 제한
+  - 정상 로그인 예약은 IP 버킷에서 제거하고, 실제 실패 해시는 PostgreSQL 감사 이력으로 별도 보관
+- **비밀번호 변경·재설정** (2026-07-27)
+  - 로그인 사용자는 현재 비밀번호를 확인한 뒤 변경하고 다른 세션을 회수
+  - 비밀번호 찾기는 계정 존재 여부를 노출하지 않는 202 응답
+  - 30분·1회용 재설정 토큰은 SHA-256 해시만 저장하고 SMTP 이메일로 전달
 
 ### 2.2 기기와 멤버십
 
@@ -54,24 +61,28 @@
 - claim 성공 시 OWNER 멤버십 생성
 - **소유권 이전** (2026-07-20): 현 OWNER가 같은 기기의 활성 MEMBER에게 `POST /transfer-ownership` — 강등+승격 한 트랜잭션, 영상·구성원·구독 유지. 외부 양도는 기기 해제 경로 사용
 - **회원 탈퇴** (2026-07-20): `DELETE /api/auth/me` — 활성 OWNER 멤버십이 있으면 409로 차단, 통과 시 멤버십·세션 회수 후 `WITHDRAWN` 처리
-- claim 실패 계정·IP당 5회/10분 제한 (코드는 기기에 귀속되지 않으므로 추측 주체 기준)
+- claim 실패 계정·IP당 Redis 슬라이딩 윈도우 5회/10분 제한 (코드는 기기에 귀속되지 않으므로 추측 주체 기준, 성공 예약은 IP 버킷에서 제거)
 - 사용자 기기 목록·상세·상태 조회
+  - MQTT heartbeat의 온라인·녹화·업로드 큐·버퍼·인원수·펌웨어 상태는 Redis 90초 TTL로 관리
+  - 목록·상세·금고·라이브 시작 판정은 Redis presence 우선, Redis 장애 시 PostgreSQL 마지막 상태로 폴백
+  - 정상 heartbeat는 DB 행을 갱신하지 않아 30초 주기 고빈도 UPDATE와 stale OFFLINE UPDATE를 제거
 - 기기 이름·영상 보존 일수 변경
 - 기기 해제·양도: 기존 행 REVOKED 종결 + credential·초대·멤버십 회수 + 영상 삭제 작업 등록 + 같은 시리얼의 새 UNCLAIMED 행 생성
-- heartbeat가 오래된 기기의 OFFLINE 판정
+- Redis presence TTL 만료로 별도 sweep 없이 OFFLINE 판정
 
 ### 2.3 초대와 구성원
 
 위치: [`server/src/main/java/com/wj/server/invitation`](./server/src/main/java/com/wj/server/invitation)
 
-- **초대 링크 + 승인 방식** (2026-07-20, 이메일 귀속 초대 폐지)
-  - OWNER가 기기별 초대 링크 생성(기본 7일 만료, 재발급 시 이전 링크 무효화, 해시만 저장)
-  - 링크를 받은 사용자가 로그인 후 가입 요청(PENDING) 제출 — 링크만으로는 멤버십이 생기지 않음
-  - OWNER가 가입 요청 목록을 보고 승인(MEMBER 멤버십 생성·재활성화) 또는 거절
+- **이메일 귀속 초대 방식** (2026-07-27)
+  - OWNER가 가입 상태가 ACTIVE인 이메일 계정만 초대
+  - 초대받은 계정이 앱 받은 초대함에서 수락하면 MEMBER 멤버십 생성·재활성화
+  - 존재하지 않거나 탈퇴한 이메일은 `INVITEE_ACCOUNT_NOT_FOUND`로 거절
+  - 초대 생성 시 초대받은 사용자에게 인앱 알림 생성 및 등록 토큰으로 FCM 푸시
 - MEMBER 목록 조회
 - MEMBER 권한 회수
 
-전달 채널은 OWNER가 링크를 카톡 등으로 직접 공유하는 방식이라 별도 이메일 발송 연동이 필요 없다.
+기기 권한은 OWNER와 MEMBER로만 구분하며 기존 EDITOR·VIEWER 데이터는 MEMBER로 전환한다.
 
 ### 2.4 IoT 인증과 MQTT
 
@@ -94,6 +105,7 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 - 기기 영상 업로드 URL 발급
 - MinIO 직접 PUT 업로드
 - 객체 크기·SHA-256 검증 후 업로드 완료 확정
+- LAUGHTER 영상이 READY가 되면 해당 기기의 활성 OWNER·MEMBER에게 인앱 알림 생성 및 FCM 푸시
 - 영상 목록·상세·재생·다운로드
 - 제목·설명·즐겨찾기 변경
 - 비동기 영상 삭제 worker

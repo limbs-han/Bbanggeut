@@ -9,14 +9,18 @@ import java.util.Locale;
 import java.util.UUID;
 
 import com.wj.server.auth.api.AuthTokenResponse;
+import com.wj.server.auth.api.ChangePasswordRequest;
+import com.wj.server.auth.api.ForgotPasswordRequest;
 import com.wj.server.auth.api.LoginRequest;
 import com.wj.server.auth.api.RefreshTokenRequest;
+import com.wj.server.auth.api.ResetPasswordRequest;
 import com.wj.server.auth.api.SignUpRequest;
 import com.wj.server.auth.api.UserSummary;
 import com.wj.server.auth.domain.AuthSessionRow;
 import com.wj.server.auth.domain.UserRow;
 import com.wj.server.auth.persistence.AuthMapper;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.AuthProperties;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -34,6 +38,7 @@ public class AuthService {
     private final JwtTokenService jwtTokenService;
     private final LoginAttemptService loginAttemptService;
     private final AuthProperties properties;
+    private final PasswordResetSender passwordResetSender;
     private final Clock clock;
 
     @Autowired
@@ -42,9 +47,11 @@ public class AuthService {
         PasswordEncoder passwordEncoder,
         JwtTokenService jwtTokenService,
         LoginAttemptService loginAttemptService,
-        AuthProperties properties
+        AuthProperties properties,
+        PasswordResetSender passwordResetSender
     ) {
-        this(authMapper, passwordEncoder, jwtTokenService, loginAttemptService, properties, Clock.systemUTC());
+        this(authMapper, passwordEncoder, jwtTokenService, loginAttemptService,
+            properties, passwordResetSender, Clock.systemUTC());
     }
 
     AuthService(
@@ -53,6 +60,7 @@ public class AuthService {
         JwtTokenService jwtTokenService,
         LoginAttemptService loginAttemptService,
         AuthProperties properties,
+        PasswordResetSender passwordResetSender,
         Clock clock
     ) {
         this.authMapper = authMapper;
@@ -60,6 +68,7 @@ public class AuthService {
         this.jwtTokenService = jwtTokenService;
         this.loginAttemptService = loginAttemptService;
         this.properties = properties;
+        this.passwordResetSender = passwordResetSender;
         this.clock = clock;
     }
 
@@ -80,13 +89,15 @@ public class AuthService {
     @Transactional
     public AuthTokenResponse login(LoginRequest request, ClientContext context) {
         String email = normalizeEmail(request.email());
-        loginAttemptService.ensureAllowed(email, context.ipAddress());
+        // Claimed before the hash comparison below, which is deliberately slow.
+        SlidingWindowRateLimiter.Reservation reservation =
+            loginAttemptService.reserveOrReject(email, context.ipAddress());
         UserRow user = authMapper.findUserByEmail(email).filter(this::isActive).orElse(null);
         if (user == null || !passwordEncoder.matches(request.password(), user.passwordHash())) {
             loginAttemptService.recordFailure(email, context.ipAddress());
             throw invalidCredentials();
         }
-        loginAttemptService.recordSuccess(email, context.ipAddress());
+        loginAttemptService.completeSuccess(reservation);
         authMapper.updateLastLogin(user.id());
         return issueTokens(user, context);
     }
@@ -109,6 +120,55 @@ public class AuthService {
         authMapper.revokeOwnedSession(sessionId, userId);
     }
 
+    @Transactional
+    public void changePassword(UUID userId, UUID sessionId, ChangePasswordRequest request) {
+        UserRow user = authMapper.findUserById(userId)
+            .filter(this::isActive)
+            .orElseThrow(this::invalidCredentials);
+        if (!passwordEncoder.matches(request.currentPassword(), user.passwordHash())) {
+            throw invalidCredentials();
+        }
+        if (passwordEncoder.matches(request.newPassword(), user.passwordHash())) {
+            throw new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "PASSWORD_UNCHANGED",
+                "새 비밀번호는 현재 비밀번호와 달라야 합니다.");
+        }
+        authMapper.updatePassword(userId, passwordEncoder.encode(request.newPassword()));
+        authMapper.expirePasswordResetTokens(userId);
+        authMapper.revokeOtherSessionsForUser(userId, sessionId);
+    }
+
+    @Transactional
+    public void requestPasswordReset(ForgotPasswordRequest request) {
+        String email = normalizeEmail(request.email());
+        UserRow user = authMapper.findUserByEmail(email).filter(this::isActive).orElse(null);
+        if (user == null) {
+            return;
+        }
+        String rawToken = newRefreshToken();
+        authMapper.expirePasswordResetTokens(user.id());
+        authMapper.insertPasswordResetToken(
+            UUID.randomUUID(), user.id(), hash(rawToken), clock.instant().plusSeconds(30 * 60));
+        passwordResetSender.send(user.email(), rawToken);
+    }
+
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        var token = authMapper.lockPasswordResetToken(hash(request.token()))
+            .orElseThrow(this::invalidPasswordResetToken);
+        if (token.usedAt() != null || !token.expiresAt().isAfter(clock.instant())
+            || authMapper.consumePasswordResetToken(token.id()) != 1) {
+            throw invalidPasswordResetToken();
+        }
+        if (authMapper.updatePassword(
+            token.userId(), passwordEncoder.encode(request.newPassword())) != 1) {
+            throw invalidPasswordResetToken();
+        }
+        authMapper.expirePasswordResetTokens(token.userId());
+        authMapper.revokeAllSessionsForUser(token.userId());
+    }
+
     /**
      * Account withdrawal. A user who still owns a device must release or
      * transfer it first — otherwise the device would end up ownerless, which
@@ -127,6 +187,7 @@ public class AuthService {
                 HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다.");
         }
         authMapper.revokeAllMembershipsForUser(userId);
+        authMapper.revokeAllVaultMembershipsForUser(userId);
         authMapper.revokeAllSessionsForUser(userId);
     }
 
@@ -187,6 +248,13 @@ public class AuthService {
 
     private ApiException invalidRefreshToken() {
         return new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "갱신 토큰이 유효하지 않습니다.");
+    }
+
+    private ApiException invalidPasswordResetToken() {
+        return new ApiException(
+            HttpStatus.UNAUTHORIZED,
+            "INVALID_PASSWORD_RESET_TOKEN",
+            "비밀번호 재설정 토큰이 유효하지 않거나 만료되었습니다.");
     }
 
     public record ClientContext(String clientName, String userAgent, String ipAddress) {

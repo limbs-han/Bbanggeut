@@ -6,6 +6,7 @@ import com.wj.server.common.web.RequestIdFilter;
 import com.wj.server.iot.auth.DeviceAuthenticationFilter;
 import com.wj.server.provisioning.api.ProvisioningAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,6 +17,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
@@ -25,7 +27,7 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
     AuthProperties.class, DeviceClaimProperties.class, StorageProperties.class,
     InvitationProperties.class, MqttProperties.class, StreamProperties.class,
     SubscriptionProperties.class, ProvisioningProperties.class, DeviceCredentialProperties.class,
-    DemoProperties.class
+    DemoProperties.class, PushProperties.class, DevicePresenceProperties.class
 })
 public class SecurityConfig {
 
@@ -68,19 +70,25 @@ public class SecurityConfig {
 
     @Bean
     @Order(3)
-    public SecurityFilterChain userFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
+    public SecurityFilterChain userFilterChain(
+        HttpSecurity http,
+        ObjectMapper objectMapper,
+        @Qualifier("accessTokenJwtDecoder") JwtDecoder accessTokenJwtDecoder
+    ) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/signup", "/api/auth/login", "/api/auth/refresh").permitAll()
+                .requestMatchers(
+                    "/api/auth/signup", "/api/auth/login", "/api/auth/refresh",
+                    "/api/auth/password/forgot", "/api/auth/password/reset").permitAll()
                 .requestMatchers(
                     HttpMethod.GET, "/api/membership-request-links/*/open").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/api/live/introspect").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
-                .jwt(jwt -> {})
+                .jwt(jwt -> jwt.decoder(accessTokenJwtDecoder))
                 .authenticationEntryPoint((request, response, exception) -> writeError(
                     response, objectMapper, HttpServletResponse.SC_UNAUTHORIZED,
                     "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.",

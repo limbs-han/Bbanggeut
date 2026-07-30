@@ -45,9 +45,11 @@ Port 1883 is intentionally absent. Do not add an anonymous or plaintext listener
   `MQTT_TLS_CERT_DIR`; it must contain `ca.crt`, `server.crt`, and `server.key`.
 - Keep the Mosquitto Dynamic Security data volume persistent. Changing the backend
   administrator password requires rotating that client in Dynamic Security too.
-- Configure MinIO with a production KES/KMS using the required
-  `MINIO_KMS_KES_*` values. Deployment initialization sets bucket-default SSE-KMS
-  and keeps anonymous bucket access disabled.
+- The base production Compose keeps MinIO private and anonymous bucket access
+  disabled, but does not invent placeholder KES/KMS credentials. Provision a
+  production KES/KMS first, then enable bucket-default SSE-KMS through a reviewed
+  production override and server-owned secrets. Do not make the base deployment
+  depend on an external KMS that has not actually been provisioned.
 - Keep PostgreSQL, MinIO API/console, RTSP and MediaMTX control ports bound to
   loopback or a private container network unless an authenticated TLS proxy is in
   front of them.
