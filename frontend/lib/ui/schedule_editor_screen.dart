@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../app/app_theme.dart';
 import 'content_state.dart';
 import 'widgets.dart';
 
@@ -29,6 +30,7 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
   late final TextEditingController _memo;
   late final TextEditingController _date;
   late bool _yearly;
+  late String _emoji;
   bool _saving = false;
 
   ContentState get _state => widget.state ?? ContentState.instance;
@@ -40,13 +42,12 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
     _title = TextEditingController(text: schedule?.title ?? '');
     _memo = TextEditingController(text: schedule?.memo ?? '');
     _date = TextEditingController(
-      text: schedule != null
-          ? DateFormat('yyyy-MM-dd').format(schedule.date)
-          : widget.initialDate == null
-          ? ''
-          : DateFormat('yyyy-MM-dd').format(widget.initialDate!),
+      text: DateFormat(
+        'yyyy-MM-dd',
+      ).format(schedule?.date ?? widget.initialDate ?? DateTime.now()),
     );
     _yearly = schedule?.yearly ?? false;
+    _emoji = schedule?.emoji ?? calendarScheduleEmojis.first;
   }
 
   @override
@@ -67,95 +68,79 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
   }
 
   Future<void> _pickDate() async {
-    final parsed = _parseDate(_date.text);
     final picked = await showDatePicker(
       context: context,
-      initialDate: parsed ?? widget.initialDate ?? DateTime.now(),
+      initialDate:
+          _parseDate(_date.text) ?? widget.initialDate ?? DateTime.now(),
       firstDate: DateTime(1900),
       lastDate: DateTime(2100),
     );
-    if (picked != null) {
-      _date.text = DateFormat('yyyy-MM-dd').format(picked);
-      _formKey.currentState?.validate();
-    }
+    if (picked == null) return;
+    _date.text = DateFormat('yyyy-MM-dd').format(picked);
+    _formKey.currentState?.validate();
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
-    final parsed = _parseDate(_date.text)!;
     final schedule = CalendarSchedule(
       id:
           widget.schedule?.id ??
           DateTime.now().microsecondsSinceEpoch.toString(),
       title: _title.text.trim(),
       memo: _memo.text.trim(),
-      date: parsed,
+      date: _parseDate(_date.text)!,
       yearly: _yearly,
+      emoji: _emoji,
     );
-    // TODO(content-api): 일정 생성/수정 API 성공 후 저장소를 갱신합니다.
     _state.saveSchedule(schedule);
     if (mounted) Navigator.pop(context, schedule);
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xFFFFFAF4),
     body: AppBackdrop(
       child: SafeArea(
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              SizedBox(
-                height: 72,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 16),
-                    RoundIconButton(
-                      icon: Icons.chevron_left_rounded,
-                      onPressed: () => Navigator.maybePop(context),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        widget.isEditing ? '일정 수정' : '새 일정 추가',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _saving ? null : _save,
-                      child: Text(_saving ? '저장 중' : '저장'),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                ),
+              _EditorHeader(
+                editing: widget.isEditing,
+                saving: _saving,
+                onSave: _save,
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 30),
                   children: [
-                    const Text(
-                      '일정 이름',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
+                    _FieldLabel('일정 이름'),
                     const SizedBox(height: 8),
                     TextFormField(
+                      key: const Key('schedule-title-field'),
                       controller: _title,
                       autofocus: !widget.isEditing,
-                      decoration: const InputDecoration(
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
                         hintText: '일정 이름을 입력하세요',
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.all(13),
+                          child: Text(
+                            _emoji,
+                            style: const TextStyle(fontSize: 23),
+                          ),
+                        ),
                       ),
                       validator: (value) => value?.trim().isEmpty == true
-                          ? '일정 이름을 입력해 주세요.'
+                          ? '일정 이름을 입력해 주세요'
                           : null,
                     ),
-                    const SizedBox(height: 18),
-                    const Text(
-                      '날짜',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
+                    const SizedBox(height: 22),
+                    _FieldLabel('날짜'),
                     const SizedBox(height: 8),
                     TextFormField(
+                      key: const Key('schedule-date-field'),
                       controller: _date,
                       keyboardType: TextInputType.datetime,
                       inputFormatters: [
@@ -167,44 +152,91 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
                         suffixIcon: IconButton(
                           tooltip: '달력에서 선택',
                           onPressed: _pickDate,
-                          icon: const Icon(Icons.calendar_month_outlined),
+                          icon: const Icon(
+                            Icons.calendar_month_outlined,
+                            color: Color(0xFF735542),
+                          ),
                         ),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return '날짜를 입력해 주세요.';
+                          return '날짜를 입력해 주세요';
                         }
-                        if (_parseDate(value.trim()) == null) {
-                          return 'YYYY-MM-DD 형식의 올바른 날짜를 입력해 주세요.';
-                        }
-                        return null;
+                        return _parseDate(value.trim()) == null
+                            ? 'YYYY-MM-DD 형식의 날짜를 입력해 주세요'
+                            : null;
                       },
                     ),
-                    const SizedBox(height: 18),
-                    const Text(
-                      '내용',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
+                    const SizedBox(height: 22),
+                    _FieldLabel('내용'),
                     const SizedBox(height: 8),
                     TextFormField(
+                      key: const Key('schedule-memo-field'),
                       controller: _memo,
-                      minLines: 4,
+                      minLines: 5,
                       maxLines: 7,
                       maxLength: 500,
                       decoration: const InputDecoration(
                         hintText: '일정 내용을 입력하세요',
+                        alignLabelWithHint: true,
                       ),
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('매년 반복'),
-                      value: _yearly,
-                      onChanged: (value) => setState(() => _yearly = value),
+                    const SizedBox(height: 16),
+                    const _FieldLabel('이모지 선택'),
+                    const SizedBox(height: 3),
+                    const Text(
+                      '선택한 이모지가 달력에 표시돼요',
+                      style: TextStyle(color: Color(0xFF8F7C6D), fontSize: 13),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 12),
+                    _EmojiPicker(
+                      selected: _emoji,
+                      onSelected: (emoji) => setState(() => _emoji = emoji),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 5,
+                      ),
+                      child: Row(
+                        children: [
+                          const Expanded(child: _FieldLabel('매년 반복')),
+                          Switch(
+                            key: const Key('schedule-yearly-switch'),
+                            value: _yearly,
+                            activeTrackColor: AppColors.coral,
+                            onChanged: (value) =>
+                                setState(() => _yearly = value),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     FilledButton(
+                      key: const Key('schedule-submit-button'),
                       onPressed: _saving ? null : _save,
-                      child: Text(widget.isEditing ? '변경 내용 저장' : '일정 추가'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.coral,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(60),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      child: _saving
+                          ? const SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(widget.isEditing ? '일정 저장' : '일정 추가'),
                     ),
                   ],
                 ),
@@ -214,5 +246,121 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
         ),
       ),
     ),
+  );
+}
+
+class _EditorHeader extends StatelessWidget {
+  const _EditorHeader({
+    required this.editing,
+    required this.saving,
+    required this.onSave,
+  });
+
+  final bool editing;
+  final bool saving;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+    child: SizedBox(
+      height: 62,
+      child: Row(
+        children: [
+          RoundIconButton(
+            icon: Icons.chevron_left_rounded,
+            onPressed: () => Navigator.maybePop(context),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              editing ? '🌱 일정 수정' : '🌱 새 일정 추가',
+              style: const TextStyle(
+                color: Color(0xFF5C4131),
+                fontSize: 27,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -1,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: saving ? null : onSave,
+            child: Text(
+              '저장',
+              style: TextStyle(
+                color: saving ? AppColors.muted : AppColors.coral,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    '$label  🌱',
+    style: const TextStyle(
+      color: Color(0xFF5D4535),
+      fontSize: 16,
+      fontWeight: FontWeight.w900,
+    ),
+  );
+}
+
+class _EmojiPicker extends StatelessWidget {
+  const _EmojiPicker({required this.selected, required this.onSelected});
+
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 10,
+    runSpacing: 10,
+    children: [
+      for (final emoji in calendarScheduleEmojis)
+        Semantics(
+          selected: emoji == selected,
+          button: true,
+          label: '$emoji 이모지',
+          child: InkWell(
+            key: ValueKey('schedule-emoji-$emoji'),
+            onTap: () => onSelected(emoji),
+            borderRadius: BorderRadius.circular(18),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: 62,
+              height: 62,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFDF9),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: emoji == selected
+                      ? AppColors.coral
+                      : const Color(0xFFF0D9C6),
+                  width: emoji == selected ? 2 : 1,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14705A43),
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Text(emoji, style: const TextStyle(fontSize: 34)),
+            ),
+          ),
+        ),
+    ],
   );
 }

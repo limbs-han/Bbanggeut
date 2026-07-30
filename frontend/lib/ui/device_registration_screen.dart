@@ -66,6 +66,10 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
 
   Future<void> _register() async {
     if (widget.controller.busy) return;
+    if (!widget.controller.canRegisterDevice) {
+      setState(() => registrationError = 'OWNER만 새 기기를 등록할 수 있어요.');
+      return;
+    }
     FocusScope.of(context).unfocus();
     final code = _normalizedCode;
     if (code.isEmpty) {
@@ -154,113 +158,133 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    resizeToAvoidBottomInset: true,
-    appBar: AppBar(
-      leading: IconButton(
-        key: const Key('device-registration-back'),
-        tooltip: widget.canGoBack ? '뒤로 가기' : '로그아웃',
-        onPressed: _exit,
-        icon: const Icon(Icons.chevron_left_rounded),
-      ),
-      title: const Text('기기 등록'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SerialNumberHelpScreen()),
+  Widget build(BuildContext context) {
+    if (!widget.controller.canRegisterDevice) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('기기 등록')),
+        body: const AppBackdrop(
+          child: Center(
+            child: EmptyState(
+              icon: Icons.lock_outline_rounded,
+              title: '접근할 수 없어요',
+              message: '새 기기 등록은 OWNER만 사용할 수 있어요.',
+            ),
           ),
-          child: const Text('도움말'),
         ),
-        const SizedBox(width: 8),
-      ],
-    ),
-    body: AppBackdrop(
-      child: SafeArea(
-        top: false,
-        child: ListView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          children: [
-            const Icon(
-              Icons.camera_indoor_rounded,
-              size: 54,
-              color: AppColors.sageDark,
+      );
+    }
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      appBar: AppBar(
+        leading: IconButton(
+          key: const Key('device-registration-back'),
+          tooltip: widget.canGoBack ? '뒤로 가기' : '로그아웃',
+          onPressed: _exit,
+          icon: const Icon(Icons.chevron_left_rounded),
+        ),
+        title: const Text('기기 등록'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SerialNumberHelpScreen()),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '어떤 방식으로 연결할까요?',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              '기기를 처음 연결하는 Owner와 초대를 요청하는 Member 흐름을 구분했어요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: 12),
-            ),
-            const SizedBox(height: 20),
-            SegmentedButton<int>(
-              key: const Key('device-registration-mode'),
-              segments: const [
-                ButtonSegment(
-                  value: 0,
-                  icon: Icon(Icons.home_work_outlined),
-                  label: Text('Owner'),
-                ),
-                ButtonSegment(
-                  value: 1,
-                  icon: Icon(Icons.person_add_alt_1_outlined),
-                  label: Text('Member'),
+            child: const Text('도움말'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: AppBackdrop(
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+            children: [
+              const Icon(
+                Icons.camera_indoor_rounded,
+                size: 54,
+                color: AppColors.sageDark,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '어떤 방식으로 연결할까요?',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '기기를 처음 연결하는 Owner와 초대를 요청하는 Member 흐름을 구분했어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              SegmentedButton<int>(
+                key: const Key('device-registration-mode'),
+                segments: const [
+                  ButtonSegment(
+                    value: 0,
+                    icon: Icon(Icons.home_work_outlined),
+                    label: Text('Owner'),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    icon: Icon(Icons.person_add_alt_1_outlined),
+                    label: Text('Member'),
+                  ),
+                ],
+                selected: {mode},
+                showSelectedIcon: false,
+                onSelectionChanged: widget.controller.busy
+                    ? null
+                    : (values) {
+                        FocusScope.of(context).unfocus();
+                        setState(() => mode = values.first);
+                      },
+              ),
+              const SizedBox(height: 16),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: mode == 0 ? _ownerPanel() : _memberPanel(),
+              ),
+              if (widget.controller.selectedVault == null) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: widget.controller.busy
+                      ? null
+                      : () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => InvitationInboxScreen(
+                              controller: widget.controller,
+                            ),
+                          ),
+                        ),
+                  icon: const Icon(Icons.mark_email_unread_outlined),
+                  label: Text(
+                    widget.controller.receivedInvitations.isEmpty
+                        ? '받은 초대함'
+                        : '받은 초대함 ${widget.controller.receivedInvitations.length}개',
+                  ),
                 ),
               ],
-              selected: {mode},
-              showSelectedIcon: false,
-              onSelectionChanged: widget.controller.busy
-                  ? null
-                  : (values) {
-                      FocusScope.of(context).unfocus();
-                      setState(() => mode = values.first);
-                    },
-            ),
-            const SizedBox(height: 16),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: mode == 0 ? _ownerPanel() : _memberPanel(),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: widget.controller.busy
-                  ? null
-                  : () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => InvitationInboxScreen(
-                          controller: widget.controller,
-                        ),
-                      ),
-                    ),
-              icon: const Icon(Icons.mark_email_unread_outlined),
-              label: Text(
-                widget.controller.receivedInvitations.isEmpty
-                    ? '받은 가족 초대 확인하기'
-                    : '받은 가족 초대 ${widget.controller.receivedInvitations.length}개',
-              ),
-            ),
-            if (!widget.canGoBack) ...[
-              const SizedBox(height: 6),
-              TextButton(
-                key: const Key('device-registration-logout'),
-                onPressed: widget.controller.busy ? null : _exit,
-                style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-                child: const Text('로그아웃'),
-              ),
+              if (!widget.canGoBack) ...[
+                const SizedBox(height: 6),
+                TextButton(
+                  key: const Key('device-registration-logout'),
+                  onPressed: widget.controller.busy ? null : _exit,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                  ),
+                  child: const Text('로그아웃'),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _ownerPanel() => SoftCard(
     key: const ValueKey('owner-registration-panel'),

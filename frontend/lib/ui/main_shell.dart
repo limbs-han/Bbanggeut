@@ -3,12 +3,11 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'calendar_screen.dart';
-import 'device_registration_screen.dart';
 import 'family_screen.dart';
 import 'home_screen.dart';
+import 'no_device_screens.dart';
 import 'settings_screen.dart';
 import 'videos_screen.dart';
-import 'vault_archive_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.controller});
@@ -19,6 +18,17 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int index = 2;
+  String? _lastDeviceId;
+
+  void _selectIndex(int value) {
+    if (value == 1 && widget.controller.authenticated) {
+      final refresh = widget.controller.selectedDevice == null
+          ? widget.controller.refreshVaultData()
+          : widget.controller.refreshDeviceData();
+      refresh.catchError((_) {});
+    }
+    if (mounted) setState(() => index = value);
+  }
 
   @override
   void initState() {
@@ -27,14 +37,23 @@ class _MainShellState extends State<MainShell> {
         widget.controller.pendingMembershipRequestPreview != null) {
       index = 3;
     }
+    _lastDeviceId = widget.controller.selectedDevice?.id;
     widget.controller.addListener(_handleRequestedRoute);
   }
 
   void _handleRequestedRoute() {
+    final currentDeviceId = widget.controller.selectedDevice?.id;
+    final deviceWasReleased = _lastDeviceId != null && currentDeviceId == null;
+    _lastDeviceId = currentDeviceId;
     final openFamily =
         widget.controller.consumeOpenFamilyAfterDeviceClaim() ||
         widget.controller.pendingMembershipRequestPreview != null;
-    if (mounted && openFamily && index != 3) setState(() => index = 3);
+    if (!mounted) return;
+    if (deviceWasReleased && index != 2) {
+      setState(() => index = 2);
+    } else if (openFamily && index != 3) {
+      setState(() => index = 3);
+    }
   }
 
   @override
@@ -45,32 +64,33 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.controller.selectedVault == null) {
-      return DeviceRegistrationScreen(
-        controller: widget.controller,
-        canGoBack: false,
-      );
-    }
-    if (widget.controller.selectedDevice == null) {
-      return VaultArchiveScreen(controller: widget.controller);
-    }
     final pages = [
       CalendarScreen(
         controller: widget.controller,
-        onBack: () => setState(() => index = 2),
+        onBack: () => _selectIndex(2),
       ),
       VideosScreen(controller: widget.controller),
       HomeScreen(
         controller: widget.controller,
-        openVideos: () => setState(() => index = 1),
-        openCalendar: () => setState(() => index = 0),
+        openVideos: () => _selectIndex(1),
+        openCalendar: () => _selectIndex(0),
       ),
-      FamilyScreen(controller: widget.controller),
-      SettingsScreen(controller: widget.controller),
+      if (widget.controller.selectedVault == null)
+        NoDeviceFamilyScreen(controller: widget.controller)
+      else
+        FamilyScreen(controller: widget.controller),
+      if (widget.controller.selectedDevice == null)
+        NoDeviceSettingsScreen(controller: widget.controller)
+      else
+        SettingsScreen(controller: widget.controller),
     ];
     return Scaffold(
       body: RefreshIndicator(
-        onRefresh: widget.controller.refreshDeviceData,
+        onRefresh: widget.controller.selectedVault == null
+            ? widget.controller.refreshAll
+            : widget.controller.selectedDevice == null
+            ? widget.controller.refreshVaultData
+            : widget.controller.refreshDeviceData,
         child: IndexedStack(index: index, children: pages),
       ),
       bottomNavigationBar: Container(
@@ -90,7 +110,7 @@ class _MainShellState extends State<MainShell> {
           child: NavigationBar(
             key: const ValueKey('main-bottom-navigation'),
             selectedIndex: index,
-            onDestinationSelected: (value) => setState(() => index = value),
+            onDestinationSelected: _selectIndex,
             destinations: const [
               NavigationDestination(
                 icon: Icon(Icons.calendar_month_outlined),
