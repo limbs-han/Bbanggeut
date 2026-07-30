@@ -342,6 +342,7 @@
 - 세션이 `READY`가 되면 앱은 `StreamSessionResponse.whepUrl`을 먼저 사용한다.
 - WHEP 연결: 앱이 영상과 오디오를 모두 포함한 recv-only SDP offer를 `POST application/sdp`로 보내고 MediaMTX의 SDP answer를 적용한다. 수신된 원격 오디오 트랙은 영상과 같은 `RTCVideoRenderer`에 연결하며 음소거 버튼으로 볼륨을 제어한다. 별도 WebSocket 시그널링 서버는 없다.
 - WHEP/ICE 연결이 실패하거나 `whepUrl`이 없거나 SDP answer에 활성 오디오 미디어가 없으면 `playUrl`의 HLS를 사용한다. 따라서 AAC처럼 WebRTC에서 직접 전달할 수 없는 오디오로 송출되더라도 HLS 폴백을 통해 소리를 유지한다.
+- WHEP와 HLS는 동시에 재생하지 않는다. WHEP 연결 성공 시 기존 HLS 컨트롤러를 정지·폐기하고 토큰 갱신 타이머를 취소하며, HLS를 열 때는 활성 WHEP 세션을 먼저 닫는다. READY 상태를 최초 조회에서 확인한 경우 상태 폴링 타이머를 다시 생성하지 않아 중복 연결을 방지한다.
 - URL 구성: WHEP `{webrtc-base-url}/{streamId}/whep?token={liveToken}`, HLS `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
 - 타이밍: 뷰어 TTL 45초, 유휴 타임아웃 60초, 기기측 하드 만료(edge-lease) 120초, 하트비트 주기 15초, 라이브 토큰 TTL 30초
 - 상태 폴링: 세션 생성 후 2초 간격으로 API-36 재조회, `READY`면 재생 시작, `FAILED/CLOSED/EXPIRED`면 에러 표시
