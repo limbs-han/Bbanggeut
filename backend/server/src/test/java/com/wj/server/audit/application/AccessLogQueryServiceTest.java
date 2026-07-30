@@ -63,6 +63,36 @@ class AccessLogQueryServiceTest {
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt());
     }
 
+    @Test
+    void vaultOwnerReadsAuditLogsWithoutAnyConnectedDevice() {
+        UUID userId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
+        AccessLogRow only = row(7, null, Instant.parse("2026-07-30T10:00:00Z"));
+        when(mapper.findActiveVaultRole(userId, vaultId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.findVaultPage(vaultId, null, null, 21)).thenReturn(List.of(only));
+
+        var page = service.listForVault(userId, vaultId, null, 20);
+
+        assertThat(page.items()).hasSize(1);
+        assertThat(page.hasNext()).isFalse();
+        assertThat(page.nextCursor()).isNull();
+    }
+
+    @Test
+    void vaultMemberCannotReadAuditLogs() {
+        UUID userId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
+        when(mapper.findActiveVaultRole(userId, vaultId)).thenReturn(Optional.of("MEMBER"));
+
+        assertThatThrownBy(() -> service.listForVault(userId, vaultId, null, 20))
+            .isInstanceOf(ApiException.class)
+            .satisfies(exception ->
+                assertThat(((ApiException) exception).status().value()).isEqualTo(403));
+        verify(mapper, never()).findVaultPage(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
     private AccessLogRow row(long id, UUID deviceId, Instant createdAt) {
         return new AccessLogRow(
             id, deviceId, UUID.randomUUID(), null, "VIDEO_VIEW", "VIDEO", UUID.randomUUID(),
