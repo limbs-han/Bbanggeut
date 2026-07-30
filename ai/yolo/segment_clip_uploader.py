@@ -27,6 +27,11 @@ SEGMENT_NAME_FORMAT = "homecam-%Y%m%dT%H%M%S.ts"
 RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429})
 TERMINAL_HTTP_STATUSES = frozenset({400, 401, 403, 404, 409, 410, 422})
 MAX_ERROR_BODY_CHARACTERS = 2_048
+EVENT_TITLES = {
+    "LAUGHTER": "웃음이 담긴 순간",
+    "CLAP": "박수가 시작된 순간",
+    "WAKE_WORD": "카메라를 부른 순간",
+}
 
 
 class SegmentCoverageError(ValueError):
@@ -40,6 +45,7 @@ class Trigger:
     occurred_at: datetime
     pre_seconds: float
     post_seconds: float
+    event_type: str = "LAUGHTER"
 
 
 @dataclass(frozen=True)
@@ -104,12 +110,16 @@ def parse_trigger(path: Path) -> Trigger:
     post_seconds = float(payload.get("postSeconds", 60.0))
     if pre_seconds <= 0 or post_seconds <= 0:
         raise ValueError("preSeconds and postSeconds must be positive")
+    event_type = str(payload.get("type", "LAUGHTER")).strip().upper()
+    if event_type not in EVENT_TITLES:
+        raise ValueError(f"unsupported trigger type: {event_type}")
     return Trigger(
         path=path,
         event_id=event_id,
         occurred_at=occurred_at.astimezone(timezone.utc),
         pre_seconds=pre_seconds,
         post_seconds=post_seconds,
+        event_type=event_type,
     )
 
 
@@ -117,20 +127,31 @@ def group_triggers(
     triggers: Iterable[Trigger],
     merge_gap_seconds: float,
 ) -> list[list[Trigger]]:
-    ordered = sorted(triggers, key=lambda trigger: trigger.occurred_at)
     groups: list[list[Trigger]] = []
-    for trigger in ordered:
-        if (
-            not groups
-            or (
-                trigger.occurred_at - groups[-1][-1].occurred_at
-            ).total_seconds()
-            > merge_gap_seconds
-        ):
-            groups.append([trigger])
-        else:
-            groups[-1].append(trigger)
-    return groups
+    by_type: dict[str, list[Trigger]] = {}
+    for trigger in triggers:
+        by_type.setdefault(trigger.event_type, []).append(trigger)
+
+    for same_type_triggers in by_type.values():
+        ordered = sorted(
+            same_type_triggers,
+            key=lambda trigger: trigger.occurred_at,
+        )
+        typed_groups: list[list[Trigger]] = []
+        for trigger in ordered:
+            if (
+                not typed_groups
+                or (
+                    trigger.occurred_at
+                    - typed_groups[-1][-1].occurred_at
+                ).total_seconds()
+                > merge_gap_seconds
+            ):
+                typed_groups.append([trigger])
+            else:
+                typed_groups[-1].append(trigger)
+        groups.extend(typed_groups)
+    return sorted(groups, key=lambda group: group[0].occurred_at)
 
 
 def clip_interval(group: list[Trigger]) -> tuple[datetime, datetime]:
@@ -397,8 +418,8 @@ def upload_group(
     checksum = sha256(output_path)
     upload_request = {
         "sourceEventId": canonical.event_id,
-        "triggerType": "LAUGHTER",
-        "title": "웃음이 감지된 순간",
+        "triggerType": canonical.event_type,
+        "title": EVENT_TITLES[canonical.event_type],
         "capturedStartAt": instant(clip_start),
         "capturedEndAt": instant(clip_end),
         "durationMs": max(

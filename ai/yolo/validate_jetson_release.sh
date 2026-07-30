@@ -36,6 +36,11 @@ required_files=(
     "${YAMNET_DIR}/ffmpeg_audio_stream.py"
     "${YAMNET_DIR}/laughter_eval_dataset.py"
     "${YAMNET_DIR}/laughter_scoring.py"
+    "${YAMNET_DIR}/audio_event_detection.py"
+    "${YAMNET_DIR}/audio_event_trigger.py"
+    "${YAMNET_DIR}/wake_name_profile.py"
+    "${YAMNET_DIR}/local_wake_name_detect_jetson.py"
+    "${YAMNET_DIR}/requirements-wake-name.txt"
     "${YAMNET_DIR}/mqtt_event_publisher.py"
     "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py"
     "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py"
@@ -64,6 +69,10 @@ grep -Fq ': "${YAMNET_THRESHOLD:=0.125}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${YAMNET_CONSECUTIVE:=3}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${YAMNET_CLAP_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${WAKE_NAME_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${SERVO_DASHBOARD_HOST:=127.0.0.1}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
@@ -89,6 +98,10 @@ PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" -m py_compile \
     "${YAMNET_DIR}/ffmpeg_audio_stream.py" \
     "${YAMNET_DIR}/laughter_eval_dataset.py" \
     "${YAMNET_DIR}/laughter_scoring.py" \
+    "${YAMNET_DIR}/audio_event_detection.py" \
+    "${YAMNET_DIR}/audio_event_trigger.py" \
+    "${YAMNET_DIR}/wake_name_profile.py" \
+    "${YAMNET_DIR}/local_wake_name_detect_jetson.py" \
     "${YAMNET_DIR}/mqtt_event_publisher.py"
 
 echo "[3/5] YOLO-side tests"
@@ -113,7 +126,11 @@ echo "[4/5] YAMNet stream tests"
         -m unittest \
         test_ffmpeg_audio_stream \
         test_laughter_eval_dataset \
-        test_laughter_scoring
+        test_laughter_scoring \
+        test_audio_event_detection \
+        test_audio_event_trigger \
+        test_wake_name_profile \
+        test_mqtt_event_publisher
 )
 
 echo "[5/5] Model benchmark tests"

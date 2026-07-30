@@ -23,6 +23,13 @@ from ffmpeg_audio_stream import (
     detect_rtsp_timeout_option,
     redact_stream_url,
 )
+from audio_event_detection import (
+    CLAP_CLASS_KEYWORDS,
+    ConsecutiveClapDetector,
+    count_impulsive_onsets,
+    find_class_indices,
+)
+from audio_event_trigger import write_audio_event_trigger
 from laughter_scoring import SCORE_AGGREGATIONS, summarize_laughter_scores
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
@@ -39,6 +46,13 @@ LAUGHTER_KEYWORDS = (
     "chuckle",
     "chortle",
 )
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -190,6 +204,51 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=5.0,
         help="Seconds to retain before and after laughter (default: 5).",
+    )
+    parser.add_argument(
+        "--enable-clap-events",
+        action="store_true",
+        default=env_flag("YAMNET_CLAP_ENABLED"),
+        help=(
+            "Enable consecutive-clap event triggers. Disabled by default "
+            "until the Backend CLAP contract is deployed."
+        ),
+    )
+    parser.add_argument(
+        "--clap-threshold",
+        type=float,
+        default=float(os.getenv("YAMNET_CLAP_THRESHOLD", "0.30")),
+        help="Minimum aggregated Clapping/Applause score (default: 0.30).",
+    )
+    parser.add_argument(
+        "--clap-consecutive",
+        type=int,
+        default=int(os.getenv("YAMNET_CLAP_CONSECUTIVE", "2")),
+        help="Required consecutive clap-positive windows (default: 2).",
+    )
+    parser.add_argument(
+        "--clap-required-onsets",
+        type=int,
+        default=int(os.getenv("YAMNET_CLAP_REQUIRED_ONSETS", "2")),
+        help="Required separated impulse attacks in the audio window (default: 2).",
+    )
+    parser.add_argument(
+        "--clap-min-active-seconds",
+        type=float,
+        default=float(os.getenv("YAMNET_CLAP_MIN_ACTIVE_SECONDS", "0.4")),
+        help="Minimum sustained clap activity in seconds (default: 0.4).",
+    )
+    parser.add_argument(
+        "--clap-max-gap-seconds",
+        type=float,
+        default=float(os.getenv("YAMNET_CLAP_MAX_GAP_SECONDS", "0.75")),
+        help="Maximum gap between clap-positive windows (default: 0.75).",
+    )
+    parser.add_argument(
+        "--clap-cooldown",
+        type=float,
+        default=float(os.getenv("YAMNET_CLAP_COOLDOWN", "12")),
+        help="Minimum seconds between clap events (default: 12).",
     )
     return parser.parse_args()
 
@@ -345,6 +404,18 @@ def validate_args(args: argparse.Namespace) -> None:
         )
     if args.stream_read_timeout_seconds <= 0:
         raise SystemExit("--stream-read-timeout-seconds must be positive")
+    if not 0.0 <= args.clap_threshold <= 1.0:
+        raise SystemExit("--clap-threshold must be between 0 and 1")
+    if args.clap_consecutive < 2:
+        raise SystemExit("--clap-consecutive must be at least 2")
+    if args.clap_required_onsets < 2:
+        raise SystemExit("--clap-required-onsets must be at least 2")
+    if args.clap_min_active_seconds < 0:
+        raise SystemExit("--clap-min-active-seconds cannot be negative")
+    if args.clap_max_gap_seconds <= 0:
+        raise SystemExit("--clap-max-gap-seconds must be positive")
+    if args.clap_cooldown < 0:
+        raise SystemExit("--clap-cooldown cannot be negative")
 
 
 def write_wav(path: Path, samples: Any, sample_rate: int, np: Any) -> None:
@@ -367,21 +438,15 @@ def write_trigger(
     class_name: str,
     clip_seconds: float,
 ) -> None:
-    event_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schemaVersion": "1.0",
-        "eventId": event_id,
-        "type": "LAUGHTER",
-        "occurredAt": occurred_at.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-        "confidence": round(score, 6),
-        "className": class_name,
-        "preSeconds": clip_seconds,
-        "postSeconds": clip_seconds,
-    }
-    destination = event_dir / f"{event_id}.trigger.json"
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    temporary.replace(destination)
+    write_audio_event_trigger(
+        event_dir,
+        event_id=event_id,
+        event_type="LAUGHTER",
+        occurred_at=occurred_at,
+        confidence=score,
+        class_name=class_name,
+        clip_seconds=clip_seconds,
+    )
 
 
 def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
@@ -407,6 +472,24 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     tf, model, class_names = load_yamnet(args.model, args.cache_dir)
     laughter_indices = find_laughter_classes(class_names)
     laughter_names = [class_names[index] for index in laughter_indices]
+    clap_indices: list[int] = []
+    clap_names: list[str] = []
+    clap_detector: ConsecutiveClapDetector | None = None
+    if args.enable_clap_events:
+        clap_indices = find_class_indices(class_names, CLAP_CLASS_KEYWORDS)
+        if not clap_indices:
+            raise RuntimeError(
+                "YAMNet class map does not contain Clapping or Applause"
+            )
+        clap_names = [class_names[index] for index in clap_indices]
+        clap_detector = ConsecutiveClapDetector(
+            threshold=args.clap_threshold,
+            required_windows=args.clap_consecutive,
+            minimum_active_seconds=args.clap_min_active_seconds,
+            maximum_gap_seconds=args.clap_max_gap_seconds,
+            cooldown_seconds=args.clap_cooldown,
+            required_onsets=args.clap_required_onsets,
+        )
     audio_queue: queue.Queue[Any] = queue.Queue(maxsize=8)
     mqtt_publisher = None
     if args.mqtt_host and not args.diagnostics_only:
@@ -442,6 +525,14 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
         f"임계값: {args.threshold:.3f}, 연속 횟수: {args.consecutive}, "
         f"입력 증폭: {args.gain:.2f}배, 점수 집계: {args.score_aggregation}"
     )
+    if clap_detector is not None:
+        print(
+            "Consecutive clap events enabled: "
+            f"classes={', '.join(clap_names)} "
+            f"threshold={args.clap_threshold:.3f} "
+            f"windows={args.clap_consecutive} "
+            f"minimumActive={args.clap_min_active_seconds:.2f}s"
+        )
     diagnostics_output = None
     if args.diagnostics_jsonl is not None:
         diagnostics_path = args.diagnostics_jsonl.expanduser().resolve()
@@ -537,6 +628,26 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                 )
                 laugh_score = score_summary.selected_score
                 best_laugh_name = score_summary.selected_class
+                now = time.monotonic()
+                clap_summary = None
+                clap_detection = None
+                clap_onset_count = 0
+                if clap_detector is not None:
+                    clap_slice = scores_np[:, clap_indices]
+                    clap_summary = summarize_laughter_scores(
+                        clap_slice.tolist(),
+                        clap_names,
+                        args.score_aggregation,
+                    )
+                    clap_onset_count = count_impulsive_onsets(
+                        waveform.tolist(),
+                        YAMNET_SAMPLE_RATE,
+                    )
+                    clap_detection = clap_detector.observe(
+                        clap_summary.selected_score,
+                        now,
+                        clap_onset_count,
+                    )
 
                 if laugh_score >= args.threshold:
                     positive_streak += 1
@@ -552,47 +663,67 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                     flush=True,
                 )
 
-                now = time.monotonic()
                 should_trigger = (
                     positive_streak >= args.consecutive
                     and now - last_alert_at >= args.cooldown
                 )
                 if diagnostics_output is not None:
+                    diagnostic_record = {
+                        "observedAt": datetime.now(timezone.utc)
+                        .isoformat(timespec="milliseconds")
+                        .replace("+00:00", "Z"),
+                        "topClass": class_names[top_index],
+                        "topScore": round(
+                            float(mean_scores[top_index]),
+                            6,
+                        ),
+                        "laughterMax": round(
+                            score_summary.max_score,
+                            6,
+                        ),
+                        "laughterMaxClass": score_summary.max_class,
+                        "laughterMean": round(
+                            score_summary.mean_score,
+                            6,
+                        ),
+                        "laughterMeanClass": score_summary.mean_class,
+                        "laughterP90": round(
+                            score_summary.p90_score,
+                            6,
+                        ),
+                        "laughterP90Class": score_summary.p90_class,
+                        "selectedAggregation": args.score_aggregation,
+                        "selectedScore": round(laugh_score, 6),
+                        "selectedClass": best_laugh_name,
+                        "threshold": args.threshold,
+                        "positiveStreak": positive_streak,
+                        "wouldTrigger": should_trigger,
+                        "rms": round(rms, 6),
+                        "inferenceMs": round(inference_ms, 3),
+                    }
+                    if clap_summary is not None and clap_detector is not None:
+                        diagnostic_record.update(
+                            {
+                                "clapScore": round(
+                                    clap_summary.selected_score,
+                                    6,
+                                ),
+                                "clapClass": clap_summary.selected_class,
+                                "clapThreshold": args.clap_threshold,
+                                "clapOnsetCount": clap_onset_count,
+                                "clapPositiveWindows": (
+                                    clap_detection.positive_windows
+                                    if clap_detection is not None
+                                    else clap_detector.positive_windows
+                                ),
+                                "clapWouldTrigger": (
+                                    clap_detection is not None
+                                ),
+                            }
+                        )
                     diagnostics_output.write(
                         json.dumps(
-                            {
-                                "observedAt": datetime.now(timezone.utc)
-                                .isoformat(timespec="milliseconds")
-                                .replace("+00:00", "Z"),
-                                "topClass": class_names[top_index],
-                                "topScore": round(
-                                    float(mean_scores[top_index]),
-                                    6,
-                                ),
-                                "laughterMax": round(
-                                    score_summary.max_score,
-                                    6,
-                                ),
-                                "laughterMaxClass": score_summary.max_class,
-                                "laughterMean": round(
-                                    score_summary.mean_score,
-                                    6,
-                                ),
-                                "laughterMeanClass": score_summary.mean_class,
-                                "laughterP90": round(
-                                    score_summary.p90_score,
-                                    6,
-                                ),
-                                "laughterP90Class": score_summary.p90_class,
-                                "selectedAggregation": args.score_aggregation,
-                                "selectedScore": round(laugh_score, 6),
-                                "selectedClass": best_laugh_name,
-                                "threshold": args.threshold,
-                                "positiveStreak": positive_streak,
-                                "wouldTrigger": should_trigger,
-                                "rms": round(rms, 6),
-                                "inferenceMs": round(inference_ms, 3),
-                            },
+                            diagnostic_record,
                             ensure_ascii=False,
                             separators=(",", ":"),
                         )
@@ -641,6 +772,71 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                         except Exception as exc:
                             print(
                                 f"MQTT 이벤트 발행 실패: {exc}",
+                                file=sys.stderr,
+                            )
+
+                if clap_detection is not None and clap_summary is not None:
+                    print(
+                        "\nConsecutive clap detected! "
+                        f"score={clap_detection.score:.3f} "
+                        f"class={clap_summary.selected_class} "
+                        f"windows={clap_detection.positive_windows} "
+                        f"active={clap_detection.active_seconds:.2f}s"
+                    )
+                    clap_event_id = None
+                    if args.event_dir is not None and not args.diagnostics_only:
+                        clap_event_id = str(uuid.uuid4())
+                        occurred_at = datetime.now(timezone.utc)
+                        if save_audio_clips:
+                            pre_audio = np.concatenate(tuple(audio_history))
+                            if len(pre_audio) > history_samples:
+                                pre_audio = pre_audio[-history_samples:]
+                            pending_clips[clap_event_id] = {
+                                "parts": [pre_audio.copy()],
+                                "post_samples": 0,
+                            }
+                        write_audio_event_trigger(
+                            args.event_dir,
+                            event_id=clap_event_id,
+                            event_type="CLAP",
+                            occurred_at=occurred_at,
+                            confidence=clap_detection.score,
+                            class_name=clap_summary.selected_class,
+                            clip_seconds=args.clip_seconds,
+                            metadata={
+                                "positiveWindows": (
+                                    clap_detection.positive_windows
+                                ),
+                                "onsetCount": clap_detection.onset_count,
+                                "activeSeconds": round(
+                                    clap_detection.active_seconds,
+                                    3,
+                                ),
+                                "scoreAggregation": args.score_aggregation,
+                            },
+                        )
+                        print(f"Local clap event: {clap_event_id}")
+                    if mqtt_publisher is not None:
+                        try:
+                            mqtt_publisher.publish_event(
+                                event_type="CLAP",
+                                event_id=clap_event_id,
+                                score=clap_detection.score,
+                                class_name=clap_summary.selected_class,
+                                threshold=args.clap_threshold,
+                                consecutive=args.clap_consecutive,
+                                monotonic_ns=time.monotonic_ns(),
+                                metadata={
+                                    "activeSeconds": round(
+                                        clap_detection.active_seconds,
+                                        3,
+                                    ),
+                                    "onsetCount": clap_detection.onset_count,
+                                },
+                            )
+                        except Exception as exc:
+                            print(
+                                f"MQTT clap event publish failed: {exc}",
                                 file=sys.stderr,
                             )
 

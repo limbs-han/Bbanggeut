@@ -34,7 +34,7 @@ class MqttEventPublisherTests(unittest.TestCase):
     def test_local_trigger_id_is_reused_for_mqtt_detection(self) -> None:
         publisher = MqttEventPublisher.__new__(MqttEventPublisher)
         publisher._device_id = "device-1"
-        publisher._event_topic = "homecam/v2/device-1/ai/laughter/detected"
+        publisher._custom_event_topic = None
         publisher._client = FakeClient()
 
         event_id = publisher.publish_laughter(
@@ -50,7 +50,38 @@ class MqttEventPublisherTests(unittest.TestCase):
         self.assertEqual(event_id, "local-trigger-1")
         self.assertEqual(payload["event_id"], "local-trigger-1")
         self.assertEqual(payload["score"], 0.81)
+        self.assertEqual(payload["event_type"], "laughter")
+        self.assertEqual(
+            publisher._client.topic,
+            "homecam/v2/device-1/ai/laughter/detected",
+        )
         self.assertEqual(publisher._client.qos, 1)
+
+    def test_generic_clap_event_uses_type_specific_topic(self) -> None:
+        publisher = MqttEventPublisher.__new__(MqttEventPublisher)
+        publisher._device_id = "device-1"
+        publisher._custom_event_topic = None
+        publisher._client = FakeClient()
+
+        event_id = publisher.publish_event(
+            event_type="CLAP",
+            event_id="clap-1",
+            score=0.72,
+            class_name="Clapping",
+            threshold=0.3,
+            consecutive=3,
+            monotonic_ns=456,
+            metadata={"activeSeconds": 1.1},
+        )
+        payload = json.loads(publisher._client.payload)
+
+        self.assertEqual(event_id, "clap-1")
+        self.assertEqual(payload["event_type"], "clap")
+        self.assertEqual(payload["metadata"]["activeSeconds"], 1.1)
+        self.assertEqual(
+            publisher._client.topic,
+            "homecam/v2/device-1/ai/clap/detected",
+        )
 
 
 if __name__ == "__main__":
