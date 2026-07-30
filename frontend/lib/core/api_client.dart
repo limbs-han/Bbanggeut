@@ -204,11 +204,24 @@ class ApiClient {
 
   Future<List<DeviceSummary>> listDevices() async =>
       (await _getList('/api/devices')).map(DeviceSummary.fromJson).toList();
-  Future<DeviceSummary> claimDevice(String registrationCode) async =>
+  Future<List<MemoryVault>> listVaults() async =>
+      (await _getList('/api/vaults')).map(MemoryVault.fromJson).toList();
+  Future<MemoryVault> createVault(String name) async => MemoryVault.fromJson(
+    await _post('/api/vaults', data: {'name': name.trim()}),
+  );
+  Future<DeviceSummary> claimDevice(
+    String registrationCode, {
+    String? vaultId,
+    String? vaultName,
+  }) async =>
       DeviceSummary.fromJson(
         await _post(
           '/api/devices/claim',
-          data: {'registrationCode': registrationCode.trim()},
+          data: {
+            'registrationCode': registrationCode.trim(),
+            'vaultId': ?vaultId,
+            'vaultName': ?vaultName,
+          },
         ),
       );
   Future<DeviceStatus> getDeviceStatus(String id) async =>
@@ -261,6 +274,10 @@ class ApiClient {
       (await _getList(
         '/api/devices/$deviceId/members',
       )).map(DeviceMember.fromJson).toList();
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
+      (await _getList(
+        '/api/vaults/$vaultId/members',
+      )).map(DeviceMember.fromJson).toList();
   Future<DeviceSummary> updateDevice(
     String deviceId, {
     String? name,
@@ -286,6 +303,20 @@ class ApiClient {
       },
     ),
   );
+  Future<Invitation> createVaultInvitation(
+    String vaultId,
+    String email, {
+    String? membershipRequestToken,
+  }) async => Invitation.fromJson(
+    await _post(
+      '/api/vaults/$vaultId/invitations',
+      data: {
+        'email': email.trim(),
+        'role': 'MEMBER',
+        'membershipRequestToken': ?membershipRequestToken,
+      },
+    ),
+  );
   Future<MembershipRequestLink> createMembershipRequestLink() async =>
       MembershipRequestLink.fromJson(
         await _post('/api/membership-request-links'),
@@ -299,8 +330,16 @@ class ApiClient {
       (await _getList(
         '/api/devices/$deviceId/invitations',
       )).map(Invitation.fromJson).toList();
+  Future<List<Invitation>> listVaultInvitations(String vaultId) async =>
+      (await _getList(
+        '/api/vaults/$vaultId/invitations',
+      )).map(Invitation.fromJson).toList();
   Future<void> revokeInvitation(String deviceId, String invitationId) async =>
       _delete('/api/devices/$deviceId/invitations/$invitationId');
+  Future<void> revokeVaultInvitation(
+    String vaultId,
+    String invitationId,
+  ) async => _delete('/api/vaults/$vaultId/invitations/$invitationId');
   Future<List<Invitation>> listMyInvitations() async =>
       (await _getList('/api/invitations')).map(Invitation.fromJson).toList();
   Future<DeviceMember> acceptInvitation(String invitationId) async =>
@@ -311,11 +350,20 @@ class ApiClient {
       _post('/api/invitations/$invitationId/decline');
   Future<void> revokeMember(String deviceId, String memberId) async =>
       _delete('/api/devices/$deviceId/members/$memberId');
+  Future<void> revokeVaultMember(String vaultId, String memberId) async =>
+      _delete('/api/vaults/$vaultId/members/$memberId');
   Future<void> transferOwnership(String deviceId, String membershipId) async =>
       _post(
         '/api/devices/$deviceId/transfer-ownership',
         data: {'newOwnerMembershipId': membershipId},
       );
+  Future<void> transferVaultOwnership(
+    String vaultId,
+    String membershipId,
+  ) async => _post(
+    '/api/vaults/$vaultId/transfer-ownership',
+    data: {'newOwnerMembershipId': membershipId},
+  );
   Future<void> releaseDevice(String deviceId) async =>
       _delete('/api/devices/$deviceId');
   Future<StreamSession> createStream(String deviceId) async =>
@@ -378,6 +426,34 @@ class ApiClient {
         from: from,
         to: to,
         size: 100,
+      );
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
+  }
+
+  Future<List<VideoMemory>> listAllVaultVideos(
+    String vaultId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final result = <VideoMemory>[];
+    String? cursor;
+    do {
+      final page = VideoPage.fromJson(
+        await _get(
+          '/api/videos',
+          query: {
+            'vaultId': vaultId,
+            'triggerType': ?triggerType,
+            'cursor': ?cursor,
+            'from': ?from?.toUtc().toIso8601String(),
+            'to': ?to?.toUtc().toIso8601String(),
+            'size': 100,
+          },
+        ),
       );
       result.addAll(page.items);
       cursor = page.hasNext ? page.nextCursor : null;

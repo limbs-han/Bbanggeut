@@ -35,6 +35,10 @@ class VideoEditorExporter {
     int captionColor = 0xFFFFFFFF,
     String filter = 'none',
     String arSticker = '',
+    // 들린 대사로 만든 시각별 자막. 이미 클립 기준으로 옮겨진 목록을 받는다
+    // (features/stt/caption_line.dart의 captionsForExport 참조).
+    // 기본값을 둬서 자막 없는 기존 호출부가 그대로 동작한다.
+    List<Map<String, Object>> captions = const [],
   }) async {
     final outputFile = File(outputPath);
     outputFile.parent.createSync(recursive: true);
@@ -53,6 +57,7 @@ class VideoEditorExporter {
       'captionColor': captionColor,
       'filter': filter,
       'arSticker': arSticker,
+      'segments': captions,
     });
     if (result == null || result.isEmpty) {
       throw const VideoExportException('영상 저장을 완료하지 못했어요.');

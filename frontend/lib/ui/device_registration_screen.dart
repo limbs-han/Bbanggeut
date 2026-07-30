@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/models.dart';
 import 'family_screen.dart';
 import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
@@ -27,9 +28,28 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
   final codeSuffix = TextEditingController();
   final codePrefixFocus = FocusNode();
   final codeSuffixFocus = FocusNode();
+  final vaultName = TextEditingController(text: '나의 추억');
   int mode = 0;
+  bool createNewVault = false;
+  String? selectedVaultId;
   Uri? membershipRequestLink;
   String? registrationError;
+
+  List<MemoryVault> get _ownedVaults =>
+      widget.controller.vaults.where((vault) => vault.isOwner).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    final selected = widget.controller.selectedVault;
+    if (selected?.isOwner == true) {
+      selectedVaultId = selected!.id;
+    } else if (_ownedVaults.isNotEmpty) {
+      selectedVaultId = _ownedVaults.first.id;
+    } else {
+      createNewVault = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -37,6 +57,7 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     codeSuffix.dispose();
     codePrefixFocus.dispose();
     codeSuffixFocus.dispose();
+    vaultName.dispose();
     super.dispose();
   }
 
@@ -55,9 +76,21 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
       setState(() => registrationError = '영문 대문자와 숫자로 된 8자리 번호를 확인해 주세요.');
       return;
     }
+    if (createNewVault && vaultName.text.trim().isEmpty) {
+      setState(() => registrationError = '새 Vault 이름을 입력해 주세요.');
+      return;
+    }
+    if (!createNewVault && selectedVaultId == null) {
+      setState(() => registrationError = '연결할 기존 Vault를 선택해 주세요.');
+      return;
+    }
     setState(() => registrationError = null);
     final formatted = '${code.substring(0, 4)}-${code.substring(4)}';
-    final ok = await widget.controller.claimDevice(formatted);
+    final ok = await widget.controller.claimDevice(
+      formatted,
+      vaultId: createNewVault ? null : selectedVaultId,
+      newVaultName: createNewVault ? vaultName.text.trim() : null,
+    );
     if (!mounted) return;
     if (!ok) {
       final apiMessage = widget.controller.errorMessage;
@@ -235,6 +268,73 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const Text(
+          '연결할 Vault 선택',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          '연결 중에는 Vault를 바꿀 수 없어요. 바꾸려면 기기 연결을 해제한 뒤 다시 등록해야 합니다.',
+          style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+        ),
+        const SizedBox(height: 10),
+        SegmentedButton<bool>(
+          key: const Key('vault-connection-choice'),
+          segments: [
+            ButtonSegment(
+              value: false,
+              enabled: _ownedVaults.isNotEmpty,
+              icon: const Icon(Icons.inventory_2_outlined),
+              label: const Text('기존 Vault'),
+            ),
+            const ButtonSegment(
+              value: true,
+              icon: Icon(Icons.create_new_folder_outlined),
+              label: Text('새 Vault'),
+            ),
+          ],
+          selected: {createNewVault},
+          showSelectedIcon: false,
+          onSelectionChanged: widget.controller.busy
+              ? null
+              : (values) => setState(() => createNewVault = values.first),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          createNewVault
+              ? '기존 Vault와 완전히 분리된 새 공간을 만들어요.'
+              : '기존 구성원과 과거 영상을 그대로 함께 사용해요.',
+          style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
+        ),
+        const SizedBox(height: 10),
+        if (!createNewVault && _ownedVaults.isNotEmpty)
+          DropdownButtonFormField<String>(
+            key: const Key('existing-vault-selector'),
+            initialValue: selectedVaultId,
+            decoration: const InputDecoration(labelText: '기존 Vault'),
+            items: _ownedVaults
+                .map(
+                  (vault) => DropdownMenuItem(
+                    value: vault.id,
+                    child: Text(vault.name),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: widget.controller.busy
+                ? null
+                : (value) => setState(() => selectedVaultId = value),
+          ),
+        if (createNewVault)
+          TextField(
+            key: const Key('new-vault-name'),
+            controller: vaultName,
+            maxLength: 80,
+            decoration: const InputDecoration(
+              labelText: '새 Vault 이름',
+              counterText: '',
+            ),
+          ),
+        const SizedBox(height: 18),
         const Text(
           '제품 아래쪽 시리얼 번호',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),

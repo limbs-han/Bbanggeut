@@ -44,6 +44,8 @@ dependencies:
   app_links: ^7.2.1
   ve_sdk_flutter: ^0.44.0
   flutter_webrtc: ^1.5.2
+  # 온디바이스 STT (features/stt). 오디오를 폰 밖으로 보내지 않는다.
+  whisper_ggml_plus: ^1.5.2
 
 dev_dependencies:
   flutter_test:
@@ -70,6 +72,10 @@ flutter:
   assets:
     - assets/images/
     - assets/config/
+    # 온디바이스 STT 모델 (약 167MiB). 설치 용량이 그만큼 늘어난다.
+    # 앱이 첫 실행 때 파일로 복사해 쓴다 — whisper.cpp는 에셋을 직접 못 읽는다.
+    # 만드는 절차는 docs/whisper-model.md 참조.
+    - assets/models/ggml-small-ko-q5_0.bin
 
   fonts:
     - family: NotoSansKR
