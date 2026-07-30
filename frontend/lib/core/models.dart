@@ -443,23 +443,20 @@ class StreamSession {
     required this.id,
     required this.status,
     required this.heartbeatIntervalSeconds,
-    this.playUrl,
     this.whepUrl,
     this.viewerExpiresAt,
     this.failureCode,
   });
   final String id;
   final String status;
-  final String? playUrl;
   final String? whepUrl;
   final int heartbeatIntervalSeconds;
   final DateTime? viewerExpiresAt;
   final String? failureCode;
-  bool get isReady => status == 'READY' && (whepUrl != null || playUrl != null);
+  bool get isReady => status == 'READY' && whepUrl != null;
   factory StreamSession.fromJson(Map<String, dynamic> json) => StreamSession(
     id: json['sessionId'] as String,
     status: json['status'] as String? ?? 'PENDING',
-    playUrl: json['playUrl'] as String?,
     whepUrl: json['whepUrl'] as String?,
     heartbeatIntervalSeconds:
         (json['heartbeatIntervalSeconds'] as num?)?.toInt() ?? 15,

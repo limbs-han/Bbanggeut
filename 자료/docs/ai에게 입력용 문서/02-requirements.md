@@ -31,7 +31,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 
 | ID | 요구사항 | 관련 FN | 근거(코드 경로) |
 |---|---|---|---|
-| REQ-F-18 | 요청 시점에만 홈캠 라이브(카드/전체화면) | FN-A10, FN-A11, FN-A37, FN-S16, FN-S17, FN-S25, FN-E04, FN-E05 | API-35~38, MQTT-01/04, `stream.py`; 실사용은 `EmbeddedLivePlayer`(FN-A10), `LiveScreen`(FN-A12, 부록A)은 도달 불가 코드 |
+| REQ-F-18 | 요청 시점에만 홈캠 라이브(카드/전체화면) | FN-A10, FN-A11, FN-A37, FN-S16, FN-S17, FN-S25, FN-E04, FN-E05 | API-35~38, MQTT-01/04, `stream.py`; 실사용은 `EmbeddedLivePlayer`(FN-A10). 도달 불가 코드였던 `LiveScreen`(FN-A12, 부록A)은 WebRTC 전용 전환에서 삭제 |
 | REQ-F-41 | 홈/캘린더/추억/가족/설정 탭 이동, 당겨서 새로고침 | FN-A06 | `main_shell.dart`(`IndexedStack`, `RefreshIndicator`) |
 
 ### 1.4 이벤트(웃음) 감지 영상 확인
@@ -136,7 +136,7 @@ MVP 7단계 관련 REQ만 간추린 구현 현황이다.
 | REQ-F-10 | 구현됨 | API-08, 코드 TTL 120초 + claim 레이트리밋 |
 | REQ-F-12 | 구현됨 | Redis TTL 기반 ONLINE/OFFLINE 및 heartbeat telemetry를 API-07/11·금고·라이브 판정에 반영 |
 | REQ-F-13 | 구현됨 | API-10 |
-| REQ-F-18 | 구현됨 | API-35~38, MQTT-01/04. `LiveScreen`은 미사용 코드지만 `EmbeddedLivePlayer`로 실제 구현됨 |
+| REQ-F-18 | 구현됨 | API-35~38, MQTT-01/04. `EmbeddedLivePlayer`로 구현됨(미사용 `LiveScreen`은 삭제) |
 | REQ-F-41 | 구현됨 | `main_shell.dart` |
 | REQ-F-37 | 구현됨 | YAMNet 임계값 판정 → presigned 업로드, systemd 상시 구동 |
 | REQ-F-21 | 구현됨 | API-27 커서 페이지네이션 |

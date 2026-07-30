@@ -71,17 +71,26 @@ void main() {
     expect(page.hasNext, isTrue);
   });
 
-  test('라이브 세션의 WebRTC와 HLS 재생 URL을 보존한다', () {
+  test('라이브 세션의 WHEP 재생 URL을 보존한다', () {
     final session = StreamSession.fromJson({
       'sessionId': 'session-id',
       'status': 'READY',
       'heartbeatIntervalSeconds': 15,
       'whepUrl': 'https://media.example/webrtc/live/stream-id/whep?token=test',
-      'playUrl': 'https://media.example/live/stream-id/index.m3u8?token=test',
     });
 
     expect(session.isReady, isTrue);
     expect(session.whepUrl, contains('/whep'));
-    expect(session.playUrl, endsWith('token=test'));
+    expect(session.whepUrl, endsWith('token=test'));
+  });
+
+  test('whepUrl이 없으면 READY라도 재생 준비로 보지 않는다', () {
+    final session = StreamSession.fromJson({
+      'sessionId': 'session-id',
+      'status': 'READY',
+      'heartbeatIntervalSeconds': 15,
+    });
+
+    expect(session.isReady, isFalse);
   });
 }

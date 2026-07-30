@@ -1738,7 +1738,7 @@ components:
           type: string
           format: uri
           nullable: true
-          description: READY 상태에서 제공되는 단방향 WebRTC WHEP URL. 운영 라이브 API가 반환하는 유일한 재생 URL이며 HLS 폴백은 제공하지 않는다.
+          description: READY 상태에서 제공되는 단방향 WebRTC WHEP URL. 운영 라이브 API가 반환하는 유일한 재생 URL이며 HLS 폴백은 제공하지 않는다. 미디어 계층은 introspection으로 세션 소유자와 ACTIVE 멤버십을 확인해 CLOSED/EXPIRED/권한 회수 뒤의 새 요청을 차단한다. URL은 앱 로그·분석 이벤트·DB에 저장하지 않는다.
         heartbeatIntervalSeconds:
           type: integer
           enum: [15]
