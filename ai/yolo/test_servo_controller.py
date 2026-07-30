@@ -73,12 +73,14 @@ def axis(
     channel: int,
     minimum: float,
     maximum: float,
+    park: float = 0.0,
 ) -> AxisConfig:
     return AxisConfig(
         name=name,
         channel=channel,
         minimum_deg=minimum,
         home_deg=0.0,
+        park_deg=park,
         maximum_deg=maximum,
         home_pulse_us=1500.0,
         pulse_us_per_degree=5.0,
@@ -172,13 +174,15 @@ class AxisConfigurationTests(unittest.TestCase):
             pan, tilt = build_axis_configs(parse_args())
 
         self.assertEqual((pan.minimum_deg, pan.maximum_deg), (-80.0, 80.0))
-        self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (-80.0, 80.0))
+        self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (-50.0, 80.0))
+        self.assertEqual((pan.park_deg, tilt.park_deg), (0.0, -50.0))
 
     def test_tilt_supports_symmetric_limits_around_home(self) -> None:
         environment = {
             "DEVICE_ID": DEVICE_ID,
             "SERVO_TILT_MIN_DEG": "-20",
             "SERVO_TILT_MAX_DEG": "20",
+            "SERVO_TILT_PARK_DEG": "0",
             "SERVO_TILT_PULSE_DIRECTION": "1",
         }
         with (
@@ -189,6 +193,7 @@ class AxisConfigurationTests(unittest.TestCase):
 
         self.assertEqual(tilt.minimum_deg, -20.0)
         self.assertEqual(tilt.home_deg, 0.0)
+        self.assertEqual(tilt.park_deg, 0.0)
         self.assertEqual(tilt.maximum_deg, 20.0)
         self.assertEqual(tilt.pulse_direction, 1)
         self.assertAlmostEqual(tilt.pulse_for_position(-20.0), 1388.88888)
@@ -497,6 +502,48 @@ class ServoControllerTests(unittest.TestCase):
         self.assertAlmostEqual(self.controller.current_pan_deg, 0.0)
         self.assertAlmostEqual(self.controller.current_tilt_deg, 0.0)
 
+    def test_home_uses_axis_specific_park_positions(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis(
+                "PAN",
+                channel=0,
+                minimum=-80.0,
+                maximum=80.0,
+                park=0.0,
+            ),
+            tilt=axis(
+                "TILT",
+                channel=1,
+                minimum=-50.0,
+                maximum=80.0,
+                park=-50.0,
+            ),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(20.0, 10.0),
+        )
+        controller.accept_payload(
+            payload(
+                state="RETURN_HOME",
+                command_x="HOME",
+                command_y="HOME",
+            ),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        for index in range(40):
+            controller.tick(10.0 + index * 0.1)
+
+        self.assertTrue(controller.is_at_home())
+        self.assertAlmostEqual(controller.current_pan_deg, 0.0)
+        self.assertAlmostEqual(controller.current_tilt_deg, -50.0)
+        status = controller.status_payload(hardware_enabled=False)
+        self.assertEqual(status["pan_park_deg"], 0.0)
+        self.assertEqual(status["tilt_park_deg"], -50.0)
+
     def test_message_timeout_forces_hold(self) -> None:
         self.accept(payload(), received_epoch=100.1, received_monotonic=10.0)
         self.controller.tick(10.1)
@@ -553,6 +600,36 @@ class ServoControllerTests(unittest.TestCase):
 
         self.assertEqual(self.controller.target_pan_deg, 80.0)
         self.assertEqual(self.controller.target_tilt_deg, 80.0)
+
+    def test_tilt_up_commands_stop_at_mechanical_safe_limit(self) -> None:
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis(
+                "TILT",
+                channel=1,
+                minimum=-50.0,
+                maximum=80.0,
+                park=-50.0,
+            ),
+            output=RecordingOutput(),
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(0.0, 0.0),
+        )
+        for index in range(1, 201):
+            sent = 100.0 + index * 0.1
+            controller.accept_payload(
+                payload(
+                    command_y="UP",
+                    error_y=-1.0,
+                    sequence=index,
+                    sent_at_epoch=sent,
+                ),
+                received_epoch=sent + 0.01,
+                received_monotonic=10.0 + index * 0.1,
+            )
+
+        self.assertEqual(controller.target_tilt_deg, -50.0)
 
 
 if __name__ == "__main__":

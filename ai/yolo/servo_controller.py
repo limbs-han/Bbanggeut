@@ -2,7 +2,8 @@
 
 The controller keeps camera-space positions separate from raw servo pulses:
 
-* PAN and TILT default to -80 through +80 degrees around logical HOME.
+* PAN defaults to -80 through +80 degrees; TILT defaults to -50 through +80
+  degrees to avoid driving the installed linkage into its mechanical stop.
 * Pulse direction and calibration remain deployment settings because linkage
   orientation and individual SG90 endpoints vary.
 * The last commanded position is restored before the first hardware pulse so
@@ -278,6 +279,7 @@ class AxisConfig:
     channel: int
     minimum_deg: float
     home_deg: float
+    park_deg: float
     maximum_deg: float
     home_pulse_us: float
     pulse_us_per_degree: float
@@ -294,6 +296,10 @@ class AxisConfig:
             raise ValueError(
                 f"{self.name} limits must satisfy minimum <= home <= maximum"
             )
+        if not self.minimum_deg <= self.park_deg <= self.maximum_deg:
+            raise ValueError(
+                f"{self.name} park position must be inside configured limits"
+            )
         if self.pulse_direction not in {-1, 1}:
             raise ValueError(f"{self.name} pulse direction must be -1 or 1")
         if self.pulse_us_per_degree <= 0:
@@ -304,7 +310,12 @@ class AxisConfig:
             raise ValueError(f"{self.name} maximum speed must be positive")
         if self.minimum_pulse_us >= self.maximum_pulse_us:
             raise ValueError(f"{self.name} pulse limits are invalid")
-        for position in (self.minimum_deg, self.home_deg, self.maximum_deg):
+        for position in (
+            self.minimum_deg,
+            self.home_deg,
+            self.park_deg,
+            self.maximum_deg,
+        ):
             pulse = self.pulse_for_position(position)
             if not self.minimum_pulse_us <= pulse <= self.maximum_pulse_us:
                 raise ValueError(
@@ -481,8 +492,8 @@ class ServoController:
         self.nominal_message_interval_seconds = nominal_message_interval_seconds
 
         initial_pan_deg, initial_tilt_deg = initial_position or (
-            pan.home_deg,
-            tilt.home_deg,
+            pan.park_deg,
+            tilt.park_deg,
         )
         if not pan.minimum_deg <= initial_pan_deg <= pan.maximum_deg:
             raise ValueError("initial PAN position is outside configured limits")
@@ -591,8 +602,8 @@ class ServoController:
                 self.target_pan_deg = self.current_pan_deg
                 self.target_tilt_deg = self.current_tilt_deg
             else:
-                self.target_pan_deg = self.pan.home_deg
-                self.target_tilt_deg = self.tilt.home_deg
+                self.target_pan_deg = self.pan.park_deg
+                self.target_tilt_deg = self.tilt.park_deg
 
         return target
 
@@ -663,14 +674,14 @@ class ServoController:
             if not self.output_armed:
                 return
             self.mode = "HOME"
-            self.target_pan_deg = self.pan.home_deg
-            self.target_tilt_deg = self.tilt.home_deg
+            self.target_pan_deg = self.pan.park_deg
+            self.target_tilt_deg = self.tilt.park_deg
 
     def is_at_home(self) -> bool:
         with self._lock:
             return (
-                abs(self.current_pan_deg - self.pan.home_deg) < 0.001
-                and abs(self.current_tilt_deg - self.tilt.home_deg) < 0.001
+                abs(self.current_pan_deg - self.pan.park_deg) < 0.001
+                and abs(self.current_tilt_deg - self.tilt.park_deg) < 0.001
             )
 
     def position_snapshot(self) -> tuple[float, float]:
@@ -698,6 +709,8 @@ class ServoController:
                 "pan_maximum_deg": self.pan.maximum_deg,
                 "tilt_minimum_deg": self.tilt.minimum_deg,
                 "tilt_maximum_deg": self.tilt.maximum_deg,
+                "pan_park_deg": self.pan.park_deg,
+                "tilt_park_deg": self.tilt.park_deg,
                 "pan_pulse_us": round(
                     self.pan.pulse_for_position(self.current_pan_deg),
                     3,
@@ -723,6 +736,7 @@ def build_axis_configs(args: argparse.Namespace) -> tuple[AxisConfig, AxisConfig
         channel=args.pan_channel,
         minimum_deg=args.pan_min_deg,
         home_deg=0.0,
+        park_deg=args.pan_park_deg,
         maximum_deg=args.pan_max_deg,
         home_pulse_us=args.pan_home_pulse_us,
         pulse_us_per_degree=args.pan_pulse_us_per_degree,
@@ -737,6 +751,7 @@ def build_axis_configs(args: argparse.Namespace) -> tuple[AxisConfig, AxisConfig
         channel=args.tilt_channel,
         minimum_deg=args.tilt_min_deg,
         home_deg=0.0,
+        park_deg=args.tilt_park_deg,
         maximum_deg=args.tilt_max_deg,
         home_pulse_us=args.tilt_home_pulse_us,
         pulse_us_per_degree=args.tilt_pulse_us_per_degree,
@@ -826,12 +841,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tilt-min-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MIN_DEG", "-80")),
+        default=float(os.getenv("SERVO_TILT_MIN_DEG", "-50")),
     )
     parser.add_argument(
         "--tilt-max-deg",
         type=float,
         default=float(os.getenv("SERVO_TILT_MAX_DEG", "80")),
+    )
+    parser.add_argument(
+        "--pan-park-deg",
+        type=float,
+        default=float(os.getenv("SERVO_PAN_PARK_DEG", "0")),
+    )
+    parser.add_argument(
+        "--tilt-park-deg",
+        type=float,
+        default=float(os.getenv("SERVO_TILT_PARK_DEG", "-50")),
     )
     parser.add_argument(
         "--pan-home-pulse-us",
