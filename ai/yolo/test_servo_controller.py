@@ -160,6 +160,16 @@ class FramingTargetValidationTests(unittest.TestCase):
 
 
 class AxisConfigurationTests(unittest.TestCase):
+    def test_defaults_limit_both_axes_to_80_degrees_from_home(self) -> None:
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            pan, tilt = build_axis_configs(parse_args())
+
+        self.assertEqual((pan.minimum_deg, pan.maximum_deg), (-80.0, 80.0))
+        self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (-80.0, 80.0))
+
     def test_tilt_supports_symmetric_limits_around_home(self) -> None:
         environment = {
             "DEVICE_ID": DEVICE_ID,
@@ -238,8 +248,8 @@ class ServoControllerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.output = RecordingOutput()
         self.controller = ServoController(
-            pan=axis("PAN", channel=0, minimum=-40.0, maximum=40.0),
-            tilt=axis("TILT", channel=1, minimum=0.0, maximum=80.0),
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
             output=self.output,
             expected_device_id=DEVICE_ID,
             message_timeout_seconds=0.75,
@@ -359,9 +369,9 @@ class ServoControllerTests(unittest.TestCase):
 
         status = self.controller.status_payload(hardware_enabled=False)
 
-        self.assertEqual(status["pan_minimum_deg"], -40.0)
-        self.assertEqual(status["pan_maximum_deg"], 40.0)
-        self.assertEqual(status["tilt_minimum_deg"], 0.0)
+        self.assertEqual(status["pan_minimum_deg"], -80.0)
+        self.assertEqual(status["pan_maximum_deg"], 80.0)
+        self.assertEqual(status["tilt_minimum_deg"], -80.0)
         self.assertEqual(status["tilt_maximum_deg"], 80.0)
         self.assertAlmostEqual(
             status["pan_pulse_us"],
@@ -390,7 +400,7 @@ class ServoControllerTests(unittest.TestCase):
                 received_monotonic=10.0 + index * 0.1,
             )
 
-        self.assertEqual(self.controller.target_pan_deg, 40.0)
+        self.assertEqual(self.controller.target_pan_deg, 80.0)
         self.assertEqual(self.controller.target_tilt_deg, 80.0)
 
 

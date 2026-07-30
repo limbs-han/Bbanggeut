@@ -692,17 +692,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pan-min-deg",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MIN_DEG", "-40")),
+        default=float(os.getenv("SERVO_PAN_MIN_DEG", "-80")),
     )
     parser.add_argument(
         "--pan-max-deg",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MAX_DEG", "40")),
+        default=float(os.getenv("SERVO_PAN_MAX_DEG", "80")),
     )
     parser.add_argument(
         "--tilt-min-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MIN_DEG", "0")),
+        default=float(os.getenv("SERVO_TILT_MIN_DEG", "-80")),
     )
     parser.add_argument(
         "--tilt-max-deg",
