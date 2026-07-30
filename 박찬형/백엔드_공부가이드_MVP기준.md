@@ -1109,6 +1109,127 @@ MVP 동선에 필요한 전제 기능은 다음 3개다.
 | Docker Compose | 로컬/운영 의존 서비스 | PostgreSQL·MinIO·Mosquitto·MediaMTX 재현 | PC에 직접 설치하면 버전과 설정이 달라짐 |
 | Gradle | 빌드·테스트 | 의존성 관리, bootJar 생성 | Maven도 가능하나 현재 Gradle로 통일 |
 
+## 1.4 코드를 열기 전에 보는 백엔드 폴더 지도
+
+백엔드는 도메인별로 나뉘지만, 각 도메인 내부의 읽는 방향은 거의 같다.
+
+```text
+backend/server/src/main/java/com/wj/server/
+├─ auth/           사람 계정, 로그인, JWT, refresh session, 비밀번호
+├─ vault/          Memory Vault, 금고 멤버십, 현재 연결 기기
+├─ device/         물리 기기 claim, 설정, 상태, 연결 해제
+├─ invitation/     금고 구성원 초대·수락·거절·회수·소유권 양도
+├─ video/          영상 metadata, 업로드 완료, 목록, 재생, 삭제, 통계
+├─ stream/         라이브 송출과 viewer session 상태 머신
+├─ iot/            기기 credential, MQTT 수신, 감지 event
+├─ notification/   앱 알림함과 FCM 전송
+├─ subscription/   금고/기기의 보관 정책과 구독
+├─ audit/          누가 언제 무엇에 접근했는지 기록
+├─ provisioning/   내부 관리자가 새 물리 기기를 출고 등록
+├─ common/         공통 오류, rate limit, web filter
+└─ config/         Spring Security와 환경설정 binding
+```
+
+한 기능 안에서는 다음 순서로 읽는다.
+
+```text
+api/*Controller
+  → api/*Request, *Response
+  → application/*Service
+  → persistence/*Mapper
+  → resources/db/migration/V*.sql
+  → 같은 이름의 *Test
+```
+
+- Controller에서 “외부 계약”을 본다.
+- Service에서 “업무 규칙과 트랜잭션”을 본다.
+- Mapper에서 “실제 SQL과 권한 조건”을 본다.
+- Flyway에서 “DB가 강제하는 불변식”을 본다.
+- Test에서 “작성자가 깨지면 안 된다고 본 조건”을 확인한다.
+
+처음부터 모든 Java 파일을 순서대로 읽는 것은 비효율적이다. 요청 하나를 골라 위의 세로 경로로 끝까지 추적한 뒤 다음 도메인으로 넘어간다.
+
+## 1.5 무엇이 어디에 저장되는가
+
+이 표를 먼저 이해하면 “왜 이 값은 Redis인데 저 값은 DB인가?”라는 질문에 답하기 쉬워진다.
+
+| 저장소/프로세스 | 저장하는 것 | 수명과 특성 | 장애·재시작 시 기대 |
+|---|---|---|---|
+| PostgreSQL | 사용자, BCrypt 비밀번호 해시, refresh session 해시, 금고·멤버십·기기 binding, 영상 metadata, 초대, 라이브 session, 알림, 감사 이력 | 권한·돈·복구에 필요한 영속 데이터, 트랜잭션 필요 | 재시작 후에도 반드시 남아야 함 |
+| Redis | 로그인·claim 시도의 슬라이딩 윈도우 ZSET | 짧은 TTL의 고빈도 운영 상태, 원자적 check-and-add 필요 | 유실 가능. 장애 시 로그인 자체는 허용하는 fail-open 정책 |
+| MinIO | MP4 영상 객체 | 큰 binary, DB transaction과 별도 | 객체와 PostgreSQL metadata를 함께 백업해야 함 |
+| Mosquitto | MQTT 연결, retained status, 전달 중 message | 실시간 전달 통로이지 업무 원장 DB가 아님 | 끊기면 재연결·LWT·재발행으로 회복 |
+| MediaMTX | 현재 들어오는 RTSP stream과 HLS/WHEP 출력 | 라이브 중에만 의미 있는 휘발 상태 | 중단돼도 사용자·영상 metadata는 손상되지 않음 |
+| Flutter secure storage | access/refresh token 등 앱의 로그인 재개 정보 | 해당 단말의 민감 로컬 상태 | 로그아웃/refresh 실패 시 삭제 |
+| Jetson 로컬 디스크 | 24시간 순환 녹화 buffer, 업로드 전 clip | 서버로 상시 전송하지 않는 privacy 경계 | 업로드 완료 전까지 edge가 책임 |
+
+핵심 판단 기준은 다음과 같다.
+
+- **없어지면 권한이나 사용자 데이터가 틀어지는가?** PostgreSQL.
+- **짧게 살아 있고 요청이 매우 많으며 원자적 카운트가 필요한가?** Redis.
+- **크기가 큰 파일인가?** MinIO.
+- **지금 발생한 명령·상태를 느슨하게 전달하는가?** MQTT.
+- **현재 재생 중인 연속 영상인가?** MediaMTX.
+
+refresh token session을 Redis로 옮기지 않은 이유도 여기서 나온다. 로그아웃·비밀번호 변경 직후 access token을 즉시 막는 보안 원장이므로, 현재 구현은 `auth_sessions`와 `users.token_version`을 PostgreSQL에서 매 요청 확인한다. Redis를 추가하더라도 DB 원장을 없애는 단순 치환이 아니라 캐시 무효화와 장애 정책을 먼저 설계해야 한다.
+
+## 1.6 HTTP 요청 하나가 지나가는 공통 경로
+
+```text
+Flutter/기기
+  → Nginx(TLS 종료, proxy header)
+  → RequestIdFilter(requestId 부여)
+  → SecurityFilterChain(사용자 JWT / 기기 credential / 관리자 키)
+  → Controller(JSON 역직렬화 + Bean Validation)
+  → Service(권한 검사 + 상태 전이 + transaction)
+  → Mapper(MyBatis SQL)
+  → PostgreSQL
+  → Response DTO
+  → 공통 오류 형식 또는 2xx JSON
+```
+
+인증이 통과했다고 업무 권한까지 끝난 것이 아니다.
+
+- Security filter는 “이 요청자가 누구인지”를 확인한다.
+- Service/Mapper는 “이 사용자가 이 Vault/영상/기기에 접근해도 되는지”를 `vault_memberships`로 다시 확인한다.
+- 외부에서 받은 `userId`, `vaultId`, `videoId`를 믿지 않고 인증 principal과 DB 관계를 기준으로 판단한다.
+
+## 1.7 핵심 도메인의 소유 관계
+
+```text
+User
+  └─ VaultMembership(OWNER 또는 MEMBER)
+       └─ MemoryVault
+            ├─ Video(vault_id = 접근·소유 경계)
+            │    └─ device_id = 실제 촬영 출처
+            ├─ Invitation / Subscription / Notification
+            └─ DeviceBinding(generation별 연결 이력)
+                 └─ Physical Device
+```
+
+여기서 물리 기기는 데이터의 영구 소유자가 아니다. 기기를 해제하거나 교체해도 Vault, 멤버십, 구독, 과거 영상은 남는다. 해제는 활성 `device_bindings`를 닫고 기기를 `UNCLAIMED`로 돌리는 동작이다. 같은 물리 기기가 다른 사용자에게 재등록되면 새 generation과 새 Vault가 생겨 이전 사용자의 영상과 섞이지 않는다.
+
+Flutter도 로그인 후 `GET /api/vaults`를 먼저 호출해 `selectedVault`를 잡는다.
+
+- 금고 없음: 전체 화면 기기 등록
+- 금고와 활성 기기 있음: 기존 5개 탭
+- 금고는 있지만 기기 없음: `VaultArchiveScreen`에서 `GET /api/videos?vaultId=...`
+
+## 1.8 기능별 전체 흐름을 한 번에 보기
+
+| 기능 | 시작 | 서버의 핵심 판단 | PostgreSQL | Redis | 외부 시스템 |
+|---|---|---|---|---|---|
+| 로그인 | 이메일+비밀번호 | rate limit, BCrypt, 계정 상태 | 사용자·session·실패 감사 이력 | 이메일/IP 시도 window | 없음 |
+| access JWT API | Bearer JWT | 서명·만료·issuer·sid·tv 검증 | session과 user 상태를 매 요청 조회 | 사용 안 함 | 없음 |
+| 기기 claim | 1회용 등록 코드 | 코드 유효성, OWNER 권한, binding 불변식 | 코드·기기·Vault·binding | 코드/IP 시도 window | 없음 |
+| heartbeat | MQTT message | 기기 식별·payload 검증 | 현재 master는 `devices` 상태 갱신 | 현재 master에서는 사용 안 함 | Mosquitto |
+| 영상 업로드 | 기기의 metadata | credential, 멱등 키, 크기·checksum | `videos` 상태 머신 | 사용 안 함 | MinIO presigned PUT |
+| 영상 조회 | vaultId/deviceId | VaultMembership 권한 | 영상 metadata·cursor | 사용 안 함 | 재생 시 MinIO GET URL |
+| 라이브 | 앱의 session 생성 | 기기 online, 멤버 권한, lease | stream/viewer session | 사용 안 함 | MQTT 명령 + MediaMTX |
+| 초대 | OWNER 요청/수신자 수락 | role·상태·이메일 일치 | invitation·membership | 사용 안 함 | email/FCM |
+
+> Redis 운영 상태 확장 MR !92는 heartbeat presence를 `presence:device:{id}` TTL 키에 두고 DB를 장애 fallback으로 사용하는 변경이다. 이 스터디 브랜치가 병합한 현재 master에는 아직 반영되지 않았으므로, 위 표는 master의 as-built와 MR 이후 구조를 구분해 적었다.
+
 ---
 
 # 2. MVP 1 — 회원가입 / 로그인
@@ -1138,9 +1259,9 @@ MVP 동선에 필요한 전제 기능은 다음 3개다.
 ## 2.2 아주 기초: 인증과 인가
 
 - **인증(Authentication)**: “너 누구야?”를 확인한다. 로그인, JWT 검증이 여기다.
-- **인가(Authorization)**: “네가 이 작업을 해도 돼?”를 확인한다. 특정 기기 멤버인지 검사하는 것이 여기다.
+- **인가(Authorization)**: “네가 이 작업을 해도 돼?”를 확인한다. 특정 추억 금고의 활성 멤버인지 검사하는 것이 여기다.
 
-로그인했다고 남의 영상까지 볼 수 있는 것은 아니다. 로그인은 사용자 ID를 알아낸 것뿐이고, 영상 조회 때 `device_memberships` 관계를 다시 확인해야 한다.
+로그인했다고 남의 영상까지 볼 수 있는 것은 아니다. 로그인은 사용자 ID를 알아낸 것뿐이고, 영상 조회 때 `vault_memberships` 관계를 다시 확인해야 한다.
 
 ## 2.3 회원가입 흐름
 
@@ -1172,14 +1293,84 @@ BCrypt는 다음 특징이 있다.
 ```text
 앱
   → POST /api/auth/login
-  → 이메일·IP 기준 최근 실패 횟수 확인
-  → users에서 활성 사용자 조회
-  → BCrypt.matches(입력 비밀번호, 저장 해시)
-  ├─ 실패: 실패 이력 기록, 항상 동일한 INVALID_CREDENTIALS 응답
-  └─ 성공: 실패 이력 정리, last_login 갱신, 토큰 발급
+  → AuthController가 ClientContext(clientName, userAgent, 실제 IP) 구성
+  → AuthService.login
+     1. 이메일 trim + 소문자 정규화
+     2. LoginAttemptService.reserveOrReject
+        → Redis Lua가 이메일 bucket과 IP bucket을 한 번에 검사·예약
+     3. PostgreSQL users에서 정규화 이메일 조회
+     4. ACTIVE 계정인지 확인
+     5. BCrypt.matches(입력 비밀번호, password_hash)
+     ├─ 실패
+     │   → PostgreSQL auth_login_attempts에 이메일/IP SHA-256 digest 기록
+     │   → 401 INVALID_CREDENTIALS
+     └─ 성공
+         → Redis 이메일 bucket 정리
+         → PostgreSQL users.last_login_at 갱신
+         → PostgreSQL auth_sessions에 refresh token SHA-256 hash INSERT
+         → access JWT + refresh 원문을 앱에 반환
 ```
 
 사용자가 없는 경우와 비밀번호가 틀린 경우에 같은 메시지를 주는 이유는 공격자에게 “이 이메일은 가입되어 있다”는 정보를 주지 않기 위해서다.
+
+### 2.4.1 Redis가 맡는 것
+
+Redis에는 비밀번호, 사용자 row, 로그인 session을 저장하지 않는다. 로그인 경로에서 Redis가 맡는 것은 **최근 시도 횟수를 빠르고 원자적으로 판단하는 일**뿐이다.
+
+```text
+rl:login:email:{sha256(email)}
+rl:login:ip:{sha256(ip)}
+```
+
+각 키는 ZSET이고 member는 요청마다 새 UUID, score는 Redis server time이다. Lua script 한 번 안에서 다음을 처리한다.
+
+1. 10분 window 밖의 member 제거
+2. 이메일과 IP bucket의 현재 개수 확인
+3. 하나라도 5회 이상이면 추가하지 않고 거부
+4. 둘 다 여유가 있으면 두 ZSET에 같은 요청 member 추가
+5. key에 window만큼 TTL 설정
+
+두 bucket을 Java에서 `count → add`로 따로 처리하면 동시 요청이 모두 같은 과거 count를 보고 통과할 수 있다. Redis Lua는 script 전체를 원자적으로 실행하므로 이 race condition을 막는다.
+
+Redis 장애 때는 **fail-open**이다. `SlidingWindowRateLimiter`가 경고 로그를 남기고 요청을 허용한다. Redis 장애 하나로 모든 사용자의 로그인을 막지 않기 위한 선택이며, 외부 Nginx의 volumetric limit은 별도로 유지해야 한다. 보안과 가용성 사이의 명시적 trade-off다.
+
+현재 master 구현은 성공 시 이메일 bucket만 삭제하고 IP bucket은 남긴다. IP 전체 제한을 유효한 계정 하나로 초기화하는 공격을 막기 위한 의도지만, 성공 요청 자체도 IP ZSET member로 남아 정상 로그인 5회가 제한에 포함되는 문제가 있다. MR !92는 `Reservation`과 성공 완료 Lua를 도입해 **성공한 요청 member 하나만 IP bucket에서 제거**하고 이메일 bucket을 정리하도록 수정한다.
+
+### 2.4.2 PostgreSQL이 맡는 것
+
+| 테이블 | 로그인에서 읽고 쓰는 값 | Redis로 옮기지 않는 이유 |
+|---|---|---|
+| `users` | email, BCrypt `password_hash`, status, `token_version`, `last_login_at` | 계정 원장이고 트랜잭션·복구가 필요 |
+| `auth_sessions` | session id, user id, refresh hash, client/user-agent/IP, 만료·폐기 시각 | 로그아웃·회전·즉시 폐기의 보안 원장 |
+| `auth_login_attempts` | 실패한 이메일/IP의 binary SHA-256 digest, 시각 | 사후 분석·보안 감사·보존 정책 대상 |
+
+실패 이력 INSERT는 best-effort다. rate limit은 이미 Redis에서 적용됐으므로 감사 DB 쓰기 실패가 잘못된 비밀번호 요청을 500으로 바꾸지는 않는다. 반대로 사용자와 session 쓰기는 로그인 결과 그 자체이므로 트랜잭션 안에서 처리한다.
+
+### 2.4.3 성공 로그인에서 앱으로 가는 것
+
+- access token: 15분 JWT. 일반 API의 `Authorization` header에 넣는다.
+- refresh token: 14일 난수 원문. 앱 secure storage에 저장한다.
+- user summary: 사용자 ID, email, 표시 이름.
+
+서버 DB에는 refresh 원문이 아니라 SHA-256 hash만 저장한다. 앱이 refresh 원문을 보내면 서버가 같은 hash를 계산해 `auth_sessions`를 찾는다. DB가 유출돼도 저장된 hash 자체를 refresh token처럼 바로 제출할 수 없게 하기 위함이다.
+
+### 2.4.4 로그인 뒤 일반 API 검증
+
+로그인이 성공했다고 이후 요청에서 DB를 전혀 보지 않는 구조가 아니다.
+
+```text
+Authorization: Bearer {access JWT}
+  → JwtDecoder: HS256 서명, exp, issuer 검증
+  → AccessTokenValidator:
+       sid로 PostgreSQL auth_sessions + users 조회
+       session userId == JWT sub
+       user status == ACTIVE
+       DB token_version == JWT tv
+  → 통과하면 SecurityContext에 사용자 principal 생성
+  → Service가 vault_memberships로 리소스 권한 추가 검사
+```
+
+따라서 로그아웃으로 session을 폐기하거나 비밀번호 변경/탈퇴로 session·token version 상태가 바뀌면 이미 발급된 access token도 다음 요청부터 거부된다. “JWT는 stateless니까 로그아웃 뒤 15분 동안 무조건 유효하다”는 설명은 이 프로젝트에는 맞지 않는다.
 
 ## 2.5 access token과 refresh token
 
@@ -1234,13 +1425,19 @@ CSRF를 끈 이유도 쿠키 기반 서버 세션이 아니라 Authorization hea
 - `auth/api/AuthController.java`
 - `auth/application/AuthService.java`
 - `auth/application/JwtTokenService.java`
+- `auth/application/AccessTokenValidator.java`
 - `auth/application/LoginAttemptService.java`
+- `auth/application/LoginAttemptAuditWriter.java`
 - `auth/application/PasswordResetSender.java` / `ConfiguredPasswordResetSender.java`
 - `auth/persistence/AuthMapper.java`
+- `common/ratelimit/SlidingWindowRateLimiter.java`
 - `config/SecurityConfig.java`
 - `config/JwtConfig.java`
+- `resources/redis/sliding-window.lua`
 - `db/migration/V1__auth.sql`
 - `db/migration/V14__login_rate_limit.sql`
+- `db/migration/V27__attempt_retention_indexes.sql`
+- `db/migration/V28__partition_attempt_history.sql`
 - `db/migration/V25__member_password_reset_notifications.sql` (password_reset_tokens 테이블)
 
 ## 2.9 다른 파트가 물을 만한 질문
@@ -1255,7 +1452,7 @@ A. 절대 아니다. HS256은 같은 키로 서명과 검증을 하므로 서버
 A. 401은 로그인 정보가 없거나 유효하지 않음, 403은 누구인지는 알지만 권한이 부족함이다. 이 프로젝트는 리소스 존재 자체를 숨기기 위해 일부 권한 실패를 404로 응답하기도 한다.
 
 **Q. 로그아웃하면 이미 발급된 access token이 즉시 무효인가요?**  
-A. refresh 세션은 폐기된다. 짧은 access token은 설계에 따라 만료까지 살아 있을 수 있으므로 15분으로 짧게 둔다. `sid`, `tv`를 활용한 추가 즉시 폐기 검증 여부는 실제 필터 구성을 확인해 설명해야 한다.
+A. 그렇다. logout이 PostgreSQL의 현재 `auth_sessions` 행을 폐기하고, `AccessTokenValidator`가 매 요청 JWT의 `sid`로 session 상태를 조회한다. 폐기된 session이면 JWT 서명과 만료가 정상이어도 401로 거부한다.
 
 **Q. 프론트가 access token을 영구 저장해도 되나요?**  
 A. access token은 짧게 쓰고, 민감 저장소에는 refresh token을 두며, 401 시 한 번만 refresh 후 원 요청을 재시도하는 흐름이 일반적이다. 동시 refresh 중복도 막아야 한다.
@@ -1372,13 +1569,24 @@ refresh token과 같은 사고방식이다. DB에는 토큰의 **SHA-256 해시�
 
 사용자 앱
   → QR 스캔 또는 8자리 직접 입력
-  → POST /api/devices/claim
+  → POST /api/devices/claim { registrationCode, name?, vaultId? }
+  → Redis에서 사용자/IP claim 시도 bucket 원자적 예약
   → 서버가 코드 해시로 기기를 역조회하고 행 잠금
   → TTL·미사용·UNCLAIMED·rate limit 확인
+  ├─ vaultId 없음: Memory Vault 생성 + 사용자 OWNER 멤버십 생성
+  └─ vaultId 있음: 기존 Vault의 OWNER인지 검증
   → device를 CLAIMED로 변경
-  → OWNER membership 생성
+  → 다음 generation의 ACTIVE DeviceBinding 생성
   → 코드를 사용 처리
 ```
+
+claim에서 Redis와 PostgreSQL의 역할도 로그인과 같은 원칙으로 나뉜다.
+
+- Redis: `rl:claim:account:{userId}`, `rl:claim:ip:{sha256(ip)}`의 최근 요청 window
+- PostgreSQL: 등록 코드, 기기 상태, Vault, OWNER 멤버십, binding generation
+- 성공/실패 감사 이력: PostgreSQL `claim_attempts`
+
+rate limit은 공격 속도를 줄일 뿐이고 소유권을 결정하지 않는다. 최종 권한과 1회용 코드 소비는 반드시 PostgreSQL transaction과 row lock으로 보장한다.
 
 ## 3.4 등록 코드 보안
 
@@ -1387,7 +1595,7 @@ refresh token과 같은 사고방식이다. DB에는 토큰의 **SHA-256 해시�
 - DB 저장: 평문이 아니라 SHA-256 해시
 - 1회용: `used_at`과 `used_by` 기록
 - 경쟁 조건 방지: `findByHashForUpdate`로 행 잠금
-- 실패 제한: 계정·IP 기준 10분에 5회
+- 실패 제한: Redis 계정·IP bucket 기준 10분에 5회, PostgreSQL에는 실패 감사 이력 보존
 - 응답: 실패 원인을 세세히 구분하지 않고 `DEVICE_CLAIM_REJECTED`
 
 짧은 코드에 SHA-256만 쓰면 DB 유출 시 모든 조합을 대입할 수 있다. 이 설계는 해시 하나만 믿는 것이 아니라 **120초 TTL + 1회용 + 등록 모드 + rate limit + 행 잠금**을 겹쳐서 방어한다.
@@ -1396,14 +1604,15 @@ QR 코드는 별도 권한 체계가 아니다. 사람이 입력할 등록 코�
 
 ## 3.5 claim이 트랜잭션이어야 하는 이유
 
-기기를 `CLAIMED`로 바꿨는데 OWNER membership 생성이 실패하면 “소유자는 없는데 이미 등록된 기기”가 된다. 반대로 membership만 생기고 코드가 미사용이면 재사용 공격이 가능하다.
+기기를 `CLAIMED`로 바꿨는데 Vault/OWNER/binding 생성이 실패하면 “연결된 금고는 없는데 이미 등록된 기기”가 된다. 반대로 binding만 생기고 코드가 미사용이면 재사용 공격이 가능하다.
 
 따라서 아래가 한 트랜잭션으로 모두 성공하거나 모두 롤백되어야 한다.
 
 - 코드 검증과 잠금
+- `vaultId`가 있으면 기존 Vault OWNER 권한 검증, 없으면 새 Vault 생성
 - device claim 상태 변경
 - registration code 사용 처리
-- OWNER membership 생성
+- Vault OWNER membership과 다음 generation DeviceBinding 생성
 
 DB의 UNIQUE와 CHECK 제약은 애플리케이션 검사를 놓쳤을 때의 마지막 방어선이다.
 
@@ -1450,11 +1659,15 @@ MQTT에는 “등록 모드가 켜졌다”는 상태만 보내고, 코드 평�
 - `device/application/RegistrationCodeHasher.java`
 - `device/application/ClaimAttemptService.java`
 - `device/application/DeviceService.java`
+- `vault/persistence/VaultMapper.java`
+- `common/ratelimit/SlidingWindowRateLimiter.java`
 - `iot/mqtt/DeviceMqttIdentityManager.java`
 - `db/migration/V2__devices_and_memberships.sql`
 - `db/migration/V3__claim_security_and_device_credentials.sql`
 - `db/migration/V11__registration_codes_and_transfer.sql`
 - `db/migration/V16__device_credential_lifecycle.sql`
+- `db/migration/V29__memory_vaults_and_device_bindings.sql`
+- `db/migration/V30__vault_lifecycle_and_vault_invitations.sql`
 
 ## 3.10 예상 질문
 
@@ -1465,7 +1678,7 @@ A. serial number는 오래 유지되는 식별자라 노출되면 반복 공격�
 A. 현재 등록 모드 상태는 MQTT로 서버에 전달되므로 통합 흐름에 영향이 있다. 코드 발급 자체는 기기 credential을 사용한 HTTPS다. 시연 전에 두 연결을 모두 확인해야 한다.
 
 **Q. 한 기기에 OWNER가 여러 명일 수 있나요?**  
-A. 활성 OWNER는 하나여야 한다. 다른 사용자는 EDITOR/VIEWER 멤버십으로 접근하고, 소유권 이전은 별도 트랜잭션이다.
+A. 소유권은 기기가 아니라 Vault에 귀속된다. 활성 Vault OWNER는 정확히 한 명이고 다른 사용자는 MEMBER다. 소유권 이전은 기존 OWNER와 새 OWNER 역할을 한 transaction에서 교체한다.
 
 **Q. 코드가 동시에 두 앱에서 제출되면요?**  
 A. 해시 조회 시 DB 행을 잠그고 1회용 상태를 변경하므로 하나만 성공해야 한다.
@@ -2225,7 +2438,19 @@ heartbeat 예:
 - `firmwareVersion`
 - CPU, 메모리, 디스크 등 계약 필드
 
-서버는 전체 원문을 모두 저장하기보다 UI와 운영에 필요한 최소 상태와 `last_seen_at`을 갱신한다. 90초 이상 heartbeat가 없으면 offline 판정하는 계약이 있다.
+현재 master의 서버는 전체 원문을 모두 저장하기보다 UI와 운영에 필요한 최소 상태와 `last_seen_at`을 PostgreSQL에 갱신한다. 조회 시 `last_seen_at`이 90초보다 오래됐으면 offline으로 계산한다.
+
+Redis 운영 상태 확장 MR !92가 반영되면 경로가 다음처럼 바뀐다.
+
+```text
+heartbeat 수신
+  → Redis presence:device:{deviceId}에 전체 UI 상태 JSON 저장
+  → TTL 90초 갱신
+  → 목록·상태·Vault·라이브 생성은 Redis를 우선 조회
+  → Redis 장애 때만 기존 PostgreSQL heartbeat UPDATE/조회로 fallback
+```
+
+heartbeat처럼 30초마다 계속 덮어쓰고 90초 뒤 자연스럽게 무효가 되는 값은 Redis TTL과 잘 맞는다. 반대로 기기 binding, 영상, 권한은 TTL 만료로 사라지면 안 되므로 PostgreSQL에 남긴다.
 
 현재 최신 요구사항 문서는 실제 기기 경로에서 `recording=false`, `uploadQueueDepth=0` 스텁 가능성을 지적한다. API 필드가 존재한다고 실제 센서 값이 연결됐다고 단정하면 안 된다.
 
@@ -2400,13 +2625,16 @@ MyBatis는 SQL을 직접 작성하고 Java method와 연결한다.
 |---|---|
 | `users` | 사용자 계정 |
 | `auth_sessions` | refresh 세션 |
-| `auth_login_attempts` | 로그인 제한 |
+| `auth_login_attempts` | 실패 로그인 감사·분석 이력. 실시간 제한 판단은 Redis |
 | `devices` | 기기 상태·설정 |
-| `device_memberships` | 사용자-기기 권한 관계 |
+| `memory_vaults` | 영상·구독·가족 권한의 영속 소유 단위 |
+| `vault_memberships` | 사용자-금고 권한 관계(OWNER/MEMBER) |
+| `device_bindings` | 금고와 물리 기기의 generation별 연결 이력 |
+| `device_memberships` | 이전 API 호환과 일부 기존 조회에 남아 있는 사용자-기기 관계 |
 | `device_credentials` | 기기 REST credential |
 | `registration_codes` | 일회용 claim 코드 해시 |
 | `device_events` | 원시 감지 이벤트 |
-| `videos` | 영상 메타데이터와 객체 상태 |
+| `videos` | 영상 메타데이터와 객체 상태. `vault_id`는 소유 경계, `device_id`는 촬영 출처 |
 | `video_deletion_jobs` | 비동기 객체 삭제 queue |
 | `device_streams` | 기기당 공유 라이브 송출 |
 | `stream_sessions` | 사용자별 viewer 세션 |
@@ -2941,14 +3169,16 @@ master Backend CI 성공
 
 SSE-KMS/KES는 불필요하다는 뜻이 아니다. 키 생성·권한·회전·백업·복구까지 운영 준비가 끝났을 때 별도로 활성화할 보안 강화 항목이다.
 
-## 23.5 역할별 develop에만 있는 후속 변경
+## 23.5 브랜치별 후속 변경을 구분하는 법
 
-2026-07-29 확인 기준으로 다음 변경은 역할별 develop에는 있지만 이 학습 문서가 병합한 `master` 기준 코드에는 아직 없다.
+2026-07-30 기준 이 스터디 브랜치는 최신 `master`를 병합했다. 따라서 온디바이스 Whisper 기반 STT, FN-A39 자동 자막, Memory Vault와 기기 없는 보관함 화면은 현재 master의 코드로 직접 공부할 수 있다.
 
-- `develop/frontend`: 온디바이스 Whisper 기반 STT와 FN-A39 자동 자막
-- `develop/device`: LCD에 등록 코드를 한 번 표시하는 흐름
+아직 master가 아닌 변경도 있다.
 
-이 항목은 코드를 미리 공부할 수는 있지만 운영 반영 완료로 발표하면 안 된다. 역할별 develop에서 `master`로 Merge Request가 병합된 뒤 최신 구현 상태를 다시 갱신한다.
+- `develop/device`: LCD에 등록 코드를 한 번 표시하는 후속 흐름
+- Backend MR !92: Redis heartbeat presence와 로그인/claim 성공 예약 정리
+
+이 항목들은 해당 MR이 역할별 develop과 master에 차례로 병합되기 전까지 운영 반영 완료로 발표하면 안 된다. 문서에서는 “현재 master의 as-built”와 “검토 중인 MR 이후 구조”를 문장으로 구분한다.
 
 ---
 
