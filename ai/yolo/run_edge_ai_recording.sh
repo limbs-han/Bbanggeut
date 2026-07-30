@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 YAMNET_DIR="${YAMNET_DIR:-${SCRIPT_DIR}/../yamnet}"
 YOLO_PYTHON="${YOLO_PYTHON:-${HOME}/venvs/yolo/bin/python}"
 YAMNET_PYTHON="${YAMNET_PYTHON:-${HOME}/venvs/yamnet/bin/python}"
+WAKE_NAME_PYTHON="${WAKE_NAME_PYTHON:-${HOME}/venvs/wake-name/bin/python}"
 EVENT_DIR="${EVENT_DIR:-${HOME}/ai_events}"
 ENV_FILE="${DEVICE_AGENT_ENV_FILE:-/etc/william-james/device-agent.env}"
 
@@ -49,6 +50,20 @@ fi
 : "${YAMNET_CONSECUTIVE:=3}"
 : "${YAMNET_COOLDOWN:=12}"
 : "${YAMNET_GAIN:=1.5}"
+: "${YAMNET_CLAP_ENABLED:=false}"
+: "${YAMNET_CLAP_THRESHOLD:=0.30}"
+: "${YAMNET_CLAP_CONSECUTIVE:=2}"
+: "${YAMNET_CLAP_REQUIRED_ONSETS:=2}"
+: "${YAMNET_CLAP_MIN_ACTIVE_SECONDS:=0.4}"
+: "${YAMNET_CLAP_MAX_GAP_SECONDS:=0.75}"
+: "${YAMNET_CLAP_COOLDOWN:=12}"
+: "${WAKE_NAME_ENABLED:=false}"
+: "${WAKE_NAME_PROFILE_DIR:=${HOME}/.local/share/william-james/wake-name}"
+: "${WAKE_NAME_MODEL_DIR:=${HOME}/ai_models/faster-whisper-small}"
+: "${WAKE_NAME_THRESHOLD:=0.82}"
+: "${WAKE_NAME_COOLDOWN:=12}"
+: "${WAKE_NAME_ASR_DEVICE:=cpu}"
+: "${WAKE_NAME_ASR_COMPUTE_TYPE:=int8}"
 : "${UPLOAD_RETRY_INITIAL_SECONDS:=5}"
 : "${UPLOAD_RETRY_MAX_SECONDS:=300}"
 
@@ -74,12 +89,33 @@ for required in \
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py" \
     "${SCRIPT_DIR}/segment_clip_uploader.py" \
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py" \
+    "${YAMNET_DIR}/local_wake_name_detect_jetson.py" \
     "${RECORDING_DIR}/.homecam-recordings"; do
     if [[ ! -e "$required" ]]; then
         echo "Required file not found: $required" >&2
         exit 1
     fi
 done
+
+case "${WAKE_NAME_ENABLED,,}" in
+    true|1|yes)
+        for required in \
+            "$WAKE_NAME_PYTHON" \
+            "${WAKE_NAME_PROFILE_DIR}/profile.json" \
+            "$WAKE_NAME_MODEL_DIR"; do
+            if [[ ! -e "$required" ]]; then
+                echo "Wake-name requirement not found: $required" >&2
+                exit 1
+            fi
+        done
+        ;;
+    false|0|no)
+        ;;
+    *)
+        echo "WAKE_NAME_ENABLED must be true or false" >&2
+        exit 2
+        ;;
+esac
 
 mkdir -p "$EVENT_DIR"
 RUN_DIR="${EVENT_DIR}/logs/$(date '+%Y%m%d_%H%M%S')"
@@ -105,6 +141,15 @@ echo \
     "YAMNet detector: aggregation=${YAMNET_SCORE_AGGREGATION} " \
     "threshold=${YAMNET_THRESHOLD} consecutive=${YAMNET_CONSECUTIVE} " \
     "cooldown=${YAMNET_COOLDOWN}s gain=${YAMNET_GAIN}"
+echo \
+    "Clap detector: enabled=${YAMNET_CLAP_ENABLED} " \
+    "threshold=${YAMNET_CLAP_THRESHOLD} " \
+    "consecutive=${YAMNET_CLAP_CONSECUTIVE} " \
+    "onsets=${YAMNET_CLAP_REQUIRED_ONSETS} " \
+    "minimumActive=${YAMNET_CLAP_MIN_ACTIVE_SECONDS}s"
+echo \
+    "Wake-name detector: enabled=${WAKE_NAME_ENABLED} " \
+    "threshold=${WAKE_NAME_THRESHOLD} cooldown=${WAKE_NAME_COOLDOWN}s"
 echo \
     "Upload retry: initial=${UPLOAD_RETRY_INITIAL_SECONDS}s " \
     "maximum=${UPLOAD_RETRY_MAX_SECONDS}s; terminal 4xx is quarantined"
@@ -149,9 +194,50 @@ YAMNET_COMMAND=(
     --clip-seconds "$EVENT_CLIP_SECONDS"
     --trigger-only
 )
+case "${YAMNET_CLAP_ENABLED,,}" in
+    true|1|yes)
+        YAMNET_COMMAND+=(
+            --enable-clap-events
+            --clap-threshold "$YAMNET_CLAP_THRESHOLD"
+            --clap-consecutive "$YAMNET_CLAP_CONSECUTIVE"
+            --clap-required-onsets "$YAMNET_CLAP_REQUIRED_ONSETS"
+            --clap-min-active-seconds "$YAMNET_CLAP_MIN_ACTIVE_SECONDS"
+            --clap-max-gap-seconds "$YAMNET_CLAP_MAX_GAP_SECONDS"
+            --clap-cooldown "$YAMNET_CLAP_COOLDOWN"
+        )
+        ;;
+    false|0|no)
+        ;;
+    *)
+        echo "YAMNET_CLAP_ENABLED must be true or false" >&2
+        exit 2
+        ;;
+esac
 "${YAMNET_COMMAND[@]}" \
     > >(sed -u 's/^/[YAMNET] /' | tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
 PIDS+=("$!")
+
+case "${WAKE_NAME_ENABLED,,}" in
+    true|1|yes)
+        "$WAKE_NAME_PYTHON" -u \
+            "${YAMNET_DIR}/local_wake_name_detect_jetson.py" \
+            --profile-dir "$WAKE_NAME_PROFILE_DIR" \
+            --model-dir "$WAKE_NAME_MODEL_DIR" \
+            --stream-url "$LOCAL_RTSP_AI_URL" \
+            --event-dir "$EVENT_DIR" \
+            --device-id "$DEVICE_ID" \
+            --threshold "$WAKE_NAME_THRESHOLD" \
+            --cooldown "$WAKE_NAME_COOLDOWN" \
+            --clip-seconds "$EVENT_CLIP_SECONDS" \
+            --device "$WAKE_NAME_ASR_DEVICE" \
+            --compute-type "$WAKE_NAME_ASR_COMPUTE_TYPE" \
+            --mqtt-host "$LOCAL_MQTT_HOST" \
+            --mqtt-port "$LOCAL_MQTT_PORT" \
+            > >(sed -u 's/^/[WAKE_NAME] /' |
+                tee -a "${RUN_DIR}/wake_name.log") 2>&1 &
+        PIDS+=("$!")
+        ;;
+esac
 
 YOLO_COMMAND=(
     "$YOLO_PYTHON" -u "${SCRIPT_DIR}/yolov8_autoframe_jetson.py"
