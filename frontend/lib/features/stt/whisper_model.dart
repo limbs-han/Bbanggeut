@@ -4,7 +4,7 @@
 /// 에셋을 직접 읽을 수 없다. 에셋은 APK 안에 압축돼 있어 파일 경로가 없다.
 /// 그래서 첫 실행 때 한 번 앱 폴더로 복사하고, 그다음부터는 있는 것을 쓴다.
 ///
-/// 모델을 만드는 절차는 `자료/docs/사람이 읽을 문서/05-STT모델가이드.md`에 있다.
+/// 모델을 만드는 절차는 `자료/docs/사람이 읽을 문서/06-STT모델가이드.md`에 있다.
 library;
 
 import 'dart:io';
@@ -56,7 +56,7 @@ Future<String> resolveWhisperModel({
     throw StateError(
       'whisper 모델을 찾지 못했습니다. $whisperModelAsset을 에셋에 넣거나 '
       '--dart-define=WHISPER_MODEL_PATH=<기기 내 경로>로 지정하세요. '
-      '만드는 절차는 자료/docs/사람이 읽을 문서/05-STT모델가이드.md 참조. ($error)',
+      '만드는 절차는 자료/docs/사람이 읽을 문서/06-STT모델가이드.md 참조. ($error)',
     );
   }
 
