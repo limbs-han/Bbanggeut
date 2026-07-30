@@ -11,7 +11,7 @@ EC2 Spring 백엔드
   -> Raspberry Pi wj-device-agent
   -> rtsp://127.0.0.1:8554/homecam 읽기
   -> 인증된 RTSPS로 EC2 8322 포트에 송출
-  -> EC2 MediaMTX가 Flutter용 보호된 HLS 생성
+  -> EC2 MediaMTX가 Flutter용 보호된 WebRTC/WHEP 재생 경로 제공
 
 USB 카메라
   -> homecam-publisher
