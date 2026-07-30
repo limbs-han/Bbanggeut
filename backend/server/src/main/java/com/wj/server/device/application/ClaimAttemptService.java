@@ -46,27 +46,29 @@ public class ClaimAttemptService {
         this.properties = properties;
     }
 
-    public void reserveOrReject(UUID userId, String ipAddress) {
-        boolean admitted = rateLimiter.tryAcquire(
+    public SlidingWindowRateLimiter.Reservation reserveOrReject(UUID userId, String ipAddress) {
+        SlidingWindowRateLimiter.Reservation reservation = rateLimiter.reserve(
             USER_KEY_PREFIX + userId,
             IP_KEY_PREFIX + fingerprint(ipAddress),
             properties.failureWindow(),
             properties.maxFailures());
-        if (!admitted) {
+        if (reservation == null) {
             throw new ApiException(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "CLAIM_RATE_LIMITED",
                 "기기 등록 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.");
         }
+        return reservation;
     }
 
     /**
-     * Releases the account budget after a code was accepted. The address budget
-     * is left alone so that one successful claim cannot clear the limit that
-     * guards guessing from the same address.
+     * Releases the account budget after a code was accepted. Earlier failures
+     * in the address budget are left alone so that one successful claim cannot
+     * clear guessing history from the same address; only this successful
+     * reservation is removed.
      */
-    public void clearFailures(UUID userId) {
-        rateLimiter.reset(USER_KEY_PREFIX + userId);
+    public void completeSuccess(SlidingWindowRateLimiter.Reservation reservation) {
+        rateLimiter.completeSuccess(reservation);
     }
 
     /**

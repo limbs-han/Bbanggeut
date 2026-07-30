@@ -40,7 +40,7 @@ class LoginAttemptServiceTest {
     @Test
     void rejectsWhenLimiterRefusesTheAttempt() {
         LoginAttemptService service = new LoginAttemptService(auditWriter, rateLimiter, PROPERTIES);
-        when(rateLimiter.tryAcquire(anyString(), anyString(), any(), anyInt())).thenReturn(false);
+        when(rateLimiter.reserve(anyString(), anyString(), any(), anyInt())).thenReturn(null);
 
         assertThatThrownBy(() -> service.reserveOrReject("USER@example.com", "203.0.113.1"))
             .isInstanceOf(ApiException.class)
@@ -51,11 +51,13 @@ class LoginAttemptServiceTest {
     @Test
     void claimsTheAttemptBeforeAnyPasswordCheck() {
         LoginAttemptService service = new LoginAttemptService(auditWriter, rateLimiter, PROPERTIES);
-        when(rateLimiter.tryAcquire(anyString(), anyString(), any(), anyInt())).thenReturn(true);
+        SlidingWindowRateLimiter.Reservation reservation = reservation();
+        when(rateLimiter.reserve(anyString(), anyString(), any(), anyInt())).thenReturn(reservation);
 
-        service.reserveOrReject("user@example.com", "203.0.113.1");
+        assertThat(service.reserveOrReject("user@example.com", "203.0.113.1"))
+            .isSameAs(reservation);
 
-        verify(rateLimiter).tryAcquire(
+        verify(rateLimiter).reserve(
             matches("rl:login:email:[0-9a-f]{64}"),
             matches("rl:login:ip:[0-9a-f]{64}"),
             eq(Duration.ofMinutes(10)),
@@ -67,25 +69,26 @@ class LoginAttemptServiceTest {
     @Test
     void normalizesEmailCaseSoTheBudgetCannotBeSidestepped() {
         LoginAttemptService service = new LoginAttemptService(auditWriter, rateLimiter, PROPERTIES);
-        when(rateLimiter.tryAcquire(anyString(), anyString(), any(), anyInt())).thenReturn(true);
+        when(rateLimiter.reserve(anyString(), anyString(), any(), anyInt()))
+            .thenReturn(reservation());
         ArgumentCaptor<String> emailKey = ArgumentCaptor.forClass(String.class);
 
         service.reserveOrReject("User@Example.com", "203.0.113.1");
         service.reserveOrReject("  user@example.com  ", "203.0.113.1");
 
         verify(rateLimiter, org.mockito.Mockito.times(2))
-            .tryAcquire(emailKey.capture(), anyString(), any(), anyInt());
+            .reserve(emailKey.capture(), anyString(), any(), anyInt());
         assertThat(emailKey.getAllValues().get(0)).isEqualTo(emailKey.getAllValues().get(1));
     }
 
     @Test
-    void releasesOnlyTheAccountBudgetOnSuccess() {
+    void completesTheExactReservationOnSuccess() {
         LoginAttemptService service = new LoginAttemptService(auditWriter, rateLimiter, PROPERTIES);
+        SlidingWindowRateLimiter.Reservation reservation = reservation();
 
-        service.clearFailures("user@example.com");
+        service.completeSuccess(reservation);
 
-        verify(rateLimiter).reset(matches("rl:login:email:[0-9a-f]{64}"));
-        verify(rateLimiter, never()).reset(matches("rl:login:ip:.*"));
+        verify(rateLimiter).completeSuccess(reservation);
     }
 
     @Test
@@ -114,5 +117,10 @@ class LoginAttemptServiceTest {
 
         assertThatCode(() -> service.recordFailure("user@example.com", "203.0.113.1"))
             .doesNotThrowAnyException();
+    }
+
+    private static SlidingWindowRateLimiter.Reservation reservation() {
+        return new SlidingWindowRateLimiter.Reservation(
+            "rl:login:email:test", "rl:login:ip:test", "member-id");
     }
 }

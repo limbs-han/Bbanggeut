@@ -56,7 +56,6 @@ management:
 app:
   demo:
     enabled: ${DEMO_MODE_ENABLED:false}
-    live-hls-url: ${DEMO_LIVE_HLS_URL:}
     live-whep-url: ${DEMO_LIVE_WHEP_URL:}
   auth:
     access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
@@ -75,6 +74,10 @@ app:
   device-claim:
     max-failures: ${DEVICE_CLAIM_MAX_FAILURES:5}
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
+  device-presence:
+    # Heartbeats arrive much more often than this. Missing the TTL means the
+    # device is offline without a database sweep or stale-row update.
+    ttl: ${DEVICE_PRESENCE_TTL:90s}
   invitation:
     ttl: ${INVITATION_TTL:7d}
   push:
@@ -100,7 +103,6 @@ app:
     idle-timeout: ${STREAM_IDLE_TIMEOUT:60s}
     edge-lease: ${STREAM_EDGE_LEASE:120s}
     heartbeat-interval: ${STREAM_HEARTBEAT_INTERVAL:15s}
-    media-base-url: ${MEDIA_BASE_URL:http://localhost:8888/live}
     webrtc-base-url: ${WEBRTC_BASE_URL:http://localhost:8889/live}
     live-token-ttl: ${LIVE_TOKEN_TTL:30s}
   storage:

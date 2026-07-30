@@ -98,7 +98,7 @@ void main() {
         isA<StateError>().having(
           (error) => error.message,
           '안내 문구',
-          allOf(contains('05-STT모델가이드.md'), contains('WHISPER_MODEL_PATH')),
+          allOf(contains('06-STT모델가이드.md'), contains('WHISPER_MODEL_PATH')),
         ),
       ),
     );

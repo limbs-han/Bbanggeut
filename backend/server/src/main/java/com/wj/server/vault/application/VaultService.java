@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
+import com.wj.server.iot.telemetry.DevicePresenceSnapshot;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.vault.api.VaultDeviceResponse;
 import com.wj.server.vault.api.VaultResponse;
 import com.wj.server.vault.domain.VaultViewRow;
@@ -17,9 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class VaultService {
     private final VaultMapper mapper;
+    private final DevicePresenceStore presenceStore;
 
-    public VaultService(VaultMapper mapper) {
+    public VaultService(VaultMapper mapper, DevicePresenceStore presenceStore) {
         this.mapper = mapper;
+        this.presenceStore = presenceStore;
     }
 
     @Transactional
@@ -46,15 +50,27 @@ public class VaultService {
     }
 
     private List<VaultResponse> aggregate(List<VaultViewRow> rows) {
+        DevicePresenceStore.BatchLookup presence = presenceStore.findAll(
+            rows.stream()
+                .map(VaultViewRow::deviceId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList());
         LinkedHashMap<UUID, VaultAccumulator> grouped = new LinkedHashMap<>();
         for (VaultViewRow row : rows) {
             VaultAccumulator accumulator = grouped.computeIfAbsent(
                 row.id(), ignored -> new VaultAccumulator(row, new ArrayList<>()));
             if (row.deviceId() != null) {
+                DevicePresenceSnapshot snapshot = presence.snapshots().get(row.deviceId());
+                String status = presence.storeAvailable()
+                    ? (snapshot == null ? "OFFLINE" : "ONLINE")
+                    : row.deviceStatus();
+                java.time.Instant lastSeenAt =
+                    presence.storeAvailable() && snapshot != null
+                        ? snapshot.lastSeenAt() : row.deviceLastSeenAt();
                 accumulator.devices().add(new VaultDeviceResponse(
                     row.bindingId(), row.bindingGeneration(), row.deviceId(),
-                    row.deviceName(), row.deviceModel(), row.deviceStatus(),
-                    row.deviceLastSeenAt()));
+                    row.deviceName(), row.deviceModel(), status, lastSeenAt));
             }
         }
         return grouped.values().stream()

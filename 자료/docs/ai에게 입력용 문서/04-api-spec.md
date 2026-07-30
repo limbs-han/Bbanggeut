@@ -98,7 +98,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "registrationCode": "string",   // required, @Size 8~12
-  "name": "string"                 // optional, @Size 1~80, 공백만 불가
+  "name": "string",                // optional, @Size 1~80, 공백만 불가
+  "vaultId": "uuid"                // optional, 기존 금고에 연결할 때 지정
 }
 ```
 - 응답 201:
@@ -110,7 +111,15 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - 에러: 429 `CLAIM_RATE_LIMITED`(5회/10분), 409 `DEVICE_CLAIM_REJECTED`
-- 비고: claim된 기기는 활성 OWNER가 정확히 1명이 되도록 보장된다.
+- 비고: `vaultId` 생략 시 새 추억 금고와 요청 사용자의 OWNER 멤버십을 만든다. 지정 시 해당 금고의 OWNER 권한을 확인하고 활성 Device Binding을 생성한다. 물리 기기의 연결 이력은 generation별로 보존된다.
+
+### Vault API `GET/POST /api/vaults`
+- 인증: 사용자 JWT
+- `GET /api/vaults`: `vault_memberships` 기준 참여 금고와 활성 연결 기기 목록 조회
+- `GET /api/vaults/{vaultId}`: 접근권한을 검증한 추억 금고 단건 조회
+- `POST /api/vaults`: 물리 기기 없이 독립적인 추억 금고 생성
+- 응답 핵심 필드: `id`, `name`, `status`, `myRole`, `retentionDays`, `subscriptionActive`, `devices[]`
+- 비고: `devices`가 빈 배열이어도 금고는 유효하다. 영상·구독·가족 권한은 물리 기기가 아니라 금고에 귀속된다. 연결 기기의 온라인 상태는 Redis presence를 합성하고 Redis 장애 시 PostgreSQL 값으로 폴백한다.
 
 ### API-43 `POST /api/iot/registration-codes`
 - 인증: 기기 credential(Bearer, ROLE_DEVICE_OPERATING) / 요청 본문 없음(`DevicePrincipal`만 사용)
@@ -165,8 +174,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "deviceId": "uuid", "status": "string",
-  "recording": false,            // MQTT-05 heartbeat 기반, 기기측 항상 false 스텁
-  "uploadQueueDepth": 0,          // 기기측 항상 0 스텁
+  "recording": false,            // 최근 MQTT-05 heartbeat 보고값
+  "uploadQueueDepth": 0,          // 최근 MQTT-05 heartbeat 보고값
   "bufferSeconds": null,          // nullable
   "personCount": null,            // nullable
   "checkedAt": "2026-07-27T00:00:00Z"
@@ -218,7 +227,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "issuedAt": "2026-07-27T00:00:00Z", "expiresAt": "2026-07-27T00:00:15Z",
   "payload": {
     "sessionId": "uuid", "streamId": "uuid",
-    "profile": "LIVE_720P_H264_AAC", "segmentDurationSeconds": 2,
+    "profile": "LIVE_720P_H264_OPUS",
     "hardExpiresAt": "2026-07-27T00:02:00Z"
   }
 }
@@ -240,13 +249,13 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 ### 미디어 경로
 
-- **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. ffmpeg: `-f v4l2` 입력→`-c:v libx264 -preset ultrafast -tune zerolatency`(기본 2500kbps)→`-f rtsp -rtsp_transport tcp`. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`
+- **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. 로컬 공유 스트림의 H.264는 `-c:v copy`, AAC 원본 오디오는 WebRTC 호환 Opus 48kHz 모노·64kbps(`-c:a libopus -application lowdelay`)로 변환해 `-f rtsp -rtsp_transport tcp`로 송출한다. 이 변환은 앱 Live View 릴레이에만 적용하며 로컬 AI·녹화 AAC는 유지한다. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`, `device-agent.jetson.env.example`
 - **WebRTC/WHEP 전용(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 원격 audio/video track을 동일 renderer stream에 연결하고 `setMuted`로 볼륨 제어. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
-- **연결 성공 조건**: answer의 audio `m=` section이 non-zero이고 원격 송신 방향(`sendonly`/`sendrecv`)이어야 하며, 원격 video/audio track 수신 후 2초 안에 inbound audio RTP 패킷이 확인되어야 함. 하나라도 실패하면 HLS 전환 없이 오류·재시도 표시
+- **연결 성공 조건**: answer의 audio `m=` section이 non-zero이고 원격 송신 방향(`sendonly`/`sendrecv`)이어야 하며, 원격 video/audio track 수신 후 2초 안에 inbound audio RTP 패킷이 확인되어야 함. 하나라도 실패하면 HLS 전환 없이 오류·재시도 표시. 소스: `frontend/lib/core/whep_player_controller.dart`
 - **오디오 코덱**: Jetson publish는 H.264+Opus 필수. AAC-only publish는 MediaMTX가 WebRTC 오디오를 건너뛸 수 있어 운영 재생에서 지원하지 않음
 - **HLS 범위**: 없음. 운영 API는 `playUrl`을 반환하지 않고(`StreamSessionResponse`에서 제거) 앱에도 HLS 재생 코드가 없다
 - **운영 경로**: Nginx HTTPS 443 `/webrtc/.../whep`→MediaMTX loopback 8889, WebRTC media/ICE UDP 8189. 8889 직접 외부 노출 금지
-- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP/HLS 접근 인가에 사용. 앱/젯슨 직접 호출 금지
+- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP 접근 인가에 사용. 앱/젯슨 직접 호출 금지
 - 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신.
 
 ---
@@ -287,7 +296,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "expiresAt": "2026-07-27T00:15:00Z"
 }
 ```
-- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `DEVICE_VAULT_BINDING_MISSING`(ACTIVE `device_bindings` 없음), 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- `V31__repair_missing_initial_vault_bindings.sql`: binding 이력이 전혀 없는 ONLINE/OFFLINE 레거시 기기만 device UUID 기반 Vault·OWNER membership·generation 1 ACTIVE binding으로 안전 복구. binding 이력이 있으면 소유 Vault 오판 방지를 위해 자동 복구하지 않음.
 - 호출부: `ai/yolo/laughter_clip_uploader.py`, `ai/yolo/segment_clip_uploader.py`
 
 ### API-26 `POST /api/iot/videos/complete`
@@ -295,11 +305,11 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 { "videoId": "uuid", "objectETag": "string" }   // objectETag optional, @Size<=200
 ```
-- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
+- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`(Vault 기반 READY 전환 0건 포함), 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
 
 ### API-27 `GET /api/videos`
 - 인증: 사용자 JWT
-- Query: `deviceId`(필수,uuid), `triggerType?`, `from?`(Instant), `to?`(Instant), `cursor?`, `size?`(기본20, 1~100)
+- Query: `deviceId` 또는 `vaultId` 중 정확히 하나(필수, uuid), `triggerType?`, `from?`(Instant), `to?`(Instant), `cursor?`, `size?`(기본20, 1~100)
 - 응답 200:
 ```json
 {
@@ -307,7 +317,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "nextCursor": "string", "hasNext": false
 }
 ```
-- 에러: 422 `VALIDATION_FAILED`, 404, 422 `INVALID_CURSOR`
+- 에러: 422 `VALIDATION_FAILED`(조회 기준 중복/누락 포함), 404, 422 `INVALID_CURSOR`
 
 `VideoResponse` 스키마(API-26/27/28/29 공통):
 ```json
@@ -543,7 +553,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "streaming": false
 }
 ```
-- 30초 주기. `recording`/`uploadQueueDepth`는 `DeviceStatusResponse`(API-11)에 실제 상태 미반영.
+- 30초 주기. 서버는 전체 heartbeat payload를 Redis `presence:device:{deviceId}`에 90초 TTL로 저장하고 API-07/11·금고 목록·라이브 시작 판정에 반영한다. TTL 만료는 OFFLINE이며 Redis 장애 시 PostgreSQL heartbeat 기록으로 폴백한다.
 - 발행: `agent.py:211-225` / 구독: `MqttInboundHandler.java`(heartbeat())
 
 #### MQTT-06 `{base}/devices/+/registration` — 구독(설계상, 실제 발행자 없음), QoS1

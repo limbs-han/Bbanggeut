@@ -2,7 +2,7 @@ logLevel: info
 
 # Raspberry Pi MediaMTX는 내부 전용 영상 분배 지점입니다.
 # 물리 카메라 publisher가 /homecam에 송출하고 기기 에이전트가 필요할 때 읽습니다.
-# 외부용 RTSPS/HLS는 EC2 MediaMTX가 담당합니다.
+# 외부용 RTSPS 수신과 WebRTC/WHEP 재생은 EC2 MediaMTX가 담당합니다.
 rtsp: yes
 rtspAddress: 127.0.0.1:8554
 rtspTransports: [tcp]

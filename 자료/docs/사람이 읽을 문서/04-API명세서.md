@@ -171,6 +171,7 @@
 | devices | List | 활성 Device Binding과 물리 기기 정보. 연결 기기가 없으면 빈 배열 |
 
 - 비고: 금고는 기기가 없어도 유지된다. 멤버십·구독·영상 접근 권한은 기기가 아니라 금고에 귀속된다.
+- 앱 연동: 로그인 직후 목록을 조회해 `selectedVault`를 복원한다. `devices`가 비어 있으면 `VaultArchiveScreen`에서 `GET /api/videos?vaultId=...`로 과거 영상을 조회하고, 새 기기 연결 시 claim 요청에 이 금고의 `id`를 넣는다.
 
 ### API-43 `POST /api/iot/registration-codes`
 
@@ -247,8 +248,8 @@
 |---|---|---|---|
 | deviceId | UUID | 필수 | 기기 ID |
 | status | String | 필수 | 상태 |
-| recording | boolean | 필수 | 녹화 중 여부(MQTT heartbeat 기반, 기기 측 항상 false 스텁) |
-| uploadQueueDepth | int | 필수 | 업로드 대기열 깊이(기기 측 항상 0 스텁) |
+| recording | boolean | 필수 | 최근 MQTT heartbeat가 보고한 녹화 중 여부 |
+| uploadQueueDepth | int | 필수 | 최근 MQTT heartbeat가 보고한 업로드 대기열 깊이 |
 | bufferSeconds | Integer | 옵션(nullable) | 버퍼 초 |
 | personCount | Integer | 옵션(nullable) | 인원 수 |
 | checkedAt | Instant | 필수 | 조회 시각 |
@@ -314,7 +315,7 @@
 
 - 방향: 발행(백엔드→기기)
 - 페이로드: `{schemaVersion:"2.0", requestId, deviceId, type: START_STREAM|EXTEND_STREAM|STOP_STREAM, issuedAt, expiresAt(issuedAt+15s), payload}`
-  - `START_STREAM.payload = {sessionId, streamId, profile:"LIVE_720P_H264_AAC", segmentDurationSeconds:2, hardExpiresAt}`
+  - `START_STREAM.payload = {sessionId, streamId, profile:"LIVE_720P_H264_OPUS", hardExpiresAt}`
   - `EXTEND_STREAM.payload = {streamId, hardExpiresAt}`
   - `STOP_STREAM.payload = {streamId, reason}`
 - 트리거: 백엔드가 스트림 세션 생성/연장/종료 시 발행
@@ -333,7 +334,7 @@
 
 - **송출 트리거**: 기기가 MQTT-01로 `START_STREAM`을 수신하면 `StreamManager.start(stream_id, hard_expires_at)` 실행
 - **송출 URL**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 `/live/{stream_id}` 고정, 쿼리/프래그먼트 금지, TLS CA 인증서 필수
-- **ffmpeg 구성**: `-f v4l2` 카메라 입력 → `-c:v libx264 -preset ultrafast -tune zerolatency` 인코딩(기본 2500kbps) → `-f rtsp -rtsp_transport tcp {publish_url}` 출력
+- **ffmpeg 구성**: 로컬 공유 스트림의 H.264 영상은 `-c:v copy`로 전달하고, AAC 원본 오디오는 WebRTC 호환 Opus 48kHz 모노·64kbps(`-c:a libopus -application lowdelay`)로 변환한 뒤 `-f rtsp -rtsp_transport tcp {publish_url}`로 출력한다. 이 변환은 앱 Live View 릴레이에만 적용되며 로컬 `/homecam/main`, `/homecam/ai`와 녹화의 AAC 오디오는 유지한다.
 - **수명 관리**: 준비 지연(기본 3초) 후 `STREAM_READY`/`STREAM_ERROR` 발행(MQTT-04). 1초 주기로 하드 만료(`hard_expires_at`) 검사 후 초과 시 자동 종료(`STREAM_HARD_EXPIRED`). 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신
 
 #### WebRTC/WHEP 전용 재생(앱)
@@ -347,7 +348,7 @@
 - 타이밍: 뷰어 TTL 45초, 유휴 타임아웃 60초, 기기측 하드 만료(edge-lease) 120초, 하트비트 주기 15초, 라이브 토큰 TTL 30초
 - 상태 폴링: 세션 생성 후 2초 간격으로 API-36 재조회, `READY`면 재생 시작, `FAILED/CLOSED/EXPIRED`면 에러 표시
 - 종료: 화면 이탈 시 WHEP 세션 `Location`에 `DELETE`한 뒤 API-37 호출
-- 재생 인가 확인: **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명 검증 → `204`/`401`) — Nginx가 WHEP/HLS 접근 시 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다.
+- 재생 인가 확인: **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명 검증 → `204`/`401`) — Nginx가 WHEP 접근 시 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다.
 - 운영 경로: HTTPS 443의 Nginx `/webrtc/.../whep` → host loopback MediaMTX 8889, WebRTC 미디어/ICE는 UDP 8189. 8889는 외부에 직접 공개하지 않는다.
 
 ---
@@ -396,7 +397,8 @@
 | requiredHeaders | Map<String,String> | 옵션(nullable) | 업로드 시 필요한 헤더(`x-amz-meta-sha256` 등) |
 | expiresAt | Instant | 옵션(nullable) | URL 만료 시각(TTL 15분) |
 
-- 에러: 413 `VIDEO_TOO_LARGE`(500MiB 초과), 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 413 `VIDEO_TOO_LARGE`(500MiB 초과), 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `DEVICE_VAULT_BINDING_MISSING`(기기는 등록 상태지만 활성 추억 금고 바인딩이 없음), 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- Vault 전환 복구: `V31__repair_missing_initial_vault_bindings.sql`은 바인딩 이력이 전혀 없는 활성 레거시 기기에 한해 초기 Vault·OWNER·ACTIVE 바인딩을 복구한다. 이전 바인딩 이력이 있는 기기는 잘못된 가정으로 다른 가족 Vault에 연결하지 않도록 자동 복구하지 않으며 재등록이 필요하다.
 
 ### API-26 `POST /api/iot/videos/complete`
 
@@ -409,7 +411,7 @@
 | objectETag | String | 옵션 | `@Size≤200` |
 
 - 응답: `200 VideoResponse` (API-27 목록의 개별 항목과 동일 스키마, 아래 참고)
-- 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_STATE_CONFLICT`(Vault 기반 READY 전환 실패 포함), 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503 `OBJECT_STORAGE_UNAVAILABLE`
 
 ### API-27 `GET /api/videos`
 
@@ -735,7 +737,7 @@
 |---|---|---|---|---|
 | MQTT-02 | `{base}/devices/+/status` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, state: ONLINE\|OFFLINE, firmwareVersion?}`. 연결(ONLINE)/LWT(OFFLINE)/정상 종료 시 발행 |
 | MQTT-03 | `{base}/devices/+/commands/ack` | 기기→백엔드 | 1 | `{schemaVersion, requestId, deviceId, status: ACCEPTED\|SUCCEEDED\|FAILED\|REJECTED\|EXPIRED, ...}`. 명령 수신·처리마다 발행 |
-| MQTT-05 | `{base}/devices/+/heartbeat` | 기기→백엔드 | 0 | `{schemaVersion, deviceId, recording, uploadQueueDepth, bufferSeconds?, personCount?, firmwareVersion}`. 30초 주기 |
+| MQTT-05 | `{base}/devices/+/heartbeat` | 기기→백엔드 | 0 | `{schemaVersion, deviceId, recording, uploadQueueDepth, bufferSeconds?, personCount?, firmwareVersion}`. 30초 주기이며 서버는 Redis presence를 90초 TTL로 갱신한다. TTL 만료는 별도 DB sweep 없이 OFFLINE을 뜻한다. |
 | MQTT-06 | `{base}/devices/+/registration` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, mode: ENABLED\|DISABLED, expiresAt?}`. 등록 코드 발급은 실제로 API-43(HTTP)으로만 이루어진다 |
 | MQTT-07 | `{base}/devices/+/events` | 기기→백엔드 | 1 | `{schemaVersion, deviceId, eventId, type, occurredAt, confidence?, localClip, source}`. 웃음 감지→업로드 흐름은 실제로 API-25/26(HTTP)으로만 동작한다 |
 | MQTT-08 | `$CONTROL/dynamic-security/v1` | 백엔드→브로커 | 1 | 기기별 MQTT 계정/ACL 생성·회전·비활성화(Mosquitto dynamic-security 관리 채널) |

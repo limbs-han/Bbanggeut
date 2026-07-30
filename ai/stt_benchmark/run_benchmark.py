@@ -352,7 +352,7 @@ def transcribe_whispercpp(model_path: str, audios: list[np.ndarray]) -> list[tup
 
     if not Path(model_path).exists():
         raise FileNotFoundError(
-            f"{model_path}이 없습니다. 만드는 절차는 자료/docs/사람이 읽을 문서/05-STT모델가이드.md 참조."
+            f"{model_path}이 없습니다. 만드는 절차는 자료/docs/사람이 읽을 문서/06-STT모델가이드.md 참조."
         )
 
     model = Model(
