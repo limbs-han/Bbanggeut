@@ -465,7 +465,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         color: Colors.black,
         child: RTCVideoView(
           whepPlayer.renderer,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
         ),
       );
     }
@@ -575,7 +575,7 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
         children: [
           RTCVideoView(
             widget.renderer,
-            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
           ),
           AnimatedOpacity(
             opacity: controlsVisible ? 1 : 0,
