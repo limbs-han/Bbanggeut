@@ -233,7 +233,37 @@ Flutter는 Vault·구성원·기기 정보를 묶어 초기화하므로 구성�
 이 경우 물리 기기 상태만 추정하지 말고 해당 시각의 API별 응답과 Backend
 로그를 함께 확인한다.
 
-## 9. 2026-07-29 운영 반영 및 검증 기록
+## 9. Vault 쓰기 API 500과 UUID 스칼라 매핑
+
+MyBatis에는 `java.util.UUID`용 기본 TypeHandler가 없다. uuid 컬럼을
+record 필드로 읽는 것은 결과 매핑을 거치므로 동작하지만, 단일 uuid
+컬럼을 `Optional<UUID>` 스칼라로 반환하면 MyBatis가 UUID를 빈으로 보고
+생성을 시도해 private `UUID(byte[])` 생성자에서 실패한다.
+
+이 형태의 매퍼는 Vault 도입과 함께 처음 생겼다.
+
+- `InvitationMapper.findFirstActiveDeviceId`
+- `VaultMapper.lockActiveVaultId`
+
+앞의 것은 초대 생성·초대 취소·구성원 회수·소유권 양도에서, 뒤의 것은
+기기 연결 해제에서 호출된다. 권한과 중복 검사는 이 호출보다 먼저
+끝나므로 미가입 이메일은 404, 기존 구성원은 409를 정상적으로 받는다.
+정상 초대 대상만 이 지점까지 도달해 500이 되므로, 증상이 "특정 계정만
+초대가 안 된다"로 보인다.
+
+조치와 회귀 방지:
+
+- `UuidTypeHandler`를 `ConfigurationCustomizer`로 전역 등록한다.
+- 등록 여부를 `MyBatisConfigTest`로 검증한다.
+- `VaultInvitationMapperIntegrationTest`가 실제 PostgreSQL과 Flyway
+  스키마에서 초대 삽입부터 조회까지를 통과시킨다.
+- 새 매퍼가 스칼라를 반환할 때는 record 필드 매핑과 다른 경로임을
+  전제하고 통합 테스트를 함께 추가한다.
+
+검증 조건: 로컬 Windows, Testcontainers `postgres:16-alpine`, Gradle
+`test` 태스크 전체 158개 통과(스킵 0).
+
+## 10. 2026-07-29 운영 반영 및 검증 기록
 
 - Vault 수명주기 변경을 역할별 develop과 `master`에 병합하고 Backend
   운영 배포를 완료했다.
