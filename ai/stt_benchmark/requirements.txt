@@ -1,0 +1,14 @@
+# STT 모델 비교용. PC에서만 쓴다 (앱 의존성이 아니다).
+#
+# torch와 torchaudio는 CUDA 빌드를 따로 받아야 한다 — 이 파일에 넣으면 CPU
+# 빌드가 깔린다. torchaudio는 funasr가 요구한다(없으면 SenseVoice가 죽는다):
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+#
+# av(PyAV)를 쓰는 이유: wheel에 ffmpeg가 들어 있어 시스템에 ffmpeg를
+# 설치하지 않고 m4a를 디코딩한다.
+
+transformers
+funasr
+jiwer
+av
+soundfile

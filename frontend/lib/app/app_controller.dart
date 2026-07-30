@@ -246,6 +246,45 @@ class AppController extends ChangeNotifier {
     await refreshVaults();
   }
 
+  /// Device presence is a Redis key with a heartbeat TTL, so the ONLINE flag
+  /// received at startup goes stale within minutes and the app would keep
+  /// offering live view for a camera that is gone. Re-read the vault list only,
+  /// leaving videos, members and invitations untouched.
+  Future<void> refreshPresence() async {
+    if (!authenticated) return;
+    final List<MemoryVault> latest;
+    try {
+      latest = await api.listVaults();
+    } catch (_) {
+      // Presence is best effort; keep showing the last known state.
+      return;
+    }
+    if (latest.isEmpty) return;
+    vaults = latest;
+    final vaultId = selectedVault?.id;
+    if (vaultId == null) return;
+    MemoryVault? current;
+    for (final vault in latest) {
+      if (vault.id == vaultId) {
+        current = vault;
+        break;
+      }
+    }
+    if (current == null) return;
+    selectedVault = current;
+    devices = current.devices
+        .map((binding) => binding.device)
+        .toList(growable: false);
+    final deviceId = selectedDevice?.id;
+    selectedDevice = devices.isEmpty
+        ? null
+        : devices.firstWhere(
+            (item) => item.id == deviceId,
+            orElse: () => devices.first,
+          );
+    notifyListeners();
+  }
+
   Future<void> refreshVaultData() async {
     final vault = selectedVault;
     if (vault == null) return;
@@ -425,8 +464,7 @@ class AppController extends ChangeNotifier {
 
   Future<bool> updateSelectedDevice({String? name, int? retentionDays}) async =>
       _guard(() async {
-        final device = selectedDevice;
-        if (device == null) return;
+        final device = requireSelectedDevice('기기 설정을 바꿀 수 없어요.');
         final updated = await api.updateDevice(
           device.id,
           name: name,
@@ -440,8 +478,7 @@ class AppController extends ChangeNotifier {
       });
 
   Future<bool> releaseSelectedDevice() async => _guard(() async {
-    final device = selectedDevice;
-    if (device == null) return;
+    final device = requireSelectedDevice('기기 연결을 해제할 수 없어요.');
     await api.releaseDevice(device.id);
     await refreshVaults();
   });
@@ -478,8 +515,7 @@ class AppController extends ChangeNotifier {
 
   Future<bool> createInvitation(String email, String role) async =>
       _guard(() async {
-        final vault = selectedVault;
-        if (vault == null || !vault.isOwner) return;
+        final vault = requireOwnedVault('가족을 초대할 수 없어요.');
         final requestToken =
             pendingMembershipRequestPreview?.email.toLowerCase() ==
                 email.trim().toLowerCase()
@@ -600,8 +636,7 @@ class AppController extends ChangeNotifier {
 
   Future<bool> revokeMemberAccess(DeviceMember member) async => _guard(
     () async {
-      final vault = selectedVault;
-      if (vault == null || !vault.isOwner) return;
+      final vault = requireOwnedVault('구성원을 내보낼 수 없어요.');
       await api.revokeVaultMember(vault.id, member.id);
       await (selectedDevice == null ? refreshVaultData() : refreshDeviceData());
     },
@@ -613,11 +648,31 @@ class AppController extends ChangeNotifier {
   }
 
   Future<bool> transferOwnership(DeviceMember member) async => _guard(() async {
-    final vault = selectedVault;
-    if (vault == null || !vault.isOwner) return;
+    final vault = requireOwnedVault('소유권을 이전할 수 없어요.');
     await api.transferVaultOwnership(vault.id, member.id);
     await refreshAll();
   });
+
+  /// Throws instead of returning, so [_guard] reports the failure rather than
+  /// leaving the caller to render a success message for work never done.
+  MemoryVault requireOwnedVault(String whatFailed) {
+    final vault = selectedVault;
+    if (vault == null) {
+      throw ApiFailure('금고를 먼저 선택해 주세요. $whatFailed');
+    }
+    if (!vault.isOwner) {
+      throw ApiFailure('OWNER 권한이 필요해요. $whatFailed', statusCode: 403);
+    }
+    return vault;
+  }
+
+  DeviceSummary requireSelectedDevice(String whatFailed) {
+    final device = selectedDevice;
+    if (device == null) {
+      throw ApiFailure('연결된 기기가 없어요. $whatFailed');
+    }
+    return device;
+  }
 
   void clearError() {
     errorMessage = null;
