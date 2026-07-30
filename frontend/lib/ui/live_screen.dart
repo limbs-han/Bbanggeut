@@ -29,7 +29,6 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   late final WhepPlayerController whepPlayer;
   Timer? pollTimer;
   Timer? heartbeatTimer;
-  Timer? tokenRefreshTimer;
   String? currentPlayUrl;
   String? error;
   bool closing = false;
@@ -73,23 +72,10 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     setState(() {});
     if (webRtcWasConnected && player == null && !closing) {
       webRtcWasConnected = false;
-      unawaited(_fallbackToHls());
+      setState(() {
+        error = 'WebRTC 연결이 끊어졌습니다. 다시 시도해 주세요.';
+      });
     }
-  }
-
-  Future<void> _fallbackToHls() async {
-    final current = session;
-    if (current == null || closing) return;
-    try {
-      final updated = await widget.controller.api.getStream(current.id);
-      if (!mounted || closing || updated.playUrl == null) return;
-      session = updated;
-      await _openPlayer(updated.playUrl!);
-      tokenRefreshTimer ??= Timer.periodic(
-        const Duration(seconds: 20),
-        (_) => _refreshPlaybackToken(),
-      );
-    } catch (_) {}
   }
 
   Future<void> _start() async {
@@ -187,23 +173,12 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
 
   Future<void> _openPreferredPlayerInternal(StreamSession updated) async {
     final whepUrl = updated.whepUrl;
-    if (whepUrl != null) {
-      try {
-        await whepPlayer.setMuted(muted);
-        await whepPlayer.connect(whepUrl);
-        await _disposeHlsPlayer();
-        tokenRefreshTimer?.cancel();
-        tokenRefreshTimer = null;
-        return;
-      } catch (_) {}
+    if (whepUrl == null || whepUrl.isEmpty) {
+      throw const WhepPlaybackException();
     }
-    final fallbackUrl = updated.playUrl;
-    if (fallbackUrl == null) throw const WhepPlaybackException();
-    await _openPlayer(fallbackUrl);
-    tokenRefreshTimer ??= Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _refreshPlaybackToken(),
-    );
+    await whepPlayer.setMuted(muted);
+    await whepPlayer.connect(whepUrl);
+    await _disposeHlsPlayer();
   }
 
   Future<void> _heartbeat() async {
@@ -240,25 +215,9 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _refreshPlaybackToken() async {
-    final current = session;
-    if (current == null || closing) return;
-    try {
-      final updated = await widget.controller.api.getStream(current.id);
-      if (!mounted) return;
-      session = updated;
-      if (updated.isReady && updated.playUrl != null) {
-        // Backend live JWT expires after 30 seconds. Recreating the network
-        // source every 20 seconds keeps Nginx playlist/segment auth valid.
-        await _openPlayer(updated.playUrl!, replace: true);
-      }
-    } catch (_) {}
-  }
-
   void _cancelTimers() {
     pollTimer?.cancel();
     heartbeatTimer?.cancel();
-    tokenRefreshTimer?.cancel();
   }
 
   Future<void> _close() async {
@@ -835,12 +794,11 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   late final ValueNotifier<VideoPlayerController?> playerListenable;
   Timer? pollTimer;
   Timer? heartbeatTimer;
-  Timer? tokenRefreshTimer;
   Timer? controlsTimer;
   String? currentPlayUrl;
   String? error;
   bool closing = false;
-  bool muted = true;
+  bool muted = false;
   bool started = false;
   bool starting = false;
   bool controlsVisible = false;
@@ -889,22 +847,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       return;
     }
     webRtcWasConnected = false;
-    setState(() {});
-    unawaited(_fallbackToHls());
-  }
-
-  Future<void> _fallbackToHls() async {
-    final current = session;
-    if (current == null || closing) return;
-    try {
-      final updated = await widget.controller.api.getStream(current.id);
-      if (!mounted || closing) return;
-      session = updated;
-      final fallbackUrl = updated.playUrl;
-      if (fallbackUrl == null) return;
-      await _openPlayer(fallbackUrl);
-      _ensureTokenRefresh();
-    } catch (_) {}
+    setState(() {
+      error = 'WebRTC 연결이 끊어졌습니다. 다시 시도해 주세요.';
+    });
   }
 
   @override
@@ -1017,32 +962,13 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   Future<void> _openPreferredPlayerInternal(StreamSession updated) async {
     final whepUrl = updated.whepUrl;
-    if (whepUrl != null) {
-      try {
-        await whepPlayer.setMuted(muted);
-        await whepPlayer.connect(whepUrl);
-        await _disposeHlsPlayer();
-        tokenRefreshTimer?.cancel();
-        tokenRefreshTimer = null;
-        if (mounted && !closing) setState(() => error = null);
-        return;
-      } catch (_) {
-        // HLS remains the compatibility path when ICE or WHEP is unavailable.
-      }
-    }
-    final fallbackUrl = updated.playUrl;
-    if (fallbackUrl == null) {
+    if (whepUrl == null || whepUrl.isEmpty) {
       throw const WhepPlaybackException();
     }
-    await _openPlayer(fallbackUrl);
-    _ensureTokenRefresh();
-  }
-
-  void _ensureTokenRefresh() {
-    tokenRefreshTimer ??= Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _refreshPlaybackToken(),
-    );
+    await whepPlayer.setMuted(muted);
+    await whepPlayer.connect(whepUrl);
+    await _disposeHlsPlayer();
+    if (mounted && !closing) setState(() => error = null);
   }
 
   Future<void> _heartbeat() async {
@@ -1080,26 +1006,11 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     }
   }
 
-  Future<void> _refreshPlaybackToken() async {
-    final current = session;
-    if (current == null || closing) return;
-    try {
-      final updated = await widget.controller.api.getStream(current.id);
-      if (!mounted || closing) return;
-      session = updated;
-      if (updated.isReady && updated.playUrl != null) {
-        await _openPlayer(updated.playUrl!, replace: true);
-      }
-    } catch (_) {}
-  }
-
   void _cancelTimers() {
     pollTimer?.cancel();
     heartbeatTimer?.cancel();
-    tokenRefreshTimer?.cancel();
     pollTimer = null;
     heartbeatTimer = null;
-    tokenRefreshTimer = null;
     controlsTimer?.cancel();
     controlsTimer = null;
   }
