@@ -58,6 +58,31 @@ The root-owned command uses the host Docker socket through the Docker CLI. This
 provides the Docker permission required for deployment without exposing the
 socket to ordinary CI jobs or feature branches.
 
+## Reinstall the wrapper whenever it changes
+
+`/usr/local/sbin/wj-deploy-backend` is a copy. Jenkins never updates it — the
+deploy job runs only `sudo /usr/local/sbin/wj-deploy-backend`, and the artifact
+it uploads contains the infrastructure files, not the wrapper. Editing
+`ci/jenkins/server/deploy/wj-deploy-backend` in the repository therefore has no
+effect on production until someone reinstalls it by hand.
+
+This has already caused one silent outage. The Redis service was added to the
+wrapper and to `backend/deploy/docker-compose.yml`, but only the Compose file
+reached the server, so every deployment kept starting `postgres minio` without
+`redis`. Login rate limiting fails open when Redis is unreachable, and device
+presence stops working, while the deployment still reports success.
+
+After merging any change to the wrapper, rerun the install command below and
+confirm the result:
+
+```bash
+sudo install -o root -g root -m 0755 \
+  ci/jenkins/server/deploy/wj-deploy-backend \
+  /usr/local/sbin/wj-deploy-backend
+sudo diff ci/jenkins/server/deploy/wj-deploy-backend /usr/local/sbin/wj-deploy-backend \
+  && echo '설치본이 저장소와 일치합니다.'
+```
+
 ## One-time server installation
 
 Install the reviewed wrapper and sudoers rule as root on the production host:
