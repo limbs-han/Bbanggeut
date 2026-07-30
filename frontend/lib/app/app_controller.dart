@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../core/api_client.dart';
 import '../core/models.dart';
 
-const devHlsUrl = String.fromEnvironment('DEV_HLS_URL');
 const devHomeCam = bool.fromEnvironment('DEV_HOME_CAM');
 
 class AppController extends ChangeNotifier {
@@ -38,7 +37,7 @@ class AppController extends ChangeNotifier {
   bool get canRegisterDevice => selectedVault == null || isOwner;
 
   Future<void> initialize() async {
-    if (devHomeCam && devHlsUrl.isNotEmpty) {
+    if (devHomeCam) {
       const demoDevice = DeviceSummary(
         id: 'local-raspberry-pi',
         name: '거실 홈캠 (개발용)',
@@ -334,7 +333,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshDeviceData() async {
-    if (devHomeCam && devHlsUrl.isNotEmpty) {
+    if (devHomeCam) {
       notifyListeners();
       return;
     }

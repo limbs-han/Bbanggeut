@@ -278,7 +278,6 @@
 | streamId | UUID | 필수 | 스트림 ID |
 | deviceId | UUID | 필수 | 기기 ID |
 | status | String | 필수 | PENDING/READY/FAILED/CLOSED/EXPIRED |
-| playUrl | String | 옵션(nullable) | 레거시/진단용 HLS URL(`READY` 상태에서 값 존재). 운영 앱은 사용하지 않음 |
 | whepUrl | String | 옵션(nullable) | 운영 WebRTC/WHEP 전용 재생 URL(`READY` 상태에서 값 존재) |
 | heartbeatIntervalSeconds | int | 필수 | 하트비트 주기(초, 기본 15초) |
 | viewerExpiresAt | Instant | 필수 | 뷰어 세션 만료 시각(TTL 45초) |
@@ -341,10 +340,10 @@
 
 - 세션이 `READY`가 되면 앱은 `StreamSessionResponse.whepUrl`을 먼저 사용한다.
 - WHEP 연결: 앱이 영상과 오디오를 모두 포함한 recv-only SDP offer를 `POST application/sdp`로 보내고 MediaMTX의 SDP answer를 적용한다. 수신된 원격 오디오 트랙은 영상과 같은 `RTCVideoRenderer`에 연결하며 음소거 버튼으로 볼륨을 제어한다. 별도 WebSocket 시그널링 서버는 없다.
-- 운영 앱은 `playUrl`로 자동 전환하지 않는다. `whepUrl`이 없거나 WHEP/ICE 연결이 실패하거나 SDP answer의 오디오가 원격 송신 방향(`sendonly`/`sendrecv`)이 아니거나, 연결 후 2초 안에 inbound audio RTP가 없으면 연결 실패를 표시하고 사용자가 재시도할 수 있게 한다.
+- 운영 API는 `playUrl`을 반환하지 않으며 앱에는 HLS 재생 경로가 없다. `whepUrl`이 없거나 WHEP/ICE 연결이 실패하거나 SDP answer의 오디오가 원격 송신 방향(`sendonly`/`sendrecv`)이 아니거나, 연결 후 2초 안에 inbound audio RTP가 없으면 연결 실패를 표시하고 사용자가 재시도할 수 있게 한다.
 - 연결 성공은 원격 video/audio track과 실제 inbound audio RTP 수신이 모두 확인된 시점이다. 홈 라이브는 기본 음소거가 아니며, 사용자가 음소거 버튼으로 직접 제어한다.
 - 송출 오디오는 WebRTC 호환 Opus를 사용해야 한다. AAC-only 송출은 MediaMTX가 WebRTC 오디오 트랙을 건너뛸 수 있으므로 지원하지 않는다.
-- URL 구성: WHEP `{webrtc-base-url}/{streamId}/whep?token={liveToken}`. HLS `playUrl`은 레거시/진단용이며 운영 앱 재생 경로에서 사용하지 않는다.
+- URL 구성: WHEP `{webrtc-base-url}/{streamId}/whep?token={liveToken}` — 운영 재생 URL은 이것뿐이다.
 - 타이밍: 뷰어 TTL 45초, 유휴 타임아웃 60초, 기기측 하드 만료(edge-lease) 120초, 하트비트 주기 15초, 라이브 토큰 TTL 30초
 - 상태 폴링: 세션 생성 후 2초 간격으로 API-36 재조회, `READY`면 재생 시작, `FAILED/CLOSED/EXPIRED`면 에러 표시
 - 종료: 화면 이탈 시 WHEP 세션 `Location`에 `DELETE`한 뒤 API-37 호출
