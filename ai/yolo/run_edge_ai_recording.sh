@@ -37,7 +37,8 @@ fi
 : "${LOCAL_MQTT_HOST:=127.0.0.1}"
 : "${LOCAL_MQTT_PORT:=1883}"
 : "${YOLO_DEADZONE_WIDTH:=0.08}"
-: "${YOLO_DEADZONE_HEIGHT:=0.08}"
+: "${YOLO_DEADZONE_HEIGHT:=0.06}"
+: "${YOLO_SUBJECT_Y_RATIO:=0.35}"
 : "${SERVO_DASHBOARD_HOST:=127.0.0.1}"
 : "${SERVO_DASHBOARD_PORT:=8765}"
 : "${SERVO_DASHBOARD_FRAME_WIDTH:=960}"
@@ -159,6 +160,7 @@ YOLO_COMMAND=(
     --command-interval 0.10
     --deadzone-width "$YOLO_DEADZONE_WIDTH"
     --deadzone-height "$YOLO_DEADZONE_HEIGHT"
+    --subject-y-ratio "$YOLO_SUBJECT_Y_RATIO"
     --control-output "${RUN_DIR}/autoframe_commands.jsonl"
     --dashboard-host "$SERVO_DASHBOARD_HOST"
     --dashboard-port "$SERVO_DASHBOARD_PORT"

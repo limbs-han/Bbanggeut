@@ -69,6 +69,7 @@ class ControllerTests(unittest.TestCase):
             ema_alpha=1.0,
             deadzone_width=0.12,
             deadzone_height=0.12,
+            subject_y_ratio=0.35,
             home_after_seconds=5.0,
         )
 
@@ -102,6 +103,21 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(command.command_y, "UP")
         self.assertGreater(command.error_x, 0)
         self.assertLess(command.error_y, 0)
+
+    def test_full_height_person_tracks_upper_body_anchor(self) -> None:
+        decision = choose_best_group(
+            (tracked(1, (10, 0, 90, 100)),),
+            100,
+            100,
+            edge_margin=0.10,
+        )
+
+        command = self.controller.update(decision, 100, 100, now=0.0)
+
+        self.assertEqual(command.command_x, "HOLD")
+        self.assertEqual(command.command_y, "UP")
+        self.assertAlmostEqual(command.center_y, 0.35)
+        self.assertAlmostEqual(command.error_y, -0.3)
 
     def test_holds_then_returns_home_after_target_loss(self) -> None:
         decision = choose_best_group(

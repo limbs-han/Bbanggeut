@@ -19,7 +19,8 @@ EVENT_DIR="${EVENT_DIR:-${HOME}/ai_events}"
 LOCAL_MQTT_HOST="${LOCAL_MQTT_HOST:-127.0.0.1}"
 LOCAL_MQTT_PORT="${LOCAL_MQTT_PORT:-1883}"
 YOLO_DEADZONE_WIDTH="${YOLO_DEADZONE_WIDTH:-0.08}"
-YOLO_DEADZONE_HEIGHT="${YOLO_DEADZONE_HEIGHT:-0.08}"
+YOLO_DEADZONE_HEIGHT="${YOLO_DEADZONE_HEIGHT:-0.06}"
+YOLO_SUBJECT_Y_RATIO="${YOLO_SUBJECT_Y_RATIO:-0.35}"
 CLIP_SECONDS="${CLIP_SECONDS:-5}"
 ENV_FILE="${DEVICE_AGENT_ENV_FILE:-/etc/william-james/device-agent.env}"
 
@@ -101,6 +102,7 @@ YOLO_COMMAND=(
     --command-interval 0.10
     --deadzone-width "$YOLO_DEADZONE_WIDTH"
     --deadzone-height "$YOLO_DEADZONE_HEIGHT"
+    --subject-y-ratio "$YOLO_SUBJECT_Y_RATIO"
     --event-dir "$EVENT_DIR"
     --clip-seconds "$CLIP_SECONDS"
     --control-output "${RUN_DIR}/autoframe_commands.jsonl"

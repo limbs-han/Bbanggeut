@@ -202,6 +202,15 @@ def parse_args() -> argparse.Namespace:
         help="Center dead-zone height as a frame ratio.",
     )
     parser.add_argument(
+        "--subject-y-ratio",
+        type=float,
+        default=0.35,
+        help=(
+            "Vertical tracking point inside the selected subject box: "
+            "0 is top, 0.5 is center, 1 is bottom (default: 0.35)."
+        ),
+    )
+    parser.add_argument(
         "--ema-alpha",
         type=float,
         default=0.25,
@@ -325,6 +334,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--deadzone-width must be between 0 and 1")
     if not 0.0 <= args.deadzone_height < 1.0:
         parser.error("--deadzone-height must be between 0 and 1")
+    if not 0.0 <= args.subject_y_ratio <= 1.0:
+        parser.error("--subject-y-ratio must be between 0 and 1")
     if not 0.0 < args.ema_alpha <= 1.0:
         parser.error("--ema-alpha must be greater than 0 and at most 1")
     if args.home_after_seconds < 0:
@@ -547,11 +558,15 @@ class AutoFrameController:
         ema_alpha: float,
         deadzone_width: float,
         deadzone_height: float,
+        subject_y_ratio: float,
         home_after_seconds: float,
     ) -> None:
+        if not 0.0 <= subject_y_ratio <= 1.0:
+            raise ValueError("subject_y_ratio must be between 0 and 1")
         self.ema_alpha = ema_alpha
         self.deadzone_width = deadzone_width
         self.deadzone_height = deadzone_height
+        self.subject_y_ratio = subject_y_ratio
         self.home_after_seconds = home_after_seconds
         self.smoothed_target: Point | None = None
         self.last_target_seen_at: float | None = None
@@ -605,7 +620,11 @@ class AutoFrameController:
                 limited_group=False,
             )
 
-        raw_x, raw_y = decision.raw_center
+        raw_x, _ = decision.raw_center
+        _, subject_top, _, subject_bottom = decision.group_box
+        raw_y = subject_top + (
+            subject_bottom - subject_top
+        ) * self.subject_y_ratio
         if self.smoothed_target is None:
             smooth_x, smooth_y = raw_x, raw_y
         else:
@@ -1020,6 +1039,7 @@ def run(args: argparse.Namespace) -> None:
         ema_alpha=args.ema_alpha,
         deadzone_width=args.deadzone_width,
         deadzone_height=args.deadzone_height,
+        subject_y_ratio=args.subject_y_ratio,
         home_after_seconds=args.home_after_seconds,
     )
 
