@@ -62,30 +62,34 @@ wait_for_healthy_service() {
 }
 
 wait_for_mediamtx() {
-  local container_id state
+  local container_id state probe_port
+
+  # 재생 경로가 WebRTC 전용으로 바뀌면서 mediamtx.yml 은 hls: false 다.
+  # MediaMTX 는 HLS 포트 8888 을 아예 열지 않으므로, 8888 을 먼저 요구하면
+  # 준비 검사가 영원히 실패해 배포가 통째로 막힌다. 실제로 켜 둔 재생
+  # 프로토콜의 포트만 확인한다.
+  if grep -Eq '^[[:space:]]*webrtc:[[:space:]]*true([[:space:]]|$)' \
+    "${infra_root}/mediamtx.yml"
+  then
+    probe_port=8889
+  else
+    probe_port=8888
+  fi
 
   for _ in $(seq 1 60); do
     container_id="$(compose ps --all --quiet mediamtx)"
     if [[ -n "${container_id}" ]]; then
       state="$(docker inspect --format '{{.State.Status}}' "${container_id}")"
       if [[ "${state}" == "running" ]] &&
-        timeout 2 bash -c '</dev/tcp/127.0.0.1/8888' 2>/dev/null
+        timeout 2 bash -c "</dev/tcp/127.0.0.1/${probe_port}" 2>/dev/null
       then
-        if grep -Eq '^[[:space:]]*webrtc:[[:space:]]*true([[:space:]]|$)' \
-          "${infra_root}/mediamtx.yml"
-        then
-          if timeout 2 bash -c '</dev/tcp/127.0.0.1/8889' 2>/dev/null; then
-            return 0
-          fi
-        else
-          return 0
-        fi
+        return 0
       fi
     fi
     sleep 2
   done
 
-  echo "MediaMTX did not become reachable on loopback port 8888." >&2
+  echo "MediaMTX did not become reachable on loopback port ${probe_port}." >&2
   compose logs --tail 100 mediamtx >&2 || true
   return 1
 }
