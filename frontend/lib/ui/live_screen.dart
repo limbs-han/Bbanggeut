@@ -243,15 +243,30 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   Future<void> _openFullscreen() async {
     if (!whepPlayer.connected) return;
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FullscreenWhepView(
-          renderer: whepPlayer.renderer,
-          title: widget.device.name,
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    try {
+      if (!mounted) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FullscreenWhepView(
+            renderer: whepPlayer.renderer,
+            title: widget.device.name,
+            muted: muted,
+            onReturnToLive: _restart,
+            onToggleMute: () async {
+              muted = !muted;
+              await whepPlayer.setMuted(muted);
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
   }
 
   void _scheduleControlsHide() {
@@ -323,23 +338,40 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                   Positioned(
                     left: 12,
                     top: widget.houseMode ? 30 : 12,
-                    child: Container(
+                    child: Material(
                       key: const Key('live-edge-button'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: hasPlayback
-                            ? const Color(0xDDD32F2F)
-                            : const Color(0xB32D312B),
+                      color: const Color(0xDDFDF9F4),
+                      borderRadius: BorderRadius.circular(99),
+                      child: InkWell(
                         borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        started ? '●  LIVE' : 'LIVE 준비',
-                        style: TextStyle(
-                          color: hasPlayback ? Colors.white : Colors.white70,
-                          fontWeight: FontWeight.w900,
+                        onTap: hasPlayback ? _restart : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 6,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.circle,
+                                size: 9,
+                                color: hasPlayback
+                                    ? const Color(0xFFE53935)
+                                    : AppColors.muted,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                started ? 'LIVE' : 'LIVE 준비',
+                                style: TextStyle(
+                                  color: hasPlayback
+                                      ? const Color(0xFFE53935)
+                                      : AppColors.muted,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -481,10 +513,16 @@ class FullscreenWhepView extends StatefulWidget {
     super.key,
     required this.renderer,
     required this.title,
+    required this.muted,
+    required this.onReturnToLive,
+    required this.onToggleMute,
   });
 
   final RTCVideoRenderer renderer;
   final String title;
+  final bool muted;
+  final Future<void> Function() onReturnToLive;
+  final Future<void> Function() onToggleMute;
 
   @override
   State<FullscreenWhepView> createState() => _FullscreenWhepViewState();
@@ -492,20 +530,21 @@ class FullscreenWhepView extends StatefulWidget {
 
 class _FullscreenWhepViewState extends State<FullscreenWhepView> {
   bool controlsVisible = true;
+  late bool muted;
   Timer? controlsTimer;
 
   @override
   void initState() {
     super.initState();
-    unawaited(
-      SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]),
-    );
-    unawaited(
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
-    );
+    muted = widget.muted;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+    });
     _scheduleControlsHide();
   }
 
@@ -519,12 +558,6 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
   @override
   void dispose() {
     controlsTimer?.cancel();
-    unawaited(
-      SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.portraitUp,
-      ]),
-    );
-    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     super.dispose();
   }
 
@@ -575,6 +608,65 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                             ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          AnimatedOpacity(
+            opacity: controlsVisible ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: IgnorePointer(
+              ignoring: !controlsVisible,
+              child: SafeArea(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        TextButton.icon(
+                          key: const Key('fullscreen-live-edge-button'),
+                          onPressed: () async {
+                            await widget.onReturnToLive();
+                            if (mounted) _scheduleControlsHide();
+                          },
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xCCFFF9F5),
+                            foregroundColor: const Color(0xFFE53935),
+                          ),
+                          icon: const Icon(Icons.circle, size: 9),
+                          label: const Text(
+                            'LIVE',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'WebRTC 실시간 · DVR 미지원',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                        const Spacer(),
+                        IconButton.filled(
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0x99000000),
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () async {
+                            await widget.onToggleMute();
+                            if (mounted) {
+                              setState(() => muted = !muted);
+                              _scheduleControlsHide();
+                            }
+                          },
+                          icon: Icon(
+                            muted
+                                ? Icons.volume_off_rounded
+                                : Icons.volume_up_rounded,
                           ),
                         ),
                       ],

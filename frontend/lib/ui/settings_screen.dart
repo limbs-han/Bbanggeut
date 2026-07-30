@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
-import 'laugh_report_content_screen.dart';
+import 'family_management_cards.dart';
+import 'invitation_inbox_screen.dart';
+import 'notification_settings_screen.dart';
 import 'password_change_screen.dart';
 import 'profile_edit_screen.dart';
 import 'widgets.dart';
@@ -18,46 +19,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  static const _storage = FlutterSecureStorage();
-  static const _anniversaryKey = 'wj_pref_anniversary_alerts';
-  static const _weeklyKey = 'wj_pref_weekly_report';
-  static const _memoryKey = 'wj_pref_new_memory_alerts';
-  bool anniversaryAlerts = true;
-  bool weeklyReport = true;
-  bool newMemoryAlerts = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNotificationPreferences();
-  }
-
-  Future<void> _loadNotificationPreferences() async {
-    try {
-      final values = await Future.wait([
-        _storage.read(key: _anniversaryKey),
-        _storage.read(key: _weeklyKey),
-        _storage.read(key: _memoryKey),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        anniversaryAlerts = values[0] != 'false';
-        weeklyReport = values[1] != 'false';
-        newMemoryAlerts = values[2] == 'true';
-      });
-    } catch (_) {
-      // 플랫폼 저장소를 사용할 수 없으면 현재 세션의 기본값을 유지한다.
-    }
-  }
-
-  Future<void> _savePreference(String key, bool value) async {
-    try {
-      await _storage.write(key: key, value: '$value');
-    } catch (_) {
-      // 화면 상태는 유지하고 다음 실행 시 기본값으로 복구한다.
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -187,44 +148,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 18),
+                    const _GroupLabel('가족 관리'),
+                    FamilyManagementCards(
+                      controller: controller,
+                      onOpenInbox: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              InvitationInboxScreen(controller: controller),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
                     const _GroupLabel('알림 설정'),
                     SoftCard(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Column(
-                        children: [
-                          _SwitchRow(
-                            icon: Icons.notifications_active_outlined,
-                            title: '기념일 알림',
-                            subtitle: '등록한 기념일을 알려드려요',
-                            value: anniversaryAlerts,
-                            onChanged: (value) {
-                              setState(() => anniversaryAlerts = value);
-                              _savePreference(_anniversaryKey, value);
-                            },
+                      padding: EdgeInsets.zero,
+                      child: _SettingRow(
+                        icon: Icons.notifications_active_outlined,
+                        title: '알림 설정',
+                        subtitle: '기념일 · 주간 리포트 · 새로운 추억',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationSettingsScreen(),
                           ),
-                          const Divider(height: 1, indent: 18, endIndent: 18),
-                          _SwitchRow(
-                            icon: Icons.event_available_outlined,
-                            title: '주간 리포트 알림',
-                            subtitle: '이번 주 웃음 기록을 요약해요',
-                            value: weeklyReport,
-                            onChanged: (value) {
-                              setState(() => weeklyReport = value);
-                              _savePreference(_weeklyKey, value);
-                            },
-                          ),
-                          const Divider(height: 1, indent: 18, endIndent: 18),
-                          _SwitchRow(
-                            icon: Icons.video_camera_back_outlined,
-                            title: '새로운 추억 알림',
-                            subtitle: '새 영상 저장 시 알려드려요',
-                            value: newMemoryAlerts,
-                            onChanged: (value) {
-                              setState(() => newMemoryAlerts = value);
-                              _savePreference(_memoryKey, value);
-                            },
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -233,19 +181,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       padding: EdgeInsets.zero,
                       child: Column(
                         children: [
-                          _SettingRow(
-                            icon: Icons.bar_chart_rounded,
-                            title: '웃음 리포트',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => LaughReportContentScreen(
-                                  controller: controller,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 1, indent: 58),
                           if (device.isOwner) ...[
                             _SettingRow(
                               icon: Icons.receipt_long_outlined,
@@ -655,44 +590,5 @@ class _SettingRow extends StatelessWidget {
         ? null
         : const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
     onTap: onTap,
-  );
-}
-
-class _SwitchRow extends StatelessWidget {
-  const _SwitchRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  @override
-  Widget build(BuildContext context) => ListTile(
-    minVerticalPadding: 9,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-    leading: CircleAvatar(
-      radius: 20,
-      backgroundColor: AppColors.sageSoft,
-      child: Icon(icon, size: 21, color: AppColors.sageDark),
-    ),
-    title: Text(
-      title,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-    ),
-    subtitle: Text(
-      subtitle,
-      style: const TextStyle(fontSize: 10, color: AppColors.inkSoft),
-    ),
-    trailing: Switch(
-      value: value,
-      activeTrackColor: AppColors.sage,
-      onChanged: onChanged,
-    ),
-    onTap: () => onChanged(!value),
   );
 }

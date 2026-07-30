@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import '../core/video_gallery_saver.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
 import 'widgets.dart';
@@ -28,6 +28,8 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   late VideoMemory _video;
   VideoPlayerController? _player;
   bool _loading = true;
+  bool _saving = false;
+  double? _saveProgress;
   String? _error;
 
   @override
@@ -133,17 +135,30 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _saveVideo() async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _saveProgress = null;
+    });
     try {
-      final download = await widget.controller.api.createDownloadUrl(_video.id);
-      final launched = await launchUrl(
-        Uri.parse(download.url),
-        mode: LaunchMode.externalApplication,
+      await VideoGallerySaver.save(
+        api: widget.controller.api,
+        videoId: _video.id,
+        onProgress: (received, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _saveProgress = received / total);
+        },
       );
-      if (mounted && !launched) {
-        showAppSnack(context, '영상을 저장할 앱을 열지 못했어요.', error: true);
-      }
+      if (mounted) showAppSnack(context, '휴대폰 갤러리에 영상을 저장했어요.');
     } catch (failure) {
       if (mounted) showAppSnack(context, '$failure', error: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _saveProgress = null;
+        });
+      }
     }
   }
 
@@ -253,10 +268,25 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                   ),
                   const SizedBox(height: 28),
                   OutlinedButton.icon(
-                    onPressed: _saveVideo,
-                    icon: const Icon(Icons.download_rounded),
-                    label: const Text('저장'),
+                    onPressed: _saving ? null : _saveVideo,
+                    icon: _saving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_rounded),
+                    label: Text(
+                      _saving
+                          ? _saveProgress == null
+                                ? '다운로드 중…'
+                                : '저장 중 ${(_saveProgress! * 100).round()}%'
+                          : '갤러리에 저장',
+                    ),
                   ),
+                  if (_saving) ...[
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(value: _saveProgress),
+                  ],
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _openEditor,

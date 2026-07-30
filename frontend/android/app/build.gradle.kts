@@ -5,6 +5,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// CI can build without private Firebase configuration. Once the real
+// google-services.json is placed in this module, FCM resources are generated.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.williamjames.william_james_app"
     compileSdk = flutter.compileSdkVersion
@@ -27,13 +33,6 @@ android {
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
-        }
-    }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-            pickFirsts += "**/libbanuba-ve-yuv.so"
         }
     }
 

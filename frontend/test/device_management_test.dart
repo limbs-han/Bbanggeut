@@ -235,6 +235,9 @@ void main() {
     expect(controller.receivedInvitations, isEmpty);
     expect(controller.devices.single.id, invitation.deviceId);
     expect(controller.selectedDevice?.id, invitation.deviceId);
+    expect(api.listMyInvitationsCalls, 1);
+    expect(api.listVaultsCalls, 1);
+    expect(api.listVaultMembersCalls, 1);
     controller.dispose();
   });
   test(
@@ -453,6 +456,9 @@ class _ProfileApiClient extends ApiClient {
 
 class _AcceptInvitationApiClient extends ApiClient {
   String? acceptedInvitationId;
+  int listMyInvitationsCalls = 0;
+  int listVaultsCalls = 0;
+  int listVaultMembersCalls = 0;
 
   static const device = DeviceSummary(
     id: 'device-1',
@@ -479,22 +485,28 @@ class _AcceptInvitationApiClient extends ApiClient {
   }
 
   @override
-  Future<List<Invitation>> listMyInvitations() async => const [];
+  Future<List<Invitation>> listMyInvitations() async {
+    listMyInvitationsCalls += 1;
+    return const [];
+  }
 
   @override
-  Future<List<MemoryVault>> listVaults() async => const [
-    MemoryVault(
-      id: 'vault-1',
-      name: '우리 집',
-      status: 'ACTIVE',
-      myRole: 'MEMBER',
-      retentionDays: 30,
-      subscriptionActive: false,
-      devices: [
-        VaultDevice(bindingId: 'binding-1', generation: 1, device: device),
-      ],
-    ),
-  ];
+  Future<List<MemoryVault>> listVaults() async {
+    listVaultsCalls += 1;
+    return const [
+      MemoryVault(
+        id: 'vault-1',
+        name: '우리 집',
+        status: 'ACTIVE',
+        myRole: 'MEMBER',
+        retentionDays: 30,
+        subscriptionActive: false,
+        devices: [
+          VaultDevice(bindingId: 'binding-1', generation: 1, device: device),
+        ],
+      ),
+    ];
+  }
 
   @override
   Future<DeviceStatus> getDeviceStatus(String id) async => const DeviceStatus(
@@ -527,7 +539,10 @@ class _AcceptInvitationApiClient extends ApiClient {
   Future<List<DeviceMember>> listMembers(String deviceId) async => const [];
 
   @override
-  Future<List<DeviceMember>> listVaultMembers(String vaultId) async => const [];
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async {
+    listVaultMembersCalls += 1;
+    return const [];
+  }
 
   @override
   Future<HomeSummary> getHomeSummary(String id) async =>
