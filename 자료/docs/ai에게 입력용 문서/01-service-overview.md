@@ -33,7 +33,7 @@
 |---|---|---|---|---|---|
 | 1 | 회원가입/로그인 | REQ-F-01,02(,03,04,05) | FN-A02,A03,S01(,A32,A33,S02) | API-01,02(,03,04,05) | 이메일+비밀번호만. 소셜로그인·비밀번호찾기는 부록 A(스텁) |
 | 2 | 기기 등록 | REQ-F-10(,12,13) | FN-A07,S04,S20,S21,E01,E02(,A27,S05) | API-08,43(,44,45,07,10,11) | QR/8자리 코드 claim. 코드 TTL 120초 |
-| 3 | 홈 라이브 스트리밍 시청 | REQ-F-18(,41) | FN-A10,A11,A37,S16,S17,S25,E04,E05(,A06) | API-34~38, MQTT-01,04 | WHEP/WebRTC 우선, 실패 시 HLS 폴백 |
+| 3 | 홈 라이브 스트리밍 시청 | REQ-F-18(,41) | FN-A10,A11,A37,S16,S17,S25,E04,E05(,A06) | API-34~38, MQTT-01,04 | 운영 WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | REQ-F-37,21,22 | FN-E06,E07,S11,A15,S12,A17,A37,S14 | API-25,26,27,31 | YAMNet 임계값 0.25·연속 2윈도우 → presigned 업로드 |
 | 5 | 영상 편집 | REQ-F-27 | FN-A21 | API-32(원본 다운로드 재사용) | Banuba 수동 편집(Android 전용), 서버 API 불요 |
 | 6 | 편집 영상 다운로드 | REQ-F-26,27 | FN-A20,S14,A21 | API-32 | 편집본은 로컬 저장+공유(SNS/메신저), 원본만 서버 다운로드 |
@@ -51,7 +51,7 @@
 | 라이브 토큰 TTL | 30초 (20초 주기 재조회) |
 | 업로드 URL TTL | 15분 |
 | 재생/다운로드 URL TTL | 5분 |
-| 명령·미디어 경로 분리 | MQTT=제어만, RTSPS(기기→미디어서버)/WHEP·WebRTC 우선+HLS 폴백(미디어서버→앱)=영상 |
+| 명령·미디어 경로 분리 | MQTT=제어만, RTSPS(기기→미디어서버)/WHEP·WebRTC(미디어서버→앱)=영상 |
 
 ## 5. 시스템 아키텍처
 
@@ -71,7 +71,7 @@ flowchart LR
         SPRING <--> DB
         SPRING <--> MQTT
         SPRING --> STORE
-        MEDIA -->|"WHEP 우선 · HLS 폴백"| NGINX
+        MEDIA -->|"WHEP"| NGINX
     end
     APP["Flutter Application"]
     J <-->|"① MQTTS 라이브 시작/종료 명령·상태"| MQTT
@@ -79,7 +79,7 @@ flowchart LR
     J <-->|"③ HTTPS 웃음 클립 업로드URL요청/완료통지"| SPRING
     J -->|"③' HTTPS(presigned PUT) 웃음 클립 업로드"| STORE
     APP <-->|"④ HTTPS+JWT 로그인·기기·라이브세션·서명URL발급"| NGINX
-    NGINX -->|"⑤ WHEP/WebRTC 우선 · HLS 폴백"| APP
+    NGINX -->|"⑤ WHEP/WebRTC"| APP
     STORE -->|"⑥ HTTPS 서명URL(발급은④경유) 저장영상재생/다운로드"| APP
 ```
 
@@ -90,10 +90,10 @@ flowchart LR
 | Jetson↔Spring(업로드) | HTTPS | `ai/yolo/laughter_clip_uploader.py`, `backend/.../video/api/IotVideoController.java` |
 | Jetson→MinIO | HTTPS PUT(presigned) | `backend/.../storage/ObjectStorageService.java` |
 | App↔Nginx→Spring | HTTPS+JWT | `frontend/lib/core/api_client.dart`, 각 `backend/.../*/api/*Controller.java` |
-| Nginx/MediaMTX→App | HTTPS WHEP signaling + WebRTC, HLS 폴백 | `frontend/lib/core/whep_player_controller.dart`, `frontend/lib/ui/live_screen.dart` |
+| Nginx/MediaMTX→App | HTTPS WHEP signaling + WebRTC | `frontend/lib/core/whep_player_controller.dart`, `frontend/lib/ui/live_screen.dart` |
 | MinIO→App(서명URL 발급은 Spring 경유) | HTTPS | `backend/.../video/application/VideoQueryService.java` |
 
-- **명령과 미디어 분리**: MQTT는 짧은 제어 메시지(시작/종료 명령, 상태)만, 실제 영상은 라이브(RTSPS→WHEP/WebRTC 우선·HLS 폴백)와 클립(HTTPS presigned)로만 흐른다.
+- **명령과 미디어 분리**: MQTT는 짧은 제어 메시지(시작/종료 명령, 상태)만, 실제 영상은 라이브(RTSPS→WHEP/WebRTC)와 클립(HTTPS presigned)로만 흐른다.
 - 인물 탐지·팬틸트 자동 추적 등 영상 기반 AI 기능은 아키텍처 범위 밖(부록 A). 이벤트 판단은 웃음소리(오디오) 감지 하나로 단순화.
 - ⚠️ MQTT `events`(MQTT-07)는 서버 핸들러가 존재하나 기기가 발행하지 않는 죽은 구독 — 이벤트 통지는 전부 HTTP(API-25/26)로만 동작.
 
@@ -140,7 +140,7 @@ MVP 7단계 기준. FN-A38 Flutter 리포트 화면은 구현됐고 FN-S26/API-5
 |---|---|---|---|
 | 1 | 회원가입/로그인 | 구현됨 | 세션 유지 포함 |
 | 2 | 기기 등록 | 구현됨 | QR/8자리 코드 claim |
-| 3 | 홈 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 우선·HLS 폴백 |
+| 3 | 홈 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지→자동업로드→목록/재생 |
 | 5 | 영상 편집 | 부분 구현 | Banuba 동작(Android 전용). 판정기준(로컬편집+기기저장) 충족 |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장, 원본 서버 다운로드 |
