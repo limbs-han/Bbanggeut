@@ -198,7 +198,7 @@ YOLO 실행 로그에서 다음을 확인한다.
 Framing target MQTT: homecam/v2/.../control/framing/target
 ```
 
-드라이런 로그의 PAN은 `-40~+40`, TILT는 `0~+80` 범위를 벗어나면 안 된다.
+드라이런 로그의 PAN과 TILT는 모두 `-80~+80` 범위를 벗어나면 안 된다.
 
 ## 8. 실물 보정
 
@@ -214,8 +214,8 @@ Framing target MQTT: homecam/v2/.../control/framing/target
    반대로 바꾼다.
 6. DOWN 명령에서 위쪽으로 움직이면 `SERVO_TILT_PULSE_DIRECTION` 부호를
    반대로 바꾼다.
-7. ±10° 시험을 통과한 뒤 PAN ±20°, ±30°, ±40° 순서로 확대한다.
-8. TILT는 아래 방향 20°, 40°, 60°, 80° 순서로 확대한다.
+7. ±10° 시험을 통과한 뒤 PAN ±20°, ±40°, ±60°, ±80° 순서로 확대한다.
+8. TILT도 위·아래 ±20°, ±40°, ±60°, ±80° 순서로 확대한다.
 9. 떨림·소음·기구물 충돌이 발생하면 즉시 외부 5V 전원을 끈다.
 
 기본 보정 환경변수:
@@ -224,9 +224,9 @@ Framing target MQTT: homecam/v2/.../control/framing/target
 SERVO_I2C_ADDRESS=0x40
 SERVO_PAN_CHANNEL=0
 SERVO_TILT_CHANNEL=1
-SERVO_PAN_MIN_DEG=-40
-SERVO_PAN_MAX_DEG=40
-SERVO_TILT_MIN_DEG=0
+SERVO_PAN_MIN_DEG=-80
+SERVO_PAN_MAX_DEG=80
+SERVO_TILT_MIN_DEG=-80
 SERVO_TILT_MAX_DEG=80
 SERVO_PAN_HOME_PULSE_US=1500
 SERVO_TILT_HOME_PULSE_US=1500
@@ -236,9 +236,8 @@ SERVO_MINIMUM_PULSE_US=1000
 SERVO_MAXIMUM_PULSE_US=2000
 ```
 
-TILT HOME을 기준으로 위·아래 이동량을 같게 쓰려면 기구물의 양방향
-여유를 먼저 확인한 뒤 `SERVO_TILT_MIN_DEG=-20`,
-`SERVO_TILT_MAX_DEG=20`처럼 HOME `0`을 중심으로 대칭 범위를 설정한다.
+PAN/TILT 모두 HOME `0`을 중심으로 `-80~+80`의 대칭 범위를 사용한다.
+기구물의 양방향 여유가 부족하면 해당 축의 최소·최대값을 더 좁게 설정한다.
 카메라의 UP/DOWN 명령과 실제 움직임이 반대라면
 `SERVO_TILT_PULSE_DIRECTION`을 `1`과 `-1` 중 반대 값으로 변경한다.
 
