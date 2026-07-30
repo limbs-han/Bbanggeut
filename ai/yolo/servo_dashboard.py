@@ -343,6 +343,8 @@ class YamnetDiagnosticsMonitor:
     def _normalize(payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "observed_at": payload.get("observedAt"),
+            "status": payload.get("status") or "READY",
+            "detail": payload.get("detail"),
             "top_class": payload.get("topClass"),
             "top_score": payload.get("topScore"),
             "score": payload.get("selectedScore"),
@@ -486,13 +488,23 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json(self.telemetry.snapshot())
         elif path == "/healthz":
             snapshot = self.telemetry.snapshot()
+            yamnet = snapshot["yamnet"]
             self._send_json(
                 {
                     "status": "ok",
                     "vision_available": snapshot["vision"] is not None,
                     "servo_available": snapshot["servo"] is not None,
                     "laughter_available": snapshot["laughter"] is not None,
-                    "yamnet_available": snapshot["yamnet"] is not None,
+                    "yamnet_available": (
+                        yamnet is not None
+                        and str(yamnet.get("status", "READY")).upper()
+                        == "READY"
+                    ),
+                    "yamnet_status": (
+                        str(yamnet.get("status", "UNAVAILABLE")).upper()
+                        if yamnet is not None
+                        else "UNAVAILABLE"
+                    ),
                 }
             )
         elif path == "/stream.mjpg":

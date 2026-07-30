@@ -51,6 +51,7 @@ fi
 : "${YAMNET_COOLDOWN:=12}"
 : "${YAMNET_GAIN:=1.5}"
 : "${YAMNET_READY_TIMEOUT_SECONDS:=90}"
+: "${YAMNET_RESTART_DELAY_SECONDS:=5}"
 : "${YAMNET_CLAP_ENABLED:=false}"
 : "${YAMNET_CLAP_THRESHOLD:=0.30}"
 : "${YAMNET_CLAP_CONSECUTIVE:=2}"
@@ -85,6 +86,10 @@ if [[ ! "$YAMNET_CONSECUTIVE" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if [[ ! "$YAMNET_READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
     echo "YAMNET_READY_TIMEOUT_SECONDS must be a positive integer" >&2
+    exit 2
+fi
+if [[ ! "$YAMNET_RESTART_DELAY_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "YAMNET_RESTART_DELAY_SECONDS must be a positive integer" >&2
     exit 2
 fi
 
@@ -128,12 +133,26 @@ mkdir -p "$RUN_DIR"
 YAMNET_DIAGNOSTICS_PATH="${RUN_DIR}/yamnet_diagnostics.jsonl"
 
 declare -a PIDS=()
+YAMNET_PID=""
+YAMNET_RESTART_AT=0
 
 child_is_running() {
     local pid="$1"
     local state
     state="$(ps -o stat= -p "$pid" 2>/dev/null)" || return 1
     [[ -n "$state" && "${state:0:1}" != "Z" ]]
+}
+
+remove_managed_pid() {
+    local removed_pid="$1"
+    local pid
+    local -a remaining=()
+    for pid in "${PIDS[@]}"; do
+        if [[ "$pid" != "$removed_pid" ]]; then
+            remaining+=("$pid")
+        fi
+    done
+    PIDS=("${remaining[@]}")
 }
 
 wait_for_children_to_stop() {
@@ -243,10 +262,32 @@ case "${YAMNET_CLAP_ENABLED,,}" in
         exit 2
         ;;
 esac
-"${YAMNET_COMMAND[@]}" \
-    > >(sed -u 's/^/[YAMNET] /' | tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
-YAMNET_PID="$!"
-PIDS+=("$YAMNET_PID")
+
+write_yamnet_status() {
+    local status="$1"
+    local detail="$2"
+    local observed_at
+    observed_at="$(date -u '+%Y-%m-%dT%H:%M:%S.000Z')"
+    printf \
+        '{"observedAt":"%s","status":"%s","detail":"%s"}\n' \
+        "$observed_at" "$status" "$detail" \
+        >> "$YAMNET_DIAGNOSTICS_PATH"
+}
+
+yamnet_has_inference() {
+    grep -q '"selectedScore"' "$YAMNET_DIAGNOSTICS_PATH" 2>/dev/null
+}
+
+start_yamnet() {
+    "${YAMNET_COMMAND[@]}" \
+        > >(sed -u 's/^/[YAMNET] /' |
+            tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
+    YAMNET_PID="$!"
+    PIDS+=("$YAMNET_PID")
+}
+
+write_yamnet_status "STARTING" "Waiting for first inference"
+start_yamnet
 
 echo \
     "Waiting up to ${YAMNET_READY_TIMEOUT_SECONDS}s for YAMNet first inference"
@@ -258,44 +299,66 @@ echo \
 # and matches what an operator sees in `date`/journal timestamps.
 yamnet_wait_started="$(date +%s)"
 yamnet_ready_deadline=$((yamnet_wait_started + YAMNET_READY_TIMEOUT_SECONDS))
-while [[ ! -s "$YAMNET_DIAGNOSTICS_PATH" ]]; do
-    if ! kill -0 "$YAMNET_PID" 2>/dev/null; then
+yamnet_initial_ready=false
+while ! yamnet_has_inference; do
+    if ! child_is_running "$YAMNET_PID"; then
         if wait "$YAMNET_PID"; then
             yamnet_status=0
         else
             yamnet_status="$?"
         fi
-        if (( yamnet_status == 0 )); then
-            yamnet_status=1
-        fi
+        remove_managed_pid "$YAMNET_PID"
+        YAMNET_PID=""
+        YAMNET_RESTART_AT=$((
+            $(date +%s) + YAMNET_RESTART_DELAY_SECONDS
+        ))
         echo \
             "YAMNet exited before readiness (status=${yamnet_status})." \
+            "Continuing in degraded mode; YAMNet will restart independently." \
             "Last log lines:" \
             >&2
         tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
-        exit "$yamnet_status"
+        write_yamnet_status \
+            "UNAVAILABLE" \
+            "Exited before readiness; restart scheduled"
+        break
     fi
     now="$(date +%s)"
     if (( now >= yamnet_ready_deadline )); then
+        if yamnet_has_inference; then
+            yamnet_initial_ready=true
+            break
+        fi
         echo \
             "YAMNet readiness timed out after " \
             "$((now - yamnet_wait_started))s " \
-            "(limit ${YAMNET_READY_TIMEOUT_SECONDS}s). Last log lines:" \
+            "(limit ${YAMNET_READY_TIMEOUT_SECONDS}s). " \
+            "Continuing in degraded mode while YAMNet keeps running. " \
+            "Last log lines:" \
             >&2
         tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
-        exit 1
+        write_yamnet_status \
+            "UNAVAILABLE" \
+            "Readiness timed out; detector still running"
+        break
     fi
     sleep 0.25
 done
-echo \
-    "YAMNet ready: first inference telemetry received after " \
-    "$(( $(date +%s) - yamnet_wait_started ))s"
+if yamnet_has_inference; then
+    yamnet_initial_ready=true
+fi
+if [[ "$yamnet_initial_ready" == true ]]; then
+    echo \
+        "YAMNet ready: first inference telemetry received after " \
+        "$(( $(date +%s) - yamnet_wait_started ))s"
+else
+    echo \
+        "YAMNet is not ready; starting the remaining AI stack in degraded mode"
+fi
 
-# Only start the uploader (and later YOLO/wake-name) once YAMNet has proven
-# it can actually produce triggers. Starting the uploader earlier just adds
-# CPU/memory contention during YAMNet's TensorFlow import and model load --
-# and gives no benefit, since there is nothing to upload before YAMNet is
-# alive anyway.
+# Give YAMNet a bounded head start to reduce TensorFlow/PyTorch startup
+# contention. Readiness is observational, not fatal: uploader, wake-name,
+# YOLO, and the dashboard still start if YAMNet is slow or temporarily down.
 UPLOADER_COMMAND=(
     "$YOLO_PYTHON" -u "${SCRIPT_DIR}/segment_clip_uploader.py"
     --event-dir "$EVENT_DIR"
@@ -368,7 +431,34 @@ MQTT_HOST= "${YOLO_COMMAND[@]}" \
 PIDS+=("$!")
 
 while true; do
+    now="$(date +%s)"
+    if [[ -n "$YAMNET_PID" ]] &&
+        ! child_is_running "$YAMNET_PID"; then
+        if wait "$YAMNET_PID"; then
+            yamnet_status=0
+        else
+            yamnet_status="$?"
+        fi
+        remove_managed_pid "$YAMNET_PID"
+        YAMNET_PID=""
+        YAMNET_RESTART_AT=$((now + YAMNET_RESTART_DELAY_SECONDS))
+        echo \
+            "YAMNet exited (status=${yamnet_status}); restarting only YAMNet " \
+            "in ${YAMNET_RESTART_DELAY_SECONDS}s" \
+            >&2
+        write_yamnet_status \
+            "UNAVAILABLE" \
+            "Detector exited; restart scheduled"
+    fi
+    if [[ -z "$YAMNET_PID" ]] && (( now >= YAMNET_RESTART_AT )); then
+        echo "Restarting YAMNet detector" >&2
+        write_yamnet_status "RESTARTING" "Launching detector"
+        start_yamnet
+    fi
     for pid in "${PIDS[@]}"; do
+        if [[ "$pid" == "$YAMNET_PID" ]]; then
+            continue
+        fi
         if ! kill -0 "$pid" 2>/dev/null; then
             wait "$pid"
             exit $?

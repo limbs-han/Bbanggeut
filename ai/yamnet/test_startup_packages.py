@@ -1,4 +1,5 @@
 import builtins
+from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
@@ -11,6 +12,14 @@ require_audio_packages = detector.require_audio_packages
 
 
 class StartupPackageTests(unittest.TestCase):
+    def test_diagnostics_are_appended_across_detector_restarts(self) -> None:
+        source = Path(detector.__file__).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'diagnostics_output = diagnostics_path.open(\n            "a"',
+            source,
+        )
+
     def test_rtsp_path_skips_sounddevice_import(self) -> None:
         original_import = builtins.__import__
         fake_numpy = SimpleNamespace(__name__="numpy")

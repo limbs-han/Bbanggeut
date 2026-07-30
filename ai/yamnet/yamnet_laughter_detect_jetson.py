@@ -597,7 +597,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
         diagnostics_path = args.diagnostics_jsonl.expanduser().resolve()
         diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
         diagnostics_output = diagnostics_path.open(
-            "w",
+            "a",
             encoding="utf-8",
             buffering=1,
         )
