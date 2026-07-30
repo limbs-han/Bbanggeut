@@ -83,6 +83,12 @@ sudo diff ci/jenkins/server/deploy/wj-deploy-backend /usr/local/sbin/wj-deploy-b
   && echo '설치본이 저장소와 일치합니다.'
 ```
 
+Forgetting this no longer fails silently. The deployment artifact carries a copy
+of the wrapper, and the installed wrapper compares itself against that copy
+before touching anything. A mismatch aborts the deployment and prints the
+install command above. The copy is an optional bundle entry, so a release built
+before this check still deploys — it only logs that the comparison was skipped.
+
 ## One-time server installation
 
 Install the reviewed wrapper and sudoers rule as root on the production host:
