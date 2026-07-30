@@ -335,14 +335,14 @@
 
 - **송출 트리거**: 기기가 MQTT-01로 `START_STREAM`을 수신하면 `StreamManager.start(stream_id, hard_expires_at)` 실행
 - **송출 URL**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 `/live/{stream_id}` 고정, 쿼리/프래그먼트 금지, TLS CA 인증서 필수
-- **ffmpeg 구성**: `-f v4l2` 카메라 입력 → `-c:v libx264 -preset ultrafast -tune zerolatency` 인코딩(기본 2500kbps) → `-f rtsp -rtsp_transport tcp {publish_url}` 출력
+- **ffmpeg 구성**: 로컬 공유 스트림의 H.264 영상은 `-c:v copy`로 전달하고, AAC 원본 오디오는 WebRTC 호환 Opus 48kHz 모노·64kbps(`-c:a libopus -application lowdelay`)로 변환한 뒤 `-f rtsp -rtsp_transport tcp {publish_url}`로 출력한다. 이 변환은 앱 Live View 릴레이에만 적용되며 로컬 `/homecam/main`, `/homecam/ai`와 녹화의 AAC 오디오는 유지한다.
 - **수명 관리**: 준비 지연(기본 3초) 후 `STREAM_READY`/`STREAM_ERROR` 발행(MQTT-04). 1초 주기로 하드 만료(`hard_expires_at`) 검사 후 초과 시 자동 종료(`STREAM_HARD_EXPIRED`). 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신
 
 #### WebRTC/WHEP 우선 재생 + HLS 폴백(앱)
 
 - 세션이 `READY`가 되면 앱은 `StreamSessionResponse.whepUrl`을 먼저 사용한다.
 - WHEP 연결: 앱이 영상과 오디오를 모두 포함한 recv-only SDP offer를 `POST application/sdp`로 보내고 MediaMTX의 SDP answer를 적용한다. 수신된 원격 오디오 트랙은 영상과 같은 `RTCVideoRenderer`에 연결하며 음소거 버튼으로 볼륨을 제어한다. 별도 WebSocket 시그널링 서버는 없다.
-- WHEP/ICE 연결이 실패하거나 `whepUrl`이 없거나 SDP answer에 활성 오디오 미디어가 없으면 `playUrl`의 HLS를 사용한다. 따라서 AAC처럼 WebRTC에서 직접 전달할 수 없는 오디오로 송출되더라도 HLS 폴백을 통해 소리를 유지한다.
+- WHEP/ICE 연결이 실패하거나 `whepUrl`이 없거나 SDP answer에 활성 오디오 미디어가 없으면 `playUrl`의 HLS를 사용한다. 정상 Jetson Live View는 Opus 오디오를 송출하므로 WHEP SDP answer에 활성 오디오 미디어가 포함되어야 한다.
 - URL 구성: WHEP `{webrtc-base-url}/{streamId}/whep?token={liveToken}`, HLS `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
 - 타이밍: 뷰어 TTL 45초, 유휴 타임아웃 60초, 기기측 하드 만료(edge-lease) 120초, 하트비트 주기 15초, 라이브 토큰 TTL 30초
 - 상태 폴링: 세션 생성 후 2초 간격으로 API-36 재조회, `READY`면 재생 시작, `FAILED/CLOSED/EXPIRED`면 에러 표시
