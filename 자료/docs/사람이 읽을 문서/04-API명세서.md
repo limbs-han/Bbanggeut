@@ -279,8 +279,7 @@
 | streamId | UUID | 필수 | 스트림 ID |
 | deviceId | UUID | 필수 | 기기 ID |
 | status | String | 필수 | PENDING/READY/FAILED/CLOSED/EXPIRED |
-| playUrl | String | 옵션(nullable) | HLS 폴백 URL(`READY` 상태에서 값 존재) |
-| whepUrl | String | 옵션(nullable) | WebRTC/WHEP 우선 재생 URL(`READY` 상태에서 값 존재) |
+| whepUrl | String | 옵션(nullable) | 운영 WebRTC/WHEP 전용 재생 URL(`READY` 상태에서 값 존재) |
 | heartbeatIntervalSeconds | int | 필수 | 하트비트 주기(초, 기본 15초) |
 | viewerExpiresAt | Instant | 필수 | 뷰어 세션 만료 시각(TTL 45초) |
 | edgeHardExpiresAt | Instant | 필수 | 기기측 하드 만료 시각(TTL 120초) |
@@ -316,7 +315,7 @@
 
 - 방향: 발행(백엔드→기기)
 - 페이로드: `{schemaVersion:"2.0", requestId, deviceId, type: START_STREAM|EXTEND_STREAM|STOP_STREAM, issuedAt, expiresAt(issuedAt+15s), payload}`
-  - `START_STREAM.payload = {sessionId, streamId, profile:"LIVE_720P_H264_AAC", segmentDurationSeconds:2, hardExpiresAt}`
+  - `START_STREAM.payload = {sessionId, streamId, profile:"LIVE_720P_H264_OPUS", hardExpiresAt}`
   - `EXTEND_STREAM.payload = {streamId, hardExpiresAt}`
   - `STOP_STREAM.payload = {streamId, reason}`
 - 트리거: 백엔드가 스트림 세션 생성/연장/종료 시 발행
@@ -338,16 +337,17 @@
 - **ffmpeg 구성**: `-f v4l2` 카메라 입력 → `-c:v libx264 -preset ultrafast -tune zerolatency` 인코딩(기본 2500kbps) → `-f rtsp -rtsp_transport tcp {publish_url}` 출력
 - **수명 관리**: 준비 지연(기본 3초) 후 `STREAM_READY`/`STREAM_ERROR` 발행(MQTT-04). 1초 주기로 하드 만료(`hard_expires_at`) 검사 후 초과 시 자동 종료(`STREAM_HARD_EXPIRED`). 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신
 
-#### WebRTC/WHEP 우선 재생 + HLS 폴백(앱)
+#### WebRTC/WHEP 전용 재생(앱)
 
 - 세션이 `READY`가 되면 앱은 `StreamSessionResponse.whepUrl`을 먼저 사용한다.
 - WHEP 연결: 앱이 recv-only SDP offer를 `POST application/sdp`로 보내고 MediaMTX의 SDP answer를 적용한다. 별도 WebSocket 시그널링 서버는 없다.
-- WHEP/ICE 연결이 실패하거나 `whepUrl`이 없으면 `playUrl`의 HLS를 사용한다.
-- URL 구성: WHEP `{webrtc-base-url}/{streamId}/whep?token={liveToken}`, HLS `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
+- 운영 API는 `playUrl`을 반환하지 않으며 앱은 HLS로 자동 전환하지 않는다. `whepUrl` 부재나 WHEP/ICE·오디오 RTP 실패 시 오류를 표시하고 재시도한다.
+- 송출은 H.264+Opus를 사용하며, 연결 성공은 원격 video/audio track과 실제 inbound audio RTP 수신이 모두 확인된 시점이다.
+- URL 구성: WHEP `{webrtc-base-url}/{streamId}/whep?token={liveToken}`
 - 타이밍: 뷰어 TTL 45초, 유휴 타임아웃 60초, 기기측 하드 만료(edge-lease) 120초, 하트비트 주기 15초, 라이브 토큰 TTL 30초
 - 상태 폴링: 세션 생성 후 2초 간격으로 API-36 재조회, `READY`면 재생 시작, `FAILED/CLOSED/EXPIRED`면 에러 표시
 - 종료: 화면 이탈 시 WHEP 세션 `Location`에 `DELETE`한 뒤 API-37 호출
-- 재생 인가 확인: **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명 검증 → `204`/`401`) — Nginx가 WHEP/HLS 접근 시 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다.
+- 재생 인가 확인: **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명 검증 → `204`/`401`) — Nginx가 WHEP 접근 시 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다.
 - 운영 경로: HTTPS 443의 Nginx `/webrtc/.../whep` → host loopback MediaMTX 8889, WebRTC 미디어/ICE는 UDP 8189. 8889는 외부에 직접 공개하지 않는다.
 
 ---
@@ -794,7 +794,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | API-01~03 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | API-08, 43~45, 07, 11 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WebRTC/WHEP 우선·HLS 폴백 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WebRTC/WHEP 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |

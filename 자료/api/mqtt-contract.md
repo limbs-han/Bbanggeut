@@ -263,8 +263,7 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
   "payload": {
     "sessionId": "44444444-4444-4444-8444-444444444444",
     "streamId": "55555555-5555-4555-8555-555555555555",
-    "profile": "LIVE_720P_H264_AAC",
-    "segmentDurationSeconds": 2,
+    "profile": "LIVE_720P_H264_OPUS",
     "hardExpiresAt": "2026-07-25T04:22:00.000Z"
   }
 }
@@ -272,7 +271,7 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 
 | `type` | payload | 단계 | 설명 |
 | --- | --- | --- | --- |
-| `START_STREAM` | `sessionId`, `streamId`, `profile`, `segmentDurationSeconds`, `hardExpiresAt` | `[기본]` | 활성 송출이 없을 때 미디어 계층으로 보내는 기기 live publisher 하나를 시작 |
+| `START_STREAM` | `sessionId`, `streamId`, `profile`, `hardExpiresAt` | `[기본]` | 활성 송출이 없을 때 H.264+Opus 기기 live publisher 하나를 시작 |
 | `EXTEND_STREAM` | `streamId`, `hardExpiresAt` | `[기본]` | 활성 시청자가 있을 때 edge 강제 종료 시각 연장 |
 | `STOP_STREAM` | `streamId`, `reason` | `[기본]` | 마지막 유효 heartbeat 또는 정상 종료부터 총 60초가 되면 송출 종료 |
 | `UPDATE_CONFIG` | `configVersion`, 허용 설정 | `[기본]` | 감지 임계값·병합 창 갱신 |
@@ -350,14 +349,14 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 | `type` | Y | `STREAM_STARTING`, `STREAM_READY`, `STREAM_STOPPED`, `STREAM_ERROR`, `STREAM_HARD_EXPIRED` |
 | `occurredAt` | Y | 상태 발생 시각 |
 | `hardExpiresAt` | Y | edge가 송출을 강제 종료할 시각. 명령 자체의 짧은 `expiresAt`과 구분 |
-| `errorCode` | 오류 시 | `ENCODER_UNAVAILABLE`, `PUBLISH_FAILED` 등. HLS remux 오류는 미디어 계층에서 별도로 관측 |
+| `errorCode` | 오류 시 | `ENCODER_UNAVAILABLE`, `PUBLISH_FAILED` 등. WebRTC 송출 오류는 MediaMTX에서 별도로 관측 |
 
 ### 5.8 온디맨드 시청 세션 수명 주기
 
 1. 앱이 `POST /api/devices/{deviceId}/stream-sessions`를 호출한다. 서버는 OWNER 또는 MEMBER의 활성 기기 멤버십을 확인한다.
 2. 같은 기기의 edge 송출이 이미 `READY`라면 새 **시청자 세션**만 연결하고 MQTT START를 보내지 않는다.
-3. 송출이 없다면 서버가 시청자 세션을 `PENDING`으로 만들고 `START_STREAM`을 발행한다. 이때 `createdAt`을 초기 `lastActivityAt`으로 두고 `viewerExpiresAt=createdAt+45초`, 첫 heartbeat가 한 번도 없을 때의 STOP deadline=`createdAt+60초`로 설정한다. HLS 첫 세그먼트가 준비되는 수초 동안 앱은 상태 API를 조회한다.
-4. 기기가 `STREAM_READY` 이벤트를 보내고 미디어 계층의 첫 HLS playlist·세그먼트도 준비되면 서버는 같은 `streamId`를 공유하는 대기 시청자 세션을 `READY`로 바꾼다.
+3. 송출이 없다면 서버가 시청자 세션을 `PENDING`으로 만들고 `START_STREAM`을 발행한다. 이때 `createdAt`을 초기 `lastActivityAt`으로 두고 `viewerExpiresAt=createdAt+45초`, 첫 heartbeat가 한 번도 없을 때의 STOP deadline=`createdAt+60초`로 설정한다. WHEP 송출이 준비되는 동안 앱은 상태 API를 조회한다.
+4. 기기가 `STREAM_READY` 이벤트를 보내면 서버는 같은 `streamId`를 공유하는 대기 시청자 세션을 `READY`로 바꾼다. 앱은 WHEP 연결 후 video/audio RTP 수신을 검증한다.
 5. 앱은 `POST /api/stream-sessions/{sessionId}/heartbeat`를 권장 15초마다 호출한다. 약 45초 동안 heartbeat가 없으면 서버가 비정상 종료 세션을 만료 처리한다.
 6. 앱의 정상 종료는 `DELETE /api/stream-sessions/{sessionId}`다. 다른 활성 시청자가 있으면 edge 송출은 유지한다.
 7. 마지막 시청 활동 시각(유효 heartbeat 또는 정상 `DELETE`)을 기준으로 60초 idle deadline을 계산한다. heartbeat가 45초 끊긴 세션을 먼저 만료시키되, 그 뒤 60초를 추가로 더하지 않는다. deadline 전에 새 시청자가 오면 예약된 STOP을 취소하고 기존 송출을 재사용한다.
@@ -369,20 +368,20 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 ### 5.9 순환 녹화와 라이브 인코딩 공유
 
 기기는 카메라·마이크를 H.264/AAC로 **한 번만 인코딩**하고 그 압축 패킷을 순환 버퍼와
-온디맨드 live publisher로 나눈다. 별도 미디어 계층 후보가 live publisher의 압축 스트림을 받아 HLS로 remux·fan-out한다.
+온디맨드 live publisher로 나눈다. MediaMTX가 live publisher의 H.264+Opus 스트림을 받아 WHEP/WebRTC로 fan-out한다.
 
 ```text
 카메라 + 마이크
   → H.264/AAC 단일 인코더
       ├─ 항상 동작: 순환 버퍼 세그먼트 기록
       └─ 온디맨드: 기기 live publisher
-                       → 미디어 계층 후보: HLS remux·fan-out (`-c copy`)
+                       → MediaMTX: WHEP/WebRTC fan-out
 ```
 
-- HLS를 위해 기기나 미디어 계층에서 두 번째 H.264 인코더를 실행하지 않는다. 미디어 계층의 HLS 변환은 재인코딩이 아닌 remux이며 FFmpeg 기준 `-c copy`를 전제로 한다.
-- HLS 세그먼트를 2초로 잡으면 영상 인코더도 2초마다 IDR 키프레임이 오도록 GOP를 정렬한다. 예를 들어 30fps면 GOP 60, closed GOP를 사용한다.
+- WebRTC를 위해 기기나 미디어 계층에서 두 번째 H.264 인코더를 실행하지 않는다. 기기는 H.264 비디오와 Opus 오디오를 MediaMTX에 직접 publish한다.
+- 저지연 재생을 위해 영상 인코더의 GOP를 약 1초로 유지하고 zerolatency 설정을 사용한다.
 - 순환 버퍼와 기기 live publisher는 같은 키프레임 정렬 H.264/AAC 출력을 소비하며, 미디어 계층도 이 압축 스트림을 그대로 받는다. 라이브 시작 때문에 순환 버퍼를 재시작하거나 비우지 않는다.
-- 첫 IDR과 HLS 세그먼트가 만들어질 때까지 API 상태는 `PENDING`일 수 있다. 앱은 이를 오류로 처리하지 않고 수초간 상태를 갱신한다.
+- 기기 publisher가 준비될 때까지 API 상태는 `PENDING`일 수 있다. 앱은 이를 오류로 처리하지 않고 수초간 상태를 갱신한다.
 - 입력 형식이 MVP 프로파일과 맞지 않으면 라이브용 즉석 재인코딩으로 우회하지 않고 명확한 오류를 반환한다. 해상도·프레임률·GOP·AAC 설정은 기기 설정에서 미리 고정한다.
 
 ## 6. 로컬 클립과 영상 업로드 연계
@@ -468,5 +467,5 @@ Retain 허용 토픽은 `/status`, `/registration`뿐이다. `/events`, `/stream
 - [ ] 마지막 유효 heartbeat 또는 정상 종료부터 총 60초 안에 새 시청자가 오면 STOP이 취소되고 기존 송출을 재사용한다.
 - [ ] heartbeat 중단 시 약 45초에 세션을 만료시키고, 마지막 유효 heartbeat부터 총 60초 시점에 `STOP_STREAM`을 발행한다(45+60초가 아님).
 - [ ] STOP 명령이 유실되어도 edge가 `payload.hardExpiresAt`에서 송출을 강제 종료한다.
-- [ ] 순환 녹화와 HLS가 H.264/AAC 인코더 하나를 공유하고 HLS는 `-c copy` remux로 생성된다.
-- [ ] HLS 세그먼트 길이와 GOP/IDR 간격이 정렬되어 있다.
+- [ ] 라이브 publisher가 H.264+Opus 하나를 송출하고 MediaMTX가 WebRTC로 fan-out한다.
+- [ ] 앱이 WHEP video/audio track과 실제 inbound audio RTP를 모두 수신한다.

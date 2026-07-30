@@ -17,7 +17,7 @@
 | PostgreSQL | 배포 완료 | Docker, EC2 Flyway V14 적용 확인 |
 | MinIO | 배포 완료 | 비공개 영상 버킷 생성, loopback 전용 |
 | Mosquitto MQTT | 배포 완료 | 백엔드 연결 정상, loopback 전용 |
-| MediaMTX | 기본 설치 완료 | RTSP/HLS loopback 전용 |
+| MediaMTX | 기본 설치 완료 | RTSPS ingest + WHEP/WebRTC 전용 |
 | Nginx·HTTPS | 배포 완료 | HTTP→HTTPS, API reverse proxy |
 | 실제 Jetson/Raspberry Pi 연결 | 미완료 | MQTTS·미디어 publish 인증 필요 |
 | 프론트엔드 연동 | 미완료 | API와 라이브 heartbeat 연동 필요 |
@@ -125,8 +125,8 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 - 시청자 heartbeat와 TTL 갱신
 - 마지막 활동 후 idle timeout에 MQTT STOP 발행
 - edge hard lease와 EXTEND 명령
-- 시청 세션과 stream ID에 귀속된 단기 HLS 토큰
-- Nginx 내부 introspection을 통한 HLS 접근 제어
+- 시청 세션과 stream ID에 귀속된 단기 WHEP 토큰
+- Nginx 내부 introspection을 통한 WHEP 접근 제어
 
 ### 2.6.1 홈 대시보드 요약 (2026-07-21 추가)
 
@@ -266,7 +266,8 @@ UFW에서 허용된 포트는 다음과 같다.
 | 9000·9001 | MinIO API·console |
 | 1883 | Mosquitto MQTT |
 | 8554 | MediaMTX RTSP ingest |
-| 8888 | MediaMTX HLS |
+| 8889 | MediaMTX WHEP signaling(loopback 전용) |
+| 8189/UDP | MediaMTX WebRTC 미디어 |
 
 ### 3.5 HTTPS와 reverse proxy
 
@@ -332,10 +333,10 @@ GitLab CI는 test·bootJar와 기본 브랜치의 수동 승인형 production �
 - live session 생성 후 `PENDING` polling
 - 15초 heartbeat
 - 30초 단기 live token 갱신
-- HLS playlist·segment 요청의 token/cookie 동작 검증
+- WHEP 요청의 단기 token 동작과 영상·오디오 RTP 검증
 - 앱 종료·화면 이탈 시 stream session DELETE
 
-특히 HLS 인증은 실제 브라우저와 HLS.js 환경에서 cross-origin/cookie 동작을 추가 검증해야 한다.
+특히 WHEP 인증과 8189/UDP ICE 연결은 Wi-Fi·LTE 환경에서 각각 검증해야 한다.
 
 ### P1: 운영 전에 필요
 
@@ -386,7 +387,7 @@ GitLab CI는 test·bootJar와 기본 브랜치의 수동 승인형 production �
 3. Jetson/Raspberry Pi heartbeat·명령 처리 연결(자동 인물 추적 제어는 IoT/AI 범위)
 4. 실제 카메라 live end-to-end 검증
 5. 영상 업로드 end-to-end 검증
-6. 프론트엔드 API·HLS·로컬 편집 연동
+6. 프론트엔드 API·WebRTC·로컬 편집 연동
 7. off-instance 백업·외부 알림·자동 rollback 보강
 ```
 

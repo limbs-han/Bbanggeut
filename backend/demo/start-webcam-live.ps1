@@ -77,10 +77,12 @@ $publisherLog = Join-Path $runtimeDirectory "publisher-error.log"
 $inputName = "video=$CameraName"
 $publisherArguments = "-hide_banner -loglevel warning -f dshow -rtbufsize 128M " +
     "-video_size $VideoSize -framerate $FrameRate -pixel_format nv12 " +
-    "-i `"$inputName`" -an -c:v libx264 -preset ultrafast -tune zerolatency " +
+    "-i `"$inputName`" -f lavfi -i anullsrc=channel_layout=mono:sample_rate=48000 " +
+    "-map 0:v:0 -map 1:a:0 -c:v libx264 -preset ultrafast -tune zerolatency " +
     "-pix_fmt yuv420p -profile:v baseline -level 3.1 -g $FrameRate " +
     "-keyint_min $FrameRate -sc_threshold 0 -b:v 2500k -maxrate 2500k " +
-    "-bufsize 5000k -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:${localTunnelPort}/demo-live"
+    "-bufsize 5000k -c:a libopus -b:a 64k -ar 48000 -shortest " +
+    "-f rtsp -rtsp_transport tcp rtsp://127.0.0.1:${localTunnelPort}/demo-live"
 $publisher = Start-Process -FilePath $ffmpeg -ArgumentList $publisherArguments `
     -WindowStyle Hidden -PassThru -RedirectStandardError $publisherLog
 Set-Content -LiteralPath (Join-Path $runtimeDirectory "publisher.pid") -Value $publisher.Id

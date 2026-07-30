@@ -196,11 +196,11 @@ flowchart TD
 | FN ID | 기능 | 담당 | 동작 규칙 | 관련 REQ·API | 코드 경로 |
 |---|---|---|---|---|---|
 | FN-A06 | 하단 탭 내비게이션 및 새로고침 | 폰 | 5개 탭 전환, 당겨서 새로고침 | REQ-F-41 | `ui/main_shell.dart`(`IndexedStack`+`RefreshIndicator`) |
-| FN-A10 | 임베디드 라이브 미리보기 | 폰+서버+젯슨 | 세션생성→상태폴링→WHEP/WebRTC 우선→실패 시 HLS 폴백→하트비트→종료 | REQ-F-18 / API-35~38 | `core/whep_player_controller.dart`, `ui/live_screen.dart`, `ui/home_screen.dart` |
+| FN-A10 | 임베디드 라이브 미리보기 | 폰+서버+젯슨 | 세션생성→상태폴링→WHEP/WebRTC 연결→video/audio RTP 검증→하트비트→종료. 실패 시 HLS 폴백 없이 오류·재시도 | REQ-F-18 / API-35~38 | `core/whep_player_controller.dart`, `ui/live_screen.dart`, `ui/home_screen.dart` |
 | FN-A11 | 전체화면 라이브 보기 | 폰 | 가로 모드 전체화면 재생, 일정 시간 후 컨트롤 자동 숨김 | REQ-F-18 | `ui/live_screen.dart`(`FullscreenLiveView`) — 3초 후 컨트롤 자동숨김 |
 | FN-A37 | 재생 컨트롤(공용) | 폰 | 저장 영상/라이브 겸용 재생 UI | REQ-F-18,22 | `ui/media_player_surface.dart` — isLive 여부로 컨트롤 분기 |
 | FN-S16 | 라이브 재생 인가 확인 | 서버 | 재생 토큰 서명 검증해 재생 허용 여부 응답 | REQ-F-18 / API-34 | `stream/api/LiveIntrospectionController.java`, `LiveTokenService.java` — 공개(permitAll), 호출주체 ⚠️미확인(MediaMTX 추정) |
-| FN-S17 | 라이브 세션 생성/조회/종료/하트비트 | 서버 | READY 응답에 토큰 포함 `whepUrl`+`playUrl`, 오프라인 거부, 뷰어TTL45s/유휴60s/엣지lease120s/하트비트15s/토큰30s | REQ-F-18 / API-35~38 | `StreamSessionResponse.java`, `StreamService.java`, `StreamProperties` |
+| FN-S17 | 라이브 세션 생성/조회/종료/하트비트 | 서버 | READY 응답에 토큰 포함 `whepUrl`만 반환, 오프라인 거부, 뷰어TTL45s/유휴60s/엣지lease120s/하트비트15s/토큰30s | REQ-F-18 / API-35~38 | `StreamSessionResponse.java`, `StreamService.java`, `StreamProperties` |
 | FN-S25 | 기기 상태/명령/이벤트 MQTT 채널 | 서버+젯슨 | 스트림 명령 전달, 상태·하트비트 수신. heartbeat는 Redis `presence:device:{id}` 90초 TTL을 갱신하고 Redis 장애 시에만 PostgreSQL UPDATE 폴백 | REQ-F-12,18 / MQTT-01~05 | `iot/mqtt/PahoMqttGateway.java`, `iot/telemetry/MqttInboundHandler.java`, `DeviceTelemetryService.java`, `DevicePresenceStore.java`, `stream/application/StreamCommandPublisher.java` |
 | FN-E04 | 원격 명령 수신/ACK | 젯슨 | `START_STREAM`/`EXTEND_STREAM`/`STOP_STREAM` 처리 후 ACK 발행 | REQ-F-18 / MQTT-01,03 | `agent.py:103,133,237-262` — PING 분기는 죽은 코드 |
 | FN-E05 | 라이브 스트림 송출(RTSPS) | 젯슨 | ffmpeg로 RTSPS 송출, 하드 만료 검사로 자동 종료, 기기당 스트림 1개 | REQ-F-18 / MQTT-04 | `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py` |
@@ -364,7 +364,7 @@ MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 �
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | FN-A01~03, A32, A33, S01, S02 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | QR/8자리 코드 claim, 자격증명 발급/회전 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 우선·HLS 폴백 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지 → 자동 업로드 → 목록/재생 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 폰 내 수동 편집(Banuba) 동작 |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장+공유, 원본 서버 다운로드 동작 |
