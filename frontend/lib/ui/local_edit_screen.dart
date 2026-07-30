@@ -22,6 +22,68 @@ const _editorSurface = Color(0xFF292521);
 const _editorSurfaceRaised = Color(0xFF35302B);
 const _editorMuted = Color(0xFFAAA198);
 
+class _LoadingBlob extends StatelessWidget {
+  const _LoadingBlob({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(size * .42),
+    ),
+  );
+}
+
+class _LoadingFeature extends StatelessWidget {
+  const _LoadingFeature({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 112,
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: .52),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: const Color(0x55DDBB98)),
+    ),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: .24),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(icon, color: color, size: 28),
+        ),
+        const SizedBox(height: 9),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF503827),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class LocalEditScreen extends StatefulWidget {
   const LocalEditScreen({
     super.key,
@@ -92,6 +154,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   Future<void> _prepare() async {
     setState(() {
       _loading = true;
+      _progress = 0;
       _error = null;
       _status = widget.openDrafts ? '저장된 편집 상태를 불러오고 있어요' : '이벤트 영상을 불러오고 있어요';
     });
@@ -662,14 +725,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       }
     },
     child: Scaffold(
-      backgroundColor: _editorBackground,
+      backgroundColor: _loading ? AppColors.cream : _editorBackground,
       appBar: AppBar(
         toolbarHeight: 64,
         leadingWidth: 104,
         titleSpacing: 0,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
-        backgroundColor: _editorBackground,
-        foregroundColor: AppColors.cream,
+        systemOverlayStyle: _loading
+            ? SystemUiOverlayStyle.dark
+            : SystemUiOverlayStyle.light,
+        backgroundColor: _loading ? AppColors.cream : _editorBackground,
+        foregroundColor: _loading ? AppColors.ink : AppColors.cream,
         centerTitle: true,
         leading: Row(
           children: [
@@ -691,10 +756,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                 ratio: _editState.selectedRatio,
                 onSelected: _selectRatio,
               )
-            : const Text(
+            : Text(
                 '편집',
                 style: TextStyle(
-                  color: AppColors.cream,
+                  color: _loading ? AppColors.ink : AppColors.cream,
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
                 ),
@@ -734,63 +799,136 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     ),
   );
 
-  Widget _preparing() => Column(
-    children: [
-      Expanded(
-        child: Stack(
-          fit: StackFit.expand,
+  Widget _preparing() {
+    final progress = _progress.clamp(0.0, 1.0);
+    final percentage = (progress * 100).round();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: AppColors.cream),
+        const Positioned(
+          left: -90,
+          top: -100,
+          child: _LoadingBlob(size: 230, color: Color(0x55FF8E78)),
+        ),
+        const Positioned(
+          right: -85,
+          top: -105,
+          child: _LoadingBlob(size: 220, color: Color(0x55C9D77E)),
+        ),
+        const Positioned(
+          right: -75,
+          bottom: -105,
+          child: _LoadingBlob(size: 210, color: Color(0x44FF8E78)),
+        ),
+        ListView(
+          key: const Key('editor-preparing-screen'),
+          padding: const EdgeInsets.fromLTRB(28, 18, 28, 32),
           children: [
-            const FamilyReferenceImage(borderRadius: 0),
-            Container(color: Colors.black.withValues(alpha: 0.38)),
+            Image.asset(
+              'assets/images/bbanggeut_logo.png',
+              height: 58,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              '추억 영상을\n불러오고 있어요',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF4B3323),
+                fontSize: 35,
+                height: 1.22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -1.5,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _status ?? '곧 편집을 시작할 수 있어요',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.muted,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Image.asset(
+              'assets/images/bbanggeut_mascot.png',
+              height: 245,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(height: 4),
             Center(
-              child: Container(
-                width: 86,
-                height: 86,
-                decoration: const BoxDecoration(
-                  color: Color(0xD91E211F),
-                  shape: BoxShape.circle,
-                ),
-                padding: const EdgeInsets.all(25),
-                child: const CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 3,
+              child: SizedBox.square(
+                dimension: 34,
+                child: CircularProgressIndicator(
+                  key: const Key('editor-loading-spinner'),
+                  value: progress > 0 ? progress : null,
+                  strokeWidth: 4,
+                  color: AppColors.coral,
+                  backgroundColor: AppColors.line,
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-      Container(
-        color: const Color(0xFF171918),
-        padding: const EdgeInsets.fromLTRB(28, 26, 28, 34),
-        child: Column(
-          children: [
-            Text(
-              _status ?? '편집기를 준비하는 중이에요',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 17,
+            const SizedBox(height: 13),
+            TweenAnimationBuilder<int>(
+              tween: IntTween(begin: 0, end: percentage),
+              duration: const Duration(milliseconds: 240),
+              builder: (_, value, _) => Text(
+                progress > 0 ? '준비 중 $value%' : '준비 중',
+                key: const Key('editor-loading-percentage'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF5A402D),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 28),
+            const Text(
+              '🌱 기다리는 동안 편집 기능을 확인해 보세요 🌱',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.inkSoft,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 14),
-            LinearProgressIndicator(
-              value: _progress == 0 ? null : _progress,
-              color: AppColors.sage,
-              backgroundColor: Colors.white24,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '편집 전 영상과 타임라인을 불러온 뒤 바로 편집할 수 있어요.',
-              style: TextStyle(color: Colors.white60, fontSize: 12),
-              textAlign: TextAlign.center,
+            const Row(
+              children: [
+                Expanded(
+                  child: _LoadingFeature(
+                    icon: Icons.content_cut_rounded,
+                    label: '자르기',
+                    color: AppColors.sage,
+                  ),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: _LoadingFeature(
+                    icon: Icons.subtitles_rounded,
+                    label: '자막',
+                    color: AppColors.coral,
+                  ),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: _LoadingFeature(
+                    icon: Icons.auto_awesome_rounded,
+                    label: '스티커',
+                    color: AppColors.yellow,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 
   Widget _editorShell() {
     final preview = _preview!;
