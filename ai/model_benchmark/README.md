@@ -7,7 +7,8 @@ Jetson에서 모델을 공정하게 비교하기 위한 로컬 전용 도구 모
 - `benchmark_log_collector.py`
   - `tegrastats`, YOLO 상태 로그, YAMNet 진단 JSONL을 읽습니다.
   - 영상·음성 원본을 노출하지 않는 스냅샷 API를 제공합니다.
-  - 기본값은 `127.0.0.1:8765`이며 외부 인터페이스는 명시적인
+  - 기본값은 `127.0.0.1:18765`이며 서보 대시보드의 `8765`와 충돌하지
+    않습니다. 외부 인터페이스는 명시적인
     `--allow-lan` 없이는 열리지 않습니다.
 - `benchmark_dataset.py`
   - 평가 데이터셋의 로컬 JSON 매니페스트를 생성합니다.
@@ -20,7 +21,7 @@ Jetson에서 모델을 공정하게 비교하기 위한 로컬 전용 도구 모
 
 ```bash
 python3 benchmark_log_collector.py \
-  --run-dir ~/ai_events/logs/<RUN_DIRECTORY> \
+  --logs-root ~/ai_events/logs \
   --event-dir ~/ai_events \
   --results-dir ~/ai_benchmark_results \
   --snapshot
@@ -30,15 +31,21 @@ HTTP API를 실행합니다.
 
 ```bash
 python3 benchmark_log_collector.py \
-  --run-dir ~/ai_events/logs/<RUN_DIRECTORY> \
-  --event-dir ~/ai_events
+  --logs-root ~/ai_events/logs \
+  --event-dir ~/ai_events \
+  --results-dir ~/ai_benchmark_results
 ```
 
 - 상태: `GET /api/health`
 - 스냅샷: `GET /api/snapshot`
 
+`--logs-root`는 요청마다 가장 최근에 활동한 실행 디렉터리를 다시 찾습니다.
+특정 실행을 고정하려면 대신 `--run-dir`을 사용합니다. API는 소스 파일의
+갱신 시각과 stale 여부도 함께 반환합니다.
+
 `--results-dir` 아래의 `*/summary.json`은 원본 경로를 제거한 뒤 대시보드의
-모델 비교 표에 반영됩니다.
+모델 비교 표에 반영됩니다. 실행 중에는 `progress.json`이 원자적으로
+갱신되므로 현재 모델·표본·프레임 진행률을 확인할 수 있습니다.
 
 ## YOLO 비교 러너
 
@@ -57,7 +64,8 @@ python3 vision_benchmark_runner.py \
   --repeats 3
 ```
 
-각 프레임 결과는 `frames.jsonl`, 실행 요약은 `summary.json`에 저장됩니다.
+각 프레임 결과는 `frames.jsonl`, 실행 요약은 `summary.json`, 실행 상태는
+`progress.json`에 저장됩니다.
 프레임 단위 바운딩박스 정답이 없는 데이터셋에서는 정확도나 mAP를 계산했다고
 표시하지 않고 `not-computed`로 남깁니다.
 

@@ -1,14 +1,35 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 type TabId = "overview" | "vision" | "audio" | "timeline";
 type ChartMode = "fps" | "latency";
+type CollectorState = "connecting" | "live" | "partial" | "offline";
+type SourceFreshness = {
+  available: boolean;
+  updatedAt: string | null;
+  ageSeconds: number | null;
+  stale: boolean;
+};
 type Snapshot = {
   schemaVersion: string;
   collectedAt: string;
   source: string;
   runId: string;
+  runDirectory: string;
+  freshness?: {
+    available: boolean;
+    latestSourceAt: string | null;
+    ageSeconds: number | null;
+    stale: boolean;
+    staleAfterSeconds: number;
+    sources: {
+      resources?: SourceFreshness;
+      vision?: SourceFreshness;
+      audio?: SourceFreshness;
+    };
+  };
   system: {
     ramUsedMb: number | null;
     ramTotalMb: number | null;
@@ -50,142 +71,139 @@ type Snapshot = {
     metrics: {
       fps?: number | null;
       wallMeanMs?: number | null;
+      wallP95Ms?: number | null;
       inferenceMeanMs?: number | null;
+      inferenceP95Ms?: number | null;
+      measuredFrames?: number | null;
       memoryMb?: number | null;
     };
+    accuracy?: {
+      status?: string;
+      reason?: string;
+    } | null;
   }>;
+  benchmarkProgress?: {
+    schemaVersion: string | null;
+    runId: string | null;
+    updatedAt: string | null;
+    status: string | null;
+    component: string | null;
+    model: string | null;
+    runtime: string | null;
+    dataset: string | null;
+    progress: {
+      completedFrames?: number | null;
+      totalFrames?: number | null;
+      completedTasks?: number | null;
+      totalTasks?: number | null;
+      percent?: number | null;
+    };
+    current?: {
+      repeat?: number | null;
+      sampleId?: string | null;
+    } | null;
+  } | null;
 };
 
-const navItems: Array<{ id: TabId; label: string; count: string }> = [
-  { id: "overview", label: "운영 개요", count: "01" },
-  { id: "vision", label: "비전 비교", count: "03" },
-  { id: "audio", label: "오디오 비교", count: "03" },
-  { id: "timeline", label: "이벤트 타임라인", count: "12" },
-];
+type HistoryPoint = {
+  collectedAt: string;
+  fps: number | null;
+  latency: number | null;
+};
 
-const visionModels = [
-  {
-    name: "YOLOv8n",
-    runtime: "TensorRT FP16",
-    fps: 28.4,
-    latency: 31.8,
-    map: 37.3,
-    memory: 812,
-    score: 82,
-    dot: "",
-  },
-  {
-    name: "YOLO11n",
-    runtime: "TensorRT FP16",
-    fps: 31.7,
-    latency: 28.2,
-    map: 39.5,
-    memory: 768,
-    score: 91,
-    dot: "blue",
-  },
-  {
-    name: "YOLO26n",
-    runtime: "PyTorch FP16",
-    fps: 22.9,
-    latency: 40.6,
-    map: 40.9,
-    memory: 946,
-    score: 86,
-    dot: "purple",
-  },
-];
-
-const audioModels = [
+const audioCandidates = [
   {
     name: "YAMNet",
-    note: "현재 기준선. AudioSet 521개 클래스로 웃음·박수 후보를 빠르게 확인합니다.",
-    f1: "0.82",
-    latency: "54 ms",
-    memory: "641 MB",
-    recommended: true,
+    note: "현재 운영 기준선입니다. 연결된 진단 JSONL이 있을 때만 지연시간과 표본 수를 표시합니다.",
   },
   {
     name: "EfficientAT MN10",
-    note: "경량 AudioSet 모델. Jetson 지연시간과 분류 성능의 균형을 비교합니다.",
-    f1: "—",
-    latency: "측정 전",
-    memory: "측정 전",
-    recommended: false,
+    note: "동일 평가 데이터셋에서 실행 결과가 생성되기 전까지 수치를 표시하지 않습니다.",
   },
   {
     name: "PANNs CNN10",
-    note: "강한 오디오 분류 기준선. 무거운 대신 어려운 환경의 재현율을 확인합니다.",
-    f1: "—",
-    latency: "측정 전",
-    memory: "측정 전",
-    recommended: false,
+    note: "정답 라벨 기반 평가와 Jetson 성능 측정을 완료한 뒤 비교 결과에 포함합니다.",
   },
 ];
 
-const eventRows = [
-  {
-    time: "14:22:38.190",
-    title: "웃음 세션 시작",
-    detail: "YAMNet · confidence 0.84",
-    tag: "LAUGHTER",
-    kind: "laughter",
-  },
-  {
-    time: "14:22:45.520",
-    title: "연속 박수 후보",
-    detail: "2회 / 1.36초",
-    tag: "CLAP ×2",
-    kind: "clap",
-  },
-  {
-    time: "14:22:56.041",
-    title: "호출명 감지 후보",
-    detail: "“윌리엄” · speaker agnostic",
-    tag: "WAKE NAME",
-    kind: "wake",
-  },
-  {
-    time: "14:23:08.661",
-    title: "동일 세션으로 병합",
-    detail: "gap 12.62초 · 최대 5분",
-    tag: "MERGED",
-    kind: "",
-  },
-];
+function formatNumber(
+  value: number | null | undefined,
+  digits = 1,
+): string {
+  return value == null || !Number.isFinite(value) ? "N/A" : value.toFixed(digits);
+}
 
-function buildSeries(seed: number, count = 34) {
-  return Array.from({ length: count }, (_, index) => {
-    const wave = Math.sin((index + seed) / 3.2) * 3.1;
-    const ripple = Math.cos((index + seed) / 1.45) * 1.2;
-    return 28 + wave + ripple;
+function formatTimestamp(value: string | null | undefined): string {
+  if (!value) return "N/A";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "N/A";
+  return parsed.toLocaleTimeString("ko-KR", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
 }
 
-function toPolyline(values: number[], min: number, max: number) {
+function formatAge(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "갱신 시각 없음";
+  if (value < 1) return "방금 갱신";
+  return `${Math.round(value)}초 전 갱신`;
+}
+
+function toPolyline(values: number[]): string {
+  if (values.length < 2) return "";
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = Math.max(maximum - minimum, 1);
   return values
     .map((value, index) => {
       const x = (index / (values.length - 1)) * 100;
-      const y = 100 - ((value - min) / (max - min)) * 100;
-      return `${x.toFixed(2)},${Math.max(0, Math.min(100, y)).toFixed(2)}`;
+      const y = 92 - ((value - minimum) / range) * 84;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(" ");
+}
+
+function sourceState(
+  source: SourceFreshness | undefined,
+  inferredAvailable = false,
+): {
+  label: string;
+  healthy: boolean;
+  detail: string;
+} {
+  if (source === undefined && inferredAvailable) {
+    return {
+      label: "LIVE",
+      healthy: true,
+      detail: "값 수신 · freshness 미지원",
+    };
+  }
+  if (!source?.available) {
+    return { label: "NO DATA", healthy: false, detail: "파일 없음" };
+  }
+  if (source.stale) {
+    return {
+      label: "STALE",
+      healthy: false,
+      detail: formatAge(source.ageSeconds),
+    };
+  }
+  return {
+    label: "LIVE",
+    healthy: true,
+    detail: formatAge(source.ageSeconds),
+  };
 }
 
 export function BenchmarkDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [chartMode, setChartMode] = useState<ChartMode>("fps");
-  const [tick, setTick] = useState(0);
-  const [toast, setToast] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [collectorState, setCollectorState] = useState<
-    "connecting" | "live" | "demo"
-  >("connecting");
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((value) => value + 1), 1800);
-    return () => window.clearInterval(timer);
-  }, []);
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [collectorState, setCollectorState] =
+    useState<CollectorState>("connecting");
 
   useEffect(() => {
     const endpoint =
@@ -197,15 +215,53 @@ export function BenchmarkDashboard() {
       try {
         const response = await fetch(endpoint, {
           cache: "no-store",
-          signal: AbortSignal.timeout(1400),
+          signal: AbortSignal.timeout(1600),
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const nextSnapshot = (await response.json()) as Snapshot;
         if (stopped || nextSnapshot.schemaVersion !== "0.1") return;
+
+        const coreValues = [
+          nextSnapshot.vision.fps,
+          nextSnapshot.system.gpuPercent,
+          nextSnapshot.system.ramUsedMb,
+          nextSnapshot.system.temperatureC,
+        ];
+        const hasCoreMetrics = coreValues.every((value) => value != null);
+        const stale =
+          nextSnapshot.freshness?.stale ??
+          Date.now() - new Date(nextSnapshot.collectedAt).getTime() > 10_000;
+        const criticalSourceIssue = [
+          nextSnapshot.freshness?.sources.resources,
+          nextSnapshot.freshness?.sources.vision,
+        ].some(
+          (source) =>
+            source !== undefined && (!source.available || source.stale),
+        );
+
         setSnapshot(nextSnapshot);
-        setCollectorState("live");
+        setCollectorState(
+          stale || criticalSourceIssue || !hasCoreMetrics
+            ? "partial"
+            : "live",
+        );
+        setHistory((previous) => {
+          if (
+            previous.at(-1)?.collectedAt === nextSnapshot.collectedAt
+          ) {
+            return previous;
+          }
+          return [
+            ...previous,
+            {
+              collectedAt: nextSnapshot.collectedAt,
+              fps: nextSnapshot.vision.fps,
+              latency: nextSnapshot.audio.latencyMeanMs,
+            },
+          ].slice(-30);
+        });
       } catch {
-        if (!stopped) setCollectorState("demo");
+        if (!stopped) setCollectorState("offline");
       }
     }
 
@@ -217,23 +273,44 @@ export function BenchmarkDashboard() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 3600);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  const fps = snapshot?.vision.fps ?? 29.4 + Math.sin(tick / 2) * 1.2;
-  const latency =
-    snapshot?.audio.latencyMeanMs ?? 33.7 + Math.cos(tick / 2.4) * 2.3;
-  const temperature =
-    snapshot?.system.temperatureC ?? 51 + Math.sin(tick / 4) * 2;
-  const gpuPercent =
-    snapshot?.system.gpuPercent ?? 64 + Math.sin(tick / 3) * 4;
+  const collectorLabel = {
+    connecting: "수집기 연결 중",
+    live: "Jetson 실측 LIVE",
+    partial: "부분 데이터 PARTIAL",
+    offline: "수집기 OFFLINE",
+  }[collectorState];
+  const comparisons =
+    snapshot?.comparisons.filter((row) => row.component === "vision") ?? [];
+  const events = snapshot?.events ?? [];
+  const benchmarkProgress = snapshot?.benchmarkProgress ?? null;
+  const progressPercent = benchmarkProgress?.progress.percent ?? null;
+  const resourceSource = sourceState(
+    snapshot?.freshness?.sources.resources,
+    snapshot != null &&
+      Object.values(snapshot.system).some((value) => value != null),
+  );
+  const visionSource = sourceState(
+    snapshot?.freshness?.sources.vision,
+    snapshot?.vision.frameCount != null || snapshot?.vision.fps != null,
+  );
+  const audioSource = sourceState(
+    snapshot?.freshness?.sources.audio,
+    (snapshot?.audio.sampleCount ?? 0) > 0,
+  );
+  const chartValues = useMemo(
+    () =>
+      history
+        .map((point) =>
+          chartMode === "fps" ? point.fps : point.latency,
+        )
+        .filter((value): value is number => value != null),
+    [chartMode, history],
+  );
+  const chartPoints = useMemo(() => toPolyline(chartValues), [chartValues]);
   const memoryUsedGb =
     snapshot?.system.ramUsedMb != null
       ? snapshot.system.ramUsedMb / 1024
-      : 4.8;
+      : null;
   const memoryDetail =
     snapshot?.system.ramTotalMb != null &&
     snapshot.system.ramUsedMb != null
@@ -241,57 +318,75 @@ export function BenchmarkDashboard() {
           (snapshot.system.ramUsedMb / snapshot.system.ramTotalMb) *
           100
         ).toFixed(0)}%`
-      : "총 7.4 GB 중 65%";
-  const seriesA = useMemo(() => buildSeries(tick % 8), [tick]);
-  const seriesB = useMemo(
-    () => buildSeries((tick + 4) % 11).map((value) => value + 3.1),
-    [tick],
-  );
+      : "리소스 로그 대기";
+  const navItems: Array<{ id: TabId; label: string; count: string }> = [
+    { id: "overview", label: "운영 개요", count: collectorState.toUpperCase() },
+    { id: "vision", label: "비전 비교", count: String(comparisons.length) },
+    {
+      id: "audio",
+      label: "오디오 비교",
+      count: String(snapshot?.audio.sampleCount ?? 0),
+    },
+    { id: "timeline", label: "이벤트 타임라인", count: String(events.length) },
+  ];
 
-  const chartA =
-    chartMode === "fps"
-      ? toPolyline(seriesA, 18, 38)
-      : toPolyline(seriesA.map((value) => 62 - value), 24, 45);
-  const chartB =
-    chartMode === "fps"
-      ? toPolyline(seriesB, 18, 38)
-      : toPolyline(seriesB.map((value) => 60 - value), 24, 45);
-  const displayedVisionModels = visionModels.map((candidate) => {
-    const measured = snapshot?.comparisons?.find(
-      (row) =>
-        row.component === "vision" &&
-        row.model?.toLowerCase() === candidate.name.toLowerCase(),
-    );
-    if (!measured) return candidate;
-    return {
-      ...candidate,
-      runtime: measured.runtime ?? candidate.runtime,
-      fps: measured.metrics.fps ?? candidate.fps,
-      latency:
-        measured.metrics.inferenceMeanMs ??
-        measured.metrics.wallMeanMs ??
-        candidate.latency,
-      memory: measured.metrics.memoryMb ?? candidate.memory,
-    };
-  });
-
-  async function handleImport(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const text = await file.text();
-      const rows = text
-        .split(/\r?\n/)
-        .filter((line) => line.trim())
-        .map((line) => JSON.parse(line));
-      setToast(`${file.name} · ${rows.length}개 JSONL 레코드를 읽었습니다.`);
-    } catch {
-      setToast("JSONL을 읽지 못했습니다. 한 줄에 JSON 객체 하나인지 확인하세요.");
-    } finally {
-      event.target.value = "";
-    }
-  }
+  const pipelineRows = [
+    {
+      index: "01",
+      title: "수집기 API",
+      detail:
+        collectorState === "offline"
+          ? "HTTP 응답 없음"
+          : snapshot?.freshness?.ageSeconds != null
+            ? formatAge(snapshot.freshness.ageSeconds)
+            : snapshot
+              ? "응답 수신"
+              : "갱신 시각 없음",
+      value: collectorState.toUpperCase(),
+      healthy: collectorState === "live",
+    },
+    {
+      index: "02",
+      title: "Jetson 리소스 로그",
+      detail: resourceSource.detail,
+      value: resourceSource.label,
+      healthy: resourceSource.healthy,
+    },
+    {
+      index: "03",
+      title: "YOLO 운영 로그",
+      detail:
+        snapshot?.vision.frameCount != null
+          ? `${snapshot.vision.frameCount.toLocaleString()} frames`
+          : visionSource.detail,
+      value: visionSource.label,
+      healthy: visionSource.healthy,
+    },
+    {
+      index: "04",
+      title: "YAMNet 진단 JSONL",
+      detail:
+        snapshot?.audio.sampleCount
+          ? `${snapshot.audio.sampleCount} samples`
+          : audioSource.detail,
+      value: audioSource.label,
+      healthy: audioSource.healthy,
+    },
+    {
+      index: "05",
+      title: "모델 비교 결과",
+      detail: "summary.json",
+      value: comparisons.length ? `${comparisons.length} RUNS` : "NO DATA",
+      healthy: comparisons.length > 0,
+    },
+    {
+      index: "06",
+      title: "이벤트 메타데이터",
+      detail: "*.trigger.json",
+      value: events.length ? `${events.length} EVENTS` : "NO DATA",
+      healthy: events.length > 0,
+    },
+  ];
 
   return (
     <div className="app-shell">
@@ -302,29 +397,17 @@ export function BenchmarkDashboard() {
           </div>
           <div className="brand-copy">
             <strong>Edge Observatory</strong>
-            <span>Jetson Orin Nano · model benchmark console</span>
+            <span>Jetson Orin Nano · measured benchmark console</span>
           </div>
         </div>
 
         <div className="topbar-actions">
-          <span className="source-chip mono">BRIO 100 / 1280×720</span>
+          <span className="source-chip mono">JETSON LOCAL</span>
           <span className="privacy-chip">LAN 전용</span>
-          <span className="live-chip">
+          <span className={`live-chip ${collectorState}`}>
             <span className="live-dot" aria-hidden="true" />
-            {collectorState === "live"
-              ? "Jetson 실측 연결"
-              : collectorState === "connecting"
-                ? "수집기 연결 중"
-                : "데모 스냅샷"}
+            {collectorLabel}
           </span>
-          <label className="import-button">
-            <span aria-hidden="true">＋</span> JSONL 가져오기
-            <input
-              type="file"
-              accept=".jsonl,.ndjson,application/x-ndjson,application/json"
-              onChange={handleImport}
-            />
-          </label>
         </div>
       </header>
 
@@ -347,16 +430,16 @@ export function BenchmarkDashboard() {
           </nav>
 
           <div className="sidebar-note">
-            <strong>데이터 보존 원칙</strong>
-            원본 영상·음성은 Jetson 내부에 유지하고, 대시보드에는 성능 수치와
-            비식별 이벤트 메타데이터만 표시합니다.
+            <strong>실측 데이터 원칙</strong>
+            원본 영상·음성은 Jetson 내부에 유지합니다. 수집되지 않은 값은
+            추정하거나 보간하지 않고 N/A로 표시합니다.
           </div>
         </aside>
 
         <main className="main">
           <section className="hero">
             <div>
-              <p className="eyebrow">Experiment / live snapshot</p>
+              <p className="eyebrow">Experiment / measured snapshot</p>
               <h1>
                 가장 빠른 모델보다
                 <br />
@@ -365,49 +448,57 @@ export function BenchmarkDashboard() {
             </div>
             <dl className="hero-meta mono">
               <dt>RUN</dt>
-              <dd>#{snapshot?.runId ?? "WJ-0730-014"}</dd>
+              <dd>#{snapshot?.runId || "N/A"}</dd>
               <dt>PROFILE</dt>
-              <dd>MAXN · 15W</dd>
+              <dd>미수집</dd>
               <dt>UPDATED</dt>
-              <dd>
-                {snapshot?.collectedAt?.slice(11, 19) ??
-                  (collectorState === "connecting" ? "CONNECTING" : "DEMO")}
-              </dd>
+              <dd>{formatTimestamp(snapshot?.collectedAt)}</dd>
             </dl>
           </section>
 
           <section className="metric-grid" aria-label="실시간 핵심 지표">
             <Metric
-              label="Inference FPS"
-              value={fps.toFixed(1)}
+              label="Vision FPS"
+              value={formatNumber(snapshot?.vision.fps)}
               unit="FPS"
-              detail="30 FPS 입력 · drop 0.3%"
-              accent
+              detail={
+                snapshot?.vision.frameCount != null
+                  ? `${snapshot.vision.frameCount.toLocaleString()} frames`
+                  : "YOLO 로그 대기"
+              }
+              accent={snapshot?.vision.fps != null}
             />
             <Metric
-              label="Mean latency"
-              value={latency.toFixed(1)}
+              label="Audio mean latency"
+              value={formatNumber(snapshot?.audio.latencyMeanMs)}
               unit="ms"
-              detail="p95 47.2 ms"
+              detail={
+                snapshot?.audio.latencyP95Ms != null
+                  ? `p95 ${snapshot.audio.latencyP95Ms.toFixed(1)} ms`
+                  : "YAMNet 진단 JSONL 대기"
+              }
             />
             <Metric
               label="GPU usage"
-              value={gpuPercent.toFixed(0)}
+              value={formatNumber(snapshot?.system.gpuPercent, 0)}
               unit="%"
-              detail="Orin CUDA · 612 MHz"
+              detail={
+                snapshot?.system.powerMw != null
+                  ? `보드 전력 ${(snapshot.system.powerMw / 1000).toFixed(2)} W`
+                  : "tegrastats 대기"
+              }
             />
             <Metric
               label="Memory"
-              value={memoryUsedGb.toFixed(1)}
+              value={formatNumber(memoryUsedGb)}
               unit="GB"
               detail={memoryDetail}
             />
             <Metric
               label="Temperature"
-              value={temperature.toFixed(0)}
+              value={formatNumber(snapshot?.system.temperatureC, 0)}
               unit="°C"
-              detail="스로틀링 없음"
-              warn={temperature > 54}
+              detail="tegrastats 최고 센서값"
             />
           </section>
 
@@ -418,8 +509,8 @@ export function BenchmarkDashboard() {
                   <section className="panel">
                     <div className="panel-header">
                       <div className="panel-title">
-                        <h2>실시간 추론 성능</h2>
-                        <span>최근 60초</span>
+                        <h2>실시간 실측 추이</h2>
+                        <span>브라우저 연결 이후 최대 30개 표본</span>
                       </div>
                       <div className="segmented" aria-label="차트 지표">
                         <button
@@ -434,52 +525,56 @@ export function BenchmarkDashboard() {
                           className={chartMode === "latency" ? "active" : ""}
                           onClick={() => setChartMode("latency")}
                         >
-                          지연시간
+                          오디오 지연시간
                         </button>
                       </div>
                     </div>
                     <div className="chart-area">
-                      <div className="chart-legend">
-                        <span>
-                          <i className="legend-line" /> YOLOv8n / active
-                        </span>
-                        <span>
-                          <i className="legend-line blue" /> YOLO11n / reference
-                        </span>
-                      </div>
-                      <svg
-                        className="performance-chart"
-                        viewBox="0 0 100 100"
-                        preserveAspectRatio="none"
-                        role="img"
-                        aria-label={`${chartMode === "fps" ? "초당 프레임" : "추론 지연시간"} 변화 차트`}
-                      >
-                        <polyline
-                          points={chartB}
-                          fill="none"
-                          stroke="#248cc1"
-                          strokeWidth="1.1"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                        <polyline
-                          points={chartA}
-                          fill="none"
-                          stroke="#e45a45"
-                          strokeWidth="1.8"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                      </svg>
+                      {chartPoints ? (
+                        <>
+                          <div className="chart-legend">
+                            <span>
+                              <i className="legend-line" />
+                              {chartMode === "fps"
+                                ? "YOLO 운영 FPS"
+                                : "YAMNet 평균 지연시간"}
+                            </span>
+                            <span className="mono">
+                              {chartValues.length} measured samples
+                            </span>
+                          </div>
+                          <svg
+                            className="performance-chart"
+                            viewBox="0 0 100 100"
+                            preserveAspectRatio="none"
+                            role="img"
+                            aria-label={`실측 ${chartMode === "fps" ? "초당 프레임" : "오디오 지연시간"} 변화 차트`}
+                          >
+                            <polyline
+                              points={chartPoints}
+                              fill="none"
+                              stroke="#e45a45"
+                              strokeWidth="1.8"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          </svg>
+                        </>
+                      ) : (
+                        <EmptyState>
+                          실측 표본이 2개 이상 쌓이면 차트를 표시합니다.
+                        </EmptyState>
+                      )}
                     </div>
                   </section>
 
                   <section className="panel">
                     <div className="panel-header">
                       <div className="panel-title">
-                        <h2>YOLO 후보 비교</h2>
-                        <span>동일 데이터셋 · 동일 전력 모드</span>
+                        <h2>YOLO 실측 결과 비교</h2>
+                        <span>summary.json에 저장된 완료 결과만 표시</span>
                       </div>
-                      <span className="mono" style={{ fontSize: "0.63rem" }}>
-                        3 / 6 RUNS
+                      <span className="mono result-count">
+                        {comparisons.length} RUNS
                       </span>
                     </div>
                     <div className="comparison-wrap">
@@ -487,42 +582,61 @@ export function BenchmarkDashboard() {
                         <thead>
                           <tr>
                             <th>모델 / 런타임</th>
+                            <th>데이터셋</th>
                             <th>FPS ↑</th>
-                            <th>Latency ↓</th>
-                            <th>COCO mAP</th>
-                            <th>RAM</th>
-                            <th>종합</th>
+                            <th>Inference mean ↓</th>
+                            <th>Wall p95 ↓</th>
+                            <th>Frames</th>
+                            <th>정확도</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {displayedVisionModels.map((model) => (
-                            <tr
-                              key={model.name}
-                              className={model.name === "YOLO11n" ? "selected" : ""}
-                            >
-                              <td>
-                                <div className="model-cell">
-                                  <i className={`model-dot ${model.dot}`} />
-                                  <span>
-                                    <strong>{model.name}</strong>
-                                    <br />
-                                    <small>{model.runtime}</small>
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="mono">{model.fps}</td>
-                              <td className="mono">{model.latency} ms</td>
-                              <td className="mono">{model.map}</td>
-                              <td className="mono">{model.memory} MB</td>
-                              <td>
-                                <span
-                                  className={`score ${model.score === 91 ? "best" : ""}`}
-                                >
-                                  {model.score}
-                                </span>
+                          {comparisons.length ? (
+                            comparisons.map((row, index) => (
+                              <tr key={row.runId ?? `${row.model}-${index}`}>
+                                <td>
+                                  <div className="model-cell">
+                                    <i className="model-dot" />
+                                    <span>
+                                      <strong>{row.model ?? "N/A"}</strong>
+                                      <br />
+                                      <small>{row.runtime ?? "N/A"}</small>
+                                    </span>
+                                  </div>
+                                </td>
+                                <td>{row.dataset ?? "N/A"}</td>
+                                <td className="mono">
+                                  {formatNumber(row.metrics.fps)}
+                                </td>
+                                <td className="mono">
+                                  {formatNumber(
+                                    row.metrics.inferenceMeanMs,
+                                  )}{" "}
+                                  ms
+                                </td>
+                                <td className="mono">
+                                  {formatNumber(row.metrics.wallP95Ms)} ms
+                                </td>
+                                <td className="mono">
+                                  {row.metrics.measuredFrames?.toLocaleString() ??
+                                    "N/A"}
+                                </td>
+                                <td>
+                                  {row.accuracy?.status === "not-computed"
+                                    ? "미계산"
+                                    : row.accuracy?.status ?? "N/A"}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={7}>
+                                <EmptyState>
+                                  완료된 모델 벤치마크가 없습니다.
+                                </EmptyState>
                               </td>
                             </tr>
-                          ))}
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -534,85 +648,61 @@ export function BenchmarkDashboard() {
                 <section className="panel">
                   <div className="panel-header">
                     <div className="panel-title">
-                      <h2>오디오 모델 비교 계획</h2>
-                      <span>웃음 · 연속 박수 · 호출명 · 일반 음성</span>
+                      <h2>오디오 모델 비교 준비 상태</h2>
+                      <span>측정되지 않은 성능 수치는 N/A</span>
                     </div>
-                    <span className="mono" style={{ fontSize: "0.63rem" }}>
-                      LOCAL AUDIO ONLY
+                    <span className="mono result-count">
+                      {snapshot?.audio.sampleCount ?? 0} SAMPLES
                     </span>
                   </div>
                   <div className="audio-grid">
-                    {audioModels.map((model) => (
-                      <article
-                        className={`audio-model ${model.recommended ? "recommended" : ""}`}
-                        key={model.name}
-                      >
-                        <h3>{model.name}</h3>
-                        <p>{model.note}</p>
-                        <div className="audio-stat">
-                          <span>macro F1</span>
-                          <strong>{model.f1}</strong>
-                        </div>
-                        <div className="audio-stat">
-                          <span>mean latency</span>
-                          <strong>{model.latency}</strong>
-                        </div>
-                        <div className="audio-stat">
-                          <span>peak RSS</span>
-                          <strong>{model.memory}</strong>
-                        </div>
-                      </article>
-                    ))}
+                    {audioCandidates.map((model) => {
+                      const isMeasuredYamnet =
+                        model.name === snapshot?.audio.model &&
+                        (snapshot?.audio.sampleCount ?? 0) > 0;
+                      return (
+                        <article className="audio-model" key={model.name}>
+                          <h3>{model.name}</h3>
+                          <p>{model.note}</p>
+                          <div className="audio-stat">
+                            <span>macro F1</span>
+                            <strong>N/A</strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>mean latency</span>
+                            <strong>
+                              {isMeasuredYamnet
+                                ? `${formatNumber(snapshot.audio.latencyMeanMs)} ms`
+                                : "N/A"}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>measured samples</span>
+                            <strong>
+                              {isMeasuredYamnet
+                                ? snapshot.audio.sampleCount
+                                : "N/A"}
+                            </strong>
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
                 </section>
               )}
 
-              {(activeTab === "overview" || activeTab === "timeline") && (
+              {activeTab === "timeline" && (
                 <section className="panel">
                   <div className="panel-header">
                     <div className="panel-title">
-                      <h2>통합 이벤트 세션</h2>
-                      <span>30초 병합 윈도우 · 최대 5분</span>
+                      <h2>실제 이벤트 메타데이터</h2>
+                      <span>현재 event-dir의 trigger JSON만 표시</span>
                     </div>
-                    <span className="mono" style={{ fontSize: "0.63rem" }}>
-                      14:22:30 — 14:23:30
+                    <span className="mono result-count">
+                      {events.length} EVENTS
                     </span>
                   </div>
-                  <div className="timeline-ruler" aria-label="통합 이벤트 타임라인">
-                    <div className="timeline-track objects">
-                      <span className="timeline-label">OBJECTS</span>
-                      <i
-                        className="timeline-segment"
-                        style={{ left: "14%", width: "26%" }}
-                      />
-                      <i
-                        className="timeline-segment"
-                        style={{ left: "47%", width: "32%" }}
-                      />
-                    </div>
-                    <div className="timeline-track audio">
-                      <span className="timeline-label">AUDIO</span>
-                      <i
-                        className="timeline-segment"
-                        style={{ left: "22%", width: "17%" }}
-                      />
-                      <i
-                        className="timeline-segment"
-                        style={{ left: "44%", width: "9%" }}
-                      />
-                      <i
-                        className="timeline-segment"
-                        style={{ left: "62%", width: "12%" }}
-                      />
-                    </div>
-                    <div className="timeline-track system">
-                      <span className="timeline-label">SESSION</span>
-                      <i
-                        className="timeline-segment"
-                        style={{ left: "22%", width: "58%" }}
-                      />
-                    </div>
-                  </div>
+                  <EventList events={events} />
                 </section>
               )}
             </div>
@@ -621,70 +711,95 @@ export function BenchmarkDashboard() {
               <section className="panel">
                 <div className="panel-header">
                   <div className="panel-title">
-                    <h2>현재 실험</h2>
-                    <span>RUNNING</span>
+                    <h2>최근 벤치마크 작업</h2>
+                    <span>{benchmarkProgress?.status ?? "대기 중"}</span>
                   </div>
-                  <span className="experiment-format">TRT FP16</span>
+                  <span className="experiment-format">
+                    {benchmarkProgress?.runtime ?? "NO RUN"}
+                  </span>
                 </div>
-                <div className="experiment-card">
-                  <div className="experiment-top">
-                    <div>
-                      <p className="eyebrow">Vision candidate</p>
-                      <p className="experiment-model">YOLO11n</p>
+                {benchmarkProgress ? (
+                  <div className="experiment-card">
+                    <div className="experiment-top">
+                      <div>
+                        <p className="eyebrow">Vision benchmark</p>
+                        <p className="experiment-model">
+                          {benchmarkProgress.model ?? "N/A"}
+                        </p>
+                      </div>
+                      <span className="score">
+                        {benchmarkProgress.status ?? "UNKNOWN"}
+                      </span>
                     </div>
-                    <span className="score best">추천</span>
+                    <div className="progress-track">
+                      <div
+                        className="progress-fill"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, progressPercent ?? 0))}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="progress-meta mono">
+                      <span>
+                        {benchmarkProgress.progress.completedFrames?.toLocaleString() ??
+                          "N/A"}{" "}
+                        /{" "}
+                        {benchmarkProgress.progress.totalFrames?.toLocaleString() ??
+                          "N/A"}{" "}
+                        frames
+                      </span>
+                      <span>
+                        {progressPercent != null
+                          ? `${progressPercent.toFixed(1)}%`
+                          : "N/A"}
+                      </span>
+                    </div>
+                    <div className="experiment-config">
+                      <ConfigItem
+                        label="Dataset"
+                        value={benchmarkProgress.dataset ?? "N/A"}
+                      />
+                      <ConfigItem
+                        label="Tasks"
+                        value={`${benchmarkProgress.progress.completedTasks ?? "N/A"} / ${benchmarkProgress.progress.totalTasks ?? "N/A"}`}
+                      />
+                      <ConfigItem
+                        label="Sample"
+                        value={benchmarkProgress.current?.sampleId ?? "N/A"}
+                      />
+                      <ConfigItem
+                        label="Updated"
+                        value={formatTimestamp(benchmarkProgress.updatedAt)}
+                      />
+                    </div>
                   </div>
-                  <div className="progress-track">
-                    <div className="progress-fill" />
-                  </div>
-                  <div className="progress-meta mono">
-                    <span>864 / 1,200 frames</span>
-                    <span>72%</span>
-                  </div>
-                  <div className="experiment-config">
-                    <div className="config-item">
-                      <span>Dataset</span>
-                      <strong>office-mix-v1</strong>
-                    </div>
-                    <div className="config-item">
-                      <span>Power mode</span>
-                      <strong>MAXN · 15W</strong>
-                    </div>
-                    <div className="config-item">
-                      <span>Resolution</span>
-                      <strong>1280×720</strong>
-                    </div>
-                    <div className="config-item">
-                      <span>Targets</span>
-                      <strong>person / cat / dog</strong>
-                    </div>
-                  </div>
-                </div>
+                ) : (
+                  <EmptyState>
+                    progress.json이 생성되면 진행률을 표시합니다.
+                  </EmptyState>
+                )}
               </section>
 
               <section className="panel">
                 <div className="panel-header">
                   <div className="panel-title">
-                    <h2>파이프라인 상태</h2>
-                    <span>6 / 6 HEALTHY</span>
+                    <h2>데이터 소스 상태</h2>
+                    <span>파일 존재 여부와 freshness 기준</span>
                   </div>
                 </div>
                 <div className="stage-list">
-                  {[
-                    ["01", "BRIO 100 입력", "video + mono audio", "30 FPS"],
-                    ["02", "MediaMTX 로컬", "homecam/ai", "ONLINE"],
-                    ["03", "YOLO 추론", "group-center tracking", "29.4 FPS"],
-                    ["04", "오디오 추론", "YAMNet baseline", "54 ms"],
-                    ["05", "이벤트 병합", "30s gap / 5m cap", "IDLE"],
-                    ["06", "업로드 큐", "delete-after-upload", "0 pending"],
-                  ].map(([index, title, detail, value]) => (
-                    <div className="stage-row" key={index}>
-                      <span className="stage-index ok">{index}</span>
-                      <span className="stage-copy">
-                        <strong>{title}</strong>
-                        <span>{detail}</span>
+                  {pipelineRows.map((stage) => (
+                    <div className="stage-row" key={stage.index}>
+                      <span
+                        className={`stage-index ${stage.healthy ? "ok" : ""}`}
+                      >
+                        {stage.index}
                       </span>
-                      <span className="stage-value">{value}</span>
+                      <span className="stage-copy">
+                        <strong>{stage.title}</strong>
+                        <span>{stage.detail}</span>
+                      </span>
+                      <span className="stage-value">{stage.value}</span>
                     </div>
                   ))}
                 </div>
@@ -693,43 +808,25 @@ export function BenchmarkDashboard() {
               <section className="panel">
                 <div className="panel-header">
                   <div className="panel-title">
-                    <h2>최근 이벤트</h2>
+                    <h2>최근 실제 이벤트</h2>
                     <span>LOCAL METADATA</span>
                   </div>
                 </div>
-                <div className="event-list">
-                  {eventRows.map((event) => (
-                    <div className="event-row" key={`${event.time}-${event.tag}`}>
-                      <span className="stage-index">•</span>
-                      <span className="event-copy">
-                        <strong>{event.title}</strong>
-                        <span>{event.detail}</span>
-                        <span className={`event-tag ${event.kind}`}>{event.tag}</span>
-                      </span>
-                      <span className="event-time">{event.time}</span>
-                    </div>
-                  ))}
-                </div>
+                <EventList events={events.slice(0, 6)} />
               </section>
             </aside>
           </div>
 
           <footer className="footer-note">
             <span>
-              {collectorState === "live"
-                ? "Jetson 읽기 전용 수집기에서 실측 데이터를 받고 있습니다."
-                : "Jetson 수집기 연결 전에는 수치가 시뮬레이션됩니다."}
+              실측값이 없는 지표는 N/A로 표시하며 대체값을 만들지 않습니다.
             </span>
-            <span className="mono">SCHEMA v0.1 · REFRESH 1.8s</span>
+            <span className="mono">
+              SCHEMA v0.1 · REFRESH 2.0s · LOCAL 8765 → JETSON 18765
+            </span>
           </footer>
         </main>
       </div>
-
-      {toast && (
-        <div className="toast" role="status">
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
@@ -740,16 +837,14 @@ function Metric({
   unit,
   detail,
   accent = false,
-  warn = false,
 }: {
   label: string;
   value: string;
   unit: string;
   detail: string;
   accent?: boolean;
-  warn?: boolean;
 }) {
-  const className = ["metric-card", accent ? "accent" : "", warn ? "warn" : ""]
+  const className = ["metric-card", accent ? "accent" : ""]
     .filter(Boolean)
     .join(" ");
 
@@ -765,5 +860,47 @@ function Metric({
       </div>
       <div className="metric-delta">{detail}</div>
     </article>
+  );
+}
+
+function EmptyState({ children }: { children: ReactNode }) {
+  return <div className="empty-state">{children}</div>;
+}
+
+function ConfigItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="config-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function EventList({ events }: { events: Snapshot["events"] }) {
+  if (!events.length) {
+    return <EmptyState>현재 보존된 이벤트 메타데이터가 없습니다.</EmptyState>;
+  }
+
+  return (
+    <div className="event-list">
+      {events.map((event) => (
+        <div className="event-row" key={event.eventId}>
+          <span className="stage-index">•</span>
+          <span className="event-copy">
+            <strong>{event.eventType ?? "UNKNOWN EVENT"}</strong>
+            <span>
+              {event.className ?? "class N/A"} · confidence{" "}
+              {formatNumber(event.confidence, 3)}
+            </span>
+            <span className="event-tag">
+              {event.eventId.slice(0, 8)}
+            </span>
+          </span>
+          <span className="event-time">
+            {formatTimestamp(event.observedAt)}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }

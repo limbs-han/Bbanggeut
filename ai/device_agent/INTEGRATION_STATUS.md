@@ -7,7 +7,7 @@
 - 기기 bootstrap/enrollment, 가상 등록 버튼, 앱의 코드 claim
 - MQTTS 상태/명령 연결과 앱 ONLINE 표시
 - 앱 시청 세션별 `START_STREAM`/`READY`/heartbeat/STOP 흐름
-- SSH 로컬 포워드를 통한 동적 RTSP publish와 MediaMTX HLS 재생
+- SSH 로컬 포워드를 통한 동적 RTSP publish와 MediaMTX WebRTC/WHEP 재생
 - Brio 100 영상/음성 동시 라이브 재생
 - 물리 카메라를 한 번만 점유하는 상시 공유 미디어 소스
 - Live View와 무관하게 항상 실행되는 YOLO/ByteTrack 및 YAMNet

@@ -130,6 +130,47 @@ function updateLaughter(laughter) {
   text("laughter-detail", `${laughter.detail || status}${retry}`);
 }
 
+function updateYamnet(yamnet) {
+  if (!yamnet) return;
+  const status = String(yamnet.status || "READY").toUpperCase();
+  const ready = status === "READY";
+  text(
+    "yamnet-status",
+    yamnet.detail ? `${status} · ${yamnet.detail}` : status,
+  );
+  if (!ready) {
+    text("yamnet-score", "—");
+    text("yamnet-rms", "—");
+    text("yamnet-top-class", "—");
+    text("yamnet-streak", "—");
+    text("yamnet-inference", "—");
+  }
+  const score = number(yamnet.score);
+  const threshold = number(yamnet.threshold);
+  if (ready) text("yamnet-score", fixed(score, 3));
+  text(
+    "yamnet-threshold",
+    `${yamnet.aggregation || "mean"} ≥ ${fixed(threshold, 3)}`,
+  );
+  if (ready) {
+    text("yamnet-rms", fixed(yamnet.rms, 4));
+    text(
+      "yamnet-top-class",
+      yamnet.top_class
+        ? `${yamnet.top_class} (${fixed(yamnet.top_score, 3)})`
+        : "—",
+    );
+    text(
+      "yamnet-streak",
+      `${yamnet.positive_streak ?? 0}${yamnet.would_trigger ? " · TRIGGER" : ""}`,
+    );
+    text(
+      "yamnet-inference",
+      yamnet.inference_ms == null ? "—" : `${fixed(yamnet.inference_ms, 0)} ms`,
+    );
+  }
+}
+
 function formatTime(value) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("ko-KR", {
@@ -252,6 +293,7 @@ async function refresh() {
     text("dashboard-uptime", `시작 시간 ${formatTime(payload.started_at)}`);
     updateVision(payload.vision);
     updateServo(payload.servo);
+    updateYamnet(payload.yamnet);
     updateLaughter(payload.laughter);
     renderEvents(payload.events || []);
     drawChart(payload.events || []);

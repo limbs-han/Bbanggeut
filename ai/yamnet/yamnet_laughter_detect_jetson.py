@@ -253,15 +253,53 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def require_audio_packages() -> tuple[Any, Any]:
+def log_stage(message: str) -> None:
+    """Print an immediately-flushed startup checkpoint.
+
+    Several startup steps (native library imports, model downloads) can take
+    a long time or hang outright depending on the runtime environment (for
+    example: a systemd service without a desktop audio session behaves very
+    differently from an interactive SSH shell). Without a checkpoint printed
+    *before* each risky step, a hang shows up as an empty log with no way to
+    tell which step never finished. `-u`/unbuffered mode is assumed, but we
+    flush explicitly anyway since these prints matter more than performance.
+    """
+
+    stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    print(f"[startup {stamp}] {message}", flush=True)
+
+
+def require_audio_packages(
+    *,
+    need_sounddevice: bool = True,
+) -> tuple[Any, Any | None]:
+    log_stage("importing numpy")
     try:
         import numpy as np
-        import sounddevice as sd
     except ImportError as exc:
         raise SystemExit(
             "오디오 패키지를 불러오지 못했습니다. 다음 명령을 실행하세요:\n"
             "python -m pip install -r requirements-jetson.txt"
         ) from exc
+    log_stage("numpy imported")
+
+    sd = None
+    if need_sounddevice:
+        # Importing sounddevice initializes PortAudio. Some headless service
+        # environments can behave differently from an interactive shell
+        # during native audio initialization, so avoid that work entirely
+        # when the selected RTSP path never uses sounddevice.
+        log_stage("importing sounddevice (initializes PortAudio)")
+        try:
+            import sounddevice as sd
+        except ImportError as exc:
+            raise SystemExit(
+                "오디오 패키지를 불러오지 못했습니다. 다음 명령을 실행하세요:\n"
+                "python -m pip install -r requirements-jetson.txt"
+            ) from exc
+        log_stage("sounddevice imported")
+    else:
+        log_stage("skipping sounddevice import (--stream-url given)")
     return np, sd
 
 
@@ -285,6 +323,10 @@ def open_audio_input(
     audio_callback: Any,
 ) -> Any:
     if not args.stream_url:
+        if sd is None:
+            raise RuntimeError(
+                "sounddevice is required when --stream-url is not set"
+            )
         with sd.InputStream(
             device=device,
             samplerate=capture_rate,
@@ -332,17 +374,24 @@ def open_audio_input(
 
 def load_yamnet(model_source: str, cache_dir: str) -> tuple[Any, Any, list[str]]:
     os.environ["TFHUB_CACHE_DIR"] = str(Path(cache_dir).expanduser())
+    log_stage(f"TFHUB_CACHE_DIR={os.environ['TFHUB_CACHE_DIR']}")
+    log_stage("importing tensorflow")
     try:
         import tensorflow as tf
+
+        log_stage("tensorflow imported, importing tensorflow_hub")
         import tensorflow_hub as hub
     except ImportError as exc:
         raise SystemExit(
             "TensorFlow 패키지를 불러오지 못했습니다. 다음 명령을 실행하세요:\n"
             "python -m pip install -r requirements-jetson.txt"
         ) from exc
+    log_stage("tensorflow_hub imported")
 
     print("YAMNet 모델을 불러오는 중입니다. 첫 실행에서는 모델을 내려받습니다.")
+    log_stage(f"hub.load({model_source!r}) starting")
     model = hub.load(model_source)
+    log_stage("hub.load finished, reading class map")
     class_map_path = model.class_map_path().numpy()
     if isinstance(class_map_path, bytes):
         class_map_path = class_map_path.decode("utf-8")
@@ -351,10 +400,12 @@ def load_yamnet(model_source: str, cache_dir: str) -> tuple[Any, Any, list[str]]
     with tf.io.gfile.GFile(class_map_path, "r") as csv_file:
         for row in csv.DictReader(csv_file):
             class_names.append(row["display_name"])
+    log_stage(f"class map loaded ({len(class_names)} classes), warming up model")
 
     warmup_started = time.perf_counter()
     model(tf.zeros(YAMNET_SAMPLE_RATE, dtype=tf.float32))
     print(f"YAMNet 준비 완료 ({time.perf_counter() - warmup_started:.2f}초)")
+    log_stage("model warmup complete")
     return tf, model, class_names
 
 
@@ -450,6 +501,7 @@ def write_trigger(
 
 
 def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
+    log_stage("run_detector starting")
     validate_args(args)
     if args.clip_seconds <= 0:
         raise SystemExit("--clip-seconds must be positive")
@@ -457,7 +509,9 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     if args.stream_url:
         device_info = {"name": f"shared stream {redact_stream_url(args.stream_url)}"}
         capture_rate = args.sample_rate or YAMNET_SAMPLE_RATE
+        log_stage(f"using shared RTSP stream, capture_rate={capture_rate}")
     else:
+        log_stage(f"querying local input device via PortAudio: {device!r}")
         try:
             device_info = sd.query_devices(device, "input")
         except Exception as exc:
@@ -466,10 +520,13 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                 "먼저 --list-devices로 마이크 번호를 확인하세요."
             ) from exc
         capture_rate = args.sample_rate or int(round(device_info["default_samplerate"]))
+        log_stage(f"local input device ready, capture_rate={capture_rate}")
     block_size = max(1, int(round(capture_rate * BLOCK_SECONDS)))
     window_size = max(block_size, int(round(capture_rate * WINDOW_SECONDS)))
 
+    log_stage("loading YAMNet model")
     tf, model, class_names = load_yamnet(args.model, args.cache_dir)
+    log_stage("YAMNet model loaded")
     laughter_indices = find_laughter_classes(class_names)
     laughter_names = [class_names[index] for index in laughter_indices]
     clap_indices: list[int] = []
@@ -495,6 +552,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     if args.mqtt_host and not args.diagnostics_only:
         from mqtt_event_publisher import MqttEventPublisher
 
+        log_stage("initializing MQTT publisher")
         mqtt_publisher = MqttEventPublisher(
             host=args.mqtt_host,
             port=args.mqtt_port,
@@ -503,6 +561,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
             password=args.mqtt_password,
             event_topic=args.mqtt_topic,
         )
+        log_stage("MQTT publisher ready")
 
     def audio_callback(indata: Any, frames: int, timing: Any, status: Any) -> None:
         del frames, timing
@@ -538,7 +597,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
         diagnostics_path = args.diagnostics_jsonl.expanduser().resolve()
         diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
         diagnostics_output = diagnostics_path.open(
-            "w",
+            "a",
             encoding="utf-8",
             buffering=1,
         )
@@ -565,6 +624,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
     last_alert_at = float("-inf")
     started_at = time.monotonic()
 
+    log_stage("opening audio input (mic or RTSP/ffmpeg)")
     try:
         with open_audio_input(
             args,
@@ -575,6 +635,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
             block_size,
             audio_callback,
         ):
+            log_stage("audio input opened, waiting for first chunk")
             while True:
                 chunk = audio_queue.get()
                 if save_audio_clips:
@@ -858,8 +919,12 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
 
 
 def main() -> None:
+    log_stage("process started, parsing arguments")
     args = parse_args()
-    np, sd = require_audio_packages()
+    log_stage(f"arguments parsed (stream_url={'set' if args.stream_url else 'unset'})")
+    np, sd = require_audio_packages(
+        need_sounddevice=bool(args.list_devices or not args.stream_url)
+    )
 
     if args.list_devices:
         print(sd.query_devices())
