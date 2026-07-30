@@ -225,11 +225,7 @@ void main() {
         retentionDays: 30,
         subscriptionActive: false,
         devices: [
-          VaultDevice(
-            bindingId: 'binding-1',
-            generation: 1,
-            device: device,
-          ),
+          VaultDevice(bindingId: 'binding-1', generation: 1, device: device),
         ],
       )
       ..selectedDevice = device
@@ -297,10 +293,17 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('device-free-vault-banner')), findsOneWidget);
-    expect(find.text('현재 연결된 기기가 없어요'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('main-bottom-navigation')),
+      findsOneWidget,
+    );
+    expect(find.text('연결된 기기가 없습니다'), findsWidgets);
+    expect(find.text('기기 연결하기'), findsOneWidget);
+
+    await tester.tap(find.text('추억'));
+    await tester.pumpAndSettle();
+
     expect(find.text('기기 해제 전 추억'), findsOneWidget);
-    expect(find.byKey(const Key('connect-device-to-vault')), findsOneWidget);
     controller.dispose();
   });
 

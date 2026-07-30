@@ -260,19 +260,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             const Divider(height: 1, indent: 58),
                           ],
-                          _SettingRow(
-                            icon: Icons.add_to_photos_outlined,
-                            title: '새 기기 연결',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => DeviceRegistrationScreen(
-                                  controller: controller,
+                          if (controller.canRegisterDevice) ...[
+                            _SettingRow(
+                              icon: Icons.add_to_photos_outlined,
+                              title: '새 기기 연결',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DeviceRegistrationScreen(
+                                    controller: controller,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          const Divider(height: 1, indent: 58),
+                            const Divider(height: 1, indent: 58),
+                          ],
                           _SettingRow(
                             icon: Icons.lock_outline_rounded,
                             title: '비밀번호 변경',

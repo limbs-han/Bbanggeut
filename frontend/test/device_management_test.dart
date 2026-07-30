@@ -7,6 +7,31 @@ import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/device_registration_screen.dart';
 
 void main() {
+  testWidgets('MEMBER는 기기 등록 화면에 직접 접근해도 차단된다', (tester) async {
+    final controller = AppController()
+      ..selectedVault = const MemoryVault(
+        id: 'member-vault',
+        name: '가족 추억',
+        status: 'ACTIVE',
+        myRole: 'MEMBER',
+        retentionDays: 30,
+        subscriptionActive: false,
+        devices: [],
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: DeviceRegistrationScreen(controller: controller),
+      ),
+    );
+
+    expect(find.text('접근할 수 없어요'), findsOneWidget);
+    expect(find.text('새 기기 등록은 OWNER만 사용할 수 있어요.'), findsOneWidget);
+    expect(find.byKey(const Key('registration-code-prefix')), findsNothing);
+    controller.dispose();
+  });
+
   test('등록 코드를 입력하는 동안 대시와 대문자 형식을 유지한다', () {
     const formatter = RegistrationCodeFormatter();
 
@@ -143,9 +168,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('기기 등록 전에 기존 Vault와 새 Vault를 명시적으로 선택한다', (
-    tester,
-  ) async {
+  testWidgets('기기 등록 전에 기존 Vault와 새 Vault를 명시적으로 선택한다', (tester) async {
     final controller = AppController()
       ..vaults = const [_ReleaseApiClient.vaultWithoutDevice]
       ..selectedVault = _ReleaseApiClient.vaultWithoutDevice;
@@ -165,10 +188,7 @@ void main() {
 
     expect(find.byKey(const Key('new-vault-name')), findsOneWidget);
     expect(find.text('기존 Vault와 완전히 분리된 새 공간을 만들어요.'), findsOneWidget);
-    expect(
-      find.textContaining('연결 중에는 Vault를 바꿀 수 없어요'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('연결 중에는 Vault를 바꿀 수 없어요'), findsOneWidget);
     controller.dispose();
   });
 
@@ -334,8 +354,7 @@ class _MultipleVaultApiClient extends ApiClient {
       const [];
 
   @override
-  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
-      const [];
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async => const [];
 
   @override
   Future<List<Invitation>> listVaultInvitations(String vaultId) async =>
@@ -406,8 +425,7 @@ class _ReleaseApiClient extends ApiClient {
   ];
 
   @override
-  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
-      const [];
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async => const [];
 
   @override
   Future<List<Invitation>> listVaultInvitations(String vaultId) async =>
@@ -461,6 +479,9 @@ class _AcceptInvitationApiClient extends ApiClient {
   }
 
   @override
+  Future<List<Invitation>> listMyInvitations() async => const [];
+
+  @override
   Future<List<MemoryVault>> listVaults() async => const [
     MemoryVault(
       id: 'vault-1',
@@ -506,8 +527,7 @@ class _AcceptInvitationApiClient extends ApiClient {
   Future<List<DeviceMember>> listMembers(String deviceId) async => const [];
 
   @override
-  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
-      const [];
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async => const [];
 
   @override
   Future<HomeSummary> getHomeSummary(String id) async =>

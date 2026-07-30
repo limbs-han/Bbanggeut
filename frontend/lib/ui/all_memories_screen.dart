@@ -195,7 +195,25 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             ),
             const SizedBox(height: 10),
             Expanded(
-              child: items.isEmpty
+              child:
+                  widget.controller.videosLoading &&
+                      widget.controller.videos.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : widget.controller.videosError != null
+                  ? EmptyState(
+                      icon: Icons.cloud_off_rounded,
+                      title: '영상을 불러오지 못했어요',
+                      message: widget.controller.videosError!,
+                      action: FilledButton(
+                        onPressed: widget.controller.videosLoading
+                            ? null
+                            : widget.controller.selectedDevice == null
+                            ? widget.controller.refreshVaultData
+                            : widget.controller.refreshDeviceData,
+                        child: const Text('다시 시도'),
+                      ),
+                    )
+                  : items.isEmpty
                   ? EmptyState(
                       icon: searchExpanded || dateRange != null
                           ? Icons.search_off_rounded

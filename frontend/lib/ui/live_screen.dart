@@ -36,6 +36,24 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   bool muted = false;
   bool webRtcWasConnected = false;
 
+  void _handlePlayerValue() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _isAtLiveEdge {
+    final value = player?.value;
+    if (value == null || !value.isInitialized) return false;
+    return value.duration - value.position <= const Duration(seconds: 3);
+  }
+
+  Future<void> _goLive() async {
+    final current = player;
+    if (current == null || !current.value.isInitialized) return;
+    await current.seekTo(current.value.duration);
+    await current.play();
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -98,21 +116,37 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
 
   Future<void> _openPlayer(String url, {bool replace = false}) async {
     if (!replace && currentPlayUrl == url && player != null) return;
+    final previous = player;
+    final previousValue = previous?.value;
+    final wasAtLiveEdge =
+        previousValue != null &&
+        previousValue.isInitialized &&
+        previousValue.duration - previousValue.position <=
+            const Duration(seconds: 3);
     final next = VideoPlayerController.networkUrl(Uri.parse(url));
     await next.initialize();
     await next.setVolume(muted ? 0 : 1);
+    if (previousValue != null && previousValue.isInitialized) {
+      final target = wasAtLiveEdge
+          ? next.value.duration
+          : previousValue.position > next.value.duration
+          ? next.value.duration
+          : previousValue.position;
+      await next.seekTo(target);
+    }
     await next.play();
     if (!mounted) {
       await next.dispose();
       return;
     }
-    final old = player;
+    next.addListener(_handlePlayerValue);
     setState(() {
       player = next;
       currentPlayUrl = url;
       error = null;
     });
-    await old?.dispose();
+    previous?.removeListener(_handlePlayerValue);
+    await previous?.dispose();
   }
 
   Future<void> _openPreferredPlayer(StreamSession updated) async {
@@ -212,6 +246,7 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_close());
+    player?.removeListener(_handlePlayerValue);
     player?.dispose();
     whepPlayer.removeListener(_refreshWebRtc);
     whepPlayer.dispose();
@@ -308,14 +343,16 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
-                            onOpenDevices: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => DeviceRegistrationScreen(
-                                  controller: widget.controller,
-                                ),
-                              ),
-                            ),
+                            onOpenDevices: widget.controller.canRegisterDevice
+                                ? () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => DeviceRegistrationScreen(
+                                        controller: widget.controller,
+                                      ),
+                                    ),
+                                  )
+                                : null,
                           ),
                         ),
                       ),
@@ -363,30 +400,40 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                             Positioned(
                               left: 12,
                               top: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 7,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xB32D312B),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 4,
-                                      backgroundColor: AppColors.live,
-                                    ),
-                                    SizedBox(width: 7),
-                                    Text(
-                                      'LIVE',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w900,
+                              child: GestureDetector(
+                                key: const Key('live-screen-edge-button'),
+                                onTap: player == null ? null : _goLive,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _isAtLiveEdge
+                                        ? const Color(0xDDD32F2F)
+                                        : const Color(0xB32D312B),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 4,
+                                        backgroundColor: _isAtLiveEdge
+                                            ? AppColors.live
+                                            : Colors.white54,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 7),
+                                      Text(
+                                        'LIVE',
+                                        style: TextStyle(
+                                          color: _isAtLiveEdge
+                                              ? Colors.white
+                                              : Colors.white70,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -451,6 +498,24 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
+                            if (player != null)
+                              Positioned(
+                                left: 12,
+                                right: 72,
+                                bottom: 0,
+                                child: VideoProgressIndicator(
+                                  player!,
+                                  allowScrubbing: true,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  colors: const VideoProgressColors(
+                                    playedColor: AppColors.coral,
+                                    bufferedColor: Colors.white54,
+                                    backgroundColor: Colors.white24,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                         Padding(
@@ -741,6 +806,26 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   bool webRtcWasConnected = false;
 
   bool get hasPlayback => whepPlayer.connected || player != null;
+  bool get _isAtLiveEdge {
+    final value = player?.value;
+    if (value == null || !value.isInitialized) return false;
+    return value.duration - value.position <= const Duration(seconds: 3);
+  }
+
+  void _handlePlayerValue() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _goLive() async {
+    final current = player;
+    if (current == null || !current.value.isInitialized) return;
+    await current.seekTo(current.value.duration);
+    await current.play();
+    if (mounted) {
+      setState(() => controlsVisible = true);
+      _scheduleControlsHide();
+    }
+  }
 
   @override
   void initState() {
@@ -949,6 +1034,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       player = null;
       playerListenable.value = null;
       currentPlayUrl = null;
+      currentPlayer?.removeListener(_handlePlayerValue);
       await currentPlayer?.dispose();
     }
     if (current != null && !(devHomeCam && devHlsUrl.isNotEmpty)) {
@@ -995,6 +1081,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     unawaited(_close());
     final currentPlayer = player;
     player = null;
+    currentPlayer?.removeListener(_handlePlayerValue);
     unawaited(currentPlayer?.dispose());
     whepPlayer.removeListener(_handleWebRtcState);
     whepPlayer.dispose();
@@ -1098,20 +1185,28 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                   Positioned(
                     left: 12,
                     top: widget.houseMode ? 30 : 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xB32D312B),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        started ? '●  LIVE' : 'LIVE 준비',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
+                    child: GestureDetector(
+                      key: const Key('live-edge-button'),
+                      onTap: player == null ? null : _goLive,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _isAtLiveEdge
+                              ? const Color(0xDDD32F2F)
+                              : const Color(0xB32D312B),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          started ? '●  LIVE' : 'LIVE 준비',
+                          style: TextStyle(
+                            color: _isAtLiveEdge
+                                ? Colors.white
+                                : Colors.white70,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ),
@@ -1422,6 +1517,22 @@ class _FullscreenLiveViewState extends State<FullscreenLiveView> {
   bool controlsVisible = true;
   Timer? controlsTimer;
 
+  bool get _isAtLiveEdge {
+    final value = activeController.value;
+    if (!value.isInitialized) return false;
+    return value.duration - value.position <= const Duration(seconds: 3);
+  }
+
+  Future<void> _goLive() async {
+    if (!activeController.value.isInitialized) return;
+    await activeController.seekTo(activeController.value.duration);
+    await activeController.play();
+    if (mounted) {
+      setState(() => controlsVisible = true);
+      _scheduleControlsHide();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1539,20 +1650,28 @@ class _FullscreenLiveViewState extends State<FullscreenLiveView> {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 11,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xB3D32F2F),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: const Text(
-                                  '●  LIVE',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
+                              GestureDetector(
+                                key: const Key('fullscreen-live-edge-button'),
+                                onTap: _goLive,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 11,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _isAtLiveEdge
+                                        ? const Color(0xDDD32F2F)
+                                        : const Color(0xB32D312B),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: Text(
+                                    '●  LIVE',
+                                    style: TextStyle(
+                                      color: _isAtLiveEdge
+                                          ? Colors.white
+                                          : Colors.white70,
+                                      fontWeight: FontWeight.w900,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1595,12 +1714,27 @@ class _FullscreenLiveViewState extends State<FullscreenLiveView> {
                         ),
                         const Positioned(
                           left: 20,
-                          bottom: 16,
+                          bottom: 34,
                           child: Text(
                             '실시간 홈캠 영상',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          bottom: 6,
+                          child: VideoProgressIndicator(
+                            activeController,
+                            allowScrubbing: true,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            colors: const VideoProgressColors(
+                              playedColor: AppColors.coral,
+                              bufferedColor: Colors.white54,
+                              backgroundColor: Colors.white24,
                             ),
                           ),
                         ),

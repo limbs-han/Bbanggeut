@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
@@ -16,6 +18,7 @@ class FamilyScreen extends StatefulWidget {
 class _FamilyScreenState extends State<FamilyScreen> {
   final inviteEmail = TextEditingController();
   String? appliedMembershipRequestToken;
+  Uri? membershipRequestLink;
 
   AppController get controller => widget.controller;
 
@@ -138,7 +141,9 @@ class _FamilyScreenState extends State<FamilyScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  device == null ? 'MEMORY VAULT' : 'HOME CAMERA',
+                                  device == null
+                                      ? 'MEMORY VAULT'
+                                      : 'HOME CAMERA',
                                   style: const TextStyle(
                                     fontSize: 9,
                                     color: AppColors.inkSoft,
@@ -304,6 +309,73 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         ),
                       ),
                     ],
+                    if (!vault.isOwner) ...[
+                      const SizedBox(height: 18),
+                      SoftCard(
+                        color: AppColors.greenCard,
+                        borderColor: AppColors.greenCard,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              '초대링크',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            const Text(
+                              'OWNER에게 보낼 초대 요청 링크를 만들 수 있어요.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.inkSoft,
+                              ),
+                            ),
+                            if (membershipRequestLink != null) ...[
+                              const SizedBox(height: 12),
+                              SelectableText(
+                                '$membershipRequestLink',
+                                key: const Key('membership-request-link'),
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: controller.busy
+                                        ? null
+                                        : membershipRequestLink == null
+                                        ? _createMemberLink
+                                        : _copyMemberLink,
+                                    icon: Icon(
+                                      membershipRequestLink == null
+                                          ? Icons.link_rounded
+                                          : Icons.copy_rounded,
+                                    ),
+                                    label: Text(
+                                      membershipRequestLink == null
+                                          ? '링크 생성'
+                                          : '복사',
+                                    ),
+                                  ),
+                                ),
+                                if (membershipRequestLink != null) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton.filledTonal(
+                                    tooltip: '공유',
+                                    onPressed: _shareMemberLink,
+                                    icon: const Icon(Icons.share_rounded),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     const Center(
                       child: Text(
@@ -323,6 +395,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
 
   Future<void> _sendInvitation() async {
     if (controller.busy) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     final email = inviteEmail.text.trim();
     if (email.isEmpty) {
       showAppSnack(context, '초대할 가족의 이메일을 입력해 주세요.', error: true);
@@ -344,6 +417,36 @@ class _FamilyScreenState extends State<FamilyScreen> {
         error: true,
       );
     }
+  }
+
+  Future<void> _createMemberLink() async {
+    if (controller.busy) return;
+    final link = await controller.createMembershipRequestLink();
+    if (!mounted) return;
+    if (link == null) {
+      showAppSnack(
+        context,
+        controller.errorMessage ?? '초대 요청 링크를 만들지 못했어요.',
+        error: true,
+      );
+      return;
+    }
+    setState(() => membershipRequestLink = link);
+    await Clipboard.setData(ClipboardData(text: '$link'));
+    if (mounted) showAppSnack(context, '초대 요청 링크를 복사했어요.');
+  }
+
+  Future<void> _copyMemberLink() async {
+    final link = membershipRequestLink;
+    if (link == null) return;
+    await Clipboard.setData(ClipboardData(text: '$link'));
+    if (mounted) showAppSnack(context, '초대 요청 링크를 복사했어요.');
+  }
+
+  Future<void> _shareMemberLink() async {
+    final link = membershipRequestLink;
+    if (link == null) return;
+    await SharePlus.instance.share(ShareParams(text: '가족 초대 요청 링크입니다.\n$link'));
   }
 
   bool _looksLikeEmail(String value) {
@@ -391,15 +494,10 @@ class _MemberTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           StatusPill(
-            label: switch (member.role) {
-              'OWNER' => '소유자',
-              'MEMBER' => '구성원',
-              'EDITOR' => '편집자',
-              _ => '뷰어',
-            },
+            label: normalizeRole(member.role) == 'OWNER' ? 'OWNER' : 'MEMBER',
             color: AppColors.sageSoft,
           ),
-          if (member.role != 'OWNER' &&
+          if (normalizeRole(member.role) != 'OWNER' &&
               controller.selectedVault?.isOwner == true)
             PopupMenuButton<String>(
               onSelected: (action) =>
