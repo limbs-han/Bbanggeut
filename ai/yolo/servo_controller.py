@@ -2,11 +2,11 @@
 
 The controller keeps camera-space positions separate from raw servo pulses:
 
-* PAN uses -40 degrees (left) through +40 degrees (right).
-* TILT limits are configurable around 0 degrees (HOME); negative/positive
-  limits allow equal travel in both directions when the linkage permits it.
+* PAN and TILT default to -80 through +80 degrees around logical HOME.
 * Pulse direction and calibration remain deployment settings because linkage
   orientation and individual SG90 endpoints vary.
+* The last commanded position is restored before the first hardware pulse so
+  a process or board restart does not assume that the linkage is already HOME.
 
 Hardware output is disabled unless SERVO_ENABLE_HARDWARE=true or
 --enable-hardware is supplied.
@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 import json
 import math
 import os
+from pathlib import Path
 import signal
 import threading
 import time
@@ -31,6 +32,7 @@ HOLD_STATES = {"HOLD", "NO_TARGET_HOLD"}
 HOME_STATES = {"HOME", "RETURN_HOME"}
 X_COMMANDS = {"LEFT", "RIGHT", "HOLD", "HOME"}
 Y_COMMANDS = {"UP", "DOWN", "HOLD", "HOME"}
+SERVO_STATE_SCHEMA_VERSION = "1.0"
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -73,6 +75,77 @@ def finite_float(payload: dict[str, Any], key: str) -> float:
     if not math.isfinite(result):
         raise ValueError(f"{key} must be finite")
     return result
+
+
+def load_saved_position(
+    path: Path,
+    *,
+    expected_device_id: str,
+    pan: "AxisConfig",
+    tilt: "AxisConfig",
+    now_epoch: float,
+    maximum_age_seconds: float,
+) -> tuple[float, float] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read servo state file {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("servo state file must contain a JSON object")
+    if payload.get("schema_version") != SERVO_STATE_SCHEMA_VERSION:
+        raise ValueError("servo state file has an unsupported schema_version")
+    if payload.get("device_id") != expected_device_id:
+        raise ValueError("servo state file belongs to a different device")
+
+    saved_at_epoch = finite_float(payload, "saved_at_epoch")
+    age_seconds = now_epoch - saved_at_epoch
+    if age_seconds < -300:
+        raise ValueError("servo state file timestamp is too far in the future")
+    if age_seconds > maximum_age_seconds:
+        raise ValueError("servo state file is stale")
+
+    pan_deg = finite_float(payload, "pan_deg")
+    tilt_deg = finite_float(payload, "tilt_deg")
+    if not pan.minimum_deg <= pan_deg <= pan.maximum_deg:
+        raise ValueError("saved PAN position is outside configured limits")
+    if not tilt.minimum_deg <= tilt_deg <= tilt.maximum_deg:
+        raise ValueError("saved TILT position is outside configured limits")
+    return pan_deg, tilt_deg
+
+
+def save_position_atomic(
+    path: Path,
+    *,
+    device_id: str,
+    pan_deg: float,
+    tilt_deg: float,
+    saved_at_epoch: float,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    payload = {
+        "schema_version": SERVO_STATE_SCHEMA_VERSION,
+        "device_id": device_id,
+        "saved_at_epoch": saved_at_epoch,
+        "pan_deg": round(pan_deg, 3),
+        "tilt_deg": round(tilt_deg, 3),
+    }
+    with temporary.open("w", encoding="utf-8", newline="\n") as state_file:
+        json.dump(payload, state_file, separators=(",", ":"))
+        state_file.write("\n")
+        state_file.flush()
+        os.fsync(state_file.fileno())
+    os.chmod(temporary, 0o640)
+    os.replace(temporary, path)
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    if directory_flag is not None:
+        directory_fd = os.open(path.parent, directory_flag)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
 
 def split_legacy_direction(direction: Any) -> tuple[str, str]:
@@ -388,6 +461,8 @@ class ServoController:
         expected_device_id: str,
         message_timeout_seconds: float,
         nominal_message_interval_seconds: float = 0.1,
+        initial_position: tuple[float, float] | None = None,
+        output_armed: bool = True,
     ) -> None:
         pan.validate()
         tilt.validate()
@@ -405,11 +480,22 @@ class ServoController:
         self.message_timeout_seconds = message_timeout_seconds
         self.nominal_message_interval_seconds = nominal_message_interval_seconds
 
-        self.current_pan_deg = pan.home_deg
-        self.current_tilt_deg = tilt.home_deg
-        self.target_pan_deg = pan.home_deg
-        self.target_tilt_deg = tilt.home_deg
-        self.mode = "HOLD"
+        initial_pan_deg, initial_tilt_deg = initial_position or (
+            pan.home_deg,
+            tilt.home_deg,
+        )
+        if not pan.minimum_deg <= initial_pan_deg <= pan.maximum_deg:
+            raise ValueError("initial PAN position is outside configured limits")
+        if not tilt.minimum_deg <= initial_tilt_deg <= tilt.maximum_deg:
+            raise ValueError("initial TILT position is outside configured limits")
+
+        self.current_pan_deg = initial_pan_deg
+        self.current_tilt_deg = initial_tilt_deg
+        self.target_pan_deg = initial_pan_deg
+        self.target_tilt_deg = initial_tilt_deg
+        self.output_armed = output_armed
+        self.startup_position_restored = initial_position is not None
+        self.mode = "HOLD" if output_armed else "STARTUP_WAITING"
         self.last_error_x = 0.0
         self.last_error_y = 0.0
         self.last_message_monotonic: float | None = None
@@ -466,8 +552,15 @@ class ServoController:
             self.last_message_monotonic = received_monotonic
             self.last_error_x = target.error_x
             self.last_error_y = target.error_y
-            self.mode = target.mode
             self.accepted_messages += 1
+
+            if not self.output_armed:
+                self.mode = "STARTUP_WAITING"
+                self.target_pan_deg = self.current_pan_deg
+                self.target_tilt_deg = self.current_tilt_deg
+                return target
+
+            self.mode = target.mode
 
             if target.mode == "TRACKING":
                 pan_error = self._signed_error(target.command_x, target.error_x)
@@ -505,14 +598,19 @@ class ServoController:
 
     def tick(self, now_monotonic: float) -> bool:
         with self._lock:
-            if self.last_message_monotonic is None:
+            if not self.output_armed:
+                self.last_tick_monotonic = now_monotonic
+                return False
+            if self.last_message_monotonic is None and self.mode != "HOME":
                 self.last_tick_monotonic = now_monotonic
                 return False
 
             if (
-                now_monotonic - self.last_message_monotonic
+                self.last_message_monotonic is not None
+                and now_monotonic - self.last_message_monotonic
                 > self.message_timeout_seconds
                 and self.mode != "HOLD"
+                and self.mode != "HOME"
             ):
                 self.mode = "HOLD"
                 self.target_pan_deg = self.current_pan_deg
@@ -529,23 +627,28 @@ class ServoController:
                 )
             self.last_tick_monotonic = now_monotonic
 
-            next_pan = move_toward(
-                self.current_pan_deg,
-                self.target_pan_deg,
-                self.pan.max_speed_deg_per_second * elapsed,
-            )
-            next_tilt = move_toward(
-                self.current_tilt_deg,
-                self.target_tilt_deg,
-                self.tilt.max_speed_deg_per_second * elapsed,
-            )
-            changed = (
-                abs(next_pan - self.current_pan_deg) >= 0.001
-                or abs(next_tilt - self.current_tilt_deg) >= 0.001
-            )
-            self.current_pan_deg = next_pan
-            self.current_tilt_deg = next_tilt
-            should_write = changed or not self._output_initialized
+            if not self._output_initialized:
+                # The first hardware pulse must reproduce the persisted
+                # position exactly. Normal speed-limited motion starts on the
+                # following tick.
+                should_write = True
+            else:
+                next_pan = move_toward(
+                    self.current_pan_deg,
+                    self.target_pan_deg,
+                    self.pan.max_speed_deg_per_second * elapsed,
+                )
+                next_tilt = move_toward(
+                    self.current_tilt_deg,
+                    self.target_tilt_deg,
+                    self.tilt.max_speed_deg_per_second * elapsed,
+                )
+                should_write = (
+                    abs(next_pan - self.current_pan_deg) >= 0.001
+                    or abs(next_tilt - self.current_tilt_deg) >= 0.001
+                )
+                self.current_pan_deg = next_pan
+                self.current_tilt_deg = next_tilt
             pan_deg = self.current_pan_deg
             tilt_deg = self.current_tilt_deg
             if should_write:
@@ -554,6 +657,25 @@ class ServoController:
         if should_write:
             self.output.write_positions(pan_deg, tilt_deg)
         return should_write
+
+    def request_home(self) -> None:
+        with self._lock:
+            if not self.output_armed:
+                return
+            self.mode = "HOME"
+            self.target_pan_deg = self.pan.home_deg
+            self.target_tilt_deg = self.tilt.home_deg
+
+    def is_at_home(self) -> bool:
+        with self._lock:
+            return (
+                abs(self.current_pan_deg - self.pan.home_deg) < 0.001
+                and abs(self.current_tilt_deg - self.tilt.home_deg) < 0.001
+            )
+
+    def position_snapshot(self) -> tuple[float, float]:
+        with self._lock:
+            return self.current_pan_deg, self.current_tilt_deg
 
     def status_payload(self, *, hardware_enabled: bool) -> dict[str, Any]:
         with self._lock:
@@ -566,6 +688,8 @@ class ServoController:
                 "component": "servo_controller",
                 "state": self.mode,
                 "hardware_enabled": hardware_enabled,
+                "output_armed": self.output_armed,
+                "startup_position_restored": self.startup_position_restored,
                 "pan_deg": round(self.current_pan_deg, 3),
                 "tilt_deg": round(self.current_tilt_deg, 3),
                 "target_pan_deg": round(self.target_pan_deg, 3),
@@ -786,6 +910,33 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=float(os.getenv("SERVO_STATUS_INTERVAL_SECONDS", "0.5")),
     )
+    parser.add_argument(
+        "--state-file",
+        type=Path,
+        default=Path(
+            os.getenv(
+                "SERVO_STATE_FILE",
+                "/var/lib/william-james-servo/position.json",
+            )
+        ),
+    )
+    parser.add_argument(
+        "--state-max-age",
+        type=float,
+        default=float(os.getenv("SERVO_STATE_MAX_AGE_SECONDS", "604800")),
+    )
+    parser.add_argument(
+        "--state-save-interval",
+        type=float,
+        default=float(os.getenv("SERVO_STATE_SAVE_INTERVAL_SECONDS", "0.25")),
+    )
+    parser.add_argument(
+        "--shutdown-home-timeout",
+        type=float,
+        default=float(
+            os.getenv("SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS", "3")
+        ),
+    )
     args = parser.parse_args()
 
     if not args.device_id or not args.device_id.strip():
@@ -798,6 +949,15 @@ def parse_args() -> argparse.Namespace:
         parser.error("--control-hz and --status-interval must be positive")
     if args.message_timeout <= 0:
         parser.error("--message-timeout must be positive")
+    if (
+        args.state_max_age <= 0
+        or args.state_save_interval <= 0
+        or args.shutdown_home_timeout <= 0
+    ):
+        parser.error(
+            "--state-max-age, --state-save-interval and "
+            "--shutdown-home-timeout must be positive"
+        )
     return args
 
 
@@ -810,6 +970,31 @@ def run(args: argparse.Namespace) -> None:
         ) from exc
 
     pan, tilt = build_axis_configs(args)
+    restored_position: tuple[float, float] | None = None
+    if args.enable_hardware:
+        try:
+            restored_position = load_saved_position(
+                args.state_file,
+                expected_device_id=args.device_id,
+                pan=pan,
+                tilt=tilt,
+                now_epoch=time.time(),
+                maximum_age_seconds=args.state_max_age,
+            )
+        except ValueError as exc:
+            print(f"Servo startup safety: {exc}")
+        if restored_position is None:
+            print(
+                "Servo startup safety: no valid saved position; "
+                "PWM output remains disabled in STARTUP_WAITING"
+            )
+        else:
+            print(
+                "Servo startup safety: restored "
+                f"pan={restored_position[0]:+.2f}deg "
+                f"tilt={restored_position[1]:+.2f}deg"
+            )
+
     if args.enable_hardware:
         output: ServoOutput = Pca9685ServoOutput(
             i2c_bus=args.i2c_bus,
@@ -828,6 +1013,8 @@ def run(args: argparse.Namespace) -> None:
         output=output,
         expected_device_id=args.device_id,
         message_timeout_seconds=args.message_timeout,
+        initial_position=restored_position,
+        output_armed=not args.enable_hardware or restored_position is not None,
     )
     target_topic = args.topic or (
         f"homecam/v2/{args.device_id}/control/framing/target"
@@ -923,12 +1110,33 @@ def run(args: argparse.Namespace) -> None:
     client.connect(args.mqtt_host, args.mqtt_port, keepalive=60)
     client.loop_start()
     last_status_at = float("-inf")
+    last_state_save_at = float("-inf")
     period = 1.0 / args.control_hz
+
+    def save_current_position() -> None:
+        pan_deg, tilt_deg = controller.position_snapshot()
+        save_position_atomic(
+            args.state_file,
+            device_id=args.device_id,
+            pan_deg=pan_deg,
+            tilt_deg=tilt_deg,
+            saved_at_epoch=time.time(),
+        )
 
     try:
         while not stop.wait(period):
             now = time.monotonic()
-            controller.tick(now)
+            wrote = controller.tick(now)
+            if (
+                wrote
+                and controller.output_armed
+                and now - last_state_save_at >= args.state_save_interval
+            ):
+                try:
+                    save_current_position()
+                    last_state_save_at = now
+                except OSError as exc:
+                    print(f"Cannot persist servo position: {exc}")
             if connected.is_set() and now - last_status_at >= args.status_interval:
                 client.publish(
                     status_topic,
@@ -943,9 +1151,26 @@ def run(args: argparse.Namespace) -> None:
                 )
                 last_status_at = now
     finally:
-        controller.close()
         client.disconnect()
         client.loop_stop()
+        if controller.output_armed:
+            controller.request_home()
+            shutdown_deadline = time.monotonic() + args.shutdown_home_timeout
+            while (
+                not controller.is_at_home()
+                and time.monotonic() < shutdown_deadline
+            ):
+                if controller.tick(time.monotonic()):
+                    try:
+                        save_current_position()
+                    except OSError as exc:
+                        print(f"Cannot persist shutdown position: {exc}")
+                time.sleep(period)
+            try:
+                save_current_position()
+            except OSError as exc:
+                print(f"Cannot persist final servo position: {exc}")
+        controller.close()
 
 
 def main() -> None:

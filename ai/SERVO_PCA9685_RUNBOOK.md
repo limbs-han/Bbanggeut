@@ -234,12 +234,33 @@ SERVO_PAN_PULSE_DIRECTION=1
 SERVO_TILT_PULSE_DIRECTION=1
 SERVO_MINIMUM_PULSE_US=1000
 SERVO_MAXIMUM_PULSE_US=2000
+SERVO_STATE_FILE=/var/lib/william-james-servo/position.json
+SERVO_STATE_MAX_AGE_SECONDS=604800
+SERVO_STATE_SAVE_INTERVAL_SECONDS=0.25
+SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS=3
 ```
 
 PAN/TILT 모두 HOME `0`을 중심으로 `-80~+80`의 대칭 범위를 사용한다.
 기구물의 양방향 여유가 부족하면 해당 축의 최소·최대값을 더 좁게 설정한다.
 카메라의 UP/DOWN 명령과 실제 움직임이 반대라면
 `SERVO_TILT_PULSE_DIRECTION`을 `1`과 `-1` 중 반대 값으로 변경한다.
+
+### 부팅 시 급회전 방지
+
+컨트롤러는 동작 중 마지막 명령 각도를 `SERVO_STATE_FILE`에 원자적으로 저장한다.
+재시작 후 첫 PWM은 HOME `0°`가 아니라 저장된 PAN/TILT 각도를 그대로 출력하고,
+그 다음 제어 주기부터 속도 제한을 적용한다.
+
+상태 파일이 없거나, 다른 기기에서 생성됐거나, 설정 범위를 벗어나거나,
+`SERVO_STATE_MAX_AGE_SECONDS`보다 오래됐으면 상태는 `STARTUP_WAITING`이 된다.
+이때 PCA9685 채널은 비활성 상태를 유지하며 객체 추적 메시지가 들어와도 PWM을
+출력하지 않는다. 현재 물리 각도를 확인해 유효한 상태 파일을 만든 뒤 서비스를
+재시작해야 한다.
+
+정상적인 서비스 종료에서는 MQTT 수신을 먼저 중단하고
+`SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS` 동안 속도 제한을 지키며 HOME으로 이동한 뒤
+최종 `0°` 위치를 저장하고 PWM 채널을 끈다. 갑작스러운 전원 차단에서는 마지막
+주기 저장값을 다음 부팅 때 사용한다.
 
 ## 9. 하드웨어 출력 활성화
 

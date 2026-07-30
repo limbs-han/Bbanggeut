@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import patch
@@ -14,8 +16,10 @@ from servo_controller import (
     Pca9685ServoOutput,
     ServoController,
     build_axis_configs,
+    load_saved_position,
     parse_args,
     parse_framing_target,
+    save_position_atomic,
 )
 
 
@@ -191,6 +195,84 @@ class AxisConfigurationTests(unittest.TestCase):
         self.assertAlmostEqual(tilt.pulse_for_position(20.0), 1611.11112)
 
 
+class PositionPersistenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.pan = axis("PAN", channel=0, minimum=-80.0, maximum=80.0)
+        self.tilt = axis("TILT", channel=1, minimum=-80.0, maximum=80.0)
+
+    def test_round_trip_saved_position(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "servo-position.json"
+            save_position_atomic(
+                path,
+                device_id=DEVICE_ID,
+                pan_deg=37.25,
+                tilt_deg=-14.5,
+                saved_at_epoch=100.0,
+            )
+
+            restored = load_saved_position(
+                path,
+                expected_device_id=DEVICE_ID,
+                pan=self.pan,
+                tilt=self.tilt,
+                now_epoch=110.0,
+                maximum_age_seconds=60.0,
+            )
+
+        self.assertEqual(restored, (37.25, -14.5))
+
+    def test_missing_state_keeps_startup_uninitialized(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            restored = load_saved_position(
+                Path(directory) / "missing.json",
+                expected_device_id=DEVICE_ID,
+                pan=self.pan,
+                tilt=self.tilt,
+                now_epoch=100.0,
+                maximum_age_seconds=60.0,
+            )
+
+        self.assertIsNone(restored)
+
+    def test_rejects_stale_or_out_of_range_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "servo-position.json"
+            save_position_atomic(
+                path,
+                device_id=DEVICE_ID,
+                pan_deg=81.0,
+                tilt_deg=0.0,
+                saved_at_epoch=100.0,
+            )
+            with self.assertRaisesRegex(ValueError, "outside configured limits"):
+                load_saved_position(
+                    path,
+                    expected_device_id=DEVICE_ID,
+                    pan=self.pan,
+                    tilt=self.tilt,
+                    now_epoch=110.0,
+                    maximum_age_seconds=60.0,
+                )
+
+            save_position_atomic(
+                path,
+                device_id=DEVICE_ID,
+                pan_deg=0.0,
+                tilt_deg=0.0,
+                saved_at_epoch=100.0,
+            )
+            with self.assertRaisesRegex(ValueError, "stale"):
+                load_saved_position(
+                    path,
+                    expected_device_id=DEVICE_ID,
+                    pan=self.pan,
+                    tilt=self.tilt,
+                    now_epoch=200.0,
+                    maximum_age_seconds=60.0,
+                )
+
+
 class Pca9685OutputTests(unittest.TestCase):
     def test_configures_50hz_and_writes_both_servo_channels(self) -> None:
         bus = FakeSmbus(7)
@@ -274,9 +356,78 @@ class ServoControllerTests(unittest.TestCase):
         wrote = self.controller.tick(10.1)
 
         self.assertTrue(wrote)
+        self.assertEqual(self.output.positions, [(0.0, 0.0)])
+        self.controller.tick(10.2)
         self.assertAlmostEqual(self.controller.current_pan_deg, 2.0)
         self.assertAlmostEqual(self.controller.current_tilt_deg, 1.0)
         self.assertEqual(self.controller.mode, "TRACKING")
+
+    def test_first_pulse_exactly_restores_saved_position(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(37.25, -14.5),
+        )
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        controller.tick(10.1)
+
+        self.assertEqual(output.positions, [(37.25, -14.5)])
+        self.assertTrue(controller.startup_position_restored)
+
+    def test_missing_position_keeps_hardware_output_disarmed(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            output_armed=False,
+        )
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        wrote = controller.tick(10.1)
+        status = controller.status_payload(hardware_enabled=True)
+
+        self.assertFalse(wrote)
+        self.assertEqual(output.positions, [])
+        self.assertEqual(status["state"], "STARTUP_WAITING")
+        self.assertFalse(status["output_armed"])
+        self.assertFalse(status["startup_position_restored"])
+
+    def test_shutdown_home_moves_safely_without_mqtt_message(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(4.0, -2.0),
+        )
+
+        controller.request_home()
+        controller.tick(10.0)
+        controller.tick(10.1)
+        controller.tick(10.2)
+
+        self.assertTrue(controller.is_at_home())
+        self.assertEqual(output.positions[0], (4.0, -2.0))
+        self.assertAlmostEqual(output.positions[-1][0], 0.0)
+        self.assertAlmostEqual(output.positions[-1][1], 0.0)
 
     def test_hold_ignores_retained_errors(self) -> None:
         self.accept(payload(), received_epoch=100.1, received_monotonic=10.0)
