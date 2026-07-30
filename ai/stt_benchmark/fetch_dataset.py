@@ -11,15 +11,21 @@ HuggingFace 공개 데이터셋:
 AI Hub 데이터셋(직접 내려받은 zip에서 뽑는다 — 압축을 풀지 않는다):
 
     python fetch_dataset.py --name phone --minutes 5 --out dataset/phone \
-      --labels-zip "<...>/2.Validation/라벨링데이터_230316/VL_D03.zip" \
-      --audio-zip  "<...>/2.Validation/원천데이터_230316/VS_D03.zip"
+      --labels-zip "<571>/2.Validation/라벨링데이터_230316/VL_D03.zip" \
+      --audio-zip  "<571>/2.Validation/원천데이터_230316/VS_D03.zip"
 
-**세 데이터셋의 성격이 다르다** — 그래서 다 재고 순위가 유지되는지 본다.
+    python fetch_dataset.py --name meeting --minutes 5 --out dataset/meeting \
+      --labels-zip "<464>/2.Validation/라벨링데이터_260312_add/VL1.zip" \
+      --audio-zip  "<464>/2.Validation/원천데이터_.../VS1.zip"
 
-  zeroth : 낭독. 깨끗한 근접 마이크. 16kHz.
-  kspon  : 자유대화. 스튜디오 녹음. 간투어·구어체 살림. 16kHz.
-  phone  : 전화 상담. **8kHz narrow band** — 정보량이 적어 가장 어렵다.
-           홈캠 원거리 마이크와 성격이 가장 가깝다.
+**데이터셋마다 성격이 다르다** — 그래서 다 재고 순위가 유지되는지 본다.
+
+  zeroth  : 낭독. 깨끗한 근접 마이크. 16kHz.
+  kspon   : 자유대화. 스튜디오 녹음. 간투어·구어체 살림. 2인, 발화 단위로 잘림.
+  phone   : 전화 상담. **8kHz narrow band** — 정보량이 적어 가장 어렵다.
+  meeting : 회의·토론. **3~5인이 절반**이라 겹쳐 말하기가 있다. 매체가 방송
+            위주라 기본적으로 깨끗하지만, `environment` 필드로 **잡음 조건만
+            골라낼 수 있다**(기본 동작). 그 필터가 이 데이터셋의 존재 이유다.
 
 오디오는 디코딩하지 않고 원본 bytes로 저장한다. 최신 datasets는 오디오
 디코딩에 torchcodec을 요구하고 그것이 다시 시스템 ffmpeg를 요구하는데, 이
@@ -31,6 +37,8 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Iterator
@@ -38,6 +46,15 @@ from typing import Iterator
 import av
 
 from run_benchmark import normalize
+
+# 이중 표기 `(A)/(B)`에서 철자 쪽이 몇 번째인가 — **데이터셋마다 반대다.**
+#   phone(571)   : (12월)/(십 이 월)   → 앞
+#   meeting(464) : (아홉 건의)/(9건의) → 뒤
+# 철자를 택하는 이유: 모델이 실제로 "9건", "TBS FM"을 내놓고, rtzr 벤치마크도
+# 철자를 우선했다고 밝혔다 — 그쪽 점수와 견주려면 맞춰야 한다.
+# 여기서 풀어 저장하므로 `normalize()`는 데이터셋을 몰라도 된다.
+_DUAL = re.compile(r"\(([^()]*)\)/\(([^()]*)\)")
+DUAL_SPELLING_GROUP = {"phone": 1, "meeting": 2}
 
 # (HF 데이터셋 ID, split, 정답 컬럼 이름)
 HF_SOURCES = {
@@ -109,6 +126,71 @@ def iter_aihub(labels_zip: Path, audio_zip: Path) -> Iterator[tuple[bytes, str]]
             yield audio.read(wav), decode_text(labels.read(entry)).strip()
 
 
+def iter_meeting(
+    labels_zip: Path, audio_zip: Path, environments: set[str]
+) -> Iterator[tuple[bytes, str]]:
+    """AI Hub 회의 음성(464)에서 발화 단위로 뽑는다.
+
+    phone(571)과 두 가지가 다르다.
+
+    1. **오디오가 세션 단위 wav 하나**다(발화 수백 개, 40분 이상). json의
+       `start`/`end`로 잘라내야 한다.
+    2. **`environment` 필드로 잡음 조건을 고를 수 있다** — 값은 ''(94%),
+       '배경 음악'(3.6%), '잡음'(2.3%)이다. 홈캠은 잡음 환경이 중요하므로
+       기본값으로 잡음·배경음악만 고른다. 이 필터가 없으면 방송 스튜디오의
+       깨끗한 발화가 대부분이라 kspon과 다를 바 없는 측정이 된다.
+
+    정답은 `form`을 쓴다. `original_form`은 이중 표기 없이 발음 쪽만 담아서
+    (둘이 39% 다르다) 모델이 철자를 낼 때 불리하다.
+    """
+    import soundfile as sf
+
+    with zipfile.ZipFile(labels_zip) as labels, zipfile.ZipFile(audio_zip) as audio:
+        # 원천데이터 zip에는 UTF-8 플래그가 없어서 zipfile이 한글 경로를 cp437로
+        # 디코딩한다("인터넷방송" → "└╬┼═│▌╣µ╝█"). 되돌리지 않으면 라벨과 짝이
+        # 하나도 안 맞는다 — 실제로 0/957이 나왔다. 라벨 zip은 플래그가 있어 정상.
+        available = {}
+        for name in audio.namelist():
+            if not name.lower().endswith(".wav"):
+                continue
+            try:
+                available[name.encode("cp437").decode("cp949")] = name
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                available[name] = name
+        # sorted: 추출 순서를 고정한다. 순서가 달라지면 결과를 비교할 수 없다.
+        for entry in sorted(n for n in labels.namelist() if n.lower().endswith(".json")):
+            wav_name = entry[:-5] + ".wav"
+            if wav_name not in available:
+                continue
+
+            session = json.loads(labels.read(entry).decode("utf-8-sig"))
+            picked = [
+                u
+                for u in session.get("utterance", [])
+                if not environments or (u.get("environment") or "") in environments
+            ]
+            if not picked:
+                continue
+
+            # 세션 wav는 한 번만 읽는다(60분이면 약 120MB). 발화마다 다시 읽으면
+            # 같은 파일을 수백 번 압축 해제하게 된다.
+            samples, rate = sf.read(
+                io.BytesIO(audio.read(available[wav_name])), dtype="float32"
+            )
+            if samples.ndim > 1:
+                samples = samples.mean(axis=1)
+
+            for utterance in picked:
+                start = int(float(utterance["start"]) * rate)
+                end = int(float(utterance["end"]) * rate)
+                clip = samples[start:end]
+                if clip.size == 0:
+                    continue
+                buffer = io.BytesIO()
+                sf.write(buffer, clip, rate, format="WAV", subtype="PCM_16")
+                yield buffer.getvalue(), (utterance.get("form") or "").strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--name", required=True, help="zeroth | kspon | 그 외(AI Hub)")
@@ -116,6 +198,14 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--labels-zip", type=Path, help="AI Hub 라벨링데이터 zip")
     parser.add_argument("--audio-zip", type=Path, help="AI Hub 원천데이터 zip")
+    # 회의 음성(464)에서 잡음 조건만 고를 때 쓴다. 빈 값을 주면 전체.
+    parser.add_argument(
+        "--environment",
+        action="append",
+        dest="environments",
+        help="meeting 전용. environment 필드 값(잡음 / 배경 음악). "
+        "기본값은 잡음·배경음악 둘 다 — 홈캠은 잡음 환경이 중요하다",
+    )
     args = parser.parse_args()
 
     if args.name in HF_SOURCES:
@@ -129,7 +219,15 @@ def main() -> int:
         for required in (args.labels_zip, args.audio_zip):
             if not required.exists():
                 parser.error(f"zip이 없습니다: {required}")
-        rows = iter_aihub(args.labels_zip, args.audio_zip)
+        if args.name == "meeting":
+            environments = set(args.environments or ["잡음", "배경 음악"])
+            print(f"[필터] environment in {sorted(environments)}")
+            rows = iter_meeting(args.labels_zip, args.audio_zip, environments)
+        else:
+            rows = iter_aihub(args.labels_zip, args.audio_zip)
+
+    # 이중 표기를 여기서 푼다 — 데이터셋마다 철자 쪽이 반대다.
+    spelling = DUAL_SPELLING_GROUP.get(args.name)
 
     target_seconds = args.minutes * 60
     args.out.mkdir(parents=True, exist_ok=True)
@@ -146,6 +244,8 @@ def main() -> int:
     for data, truth in rows:
         if total_seconds >= target_seconds:
             break
+        if spelling:
+            truth = _DUAL.sub(lambda m: m.group(spelling), truth)
         if not data or not normalize(truth):
             continue  # 정답이 비면 CER을 잴 수 없다.
         # AI Hub의 (())는 사람도 알아듣지 못한 구간이다. 정답에 그 말이 빠져

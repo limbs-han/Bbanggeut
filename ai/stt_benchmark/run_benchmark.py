@@ -60,6 +60,11 @@ MODELS = [
     # q5_0-rebuilt는 앱에 있던 q5_0과 SHA256이 같은 파일이다.
     ("small-ko q5_1 (앱 에셋)", "whispercpp", str(APP_ASSET)),
     ("small-ko q5_0 (교체 전)", "whispercpp", str(LOCAL_MODELS / "ggml-small-ko-q5_0-rebuilt.bin")),
+    # q8_0을 다시 넣었다. zeroth에서 q5_1과 같은 2.9%라 볼 것이 없다고 판단했지만,
+    # 잡음 조건에서 small-ko의 양자화 손실이 크게 드러났다(meeting: fp32 10.3% →
+    # q5_1 16.3%, +6.0%p). SenseVoice int8은 +1.7%p뿐이라 배포 형태에서 뒤집힌다.
+    # **양자화 손실은 조건마다 다르므로** 8비트를 잡음 조건에서 재봐야 한다.
+    ("small-ko q8_0 (whisper.cpp)", "whispercpp", str(LOCAL_MODELS / "ggml-small-ko-q8_0.bin")),
     ("SenseVoice int8 (sherpa-onnx)", "sherpa", str(LOCAL_MODELS / "sensevoice-model.int8.onnx")),
 ]
 
@@ -99,12 +104,22 @@ MODELS = [
 # 나중에 지우면 "0000"이 본문에 섞인다.
 _STAMP = re.compile(r"^\s*\d{1,2}:\d{2}(?::\d{2})?\s*$", re.MULTILINE)
 
-# AI Hub 전사의 이중 표기 — (철자)/(발음) 중 **철자를 택한다.**
-# `(12월)/(십 이 월)`, `(NCS)/(엔씨에스)` 형태로 300회 넘게 나온다.
-# 철자를 택하는 이유: whisper·SenseVoice가 실제로 "12월", "NCS"를 내놓고,
-# rtzr 벤치마크도 철자를 우선했다고 밝혔다 — 그쪽 점수와 비교하려면 맞춰야 한다.
-# 이 치환은 다른 정규화보다 먼저 해야 한다(슬래시가 태그 패턴과 충돌한다).
+# AI Hub 전사의 이중 표기에 대한 **안전망**이다. 정상 경로에서는
+# `fetch_dataset.py`가 추출할 때 이미 풀어서 저장한다 — **데이터셋마다 표기
+# 순서가 반대**이기 때문이다.
+#
+#   phone(571)   : (12월)/(십 이 월)        → 앞이 철자
+#   meeting(464) : (아홉 건의)/(9건의)      → 뒤가 철자
+#
+# 그 분기를 여기 두면 정답과 가설이 같은 함수를 통과한다는 원칙이 깨진다.
+# 여기서는 혹시 남은 것을 앞쪽으로 풀어 CER이 슬래시 때문에 부풀지 않게만 한다.
 _DUAL = re.compile(r"\(([^()]*)\)/\([^()]*\)")
+
+# AI Hub 회의 음성(464)의 비식별화·비언어 표기.
+# @이름1 @정당2 @상호명3 @전화번호1 @주소1 (비식별화), @웃음 @목청 @노래 (비언어).
+# 모델이 맞출 수 없으므로 제거한다. @백신처럼 실제 낱말인 경우도 있지만
+# 합쳐 0.1% 미만이라 토큰째 지운다.
+_ANON = re.compile(r"@\S+")
 
 # AI Hub 잡음·간투어 태그. b/=숨소리 n/=잡음 l/=웃음 o/=간투어 u/=불분명.
 # 공백 뒤에만 오므로 그 조건을 붙인다 — 안 붙이면 영문 낱말을 잘라먹는다.
@@ -113,7 +128,11 @@ _AIHUB_TAG = re.compile(r"(?:^|\s)[bnlou]/")
 # SenseVoice가 붙이는 감정·이벤트·언어 태그(<|HAPPY|>, <|Laughter|>),
 # 정답지의 [불명], AI Hub의 (()) — 알아들을 수 없는 구간 표기다.
 # 안 지우면 CER이 태그 길이만큼 부풀어 무조건 진다.
-_TAG = re.compile(r"<\|[^|]*\|>|\[[^\]]*\]|\(\(\)\)")
+#
+# `/(bgm)` `/(noise)`는 회의 음성(464)의 배경음 표기다. 괄호와 슬래시만
+# 지우면 **`bgm`·`noise`라는 낱말이 정답에 남는다** — 잡음 발화만 골라 뽑은
+# meeting에서 그것이 정답의 8.7%를 차지했다. 모델이 낼 수 없는 글자다.
+_TAG = re.compile(r"<\|[^|]*\|>|\[[^\]]*\]|\(\(\)\)|/\([^)]*\)")
 
 # 공백과 문장부호 전부. 한글·영문·숫자만 남는다(\w는 한글을 포함한다).
 _PUNCT = re.compile(r"[^\w]|_", re.UNICODE)
@@ -126,6 +145,7 @@ def normalize(text: str) -> str:
     충돌하지 않고, 타임스탬프를 먼저 지워야 숫자가 본문에 섞이지 않는다.
     """
     text = _DUAL.sub(r"\1", text)
+    text = _ANON.sub(" ", text)
     text = _AIHUB_TAG.sub(" ", text)
     text = _STAMP.sub("", text)
     text = _TAG.sub("", text)
