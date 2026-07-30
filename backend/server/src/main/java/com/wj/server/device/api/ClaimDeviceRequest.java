@@ -11,9 +11,16 @@ public record ClaimDeviceRequest(
     @Size(min = 1, max = 80)
     @Pattern(regexp = ".*\\S.*", message = "공백만 입력할 수 없습니다.")
     String name,
-    UUID vaultId
+    UUID vaultId,
+    @Size(min = 1, max = 80)
+    @Pattern(regexp = ".*\\S.*", message = "공백만 입력할 수 없습니다.")
+    String vaultName
 ) {
     public ClaimDeviceRequest(String registrationCode, String name) {
-        this(registrationCode, name, null);
+        this(registrationCode, name, null, null);
+    }
+
+    public ClaimDeviceRequest(String registrationCode, String name, UUID vaultId) {
+        this(registrationCode, name, vaultId, null);
     }
 }

@@ -242,8 +242,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ### 미디어 경로
 
 - **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. ffmpeg: `-f v4l2` 입력→`-c:v libx264 -preset ultrafast -tune zerolatency`(기본 2500kbps)→`-f rtsp -rtsp_transport tcp`. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`
-- **WebRTC/WHEP 우선(앱)**: `whepUrl`에 recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
-- **HLS 폴백(앱)**: WHEP/ICE 실패 또는 `whepUrl` 부재 시 `playUrl` 사용. `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
+- **WebRTC/WHEP 우선(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 원격 audio/video track을 동일 renderer stream에 연결하고 `setMuted`로 볼륨 제어. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
+- **HLS 폴백(앱)**: WHEP/ICE 실패, `whepUrl` 부재, SDP answer의 활성 `m=audio` 부재 또는 원격 audio/video track 수신 실패 시 `playUrl` 사용. AAC-only publish도 HLS에서 음성을 유지한다. `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
 - **운영 경로**: Nginx HTTPS 443 `/webrtc/.../whep`→MediaMTX loopback 8889, WebRTC media/ICE UDP 8189. 8889 직접 외부 노출 금지
 - **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP/HLS 접근 인가에 사용. 앱/젯슨 직접 호출 금지
 - 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신.
