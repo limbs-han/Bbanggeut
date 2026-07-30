@@ -119,6 +119,7 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     final whepUrl = updated.whepUrl;
     if (whepUrl != null) {
       try {
+        await whepPlayer.setMuted(muted);
         await whepPlayer.connect(whepUrl);
         return;
       } catch (_) {}
@@ -411,14 +412,15 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
-                            if (player != null)
+                            if (whepPlayer.connected || player != null)
                               Positioned(
                                 left: 12,
                                 bottom: 12,
                                 child: FilledButton.icon(
                                   onPressed: () {
                                     setState(() => muted = !muted);
-                                    player?.setVolume(muted ? 0 : 1);
+                                    unawaited(player?.setVolume(muted ? 0 : 1));
+                                    unawaited(whepPlayer.setMuted(muted));
                                   },
                                   style: FilledButton.styleFrom(
                                     minimumSize: const Size(0, 42),
@@ -855,6 +857,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     final whepUrl = updated.whepUrl;
     if (whepUrl != null) {
       try {
+        await whepPlayer.setMuted(muted);
         await whepPlayer.connect(whepUrl);
         if (mounted && !closing) setState(() => error = null);
         return;
@@ -1151,7 +1154,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                       Positioned(
                         left: 10,
                         bottom: 10,
-                        right: 58,
+                        right: 106,
                         child: AnimatedOpacity(
                           opacity: controlsVisible ? 1 : 0,
                           duration: const Duration(milliseconds: 180),
@@ -1170,6 +1173,34 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                           ),
                         ),
                       ),
+                    Positioned(
+                      right: 58,
+                      bottom: 10,
+                      child: AnimatedOpacity(
+                        opacity: controlsVisible ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: IgnorePointer(
+                          ignoring: !controlsVisible,
+                          child: IconButton.filled(
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0x99000000),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () {
+                              setState(() => muted = !muted);
+                              unawaited(player?.setVolume(muted ? 0 : 1));
+                              unawaited(whepPlayer.setMuted(muted));
+                              _scheduleControlsHide();
+                            },
+                            icon: Icon(
+                              muted
+                                  ? Icons.volume_off_rounded
+                                  : Icons.volume_up_rounded,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                     Positioned(
                       right: 10,
                       bottom: 10,

@@ -4,7 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
-/// Receives a single video track from a WHEP endpoint.
+/// Receives video and audio tracks from a WHEP endpoint.
 ///
 /// Signaling is completed with a non-trickle SDP exchange so MediaMTX can be
 /// used without a separate WebSocket signaling service.
@@ -29,8 +29,22 @@ class WhepPlayerController extends ChangeNotifier {
   bool _rendererInitialized = false;
   bool _disposed = false;
   bool _connected = false;
+  bool _muted = false;
 
   bool get connected => _connected;
+
+  @visibleForTesting
+  static const receiveMediaTypes = <RTCRtpMediaType>[
+    RTCRtpMediaType.RTCRtpMediaTypeVideo,
+    RTCRtpMediaType.RTCRtpMediaTypeAudio,
+  ];
+
+  Future<void> setMuted(bool muted) async {
+    _muted = muted;
+    if (_rendererInitialized) {
+      await renderer.setVolume(muted ? 0 : 1);
+    }
+  }
 
   Future<void> connect(String endpoint) async {
     if (_disposed) {
@@ -43,7 +57,8 @@ class WhepPlayerController extends ChangeNotifier {
     }
 
     final endpointUri = Uri.parse(endpoint);
-    final trackReady = Completer<void>();
+    final videoTrackReady = Completer<void>();
+    final audioTrackReady = Completer<void>();
     final iceGatheringComplete = Completer<void>();
     final peer = await createPeerConnection({
       'sdpSemantics': 'unified-plan',
@@ -62,23 +77,34 @@ class WhepPlayerController extends ChangeNotifier {
           state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
         _connected = false;
         notifyListeners();
-        if (!trackReady.isCompleted) {
-          trackReady.completeError(const WhepPlaybackException());
+        if (!videoTrackReady.isCompleted) {
+          videoTrackReady.completeError(const WhepPlaybackException());
+        }
+        if (!audioTrackReady.isCompleted) {
+          audioTrackReady.completeError(const WhepPlaybackException());
         }
       }
     };
     peer.onTrack = (event) {
-      if (event.track.kind != 'video' || event.streams.isEmpty) return;
+      if (event.streams.isEmpty) return;
       renderer.srcObject = event.streams.first;
+      if (event.track.kind == 'audio') {
+        unawaited(renderer.setVolume(_muted ? 0 : 1));
+        if (!audioTrackReady.isCompleted) audioTrackReady.complete();
+        return;
+      }
+      if (event.track.kind != 'video') return;
       _connected = true;
       notifyListeners();
-      if (!trackReady.isCompleted) trackReady.complete();
+      if (!videoTrackReady.isCompleted) videoTrackReady.complete();
     };
 
-    await peer.addTransceiver(
-      kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
-      init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
-    );
+    for (final mediaType in receiveMediaTypes) {
+      await peer.addTransceiver(
+        kind: mediaType,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
+      );
+    }
 
     try {
       final offer = await peer.createOffer();
@@ -106,6 +132,11 @@ class WhepPlayerController extends ChangeNotifier {
       if (answerSdp == null || answerSdp.isEmpty) {
         throw const WhepPlaybackException();
       }
+      if (!hasActiveAudioMedia(answerSdp)) {
+        // MediaMTX does not transcode AAC to a WebRTC audio codec. Falling
+        // back to HLS preserves sound when the publisher is AAC-only.
+        throw const WhepPlaybackException();
+      }
 
       final location = response.headers.value('location');
       if (location != null && location.isNotEmpty) {
@@ -116,7 +147,10 @@ class WhepPlayerController extends ChangeNotifier {
       await peer.setRemoteDescription(
         RTCSessionDescription(answerSdp, 'answer'),
       );
-      await trackReady.future.timeout(const Duration(seconds: 10));
+      await Future.wait([
+        videoTrackReady.future,
+        audioTrackReady.future,
+      ]).timeout(const Duration(seconds: 10));
     } catch (_) {
       await close();
       throw const WhepPlaybackException();
@@ -131,6 +165,16 @@ class WhepPlayerController extends ChangeNotifier {
       if (value != null && value.isNotEmpty) query[key] = value;
     }
     return target.replace(queryParameters: query);
+  }
+
+  @visibleForTesting
+  static bool hasActiveAudioMedia(String sdp) {
+    for (final line in sdp.split(RegExp(r'\r?\n'))) {
+      if (!line.startsWith('m=audio ')) continue;
+      final parts = line.trim().split(RegExp(r'\s+'));
+      return parts.length > 1 && parts[1] != '0';
+    }
+    return false;
   }
 
   Future<void> close() {
