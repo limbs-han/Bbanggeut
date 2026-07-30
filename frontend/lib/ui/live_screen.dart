@@ -35,6 +35,7 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   bool closing = false;
   bool muted = false;
   bool webRtcWasConnected = false;
+  Future<void>? preferredPlayerFuture;
 
   void _handlePlayerValue() {
     if (mounted) setState(() {});
@@ -105,10 +106,12 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
         (_) => _heartbeat(),
       );
       await _checkStatus();
-      pollTimer = Timer.periodic(
-        const Duration(seconds: 2),
-        (_) => _checkStatus(),
-      );
+      if (session?.isReady != true && !closing) {
+        pollTimer = Timer.periodic(
+          const Duration(seconds: 2),
+          (_) => _checkStatus(),
+        );
+      }
     } catch (failure) {
       if (mounted) setState(() => error = '$failure');
     }
@@ -116,6 +119,10 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
 
   Future<void> _openPlayer(String url, {bool replace = false}) async {
     if (!replace && currentPlayUrl == url && player != null) return;
+    if (whepPlayer.connected) {
+      webRtcWasConnected = false;
+      await whepPlayer.close();
+    }
     final previous = player;
     final previousValue = previous?.value;
     final wasAtLiveEdge =
@@ -125,6 +132,10 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
             const Duration(seconds: 3);
     final next = VideoPlayerController.networkUrl(Uri.parse(url));
     await next.initialize();
+    if (whepPlayer.connected || closing) {
+      await next.dispose();
+      return;
+    }
     await next.setVolume(muted ? 0 : 1);
     if (previousValue != null && previousValue.isInitialized) {
       final target = wasAtLiveEdge
@@ -149,12 +160,40 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     await previous?.dispose();
   }
 
-  Future<void> _openPreferredPlayer(StreamSession updated) async {
+  Future<void> _disposeHlsPlayer() async {
+    final current = player;
+    if (current == null) return;
+    player = null;
+    currentPlayUrl = null;
+    current.removeListener(_handlePlayerValue);
+    try {
+      await current.pause();
+    } catch (_) {}
+    await current.dispose();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openPreferredPlayer(StreamSession updated) {
+    final existing = preferredPlayerFuture;
+    if (existing != null) return existing;
+    final operation = _openPreferredPlayerInternal(updated);
+    preferredPlayerFuture = operation;
+    return operation.whenComplete(() {
+      if (identical(preferredPlayerFuture, operation)) {
+        preferredPlayerFuture = null;
+      }
+    });
+  }
+
+  Future<void> _openPreferredPlayerInternal(StreamSession updated) async {
     final whepUrl = updated.whepUrl;
     if (whepUrl != null) {
       try {
         await whepPlayer.setMuted(muted);
         await whepPlayer.connect(whepUrl);
+        await _disposeHlsPlayer();
+        tokenRefreshTimer?.cancel();
+        tokenRefreshTimer = null;
         return;
       } catch (_) {}
     }
@@ -806,6 +845,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   bool starting = false;
   bool controlsVisible = false;
   bool webRtcWasConnected = false;
+  Future<void>? preferredPlayerFuture;
 
   bool get hasPlayback => whepPlayer.connected || player != null;
   bool get _isAtLiveEdge {
@@ -907,10 +947,12 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         (_) => _heartbeat(),
       );
       await _checkStatus();
-      pollTimer = Timer.periodic(
-        const Duration(seconds: 2),
-        (_) => _checkStatus(),
-      );
+      if (session?.isReady != true && !closing) {
+        pollTimer = Timer.periodic(
+          const Duration(seconds: 2),
+          (_) => _checkStatus(),
+        );
+      }
     } catch (failure) {
       if (mounted && !closing) setState(() => error = '$failure');
     } finally {
@@ -920,8 +962,16 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   Future<void> _openPlayer(String url, {bool replace = false}) async {
     if (!replace && currentPlayUrl == url && player != null) return;
+    if (whepPlayer.connected) {
+      webRtcWasConnected = false;
+      await whepPlayer.close();
+    }
     final next = VideoPlayerController.networkUrl(Uri.parse(url));
     await next.initialize();
+    if (whepPlayer.connected || closing) {
+      await next.dispose();
+      return;
+    }
     await next.setVolume(muted ? 0 : 1);
     await next.play();
     if (!mounted || closing) {
@@ -935,15 +985,45 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       currentPlayUrl = url;
       error = null;
     });
+    old?.removeListener(_handlePlayerValue);
     await old?.dispose();
   }
 
-  Future<void> _openPreferredPlayer(StreamSession updated) async {
+  Future<void> _disposeHlsPlayer() async {
+    final current = player;
+    if (current == null) return;
+    player = null;
+    playerListenable.value = null;
+    currentPlayUrl = null;
+    current.removeListener(_handlePlayerValue);
+    try {
+      await current.pause();
+    } catch (_) {}
+    await current.dispose();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openPreferredPlayer(StreamSession updated) {
+    final existing = preferredPlayerFuture;
+    if (existing != null) return existing;
+    final operation = _openPreferredPlayerInternal(updated);
+    preferredPlayerFuture = operation;
+    return operation.whenComplete(() {
+      if (identical(preferredPlayerFuture, operation)) {
+        preferredPlayerFuture = null;
+      }
+    });
+  }
+
+  Future<void> _openPreferredPlayerInternal(StreamSession updated) async {
     final whepUrl = updated.whepUrl;
     if (whepUrl != null) {
       try {
         await whepPlayer.setMuted(muted);
         await whepPlayer.connect(whepUrl);
+        await _disposeHlsPlayer();
+        tokenRefreshTimer?.cancel();
+        tokenRefreshTimer = null;
         if (mounted && !closing) setState(() => error = null);
         return;
       } catch (_) {
