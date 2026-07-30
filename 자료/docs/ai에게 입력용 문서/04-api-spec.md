@@ -196,8 +196,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 {
   "sessionId": "uuid", "streamId": "uuid", "deviceId": "uuid",
   "status": "PENDING|READY|FAILED|CLOSED|EXPIRED",
-  "playUrl": null,                     // READY일 때만 값 존재, HLS 폴백 URL
-  "whepUrl": null,                     // READY일 때만 값 존재, WebRTC/WHEP 우선 URL
+  "whepUrl": null,                     // READY일 때만 값 존재, 운영 WebRTC/WHEP 전용 URL
   "heartbeatIntervalSeconds": 15,
   "viewerExpiresAt": "2026-07-27T00:00:45Z",
   "edgeHardExpiresAt": "2026-07-27T00:02:00Z",
@@ -206,7 +205,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `DEVICE_OFFLINE`(기기 오프라인이면 세션 생성 거부)
-- 실사용: `EmbeddedLivePlayer`와 전체화면 라이브. `WhepPlayerController`로 WHEP 우선 연결 후 HLS 폴백
+- 실사용: `EmbeddedLivePlayer`와 전체화면 라이브. 운영 앱은 `WhepPlayerController`로 WHEP/WebRTC만 연결하며 HLS로 폴백하지 않음
 
 ### API-36 `GET /api/stream-sessions/{sessionId}`
 - 인증: 사용자 JWT
@@ -228,7 +227,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "issuedAt": "2026-07-27T00:00:00Z", "expiresAt": "2026-07-27T00:00:15Z",
   "payload": {
     "sessionId": "uuid", "streamId": "uuid",
-    "profile": "LIVE_720P_H264_AAC", "segmentDurationSeconds": 2,
+    "profile": "LIVE_720P_H264_OPUS",
     "hardExpiresAt": "2026-07-27T00:02:00Z"
   }
 }
@@ -251,10 +250,11 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ### 미디어 경로
 
 - **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. ffmpeg: `-f v4l2` 입력→`-c:v libx264 -preset ultrafast -tune zerolatency`(기본 2500kbps)→`-f rtsp -rtsp_transport tcp`. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`
-- **WebRTC/WHEP 우선(앱)**: `whepUrl`에 recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
-- **HLS 폴백(앱)**: WHEP/ICE 실패 또는 `whepUrl` 부재 시 `playUrl` 사용. `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`
+- **WebRTC/WHEP 전용(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
+- **연결 성공 조건**: 원격 video/audio track과 inbound audio RTP 수신이 모두 확인되어야 함. 실패 시 HLS 전환 없이 오류·재시도 표시
+- **오디오 코덱**: Jetson publish는 H.264+Opus 필수. AAC-only publish는 운영 재생에서 지원하지 않음
 - **운영 경로**: Nginx HTTPS 443 `/webrtc/.../whep`→MediaMTX loopback 8889, WebRTC media/ICE UDP 8189. 8889 직접 외부 노출 금지
-- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP/HLS 접근 인가에 사용. 앱/젯슨 직접 호출 금지
+- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP 접근 인가에 사용. 앱/젯슨 직접 호출 금지
 - 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신.
 
 ---
@@ -637,7 +637,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | API-01~03 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | API-08, 43~45, 07, 11 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WHEP/WebRTC 우선·HLS 폴백 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |

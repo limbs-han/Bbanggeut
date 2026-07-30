@@ -161,8 +161,7 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("sessionId", sessionId);
         payload.put("streamId", streamId);
-        payload.put("profile", "LIVE_720P_H264_AAC");
-        payload.put("segmentDurationSeconds", 2);
+        payload.put("profile", "LIVE_720P_H264_OPUS");
         payload.put("hardExpiresAt", hardExpiresAt);
         return publish(deviceId, "START_STREAM", payload);
     }

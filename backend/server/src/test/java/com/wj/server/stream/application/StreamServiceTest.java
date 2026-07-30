@@ -44,12 +44,11 @@ class StreamServiceTest {
     void setUp() {
         StreamProperties properties = new StreamProperties(
             Duration.ofSeconds(45), Duration.ofSeconds(60), Duration.ofSeconds(120),
-            Duration.ofSeconds(15), "https://media.example/live/",
-            "https://media.example/webrtc/live/", Duration.ofSeconds(30));
+            Duration.ofSeconds(15), "https://media.example/webrtc/live/", Duration.ofSeconds(30));
         lenient().when(presenceStore.find(any()))
             .thenReturn(new DevicePresenceStore.Lookup(false, null));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
-            new DemoProperties(false, null, null), presenceStore,
+            new DemoProperties(false, null), presenceStore,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -112,19 +111,17 @@ class StreamServiceTest {
 
         assertThat(response.streamId()).isEqualTo(streamId);
         assertThat(response.status()).isEqualTo("PENDING");
-        assertThat(response.playUrl()).isNull();
         assertThat(response.whepUrl()).isNull();
         verify(publisher).start(deviceId, response.sessionId(), streamId, NOW.plusSeconds(120));
     }
 
     @Test
-    void demoWithoutExplicitHlsUrlUsesTheTokenProtectedStreamPath() {
+    void readySessionReturnsOnlyTokenProtectedWhepUrl() {
         StreamProperties properties = new StreamProperties(
             Duration.ofSeconds(45), Duration.ofSeconds(60), Duration.ofSeconds(120),
-            Duration.ofSeconds(15), "https://media.example/live/",
-            "https://media.example/webrtc/live/", Duration.ofSeconds(30));
+            Duration.ofSeconds(15), "https://media.example/webrtc/live/", Duration.ofSeconds(30));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
-            new DemoProperties(true, "", ""), presenceStore, Clock.fixed(NOW, ZoneOffset.UTC));
+            new DemoProperties(true, ""), presenceStore, Clock.fixed(NOW, ZoneOffset.UTC));
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UUID streamId = UUID.randomUUID();
@@ -138,8 +135,6 @@ class StreamServiceTest {
 
         var response = service.create(userId, deviceId);
 
-        assertThat(response.playUrl())
-            .isEqualTo("https://media.example/live/" + streamId + "/index.m3u8?token=live-token");
         assertThat(response.whepUrl())
             .isEqualTo("https://media.example/webrtc/live/" + streamId + "/whep?token=live-token");
     }

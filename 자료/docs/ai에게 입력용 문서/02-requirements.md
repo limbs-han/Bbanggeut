@@ -89,8 +89,8 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 | REQ-NF-08 | 운영 | PostgreSQL/MinIO 일 03:30 KST 자동 백업, 14일 보관 | `backup-william-james.sh`(`pg_dump -Fc`), `WJ_BACKUP_RETENTION_DAYS:-14`, `william-james-backup.timer` |
 | REQ-NF-09 | 운영 | 앱/프록시/컨테이너 상태·디스크 헬스체크 | `management.endpoints.web.exposure.include: health,info,metrics`, `check-william-james.sh`, `william-james-monitor.timer` |
 | REQ-NF-10 | 운영 | 테스트→빌드→배포 CI/CD | `.gitlab-ci.yml`(`test-backend`,`test-device-agent`,`package-backend`,`deploy-production`) |
-| REQ-NF-11 | 미디어 | H.264+AAC 인코딩 | MQTT `START_STREAM.payload.profile:"LIVE_720P_H264_AAC"`, `stream.py`(ffmpeg) |
-| REQ-NF-12 | 미디어 | WHEP/WebRTC 우선 재생, 연결 실패 시 HLS 폴백. 두 URL 모두 짧은 라이브 토큰 사용 | `StreamSessionResponse.whepUrl/playUrl`, `WhepPlayerController`, `live_screen.dart` |
+| REQ-NF-11 | 미디어 | 실시간 송출 H.264+Opus 인코딩 | MQTT `START_STREAM.payload.profile:"LIVE_720P_H264_OPUS"`, `stream.py`(ffmpeg) |
+| REQ-NF-12 | 미디어 | 운영 WHEP/WebRTC 전용 재생. video/audio track과 inbound audio RTP를 모두 확인하며 실패 시 HLS 폴백 없이 오류·재시도 표시 | `StreamSessionResponse.whepUrl`, `WhepPlayerController`, `live_screen.dart` |
 
 ---
 
