@@ -72,6 +72,16 @@ Compose가 컨테이너를 식별하는 값은 모두 명시적입니다. `compo
 남기지 않으려면 `clone`과 `pull` 시점에 직접 입력합니다. 구성 변경은 드물게 발생하므로 매번
 입력해도 부담이 크지 않고, 자격 증명을 저장하지 않는 편이 안전합니다.
 
+호스트는 `ci/jenkins/server`만 필요합니다. 저장소에는 190MB 크기의 STT 모델이 커밋돼 있어
+전체 클론은 500MB가 넘으므로, 필요한 경로만 받습니다.
+
+```bash
+cd /home/ubuntu && git clone --filter=blob:none --sparse https://lab.ssafy.com/s15-webmobile3-sub1/S15P11E201.git && cd S15P11E201 && git sparse-checkout set ci/jenkins/server
+```
+
+부분 클론을 서버가 지원하지 않으면 `--filter=blob:none`을 빼고 실행합니다. 이후 `git pull`은
+받아둔 경로만 갱신합니다.
+
 옮기기 전에 두 가지를 확인합니다. 먼저 기존 디렉터리에만 있는 파일이 없는지 봅니다. 있으면
 저장소에 없는 로컬 전용 파일이므로 함께 옮길지 판단해야 합니다.
 
