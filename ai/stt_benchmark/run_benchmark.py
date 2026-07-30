@@ -28,6 +28,7 @@ import argparse
 import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 import av
@@ -152,6 +153,21 @@ def normalize(text: str) -> str:
     return _PUNCT.sub("", text)
 
 
+def to_jamo(text: str) -> str:
+    """한글 음절을 자모로 분해한다 — 발음이 비슷한 오류를 부분 점수로 반영한다.
+
+    음절 단위 CER은 자모 하나만 달라도 음절 전체를 오류로 센다. `것`과 `거`가
+    완전히 다른 것으로 잡히는데, 실제로는 종성 하나 차이다. NFD로 분해하면
+    `것`(ㄱㅓㅅ) 대 `거`(ㄱㅓ)가 3분의 1 오류가 된다.
+
+    **CER과 절대값을 비교하면 안 된다** — 분모(자모 수)가 음절 수의 2~3배라
+    항상 낮게 나온다. 모델 간 상대 비교에만 쓴다.
+
+    한국어 ASR 평가에서 쓰이는 지표이므로 특정 데이터셋에 맞춘 조정이 아니다.
+    """
+    return unicodedata.normalize("NFD", text)
+
+
 # --- 입력 -------------------------------------------------------------------
 
 
@@ -257,24 +273,45 @@ def transcribe_transformers(model_id: str, audios: list[np.ndarray]) -> list[tup
     # 인자를 거부한다(SungBeom/whisper-small-ko가 그렇다). 그 모델은 한국어
     # 전용이므로 언어를 강제할 필요가 없다 — 제작자가 정한 기본값으로 돌린다.
     # 첫 클립에서 한 번 판단하고 나머지 클립에 그대로 적용한다.
+    def run(audio: np.ndarray, korean: bool) -> dict:
+        """30초 초과 오디오를 처리하는 세 경로를 순서대로 시도한다.
+
+        transformers는 30초를 넘으면 long-form 생성으로 넘어가면서 타임스탬프
+        토큰 예측을 요구한다. 그런데 `SungBeom/whisper-small-ko`는 generation
+        config가 낡아서 **타임스탬프도 못 낸다**(`language` 인자를 거부하는 것과
+        같은 원인). 그 모델은 30초 청킹으로 우회한다.
+
+        데이터셋 클립은 전부 30초 미만이라 이 경로가 드러나지 않았고,
+        `--audio`로 75초 녹음을 넣었을 때 처음 터졌다. whisper.cpp 쪽은 자체
+        청킹이라 이 문제가 없다.
+        """
+        kwargs = {"generate_kwargs": {"language": "ko", "task": "transcribe"}} if korean else {}
+        long_form = len(audio) > 30 * SAMPLE_RATE
+        if not long_form:
+            return pipe(_payload(audio), **kwargs)
+        try:
+            return pipe(_payload(audio), return_timestamps=True, **kwargs)
+        except ValueError as error:
+            if "timestamp" not in str(error).lower():
+                raise
+            print("    (타임스탬프 미지원 — 30초 청킹으로 우회)", file=sys.stderr)
+            return pipe(_payload(audio), chunk_length_s=30, **kwargs)
+
     force_korean = True
     results = []
     for audio in audios:
         started = time.perf_counter()
         if force_korean:
             try:
-                out = pipe(
-                    _payload(audio),
-                    generate_kwargs={"language": "ko", "task": "transcribe"},
-                )
+                out = run(audio, korean=True)
             except ValueError as error:
                 print(f"    (language 인자 거부 — 기본값으로 재시도)", file=sys.stderr)
                 print(f"      {error}", file=sys.stderr)
                 force_korean = False
                 started = time.perf_counter()
-                out = pipe(_payload(audio))
+                out = run(audio, korean=False)
         else:
-            out = pipe(_payload(audio))
+            out = run(audio, korean=False)
         results.append((out["text"], time.perf_counter() - started))
 
     del pipe
@@ -413,7 +450,7 @@ def main() -> int:
             outputs = RUNNERS[runtime](model_id, audios)
         except Exception as error:  # 한 모델이 죽어도 나머지는 계속 잰다.
             print(f"    실패: {type(error).__name__}: {error}", file=sys.stderr)
-            summary.append((label, None, None, f"{type(error).__name__}: {error}"))
+            summary.append((label, None, None, None, f"{type(error).__name__}: {error}"))
             continue
 
         hypotheses = [text for text, _ in outputs]
@@ -421,11 +458,12 @@ def main() -> int:
 
         # 코퍼스 단위 CER — 총 편집거리를 총 정답 길이로 나눈다. 클립별 CER의
         # 평균을 쓰면 짧은 클립이 과도한 가중을 받는다.
-        cer = jiwer.cer(
-            [normalize(t) for t in truths],
-            [normalize(h) for h in hypotheses],
-        )
-        summary.append((label, cer, elapsed, None))
+        refs = [normalize(t) for t in truths]
+        hyps = [normalize(h) for h in hypotheses]
+        cer = jiwer.cer(refs, hyps)
+        # 자모 CER — 발음이 비슷한 오류에 부분 점수를 준다(to_jamo 참조).
+        jamo = jiwer.cer([to_jamo(r) for r in refs], [to_jamo(h) for h in hyps])
+        summary.append((label, cer, jamo, elapsed, None))
 
         details[label] = sorted(
             (
@@ -434,17 +472,21 @@ def main() -> int:
             ),
             key=lambda row: -row[0],
         )
-        print(f"    CER {cer:.1%}  추론 {elapsed:.1f}초", file=sys.stderr)
+        print(f"    CER {cer:.1%}  자모 {jamo:.1%}  추론 {elapsed:.1f}초", file=sys.stderr)
 
     print(f"## 결과 — {len(clips)}개 클립, {total_seconds / 60:.1f}분, 정답 {total_chars}자\n")
     print(f"한 글자가 CER {100 / total_chars:.2f}%p다. 이보다 작은 차이는 우연이다.\n")
-    print("| 모델 | CER | 추론 시간(초) |")
-    print("|---|---|---|")
-    for label, cer, elapsed, failure in summary:
+    print("| 모델 | CER | 자모 CER | 추론 시간(초) |")
+    print("|---|---|---|---|")
+    for label, cer, jamo, elapsed, failure in summary:
         if failure:
-            print(f"| {label} | 실패: {failure} | — |")
+            print(f"| {label} | 실패: {failure} | — | — |")
         else:
-            print(f"| {label} | {cer:.1%} | {elapsed:.1f} |")
+            print(f"| {label} | {cer:.1%} | {jamo:.1%} | {elapsed:.1f} |")
+
+    print("\n**자모 CER**은 한글 음절을 자모로 분해해 재므로 발음이 비슷한 오류에")
+    print("부분 점수를 준다(`것` 대 `거` = 3분의 1 오류). 분모가 2~3배라 CER과")
+    print("절대값을 비교하면 안 되고, 모델 간 상대 비교에만 쓴다.")
 
     print("\n추론 시간은 모델 로딩을 뺀 순수 추론이다.")
     print(f"**fp32는 GPU, 양자화는 CPU({THREADS}스레드)다 — 두 묶음의 시간을 서로")

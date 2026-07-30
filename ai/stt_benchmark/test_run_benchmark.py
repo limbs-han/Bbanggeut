@@ -11,7 +11,9 @@
 import tempfile
 from pathlib import Path
 
-from run_benchmark import normalize, read_truth
+import jiwer
+
+from run_benchmark import normalize, read_truth, to_jamo
 
 # --- normalize ---------------------------------------------------------------
 
@@ -55,6 +57,20 @@ assert normalize("(아홉 건의)/(9건의) 사례") == "아홉건의사례"
 # 남아 CER을 부풀린다 — meeting에서 정답의 8.7%를 차지했다.
 assert normalize("윤곽을 드러냈습니다. /(bgm)") == "윤곽을드러냈습니다"
 assert normalize("집값을 잡을 수 있을까요? /(noise)") == "집값을잡을수있을까요"
+
+# --- to_jamo -----------------------------------------------------------------
+
+# 음절 단위 CER은 종성 하나 차이를 음절 전체 오류로 센다. 자모로 분해하면
+# 부분 점수가 되어 발음이 비슷한 오류가 과대평가되지 않는다.
+assert jiwer.cer("것", "거") == 1.0, "음절 CER은 종성 차이를 전부 오류로 센다"
+assert jiwer.cer(to_jamo("것"), to_jamo("거")) < 0.5, "자모 CER은 부분 점수를 준다"
+
+# 같은 문자열은 어느 지표로도 0이다.
+assert jiwer.cer(to_jamo("같이하자"), to_jamo("같이하자")) == 0.0
+
+# 완전히 다른 낱말은 자모로도 크게 틀린 것으로 남는다 — 부분 점수가 오류를
+# 감춰서는 안 된다.
+assert jiwer.cer(to_jamo("같이하자"), to_jamo("미쳐져")) > 0.5
 
 # --- read_truth --------------------------------------------------------------
 
