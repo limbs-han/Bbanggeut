@@ -128,13 +128,61 @@ mkdir -p "$RUN_DIR"
 YAMNET_DIAGNOSTICS_PATH="${RUN_DIR}/yamnet_diagnostics.jsonl"
 
 declare -a PIDS=()
+
+child_is_running() {
+    local pid="$1"
+    local state
+    state="$(ps -o stat= -p "$pid" 2>/dev/null)" || return 1
+    [[ -n "$state" && "${state:0:1}" != "Z" ]]
+}
+
+wait_for_children_to_stop() {
+    local attempts="$1"
+    local attempt
+    local pid
+    local any_running
+    for ((attempt = 0; attempt < attempts; attempt += 1)); do
+        any_running=false
+        for pid in "${PIDS[@]}"; do
+            if child_is_running "$pid"; then
+                any_running=true
+                break
+            fi
+        done
+        if [[ "$any_running" == false ]]; then
+            return 0
+        fi
+        sleep 0.25
+    done
+    return 1
+}
+
 cleanup() {
     local status="$?"
+    local pid
     trap - EXIT INT TERM
-    for pid in "${PIDS[@]}"; do
-        kill -INT "$pid" 2>/dev/null || true
-    done
-    wait 2>/dev/null || true
+    if ((${#PIDS[@]} > 0)); then
+        for pid in "${PIDS[@]}"; do
+            kill -INT "$pid" 2>/dev/null || true
+        done
+        if ! wait_for_children_to_stop 20; then
+            echo "Escalating AI child shutdown to SIGTERM" >&2
+            for pid in "${PIDS[@]}"; do
+                kill -TERM "$pid" 2>/dev/null || true
+            done
+            if ! wait_for_children_to_stop 8; then
+                echo "Escalating AI child shutdown to SIGKILL" >&2
+                for pid in "${PIDS[@]}"; do
+                    kill -KILL "$pid" 2>/dev/null || true
+                done
+            fi
+        fi
+        for pid in "${PIDS[@]}"; do
+            if ! child_is_running "$pid"; then
+                wait "$pid" 2>/dev/null || true
+            fi
+        done
+    fi
     exit "$status"
 }
 trap cleanup EXIT INT TERM
@@ -159,31 +207,6 @@ echo \
 echo \
     "Upload retry: initial=${UPLOAD_RETRY_INITIAL_SECONDS}s " \
     "maximum=${UPLOAD_RETRY_MAX_SECONDS}s; terminal 4xx is quarantined"
-
-UPLOADER_COMMAND=(
-    "$YOLO_PYTHON" -u "${SCRIPT_DIR}/segment_clip_uploader.py"
-    --event-dir "$EVENT_DIR"
-    --recording-dir "$RECORDING_DIR"
-    --api-base-url "$API_BASE_URL"
-    --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
-    --segment-seconds "$RECORDING_SEGMENT_SECONDS"
-    --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
-    --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"
-)
-case "${DELETE_EVENT_AFTER_UPLOAD,,}" in
-    true|1|yes)
-        UPLOADER_COMMAND+=(--delete-after-upload)
-        ;;
-    false|0|no)
-        ;;
-    *)
-        echo "DELETE_EVENT_AFTER_UPLOAD must be true or false" >&2
-        exit 2
-        ;;
-esac
-"${UPLOADER_COMMAND[@]}" \
-    > >(sed -u 's/^/[UPLOAD] /' | tee -a "${RUN_DIR}/uploader.log") 2>&1 &
-PIDS+=("$!")
 
 YAMNET_COMMAND=(
     "$YAMNET_PYTHON" -u "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py"
@@ -227,7 +250,14 @@ PIDS+=("$YAMNET_PID")
 
 echo \
     "Waiting up to ${YAMNET_READY_TIMEOUT_SECONDS}s for YAMNet first inference"
-yamnet_ready_deadline=$((SECONDS + YAMNET_READY_TIMEOUT_SECONDS))
+# Use a wall-clock deadline (date +%s) rather than bash's $SECONDS. $SECONDS
+# is relative to when *this shell* started, which is normally fine, but it is
+# an easy thing to get wrong (e.g. it does not survive `exec`, and it is easy
+# to accidentally read it from a different shell/subshell than the one that
+# set the baseline). A plain epoch-seconds comparison has no such surprises
+# and matches what an operator sees in `date`/journal timestamps.
+yamnet_wait_started="$(date +%s)"
+yamnet_ready_deadline=$((yamnet_wait_started + YAMNET_READY_TIMEOUT_SECONDS))
 while [[ ! -s "$YAMNET_DIAGNOSTICS_PATH" ]]; do
     if ! kill -0 "$YAMNET_PID" 2>/dev/null; then
         if wait "$YAMNET_PID"; then
@@ -239,20 +269,57 @@ while [[ ! -s "$YAMNET_DIAGNOSTICS_PATH" ]]; do
             yamnet_status=1
         fi
         echo \
-            "YAMNet exited before readiness (status=${yamnet_status})" \
+            "YAMNet exited before readiness (status=${yamnet_status})." \
+            "Last log lines:" \
             >&2
+        tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
         exit "$yamnet_status"
     fi
-    if (( SECONDS >= yamnet_ready_deadline )); then
+    now="$(date +%s)"
+    if (( now >= yamnet_ready_deadline )); then
         echo \
             "YAMNet readiness timed out after " \
-            "${YAMNET_READY_TIMEOUT_SECONDS}s" \
+            "$((now - yamnet_wait_started))s " \
+            "(limit ${YAMNET_READY_TIMEOUT_SECONDS}s). Last log lines:" \
             >&2
+        tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
         exit 1
     fi
     sleep 0.25
 done
-echo "YAMNet ready: first inference telemetry received"
+echo \
+    "YAMNet ready: first inference telemetry received after " \
+    "$(( $(date +%s) - yamnet_wait_started ))s"
+
+# Only start the uploader (and later YOLO/wake-name) once YAMNet has proven
+# it can actually produce triggers. Starting the uploader earlier just adds
+# CPU/memory contention during YAMNet's TensorFlow import and model load --
+# and gives no benefit, since there is nothing to upload before YAMNet is
+# alive anyway.
+UPLOADER_COMMAND=(
+    "$YOLO_PYTHON" -u "${SCRIPT_DIR}/segment_clip_uploader.py"
+    --event-dir "$EVENT_DIR"
+    --recording-dir "$RECORDING_DIR"
+    --api-base-url "$API_BASE_URL"
+    --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
+    --segment-seconds "$RECORDING_SEGMENT_SECONDS"
+    --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
+    --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"
+)
+case "${DELETE_EVENT_AFTER_UPLOAD,,}" in
+    true|1|yes)
+        UPLOADER_COMMAND+=(--delete-after-upload)
+        ;;
+    false|0|no)
+        ;;
+    *)
+        echo "DELETE_EVENT_AFTER_UPLOAD must be true or false" >&2
+        exit 2
+        ;;
+esac
+"${UPLOADER_COMMAND[@]}" \
+    > >(sed -u 's/^/[UPLOAD] /' | tee -a "${RUN_DIR}/uploader.log") 2>&1 &
+PIDS+=("$!")
 
 case "${WAKE_NAME_ENABLED,,}" in
     true|1|yes)
