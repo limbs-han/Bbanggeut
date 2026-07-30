@@ -49,9 +49,11 @@ class MainActivity : FlutterActivity() {
 
     private var activeTransformer: Transformer? = null
     private var activeResult: MethodChannel.Result? = null
+    private lateinit var editorProjectExporter: EditorProjectExporter
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        editorProjectExporter = EditorProjectExporter(this)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             VIDEO_CANVAS_CHANNEL,
@@ -63,6 +65,10 @@ class MainActivity : FlutterActivity() {
         call: MethodCall,
         result: MethodChannel.Result,
     ) {
+        if (editorProjectExporter.handles(call.method)) {
+            editorProjectExporter.handle(call, result)
+            return
+        }
         when (call.method) {
             "generateThumbnails" -> {
                 val inputPath = call.argument<String>("inputPath")
@@ -548,6 +554,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        if (::editorProjectExporter.isInitialized) {
+            editorProjectExporter.dispose()
+        }
         activeTransformer?.cancel()
         activeResult?.error(
             "EXPORT_CANCELLED",

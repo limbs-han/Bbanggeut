@@ -42,7 +42,7 @@ dependencies:
   share_plus: ^13.2.1
   path_provider: ^2.1.6
   app_links: ^7.2.1
-  ve_sdk_flutter: ^0.44.0
+  banuba_sdk: ^3.1.5
   flutter_webrtc: ^1.5.2
   # 온디바이스 STT (features/stt). 오디오를 폰 밖으로 보내지 않는다.
   whisper_ggml_plus: ^1.5.2

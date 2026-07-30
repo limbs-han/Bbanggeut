@@ -87,9 +87,24 @@ flutter {
     source = "../.."
 }
 
+val copyBanubaEffects =
+    tasks.register<Sync>("copyBanubaEffects") {
+        from("../../effects")
+        into(layout.buildDirectory.dir("generated/banubaAssets/bnb-resources/effects"))
+    }
+
+android.sourceSets.getByName("main").assets.srcDir(
+    layout.buildDirectory.dir("generated/banubaAssets"),
+)
+tasks.named("preBuild").configure {
+    dependsOn(copyBanubaEffects)
+}
+
 dependencies {
     // Keep every Media3 module on the same version used by video_player_android.
     implementation("androidx.media3:media3-common:1.9.2")
     implementation("androidx.media3:media3-effect:1.9.2")
     implementation("androidx.media3:media3-transformer:1.9.2")
+    implementation("com.banuba.sdk:face_tracker:1.18.+")
+    implementation("com.banuba.sdk:background:1.18.+")
 }

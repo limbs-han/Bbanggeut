@@ -4,8 +4,8 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
-import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
+import '../core/saved_video_edit.dart';
 import 'content_video_detail_screen.dart';
 import 'local_edit_screen.dart';
 import 'widgets.dart';
@@ -101,7 +101,7 @@ class _VideoDetailScreenState extends State<_LegacyVideoDetailScreen> {
   }
 
   Future<void> _openVideoEditor() async {
-    final result = await Navigator.push<SavedBanubaEdit>(
+    final result = await Navigator.push<SavedVideoEdit>(
       context,
       MaterialPageRoute(
         builder: (_) =>
