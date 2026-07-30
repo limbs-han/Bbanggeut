@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.wj.server.invitation.application.InvitationService;
 import com.wj.server.invitation.application.MembershipRequestService;
+import com.wj.server.device.api.TransferOwnershipRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -42,7 +43,18 @@ public class InvitationController {
     ) {
         return ResponseEntity.status(201)
             .body(invitationService.createInvitation(
-                userId(jwt), deviceId, request.email(), request.role(),
+                userId(jwt), deviceId, request.email(), request.membershipRequestToken()));
+    }
+
+    @PostMapping("/vaults/{vaultId}/invitations")
+    public ResponseEntity<InvitationResponse> createVaultInvitation(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID vaultId,
+        @Valid @RequestBody CreateInvitationRequest request
+    ) {
+        return ResponseEntity.status(201)
+            .body(invitationService.createVaultInvitation(
+                userId(jwt), vaultId, request.email(),
                 request.membershipRequestToken()));
     }
 
@@ -80,6 +92,14 @@ public class InvitationController {
         return invitationService.listDeviceInvitations(userId(jwt), deviceId);
     }
 
+    @GetMapping("/vaults/{vaultId}/invitations")
+    public List<InvitationResponse> listVaultInvitations(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID vaultId
+    ) {
+        return invitationService.listVaultInvitations(userId(jwt), vaultId);
+    }
+
     @DeleteMapping("/devices/{deviceId}/invitations/{invitationId}")
     public ResponseEntity<Void> revokeInvitation(
         @AuthenticationPrincipal Jwt jwt,
@@ -87,6 +107,17 @@ public class InvitationController {
         @PathVariable UUID invitationId
     ) {
         invitationService.revokeInvitation(userId(jwt), deviceId, invitationId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/vaults/{vaultId}/invitations/{invitationId}")
+    public ResponseEntity<Void> revokeVaultInvitation(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID vaultId,
+        @PathVariable UUID invitationId
+    ) {
+        invitationService.revokeVaultInvitation(
+            userId(jwt), vaultId, invitationId);
         return ResponseEntity.noContent().build();
     }
 
@@ -124,6 +155,14 @@ public class InvitationController {
         return invitationService.listMembers(userId(jwt), deviceId);
     }
 
+    @GetMapping("/vaults/{vaultId}/members")
+    public List<DeviceMemberResponse> listVaultMembers(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID vaultId
+    ) {
+        return invitationService.listVaultMembers(userId(jwt), vaultId);
+    }
+
     @DeleteMapping("/devices/{deviceId}/members/{membershipId}")
     public ResponseEntity<Void> revokeMember(
         @AuthenticationPrincipal Jwt jwt,
@@ -131,6 +170,28 @@ public class InvitationController {
         @PathVariable UUID membershipId
     ) {
         invitationService.revokeMember(userId(jwt), deviceId, membershipId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/vaults/{vaultId}/members/{membershipId}")
+    public ResponseEntity<Void> revokeVaultMember(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID vaultId,
+        @PathVariable UUID membershipId
+    ) {
+        invitationService.revokeVaultMember(
+            userId(jwt), vaultId, membershipId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/vaults/{vaultId}/transfer-ownership")
+    public ResponseEntity<Void> transferVaultOwnership(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID vaultId,
+        @Valid @RequestBody TransferOwnershipRequest request
+    ) {
+        invitationService.transferVaultOwnership(
+            userId(jwt), vaultId, request);
         return ResponseEntity.noContent().build();
     }
 

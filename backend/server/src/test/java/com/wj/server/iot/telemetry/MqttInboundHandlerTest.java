@@ -23,13 +23,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class MqttInboundHandlerTest {
     private static final Instant NOW = Instant.parse("2026-07-17T10:00:00Z");
     @Mock private DeviceTelemetryMapper telemetryMapper;
+    @Mock private DeviceTelemetryService telemetryService;
     @Mock private StreamEventService streamEventService;
     @Mock private DeviceEventService deviceEventService;
     private MqttInboundHandler handler;
 
     @BeforeEach
     void setUp() {
-        handler = new MqttInboundHandler(new ObjectMapper(), telemetryMapper, streamEventService,
+        handler = new MqttInboundHandler(
+            new ObjectMapper(), telemetryMapper, telemetryService, streamEventService,
             deviceEventService,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -42,7 +44,7 @@ class MqttInboundHandlerTest {
              "uploadQueueDepth":2,"bufferSeconds":120,"personCount":3,"firmwareVersion":"0.4.0"}
             """.formatted(deviceId));
 
-        verify(telemetryMapper).recordHeartbeat(deviceId, true, 2, 120, 3, "0.4.0");
+        verify(telemetryService).recordHeartbeat(deviceId, true, 2, 120, 3, "0.4.0");
     }
 
     @Test
@@ -52,7 +54,7 @@ class MqttInboundHandlerTest {
             {"schemaVersion":"2.0","deviceId":"%s","recording":true,"uploadQueueDepth":2}
             """.formatted(UUID.randomUUID()));
 
-        verify(telemetryMapper, never()).recordHeartbeat(
+        verify(telemetryService, never()).recordHeartbeat(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean(),
             org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());

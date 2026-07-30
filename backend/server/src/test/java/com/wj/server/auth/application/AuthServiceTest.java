@@ -16,13 +16,18 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.wj.server.auth.api.LoginRequest;
+import com.wj.server.auth.api.ChangePasswordRequest;
+import com.wj.server.auth.api.ForgotPasswordRequest;
 import com.wj.server.auth.api.RefreshTokenRequest;
+import com.wj.server.auth.api.ResetPasswordRequest;
 import com.wj.server.auth.api.SignUpRequest;
 import com.wj.server.auth.application.AuthService.ClientContext;
 import com.wj.server.auth.domain.AuthSessionRow;
+import com.wj.server.auth.domain.PasswordResetTokenRow;
 import com.wj.server.auth.domain.UserRow;
 import com.wj.server.auth.persistence.AuthMapper;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.AuthProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +49,8 @@ class AuthServiceTest {
     private JwtTokenService jwtTokenService;
     @Mock
     private LoginAttemptService loginAttemptService;
+    @Mock
+    private PasswordResetSender passwordResetSender;
 
     private PasswordEncoder passwordEncoder;
     private AuthService authService;
@@ -60,6 +67,7 @@ class AuthServiceTest {
             jwtTokenService,
             loginAttemptService,
             properties,
+            passwordResetSender,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -102,6 +110,28 @@ class AuthServiceTest {
             .isEqualTo("INVALID_CREDENTIALS");
 
         verify(authMapper, never()).insertSession(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void loginCompletesTheExactRedisReservationAfterSuccessfulPasswordCheck() {
+        UUID userId = UUID.randomUUID();
+        UserRow user = new UserRow(
+            userId, "user@example.com", passwordEncoder.encode("correct-password"),
+            "사용자", "ACTIVE", 0);
+        SlidingWindowRateLimiter.Reservation reservation =
+            new SlidingWindowRateLimiter.Reservation(
+                "rl:login:email:test", "rl:login:ip:test", "member-id");
+        when(loginAttemptService.reserveOrReject("user@example.com", CLIENT.ipAddress()))
+            .thenReturn(reservation);
+        when(authMapper.findUserByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(authMapper.insertSession(any(), any(), anyString(), any(), any(), any(), any())).thenReturn(1);
+        when(jwtTokenService.createAccessToken(any(), any())).thenReturn("access-token");
+
+        authService.login(
+            new LoginRequest("user@example.com", "correct-password"), CLIENT);
+
+        verify(loginAttemptService).completeSuccess(reservation);
+        verify(authMapper).updateLastLogin(userId);
     }
 
     @Test
@@ -150,6 +180,76 @@ class AuthServiceTest {
         authService.withdraw(userId);
 
         verify(authMapper).revokeAllMembershipsForUser(userId);
+        verify(authMapper).revokeAllSessionsForUser(userId);
+    }
+
+    @Test
+    void changePasswordVerifiesCurrentPasswordAndRevokesOtherSessions() {
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UserRow user = new UserRow(
+            userId, "user@example.com", passwordEncoder.encode("current-password"),
+            "사용자", "ACTIVE", 0);
+        when(authMapper.findUserById(userId)).thenReturn(Optional.of(user));
+
+        authService.changePassword(
+            userId, sessionId,
+            new ChangePasswordRequest("current-password", "new-password-123"));
+
+        verify(authMapper).updatePassword(
+            org.mockito.ArgumentMatchers.eq(userId), anyString());
+        verify(authMapper).revokeOtherSessionsForUser(userId, sessionId);
+    }
+
+    @Test
+    void forgotPasswordStoresOnlyHashAndSendsRawToken() {
+        UUID userId = UUID.randomUUID();
+        UserRow user = new UserRow(
+            userId, "user@example.com", "encoded", "사용자", "ACTIVE", 0);
+        when(authMapper.findUserByEmail("user@example.com")).thenReturn(Optional.of(user));
+
+        authService.requestPasswordReset(
+            new ForgotPasswordRequest(" USER@example.com "));
+
+        ArgumentCaptor<String> hashCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> rawTokenCaptor = ArgumentCaptor.forClass(String.class);
+        verify(authMapper).insertPasswordResetToken(
+            any(), org.mockito.ArgumentMatchers.eq(userId), hashCaptor.capture(),
+            org.mockito.ArgumentMatchers.eq(NOW.plus(Duration.ofMinutes(30))));
+        verify(passwordResetSender).send(
+            org.mockito.ArgumentMatchers.eq("user@example.com"), rawTokenCaptor.capture());
+        assertThat(hashCaptor.getValue()).matches("[0-9a-f]{64}");
+        assertThat(hashCaptor.getValue()).isNotEqualTo(rawTokenCaptor.getValue());
+    }
+
+    @Test
+    void forgotPasswordDoesNotRevealUnknownEmail() {
+        when(authMapper.findUserByEmail("unknown@example.com")).thenReturn(Optional.empty());
+
+        authService.requestPasswordReset(
+            new ForgotPasswordRequest("unknown@example.com"));
+
+        verify(passwordResetSender, never()).send(anyString(), anyString());
+        verify(authMapper, never()).insertPasswordResetToken(any(), any(), any(), any());
+    }
+
+    @Test
+    void resetPasswordConsumesTokenAndRevokesEverySession() {
+        UUID tokenId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        String rawToken = "r".repeat(43);
+        when(authMapper.lockPasswordResetToken(anyString()))
+            .thenReturn(Optional.of(new PasswordResetTokenRow(
+                tokenId, userId, NOW.plusSeconds(60), null)));
+        when(authMapper.consumePasswordResetToken(tokenId)).thenReturn(1);
+        when(authMapper.updatePassword(
+            org.mockito.ArgumentMatchers.eq(userId), anyString())).thenReturn(1);
+
+        authService.resetPassword(
+            new ResetPasswordRequest(rawToken, "new-password-123"));
+
+        verify(authMapper).consumePasswordResetToken(tokenId);
+        verify(authMapper).expirePasswordResetTokens(userId);
         verify(authMapper).revokeAllSessionsForUser(userId);
     }
 }

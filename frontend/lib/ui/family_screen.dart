@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
@@ -15,8 +17,8 @@ class FamilyScreen extends StatefulWidget {
 
 class _FamilyScreenState extends State<FamilyScreen> {
   final inviteEmail = TextEditingController();
-  String inviteRole = 'VIEWER';
   String? appliedMembershipRequestToken;
+  Uri? membershipRequestLink;
 
   AppController get controller => widget.controller;
 
@@ -55,7 +57,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final device = controller.selectedDevice!;
+    final vault = controller.selectedVault!;
+    final device = controller.selectedDevice;
     return AppBackdrop(
       child: CustomScrollView(
         key: const PageStorageKey('family-scroll'),
@@ -73,19 +76,43 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         const Spacer(),
                         Expanded(
                           flex: 4,
-                          child: Text(
-                            '우리 가족',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleLarge,
+                          child: PopupMenuButton<String>(
+                            key: const Key('family-vault-selector'),
+                            initialValue: vault.id,
+                            tooltip: '관리할 Vault 변경',
+                            onSelected: (vaultId) {
+                              final next = controller.vaults.firstWhere(
+                                (item) => item.id == vaultId,
+                              );
+                              controller.selectVault(next);
+                            },
+                            itemBuilder: (_) => controller.vaults
+                                .map(
+                                  (item) => PopupMenuItem(
+                                    value: item.id,
+                                    child: Text(item.name),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    vault.name,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
+                                  ),
+                                ),
+                                if (controller.vaults.length > 1)
+                                  const Icon(Icons.swap_horiz_rounded),
+                              ],
+                            ),
                           ),
                         ),
-                        if (device.isOwner)
-                          TextButton(
-                            onPressed: () => _showInviteDialog(context),
-                            child: const Text('초대하기'),
-                          )
-                        else
-                          const SizedBox(width: 70),
+                        const SizedBox(width: 70),
                       ],
                     ),
                     const SizedBox(height: 15),
@@ -113,9 +140,11 @@ class _FamilyScreenState extends State<FamilyScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'HOME CAMERA',
-                                  style: TextStyle(
+                                Text(
+                                  device == null
+                                      ? 'MEMORY VAULT'
+                                      : 'HOME CAMERA',
+                                  style: const TextStyle(
                                     fontSize: 9,
                                     color: AppColors.inkSoft,
                                     fontWeight: FontWeight.w900,
@@ -123,14 +152,16 @@ class _FamilyScreenState extends State<FamilyScreen> {
                                   ),
                                 ),
                                 Text(
-                                  device.name,
+                                  device?.name ?? vault.name,
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
                                 Text(
-                                  '● ${controller.deviceStatus?.isOnline == true ? '온라인' : '오프라인'} · ${device.model}',
+                                  device == null
+                                      ? '● 기기 연결 없음 · 과거 영상과 구성원은 유지됩니다'
+                                      : '● ${controller.deviceStatus?.isOnline == true ? '온라인' : '오프라인'} · ${device.model}',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: AppColors.inkSoft,
@@ -177,7 +208,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         }).toList(),
                       ),
                     ),
-                    if (device.isOwner &&
+                    if (vault.isOwner &&
                         controller.sentInvitations.isNotEmpty) ...[
                       const SizedBox(height: 18),
                       const Text(
@@ -196,7 +227,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         ),
                       ),
                     ],
-                    if (device.isOwner) ...[
+                    if (vault.isOwner) ...[
                       const SizedBox(height: 18),
                       SoftCard(
                         color: AppColors.greenCard,
@@ -218,28 +249,6 @@ class _FamilyScreenState extends State<FamilyScreen> {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            DropdownButtonFormField<String>(
-                              initialValue: inviteRole,
-                              decoration: const InputDecoration(
-                                labelText: '권한',
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'VIEWER',
-                                  child: Text('VIEWER · 영상 보기'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'EDITOR',
-                                  child: Text('EDITOR · 보기 및 편집'),
-                                ),
-                              ],
-                              onChanged: controller.busy
-                                  ? null
-                                  : (value) => setState(
-                                      () => inviteRole = value ?? 'VIEWER',
-                                    ),
-                            ),
-                            const SizedBox(height: 10),
                             if (controller.pendingMembershipRequestPreview !=
                                 null) ...[
                               Container(
@@ -300,6 +309,73 @@ class _FamilyScreenState extends State<FamilyScreen> {
                         ),
                       ),
                     ],
+                    if (!vault.isOwner) ...[
+                      const SizedBox(height: 18),
+                      SoftCard(
+                        color: AppColors.greenCard,
+                        borderColor: AppColors.greenCard,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              '초대링크',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            const Text(
+                              'OWNER에게 보낼 초대 요청 링크를 만들 수 있어요.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.inkSoft,
+                              ),
+                            ),
+                            if (membershipRequestLink != null) ...[
+                              const SizedBox(height: 12),
+                              SelectableText(
+                                '$membershipRequestLink',
+                                key: const Key('membership-request-link'),
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: controller.busy
+                                        ? null
+                                        : membershipRequestLink == null
+                                        ? _createMemberLink
+                                        : _copyMemberLink,
+                                    icon: Icon(
+                                      membershipRequestLink == null
+                                          ? Icons.link_rounded
+                                          : Icons.copy_rounded,
+                                    ),
+                                    label: Text(
+                                      membershipRequestLink == null
+                                          ? '링크 생성'
+                                          : '복사',
+                                    ),
+                                  ),
+                                ),
+                                if (membershipRequestLink != null) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton.filledTonal(
+                                    tooltip: '공유',
+                                    onPressed: _shareMemberLink,
+                                    icon: const Icon(Icons.share_rounded),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     const Center(
                       child: Text(
@@ -317,49 +393,19 @@ class _FamilyScreenState extends State<FamilyScreen> {
     );
   }
 
-  Future<void> _showInviteDialog(BuildContext context) async {
-    final input = TextEditingController(text: inviteEmail.text);
-    final email = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('가족 초대'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.send,
-          autofillHints: const [AutofillHints.email],
-          decoration: const InputDecoration(
-            labelText: '이메일',
-            hintText: 'family@example.com',
-          ),
-          onSubmitted: (value) => Navigator.pop(context, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, input.text.trim()),
-            child: const Text('초대'),
-          ),
-        ],
-      ),
-    );
-    input.dispose();
-    if (email == null) return;
-    inviteEmail.text = email;
-    await _sendInvitation();
-  }
-
   Future<void> _sendInvitation() async {
+    if (controller.busy) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     final email = inviteEmail.text.trim();
+    if (email.isEmpty) {
+      showAppSnack(context, '초대할 가족의 이메일을 입력해 주세요.', error: true);
+      return;
+    }
     if (!_looksLikeEmail(email)) {
       showAppSnack(context, '올바른 이메일 주소를 입력해 주세요.', error: true);
       return;
     }
-    final ok = await controller.createInvitation(email, inviteRole);
+    final ok = await controller.createInvitation(email, 'MEMBER');
     if (!mounted) return;
     if (ok) {
       inviteEmail.clear();
@@ -371,6 +417,36 @@ class _FamilyScreenState extends State<FamilyScreen> {
         error: true,
       );
     }
+  }
+
+  Future<void> _createMemberLink() async {
+    if (controller.busy) return;
+    final link = await controller.createMembershipRequestLink();
+    if (!mounted) return;
+    if (link == null) {
+      showAppSnack(
+        context,
+        controller.errorMessage ?? '초대 요청 링크를 만들지 못했어요.',
+        error: true,
+      );
+      return;
+    }
+    setState(() => membershipRequestLink = link);
+    await Clipboard.setData(ClipboardData(text: '$link'));
+    if (mounted) showAppSnack(context, '초대 요청 링크를 복사했어요.');
+  }
+
+  Future<void> _copyMemberLink() async {
+    final link = membershipRequestLink;
+    if (link == null) return;
+    await Clipboard.setData(ClipboardData(text: '$link'));
+    if (mounted) showAppSnack(context, '초대 요청 링크를 복사했어요.');
+  }
+
+  Future<void> _shareMemberLink() async {
+    final link = membershipRequestLink;
+    if (link == null) return;
+    await SharePlus.instance.share(ShareParams(text: '가족 초대 요청 링크입니다.\n$link'));
   }
 
   bool _looksLikeEmail(String value) {
@@ -418,14 +494,11 @@ class _MemberTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           StatusPill(
-            label: switch (member.role) {
-              'OWNER' => '소유자',
-              'EDITOR' => '편집자',
-              _ => '뷰어',
-            },
+            label: normalizeRole(member.role) == 'OWNER' ? 'OWNER' : 'MEMBER',
             color: AppColors.sageSoft,
           ),
-          if (member.role != 'OWNER' && controller.selectedDevice!.isOwner)
+          if (normalizeRole(member.role) != 'OWNER' &&
+              controller.selectedVault?.isOwner == true)
             PopupMenuButton<String>(
               onSelected: (action) =>
                   action == 'transfer' ? _transfer(context) : _revoke(context),
@@ -445,7 +518,7 @@ class _MemberTile extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('소유권을 넘길까요?'),
         content: Text(
-          '${member.user.displayName}님이 새 OWNER가 되고 나는 EDITOR가 됩니다.',
+          '${member.user.displayName}님이 새 OWNER가 되고 나는 MEMBER가 됩니다.',
         ),
         actions: [
           TextButton(
@@ -461,11 +534,10 @@ class _MemberTile extends StatelessWidget {
     );
     if (confirmed == true) {
       try {
-        await controller.api.transferOwnership(
-          controller.selectedDevice!.id,
-          member.id,
-        );
-        await controller.refreshAll();
+        final ok = await controller.transferOwnership(member);
+        if (!ok) {
+          throw controller.errorMessage ?? '소유권을 이전하지 못했어요.';
+        }
         if (context.mounted) showAppSnack(context, '소유권을 이전했어요.');
       } catch (failure) {
         if (context.mounted) showAppSnack(context, '$failure', error: true);

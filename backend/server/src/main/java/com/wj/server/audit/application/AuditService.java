@@ -66,8 +66,74 @@ public class AuditService {
         }
     }
 
+    public void successForVault(
+        UUID vaultId,
+        UUID deviceId,
+        UUID actorUserId,
+        String action,
+        String targetType,
+        UUID targetId
+    ) {
+        AuditEvent event = event(
+            deviceId, vaultId, actorUserId, action, targetType, targetId,
+            "SUCCESS", null);
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+            && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        writeSafely(event);
+                    }
+                });
+        } else {
+            writeSafely(event);
+        }
+    }
+
+    public void deniedForVault(
+        UUID vaultId,
+        UUID deviceId,
+        UUID actorUserId,
+        String action,
+        String targetType,
+        UUID targetId,
+        String reasonCode
+    ) {
+        AuditEvent event = event(
+            deviceId, vaultId, actorUserId, action, targetType, targetId,
+            "DENIED", reasonCode);
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+            && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        writeSafely(event);
+                    }
+                });
+        } else {
+            writeSafely(event);
+        }
+    }
+
     private AuditEvent event(
         UUID deviceId,
+        UUID actorUserId,
+        String action,
+        String targetType,
+        UUID targetId,
+        String outcome,
+        String reasonCode
+    ) {
+        return event(
+            deviceId, null, actorUserId, action, targetType, targetId,
+            outcome, reasonCode);
+    }
+
+    private AuditEvent event(
+        UUID deviceId,
+        UUID vaultId,
         UUID actorUserId,
         String action,
         String targetType,
@@ -81,7 +147,8 @@ public class AuditService {
         Object requestIdValue = request == null ? null : request.getAttribute(RequestIdFilter.ATTRIBUTE);
         String requestId = requestIdValue == null ? null : truncate(String.valueOf(requestIdValue), 100);
         return new AuditEvent(
-            deviceId, actorUserId, null, action, targetType, targetId, outcome, reasonCode,
+            deviceId, vaultId, actorUserId, null, action, targetType, targetId,
+            outcome, reasonCode,
             ipAddress, userAgent, requestId);
     }
 

@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
-import 'extra_screens.dart';
+import '../core/whep_player_controller.dart';
+import 'content_notifications_screen.dart';
+import 'device_registration_screen.dart';
+import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
 
 class LiveScreen extends StatefulWidget {
@@ -22,6 +26,7 @@ class LiveScreen extends StatefulWidget {
 class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   StreamSession? session;
   VideoPlayerController? player;
+  late final WhepPlayerController whepPlayer;
   Timer? pollTimer;
   Timer? heartbeatTimer;
   Timer? tokenRefreshTimer;
@@ -29,12 +34,61 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   String? error;
   bool closing = false;
   bool muted = false;
+  bool webRtcWasConnected = false;
+
+  void _handlePlayerValue() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _isAtLiveEdge {
+    final value = player?.value;
+    if (value == null || !value.isInitialized) return false;
+    return value.duration - value.position <= const Duration(seconds: 3);
+  }
+
+  Future<void> _goLive() async {
+    final current = player;
+    if (current == null || !current.value.isInitialized) return;
+    await current.seekTo(current.value.duration);
+    await current.play();
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
+    whepPlayer = WhepPlayerController()..addListener(_refreshWebRtc);
     WidgetsBinding.instance.addObserver(this);
     _start();
+  }
+
+  void _refreshWebRtc() {
+    if (!mounted) return;
+    if (whepPlayer.connected) {
+      webRtcWasConnected = true;
+      setState(() {});
+      return;
+    }
+    setState(() {});
+    if (webRtcWasConnected && player == null && !closing) {
+      webRtcWasConnected = false;
+      unawaited(_fallbackToHls());
+    }
+  }
+
+  Future<void> _fallbackToHls() async {
+    final current = session;
+    if (current == null || closing) return;
+    try {
+      final updated = await widget.controller.api.getStream(current.id);
+      if (!mounted || closing || updated.playUrl == null) return;
+      session = updated;
+      await _openPlayer(updated.playUrl!);
+      tokenRefreshTimer ??= Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => _refreshPlaybackToken(),
+      );
+    } catch (_) {}
   }
 
   Future<void> _start() async {
@@ -62,21 +116,55 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
 
   Future<void> _openPlayer(String url, {bool replace = false}) async {
     if (!replace && currentPlayUrl == url && player != null) return;
+    final previous = player;
+    final previousValue = previous?.value;
+    final wasAtLiveEdge =
+        previousValue != null &&
+        previousValue.isInitialized &&
+        previousValue.duration - previousValue.position <=
+            const Duration(seconds: 3);
     final next = VideoPlayerController.networkUrl(Uri.parse(url));
     await next.initialize();
     await next.setVolume(muted ? 0 : 1);
+    if (previousValue != null && previousValue.isInitialized) {
+      final target = wasAtLiveEdge
+          ? next.value.duration
+          : previousValue.position > next.value.duration
+          ? next.value.duration
+          : previousValue.position;
+      await next.seekTo(target);
+    }
     await next.play();
     if (!mounted) {
       await next.dispose();
       return;
     }
-    final old = player;
+    next.addListener(_handlePlayerValue);
     setState(() {
       player = next;
       currentPlayUrl = url;
       error = null;
     });
-    await old?.dispose();
+    previous?.removeListener(_handlePlayerValue);
+    await previous?.dispose();
+  }
+
+  Future<void> _openPreferredPlayer(StreamSession updated) async {
+    final whepUrl = updated.whepUrl;
+    if (whepUrl != null) {
+      try {
+        await whepPlayer.setMuted(muted);
+        await whepPlayer.connect(whepUrl);
+        return;
+      } catch (_) {}
+    }
+    final fallbackUrl = updated.playUrl;
+    if (fallbackUrl == null) throw const WhepPlaybackException();
+    await _openPlayer(fallbackUrl);
+    tokenRefreshTimer ??= Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshPlaybackToken(),
+    );
   }
 
   Future<void> _heartbeat() async {
@@ -99,11 +187,7 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
       setState(() => session = updated);
       if (updated.isReady) {
         pollTimer?.cancel();
-        await _openPlayer(updated.playUrl!);
-        tokenRefreshTimer ??= Timer.periodic(
-          const Duration(seconds: 20),
-          (_) => _refreshPlaybackToken(),
-        );
+        await _openPreferredPlayer(updated);
       } else if (const {
         'FAILED',
         'CLOSED',
@@ -142,6 +226,7 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     if (closing) return;
     closing = true;
     _cancelTimers();
+    await whepPlayer.close();
     final current = session;
     if (current != null && !(devHomeCam && devHlsUrl.isNotEmpty)) {
       try {
@@ -161,9 +246,36 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _close();
+    unawaited(_close());
+    player?.removeListener(_handlePlayerValue);
     player?.dispose();
+    whepPlayer.removeListener(_refreshWebRtc);
+    whepPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _openFullscreen() async {
+    if (whepPlayer.connected) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FullscreenWhepView(
+            renderer: whepPlayer.renderer,
+            title: widget.device.name,
+          ),
+        ),
+      );
+      return;
+    }
+    final current = player;
+    if (current == null) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            FullscreenLiveView(controller: current, title: widget.device.name),
+      ),
+    );
   }
 
   @override
@@ -222,8 +334,26 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                       onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => NotificationsScreen(
+                          builder: (_) => ContentNotificationsScreen(
                             controller: widget.controller,
+                            onOpenInvitations: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => InvitationInboxScreen(
+                                  controller: widget.controller,
+                                ),
+                              ),
+                            ),
+                            onOpenDevices: widget.controller.canRegisterDevice
+                                ? () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => DeviceRegistrationScreen(
+                                        controller: widget.controller,
+                                      ),
+                                    ),
+                                  )
+                                : null,
                           ),
                         ),
                       ),
@@ -271,30 +401,40 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                             Positioned(
                               left: 12,
                               top: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 7,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xB32D312B),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 4,
-                                      backgroundColor: AppColors.live,
-                                    ),
-                                    SizedBox(width: 7),
-                                    Text(
-                                      'LIVE',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w900,
+                              child: GestureDetector(
+                                key: const Key('live-screen-edge-button'),
+                                onTap: player == null ? null : _goLive,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _isAtLiveEdge
+                                        ? const Color(0xDDD32F2F)
+                                        : const Color(0xB32D312B),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 4,
+                                        backgroundColor: _isAtLiveEdge
+                                            ? AppColors.live
+                                            : Colors.white54,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 7),
+                                      Text(
+                                        'LIVE',
+                                        style: TextStyle(
+                                          color: _isAtLiveEdge
+                                              ? Colors.white
+                                              : Colors.white70,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -319,27 +459,29 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
-                            Positioned(
-                              left: 12,
-                              bottom: 12,
-                              child: FilledButton.icon(
-                                onPressed: () {
-                                  setState(() => muted = !muted);
-                                  player?.setVolume(muted ? 0 : 1);
-                                },
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size(0, 42),
-                                  backgroundColor: const Color(0x9B2D312B),
-                                  foregroundColor: Colors.white,
+                            if (whepPlayer.connected || player != null)
+                              Positioned(
+                                left: 12,
+                                bottom: 12,
+                                child: FilledButton.icon(
+                                  onPressed: () {
+                                    setState(() => muted = !muted);
+                                    unawaited(player?.setVolume(muted ? 0 : 1));
+                                    unawaited(whepPlayer.setMuted(muted));
+                                  },
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(0, 42),
+                                    backgroundColor: const Color(0x9B2D312B),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  icon: Icon(
+                                    muted
+                                        ? Icons.volume_off_rounded
+                                        : Icons.volume_up_rounded,
+                                  ),
+                                  label: Text(muted ? '소리 꺼짐' : '소리 켜짐'),
                                 ),
-                                icon: Icon(
-                                  muted
-                                      ? Icons.volume_off_rounded
-                                      : Icons.volume_up_rounded,
-                                ),
-                                label: Text(muted ? '소리 꺼짐' : '소리 켜짐'),
                               ),
-                            ),
                             Positioned(
                               right: 12,
                               bottom: 12,
@@ -347,17 +489,10 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                                 radius: 25,
                                 backgroundColor: const Color(0xA82D312B),
                                 child: IconButton(
-                                  onPressed: player == null
-                                      ? null
-                                      : () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => FullscreenLiveView(
-                                              controller: player!,
-                                              title: widget.device.name,
-                                            ),
-                                          ),
-                                        ),
+                                  onPressed:
+                                      whepPlayer.connected || player != null
+                                      ? _openFullscreen
+                                      : null,
                                   icon: const Icon(
                                     Icons.fullscreen_rounded,
                                     color: Colors.white,
@@ -365,6 +500,24 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
+                            if (player != null)
+                              Positioned(
+                                left: 12,
+                                right: 72,
+                                bottom: 0,
+                                child: VideoProgressIndicator(
+                                  player!,
+                                  allowScrubbing: true,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  colors: const VideoProgressColors(
+                                    playedColor: AppColors.coral,
+                                    bufferedColor: Colors.white54,
+                                    backgroundColor: Colors.white24,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                         Padding(
@@ -535,6 +688,15 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   }
 
   Widget _videoBody() {
+    if (whepPlayer.connected) {
+      return ColoredBox(
+        color: Colors.black,
+        child: RTCVideoView(
+          whepPlayer.renderer,
+          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+        ),
+      );
+    }
     if (player != null) {
       return ColoredBox(
         color: Colors.black,
@@ -614,11 +776,13 @@ class EmbeddedLivePlayer extends StatefulWidget {
     required this.controller,
     required this.device,
     required this.status,
+    this.houseMode = false,
   });
 
   final AppController controller;
   final DeviceSummary device;
   final DeviceStatus? status;
+  final bool houseMode;
 
   @override
   State<EmbeddedLivePlayer> createState() => _EmbeddedLivePlayerState();
@@ -628,39 +792,107 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     with WidgetsBindingObserver {
   StreamSession? session;
   VideoPlayerController? player;
+  late final WhepPlayerController whepPlayer;
   late final ValueNotifier<VideoPlayerController?> playerListenable;
   Timer? pollTimer;
   Timer? heartbeatTimer;
   Timer? tokenRefreshTimer;
+  Timer? controlsTimer;
   String? currentPlayUrl;
   String? error;
   bool closing = false;
   bool muted = true;
+  bool started = false;
+  bool starting = false;
+  bool controlsVisible = false;
+  bool webRtcWasConnected = false;
+
+  bool get hasPlayback => whepPlayer.connected || player != null;
+  bool get _isAtLiveEdge {
+    final value = player?.value;
+    if (value == null || !value.isInitialized) return false;
+    return value.duration - value.position <= const Duration(seconds: 3);
+  }
+
+  void _handlePlayerValue() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _goLive() async {
+    final current = player;
+    if (current == null || !current.value.isInitialized) return;
+    await current.seekTo(current.value.duration);
+    await current.play();
+    if (mounted) {
+      setState(() => controlsVisible = true);
+      _scheduleControlsHide();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    whepPlayer = WhepPlayerController()..addListener(_handleWebRtcState);
     playerListenable = ValueNotifier(null);
     WidgetsBinding.instance.addObserver(this);
-    _start();
+  }
+
+  void _handleWebRtcState() {
+    if (!mounted) return;
+    if (whepPlayer.connected) {
+      webRtcWasConnected = true;
+      setState(() => error = null);
+      return;
+    }
+    if (!webRtcWasConnected || player != null || closing) {
+      setState(() {});
+      return;
+    }
+    webRtcWasConnected = false;
+    setState(() {});
+    unawaited(_fallbackToHls());
+  }
+
+  Future<void> _fallbackToHls() async {
+    final current = session;
+    if (current == null || closing) return;
+    try {
+      final updated = await widget.controller.api.getStream(current.id);
+      if (!mounted || closing) return;
+      session = updated;
+      final fallbackUrl = updated.playUrl;
+      if (fallbackUrl == null) return;
+      await _openPlayer(fallbackUrl);
+      _ensureTokenRefresh();
+    } catch (_) {}
   }
 
   @override
   void didUpdateWidget(covariant EmbeddedLivePlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.device.id != widget.device.id) {
-      unawaited(_restart());
-    } else if (oldWidget.status?.isOnline == false &&
-        widget.status?.isOnline == true &&
-        player == null) {
-      unawaited(_restart());
+      started = false;
+      controlsVisible = false;
+      unawaited(_closeForDeviceChange());
     }
   }
 
   Future<void> _start() async {
+    if (starting) return;
+    setState(() {
+      started = true;
+      starting = true;
+      closing = false;
+      error = null;
+    });
     if (widget.status?.isOnline == false &&
         !(devHomeCam && devHlsUrl.isNotEmpty)) {
-      if (mounted) setState(() => error = '카메라가 오프라인이에요.');
+      if (mounted) {
+        setState(() {
+          error = '카메라가 오프라인이에요.';
+          starting = false;
+        });
+      }
       return;
     }
     try {
@@ -681,6 +913,8 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       );
     } catch (failure) {
       if (mounted && !closing) setState(() => error = '$failure');
+    } finally {
+      if (mounted) setState(() => starting = false);
     }
   }
 
@@ -704,6 +938,33 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     await old?.dispose();
   }
 
+  Future<void> _openPreferredPlayer(StreamSession updated) async {
+    final whepUrl = updated.whepUrl;
+    if (whepUrl != null) {
+      try {
+        await whepPlayer.setMuted(muted);
+        await whepPlayer.connect(whepUrl);
+        if (mounted && !closing) setState(() => error = null);
+        return;
+      } catch (_) {
+        // HLS remains the compatibility path when ICE or WHEP is unavailable.
+      }
+    }
+    final fallbackUrl = updated.playUrl;
+    if (fallbackUrl == null) {
+      throw const WhepPlaybackException();
+    }
+    await _openPlayer(fallbackUrl);
+    _ensureTokenRefresh();
+  }
+
+  void _ensureTokenRefresh() {
+    tokenRefreshTimer ??= Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshPlaybackToken(),
+    );
+  }
+
   Future<void> _heartbeat() async {
     final current = session;
     if (current == null || closing) return;
@@ -721,11 +982,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       session = updated;
       if (updated.isReady) {
         pollTimer?.cancel();
-        await _openPlayer(updated.playUrl!);
-        tokenRefreshTimer ??= Timer.periodic(
-          const Duration(seconds: 20),
-          (_) => _refreshPlaybackToken(),
-        );
+        await _openPreferredPlayer(updated);
       } else if (const {
         'FAILED',
         'CLOSED',
@@ -763,6 +1020,8 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     pollTimer = null;
     heartbeatTimer = null;
     tokenRefreshTimer = null;
+    controlsTimer?.cancel();
+    controlsTimer = null;
   }
 
   Future<void> _close({bool disposePlayer = false}) async {
@@ -772,10 +1031,13 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     final current = session;
     session = null;
     if (disposePlayer) {
+      await whepPlayer.close();
+      webRtcWasConnected = false;
       final currentPlayer = player;
       player = null;
       playerListenable.value = null;
       currentPlayUrl = null;
+      currentPlayer?.removeListener(_handlePlayerValue);
       await currentPlayer?.dispose();
     }
     if (current != null && !(devHomeCam && devHlsUrl.isNotEmpty)) {
@@ -795,12 +1057,22 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     await _start();
   }
 
+  Future<void> _closeForDeviceChange() async {
+    await _close(disposePlayer: true);
+    if (!mounted) return;
+    setState(() {
+      closing = false;
+      error = null;
+      starting = false;
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       unawaited(_close(disposePlayer: true));
-    } else if (state == AppLifecycleState.resumed && closing) {
+    } else if (state == AppLifecycleState.resumed && closing && started) {
       unawaited(_restart());
     }
   }
@@ -808,12 +1080,31 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    unawaited(_close(disposePlayer: true));
+    controlsTimer?.cancel();
+    unawaited(_close());
+    final currentPlayer = player;
+    player = null;
+    currentPlayer?.removeListener(_handlePlayerValue);
+    unawaited(currentPlayer?.dispose());
+    whepPlayer.removeListener(_handleWebRtcState);
+    whepPlayer.dispose();
     playerListenable.dispose();
     super.dispose();
   }
 
   Future<void> _openFullscreen() async {
+    if (whepPlayer.connected) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FullscreenWhepView(
+            renderer: whepPlayer.renderer,
+            title: widget.device.name,
+          ),
+        ),
+      );
+      return;
+    }
     final current = player;
     if (current == null) return;
     await Navigator.push<void>(
@@ -828,76 +1119,205 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     );
   }
 
+  void _scheduleControlsHide() {
+    controlsTimer?.cancel();
+    controlsTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => controlsVisible = false);
+    });
+  }
+
+  void _handleVideoTap() {
+    if (!hasPlayback) {
+      if (!starting) {
+        if (started) {
+          unawaited(_restart());
+        } else {
+          unawaited(_start());
+        }
+      }
+      return;
+    }
+    setState(() => controlsVisible = !controlsVisible);
+    if (controlsVisible) _scheduleControlsHide();
+  }
+
   @override
   Widget build(BuildContext context) => SoftCard(
     padding: EdgeInsets.zero,
-    radius: 24,
+    radius: widget.houseMode ? 0 : 24,
     borderColor: Colors.transparent,
     child: ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(widget.houseMode ? 0 : 24),
       child: Column(
         children: [
           AspectRatio(
             aspectRatio: 16 / 9,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _videoBody(),
-                Positioned(
-                  left: 12,
-                  top: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xB32D312B),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: const Text(
-                      '●  LIVE',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _handleVideoTap,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _videoBody(),
+                  if (!hasPlayback)
+                    Center(
+                      child: IconButton.filled(
+                        key: const Key('live-play-button'),
+                        onPressed: starting ? null : _handleVideoTap,
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xB33A2C22),
+                          foregroundColor: Colors.white,
+                          fixedSize: const Size.square(58),
+                        ),
+                        icon: starting
+                            ? const SizedBox.square(
+                                dimension: 23,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Icon(
+                                error == null
+                                    ? Icons.play_arrow_rounded
+                                    : Icons.refresh_rounded,
+                                size: 34,
+                              ),
                       ),
                     ),
-                  ),
-                ),
-                if (player != null) ...[
                   Positioned(
-                    left: 10,
-                    bottom: 10,
-                    child: IconButton.filled(
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0x99000000),
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {
-                        setState(() => muted = !muted);
-                        player?.setVolume(muted ? 0 : 1);
-                      },
-                      icon: Icon(
-                        muted
-                            ? Icons.volume_off_rounded
-                            : Icons.volume_up_rounded,
+                    left: 12,
+                    top: widget.houseMode ? 30 : 12,
+                    child: GestureDetector(
+                      key: const Key('live-edge-button'),
+                      onTap: player == null ? null : _goLive,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _isAtLiveEdge
+                              ? const Color(0xDDD32F2F)
+                              : const Color(0xB32D312B),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          started ? '●  LIVE' : 'LIVE 준비',
+                          style: TextStyle(
+                            color: _isAtLiveEdge
+                                ? Colors.white
+                                : Colors.white70,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  Positioned(
-                    right: 10,
-                    bottom: 10,
-                    child: IconButton.filled(
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0x99000000),
-                        foregroundColor: Colors.white,
+                  if (hasPlayback) ...[
+                    if (player != null)
+                      AnimatedOpacity(
+                        opacity: controlsVisible ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: IgnorePointer(
+                          ignoring: !controlsVisible,
+                          child: Center(
+                            child: IconButton.filled(
+                              style: IconButton.styleFrom(
+                                backgroundColor: const Color(0x99000000),
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () {
+                                final current = player!;
+                                setState(() {
+                                  current.value.isPlaying
+                                      ? current.pause()
+                                      : current.play();
+                                });
+                                _scheduleControlsHide();
+                              },
+                              icon: Icon(
+                                player!.value.isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      onPressed: _openFullscreen,
-                      icon: const Icon(Icons.fullscreen_rounded),
+                    if (player != null)
+                      Positioned(
+                        left: 10,
+                        bottom: 10,
+                        right: 106,
+                        child: AnimatedOpacity(
+                          opacity: controlsVisible ? 1 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          child: IgnorePointer(
+                            ignoring: !controlsVisible,
+                            child: VideoProgressIndicator(
+                              player!,
+                              allowScrubbing: true,
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                              colors: const VideoProgressColors(
+                                playedColor: AppColors.coral,
+                                bufferedColor: Colors.white54,
+                                backgroundColor: Colors.white24,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      right: 58,
+                      bottom: 10,
+                      child: AnimatedOpacity(
+                        opacity: controlsVisible ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: IgnorePointer(
+                          ignoring: !controlsVisible,
+                          child: IconButton.filled(
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0x99000000),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () {
+                              setState(() => muted = !muted);
+                              unawaited(player?.setVolume(muted ? 0 : 1));
+                              unawaited(whepPlayer.setMuted(muted));
+                              _scheduleControlsHide();
+                            },
+                            icon: Icon(
+                              muted
+                                  ? Icons.volume_off_rounded
+                                  : Icons.volume_up_rounded,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    Positioned(
+                      right: 10,
+                      bottom: 10,
+                      child: AnimatedOpacity(
+                        opacity: controlsVisible ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: IgnorePointer(
+                          ignoring: !controlsVisible,
+                          child: IconButton.filled(
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0x99000000),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _openFullscreen,
+                            icon: const Icon(Icons.fullscreen_rounded),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           Padding(
@@ -932,6 +1352,15 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   );
 
   Widget _videoBody() {
+    if (whepPlayer.connected) {
+      return ColoredBox(
+        color: Colors.black,
+        child: RTCVideoView(
+          whepPlayer.renderer,
+          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+        ),
+      );
+    }
     final current = player;
     if (current != null) {
       return ColoredBox(
@@ -946,11 +1375,29 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         ),
       );
     }
+    if (!started) {
+      return const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF38413B), Color(0xFF171A18)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Icon(
+            Icons.camera_indoor_rounded,
+            size: 72,
+            color: Color(0x66FFFFFF),
+          ),
+        ),
+      );
+    }
     return ColoredBox(
       color: const Color(0xFF171A18),
       child: Center(
         child: error == null
-            ? const CircularProgressIndicator(color: Colors.white)
+            ? const SizedBox.shrink()
             : Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
@@ -965,6 +1412,120 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       ),
     );
   }
+}
+
+class FullscreenWhepView extends StatefulWidget {
+  const FullscreenWhepView({
+    super.key,
+    required this.renderer,
+    required this.title,
+  });
+
+  final RTCVideoRenderer renderer;
+  final String title;
+
+  @override
+  State<FullscreenWhepView> createState() => _FullscreenWhepViewState();
+}
+
+class _FullscreenWhepViewState extends State<FullscreenWhepView> {
+  bool controlsVisible = true;
+  Timer? controlsTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]),
+    );
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+    );
+    _scheduleControlsHide();
+  }
+
+  void _scheduleControlsHide() {
+    controlsTimer?.cancel();
+    controlsTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => controlsVisible = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    controlsTimer?.cancel();
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]),
+    );
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    body: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        setState(() => controlsVisible = !controlsVisible);
+        if (controlsVisible) _scheduleControlsHide();
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          RTCVideoView(
+            widget.renderer,
+            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+          ),
+          AnimatedOpacity(
+            opacity: controlsVisible ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: IgnorePointer(
+              ignoring: !controlsVisible,
+              child: SafeArea(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Row(
+                      children: [
+                        IconButton.filled(
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0x99000000),
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close_fullscreen_rounded),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${widget.title} · WebRTC LIVE',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class FullscreenLiveView extends StatefulWidget {
@@ -986,6 +1547,22 @@ class _FullscreenLiveViewState extends State<FullscreenLiveView> {
   late VideoPlayerController activeController;
   bool controlsVisible = true;
   Timer? controlsTimer;
+
+  bool get _isAtLiveEdge {
+    final value = activeController.value;
+    if (!value.isInitialized) return false;
+    return value.duration - value.position <= const Duration(seconds: 3);
+  }
+
+  Future<void> _goLive() async {
+    if (!activeController.value.isInitialized) return;
+    await activeController.seekTo(activeController.value.duration);
+    await activeController.play();
+    if (mounted) {
+      setState(() => controlsVisible = true);
+      _scheduleControlsHide();
+    }
+  }
 
   @override
   void initState() {
@@ -1104,20 +1681,28 @@ class _FullscreenLiveViewState extends State<FullscreenLiveView> {
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 11,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xB3D32F2F),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: const Text(
-                                  '●  LIVE',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
+                              GestureDetector(
+                                key: const Key('fullscreen-live-edge-button'),
+                                onTap: _goLive,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 11,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _isAtLiveEdge
+                                        ? const Color(0xDDD32F2F)
+                                        : const Color(0xB32D312B),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: Text(
+                                    '●  LIVE',
+                                    style: TextStyle(
+                                      color: _isAtLiveEdge
+                                          ? Colors.white
+                                          : Colors.white70,
+                                      fontWeight: FontWeight.w900,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1160,12 +1745,27 @@ class _FullscreenLiveViewState extends State<FullscreenLiveView> {
                         ),
                         const Positioned(
                           left: 20,
-                          bottom: 16,
+                          bottom: 34,
                           child: Text(
                             '실시간 홈캠 영상',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          bottom: 6,
+                          child: VideoProgressIndicator(
+                            activeController,
+                            allowScrubbing: true,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            colors: const VideoProgressColors(
+                              playedColor: AppColors.coral,
+                              bufferedColor: Colors.white54,
+                              backgroundColor: Colors.white24,
                             ),
                           ),
                         ),

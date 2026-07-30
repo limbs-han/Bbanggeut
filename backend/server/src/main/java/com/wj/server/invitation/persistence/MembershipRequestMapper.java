@@ -48,7 +48,7 @@ public interface MembershipRequestMapper {
 
     @Select("""
         SELECT EXISTS (
-            SELECT 1 FROM device_memberships
+            SELECT 1 FROM vault_memberships
              WHERE user_id = #{userId} AND role = 'OWNER' AND status = 'ACTIVE'
         )
         """)

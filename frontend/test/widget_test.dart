@@ -1,15 +1,31 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:william_james_app/app/app_controller.dart';
 import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
+import 'package:william_james_app/core/banuba_video_editor.dart';
 import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/auth_screen.dart';
+import 'package:william_james_app/ui/local_edit_screen.dart';
 import 'package:william_james_app/ui/main_shell.dart';
+import 'package:william_james_app/ui/onboarding_screen.dart';
+import 'package:william_james_app/ui/video_detail_screen.dart';
 
 void main() {
   setUpAll(() => initializeDateFormatting('ko'));
+
+  testWidgets('로컬 Banuba 토큰 설정을 자동으로 불러온다', (tester) async {
+    expect(
+      await BanubaVideoEditor(
+        assetBundle: _BanubaConfigAssetBundle(),
+      ).isConfigured,
+      isTrue,
+    );
+  });
 
   testWidgets('로그인과 회원가입 화면을 전환한다', (tester) async {
     final controller = AppController();
@@ -21,6 +37,8 @@ void main() {
     );
 
     expect(find.widgetWithText(FilledButton, '로그인'), findsOneWidget);
+    expect(find.textContaining('다시 만나면'), findsNothing);
+    expect(find.textContaining('AI가 담은 우리 가족의 웃음'), findsNothing);
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -50,6 +68,7 @@ void main() {
       findsNothing,
     );
     expect(find.bySemanticsLabel('빵긋 로고'), findsOneWidget);
+    expect(find.bySemanticsLabel('빵긋 캐릭터'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -70,6 +89,59 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('로그인 비밀번호를 기본 숨김 처리하고 지정된 간편 로그인만 표시한다', (tester) async {
+    final controller = AppController();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: AuthScreen(controller: controller),
+      ),
+    );
+
+    final passwordField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == '비밀번호를 입력하세요',
+    );
+    expect(tester.widget<TextField>(passwordField).obscureText, isTrue);
+    expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
+    expect(find.text('Google'), findsOneWidget);
+    expect(find.text('카카오'), findsOneWidget);
+    expect(find.text('Apple'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.visibility_off_outlined));
+    await tester.pump();
+    expect(tester.widget<TextField>(passwordField).obscureText, isFalse);
+    expect(find.byIcon(Icons.visibility_outlined), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('온보딩 마지막 페이지에서 건너뛰기를 숨기고 로그인 버튼을 표시한다', (tester) async {
+    var finished = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: OnboardingScreen(
+          onFinished: () async {
+            finished = true;
+          },
+        ),
+      ),
+    );
+
+    for (var index = 0; index < 3; index++) {
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('매일의 웃음이 우리집 보물이 돼요'), findsOneWidget);
+    expect(find.text('건너뛰기'), findsNothing);
+    final loginButton = find.widgetWithText(FilledButton, '로그인하러 가기');
+    expect(loginButton, findsOneWidget);
+    await tester.tap(loginButton);
+    await tester.pump();
+    expect(finished, isTrue);
+  });
+
   testWidgets('작은 화면에서 키보드가 열려도 로그인과 회원가입 입력칸이 보인다', (tester) async {
     tester.view.physicalSize = const Size(390, 700);
     tester.view.devicePixelRatio = 1;
@@ -87,7 +159,7 @@ void main() {
 
     final passwordField = find.byWidgetPredicate(
       (widget) =>
-          widget is TextField && widget.decoration?.hintText == '비밀번호를 입력해주세요',
+          widget is TextField && widget.decoration?.hintText == '비밀번호를 입력하세요',
     );
     final loginPassword = tester.widget<TextField>(passwordField);
     expect(loginPassword.decoration?.hintStyle?.color, AppColors.muted);
@@ -135,15 +207,28 @@ void main() {
   });
 
   testWidgets('메인 화면에 다섯 개 하단 네비게이션을 표시한다', (tester) async {
-    final controller = AppController(api: _FakeApiClient())
-      ..selectedDevice = const DeviceSummary(
-        id: 'test-device',
-        name: '테스트 홈캠',
-        model: 'test',
-        status: 'ONLINE',
+    final api = _FakeApiClient();
+    const device = DeviceSummary(
+      id: 'test-device',
+      name: '테스트 홈캠',
+      model: 'test',
+      status: 'ONLINE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+    );
+    final controller = AppController(api: api)
+      ..selectedVault = const MemoryVault(
+        id: 'vault-1',
+        name: '우리 집',
+        status: 'ACTIVE',
         myRole: 'OWNER',
         retentionDays: 30,
+        subscriptionActive: false,
+        devices: [
+          VaultDevice(bindingId: 'binding-1', generation: 1, device: device),
+        ],
       )
+      ..selectedDevice = device
       ..deviceStatus = const DeviceStatus(
         status: 'ONLINE',
         recording: true,
@@ -159,6 +244,8 @@ void main() {
 
     final navigation = find.byKey(const ValueKey('main-bottom-navigation'));
     expect(navigation, findsOneWidget);
+    expect(tester.widget<NavigationBar>(navigation).selectedIndex, 2);
+    expect(api.streamCreationCount, 0);
     for (final label in ['홈', '캘린더', '추억', '가족', '설정']) {
       expect(
         find.descendant(of: navigation, matching: find.text(label)),
@@ -171,15 +258,102 @@ void main() {
     );
     await tester.pump();
     expect(find.text('전체 추억'), findsOneWidget);
-    expect(find.text('홈캠'), findsOneWidget);
     expect(find.text('웃음 감지'), findsOneWidget);
     expect(find.text('편집 완료'), findsOneWidget);
     expect(find.text('최신순'), findsOneWidget);
     controller.dispose();
   });
+
+  testWidgets('연결 기기가 없어도 추억 금고와 과거 영상을 표시한다', (tester) async {
+    final controller = AppController(api: _FakeApiClient())
+      ..selectedVault = const MemoryVault(
+        id: 'vault-archive',
+        name: '우리 집 추억',
+        status: 'ACTIVE',
+        myRole: 'OWNER',
+        retentionDays: 30,
+        subscriptionActive: false,
+        devices: [],
+      )
+      ..videos = const [
+        VideoMemory(
+          id: 'memory-1',
+          deviceId: 'old-device',
+          triggerType: 'LAUGHTER',
+          title: '기기 해제 전 추억',
+          status: 'READY',
+          favorite: false,
+        ),
+      ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: MainShell(controller: controller),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('main-bottom-navigation')),
+      findsOneWidget,
+    );
+    expect(find.text('연결된 기기가 없습니다'), findsWidgets);
+    expect(find.text('기기 연결하기'), findsOneWidget);
+
+    await tester.tap(find.text('추억'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('기기 해제 전 추억'), findsOneWidget);
+    controller.dispose();
+  });
+
+  testWidgets('영상 편집하기 버튼으로 편집 화면을 연다', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(api: _FakeApiClient());
+    const video = VideoMemory(
+      id: 'test-video',
+      deviceId: 'test-device',
+      triggerType: 'SMILE',
+      title: '저녁 식사 웃음',
+      status: 'PROCESSING',
+      favorite: false,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: VideoDetailScreen(controller: controller, video: video),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editButton = find.widgetWithText(FilledButton, '영상 편집하기');
+    await tester.ensureVisible(editButton);
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LocalEditScreen), findsOneWidget);
+    expect(find.text('편집'), findsOneWidget);
+    controller.dispose();
+  });
+}
+
+class _BanubaConfigAssetBundle extends CachingAssetBundle {
+  @override
+  Future<ByteData> load(String key) async {
+    final bytes = utf8.encode(
+      jsonEncode({'BANUBA_LICENSE_TOKEN': 'test-license-token'}),
+    );
+    return ByteData.sublistView(Uint8List.fromList(bytes));
+  }
 }
 
 class _FakeApiClient extends ApiClient {
+  int streamCreationCount = 0;
   static const failedStream = StreamSession(
     id: 'test-stream',
     status: 'FAILED',
@@ -188,7 +362,10 @@ class _FakeApiClient extends ApiClient {
   );
 
   @override
-  Future<StreamSession> createStream(String deviceId) async => failedStream;
+  Future<StreamSession> createStream(String deviceId) async {
+    streamCreationCount++;
+    return failedStream;
+  }
 
   @override
   Future<StreamSession> getStream(String id) async => failedStream;
@@ -198,6 +375,10 @@ class _FakeApiClient extends ApiClient {
 
   @override
   Future<void> closeStream(String id) async {}
+
+  @override
+  Future<SignedUrl> createDownloadUrl(String id) async =>
+      throw StateError('테스트에서는 영상을 내려받지 않아요.');
 
   @override
   Future<VideoPage> listVideos(

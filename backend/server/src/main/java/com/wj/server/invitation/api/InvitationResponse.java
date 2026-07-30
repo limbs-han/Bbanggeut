@@ -19,6 +19,23 @@ public record InvitationResponse(
     UserSummary inviter,
     String status,
     Instant expiresAt,
-    Instant createdAt
+    Instant createdAt,
+    UUID vaultId,
+    String vaultName
 ) {
+    public InvitationResponse(
+        UUID id,
+        UUID deviceId,
+        String deviceName,
+        String inviteeEmail,
+        String role,
+        UserSummary inviter,
+        String status,
+        Instant expiresAt,
+        Instant createdAt
+    ) {
+        this(
+            id, deviceId, deviceName, inviteeEmail, role, inviter,
+            status, expiresAt, createdAt, null, null);
+    }
 }

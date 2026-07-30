@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.device.api.ClaimDeviceRequest;
 import com.wj.server.device.api.DeviceResponse;
 import com.wj.server.device.api.DeviceSummaryResponse;
@@ -18,6 +19,9 @@ import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
 import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
+import com.wj.server.iot.telemetry.DevicePresenceSnapshot;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
+import com.wj.server.vault.persistence.VaultMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -31,6 +35,8 @@ public class DeviceService {
     private final ClaimAttemptService claimAttemptService;
     private final AuditService auditService;
     private final DeviceMqttIdentityManager mqttIdentityManager;
+    private final VaultMapper vaultMapper;
+    private final DevicePresenceStore presenceStore;
     private final Clock clock;
 
     @Autowired
@@ -40,10 +46,13 @@ public class DeviceService {
         RegistrationCodeHasher registrationCodeHasher,
         ClaimAttemptService claimAttemptService,
         AuditService auditService,
-        DeviceMqttIdentityManager mqttIdentityManager
+        DeviceMqttIdentityManager mqttIdentityManager,
+        VaultMapper vaultMapper,
+        DevicePresenceStore presenceStore
     ) {
         this(deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, mqttIdentityManager, Clock.systemUTC());
+            claimAttemptService, auditService, mqttIdentityManager, vaultMapper, presenceStore,
+            Clock.systemUTC());
     }
 
     DeviceService(
@@ -53,6 +62,8 @@ public class DeviceService {
         ClaimAttemptService claimAttemptService,
         AuditService auditService,
         DeviceMqttIdentityManager mqttIdentityManager,
+        VaultMapper vaultMapper,
+        DevicePresenceStore presenceStore,
         Clock clock
     ) {
         this.deviceMapper = deviceMapper;
@@ -61,12 +72,15 @@ public class DeviceService {
         this.claimAttemptService = claimAttemptService;
         this.auditService = auditService;
         this.mqttIdentityManager = mqttIdentityManager;
+        this.vaultMapper = vaultMapper;
+        this.presenceStore = presenceStore;
         this.clock = clock;
     }
 
     @Transactional
     public DeviceResponse claim(UUID userId, ClaimDeviceRequest request, String ipAddress) {
-        claimAttemptService.ensureAllowed(userId, ipAddress);
+        SlidingWindowRateLimiter.Reservation reservation =
+            claimAttemptService.reserveOrReject(userId, ipAddress);
         UUID attemptedDeviceId = null;
         try {
             // The submitted code identifies the device: the hash lookup is the
@@ -87,11 +101,27 @@ public class DeviceService {
                 || registrationCodeMapper.markUsed(code.id(), userId) != 1) {
                 throw claimRejected();
             }
+            UUID vaultId = request.vaultId();
+            if (vaultId == null) {
+                vaultId = UUID.randomUUID();
+                vaultMapper.insertVault(
+                    vaultId,
+                    request.vaultName() == null
+                        ? "나의 추억"
+                        : request.vaultName().trim());
+                vaultMapper.insertOwner(vaultId, userId);
+            } else {
+                String role = vaultMapper.findActiveRole(userId, vaultId)
+                    .orElseThrow(this::notFound);
+                requireOwner(role, userId, code.deviceId(), "DEVICE_CLAIM");
+            }
+            vaultMapper.insertActiveBinding(code.deviceId(), vaultId);
             deviceMapper.insertOwnerMembership(code.deviceId(), userId);
+            deviceMapper.syncMembershipsFromVault(code.deviceId());
             DeviceResponse response = deviceMapper.findAccessibleDevice(userId, code.deviceId())
-                .map(this::toDeviceResponse)
+                .map(this::toCurrentDeviceResponse)
                 .orElseThrow(() -> new IllegalStateException("Claimed device is not accessible to its owner"));
-            claimAttemptService.recordSuccess(userId, ipAddress);
+            claimAttemptService.completeSuccess(reservation);
             auditService.success(code.deviceId(), userId, "DEVICE_CLAIM", "DEVICE", code.deviceId());
             return response;
         } catch (ApiException exception) {
@@ -109,15 +139,19 @@ public class DeviceService {
 
     @Transactional(readOnly = true)
     public List<DeviceSummaryResponse> list(UUID userId) {
-        return deviceMapper.findAccessibleDevices(userId).stream()
-            .map(this::toSummaryResponse)
+        List<DeviceViewRow> rows = deviceMapper.findAccessibleDevices(userId);
+        DevicePresenceStore.BatchLookup presence =
+            presenceStore.findAll(rows.stream().map(DeviceViewRow::id).toList());
+        return rows.stream()
+            .map(row -> toSummaryResponse(
+                row, presence.storeAvailable(), presence.snapshots().get(row.id())))
             .toList();
     }
 
     @Transactional(readOnly = true)
     public DeviceResponse get(UUID userId, UUID deviceId) {
         return deviceMapper.findAccessibleDevice(userId, deviceId)
-            .map(this::toDeviceResponse)
+            .map(this::toCurrentDeviceResponse)
             .orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다."));
     }
@@ -132,8 +166,10 @@ public class DeviceService {
             deviceId,
             request.namePresent(), request.namePresent() ? request.name().trim() : null,
             request.retentionDaysPresent(), request.retentionDays());
+        vaultMapper.updateRetentionForDevice(
+            deviceId, request.retentionDaysPresent(), request.retentionDays());
         DeviceResponse response = deviceMapper.findAccessibleDevice(userId, deviceId)
-            .map(this::toDeviceResponse)
+            .map(this::toCurrentDeviceResponse)
             .orElseThrow(this::notFound);
         auditService.success(deviceId, userId, "DEVICE_UPDATE", "DEVICE", deviceId);
         return response;
@@ -142,6 +178,17 @@ public class DeviceService {
     @Transactional
     public DeviceStatusResponse status(UUID userId, UUID deviceId) {
         deviceMapper.findAccessibleDevice(userId, deviceId).orElseThrow(this::notFound);
+        DevicePresenceStore.Lookup presence = presenceStore.find(deviceId);
+        if (presence.storeAvailable()) {
+            DevicePresenceSnapshot snapshot = presence.snapshot();
+            return snapshot == null
+                ? new DeviceStatusResponse(deviceId, "OFFLINE", false, 0, null, null, clock.instant())
+                : new DeviceStatusResponse(
+                    deviceId, "ONLINE", snapshot.recording(), snapshot.uploadQueueDepth(),
+                    snapshot.bufferSeconds(), snapshot.personCount(), clock.instant());
+        }
+
+        // Redis outages fall back to the previous durable last-seen behavior.
         deviceMapper.markOfflineIfStale(deviceId);
         var status = deviceMapper.findAccessibleStatus(userId, deviceId).orElseThrow(this::notFound);
         return new DeviceStatusResponse(
@@ -150,7 +197,7 @@ public class DeviceService {
     }
 
     /**
-     * Transfers ownership to an existing active EDITOR or VIEWER of the same device.
+     * Transfers ownership to an existing active MEMBER of the same device.
      * Videos, members, settings and the device subscription all stay — only the
      * roles swap. The deferred one-active-OWNER trigger re-validates at commit.
      */
@@ -165,37 +212,36 @@ public class DeviceService {
             throw new ApiException(
                 HttpStatus.CONFLICT, "ALREADY_OWNER", "이미 본인이 OWNER인 기기입니다.");
         }
-        if ((!"EDITOR".equals(target.role()) && !"VIEWER".equals(target.role()))
+        if (!"MEMBER".equals(target.role())
             || !"ACTIVE".equals(target.status())
-            || deviceMapper.demoteOwnerToEditor(deviceId, userId) != 1
+            || vaultMapper.demoteOwnerForDevice(deviceId, userId) != 1
+            || vaultMapper.promoteMemberForDevice(deviceId, target.id()) != 1
+            || deviceMapper.demoteOwnerToMember(deviceId, userId) != 1
             || deviceMapper.promoteNonOwnerToOwner(deviceId, target.id()) != 1) {
             throw new ApiException(
                 HttpStatus.CONFLICT,
                 "TRANSFER_TARGET_NOT_ACTIVE_MEMBER",
-                "해당 기기의 활성 EDITOR 또는 VIEWER에게만 소유권을 넘길 수 있습니다.");
+                "해당 기기의 활성 MEMBER에게만 소유권을 넘길 수 있습니다.");
         }
         auditService.success(deviceId, userId, "DEVICE_UPDATE", "MEMBERSHIP", target.id());
     }
 
     /**
-     * Releases a device and closes every server-side access path. Reusing the
-     * physical unit requires explicit provisioning so a fresh device identity
-     * and bootstrap credential can be delivered to it.
+     * Disconnects the physical camera from its vault. Memories, subscription
+     * and vault membership survive; only live-device access is closed. The
+     * stable physical row returns to UNCLAIMED so it can be paired again.
      */
     @Transactional
     public void revoke(UUID userId, UUID deviceId) {
         DeviceViewRow device = deviceMapper.lockAccessibleDevice(userId, deviceId)
             .orElseThrow(this::notFound);
         requireOwner(device.myRole(), userId, deviceId, "DEVICE_REVOKE");
-        if (deviceMapper.markRevoked(deviceId) != 1) {
+        vaultMapper.lockActiveVaultId(deviceId).orElseThrow(this::notFound);
+        if (vaultMapper.endActiveBinding(deviceId, userId, "DISCONNECTED") != 1
+            || deviceMapper.markUnclaimed(deviceId) != 1) {
             throw notFound();
         }
-        deviceMapper.revokeActiveCredentials(deviceId);
-        deviceMapper.cancelPendingInvitations(deviceId);
         deviceMapper.revokeAllMemberships(deviceId, userId);
-        deviceMapper.markAllVideosDeleting(deviceId, userId);
-        deviceMapper.enqueueDeletionJobsForDevice(deviceId);
-        mqttIdentityManager.revoke(deviceId);
         auditService.success(deviceId, userId, "DEVICE_REVOKE", "DEVICE", deviceId);
     }
 
@@ -221,17 +267,34 @@ public class DeviceService {
         }
     }
 
-    private DeviceSummaryResponse toSummaryResponse(DeviceViewRow row) {
+    private DeviceSummaryResponse toSummaryResponse(
+        DeviceViewRow row,
+        boolean storeAvailable,
+        DevicePresenceSnapshot snapshot
+    ) {
+        String status = storeAvailable ? (snapshot == null ? "OFFLINE" : "ONLINE") : row.status();
+        java.time.Instant lastSeenAt =
+            storeAvailable && snapshot != null ? snapshot.lastSeenAt() : row.lastSeenAt();
         return new DeviceSummaryResponse(
-            row.id(), row.name(), row.model(), row.status(), row.myRole(),
-            row.retentionDays(), row.lastSeenAt());
+            row.id(), row.name(), row.model(), status, row.myRole(),
+            row.retentionDays(), lastSeenAt);
     }
 
-    private DeviceResponse toDeviceResponse(DeviceViewRow row) {
+    private DeviceResponse toCurrentDeviceResponse(DeviceViewRow row) {
+        DevicePresenceStore.Lookup presence = presenceStore.find(row.id());
+        DevicePresenceSnapshot snapshot = presence.snapshot();
+        String status = presence.storeAvailable()
+            ? (snapshot == null ? "OFFLINE" : "ONLINE")
+            : row.status();
+        java.time.Instant lastSeenAt =
+            presence.storeAvailable() && snapshot != null ? snapshot.lastSeenAt() : row.lastSeenAt();
+        String firmwareVersion = presence.storeAvailable() && snapshot != null
+            && snapshot.firmwareVersion() != null
+            ? snapshot.firmwareVersion() : row.firmwareVersion();
         return new DeviceResponse(
-            row.id(), row.name(), row.model(), row.status(), row.myRole(),
-            row.retentionDays(), row.lastSeenAt(), row.serialNumber(),
-            row.firmwareVersion(), row.claimedAt());
+            row.id(), row.name(), row.model(), status, row.myRole(),
+            row.retentionDays(), lastSeenAt, row.serialNumber(),
+            firmwareVersion, row.claimedAt());
     }
 
     private ApiException claimRejected() {

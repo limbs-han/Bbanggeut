@@ -1,0 +1,297 @@
+package com.wj.server.common.ratelimit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wj.server.config.DevicePresenceProperties;
+import com.wj.server.iot.telemetry.DevicePresenceSnapshot;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.testcontainers.DockerClientFactory;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
+
+/**
+ * Exercises the limiter against a real Redis, because the property under test
+ * is atomicity between the count and the record. A mocked client cannot show
+ * whether concurrent callers observe each other.
+ */
+class SlidingWindowRateLimiterIntegrationTest {
+    private static final int LIMIT = 5;
+
+    private static GenericContainer<?> redis;
+    private static LettuceConnectionFactory connectionFactory;
+    private static SlidingWindowRateLimiter limiter;
+    private static DevicePresenceStore presenceStore;
+
+    @BeforeAll
+    static void startRedis() {
+        String externalHost = System.getenv("TEST_REDIS_HOST");
+        if (externalHost != null && !externalHost.isBlank()) {
+            int externalPort = Integer.parseInt(requiredEnvironment("TEST_REDIS_PORT"));
+            connectionFactory = connectionFactory(externalHost, externalPort);
+            requireReachable(externalHost, externalPort);
+            limiter = new SlidingWindowRateLimiter(template(connectionFactory));
+            presenceStore = presenceStore(template(connectionFactory));
+            return;
+        }
+
+        assumeTrue(
+            dockerAvailable(),
+            "Docker 또는 TEST_REDIS_* 환경이 없어 Redis 통합 테스트를 건너뜁니다.");
+
+        redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
+        redis.start();
+        connectionFactory = connectionFactory(redis.getHost(), redis.getMappedPort(6379));
+        limiter = new SlidingWindowRateLimiter(template(connectionFactory));
+        presenceStore = presenceStore(template(connectionFactory));
+    }
+
+    /**
+     * The limiter deliberately allows an attempt it cannot check, so a CI Redis
+     * that is simply unreachable would surface here as a puzzling count
+     * mismatch further down. Fail on the actual cause instead.
+     */
+    private static void requireReachable(String host, int port) {
+        try (var connection = connectionFactory.getConnection()) {
+            connection.ping();
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException(
+                "TEST_REDIS_HOST=%s:%d 에 연결할 수 없습니다.".formatted(host, port), exception);
+        }
+    }
+
+    /**
+     * Probing can throw rather than answer when the local Docker API is too new
+     * for the bundled client, which should skip the case instead of failing it.
+     */
+    private static boolean dockerAvailable() {
+        try {
+            return DockerClientFactory.instance().isDockerAvailable();
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private static String requiredEnvironment(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(name + " 환경 변수가 필요합니다.");
+        }
+        return value;
+    }
+
+    @AfterAll
+    static void stopRedis() {
+        if (connectionFactory != null) {
+            connectionFactory.destroy();
+        }
+        if (redis != null) {
+            redis.stop();
+        }
+    }
+
+    /**
+     * The regression this class exists for. Sequential callers were always
+     * limited correctly; simultaneous ones all read the same pre-limit count
+     * and passed together, which is the traffic an attacker actually sends.
+     */
+    @Test
+    void admitsExactlyTheLimitWhenFiftyCallersArriveAtOnce() throws Exception {
+        String identity = key("identity");
+        String address = key("address");
+        int callers = 50;
+        AtomicInteger admitted = new AtomicInteger();
+        CountDownLatch ready = new CountDownLatch(callers);
+        CountDownLatch start = new CountDownLatch(1);
+
+        ExecutorService pool = Executors.newFixedThreadPool(callers);
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < callers; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    if (limiter.tryAcquire(identity, address, Duration.ofSeconds(30), LIMIT)) {
+                        admitted.incrementAndGet();
+                    }
+                    return null;
+                }));
+            }
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            for (Future<?> future : futures) {
+                future.get(10, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(admitted.get()).isEqualTo(LIMIT);
+    }
+
+    @Test
+    void refusesFurtherAttemptsOnceTheIdentityBudgetIsSpent() {
+        String identity = key("identity");
+        for (int i = 0; i < LIMIT; i++) {
+            // A different address each time: the identity budget alone must stop this.
+            assertThat(limiter.tryAcquire(identity, key("address"), Duration.ofSeconds(30), LIMIT))
+                .isTrue();
+        }
+
+        assertThat(limiter.tryAcquire(identity, key("address"), Duration.ofSeconds(30), LIMIT))
+            .isFalse();
+    }
+
+    @Test
+    void refusesFurtherAttemptsOnceTheAddressBudgetIsSpent() {
+        String address = key("address");
+        for (int i = 0; i < LIMIT; i++) {
+            // A different identity each time: guessing many accounts from one
+            // address has to be limited too.
+            assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
+                .isTrue();
+        }
+
+        assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
+            .isFalse();
+    }
+
+    /**
+     * A fixed window would free the whole budget at one shared instant, letting
+     * twice the limit through across the boundary. Entries have to expire
+     * individually.
+     */
+    @Test
+    void freesBudgetGraduallyAsIndividualEntriesAgeOut() throws Exception {
+        String identity = key("identity");
+        String address = key("address");
+        Duration window = Duration.ofMillis(600);
+
+        assertThat(limiter.tryAcquire(identity, address, window, 2)).isTrue();
+        Thread.sleep(400);
+        assertThat(limiter.tryAcquire(identity, address, window, 2)).isTrue();
+        assertThat(limiter.tryAcquire(identity, address, window, 2)).isFalse();
+
+        // Only the first entry has aged out by now, so exactly one slot returns.
+        Thread.sleep(300);
+        assertThat(limiter.tryAcquire(identity, address, window, 2)).isTrue();
+        assertThat(limiter.tryAcquire(identity, address, window, 2)).isFalse();
+    }
+
+    @Test
+    void successfulReservationsDoNotConsumeTheSharedAddressBudget() {
+        String address = key("address");
+
+        for (int i = 0; i < LIMIT + 3; i++) {
+            SlidingWindowRateLimiter.Reservation reservation = limiter.reserve(
+                key("identity"), address, Duration.ofSeconds(30), LIMIT);
+            assertThat(reservation).isNotNull();
+            limiter.completeSuccess(reservation);
+        }
+
+        assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
+            .isTrue();
+    }
+
+    @Test
+    void successDoesNotEraseOtherFailuresFromTheSharedAddress() {
+        String address = key("address");
+        for (int i = 0; i < LIMIT - 1; i++) {
+            assertThat(limiter.tryAcquire(key("failed-identity"), address, Duration.ofSeconds(30), LIMIT))
+                .isTrue();
+        }
+        SlidingWindowRateLimiter.Reservation successful = limiter.reserve(
+            key("successful-identity"), address, Duration.ofSeconds(30), LIMIT);
+        assertThat(successful).isNotNull();
+
+        limiter.completeSuccess(successful);
+
+        assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
+            .isTrue();
+        assertThat(limiter.tryAcquire(key("identity"), address, Duration.ofSeconds(30), LIMIT))
+            .isFalse();
+    }
+
+    @Test
+    void devicePresenceExpiresWithoutADatabaseSweep() throws Exception {
+        UUID deviceId = UUID.randomUUID();
+        DevicePresenceSnapshot snapshot = new DevicePresenceSnapshot(
+            java.time.Instant.parse("2026-07-30T01:00:00Z"),
+            true, 2, 120, 3, "0.4.0");
+
+        assertThat(presenceStore.put(deviceId, snapshot)).isTrue();
+        assertThat(presenceStore.find(deviceId).snapshot()).isEqualTo(snapshot);
+
+        Thread.sleep(500);
+
+        assertThat(presenceStore.find(deviceId).storeAvailable()).isTrue();
+        assertThat(presenceStore.find(deviceId).online()).isFalse();
+    }
+
+    /**
+     * Refusing every sign-in during a Redis outage would turn a degraded
+     * limiter into a total outage, so the attempt is allowed and logged.
+     */
+    @Test
+    void allowsTheAttemptWhenRedisCannotBeReached() {
+        LettuceConnectionFactory unreachable = connectionFactory("127.0.0.1", 6399);
+        try {
+            SlidingWindowRateLimiter degraded = new SlidingWindowRateLimiter(template(unreachable));
+
+            for (int i = 0; i < LIMIT + 3; i++) {
+                assertThat(degraded.tryAcquire(key("identity"), key("address"), Duration.ofSeconds(30), LIMIT))
+                    .isTrue();
+            }
+        } finally {
+            unreachable.destroy();
+        }
+    }
+
+    private static LettuceConnectionFactory connectionFactory(String host, int port) {
+        LettuceClientConfiguration clientConfiguration = LettuceClientConfiguration.builder()
+            .commandTimeout(Duration.ofMillis(500))
+            .shutdownTimeout(Duration.ZERO)
+            .build();
+        LettuceConnectionFactory factory = new LettuceConnectionFactory(
+            new RedisStandaloneConfiguration(host, port), clientConfiguration);
+        factory.afterPropertiesSet();
+        return factory;
+    }
+
+    private static StringRedisTemplate template(LettuceConnectionFactory factory) {
+        StringRedisTemplate template = new StringRedisTemplate(factory);
+        template.afterPropertiesSet();
+        return template;
+    }
+
+    private static DevicePresenceStore presenceStore(StringRedisTemplate template) {
+        return new DevicePresenceStore(
+            template,
+            new ObjectMapper().findAndRegisterModules(),
+            new DevicePresenceProperties(Duration.ofMillis(300)));
+    }
+
+    /** Fresh key per use so the cases stay independent of each other. */
+    private static String key(String kind) {
+        return "test:" + kind + ":" + UUID.randomUUID();
+    }
+}

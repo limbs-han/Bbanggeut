@@ -7,6 +7,27 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/wj}
     username: ${DB_USER:wj}
     password: ${DB_PASSWORD:wj-dev-only}
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # Kept short on purpose. Sign-in falls back to allowing the attempt when
+      # the limiter cannot answer, so a stalled Redis must fail fast instead of
+      # holding the request open.
+      timeout: ${REDIS_TIMEOUT:500ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -19,6 +40,14 @@ mybatis:
     map-underscore-to-camel-case: true
 
 management:
+  health:
+    mail:
+      enabled: ${MAIL_HEALTH_ENABLED:false}
+    # The application keeps serving sign-in without Redis, so its absence is a
+    # degraded limiter rather than an unhealthy instance. Watch the limiter
+    # warning logs instead of failing the health probe.
+    redis:
+      enabled: ${REDIS_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:
@@ -28,12 +57,15 @@ app:
   demo:
     enabled: ${DEMO_MODE_ENABLED:false}
     live-hls-url: ${DEMO_LIVE_HLS_URL:}
+    live-whep-url: ${DEMO_LIVE_WHEP_URL:}
   auth:
     access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:14d}
     jwt-secret: ${JWT_SIGNING_KEY:local-development-signing-key-change-me-2026}
     login-max-failures: ${LOGIN_MAX_FAILURES:5}
     login-failure-window: ${LOGIN_FAILURE_WINDOW:10m}
+    password-reset-url: ${PASSWORD_RESET_URL:bbanggeut://password-reset?token=}
+    password-reset-from: ${PASSWORD_RESET_FROM:no-reply@bbanggeut.local}
   provisioning:
     enabled: ${DEVICE_PROVISIONING_ENABLED:false}
     admin-key: ${DEVICE_PROVISIONING_ADMIN_KEY:}
@@ -43,8 +75,15 @@ app:
   device-claim:
     max-failures: ${DEVICE_CLAIM_MAX_FAILURES:5}
     failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
+  device-presence:
+    # Heartbeats arrive much more often than this. Missing the TTL means the
+    # device is offline without a database sweep or stale-row update.
+    ttl: ${DEVICE_PRESENCE_TTL:90s}
   invitation:
     ttl: ${INVITATION_TTL:7d}
+  push:
+    enabled: ${FCM_ENABLED:false}
+    project-id: ${FIREBASE_PROJECT_ID:}
   subscription:
     premium-retention-days: ${SUBSCRIPTION_PREMIUM_RETENTION_DAYS:365}
     grace: ${SUBSCRIPTION_GRACE:30d}
@@ -66,6 +105,7 @@ app:
     edge-lease: ${STREAM_EDGE_LEASE:120s}
     heartbeat-interval: ${STREAM_HEARTBEAT_INTERVAL:15s}
     media-base-url: ${MEDIA_BASE_URL:http://localhost:8888/live}
+    webrtc-base-url: ${WEBRTC_BASE_URL:http://localhost:8889/live}
     live-token-ttl: ${LIVE_TOKEN_TTL:30s}
   storage:
     endpoint: ${S3_ENDPOINT:http://localhost:9000}

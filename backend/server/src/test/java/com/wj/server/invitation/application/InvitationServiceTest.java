@@ -22,6 +22,7 @@ import com.wj.server.invitation.domain.InvitationRow;
 import com.wj.server.invitation.domain.MembershipRequestRow;
 import com.wj.server.invitation.domain.MembershipRow;
 import com.wj.server.invitation.persistence.InvitationMapper;
+import com.wj.server.notification.application.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +40,8 @@ class InvitationServiceTest {
     private AuditService auditService;
     @Mock
     private MembershipRequestService membershipRequestService;
+    @Mock
+    private NotificationService notificationService;
 
     private InvitationService service;
 
@@ -49,13 +52,27 @@ class InvitationServiceTest {
             new InvitationProperties(TTL),
             auditService,
             membershipRequestService,
+            notificationService,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private InvitationRow pendingInvitation(UUID id, UUID deviceId, UUID inviterId, String inviteeEmail, Instant expiresAt) {
         return new InvitationRow(
             id, deviceId, "Camera", inviterId, "owner@example.com", "오너",
-            inviteeEmail, "EDITOR", "PENDING", expiresAt, NOW);
+            inviteeEmail, "MEMBER", "PENDING", expiresAt, NOW);
+    }
+
+    private InvitationRow pendingVaultInvitation(
+        UUID id,
+        UUID vaultId,
+        UUID inviterId,
+        String inviteeEmail,
+        Instant expiresAt
+    ) {
+        return new InvitationRow(
+            id, null, null, inviterId, "owner@example.com", "오너",
+            inviteeEmail, "MEMBER", "PENDING", expiresAt, NOW,
+            vaultId, "우리 집 추억");
     }
 
     @Test
@@ -63,6 +80,7 @@ class InvitationServiceTest {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("member@example.com")).thenReturn(true);
         when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(false);
         when(mapper.pendingInvitationExists(deviceId, "member@example.com")).thenReturn(false);
         when(mapper.findScopedInvitation(eq(deviceId), any()))
@@ -70,11 +88,13 @@ class InvitationServiceTest {
                 invocation.getArgument(1), deviceId, ownerId, "member@example.com", NOW.plus(TTL))));
 
         var response = service.createInvitation(
-            ownerId, deviceId, "  Member@Example.com ", "EDITOR", null);
+            ownerId, deviceId, "  Member@Example.com ", null);
 
         verify(mapper).insertInvitation(
             any(), eq(deviceId), eq(ownerId), eq("member@example.com"),
-            eq("EDITOR"), eq(NOW.plus(TTL)));
+            eq("MEMBER"), eq(NOW.plus(TTL)));
+        verify(notificationService).invitationReceived(
+            eq("member@example.com"), eq(deviceId), eq("Camera"), any());
         assertThat(response.status()).isEqualTo("PENDING");
         assertThat(response.inviteeEmail()).isEqualTo("member@example.com");
     }
@@ -89,6 +109,7 @@ class InvitationServiceTest {
             UUID.randomUUID(), requesterId, "member@example.com", "멤버",
             NOW.plusSeconds(60), null);
         when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("member@example.com")).thenReturn(true);
         when(membershipRequestService.requireForInvitation(
             token, "member@example.com")).thenReturn(request);
         when(mapper.findScopedInvitation(eq(deviceId), any()))
@@ -97,7 +118,7 @@ class InvitationServiceTest {
                 "member@example.com", NOW.plus(TTL))));
 
         service.createInvitation(
-            ownerId, deviceId, "member@example.com", "VIEWER", token);
+            ownerId, deviceId, "member@example.com", token);
 
         verify(membershipRequestService).consume(
             eq(token), eq(request), eq(ownerId), any());
@@ -107,10 +128,10 @@ class InvitationServiceTest {
     void memberCannotInvite() {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
-        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("EDITOR"));
+        when(mapper.findActiveRole(userId, deviceId)).thenReturn(Optional.of("MEMBER"));
 
         assertThatThrownBy(() -> service.createInvitation(
-            userId, deviceId, "member@example.com", "EDITOR", null))
+            userId, deviceId, "member@example.com", null))
             .isInstanceOf(ApiException.class)
             .satisfies(exception -> assertThat(((ApiException) exception).status().value()).isEqualTo(403));
         verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
@@ -121,14 +142,32 @@ class InvitationServiceTest {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("member@example.com")).thenReturn(true);
         when(mapper.activeMemberEmailExists(deviceId, "member@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> service.createInvitation(
-            ownerId, deviceId, "member@example.com", "VIEWER", null))
+            ownerId, deviceId, "member@example.com", null))
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("ALREADY_DEVICE_MEMBER");
         verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void invitingUnknownEmailIsRejectedBeforeInvitationIsCreated() {
+        UUID ownerId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(mapper.findActiveRole(ownerId, deviceId)).thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("unknown@example.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createInvitation(
+            ownerId, deviceId, " Unknown@example.com ", null))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("INVITEE_ACCOUNT_NOT_FOUND");
+
+        verify(mapper, never()).insertInvitation(any(), any(), any(), any(), any(), any());
+        verify(notificationService, never()).invitationReceived(any(), any(), any(), any());
     }
 
     @Test
@@ -144,12 +183,12 @@ class InvitationServiceTest {
         when(mapper.findMembership(deviceId, userId))
             .thenReturn(Optional.of(new MembershipRow(
                 UUID.randomUUID(), deviceId, userId,
-                "member@example.com", "멤버", "EDITOR", "ACTIVE", NOW)));
+                "member@example.com", "멤버", "MEMBER", "ACTIVE", NOW)));
 
         var member = service.acceptInvitation(userId, invitationId);
 
-        verify(mapper).activateMember(deviceId, userId, "EDITOR");
-        assertThat(member.role()).isEqualTo("EDITOR");
+        verify(mapper).activateMember(deviceId, userId, "MEMBER");
+        assertThat(member.role()).isEqualTo("MEMBER");
         assertThat(member.status()).isEqualTo("ACTIVE");
     }
 
@@ -219,5 +258,59 @@ class InvitationServiceTest {
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("OWNER_CANNOT_BE_REVOKED");
+    }
+
+    @Test
+    void detachedVaultOwnerCanInviteWithoutAnActiveDevice() {
+        UUID ownerId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
+        when(mapper.findActiveVaultRole(ownerId, vaultId))
+            .thenReturn(Optional.of("OWNER"));
+        when(mapper.activeUserEmailExists("member@example.com"))
+            .thenReturn(true);
+        when(mapper.findFirstActiveDeviceId(vaultId))
+            .thenReturn(Optional.empty());
+        when(mapper.findScopedVaultInvitation(eq(vaultId), any()))
+            .thenAnswer(invocation -> Optional.of(pendingVaultInvitation(
+                invocation.getArgument(1), vaultId, ownerId,
+                "member@example.com", NOW.plus(TTL))));
+
+        var response = service.createVaultInvitation(
+            ownerId, vaultId, " Member@Example.com ", null);
+
+        verify(mapper).insertVaultInvitation(
+            any(), eq(vaultId), eq(null), eq(ownerId),
+            eq("member@example.com"), eq(NOW.plus(TTL)));
+        verify(notificationService).vaultInvitationReceived(
+            eq("member@example.com"), eq(vaultId),
+            eq("우리 집 추억"), any());
+        assertThat(response.vaultId()).isEqualTo(vaultId);
+        assertThat(response.deviceId()).isNull();
+    }
+
+    @Test
+    void acceptingVaultInvitationKeepsMembershipWhenNoDeviceIsBound() {
+        UUID userId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
+        UUID invitationId = UUID.randomUUID();
+        UUID membershipId = UUID.randomUUID();
+        when(mapper.findUserEmail(userId))
+            .thenReturn(Optional.of("member@example.com"));
+        when(mapper.lockInvitation(invitationId))
+            .thenReturn(Optional.of(pendingVaultInvitation(
+                invitationId, vaultId, UUID.randomUUID(),
+                "member@example.com", NOW.plusSeconds(60))));
+        when(mapper.acceptInvitation(invitationId, userId)).thenReturn(1);
+        when(mapper.findVaultMembership(vaultId, userId))
+            .thenReturn(Optional.of(new MembershipRow(
+                membershipId, null, userId, "member@example.com", "멤버",
+                "MEMBER", "ACTIVE", NOW, vaultId)));
+
+        var response = service.acceptInvitation(userId, invitationId);
+
+        verify(mapper).activateVaultMemberByVault(vaultId, userId);
+        verify(mapper).activateMemberForVaultDevices(vaultId, userId);
+        verify(mapper, never()).activateMember(any(), any(), any());
+        assertThat(response.vaultId()).isEqualTo(vaultId);
     }
 }

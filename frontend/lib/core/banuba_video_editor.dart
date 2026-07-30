@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -30,9 +31,14 @@ class SavedBanubaEdit {
 }
 
 class BanubaVideoEditor {
-  BanubaVideoEditor({VeSdkFlutter? sdk}) : _sdk = sdk ?? VeSdkFlutter();
+  BanubaVideoEditor({VeSdkFlutter? sdk, AssetBundle? assetBundle})
+    : _sdk = sdk ?? VeSdkFlutter(),
+      _assetBundle = assetBundle ?? rootBundle;
 
-  static const _licenseToken = String.fromEnvironment('BANUBA_LICENSE_TOKEN');
+  static const _compiledLicenseToken = String.fromEnvironment(
+    'BANUBA_LICENSE_TOKEN',
+  );
+  static const _localConfigAsset = 'assets/config/banuba.local.json';
   static const _giphyApiKey = String.fromEnvironment('GIPHY_API_KEY');
   static const _aiAudioDataUrl = String.fromEnvironment(
     'BANUBA_AI_AUDIO_DATA_URL',
@@ -67,8 +73,11 @@ class BanubaVideoEditor {
   );
 
   final VeSdkFlutter _sdk;
+  final AssetBundle _assetBundle;
+  String? _resolvedLicenseToken;
 
-  bool get isConfigured => _licenseToken.trim().isNotEmpty;
+  Future<bool> get isConfigured async =>
+      (await _resolveLicenseToken()).isNotEmpty;
   bool get isAiClippingConfigured =>
       _aiAudioDataUrl.isNotEmpty && _aiAudioTracksUrl.isNotEmpty;
   bool get isAiCaptionsConfigured =>
@@ -82,7 +91,7 @@ class BanubaVideoEditor {
     required String outputName,
     bool enableAiCaptions = false,
   }) async {
-    _ensureConfigured();
+    final licenseToken = await _requireLicenseToken();
     if (enableAiCaptions && !isAiCaptionsConfigured) {
       throw const BanubaEditorException(
         'AI 자동 자막을 사용하려면 Banuba Captions API 키가 필요해요.',
@@ -90,7 +99,7 @@ class BanubaVideoEditor {
     }
     try {
       final result = await _sdk.openEditorScreen(
-        _licenseToken,
+        licenseToken,
         _features(enableAiCaptions: enableAiCaptions),
         sourcePaths,
         exportData: _exportData(outputName),
@@ -103,7 +112,7 @@ class BanubaVideoEditor {
   }
 
   Future<SavedBanubaEdit?> aiClip({required String outputName}) async {
-    _ensureConfigured();
+    final licenseToken = await _requireLicenseToken();
     if (!isAiClippingConfigured) {
       throw const BanubaEditorException(
         'AI 자동 편집을 사용하려면 Banuba AI Clipping용 '
@@ -112,7 +121,7 @@ class BanubaVideoEditor {
     }
     try {
       final result = await _sdk.openAiClippingScreen(
-        _licenseToken,
+        licenseToken,
         _features(enableAiClipping: true),
         exportData: _exportData(outputName),
       );
@@ -127,7 +136,7 @@ class BanubaVideoEditor {
     required List<String> sourcePaths,
     required String outputName,
   }) async {
-    _ensureConfigured();
+    final licenseToken = await _requireLicenseToken();
     if (!isAiCaptionsConfigured && !isAiClippingConfigured) {
       throw const BanubaEditorException(
         'Banuba AI 설정이 필요해요. Captions API 또는 AI Clipping URL을 확인해 주세요.',
@@ -135,7 +144,7 @@ class BanubaVideoEditor {
     }
     try {
       final result = await _sdk.openEditorScreen(
-        _licenseToken,
+        licenseToken,
         _features(
           enableAiCaptions: isAiCaptionsConfigured,
           enableAiClipping: isAiClippingConfigured,
@@ -151,10 +160,10 @@ class BanubaVideoEditor {
   }
 
   Future<SavedBanubaEdit?> openDrafts({required String outputName}) async {
-    _ensureConfigured();
+    final licenseToken = await _requireLicenseToken();
     try {
       final result = await _sdk.openDraftsScreen(
-        _licenseToken,
+        licenseToken,
         _features(),
         exportData: _exportData(outputName),
       );
@@ -288,13 +297,40 @@ class BanubaVideoEditor {
     await File(sourcePath).copy(destination);
   }
 
-  void _ensureConfigured() {
-    if (!isConfigured) {
+  Future<String> _resolveLicenseToken() async {
+    final cached = _resolvedLicenseToken;
+    if (cached != null) return cached;
+
+    final compiled = _compiledLicenseToken.trim();
+    if (compiled.isNotEmpty) {
+      _resolvedLicenseToken = compiled;
+      return compiled;
+    }
+
+    try {
+      final raw = await _assetBundle.loadString(_localConfigAsset);
+      final config = jsonDecode(raw);
+      if (config is Map<String, dynamic>) {
+        final local = (config['BANUBA_LICENSE_TOKEN'] as String? ?? '').trim();
+        _resolvedLicenseToken = local;
+        return local;
+      }
+    } catch (_) {
+      // A local config is optional; production builds should use dart-define.
+    }
+    _resolvedLicenseToken = '';
+    return '';
+  }
+
+  Future<String> _requireLicenseToken() async {
+    final token = await _resolveLicenseToken();
+    if (token.isEmpty) {
       throw const BanubaEditorException(
         'Banuba 라이선스 토큰이 설정되지 않았어요. '
-        '--dart-define=BANUBA_LICENSE_TOKEN=... 옵션으로 앱을 실행해 주세요.',
+        '로컬 설정 또는 빌드 환경을 확인해 주세요.',
       );
     }
+    return token;
   }
 
   String _messageFor(PlatformException error) => switch (error.code) {
