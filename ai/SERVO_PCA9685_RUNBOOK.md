@@ -198,7 +198,7 @@ YOLO 실행 로그에서 다음을 확인한다.
 Framing target MQTT: homecam/v2/.../control/framing/target
 ```
 
-드라이런 로그의 PAN과 TILT는 모두 `-80~+80` 범위를 벗어나면 안 된다.
+드라이런 로그의 PAN은 `-80~+80`, TILT는 `-50~+80` 범위를 벗어나면 안 된다.
 
 ## 8. 실물 보정
 
@@ -226,8 +226,10 @@ SERVO_PAN_CHANNEL=0
 SERVO_TILT_CHANNEL=1
 SERVO_PAN_MIN_DEG=-80
 SERVO_PAN_MAX_DEG=80
-SERVO_TILT_MIN_DEG=-80
+SERVO_TILT_MIN_DEG=-50
 SERVO_TILT_MAX_DEG=80
+SERVO_PAN_PARK_DEG=0
+SERVO_TILT_PARK_DEG=-50
 SERVO_PAN_HOME_PULSE_US=1500
 SERVO_TILT_HOME_PULSE_US=1500
 SERVO_PAN_PULSE_DIRECTION=1
@@ -240,8 +242,10 @@ SERVO_STATE_SAVE_INTERVAL_SECONDS=0.25
 SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS=3
 ```
 
-PAN/TILT 모두 HOME `0`을 중심으로 `-80~+80`의 대칭 범위를 사용한다.
-기구물의 양방향 여유가 부족하면 해당 축의 최소·최대값을 더 좁게 설정한다.
+PAN은 `-80~+80`, TILT는 구조물 한계 때문에 `-50~+80`을 사용한다.
+객체가 5초 이상 감지되지 않으면 PAN은 `0°`, TILT는 `-50°` PARK 위치로
+속도 제한 복귀한다. `*_HOME_PULSE_US`는 논리 `0°`의 PWM 보정값이므로 PARK
+각도를 바꿀 때 수정하지 않는다.
 카메라의 UP/DOWN 명령과 실제 움직임이 반대라면
 `SERVO_TILT_PULSE_DIRECTION`을 `1`과 `-1` 중 반대 값으로 변경한다.
 
