@@ -137,6 +137,8 @@ PIDS+=("$!")
 YAMNET_COMMAND=(
     "$YAMNET_PYTHON" -u "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py"
     --device-id "$DEVICE_ID"
+    --mqtt-host "$LOCAL_MQTT_HOST"
+    --mqtt-port "$LOCAL_MQTT_PORT"
     --stream-url "$LOCAL_RTSP_AI_URL"
     --score-aggregation "$YAMNET_SCORE_AGGREGATION"
     --threshold "$YAMNET_THRESHOLD"
@@ -147,7 +149,7 @@ YAMNET_COMMAND=(
     --clip-seconds "$EVENT_CLIP_SECONDS"
     --trigger-only
 )
-MQTT_HOST= "${YAMNET_COMMAND[@]}" \
+"${YAMNET_COMMAND[@]}" \
     > >(sed -u 's/^/[YAMNET] /' | tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
 PIDS+=("$!")
 
@@ -165,6 +167,7 @@ YOLO_COMMAND=(
     --dashboard-host "$SERVO_DASHBOARD_HOST"
     --dashboard-port "$SERVO_DASHBOARD_PORT"
     --dashboard-log "${RUN_DIR}/servo_dashboard.jsonl"
+    --dashboard-event-dir "$EVENT_DIR"
     --dashboard-frame-width "$SERVO_DASHBOARD_FRAME_WIDTH"
     --dashboard-jpeg-quality "$SERVO_DASHBOARD_JPEG_QUALITY"
     --dashboard-frame-interval "$SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS"

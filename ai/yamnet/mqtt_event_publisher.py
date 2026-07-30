@@ -113,13 +113,14 @@ class MqttEventPublisher:
     def publish_laughter(
         self,
         *,
+        event_id: str | None = None,
         score: float,
         class_name: str,
         threshold: float,
         consecutive: int,
         monotonic_ns: int,
     ) -> str:
-        event_id = str(uuid.uuid4())
+        event_id = event_id or str(uuid.uuid4())
         detected_at = (
             datetime.now(timezone.utc)
             .isoformat(timespec="milliseconds")

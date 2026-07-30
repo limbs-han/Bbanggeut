@@ -273,7 +273,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dashboard-log",
         type=Path,
-        help="Optional JSON Lines path for combined vision and servo dashboard logs.",
+        help="Optional JSON Lines path for vision, servo, and laughter logs.",
+    )
+    parser.add_argument(
+        "--dashboard-event-dir",
+        type=Path,
+        help="Watch laughter trigger and upload markers without capturing clips.",
     )
     parser.add_argument(
         "--dashboard-frame-width",
@@ -1028,6 +1033,7 @@ def run(args: argparse.Namespace) -> None:
             mqtt_username=args.mqtt_username,
             mqtt_password=args.mqtt_password,
             log_path=args.dashboard_log,
+            event_dir=args.dashboard_event_dir,
             jpeg_width=args.dashboard_frame_width,
             jpeg_quality=args.dashboard_jpeg_quality,
             frame_interval_seconds=args.dashboard_frame_interval,

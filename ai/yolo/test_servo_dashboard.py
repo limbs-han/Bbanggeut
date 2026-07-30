@@ -10,6 +10,7 @@ import urllib.request
 from servo_dashboard import (
     DashboardRequestHandler,
     DashboardTelemetry,
+    LaughterEventDirectoryMonitor,
     ThreadingHTTPServer,
 )
 from functools import partial
@@ -79,6 +80,89 @@ class DashboardTelemetryTests(unittest.TestCase):
         self.assertEqual(records[0]["source"], "servo")
         self.assertEqual(records[0]["state"], "HOLD")
 
+    def test_laughter_state_keeps_detection_context_during_upload(self) -> None:
+        telemetry = DashboardTelemetry()
+        telemetry.update_laughter(
+            {
+                "state": "DETECTED",
+                "event_id": "laugh-1",
+                "occurred_at": "2026-07-30T01:00:00.000Z",
+                "confidence": 0.81,
+            }
+        )
+        telemetry.update_laughter(
+            {
+                "state": "RETRYING",
+                "upload_status": "RETRYING",
+                "event_id": "laugh-1",
+                "detail": "HTTP 503",
+                "attempts": 2,
+            }
+        )
+
+        laughter = telemetry.snapshot()["laughter"]
+
+        self.assertEqual(laughter["upload_status"], "RETRYING")
+        self.assertEqual(laughter["confidence"], 0.81)
+        self.assertEqual(laughter["attempts"], 2)
+        telemetry.close()
+
+    def test_event_directory_monitor_logs_trigger_and_upload_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            event_dir = Path(temp_dir)
+            telemetry = DashboardTelemetry()
+            monitor = LaughterEventDirectoryMonitor(event_dir, telemetry)
+            (event_dir / "laugh-1.trigger.json").write_text(
+                json.dumps(
+                    {
+                        "eventId": "laugh-1",
+                        "occurredAt": "2026-07-30T01:00:00.000Z",
+                        "confidence": 0.81,
+                        "className": "Laughter",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            monitor.scan_once()
+            (event_dir / "laugh-1.upload-status.json").write_text(
+                json.dumps(
+                    {
+                        "eventId": "laugh-1",
+                        "status": "UPLOADED",
+                        "detail": "영상 업로드 완료",
+                        "videoId": "video-1",
+                        "history": [
+                            {
+                                "status": "BUILDING_CLIP",
+                                "detail": "영상 생성 중",
+                                "updatedAt": "2026-07-30T01:01:00.000Z",
+                            },
+                            {
+                                "status": "UPLOADED",
+                                "detail": "영상 업로드 완료",
+                                "videoId": "video-1",
+                                "updatedAt": "2026-07-30T01:02:00.000Z",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            monitor.scan_once()
+            monitor.scan_once()
+
+            snapshot = telemetry.snapshot()
+
+            self.assertEqual(snapshot["laughter"]["upload_status"], "UPLOADED")
+            self.assertEqual(snapshot["laughter"]["confidence"], 0.81)
+            self.assertEqual(snapshot["laughter"]["video_id"], "video-1")
+            self.assertEqual(
+                [event["upload_status"] for event in snapshot["events"]],
+                ["DETECTED", "BUILDING_CLIP", "UPLOADED"],
+            )
+            monitor.close()
+            telemetry.close()
+
 
 class DashboardHttpTests(unittest.TestCase):
     def test_health_and_state_endpoints(self) -> None:
@@ -113,6 +197,7 @@ class DashboardHttpTests(unittest.TestCase):
 
         self.assertEqual(health["status"], "ok")
         self.assertFalse(health["vision_available"])
+        self.assertFalse(health["laughter_available"])
         self.assertIsNone(state["servo"])
 
 

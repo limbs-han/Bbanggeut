@@ -36,6 +36,7 @@ class DashboardTelemetry:
         self._condition = threading.Condition()
         self._vision: dict[str, Any] | None = None
         self._servo: dict[str, Any] | None = None
+        self._laughter: dict[str, Any] | None = None
         self._events: deque[dict[str, Any]] = deque(maxlen=max_events)
         self._jpeg: bytes | None = None
         self._frame_sequence = 0
@@ -52,7 +53,7 @@ class DashboardTelemetry:
     @staticmethod
     def _event_from_payload(source: str, payload: dict[str, Any]) -> dict[str, Any]:
         return {
-            "recorded_at": utc_now(),
+            "recorded_at": payload.get("recorded_at") or utc_now(),
             "source": source,
             "state": payload.get("state"),
             "direction": payload.get("direction"),
@@ -73,6 +74,16 @@ class DashboardTelemetry:
             "target_pan_deg": payload.get("target_pan_deg"),
             "target_tilt_deg": payload.get("target_tilt_deg"),
             "hardware_enabled": payload.get("hardware_enabled"),
+            "event_id": payload.get("event_id"),
+            "occurred_at": payload.get("occurred_at"),
+            "confidence": payload.get("confidence"),
+            "class_name": payload.get("class_name"),
+            "upload_status": payload.get("upload_status"),
+            "detail": payload.get("detail"),
+            "attempts": payload.get("attempts"),
+            "retry_delay_seconds": payload.get("retry_delay_seconds"),
+            "http_status": payload.get("http_status"),
+            "video_id": payload.get("video_id"),
         }
 
     def _append_event(self, source: str, payload: dict[str, Any]) -> None:
@@ -107,6 +118,25 @@ class DashboardTelemetry:
             self._append_event("servo", payload)
             self._condition.notify_all()
 
+    def update_laughter(self, payload: dict[str, Any]) -> None:
+        with self._condition:
+            merged: dict[str, Any] = {}
+            if (
+                self._laughter is not None
+                and self._laughter.get("event_id") == payload.get("event_id")
+            ):
+                merged.update(self._laughter)
+            merged.update(
+                {
+                    key: value
+                    for key, value in payload.items()
+                    if value is not None
+                }
+            )
+            self._laughter = merged
+            self._append_event("laughter", merged)
+            self._condition.notify_all()
+
     def snapshot(self) -> dict[str, Any]:
         with self._condition:
             return {
@@ -114,6 +144,9 @@ class DashboardTelemetry:
                 "started_at": self._started_at,
                 "vision": dict(self._vision) if self._vision is not None else None,
                 "servo": dict(self._servo) if self._servo is not None else None,
+                "laughter": (
+                    dict(self._laughter) if self._laughter is not None else None
+                ),
                 "events": list(self._events),
                 "frame_sequence": self._frame_sequence,
             }
@@ -136,6 +169,144 @@ class DashboardTelemetry:
                 self._log_file.close()
                 self._log_file = None
             self._condition.notify_all()
+
+
+class LaughterEventDirectoryMonitor:
+    """Convert local laughter trigger and upload markers into telemetry."""
+
+    _SUFFIXES = (
+        ".trigger.json",
+        ".upload-status.json",
+        ".uploaded.json",
+        ".merged.json",
+        ".upload-blocked.json",
+    )
+
+    def __init__(
+        self,
+        event_dir: Path,
+        telemetry: DashboardTelemetry,
+        *,
+        poll_seconds: float = 0.25,
+    ) -> None:
+        self.event_dir = event_dir.expanduser().resolve()
+        self.telemetry = telemetry
+        self.poll_seconds = poll_seconds
+        self._seen_versions: dict[Path, tuple[int, int]] = {}
+        self._seen_history_entries: dict[Path, set[tuple[Any, ...]]] = {}
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="laughter-event-monitor",
+            daemon=True,
+        )
+
+    @staticmethod
+    def _event_id(path: Path) -> str:
+        for suffix in LaughterEventDirectoryMonitor._SUFFIXES:
+            if path.name.endswith(suffix):
+                return path.name.removesuffix(suffix)
+        return path.stem
+
+    @staticmethod
+    def _normalize(path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+        event_id = str(payload.get("eventId") or LaughterEventDirectoryMonitor._event_id(path))
+        if path.name.endswith(".trigger.json"):
+            status = "DETECTED"
+            detail = "웃음 신호 감지"
+        elif path.name.endswith(".uploaded.json"):
+            status = "UPLOADED"
+            detail = "영상 업로드 완료"
+        elif path.name.endswith(".merged.json"):
+            status = "MERGED"
+            detail = "인접 웃음 이벤트와 영상 병합"
+        elif path.name.endswith(".upload-blocked.json"):
+            status = "BLOCKED"
+            detail = str(payload.get("reason") or "업로드 차단")
+        else:
+            status = str(payload.get("status") or "UNKNOWN")
+            detail = str(payload.get("detail") or "")
+        return {
+            "recorded_at": payload.get("updatedAt") or payload.get("occurredAt"),
+            "state": status,
+            "upload_status": status,
+            "event_id": event_id,
+            "occurred_at": payload.get("occurredAt"),
+            "confidence": payload.get("confidence"),
+            "class_name": payload.get("className"),
+            "detail": detail,
+            "attempts": payload.get("attempts"),
+            "retry_delay_seconds": payload.get("retryDelaySeconds"),
+            "http_status": payload.get("httpStatus"),
+            "video_id": payload.get("videoId"),
+        }
+
+    def scan_once(self) -> None:
+        try:
+            self.event_dir.mkdir(parents=True, exist_ok=True)
+            paths = sorted(
+                (
+                    path
+                    for suffix in self._SUFFIXES
+                    for path in self.event_dir.glob(f"*{suffix}")
+                ),
+                key=lambda path: path.stat().st_mtime_ns,
+            )
+        except OSError:
+            return
+        for path in paths:
+            try:
+                stat = path.stat()
+                version = (stat.st_mtime_ns, stat.st_size)
+                if self._seen_versions.get(path) == version:
+                    continue
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict):
+                    continue
+                history = payload.get("history")
+                if path.name.endswith(".upload-status.json") and isinstance(
+                    history, list
+                ):
+                    for item in history:
+                        if isinstance(item, dict):
+                            entry_key = (
+                                item.get("updatedAt"),
+                                item.get("status"),
+                                item.get("detail"),
+                            )
+                            seen_entries = self._seen_history_entries.setdefault(
+                                path, set()
+                            )
+                            if entry_key in seen_entries:
+                                continue
+                            self.telemetry.update_laughter(
+                                self._normalize(
+                                    path,
+                                    {
+                                        "eventId": payload.get("eventId"),
+                                        **item,
+                                    },
+                                )
+                            )
+                            seen_entries.add(entry_key)
+                else:
+                    self.telemetry.update_laughter(self._normalize(path, payload))
+                self._seen_versions[path] = version
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.poll_seconds):
+            self.scan_once()
+
+    def start(self) -> None:
+        self.scan_once()
+        self._thread.start()
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=max(1.0, self.poll_seconds * 2))
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -231,6 +402,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     "status": "ok",
                     "vision_available": snapshot["vision"] is not None,
                     "servo_available": snapshot["servo"] is not None,
+                    "laughter_available": snapshot["laughter"] is not None,
                 }
             )
         elif path == "/stream.mjpg":
@@ -253,6 +425,7 @@ class ServoDashboard:
         mqtt_username: str | None = None,
         mqtt_password: str | None = None,
         log_path: Path | None = None,
+        event_dir: Path | None = None,
         jpeg_width: int = 960,
         jpeg_quality: int = 72,
         frame_interval_seconds: float = 0.2,
@@ -271,6 +444,11 @@ class ServoDashboard:
         self.frame_interval_seconds = frame_interval_seconds
         self._last_frame_at = float("-inf")
         self.telemetry = DashboardTelemetry(log_path=log_path)
+        self._laughter_monitor = (
+            LaughterEventDirectoryMonitor(event_dir, self.telemetry)
+            if event_dir is not None
+            else None
+        )
         static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
         handler = partial(
             DashboardRequestHandler,
@@ -295,6 +473,9 @@ class ServoDashboard:
         self._servo_topic = (
             f"homecam/v2/{device_id}/control/framing/status"
         )
+        self._laughter_topic = (
+            f"homecam/v2/{device_id}/ai/laughter/detected"
+        )
         self._mqtt.on_connect = self._on_connect
         self._mqtt.on_message = self._on_message
         self._mqtt.connect(mqtt_host, mqtt_port, keepalive=60)
@@ -309,19 +490,37 @@ class ServoDashboard:
     ) -> None:
         del userdata, connect_flags, properties
         if not reason_code.is_failure:
-            client.subscribe(self._servo_topic, qos=0)
+            client.subscribe(
+                [(self._servo_topic, 0), (self._laughter_topic, 1)]
+            )
 
     def _on_message(self, client: Any, userdata: Any, message: Any) -> None:
         del client, userdata
         try:
             payload = json.loads(message.payload.decode("utf-8"))
             if isinstance(payload, dict):
-                self.telemetry.update_servo(payload)
+                if message.topic == self._laughter_topic:
+                    self.telemetry.update_laughter(
+                        {
+                            "state": "DETECTED",
+                            "recorded_at": payload.get("detected_at"),
+                            "upload_status": "DETECTED",
+                            "event_id": payload.get("event_id"),
+                            "occurred_at": payload.get("detected_at"),
+                            "confidence": payload.get("score"),
+                            "class_name": payload.get("class_name"),
+                            "detail": "YAMNet MQTT 웃음 신호",
+                        }
+                    )
+                elif message.topic == self._servo_topic:
+                    self.telemetry.update_servo(payload)
         except (UnicodeDecodeError, json.JSONDecodeError):
             return
 
     def start(self) -> None:
         self._mqtt.loop_start()
+        if self._laughter_monitor is not None:
+            self._laughter_monitor.start()
         self._http_thread.start()
         print(f"Servo dashboard: http://{self.host}:{self.port}")
 
@@ -365,6 +564,8 @@ class ServoDashboard:
     def close(self) -> None:
         self._http.shutdown()
         self._http.server_close()
+        if self._laughter_monitor is not None:
+            self._laughter_monitor.close()
         self._mqtt.disconnect()
         self._mqtt.loop_stop()
         self.telemetry.close()

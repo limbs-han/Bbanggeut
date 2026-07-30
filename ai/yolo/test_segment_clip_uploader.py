@@ -202,6 +202,13 @@ class SegmentClipUploaderTests(unittest.TestCase):
             )
             self.assertEqual(marker["httpStatus"], 409)
             self.assertFalse(marker["retryable"])
+            status = json.loads(
+                (event_dir / "blocked.upload-status.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(status["status"], "BLOCKED")
+            self.assertEqual(status["httpStatus"], 409)
 
 
 if __name__ == "__main__":

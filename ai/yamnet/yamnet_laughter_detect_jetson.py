@@ -607,6 +607,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                     )
                     positive_streak = 0
                     last_alert_at = now
+                    event_id = None
                     if args.event_dir is not None and not args.diagnostics_only:
                         event_id = str(uuid.uuid4())
                         occurred_at = datetime.now(timezone.utc)
@@ -630,6 +631,7 @@ def run_detector(args: argparse.Namespace, np: Any, sd: Any) -> None:
                     if mqtt_publisher is not None:
                         try:
                             mqtt_publisher.publish_laughter(
+                                event_id=event_id,
                                 score=laugh_score,
                                 class_name=best_laugh_name,
                                 threshold=args.threshold,
