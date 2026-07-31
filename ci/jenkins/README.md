@@ -41,6 +41,65 @@ Jenkins Controller가 Java 21로 실행되므로 Agent 연결 프로그램도 Ja
 Backend Gradle 설정은 Java 17 toolchain을 요구하므로 공통 Agent에는 Java 17을 별도 경로로
 함께 설치했습니다.
 
+## 서버 구성 반영 절차
+
+호스트는 이 저장소의 체크아웃에서 `ci/jenkins/server`를 작업 디렉터리로 삼아 Compose를
+실행합니다. 구성 변경은 `git pull` 후 컨테이너를 다시 생성하는 것으로 반영합니다.
+
+```bash
+cd "$(git rev-parse --show-toplevel)/ci/jenkins/server" && git pull
+```
+
+이후 아래 "Agent 프로세스 회수"의 재생성 절차를 따릅니다. 환경 변수는 컨테이너 생성 시점에
+고정되므로, `compose.yml`을 갱신해도 재생성하지 않으면 실행 중인 컨테이너에는 반영되지
+않습니다.
+
+### 체크아웃을 쓰는 이유
+
+호스트가 저장소와 무관한 디렉터리에서 Compose를 실행하면, 구성 변경이 사람이 파일을 복사해야
+반영됩니다. 2026-07-30에 이 누락이 실제로 발생했습니다. `redis-ci`와 `TEST_REDIS_*`를 추가한
+커밋이 하루 넘게 호스트에 반영되지 않아, 로그인 시도 제한 통합 테스트 8개가 매 빌드 조용히
+건너뛰기 처리됐습니다. 빌드는 계속 성공으로 표시됐고 경고만 로그에 남았습니다.
+
+### 작업 디렉터리를 옮길 때 (일회성)
+
+Compose가 컨테이너를 식별하는 값은 모두 명시적입니다. `compose.yml`의 `name`, 각 네트워크의
+`name`, 서비스별 `container_name`이 고정돼 있고 `secrets`의 `file`은 작업 디렉터리 밖의
+절대 경로입니다. 디렉터리 경로에서 파생되는 값이 없으므로 다른 경로에서 실행해도 같은
+프로젝트로 인식합니다.
+
+체크아웃은 저장소 읽기에 쓰는 읽기 전용 Deploy Token으로 받습니다. 호스트 디스크에 토큰을
+남기지 않으려면 `clone`과 `pull` 시점에 직접 입력합니다. 구성 변경은 드물게 발생하므로 매번
+입력해도 부담이 크지 않고, 자격 증명을 저장하지 않는 편이 안전합니다.
+
+호스트는 `ci/jenkins/server`만 필요합니다. 저장소에는 190MB 크기의 STT 모델이 커밋돼 있어
+전체 클론은 500MB가 넘으므로, 필요한 경로만 받습니다.
+
+```bash
+cd /home/ubuntu && git clone --filter=blob:none --sparse https://lab.ssafy.com/s15-webmobile3-sub1/S15P11E201.git && cd S15P11E201 && git sparse-checkout set ci/jenkins/server
+```
+
+부분 클론을 서버가 지원하지 않으면 `--filter=blob:none`을 빼고 실행합니다. 이후 `git pull`은
+받아둔 경로만 갱신합니다.
+
+옮기기 전에 두 가지를 확인합니다. 먼저 기존 디렉터리에만 있는 파일이 없는지 봅니다. 있으면
+저장소에 없는 로컬 전용 파일이므로 함께 옮길지 판단해야 합니다.
+
+```bash
+diff <(ls -A /home/ubuntu/jenkins) <(ls -A "$(git rev-parse --show-toplevel)/ci/jenkins/server")
+```
+
+다음으로 두 디렉터리에서 해석된 구성이 같은지 확인합니다. `build.context`가 절대 경로로
+전개되므로 그 다섯 줄만 달라야 하고, 그 외에 차이가 있으면 옮기지 않고 원인을 먼저
+확인합니다.
+
+```bash
+diff <(cd /home/ubuntu/jenkins && docker compose config) <(cd "$(git rev-parse --show-toplevel)/ci/jenkins/server" && docker compose config)
+```
+
+이미지는 `image:`의 태그로 식별되므로 작업 디렉터리를 옮겨도 다시 빌드되지 않습니다. 재빌드가
+필요하면 `--build`를 명시해야 합니다.
+
 ## Agent 프로세스 회수
 
 네 Jenkins Agent는 Compose의 `init: true`를 공통 적용합니다. 컨테이너 안에서 빌드 프로세스가
