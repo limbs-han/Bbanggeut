@@ -138,7 +138,7 @@ flowchart LR
 
 - `02-requirements.md` — REQ-F-01~42, REQ-NF-01~12
 - `03-features.md` — FN-A/S/E/H 79개(FN-A39 온디바이스 자막 포함) + 경로 매핑 총람
-- `04-api-spec.md` — API-01~62(06·51~54 제외), MQTT-01~15 + JSON 스키마
+- `04-api-spec.md` — API-01~62(06 제외), MQTT-01~15 + JSON 스키마
 
 ## 9. 부록 B: 현재 구현 현황 요약
 
