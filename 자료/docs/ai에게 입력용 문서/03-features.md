@@ -38,13 +38,13 @@ ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호
 | `ui/main_shell.dart` | FN-A06 |
 | `ui/device_registration_screen.dart` | FN-A07~A08 |
 | `ui/home_screen.dart`, `ui/live_screen.dart` | FN-A09~A12 |
-| `ui/calendar_screen.dart`, `ui/extra_screens.dart`(AnniversaryEditorScreen) | FN-A13~A14 |
+| `ui/content_calendar_screen.dart`, `ui/schedule_editor_screen.dart` | FN-A13~A14 |
 | `ui/videos_screen.dart` | FN-A15~A16 |
 | `ui/video_detail_screen.dart`, `ui/local_edit_screen.dart` | FN-A17~A21 |
 | `ui/family_screen.dart` | FN-A22~A24 |
 | `ui/invitation_inbox_screen.dart` | FN-A25 |
 | `ui/settings_screen.dart` | FN-A26~A34 |
-| `ui/extra_screens.dart`(NotificationsScreen, LaughReportScreen) | FN-A35~A36 |
+| `ui/content_notifications_screen.dart`, `ui/laugh_report_content_screen.dart` | FN-A35~A36 |
 | `ui/media_player_surface.dart` | FN-A37 |
 | `ui/laugh_report_content_screen.dart`(`LaughReportContentScreen`) | **FN-A38 [구현]** |
 | `core/api_client.dart` | (전 화면 공용 API 호출 지점) |
@@ -96,7 +96,7 @@ flowchart TD
     Home --> VideoDetail["VideoDetailScreen\n상세/재생 (FN-A17, A37)"]
     Calendar --> VideoDetail
     Videos --> VideoDetail
-    Videos --> LaughReport["LaughReportScreen\n웃음 통계 (FN-A36)"]
+    Home --> LaughReport["LaughReportContentScreen\n웃음 통계 (FN-A36)"]
     LaughReport --> ReportScreen["LaughReportContentScreen\n날짜별 단말 집계 리포트 (FN-A38)"]
     ReportScreen --> VideoDetail
 
@@ -112,7 +112,7 @@ flowchart TD
 
 - 탭 순서(인덱스 0~4): 홈 / 캘린더 / 추억 / 가족 / 설정.
 - 앱 최상위 선택 상태는 물리 기기(`selectedDevice`)가 아니라 추억 금고(`selectedVault`)다. 기기 해제 후에도 금고·영상·멤버십·구독은 유지되며, `GET /api/vaults` 재조회 결과에 따라 `VaultArchiveScreen` 또는 5탭 화면으로 이동한다.
-- `LiveScreen`(FN-A12, 부록A)은 도달 불가 코드여서 WebRTC 전용 전환에서 삭제했다(ID는 결번 방지를 위해 부록A에 제거 표기로 유지). 기념일 편집(`AnniversaryEditorScreen`), 알림 목록(`NotificationsScreen`) 등 MVP·가족공유 밖 보조 화면도 생략(부록A 참고).
+- `LiveScreen`(FN-A12, 부록A)은 도달 불가 코드여서 WebRTC 전용 전환에서 삭제했다(ID는 결번 방지를 위해 부록A에 제거 표기로 유지). 일정 편집(`ScheduleEditorScreen`), 알림 목록(`ContentNotificationsScreen`) 등 보조 화면도 생략(부록A 참고).
 - **`LaughReportContentScreen`(FN-A38)은 구현됐다** — `AppController.videos`의 `LAUGHTER` 항목을 날짜별로 단말 집계한다. 주간/월간 서버 집계는 FN-S26/API-62 범위다.
 
 | ID | 기능 | 사용 API | 소스 파일(`frontend/lib/`) | 비고/에러코드 |
@@ -130,7 +130,7 @@ flowchart TD
 | FN-A11 | 전체화면 라이브 | (재사용, 신규호출없음) | `ui/live_screen.dart`(FullscreenWhepView) | WHEP 렌더러 전체화면, 3초 후 컨트롤 자동숨김 |
 | FN-A12 | 독립형 라이브 화면 | — | (삭제됨) | **제거됨** — 도달 불가 HLS 기반 코드로 WebRTC 전용 전환에서 삭제 |
 | FN-A13 | 월별 캘린더 영상조회 | API-27 | `ui/calendar_screen.dart` | - |
-| FN-A14 | 기념일 배너/편집(미구현) | 없음 ❌ | `ui/calendar_screen.dart`, `ui/extra_screens.dart:193,296` | backend "anniversary" grep 0건 |
+| FN-A14 | 기념일 배너/편집(미구현) | 없음 ❌ | `ui/content_calendar_screen.dart`, `ui/schedule_editor_screen.dart` | backend "anniversary" grep 0건 |
 | FN-A15 | 영상 목록/필터/정렬/검색 | API-27(간접, 로컬필터) | `ui/videos_screen.dart` | - |
 | FN-A16 | 영상 삭제 | API-30 | `ui/videos_screen.dart` | 403 FORBIDDEN_ROLE, 404 |
 | FN-A17 | 영상 상세/재생 | API-31 | `ui/video_detail_screen.dart` | 409 VIDEO_NOT_READY, 503 |
@@ -153,10 +153,10 @@ flowchart TD
 | FN-A33 | 회원 탈퇴 | API-05 | `ui/settings_screen.dart` | 409 OWNER_MEMBERSHIP_EXISTS |
 | FN-A34 | 기기 해제 | API-13 | `ui/settings_screen.dart` | 403, 404 |
 | FN-A35 | 알림 목록/읽음처리·FCM 화면 이동 | API-58, API-60, API-61 (API-59는 클라이언트 정의만) | `ui/content_notifications_screen.dart`, `core/push_notification_service.dart` | 서버 알림 목록과 읽음 API 사용. FCM의 초대·웃음 영상 payload를 대상 화면에 연결 |
-| FN-A36 | 웃음 리포트/웃음 잔디 | API-33, API-27(간접) | `ui/extra_screens.dart`(LaughReportScreen) | - |
+| FN-A36 | 웃음 리포트/웃음 잔디 | API-33, API-27(간접) | `ui/laugh_report_content_screen.dart` | - |
 | FN-A37 | 재생 공용 컴포넌트 | 없음(순수 UI) | `ui/media_player_surface.dart` | isLive 여부로 컨트롤 분기 |
 
-검증: 화면 파일 13개(`auth_screen`,`calendar_screen`,`device_registration_screen`,`extra_screens`,`family_screen`,`home_screen`,`invitation_inbox_screen`,`live_screen`,`local_edit_screen`,`media_player_surface`,`settings_screen`,`videos_screen`,`video_detail_screen`) 전부 등장 + `main_shell.dart` 별도.
+검증: 화면 경로는 위 표의 현재 구현 파일을 기준으로 확인하며, 삭제된 레거시 화면 파일을 구현 근거로 사용하지 않는다.
 
 ---
 
@@ -248,9 +248,9 @@ flowchart TD
 |---|---|---|---|---|---|
 | FN-A13 | 월별 캘린더 영상 조회 | 폰+서버 | 월 이동 시 해당 월 범위 재조회, 날짜 선택 시 해당일 목록 표시 | REQ-F-19 / API-27 | `ui/calendar_screen.dart` |
 | FN-S12 | 영상 목록 조회(캘린더 집계 재사용) | 서버 | 5절 표 참고(커서 페이지네이션) | REQ-F-19 / API-27 | `video/api/VideoController.java` |
-| FN-A36 | 웃음 리포트/웃음 잔디 | 폰 | 월평균·전체포착수·주간추이 막대, 연간 히트맵을 탭으로 전환 | REQ-F-36 / API-33 | `ui/extra_screens.dart`(`LaughReportScreen`) |
+| FN-A36 | 웃음 리포트/웃음 잔디 | 폰 | 월평균·전체포착수·주간추이 막대, 연간 히트맵을 탭으로 전환 | REQ-F-36 / API-33 | `ui/laugh_report_content_screen.dart`(`LaughReportContentScreen`) |
 | FN-S15 | 영상 통계 | 서버 | 기간별 트리거타입/일별 집계, 최다 요일·시간대 통계 | REQ-F-36 / API-33 | `video/api/VideoStatsController.java`, `VideoStatsService.java` |
-| FN-S22 | 이벤트 통계 | 서버 | 기간별 감지 이벤트/업로드 영상 수 집계. FN-A38/FN-S26 확장 시 기반 로직 후보 | REQ-F-36 / API-46 | `iot/event/EventStatsController.java`, `EventStatsService.java` — 서버 정교히 구현되었으나 `LaughReportScreen`은 API-33만 사용 |
+| FN-S22 | 이벤트 통계 | 서버 | 기간별 감지 이벤트/업로드 영상 수 집계. FN-A38/FN-S26 확장 시 기반 로직 후보 | REQ-F-36 / API-46 | `iot/event/EventStatsController.java`, `EventStatsService.java` — 서버 정교히 구현되었으나 `LaughReportContentScreen`은 API-33만 사용 |
 | **FN-A38** `[구현]` | 웃음 리포트 화면 | 폰 | 로드된 `LAUGHTER` 영상을 날짜별 단말 집계. 전체 횟수·웃음 날짜 수·최근 날짜별 횟수·연간 잔디·선택 날짜 영상 제공 | REQ-F-42 / 기존 영상 목록 | `ui/laugh_report_content_screen.dart` |
 | **FN-S26** `[제안·미구현]` | 리포트 집계 API | 서버 | 기간(주간/월간) 파라미터로 웃음 횟수 합계·시간대별 분포·베스트 클립 목록 집계. FN-S15/FN-S22 로직·`device_events` 데이터를 확장 기반으로 검토 가능(정렬 기준·개수는 상세 설계 시 확정) | REQ-F-42 / API-62 [제안] | **경로 없음 — 미구현, 신규 개발 필요** |
 
@@ -327,7 +327,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN-A05 | 비밀번호 찾기(이메일 재설정 링크) | 서버 구현 완료(API-56, 57), 앱 미연동 — REQ-F-08 · `ui/auth_screen.dart:249-256` 로컬 스낵바 |
 | FN-A09 | 홈 요약 카드(오늘의 촬영·저장·메모 통계, 최근 하이라이트) | 확장 — REQ-F-17 · `ui/home_screen.dart`(homeSummary 실패는 best-effort 무시) |
 | FN-A12 | 독립형 라이브 화면(`LiveScreen`) | **제거됨** — 도달 불가 HLS 기반 코드로 WebRTC 전용 전환에서 삭제 |
-| FN-A14 | 기념일 배너/편집 | 미구현(스텁) — REQ-F-20 · `ui/calendar_screen.dart`, `ui/extra_screens.dart:193,296` |
+| FN-A14 | 기념일 배너/편집 | 미구현(스텁) — REQ-F-20 · `ui/content_calendar_screen.dart`, `ui/schedule_editor_screen.dart` |
 | FN-A16 | 영상 삭제(OWNER 전용) | 확장 — REQ-F-25 · `ui/videos_screen.dart` |
 | FN-A18 | 영상 메타데이터(제목/메모) 편집 | 확장 — REQ-F-23 · `ui/video_detail_screen.dart` |
 | FN-A19 | 즐겨찾기 토글 | 확장 — REQ-F-24 · `ui/video_detail_screen.dart`, `app/app_controller.dart` |
@@ -337,7 +337,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN-A30 | 구독(보관 플랜) 관리 | 확장 — REQ-F-33 · `ui/settings_screen.dart` |
 | FN-A31 | 접근 기록 조회 | 확장 — REQ-F-34 · `ui/settings_screen.dart` |
 | FN-A34 | 기기 해제 | 확장 — REQ-F-15 · `ui/settings_screen.dart` |
-| FN-A35 | 알림 목록/안읽은개수/읽음 처리·FCM 화면 이동 | 구현(서버+앱, API-58~61) — REQ-F-35 · `ui/content_notifications_screen.dart`(실제 화면), `core/push_notification_service.dart`. `ui/extra_screens.dart:14` `NotificationsScreen`은 위임 래퍼이고 같은 파일 `_LegacyNotificationsScreen`은 미사용. 개별·모두 읽음은 서버 연동이나 `countUnreadNotifications`(API-59)는 클라이언트 정의만 있고 호출처 없음 |
+| FN-A35 | 알림 목록/안읽은개수/읽음 처리·FCM 화면 이동 | 구현(서버+앱, API-58~61) — REQ-F-35 · `ui/content_notifications_screen.dart`, `core/push_notification_service.dart`. 개별·모두 읽음은 서버 연동이나 `countUnreadNotifications`(API-59)는 클라이언트 정의만 있고 호출처 없음 |
 
 ### 서버(Server)
 
