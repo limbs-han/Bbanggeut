@@ -5,7 +5,7 @@
 
 ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호. 앱39(A01~A39) + 서버26(S01~S26) + 엣지10(E01~10) + 하드웨어4(H01~04) = **79개**. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조).
 
-**FN-A38 Flutter 리포트 화면은 구현됐다. FN-S26 서버 집계만 `[제안·미구현]`이다. 코드 경로가 없는 FN-S26/API-51을 존재하는 코드로 가정하지 말 것.**
+**FN-A38 Flutter 리포트 화면은 구현됐다. FN-S26 서버 집계만 `[제안·미구현]`이다. 코드 경로가 없는 FN-S26/API-62을 존재하는 코드로 가정하지 말 것.**
 
 ---
 
@@ -26,7 +26,7 @@ ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호
 | provisioning | FN-S23 | API-47~49 | `provisioning/api/`, `provisioning/application/` |
 | audit | FN-S24 | API-50 | `audit/api/`, `audit/application/` |
 | MQTT 공통 | FN-S25 | MQTT-01~09 | `iot/mqtt/`, `iot/telemetry/`, `stream/application/StreamCommandPublisher.java`, `stream/application/StreamEventService.java`, `iot/event/DeviceEventService.java` |
-| **report(제안)** | **FN-S26** | **API-51 [제안]** | **코드 없음 — 기존 `video/api/VideoStatsController.java`(API-33)·`iot/event/EventStatsController.java`(API-46) 확장 검토 대상** |
+| **report(제안)** | **FN-S26** | **API-62 [제안]** | **코드 없음 — 기존 `video/api/VideoStatsController.java`(API-33)·`iot/event/EventStatsController.java`(API-46) 확장 검토 대상** |
 | 공통 | - | - | `common/api/`, `common/web/`, `config/` |
 
 ### 0.2 화면 → dart 파일 경로 (`frontend/lib/`)
@@ -113,7 +113,7 @@ flowchart TD
 - 탭 순서(인덱스 0~4): 홈 / 캘린더 / 추억 / 가족 / 설정.
 - 앱 최상위 선택 상태는 물리 기기(`selectedDevice`)가 아니라 추억 금고(`selectedVault`)다. 기기 해제 후에도 금고·영상·멤버십·구독은 유지되며, `GET /api/vaults` 재조회 결과에 따라 `VaultArchiveScreen` 또는 5탭 화면으로 이동한다.
 - `LiveScreen`(FN-A12, 부록A)은 도달 불가 코드여서 WebRTC 전용 전환에서 삭제했다(ID는 결번 방지를 위해 부록A에 제거 표기로 유지). 기념일 편집(`AnniversaryEditorScreen`), 알림 목록(`NotificationsScreen`) 등 MVP·가족공유 밖 보조 화면도 생략(부록A 참고).
-- **`LaughReportContentScreen`(FN-A38)은 구현됐다** — `AppController.videos`의 `LAUGHTER` 항목을 날짜별로 단말 집계한다. 주간/월간 서버 집계는 FN-S26/API-51 범위다.
+- **`LaughReportContentScreen`(FN-A38)은 구현됐다** — `AppController.videos`의 `LAUGHTER` 항목을 날짜별로 단말 집계한다. 주간/월간 서버 집계는 FN-S26/API-62 범위다.
 
 | ID | 기능 | 사용 API | 소스 파일(`frontend/lib/`) | 비고/에러코드 |
 |---|---|---|---|---|
@@ -152,7 +152,7 @@ flowchart TD
 | FN-A32 | 로그아웃 | API-04 | `ui/settings_screen.dart`, `ui/device_registration_screen.dart` | - |
 | FN-A33 | 회원 탈퇴 | API-05 | `ui/settings_screen.dart` | 409 OWNER_MEMBERSHIP_EXISTS |
 | FN-A34 | 기기 해제 | API-13 | `ui/settings_screen.dart` | 403, 404 |
-| FN-A35 | 알림 목록/읽음처리·FCM 화면 이동 | API-39~43 | `ui/content_notifications_screen.dart`, `core/push_notification_service.dart` | 서버 알림 목록과 읽음 API 사용. FCM의 초대·웃음 영상 payload를 대상 화면에 연결 |
+| FN-A35 | 알림 목록/읽음처리·FCM 화면 이동 | API-58, API-60, API-61 (API-59는 클라이언트 정의만) | `ui/content_notifications_screen.dart`, `core/push_notification_service.dart` | 서버 알림 목록과 읽음 API 사용. FCM의 초대·웃음 영상 payload를 대상 화면에 연결 |
 | FN-A36 | 웃음 리포트/웃음 잔디 | API-33, API-27(간접) | `ui/extra_screens.dart`(LaughReportScreen) | - |
 | FN-A37 | 재생 공용 컴포넌트 | 없음(순수 UI) | `ui/media_player_surface.dart` | isLive 여부로 컨트롤 분기 |
 
@@ -252,19 +252,19 @@ flowchart TD
 | FN-S15 | 영상 통계 | 서버 | 기간별 트리거타입/일별 집계, 최다 요일·시간대 통계 | REQ-F-36 / API-33 | `video/api/VideoStatsController.java`, `VideoStatsService.java` |
 | FN-S22 | 이벤트 통계 | 서버 | 기간별 감지 이벤트/업로드 영상 수 집계. FN-A38/FN-S26 확장 시 기반 로직 후보 | REQ-F-36 / API-46 | `iot/event/EventStatsController.java`, `EventStatsService.java` — 서버 정교히 구현되었으나 `LaughReportScreen`은 API-33만 사용 |
 | **FN-A38** `[구현]` | 웃음 리포트 화면 | 폰 | 로드된 `LAUGHTER` 영상을 날짜별 단말 집계. 전체 횟수·웃음 날짜 수·최근 날짜별 횟수·연간 잔디·선택 날짜 영상 제공 | REQ-F-42 / 기존 영상 목록 | `ui/laugh_report_content_screen.dart` |
-| **FN-S26** `[제안·미구현]` | 리포트 집계 API | 서버 | 기간(주간/월간) 파라미터로 웃음 횟수 합계·시간대별 분포·베스트 클립 목록 집계. FN-S15/FN-S22 로직·`device_events` 데이터를 확장 기반으로 검토 가능(정렬 기준·개수는 상세 설계 시 확정) | REQ-F-42 / API-51 [제안] | **경로 없음 — 미구현, 신규 개발 필요** |
+| **FN-S26** `[제안·미구현]` | 리포트 집계 API | 서버 | 기간(주간/월간) 파라미터로 웃음 횟수 합계·시간대별 분포·베스트 클립 목록 집계. FN-S15/FN-S22 로직·`device_events` 데이터를 확장 기반으로 검토 가능(정렬 기준·개수는 상세 설계 시 확정) | REQ-F-42 / API-62 [제안] | **경로 없음 — 미구현, 신규 개발 필요** |
 
 ---
 
 ## 9. 가족 공유
 
-기기 단위 **OWNER / EDITOR / VIEWER** 3역할. 가입은 초대 승인제로만 이루어진다.
+기기 단위 **OWNER / MEMBER** 2역할. 가입은 초대 승인제로만 이루어지며, 초대로 만들어지는 역할은 항상 MEMBER다.
 
 | FN ID | 기능 | 담당 | 동작 규칙 | 관련 REQ·API | 코드 경로 |
 |---|---|---|---|---|---|
 | FN-A08 | 멤버십 요청 링크 생성/공유 | 폰+서버 | 요청 링크 생성해 공유, OWNER가 열면 요청자 정보 미리보기+초대 폼 자동채움 | REQ-F-11 / API-15,16 | `ui/device_registration_screen.dart`, `app/app_controller.dart` — 403, 404 |
 | FN-S08 | 멤버십 요청 링크 | 서버 | 요청자당 활성 링크 1개, 링크 자체는 멤버십 미생성(정식 초대 FN-S07 별도 필요) | REQ-F-11 / API-15,16,17 | `invitation/api/InvitationController.java`, `MembershipRequestService.java` — `/open`은 302 리다이렉트(앱 미호출) |
-| FN-A22 | 가족 구성원 목록/초대 | 폰+서버 | 이메일+역할(EDITOR/VIEWER)로 초대, 구성원/보낸초대 목록 조회 | REQ-F-28 / API-14,18,23 | `ui/family_screen.dart` — 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
+| FN-A22 | 가족 구성원 목록/초대 | 폰+서버 | 이메일로 MEMBER 초대(role 필드 없음), 구성원/보낸초대 목록 조회 | REQ-F-28 / API-14,18,23 | `ui/family_screen.dart` — 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
 | FN-S07 | 초대 발송/보낸 초대 조회/취소 | 서버 | 유효기간 7일, 이미 구성원/동일대상 PENDING 있으면 거부 | REQ-F-28,29 / API-14,18,19 | `invitation/api/InvitationController.java`, `InvitationService.java` |
 | FN-S10 | 구성원 목록/추방 | 서버 | OWNER 추방 불가, 비활성 멤버십 재추방 불가 | REQ-F-28,30 / API-23,24 | `invitation/api/InvitationController.java` — 409 `OWNER_CANNOT_BE_REVOKED` |
 | FN-A23 | 보낸 초대 취소 | 폰+서버 | PENDING 상태만 취소 가능 | REQ-F-29 / API-19 | `ui/family_screen.dart` — 403, 409 `INVITATION_NOT_PENDING` |
@@ -324,7 +324,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN ID | 기능(한 줄) | 비고(코드 경로) |
 |---|---|---|
 | FN-A04 | 소셜 로그인 버튼(Apple/Google/카카오) | 미구현(스텁) — REQ-F-07 · `ui/auth_screen.dart:284-298` |
-| FN-A05 | 비밀번호 찾기 | 미구현(스텁) — REQ-F-08 · `ui/auth_screen.dart:249-256` |
+| FN-A05 | 비밀번호 찾기(이메일 재설정 링크) | 서버 구현 완료(API-56, 57), 앱 미연동 — REQ-F-08 · `ui/auth_screen.dart:249-256` 로컬 스낵바 |
 | FN-A09 | 홈 요약 카드(오늘의 촬영·저장·메모 통계, 최근 하이라이트) | 확장 — REQ-F-17 · `ui/home_screen.dart`(homeSummary 실패는 best-effort 무시) |
 | FN-A12 | 독립형 라이브 화면(`LiveScreen`) | **제거됨** — 도달 불가 HLS 기반 코드로 WebRTC 전용 전환에서 삭제 |
 | FN-A14 | 기념일 배너/편집 | 미구현(스텁) — REQ-F-20 · `ui/calendar_screen.dart`, `ui/extra_screens.dart:193,296` |
@@ -333,11 +333,11 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN-A19 | 즐겨찾기 토글 | 확장 — REQ-F-24 · `ui/video_detail_screen.dart`, `app/app_controller.dart` |
 | FN-A26 | 프로필 이름 수정 | 미구현(서버 API 부재) — REQ-F-06 · `ui/settings_screen.dart`, `core/api_client.dart:152-158` |
 | FN-A28 | 알림 설정(로컬 저장, 서버 미연동) | 확장 — REQ-F-32 · `ui/settings_screen.dart`(`flutter_secure_storage`) |
-| FN-A29 | 비밀번호 변경 | 미구현(스텁) — REQ-F-09 · `ui/settings_screen.dart:271-274` |
+| FN-A29 | 비밀번호 변경 | 서버 구현 완료(API-55), 앱 미연동 — REQ-F-09 · `ui/settings_screen.dart:271-274` 로컬 스낵바 |
 | FN-A30 | 구독(보관 플랜) 관리 | 확장 — REQ-F-33 · `ui/settings_screen.dart` |
 | FN-A31 | 접근 기록 조회 | 확장 — REQ-F-34 · `ui/settings_screen.dart` |
 | FN-A34 | 기기 해제 | 확장 — REQ-F-15 · `ui/settings_screen.dart` |
-| FN-A35 | 알림 목록/읽음 처리·FCM 화면 이동 | 구현 — REQ-F-35 · `ui/content_notifications_screen.dart`, `core/push_notification_service.dart` |
+| FN-A35 | 알림 목록/안읽은개수/읽음 처리·FCM 화면 이동 | 구현(서버+앱, API-58~61) — REQ-F-35 · `ui/content_notifications_screen.dart`(실제 화면), `core/push_notification_service.dart`. `ui/extra_screens.dart:14` `NotificationsScreen`은 위임 래퍼이고 같은 파일 `_LegacyNotificationsScreen`은 미사용. 개별·모두 읽음은 서버 연동이나 `countUnreadNotifications`(API-59)는 클라이언트 정의만 있고 호출처 없음 |
 
 ### 서버(Server)
 
@@ -371,7 +371,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 
 ## 12. 부록 B: 현재 구현 현황
 
-MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 집계는 제안·미구현이다.
+MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-62 서버 집계는 제안·미구현이다.
 
 | # | MVP 단계 | 상태 | 비고 |
 |---|---|---|---|
@@ -381,6 +381,6 @@ MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 �
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지 → 자동 업로드 → 목록/재생 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 앱 자체 로컬 수동 편집기 동작 |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장+공유, 원본 서버 다운로드 동작 |
-| 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-51 서버 집계는 제안·미구현** |
+| 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-62 서버 집계는 제안·미구현** |
 
 **ID 검증**: 본문(2~9절) 고유 FN 개수 = 앱24(A01,A02,A03,A06,A07,A08,A10,A11,A13,A15,A17,A20,A21,A22,A23,A24,A25,A27,A32,A33,A36,A37,A38,A39) + 서버20(S01,S02,S03,S04,S05,S07,S08,S09,S10,S11,S12,S14,S15,S16,S17,S20,S21,S22,S25,S26) + 엣지7(E01~E07) = 51. 부록A 고유 FN 개수 = 앱15(A04,A05,A09,A12,A14,A16,A18,A19,A26,A28,A29,A30,A31,A34,A35) + 서버6(S06,S13,S18,S19,S23,S24) + 엣지3(E08,E09,E10) + 하드웨어4(H01~H04) = 28. 51+28=79, FN-A01~39·FN-S01~26·FN-E01~10·FN-H01~04 전수 반영(결번·중복 없음, FN-A21/FN-S12/FN-S14는 여러 단계에서 의도적으로 재사용 표기). MQTT-01~15 전수는 10절에서 확인.

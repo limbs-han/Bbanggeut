@@ -3,6 +3,10 @@
 심화 오디오 이벤트의 연속 박수·사용자 지정 호출명 설계와 실행 방법은
 [`yamnet/ADVANCED_AUDIO_EVENTS.md`](yamnet/ADVANCED_AUDIO_EVENTS.md)를 참고한다.
 
+앱 온디바이스 STT 모델 선정에 쓴 한국어 STT 비교 벤치마크는
+[`stt_benchmark/`](stt_benchmark/)에 있다 — 배경과 결론은
+[`stt_benchmark/run_benchmark.py`](stt_benchmark/run_benchmark.py) 머리 주석을 참고한다.
+
 Jetson Orin Nano에서 영상과 음성을 동시에 분석하는 AI 모듈이다. YOLO + ByteTrack은 사람·고양이·강아지를 추적하여 카메라 구도 목표를 계산하고, YAMNet은 웃음소리를 감지한다. 두 결과는 로컬 Mosquitto를 통해 결합되어 추억 영상 저장 후보 이벤트로 전달된다.
 
 현재 디스크 기반 운영 구성은 로컬 RTSP 입력을 사용한다. YOLO가 공유 RTSP를
