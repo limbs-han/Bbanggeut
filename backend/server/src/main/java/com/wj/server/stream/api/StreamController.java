@@ -41,6 +41,23 @@ public class StreamController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/stream-sessions/{sessionId}/talkback")
+    public TalkbackResponse openTalkback(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID sessionId
+    ) {
+        return service.openTalkback(userId(jwt), sessionId);
+    }
+
+    @DeleteMapping("/stream-sessions/{sessionId}/talkback")
+    public ResponseEntity<Void> closeTalkback(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID sessionId
+    ) {
+        service.closeTalkback(userId(jwt), sessionId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/stream-sessions/{sessionId}/heartbeat")
     public ResponseEntity<Void> heartbeat(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
         service.heartbeat(userId(jwt), sessionId);

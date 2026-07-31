@@ -277,6 +277,8 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 | `UPDATE_CONFIG` | `configVersion`, 허용 설정 | `[기본]` | 감지 임계값·병합 창 갱신 |
 | `PING` | 빈 객체 | `[기본]` | 명령 경로 진단 |
 | `SET_PAN_TILT` | `panDegrees`, `tiltDegrees` | `[심화]` | 수동 카메라 각도 조절. 자동 추적과 동시에 실행하지 않음 |
+| `START_TALKBACK` | `streamId`, `profile`, `hardExpiresAt` | `[심화]` | 앱이 보내는 역방향 오디오를 기기 스피커로 재생 시작 |
+| `STOP_TALKBACK` | `streamId`, `reason` | `[심화]` | 역방향 오디오 재생 종료와 기기 마이크 복구 |
 
 - 기기는 payload의 `deviceId`가 인증 기기와 같은지, `expiresAt`이 지나지 않았는지 확인한다.
 - 알 수 없는 명령은 실행하지 않고 `UNSUPPORTED_COMMAND` ACK를 보낸다.
@@ -285,6 +287,13 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 - 서버 명령은 순환 버퍼와 로컬 이벤트 클립 생성 작업을 중단하거나 지연시키면 안 된다.
 - `expiresAt`은 명령 자체의 짧은 실행 기한이고, `payload.hardExpiresAt`은 STOP 명령 유실에 대비한 edge 송출 강제 종료 시각이다.
 - `START_STREAM`의 `sessionId`는 최초 시청자 추적용이다. 추가 시청자는 같은 `streamId`를 공유하며 START 명령을 다시 보내지 않는다.
+- `START_TALKBACK`은 기기당 한 명에게만 발행한다. 발화 권한은 서버가 단일 행으로 관리한다.
+- `START_TALKBACK`은 기기 라이브 송출을 재시작하지 않는다. 재시작하면 말할 때마다 영상이 끊긴다.
+- 에코 순환은 앱이 발화 중 자신의 재생을 뮤트해서 끊는다. 기기는 업링크를 그대로 유지한다.
+- `START_TALKBACK`의 `hardExpiresAt`은 STOP 유실에 대비한 재생 강제 종료 시각이다.
+- `START_TALKBACK`은 시청자 heartbeat 주기마다 재발행되는 멱등 명령이다. 같은 `streamId`면 만료 시각만 갱신한다.
+- `STOP_TALKBACK`의 `reason`은 `VIEWER_RELEASED`, `VIEWER_CLOSED`, `TALKBACK_EXPIRED` 중 하나다.
+- 역방향 오디오는 `talkback/{streamId}` 경로로 분리한다. 라이브 송출 경로와 섞지 않는다.
 
 ### 5.6 명령 결과 `/commands/ack`
 
@@ -318,6 +327,8 @@ TOUCH는 다른 감지 이벤트와 동일하게 원시 이벤트로만 저장�
 - `STREAM_START_FAILED`
 - `CONFIG_VERSION_CONFLICT`
 - `PAN_TILT_OUT_OF_RANGE`
+- `SPEAKER_UNAVAILABLE`
+- `TALKBACK_START_FAILED`
 
 ### 5.7 온디맨드 송출 상태 `/stream/events`
 

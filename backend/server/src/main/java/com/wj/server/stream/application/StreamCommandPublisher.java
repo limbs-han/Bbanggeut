@@ -7,4 +7,6 @@ public interface StreamCommandPublisher {
     boolean start(UUID deviceId, UUID sessionId, UUID streamId, Instant hardExpiresAt);
     boolean extend(UUID deviceId, UUID streamId, Instant hardExpiresAt);
     boolean stop(UUID deviceId, UUID streamId, String reason);
+    boolean startTalkback(UUID deviceId, UUID streamId, Instant hardExpiresAt);
+    boolean stopTalkback(UUID deviceId, UUID streamId, String reason);
 }
