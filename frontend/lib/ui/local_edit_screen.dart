@@ -924,8 +924,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                             SizedBox(width: 8),
                             Expanded(
                               child: _PreparingFeatureCard(
-                                icon: Icons.subtitles_rounded,
-                                label: '자막',
+                                icon: Icons.music_note_rounded,
+                                label: '음악',
                                 iconColor: AppColors.coral,
                                 iconBackground: Color(0xFFFFE1D7),
                               ),
