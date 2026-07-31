@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>William James · YOLO Benchmark Snapshot</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, Pretendard, "Noto Sans KR", system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #070b14;
+        color: #edf4ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        width: 1600px;
+        height: 1000px;
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 84% 5%, rgba(47, 124, 255, 0.2), transparent 30%),
+          radial-gradient(circle at 12% 100%, rgba(16, 216, 171, 0.13), transparent 34%),
+          linear-gradient(145deg, #080d18 0%, #0b1220 52%, #080d18 100%);
+      }
+
+      .shell {
+        height: 100%;
+        padding: 46px 58px 40px;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 30px;
+      }
+
+      .brand {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+      }
+
+      .mark {
+        width: 54px;
+        height: 54px;
+        border: 1px solid rgba(95, 168, 255, 0.7);
+        border-radius: 17px;
+        background:
+          linear-gradient(145deg, rgba(54, 138, 255, 0.35), rgba(19, 236, 187, 0.2));
+        box-shadow: 0 0 32px rgba(48, 133, 255, 0.2);
+        position: relative;
+      }
+
+      .mark::before,
+      .mark::after {
+        content: "";
+        position: absolute;
+        inset: 13px;
+        border: 2px solid #8bc1ff;
+        border-radius: 8px;
+      }
+
+      .mark::after {
+        inset: 21px;
+        border-color: #40e1bd;
+        border-radius: 50%;
+      }
+
+      .eyebrow {
+        margin: 0 0 7px;
+        color: #7e99bb;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 30px;
+        letter-spacing: -0.035em;
+      }
+
+      .stamp {
+        padding: 11px 16px;
+        border: 1px solid rgba(127, 154, 190, 0.25);
+        border-radius: 999px;
+        color: #a9bdd7;
+        background: rgba(10, 18, 32, 0.78);
+        font-size: 13px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.05fr 1.95fr;
+        gap: 22px;
+        margin-bottom: 22px;
+      }
+
+      .panel {
+        border: 1px solid rgba(125, 159, 204, 0.2);
+        border-radius: 22px;
+        background: rgba(12, 20, 34, 0.86);
+        box-shadow: 0 18px 70px rgba(0, 0, 0, 0.22);
+      }
+
+      .identity {
+        min-height: 216px;
+        padding: 29px 30px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .identity::after {
+        content: "";
+        position: absolute;
+        width: 210px;
+        height: 210px;
+        right: -66px;
+        bottom: -92px;
+        border: 33px solid rgba(56, 136, 255, 0.08);
+        border-radius: 50%;
+      }
+
+      .model-name {
+        margin: 7px 0 10px;
+        font-size: 58px;
+        line-height: 1;
+        letter-spacing: -0.055em;
+      }
+
+      .model-note {
+        margin: 0;
+        color: #9db1cb;
+        font-size: 15px;
+        line-height: 1.7;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin-top: 20px;
+        padding: 8px 12px;
+        border: 1px solid rgba(55, 224, 184, 0.34);
+        border-radius: 999px;
+        color: #72f0cf;
+        background: rgba(29, 173, 137, 0.09);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+      }
+
+      .badge::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 12px currentColor;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        padding: 18px;
+      }
+
+      .metric {
+        min-height: 180px;
+        padding: 21px 20px;
+        border: 1px solid rgba(123, 158, 202, 0.15);
+        border-radius: 16px;
+        background: linear-gradient(
+          150deg,
+          rgba(19, 31, 52, 0.88),
+          rgba(10, 17, 29, 0.88)
+        );
+      }
+
+      .metric-label {
+        color: #8096b2;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .metric-value {
+        margin-top: 25px;
+        font-size: 35px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+      }
+
+      .metric-unit {
+        margin-left: 4px;
+        color: #7f97b5;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .metric-foot {
+        margin-top: 20px;
+        color: #7188a5;
+        font-size: 12px;
+      }
+
+      .lower {
+        display: grid;
+        grid-template-columns: 1.25fr 0.95fr;
+        gap: 22px;
+      }
+
+      .comparison,
+      .resources {
+        height: 456px;
+        padding: 25px 28px;
+      }
+
+      .panel-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+
+      .panel-title h2 {
+        margin: 0;
+        font-size: 17px;
+      }
+
+      .panel-title span {
+        color: #6e85a2;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      .bar-group {
+        margin-bottom: 18px;
+      }
+
+      .bar-heading {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        color: #aabbd0;
+        font-size: 13px;
+      }
+
+      .bar-track {
+        height: 12px;
+        border-radius: 999px;
+        background: #111c2e;
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #2b7fff, #49c7ff);
+      }
+
+      .bar-group.selected .bar-heading {
+        color: #f3f8ff;
+        font-weight: 800;
+      }
+
+      .bar-group.selected .bar-fill {
+        background: linear-gradient(90deg, #36d3af, #83f5db);
+        box-shadow: 0 0 18px rgba(72, 227, 190, 0.28);
+      }
+
+      .resource-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+
+      .resource {
+        min-height: 125px;
+        padding: 18px;
+        border-radius: 15px;
+        background: rgba(16, 27, 45, 0.76);
+        border: 1px solid rgba(127, 159, 203, 0.14);
+      }
+
+      .resource strong {
+        display: block;
+        margin-top: 15px;
+        font-size: 27px;
+      }
+
+      .resource p {
+        margin: 7px 0 0;
+        color: #7187a4;
+        font-size: 11px;
+      }
+
+      .warning {
+        margin-top: 15px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: rgba(255, 188, 74, 0.08);
+        border: 1px solid rgba(255, 188, 74, 0.18);
+        color: #d6b46f;
+        font-size: 11px;
+        line-height: 1.55;
+      }
+
+      footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 18px;
+        color: #657b97;
+        font-size: 11px;
+      }
+
+      footer code {
+        color: #8198b5;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="brand">
+          <div class="mark" aria-hidden="true"></div>
+          <div>
+            <p class="eyebrow">William James · Edge Observatory</p>
+            <h1>YOLO Detection Benchmark Snapshot</h1>
+          </div>
+        </div>
+        <div class="stamp">JETSON ORIN NANO · PYTORCH · 2026-07-31</div>
+      </header>
+
+      <section class="hero">
+        <article class="panel identity">
+          <p class="eyebrow">Selected model</p>
+          <div class="model-name" id="modelName">YOLOv8n</div>
+          <p class="model-note">
+            office-vision-v1 · person only<br />
+            9 scenes × 300 frames × 3 repeats
+          </p>
+          <div class="badge" id="decisionBadge">REALTIME CANDIDATE</div>
+        </article>
+
+        <article class="panel metrics">
+          <div class="metric">
+            <div class="metric-label">Throughput</div>
+            <div class="metric-value">
+              <span id="fps">28.216</span><span class="metric-unit">FPS</span>
+            </div>
+            <div class="metric-foot">8,100 measured frames</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Inference mean</div>
+            <div class="metric-value">
+              <span id="mean">23.172</span><span class="metric-unit">ms</span>
+            </div>
+            <div class="metric-foot">CUDA model inference</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Inference P95</div>
+            <div class="metric-value">
+              <span id="p95">24.839</span><span class="metric-unit">ms</span>
+            </div>
+            <div class="metric-foot">95th percentile latency</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Detections</div>
+            <div class="metric-value" id="detections">11,994</div>
+            <div class="metric-foot">person detections · not accuracy</div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lower">
+        <article class="panel comparison">
+          <div class="panel-title">
+            <h2>동일 데이터셋 처리 속도</h2>
+            <span>HIGHER IS BETTER · FPS</span>
+          </div>
+          <div id="bars"></div>
+          <div class="warning">
+            탐지 누계는 오탐을 포함할 수 있습니다. 프레임별 정답 박스가 없어
+            precision, recall, mAP는 계산하지 않았습니다.
+          </div>
+        </article>
+
+        <article class="panel resources">
+          <div class="panel-title">
+            <h2>시스템 자원 최고값</h2>
+            <span>1 SECOND SNAPSHOTS · MAX</span>
+          </div>
+          <div class="resource-grid">
+            <div class="resource">
+              <span class="metric-label">GPU</span>
+              <strong><span id="gpu">96</span>%</strong>
+              <p>GR3D frequency peak</p>
+            </div>
+            <div class="resource">
+              <span class="metric-label">RAM</span>
+              <strong><span id="ram">3,331</span> MB</strong>
+              <p>system used memory peak</p>
+            </div>
+            <div class="resource">
+              <span class="metric-label">Temperature</span>
+              <strong><span id="temperature">51.968</span>°C</strong>
+              <p>Jetson reported peak</p>
+            </div>
+            <div class="resource">
+              <span class="metric-label">Power</span>
+              <strong><span id="power">7,091</span> mW</strong>
+              <p>VDD_IN instantaneous peak</p>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <footer>
+        <span>Accuracy status: NOT COMPUTED · scene labels only</span>
+        <code>dataset sha256: 98098f04…0954a1</code>
+      </footer>
+    </main>
+
+    <script>
+      const results = [
+        {
+          model: "YOLOv8n",
+          fps: 28.216,
+          mean: 23.172,
+          p95: 24.839,
+          detections: 11994,
+          gpu: 96,
+          ram: 3331,
+          temperature: 51.968,
+          power: 7091,
+          candidate: true,
+        },
+        {
+          model: "YOLO11n",
+          fps: 23.653,
+          mean: 30.011,
+          p95: 32.539,
+          detections: 12144,
+          gpu: 81,
+          ram: 3053,
+          temperature: 51.875,
+          power: 6972,
+          candidate: false,
+        },
+        {
+          model: "YOLO26n",
+          fps: 18.474,
+          mean: 41.809,
+          p95: 45.636,
+          detections: 11667,
+          gpu: 85,
+          ram: 3071,
+          temperature: 51.031,
+          power: 5912,
+          candidate: false,
+        },
+      ];
+
+      const requestedModel =
+        new URLSearchParams(window.location.search).get("model") || "YOLOv8n";
+      const selected =
+        results.find((result) => result.model === requestedModel) || results[0];
+      const maximumFps = Math.max(...results.map((result) => result.fps));
+
+      document.getElementById("modelName").textContent = selected.model;
+      document.getElementById("fps").textContent = selected.fps.toFixed(3);
+      document.getElementById("mean").textContent = selected.mean.toFixed(3);
+      document.getElementById("p95").textContent = selected.p95.toFixed(3);
+      document.getElementById("detections").textContent =
+        selected.detections.toLocaleString("en-US");
+      document.getElementById("gpu").textContent = selected.gpu;
+      document.getElementById("ram").textContent =
+        selected.ram.toLocaleString("en-US");
+      document.getElementById("temperature").textContent =
+        selected.temperature.toFixed(3);
+      document.getElementById("power").textContent =
+        selected.power.toLocaleString("en-US");
+
+      const badge = document.getElementById("decisionBadge");
+      badge.textContent = selected.candidate
+        ? "REALTIME CANDIDATE"
+        : "BENCHMARK COMPLETED";
+
+      document.getElementById("bars").innerHTML = results
+        .map(
+          (result) => `
+            <div class="bar-group ${result.model === selected.model ? "selected" : ""}">
+              <div class="bar-heading">
+                <span>${result.model}</span>
+                <span>${result.fps.toFixed(3)} FPS</span>
+              </div>
+              <div class="bar-track">
+                <div
+                  class="bar-fill"
+                  style="width: ${(result.fps / maximumFps) * 100}%"
+                ></div>
+              </div>
+            </div>
+          `,
+        )
+        .join("");
+    </script>
+  </body>
+</html>
