@@ -550,7 +550,7 @@ AI와 녹화 코드는 스트림 URL과 인증정보를 환경변수로 받아�
 
 - [ ] FPS, 탐지 지연, CPU, GPU, RAM, 온도를 기록한다.
 - [ ] `integration-soak-test.sh`의 분 단위 journal과 YOLO/YAMNet 실행 로그를 함께 보관한다.
-- [x] 10분 예비 시험 결과를 `AI_RTSP_10MIN_TEST_2026-07-23.md`에 기록한다.
+- [x] 10분 예비 시험 결과를 [`AI_RTSP_10MIN_TEST_2026-07-23.md`](../이재준/AI_RTSP_10MIN_TEST_2026-07-23.md)에 기록한다.
 - [ ] 256GB 저장장치에서 실제 시간당 증가량을 측정한다.
 - [ ] 720p 통합 시험 후 1080p 전환 가능성을 평가한다.
 - [ ] 웃음 Recall, Precision, FP/hour와 평균 탐지 지연을 기록한다.

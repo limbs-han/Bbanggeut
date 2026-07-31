@@ -30,16 +30,16 @@ Jetson에서 웃음 감지부터 전후 60초 로컬 MP4 생성과 노트북 다
 순서대로 따른다.
 
 2026-07-24 YOLO RTSP 사람 탐지·상태 전이·강제 단절 복구 결과는
-[`AI_YOLO_RTSP_VALIDATION_2026-07-24.md`](AI_YOLO_RTSP_VALIDATION_2026-07-24.md)에
+[`AI_YOLO_RTSP_VALIDATION_2026-07-24.md`](../이재준/AI_YOLO_RTSP_VALIDATION_2026-07-24.md)에
 기록했다.
 
 2026-07-26 야간부터 27일 새벽까지의 업로드 안전성, 웃음 false-negative
 분석, 평가 데이터 도구와 다음 작업은
-[`AI_DAILY_PROGRESS_2026-07-27.md`](AI_DAILY_PROGRESS_2026-07-27.md)에
+[`AI_DAILY_PROGRESS_2026-07-27.md`](../이재준/AI_DAILY_PROGRESS_2026-07-27.md)에
 기록했다.
 
 2026-07-27 실제 웃음 이벤트의 서버 업로드와 Flutter 앱 재생 종단 결과는
-[`AI_MVP_EVENT_E2E_2026-07-27.md`](AI_MVP_EVENT_E2E_2026-07-27.md)에
+[`AI_MVP_EVENT_E2E_2026-07-27.md`](../이재준/AI_MVP_EVENT_E2E_2026-07-27.md)에
 기록했다. 같은 절차를 반복할 때는
 [`yolo/validate_laughter_event_e2e.sh`](yolo/validate_laughter_event_e2e.sh)를
 사용한다.
@@ -739,7 +739,7 @@ RTSP·녹화·기존 UDP AI를 함께 시험할 때는
 2026-07-23 Jetson 10분 예비 시험에서는 RTSP 실패 없이 약 200MiB가
 녹화됐고 온도는 약 50°C, 스왑은 0MB였다. 종료 표본의 CPU 사용률이
 높아 1080p 전환 전 최적화가 필요하다. 상세값은
-`AI_RTSP_10MIN_TEST_2026-07-23.md`에 기록했다.
+[`AI_RTSP_10MIN_TEST_2026-07-23.md`](../이재준/AI_RTSP_10MIN_TEST_2026-07-23.md)에 기록했다.
 
 ## 모델과 생성 파일 관리
 
