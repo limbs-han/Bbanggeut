@@ -181,75 +181,91 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
   }
 
   Widget _buildOwnerInvitationCard() {
-    return SoftCard(
-      color: AppColors.greenCard,
-      borderColor: AppColors.greenCard,
-      child: Column(
-        children: [
-          const Row(
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        SoftCard(
+          color: AppColors.greenCard,
+          borderColor: AppColors.greenCard,
+          padding: const EdgeInsets.fromLTRB(118, 24, 18, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _OverlappingDots(),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '함께할 가족을 초대해요',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+              const Text(
+                '함께할 가족을 초대해요',
+                style: TextStyle(
+                  color: AppColors.sageDark,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (controller.pendingMembershipRequestPreview != null) ...[
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                '${controller.pendingMembershipRequestPreview!.displayName}님이 멤버 초대를 요청했어요. 이메일을 확인하고 초대를 보내 주세요.',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.inkSoft,
-                ),
-              ),
-            ),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('settings-family-invite-email'),
-                  controller: inviteEmail,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.send,
-                  autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(
-                    labelText: '이메일',
-                    hintText: 'family@example.com',
+              const SizedBox(height: 12),
+              if (controller.pendingMembershipRequestPreview != null) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withValues(alpha: .82),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  onSubmitted: (_) => _sendInvitation(),
+                  child: Text(
+                    '${controller.pendingMembershipRequestPreview!.displayName}님이 멤버 초대를 요청했어요. 이메일을 확인하고 초대를 보내 주세요.',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkSoft,
+                    ),
+                  ),
                 ),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('settings-family-invite-email'),
+                      controller: inviteEmail,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.send,
+                      autofillHints: const [AutofillHints.email],
+                      decoration: InputDecoration(
+                        hintText: '이메일 입력',
+                        filled: true,
+                        fillColor: AppColors.surface.withValues(alpha: .94),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 15,
+                          vertical: 15,
+                        ),
+                      ),
+                      onSubmitted: (_) => _sendInvitation(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: controller.busy ? null : _sendInvitation,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(88, 54),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    child: const Text(
+                      '초대하기',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: controller.busy ? null : _sendInvitation,
-                style: FilledButton.styleFrom(minimumSize: const Size(72, 56)),
-                child: const Text('초대'),
+              const SizedBox(height: 8),
+              const Text(
+                '입력한 이메일 계정으로 초대장을 보내요.',
+                style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          const Text(
-            '입력한 이메일 계정의 받은 초대함으로 초대를 보내요.',
-            style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
-          ),
-        ],
-      ),
+        ),
+        const Positioned(left: 14, top: 25, child: _InviteEnvelopeDecoration()),
+        const Positioned(right: 13, top: -14, child: _InviteRibbonDecoration()),
+      ],
     );
   }
 
@@ -589,31 +605,142 @@ String _invitationStatusLabel(String status) => switch (status) {
   _ => status,
 };
 
-class _OverlappingDots extends StatelessWidget {
-  const _OverlappingDots();
+class _InviteEnvelopeDecoration extends StatelessWidget {
+  const _InviteEnvelopeDecoration();
 
   @override
-  Widget build(BuildContext context) => const SizedBox(
-    width: 62,
-    height: 34,
+  Widget build(BuildContext context) => SizedBox(
+    width: 92,
+    height: 96,
     child: Stack(
+      alignment: Alignment.center,
       children: [
-        Positioned(
-          left: 0,
-          child: CircleAvatar(
-            radius: 17,
-            backgroundColor: AppColors.yellowSoft,
+        Transform.rotate(
+          angle: -.12,
+          child: Container(
+            width: 76,
+            height: 55,
+            decoration: BoxDecoration(
+              color: const Color(0xFFD4DDA4),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFA6B471), width: 2),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x246E7F45),
+                  blurRadius: 8,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.mail_outline_rounded,
+              color: AppColors.sageDark,
+              size: 38,
+            ),
           ),
         ),
-        Positioned(
-          left: 20,
-          child: CircleAvatar(radius: 17, backgroundColor: AppColors.greenCard),
+        const Positioned(
+          right: 5,
+          top: 10,
+          child: Icon(Icons.favorite_rounded, color: AppColors.coral, size: 24),
         ),
-        Positioned(
-          left: 40,
-          child: CircleAvatar(radius: 17, backgroundColor: AppColors.pink),
+        const Positioned(
+          left: 3,
+          bottom: 5,
+          child: Icon(
+            Icons.auto_awesome_rounded,
+            color: AppColors.yellow,
+            size: 23,
+          ),
         ),
       ],
     ),
   );
+}
+
+class _InviteRibbonDecoration extends StatelessWidget {
+  const _InviteRibbonDecoration();
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: const Size(92, 60), painter: _InviteRibbonPainter());
+}
+
+class _InviteRibbonPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ribbon = Paint()
+      ..color = const Color(0xFFC4CD91)
+      ..style = PaintingStyle.fill;
+    final edge = Paint()
+      ..color = const Color(0xFF98A667)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    final left = Path()
+      ..moveTo(size.width * .49, size.height * .34)
+      ..cubicTo(
+        size.width * .34,
+        size.height * .02,
+        size.width * .05,
+        size.height * .05,
+        size.width * .1,
+        size.height * .42,
+      )
+      ..cubicTo(
+        size.width * .16,
+        size.height * .72,
+        size.width * .38,
+        size.height * .58,
+        size.width * .49,
+        size.height * .42,
+      )
+      ..close();
+    final right = Path()
+      ..moveTo(size.width * .51, size.height * .34)
+      ..cubicTo(
+        size.width * .66,
+        size.height * .02,
+        size.width * .95,
+        size.height * .05,
+        size.width * .9,
+        size.height * .42,
+      )
+      ..cubicTo(
+        size.width * .84,
+        size.height * .72,
+        size.width * .62,
+        size.height * .58,
+        size.width * .51,
+        size.height * .42,
+      )
+      ..close();
+    final tails = Path()
+      ..moveTo(size.width * .43, size.height * .45)
+      ..lineTo(size.width * .2, size.height)
+      ..lineTo(size.width * .43, size.height * .8)
+      ..lineTo(size.width * .5, size.height * .5)
+      ..lineTo(size.width * .57, size.height * .8)
+      ..lineTo(size.width * .8, size.height)
+      ..lineTo(size.width * .57, size.height * .45)
+      ..close();
+    final knot = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(size.width * .5, size.height * .4),
+        width: size.width * .2,
+        height: size.height * .28,
+      ),
+      const Radius.circular(7),
+    );
+
+    for (final path in [tails, left, right]) {
+      canvas.drawPath(path, ribbon);
+      canvas.drawPath(path, edge);
+    }
+    canvas.drawRRect(knot, ribbon);
+    canvas.drawRRect(knot, edge);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
