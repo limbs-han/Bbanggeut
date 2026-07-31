@@ -177,14 +177,6 @@ public interface InvitationMapper {
 
     // --- memberships ---
 
-    @Select("""
-        SELECT EXISTS (
-            SELECT 1 FROM device_memberships
-             WHERE device_id = #{deviceId} AND user_id = #{userId} AND status = 'ACTIVE'
-        )
-        """)
-    boolean activeMembershipExists(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
-
     @Insert("""
         INSERT INTO device_memberships (device_id, user_id, role, status, joined_at)
         VALUES (#{deviceId}, #{userId}, #{role}::device_role, 'ACTIVE', now())

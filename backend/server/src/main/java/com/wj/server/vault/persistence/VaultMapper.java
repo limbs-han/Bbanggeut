@@ -125,36 +125,6 @@ public interface VaultMapper {
         """)
     Optional<UUID> lockActiveVaultId(@Param("deviceId") UUID deviceId);
 
-    @Insert("""
-        INSERT INTO vault_memberships (vault_id, user_id, role, status)
-        SELECT b.vault_id, #{userId}, CAST(#{role} AS device_role), 'ACTIVE'
-          FROM device_bindings b
-         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
-        ON CONFLICT (vault_id, user_id) DO UPDATE
-            SET role = EXCLUDED.role, status = 'ACTIVE', joined_at = now(),
-                revoked_at = NULL, revoked_by = NULL, updated_at = now()
-        """)
-    int activateMemberForDevice(
-        @Param("deviceId") UUID deviceId,
-        @Param("userId") UUID userId,
-        @Param("role") String role
-    );
-
-    @Update("""
-        UPDATE vault_memberships vm
-           SET status = 'REVOKED', revoked_at = now(),
-               revoked_by = #{ownerId}, updated_at = now()
-          FROM device_bindings b
-         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
-           AND vm.vault_id = b.vault_id AND vm.user_id = #{memberUserId}
-           AND vm.role = 'MEMBER' AND vm.status = 'ACTIVE'
-        """)
-    int revokeMemberForDevice(
-        @Param("deviceId") UUID deviceId,
-        @Param("memberUserId") UUID memberUserId,
-        @Param("ownerId") UUID ownerId
-    );
-
     @Update("""
         UPDATE vault_memberships vm
            SET role = 'MEMBER', updated_at = now()

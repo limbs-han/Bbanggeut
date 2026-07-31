@@ -37,9 +37,6 @@ public interface ProvisioningMapper {
         @Param("firmwareVersion") String firmwareVersion
     );
 
-    @Select("SELECT status::text FROM devices WHERE id = #{deviceId}")
-    Optional<String> findDeviceStatus(@Param("deviceId") UUID deviceId);
-
     @Select("SELECT status::text FROM devices WHERE id = #{deviceId} FOR UPDATE")
     Optional<String> lockDeviceStatus(@Param("deviceId") UUID deviceId);
 
