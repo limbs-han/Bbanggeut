@@ -7,61 +7,82 @@ any change.
 
 - The default branch is `master`. Do not use a branch named `main`.
 - Long-lived branches are:
-  - `master`: final integration and Backend production deployment baseline
-  - `develop/frontend`: Flutter integration
-  - `develop/backend`: Spring Boot integration
-  - `develop/device`: IoT, Raspberry Pi, Jetson, and AI integration
-- Never push directly to `master` or a `develop/*` branch. Use a Merge Request.
-  This holds even when the user asks for a direct merge into `master`; explain
-  the feature-branch and develop route instead.
-- Never delete `master`, `develop/frontend`, `develop/backend`, or
-  `develop/device`.
-- A `develop/*` branch is created from `master` only. Never create one from
-  another `develop/*` branch: it drags that branch's commits into your history,
-  and the next merge to `master` carries changes your role never made.
+  - `develop`: shared integration branch for every role (Backend, Frontend,
+    Device/AI)
+  - `master`: deployment baseline
+- There are no per-role develop branches. Backend, Frontend, and Device all use
+  the same `develop`.
+- Never push directly to `master` or `develop`. Use a Merge Request.
+- Never delete `master` or `develop`.
 
-Create feature branches from the matching up-to-date develop branch:
+### Core rule: `master` only ever merges from `develop`
 
-- Frontend: `feat/frontend/<feature>` from `develop/frontend`
-- Backend: `feat/backend/<feature>` from `develop/backend`
-- Device and AI: `feat/device/<feature>` from `develop/device`
-- Jenkins and CI/CD: `feat/jenkins-<feature>`; target `master` unless instructed
-  otherwise
-- Repository-wide docs and policy (`AGENTS.md`, branch rules, root README):
-  `docs/<topic>`; target `master`
+The single merge into `master` is `develop` -> `master`. Never open an MR
+targeting `master` from anything else — not a feature, a fix, a doc change, or
+a config change. This holds even when the user asks for a direct merge into
+`master`; explain the `develop` route instead.
+
+Because of this rule `master` is always a subset of `develop`. No commit can
+exist on `master` but not on `develop`, so merging `master` back into `develop`
+is never necessary. The old back-merge, `chore/sync-*`, and `chore/integrate-*`
+procedures are retired — they existed only to manage three develop branches.
+
+## Feature branches
+
+Prefixes exist so a human can tell which part a branch touches. Every branch is
+created from `develop` and merged back into `develop`.
+
+- `feat/backend/<feature>`, `feat/frontend/<feature>`, `feat/device/<feature>`
+- `feat/jenkins-<task>` for Jenkins and CI/CD
+- `fix/backend/<bug>`, `fix/frontend/<bug>`, `fix/device/<bug>`
+- `docs/<topic>` for documentation-only changes
+- `chore/<task>` for build, config, and file cleanup
 
 Do not use `codex`, a person's name, or meaningless numbers in a branch name.
 
-Merge Request targets must match the role:
+Keep feature branches short-lived: merge and delete within one to three days. A
+long-lived feature branch drifts from `develop` and creates conflicts.
 
-- `feat/frontend/*` -> `develop/frontend`
-- `feat/backend/*` -> `develop/backend`
-- `feat/device/*` -> `develop/device`
-- `feat/jenkins-*` -> `master` unless instructed otherwise
-- `docs/*` -> `master`
+## Starting work
 
-Do not merge a normal feature branch directly into `master` or another role's
-develop branch. Delete feature branches after a successful merge. When merging
-a develop branch into `master`, keep the develop branch.
-
-## Back-merge master after every integration
-
-After a `develop/*` -> `master` merge, merge `master` back into all three
-develop branches. Do not skip this.
-
-Develop branches are also protected, so a back-merge is an MR too:
+The commands are identical for every role:
 
 ```
 git fetch origin --prune
-git switch -c chore/sync-<role>-from-master origin/develop/<role>
-git merge origin/master
-git push -u origin chore/sync-<role>-from-master
+git switch develop
+git pull --ff-only origin develop
+git switch -c feat/backend/<feature>
 ```
 
-Without the back-merge each develop stays unaware of what the other roles
-changed, and the next merge to `master` reopens the same conflicts on the same
-lines. Before starting a feature, confirm the target develop is not behind
-`master`; if it is, back-merge first.
+## Merge Request targets
+
+Every feature branch targets `develop`:
+
+- `feat/*` -> `develop`
+- `fix/*` -> `develop`
+- `docs/*` -> `develop`
+- `chore/*` -> `develop`
+
+The only MR targeting `master` is `develop` -> `master`.
+
+## Merging and deleting
+
+Merge into `develop` only after CI passes. In the MR, enable **Squash commits**
+and **Delete source branch when merge request is accepted**, so one MR becomes
+one commit on `develop` and no feature branch is left behind.
+
+For `develop` -> `master`, turn both options off: `develop` must survive, and
+squashing its history causes conflicts on the next promotion.
+
+Nothing needs to happen after a `develop` -> `master` merge. Do not back-merge.
+
+## Urgent fixes
+
+Even for a production emergency, do not MR directly into `master`. Branch
+`fix/<role>/<bug>` from `develop`, merge it into `develop`, then immediately
+open `develop` -> `master`. `develop` is kept green by required CI, so this path
+is not slow. Allowing one exception puts `master` ahead of `develop` and brings
+back the retired back-merge procedure.
 
 ## Shared files and conflicts
 
@@ -70,35 +91,16 @@ All three roles edit these:
 - `자료/docs/**`
 - `자료/api/openapi.yaml`
 
-`master` holds every role's edits; each develop holds only its own. That
-mismatch is what produces the conflicts.
-
-Never resolve these by taking one side wholesale — each side carries facts the
-other lacks, so a wholesale choice silently deletes content. Instead: read both
-sides, decide per item which one matches the actual code, keep both lines when
-both are valid, then re-check the result against the code.
-
 Keep one fact per line. A table row or bullet that packs several facts together
 turns unrelated edits by different roles into a conflict.
 
-## When a develop -> master MR cannot be merged
+Never resolve a conflict by taking one side wholesale — each side carries facts
+the other lacks, so a wholesale choice silently deletes content. Read both
+sides, decide per item which one matches the actual code, keep both lines when
+both are valid, then re-check the result against the code.
 
-`master` is protected and the GitLab MR UI cannot always resolve conflicts.
-Resolve locally and open an MR from an integration branch:
-
-```
-git fetch origin --prune
-git switch -c chore/integrate-<topic> origin/master
-git merge origin/develop/backend
-git merge origin/develop/frontend
-git merge origin/develop/device
-git push -u origin chore/integrate-<topic>
-```
-
-Commit each merge after resolving its conflicts, and run the local checks before
-pushing. Merge in the order backend, frontend, device so the API contract is
-settled before the other roles' documentation builds on it. The branch sits on
-top of `master`, so the MR itself is conflict-free. Back-merge afterwards.
+With a single `develop`, these conflicts surface only when merging a feature
+branch into `develop`. Pull `develop` often to keep the conflict surface small.
 
 ## Required workflow
 
@@ -107,9 +109,7 @@ Before changing code:
 1. Read this file.
 2. Run `git status` and confirm the current branch.
 3. Run `git fetch origin --prune`.
-4. Confirm the matching develop branch is not behind `master`; back-merge first
-   if it is.
-5. Create a correctly named feature branch from that develop branch.
+4. Create a correctly named feature branch from `develop`.
 
 Before pushing:
 
@@ -120,7 +120,7 @@ Before pushing:
 3. Confirm the code and the documents agree.
 4. Review the changed files and complete diff.
 5. Commit and push only to the feature branch.
-6. Create an MR targeting the matching develop branch.
+6. Create an MR targeting `develop`.
 7. Do not merge when CI fails. Fix the same feature branch and rerun CI.
 8. Report each result clearly in Korean.
 
@@ -131,6 +131,14 @@ Before pushing:
 - Backend: build, unit tests, and PostgreSQL integration tests.
 - Device and AI: Device Agent tests, AI Python tests, and Python/Shell syntax
   checks.
+- API Contract: `자료/api/openapi.yaml` contract checks.
+
+`Jenkinsfile` selects stages by branch name. `master` and `develop` run all
+four stages; a `feat/<role>/**` or `fix/<role>/**` branch runs that role's stage
+plus API Contract; `docs/**` and `chore/**` run API Contract only.
+
+A missing or wrong role prefix means that role's CI never runs, and the MR shows
+green rather than failing. That is why the naming rule matters.
 
 ## Deployment restrictions
 

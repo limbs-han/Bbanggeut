@@ -146,10 +146,18 @@ SHA를 지정해 특정 빌드를 직접 실행하는 요청은 HTTP 401로 차�
 | 브랜치 | 실행되는 CI |
 |---|---|
 | `master` | Backend, Frontend, IoT, AI 전체 |
-| `develop/backend`, `feat/backend/**` | Backend |
-| `develop/frontend`, `feat/frontend/**` | Frontend |
-| `develop/device`, `feat/device/**` | IoT와 AI |
-| 모든 `feat/**`, `develop/**`, `docs/**` | API Contract |
+| `develop` | Backend, Frontend, IoT, AI 전체 |
+| `feat/backend/**`, `fix/backend/**` | Backend |
+| `feat/frontend/**`, `fix/frontend/**` | Frontend |
+| `feat/device/**`, `fix/device/**` | IoT와 AI |
+| `feat/jenkins-*` | Backend, Frontend, IoT, AI 전체 |
+| 모든 `feat/**`, `fix/**`, `docs/**`, `chore/**` | API Contract |
+
+`develop`은 세 파트 공통 통합 브랜치이므로 `master`와 같이 전체 CI를 실행합니다.
+파트별 `develop/backend`·`develop/frontend`·`develop/device`는 폐지됐습니다.
+
+브랜치 이름의 파트 접두사가 실행 범위를 결정합니다. 접두사를 빠뜨리거나 틀리게
+쓰면 해당 파트 CI가 조용히 실행되지 않고 MR이 초록색으로 보입니다.
 
 Jenkins 자체 구성을 바꾸는 검증 브랜치에서는 Backend, Frontend, Device 전체 CI를 실행하도록
 해당 브랜치 이름을 `Jenkinsfile`에 명시합니다.
@@ -174,7 +182,7 @@ Actions 워크플로였습니다. 이 저장소는 GitLab이므로 그 워크플
 해당합니다. 컨트롤러에서 사라진 경로가 목록에 남아 있어도 실패하므로 목록이 낡지
 않습니다.
 
-현재 GitLab의 `master`나 `develop/*` 브랜치는 자동으로 생성하거나 변경하지 않습니다.
+현재 GitLab의 `master`나 `develop` 브랜치는 자동으로 생성하거나 변경하지 않습니다.
 브랜치 정책 적용은 별도의 GitLab 관리 단계에서 진행합니다.
 
 ## PostgreSQL 통합 테스트
