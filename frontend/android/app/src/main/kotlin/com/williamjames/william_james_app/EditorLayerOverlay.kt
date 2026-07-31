@@ -98,48 +98,63 @@ object EditorLayerOverlay {
     private class TimedLayerText(
         private val startUs: Long,
         private val endUs: Long,
-        private val value: String,
-        private val color: Int,
-        private val backgroundColor: Int,
-        private val fontSize: Int,
-        private val bold: Boolean,
+        value: String,
+        color: Int,
+        backgroundColor: Int,
+        fontSize: Int,
+        bold: Boolean,
         private val settings: OverlaySettings,
     ) : TextOverlay() {
-        override fun getText(presentationTimeUs: Long): SpannableString {
-            if (presentationTimeUs < startUs || presentationTimeUs >= endUs) {
-                return SpannableString("")
+        /// 보일 때와 안 보일 때, 글은 이 둘뿐이다. 미리 만들어 두고 돌려준다.
+        ///
+        /// media3의 TextOverlay는 getText가 준 값이 **직전과 같을 때만** 글자
+        /// 비트맵을 다시 만들지 않는다 (TextOverlay.getBitmap의
+        /// `overlayText.equals(lastText)`). 프레임마다 새 SpannableString을
+        /// 만들면 그 비교가 어긋난다 — 스팬끼리의 equals는 안드로이드 버전에
+        /// 따라 참조 비교라서다. 그러면 글자 재기·배치·그리기와 GL 텍스처
+        /// 업로드를 30fps 2분 영상에서 3600번 되풀이한다.
+        ///
+        /// 같은 인스턴스를 돌려주면 비교가 언제나 맞아, 글이 실제로 바뀌는
+        /// 순간에만 다시 그린다.
+        private val visible = SpannableString(value).apply {
+            setSpan(
+                ForegroundColorSpan(color),
+                0,
+                length,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+            if (backgroundColor ushr 24 != 0) {
+                setSpan(
+                    BackgroundColorSpan(backgroundColor),
+                    0,
+                    length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
             }
-            return SpannableString(value).apply {
+            setSpan(
+                AbsoluteSizeSpan(fontSize),
+                0,
+                length,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+            if (bold) {
                 setSpan(
-                    ForegroundColorSpan(color),
+                    StyleSpan(Typeface.BOLD),
                     0,
                     length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
-                if (backgroundColor ushr 24 != 0) {
-                    setSpan(
-                        BackgroundColorSpan(backgroundColor),
-                        0,
-                        length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-                    )
-                }
-                setSpan(
-                    AbsoluteSizeSpan(fontSize),
-                    0,
-                    length,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-                )
-                if (bold) {
-                    setSpan(
-                        StyleSpan(Typeface.BOLD),
-                        0,
-                        length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-                    )
-                }
             }
         }
+
+        private val hidden = SpannableString("")
+
+        override fun getText(presentationTimeUs: Long): SpannableString =
+            if (presentationTimeUs < startUs || presentationTimeUs >= endUs) {
+                hidden
+            } else {
+                visible
+            }
 
         override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
             settings

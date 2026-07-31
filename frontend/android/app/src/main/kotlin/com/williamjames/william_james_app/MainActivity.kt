@@ -1,6 +1,7 @@
 package com.williamjames.william_james_app
 
 import android.content.ContentValues
+import android.graphics.Bitmap
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
@@ -41,12 +42,25 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 @UnstableApi
 class MainActivity : FlutterActivity() {
     companion object {
         private const val VIDEO_CANVAS_CHANNEL = "com.williamjames/video_canvas"
+
+        /// 타임라인 썸네일의 세로 픽셀 수. 편집 화면의 띠는 60dp 남짓이라
+        /// 3배 밀도 화면에서도 이 정도면 또렷하다.
+        private const val THUMBNAIL_HEIGHT = 192
+
+        /// 프레임을 나눠 뽑을 스레드 수. 더 늘리면 하드웨어 디코더를 두고
+        /// 서로 기다린다.
+        private const val THUMBNAIL_WORKERS = 3
+
+        /// 갤러리로 옮길 때 한 번에 밀어 넣는 크기.
+        private const val COPY_CHUNK_BYTES = 8L * 1024 * 1024
     }
 
     private var activeTransformer: Transformer? = null
@@ -159,37 +173,8 @@ class MainActivity : FlutterActivity() {
         }
         val count = requestedCount.coerceIn(1, 16)
         Thread {
-            val retriever = MediaMetadataRetriever()
             try {
-                retriever.setDataSource(inputFile.absolutePath)
-                val durationMs = retriever
-                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                    ?.toLongOrNull()
-                    ?: 0L
-                val outputDirectory = File(
-                    cacheDir,
-                    "video_thumbnails/${System.currentTimeMillis()}",
-                ).apply { mkdirs() }
-                val files = mutableListOf<String>()
-                repeat(count) { index ->
-                    val timeUs = if (durationMs <= 0L) {
-                        0L
-                    } else {
-                        durationMs * 1000L * index / count
-                    }
-                    val bitmap = retriever.getFrameAtTime(
-                        timeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                    )
-                    if (bitmap != null) {
-                        val output = File(outputDirectory, "thumb_$index.jpg")
-                        FileOutputStream(output).use { stream ->
-                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, stream)
-                        }
-                        bitmap.recycle()
-                        files.add(output.absolutePath)
-                    }
-                }
+                val files = extractThumbnails(inputFile, count)
                 runOnUiThread { result.success(files) }
             } catch (failure: Exception) {
                 runOnUiThread {
@@ -199,10 +184,108 @@ class MainActivity : FlutterActivity() {
                         null,
                     )
                 }
-            } finally {
-                retriever.release()
             }
         }.start()
+    }
+
+    /// 타임라인 띠에 깔 프레임을 뽑는다.
+    ///
+    /// 예전에는 한 스레드가 원본 해상도 그대로 여덟 장을 순서대로 디코딩하고
+    /// 그 큰 비트맵을 JPEG로 구웠다. 1080p 영상에서는 이 과정만으로 편집
+    /// 화면의 타임라인이 몇 초 동안 비어 있었다. 두 가지를 바꿨다.
+    ///
+    /// - 필요한 크기로 바로 받는다(`getScaledFrameAtTime`). 만들었다 버리는
+    ///   큰 비트맵이 없어져 디코딩과 압축 비용이 같이 줄어든다.
+    /// - 일꾼 몇을 두고 나눠 맡는다. MediaMetadataRetriever는 스레드마다
+    ///   따로 있어야 하므로 각자 자기 것을 연다.
+    private fun extractThumbnails(inputFile: File, count: Int): List<String> {
+        val probe = MediaMetadataRetriever()
+        val durationMs: Long
+        val sourceWidth: Int
+        val sourceHeight: Int
+        try {
+            probe.setDataSource(inputFile.absolutePath)
+            durationMs = probe
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?: 0L
+            sourceWidth = probe
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                ?.toIntOrNull()
+                ?: 0
+            sourceHeight = probe
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                ?.toIntOrNull()
+                ?: 0
+        } finally {
+            probe.release()
+        }
+
+        val targetWidth = if (sourceWidth > 0 && sourceHeight > 0) {
+            (THUMBNAIL_HEIGHT.toLong() * sourceWidth / sourceHeight)
+                .toInt()
+                .coerceIn(2, THUMBNAIL_HEIGHT * 4)
+        } else {
+            THUMBNAIL_HEIGHT * 16 / 9
+        }
+
+        val outputDirectory = File(
+            cacheDir,
+            "video_thumbnails/${System.currentTimeMillis()}",
+        ).apply { mkdirs() }
+        val paths = arrayOfNulls<String>(count)
+        val nextIndex = AtomicInteger(0)
+        val workers = (0 until minOf(THUMBNAIL_WORKERS, count)).map {
+            Thread {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(inputFile.absolutePath)
+                    while (true) {
+                        val index = nextIndex.getAndIncrement()
+                        if (index >= count) break
+                        val timeUs = if (durationMs <= 0L) {
+                            0L
+                        } else {
+                            durationMs * 1000L * index / count
+                        }
+                        val bitmap = retriever.scaledFrameAt(
+                            timeUs,
+                            targetWidth,
+                            THUMBNAIL_HEIGHT,
+                        ) ?: continue
+                        val output = File(outputDirectory, "thumb_$index.jpg")
+                        FileOutputStream(output).use { stream ->
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 75, stream)
+                        }
+                        bitmap.recycle()
+                        paths[index] = output.absolutePath
+                    }
+                } catch (ignored: Exception) {
+                    // 한 일꾼이 넘어져도 나머지가 뽑아 둔 프레임은 그대로 쓴다.
+                    // 타임라인은 빈 칸을 견딘다.
+                } finally {
+                    retriever.release()
+                }
+            }
+        }
+        workers.forEach(Thread::start)
+        workers.forEach(Thread::join)
+        return paths.filterNotNull()
+    }
+
+    private fun MediaMetadataRetriever.scaledFrameAt(
+        timeUs: Long,
+        width: Int,
+        height: Int,
+    ) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        getScaledFrameAtTime(
+            timeUs,
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            width,
+            height,
+        )
+    } else {
+        getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
     }
 
     private fun renderPortraitVideo(
@@ -513,9 +596,7 @@ class MainActivity : FlutterActivity() {
                 uri = insertedUri
 
                 resolver.openOutputStream(insertedUri)?.use { outputStream ->
-                    FileInputStream(inputFile).use { inputStream ->
-                        inputStream.copyTo(outputStream, 128 * 1024)
-                    }
+                    copyFast(inputFile, outputStream)
                 } ?: throw IllegalStateException("Could not write the video to the gallery.")
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -558,10 +639,8 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("Could not create the gallery folder.")
             }
             val destination = File(galleryDirectory, buildUniqueGalleryFileName(title))
-            FileInputStream(inputFile).use { inputStream ->
-                FileOutputStream(destination).use { outputStream ->
-                    inputStream.copyTo(outputStream, 128 * 1024)
-                }
+            FileOutputStream(destination).use { outputStream ->
+                copyFast(inputFile, outputStream)
             }
             // 스캐너에 알리지 않으면 갤러리 앱 목록에 뜨지 않는다.
             MediaScannerConnection.scanFile(
@@ -578,6 +657,40 @@ class MainActivity : FlutterActivity() {
                     failure.message ?: "Could not save the video to the gallery.",
                     null,
                 )
+            }
+        }
+    }
+
+    /// 편집 결과를 갤러리로 옮긴다.
+    ///
+    /// MediaStore가 주는 스트림은 대개 파일 디스크립터를 감싼 것이라 커널이
+    /// 바로 옮길 수 있다. 128KiB씩 사용자 공간을 오가며 복사하던 예전 방식보다
+    /// 큰 영상에서 눈에 띄게 빠르다. 파일이 아닌 스트림이 오면 예전처럼 버퍼로
+    /// 복사한다.
+    private fun copyFast(source: File, destination: OutputStream) {
+        FileInputStream(source).use { input ->
+            val sink = (destination as? FileOutputStream)?.channel
+            if (sink == null) {
+                input.copyTo(destination, 1 shl 20)
+                return
+            }
+            val channel = input.channel
+            val size = channel.size()
+            var position = 0L
+            while (position < size) {
+                val moved = channel.transferTo(
+                    position,
+                    minOf(COPY_CHUNK_BYTES, size - position),
+                    sink,
+                )
+                if (moved <= 0L) break
+                position += moved
+            }
+            if (position < size) {
+                // transferTo가 더 못 옮기는 상황(파이프 등)에서는 남은 만큼만
+                // 버퍼로 마저 채운다.
+                channel.position(position)
+                input.copyTo(destination, 1 shl 20)
             }
         }
     }

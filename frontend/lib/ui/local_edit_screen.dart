@@ -2,11 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
@@ -15,6 +13,7 @@ import '../core/models.dart';
 import '../core/saved_video_edit.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
+import '../core/video_source_cache.dart';
 import '../editor/editor_ar_effects.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
@@ -212,52 +211,37 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   Future<String> _downloadSource() async {
-    final temporary =
-        await (widget.cacheDirectoryProvider?.call() ??
-            getTemporaryDirectory());
-    final input = File(
-      '${temporary.path}${Platform.pathSeparator}event-${widget.video.id}.mp4',
+    // 같은 영상을 다시 편집하거나, 상세 화면이 미리 받아 뒀거나, 갤러리에
+    // 저장한 적이 있으면 네트워크를 아예 타지 않는다.
+    final cached = await VideoSourceCache.cachedPath(
+      widget.video.id,
+      cacheDirectoryProvider: widget.cacheDirectoryProvider,
     );
-
-    // 같은 영상을 다시 편집할 때 매번 전체 파일을 내려받지 않는다. 다운로드는
-    // 임시 파일에 완료한 뒤 이름을 바꾸므로 이 경로의 파일은 완성본만 남는다.
-    if (await input.exists() && await input.length() > 0) {
+    if (cached != null) {
       if (mounted) {
         setState(() {
           _progress = 0.86;
           _status = '저장된 영상을 바로 불러오고 있어요';
         });
       }
-      return input.path;
+      return cached;
     }
 
-    final signed = await widget.controller.api.createDownloadUrl(
-      widget.video.id,
-    );
-    if (mounted) {
-      setState(() {
-        _progress = 0.12;
-        _status = '추억 영상을 휴대폰으로 가져오고 있어요';
-      });
-    }
-    final partial = File('${input.path}.download');
-    if (await partial.exists()) await partial.delete();
-    await Dio().download(
-      signed.url,
-      partial.path,
-      deleteOnError: true,
-      onReceiveProgress: (received, total) {
-        if (mounted && total > 0) {
-          final downloadProgress = (received / total)
-              .clamp(0.0, 1.0)
-              .toDouble();
-          setState(() => _progress = 0.12 + downloadProgress * 0.72);
-        }
+    // 상세 화면에서 미리 받기가 이미 돌고 있으면 그 다운로드에 올라탄다.
+    // 같은 파일을 두 번 받지 않고, 진행률도 이어서 보인다.
+    return VideoSourceCache.ensure(
+      api: widget.controller.api,
+      videoId: widget.video.id,
+      cacheDirectoryProvider: widget.cacheDirectoryProvider,
+      onProgress: (received, total) {
+        if (!mounted || total <= 0) return;
+        final downloadProgress = (received / total).clamp(0.0, 1.0).toDouble();
+        setState(() {
+          _progress = 0.12 + downloadProgress * 0.72;
+          _status = '추억 영상을 휴대폰으로 가져오고 있어요';
+        });
       },
     );
-    if (await input.exists()) await input.delete();
-    await partial.rename(input.path);
-    return input.path;
   }
 
   void _onPreviewChanged() {
@@ -656,6 +640,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       const EditorExportState(phase: EditorExportPhase.preparing, progress: 0),
     );
 
+    // 권한 왕복을 렌더링과 겹쳐 둔다. 저장이 끝난 뒤에 물으면 그 시간이
+    // 고스란히 사용자를 기다리게 하는데, 여기서 시작하면 렌더링이 끝날 즈음엔
+    // 이미 답이 와 있다.
+    final galleryAccess = _requestGalleryAccess();
+
     try {
       final exportProject = _projectWithManualCaption(
         projectController.project,
@@ -700,7 +689,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
               : '원본 화질 그대로 갤러리에 저장하고 있어요';
         });
       }
-      await _saveToPhoneGallery(outputPath);
+      await _saveToPhoneGallery(outputPath, galleryAccess);
       if (!mounted) return;
       _editState.markSaved();
       projectController.setExportState(
@@ -744,6 +733,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     }
   }
 
+  /// 갤러리 권한을 물어 둔다. 답을 기다리는 쪽은 렌더링이 끝난 뒤다.
+  Future<void> _requestGalleryAccess() async {
+    try {
+      if (!await Gal.hasAccess()) await Gal.requestAccess();
+    } catch (_) {
+      // 권한 확인 자체가 실패하는 기기도 있다. 저장은 그대로 시도한다.
+    }
+  }
+
   /// 편집 결과를 휴대폰 갤러리에 넣는다.
   ///
   /// **왜 권한으로 막지 않는가**: 예전에는 `Gal.hasAccess()`가 false면 곧바로
@@ -751,12 +749,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   /// 앱이 만든 영상을 넣는 데는 권한이 필요 없다 — 거절된 권한 하나 때문에
   /// 저장 전체가 막히는 게 실제 증상이었다. 그래서 권한은 요청만 해 보고,
   /// 저장은 MediaStore로 직접 한다. 그쪽이 실패하면 gal로 한 번 더 시도한다.
-  Future<void> _saveToPhoneGallery(String videoPath) async {
-    try {
-      if (!await Gal.hasAccess()) await Gal.requestAccess();
-    } catch (_) {
-      // 권한 확인 자체가 실패하는 기기도 있다. 저장은 그대로 시도한다.
-    }
+  Future<void> _saveToPhoneGallery(
+    String videoPath,
+    Future<void> galleryAccess,
+  ) async {
+    await galleryAccess;
     try {
       await _editorPlatform.saveToGallery(
         inputPath: videoPath,
