@@ -855,21 +855,24 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                       SizedBox(height: compact ? 8 : 14),
                       _PreparingMascot(height: compact ? 205 : 255),
                       SizedBox(height: compact ? 8 : 14),
-                      Text.rich(
-                        TextSpan(
-                          children: [
-                            const TextSpan(text: '준비 중 '),
-                            TextSpan(
-                              text: '$percent%',
-                              style: const TextStyle(color: AppColors.coral),
-                            ),
-                          ],
-                        ),
-                        key: const Key('editor-preparing-percent'),
-                        style: TextStyle(
-                          color: const Color(0xFF4D3425),
-                          fontSize: compact ? 21 : 24,
-                          fontWeight: FontWeight.w900,
+                      KeyedSubtree(
+                        key: const Key('editor-loading-percentage'),
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              const TextSpan(text: '준비 중 '),
+                              TextSpan(
+                                text: '$percent%',
+                                style: const TextStyle(color: AppColors.coral),
+                              ),
+                            ],
+                          ),
+                          key: const Key('editor-preparing-percent'),
+                          style: TextStyle(
+                            color: const Color(0xFF4D3425),
+                            fontSize: compact ? 21 : 24,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -921,8 +924,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                             SizedBox(width: 8),
                             Expanded(
                               child: _PreparingFeatureCard(
-                                icon: Icons.music_note_rounded,
-                                label: '음악',
+                                icon: Icons.subtitles_rounded,
+                                label: '자막',
                                 iconColor: AppColors.coral,
                                 iconBackground: Color(0xFFFFE1D7),
                               ),

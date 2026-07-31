@@ -30,6 +30,7 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   bool _loading = true;
   bool _saving = false;
   double? _saveProgress;
+  bool _deleting = false;
   String? _error;
 
   @override
@@ -172,6 +173,26 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
     );
   }
 
+  Future<void> _deleteVideo() async {
+    if (_deleting || widget.controller.busy) return;
+    final confirmed = await confirmVideoDeletion(context);
+    if (!mounted || !confirmed) return;
+    setState(() => _deleting = true);
+    final ok = await widget.controller.removeVideo(_video);
+    if (!mounted) return;
+    if (ok) {
+      showAppSnack(context, '영상을 삭제했어요.');
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _deleting = false);
+    showAppSnack(
+      context,
+      widget.controller.errorMessage ?? '영상을 삭제하지 못했어요.',
+      error: true,
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     body: AppBackdrop(
@@ -206,6 +227,19 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                           ? AppColors.coral
                           : AppColors.muted,
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '영상 삭제',
+                    onPressed: _deleting ? null : _deleteVideo,
+                    icon: _deleting
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.delete_outline_rounded,
+                            color: AppColors.danger,
+                          ),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -290,7 +324,6 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _openEditor,
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
                     icon: const Icon(Icons.content_cut_rounded),
                     label: const Text('영상 편집하기'),
                   ),

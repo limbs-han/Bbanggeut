@@ -16,7 +16,11 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
+  // Home and family show the camera's online state, which expires with its
+  // heartbeat TTL, so both re-read presence on entry.
+  static const _presenceTabs = {2, 3};
+
   int index = 2;
   String? _lastDeviceId;
 
@@ -26,8 +30,18 @@ class _MainShellState extends State<MainShell> {
           ? widget.controller.refreshVaultData()
           : widget.controller.refreshDeviceData();
       refresh.catchError((_) {});
+    } else if (_presenceTabs.contains(value)) {
+      widget.controller.refreshPresence().catchError((_) {});
     }
     if (mounted) setState(() => index = value);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _presenceTabs.contains(index)) {
+      widget.controller.refreshPresence().catchError((_) {});
+    }
   }
 
   @override
@@ -39,6 +53,7 @@ class _MainShellState extends State<MainShell> {
     }
     _lastDeviceId = widget.controller.selectedDevice?.id;
     widget.controller.addListener(_handleRequestedRoute);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   void _handleRequestedRoute() {
@@ -58,6 +73,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_handleRequestedRoute);
     super.dispose();
   }
@@ -72,6 +88,7 @@ class _MainShellState extends State<MainShell> {
       VideosScreen(controller: widget.controller),
       HomeScreen(
         controller: widget.controller,
+        isActive: index == 2,
         openVideos: () => _selectIndex(1),
         openCalendar: () => _selectIndex(0),
       ),

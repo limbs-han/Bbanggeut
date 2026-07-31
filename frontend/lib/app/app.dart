@@ -4,15 +4,16 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/push_notification_service.dart';
 import '../ui/auth_screen.dart';
 import '../ui/content_notifications_screen.dart';
+import '../ui/device_registration_screen.dart';
 import '../ui/invitation_inbox_screen.dart';
 import '../ui/main_shell.dart';
 import '../ui/onboarding_screen.dart';
 import '../ui/video_detail_screen.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
-import '../core/push_notification_service.dart';
 
 class WilliamJamesApp extends StatefulWidget {
   const WilliamJamesApp({super.key});
@@ -215,9 +216,16 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
         if (onboardingSeen == false) {
           return OnboardingScreen(onFinished: _finishOnboarding);
         }
-        return controller.authenticated
-            ? MainShell(controller: controller)
-            : AuthScreen(controller: controller);
+        if (!controller.authenticated) {
+          return AuthScreen(controller: controller);
+        }
+        if (controller.requiresInitialDeviceRegistration) {
+          return DeviceRegistrationScreen(
+            controller: controller,
+            canGoBack: false,
+          );
+        }
+        return MainShell(controller: controller);
       },
     ),
   );

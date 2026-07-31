@@ -1,3 +1,5 @@
+import com.android.build.api.dsl.LibraryExtension
+
 allprojects {
     repositories {
         google()
@@ -18,6 +20,13 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+    if (name == "video_thumbnail") {
+        afterEvaluate {
+            extensions.configure<LibraryExtension> {
+                compileSdk = 36
+            }
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

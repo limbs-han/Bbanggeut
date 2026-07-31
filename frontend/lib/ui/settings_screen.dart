@@ -6,6 +6,7 @@ import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
 import 'family_management_cards.dart';
 import 'invitation_inbox_screen.dart';
+import 'laugh_report_content_screen.dart';
 import 'notification_settings_screen.dart';
 import 'password_change_screen.dart';
 import 'profile_edit_screen.dart';
@@ -22,7 +23,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    final device = controller.selectedDevice!;
+    // A vault keeps its members, videos and subscription with no device bound,
+    // so this screen must render without one.
+    final device = controller.selectedDevice;
+    final isOwner =
+        controller.selectedVault?.isOwner ?? device?.isOwner ?? false;
     return AppBackdrop(
       child: CustomScrollView(
         key: const PageStorageKey('settings-scroll'),
@@ -139,8 +144,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           _SettingRow(
                             icon: Icons.videocam_outlined,
                             title: '카메라 설정',
-                            subtitle: device.name,
-                            onTap: device.isOwner
+                            subtitle: device?.name ?? '연결된 기기가 없어요',
+                            onTap: device != null && device.isOwner
                                 ? () => _editDevice(context)
                                 : null,
                           ),
@@ -181,7 +186,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       padding: EdgeInsets.zero,
                       child: Column(
                         children: [
-                          if (device.isOwner) ...[
+                          _SettingRow(
+                            icon: Icons.bar_chart_rounded,
+                            title: '웃음 리포트',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => LaughReportContentScreen(
+                                  controller: controller,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const Divider(height: 1, indent: 58),
+                          if (isOwner) ...[
                             _SettingRow(
                               icon: Icons.receipt_long_outlined,
                               title: '접근 기록',
@@ -232,7 +250,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                     ),
-                    if (device.isOwner) ...[
+                    if (device != null && isOwner) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         onPressed: () => _releaseDevice(context),
@@ -278,10 +296,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _editDevice(BuildContext context) async {
     final controller = widget.controller;
+    final selected = controller.selectedDevice;
+    if (selected == null) {
+      showAppSnack(context, '연결된 기기가 없어요.', error: true);
+      return;
+    }
     final result = await showDialog<_DeviceManageResult>(
       context: context,
-      builder: (context) =>
-          _RenameDeviceDialog(initialName: controller.selectedDevice!.name),
+      builder: (context) => _RenameDeviceDialog(initialName: selected.name),
     );
     if (!context.mounted || result == null) return;
     if (result.release) {
@@ -303,10 +325,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _subscription(BuildContext context) async {
     final controller = widget.controller;
+    // The subscription belongs to the vault; the device route is only a
+    // fallback for a session that never resolved one.
+    final vaultId = controller.selectedVault?.id;
+    final deviceId = controller.selectedDevice?.id;
+    if (vaultId == null && deviceId == null) {
+      showAppSnack(context, '구독 정보를 불러오지 못했어요.', error: true);
+      return;
+    }
     try {
-      var subscription = await controller.api.getSubscription(
-        controller.selectedDevice!.id,
-      );
+      var subscription = vaultId != null
+          ? await controller.api.getVaultSubscription(vaultId)
+          : await controller.api.getSubscription(deviceId!);
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
@@ -326,12 +356,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               FilledButton(
                 onPressed: () async {
                   subscription = subscription.active
-                      ? await controller.api.cancelSubscription(
-                          controller.selectedDevice!.id,
-                        )
-                      : await controller.api.activateSubscription(
-                          controller.selectedDevice!.id,
-                        );
+                      ? (vaultId != null
+                            ? await controller.api.cancelVaultSubscription(
+                                vaultId,
+                              )
+                            : await controller.api.cancelSubscription(
+                                deviceId!,
+                              ))
+                      : (vaultId != null
+                            ? await controller.api.activateVaultSubscription(
+                                vaultId,
+                              )
+                            : await controller.api.activateSubscription(
+                                deviceId!,
+                              ));
                   setDialogState(() {});
                   await controller.refreshAll();
                 },
@@ -347,10 +385,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _logs(BuildContext context) async {
+    final controller = widget.controller;
+    final vaultId = controller.selectedVault?.id;
+    final deviceId = controller.selectedDevice?.id;
+    if (vaultId == null && deviceId == null) {
+      showAppSnack(context, '접근 기록을 불러오지 못했어요.', error: true);
+      return;
+    }
     try {
-      final logs = await widget.controller.api.listAccessLogs(
-        widget.controller.selectedDevice!.id,
-      );
+      final logs = vaultId != null
+          ? await controller.api.listVaultAccessLogs(vaultId)
+          : await controller.api.listAccessLogs(deviceId!);
       if (!context.mounted) return;
       await showModalBottomSheet<void>(
         context: context,
@@ -429,7 +474,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _releaseDevice(BuildContext context) async {
-    final device = widget.controller.selectedDevice!;
+    final device = widget.controller.selectedDevice;
+    if (device == null) {
+      showAppSnack(context, '연결된 기기가 없어요.', error: true);
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

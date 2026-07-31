@@ -87,6 +87,36 @@ pipeline {
                     }
                 }
 
+                stage('API Contract') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            branch 'master'
+                            branch pattern: 'develop/**', comparator: 'GLOB'
+                            branch pattern: 'feat/**', comparator: 'GLOB'
+                            branch pattern: 'docs/**', comparator: 'GLOB'
+                            // 역머지 브랜치도 계약을 확인한다. 이 검사가 없으면
+                            // master 를 되돌려 받는 MR 이 아무 CI 도 타지 않는다.
+                            branch pattern: 'chore/**', comparator: 'GLOB'
+                        }
+                    }
+                    agent {
+                        label 'backend'
+                    }
+                    steps {
+                        gitlabCommitStatus(name: 'ci/api-contract') {
+                            deleteDir()
+                            checkout scm
+                            sh 'bash ci/jenkins/scripts/run-api-contract-ci.sh'
+                        }
+                    }
+                    post {
+                        cleanup {
+                            cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+                        }
+                    }
+                }
+
                 stage('Device (IoT + AI)') {
                     when {
                         beforeAgent true

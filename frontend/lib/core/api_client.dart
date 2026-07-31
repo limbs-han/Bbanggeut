@@ -490,6 +490,46 @@ class ApiClient {
     return result;
   }
 
+  // Subscription and audit logs belong to the vault, so these keep working
+  // while the vault has no connected device.
+  Future<SubscriptionInfo> getVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _get('/api/vaults/$vaultId/subscription'),
+      );
+  Future<SubscriptionInfo> activateVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _put('/api/vaults/$vaultId/subscription'),
+      );
+  Future<SubscriptionInfo> cancelVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _deleteMap('/api/vaults/$vaultId/subscription'),
+      );
+  Future<AccessLogPage> listVaultAccessLogPage(
+    String vaultId, {
+    String? cursor,
+    int size = 30,
+  }) async => AccessLogPage.fromJson(
+    await _get(
+      '/api/vaults/$vaultId/access-logs',
+      query: {'size': size.clamp(1, 100), 'cursor': ?cursor},
+    ),
+  );
+
+  Future<List<AccessLogEntry>> listVaultAccessLogs(String vaultId) async {
+    final result = <AccessLogEntry>[];
+    String? cursor;
+    do {
+      final page = await listVaultAccessLogPage(
+        vaultId,
+        cursor: cursor,
+        size: 100,
+      );
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
+  }
+
   Future<List<VideoMemory>> listAllVideos(
     String deviceId, {
     String? triggerType,
