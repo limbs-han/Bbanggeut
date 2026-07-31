@@ -29,7 +29,7 @@ class NotificationServiceTest {
         UUID notificationId = UUID.randomUUID();
         when(mapper.findForUser(userId, 100)).thenReturn(List.of(new NotificationRow(
             notificationId, "INVITATION_RECEIVED", "초대", "새 초대",
-            UUID.randomUUID(), UUID.randomUUID(), null,
+            UUID.randomUUID(), null, UUID.randomUUID(), null,
             Instant.parse("2026-07-27T10:00:00Z"))));
 
         var result = new NotificationService(mapper, pushDispatcher).list(userId, 1_000);
