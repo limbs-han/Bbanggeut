@@ -450,6 +450,12 @@ class ApiClient {
       _post('/api/stream-sessions/$id/heartbeat');
   Future<void> closeStream(String id) async =>
       _delete('/api/stream-sessions/$id');
+  Future<TalkbackSession> openTalkback(String id) async =>
+      TalkbackSession.fromJson(
+        await _post('/api/stream-sessions/$id/talkback'),
+      );
+  Future<void> closeTalkback(String id) async =>
+      _delete('/api/stream-sessions/$id/talkback');
   Future<SubscriptionInfo> getSubscription(String deviceId) async =>
       SubscriptionInfo.fromJson(
         await _get('/api/devices/$deviceId/subscription'),

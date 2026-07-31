@@ -512,6 +512,23 @@ class StreamSession {
   );
 }
 
+class TalkbackSession {
+  const TalkbackSession({
+    required this.sessionId,
+    required this.whipUrl,
+    this.expiresAt,
+  });
+  final String sessionId;
+  final String whipUrl;
+  final DateTime? expiresAt;
+  factory TalkbackSession.fromJson(Map<String, dynamic> json) =>
+      TalkbackSession(
+        sessionId: json['sessionId'] as String,
+        whipUrl: json['whipUrl'] as String,
+        expiresAt: parseDate(json['expiresAt']),
+      );
+}
+
 class SignedUrl {
   const SignedUrl({required this.url, this.expiresAt});
   final String url;
