@@ -405,10 +405,30 @@ sudo journalctl -u wj-registration-button-jetson -f
 The LCD shows `Press button`, then `Requesting code`, followed by the issued
 `XXXX-XXXX` value. At the server-provided expiry time (normally two minutes),
 the LCD replaces the stale code with `Code expired` / `Press button`. Issuing a
-new code cancels the previous expiry timer. A failed or timed-out request
-displays a short error instead.
+new code cancels the previous expiry timer.
+
+A failed request shows `Registration` / `Failed`, then after
+`REGISTRATION_FAILURE_REASON_SECONDS` (default 3) the reason, and after a
+further `REGISTRATION_FAILURE_READY_SECONDS` (default 5) it returns to
+`Press button` / `to register` so the code can be requested again. Pressing the
+button during the sequence cancels the remaining steps.
+
+Only an already-registered device gets a specific reason,
+`Device already` / `registered`, because it is the one cause the person at the
+device can act on. Every other cause — a rejected token, a server fault, an
+unreachable network — shows `Temporary error` / `Try again later`, so the LCD
+never exposes why the request was refused. The rejected status and error code
+stay in the journal:
+
+```
+Registration request failed: Registration command failed with exit code 1: \
+RuntimeError: 서버가 요청을 거부했습니다 (401, DEVICE_AUTHENTICATION_FAILED)
+```
+
 Override `REGISTRATION_BUTTON_CHIP`, `REGISTRATION_BUTTON_LINE`,
-`LCD_I2C_BUS`, `LCD_I2C_ADDRESS`, or `LCD_COLUMNS` in
+`LCD_I2C_BUS`, `LCD_I2C_ADDRESS`, `LCD_COLUMNS`,
+`REGISTRATION_FAILURE_REASON_SECONDS`, or
+`REGISTRATION_FAILURE_READY_SECONDS` in
 `/etc/william-james/device-agent.env` when the target differs.
 
 To issue one code and show it on the LCD without a physical button, stop the
