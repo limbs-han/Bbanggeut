@@ -36,17 +36,23 @@ class _MemoryStore extends TranscriptStore {
 /// 그 안에서는 절대 끝나지 않는다 — 테스트가 무한 대기에 걸린다(Task 4에서 실제로
 /// 겪었다). 그래서 그림은 setUpAll에서 한 번 만들어 넣어 준다.
 class _StubGateway implements ComicGateway {
-  _StubGateway({required this.png, this.imageError});
+  _StubGateway({required this.png, this.scriptError, this.imageError});
 
   final Uint8List png;
+  final Object? scriptError;
   final Object? imageError;
 
   @override
-  Future<List<ComicCut>> script(String videoId, List<CaptionLine> lines) async =>
-      [
-        for (var i = 0; i < 4; i++)
-          ComicCut(beat: '컷$i', scene: '장면$i', dialogue: '대사$i'),
-      ];
+  Future<List<ComicCut>> script(
+    String videoId,
+    List<CaptionLine> lines,
+  ) async {
+    if (scriptError != null) throw scriptError!;
+    return [
+      for (var i = 0; i < 4; i++)
+        ComicCut(beat: '컷$i', scene: '장면$i', dialogue: '대사$i'),
+    ];
+  }
 
   @override
   Future<Uint8List> image(
@@ -91,12 +97,19 @@ void main() {
     png = await FakeComicGateway().image('v1', const []);
   });
 
-  ComicController build({List<CaptionLine>? saved, Object? imageError}) =>
-      ComicController(
-        gateway: _StubGateway(png: png, imageError: imageError),
-        videoId: 'v1',
-        store: _MemoryStore(saved),
-      );
+  ComicController build({
+    List<CaptionLine>? saved,
+    Object? scriptError,
+    Object? imageError,
+  }) => ComicController(
+    gateway: _StubGateway(
+      png: png,
+      scriptError: scriptError,
+      imageError: imageError,
+    ),
+    videoId: 'v1',
+    store: _MemoryStore(saved),
+  );
 
   testWidgets('전사문이 없으면 안내를 보여준다', (tester) async {
     await pump(tester, build());
@@ -160,5 +173,15 @@ void main() {
     expect(find.textContaining('생성 실패'), findsOneWidget);
     expect(find.text('고친 대사'), findsOneWidget);
     expect(find.byKey(const ValueKey('comic-make-image')), findsOneWidget);
+  });
+
+  /// 첫 시도부터 구성이 실패하면 고칠 대사조차 없다 — 목록 대신 다시 시도만 보여준다.
+  testWidgets('구성부터 실패하면 목록 없이 다시 시도를 보여준다', (tester) async {
+    await pump(tester, build(saved: _lines(), scriptError: StateError('구성 실패')));
+
+    expect(find.textContaining('구성 실패'), findsOneWidget);
+    expect(find.text('다시 시도'), findsOneWidget);
+    expect(find.byKey(const ValueKey('comic-cut-0')), findsNothing);
+    expect(find.byKey(const ValueKey('comic-make-image')), findsNothing);
   });
 }
