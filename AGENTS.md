@@ -67,12 +67,19 @@ The only MR targeting `master` is `develop` -> `master`.
 
 ## Merging and deleting
 
-Merge into `develop` only after CI passes. In the MR, enable **Squash commits**
-and **Delete source branch when merge request is accepted**, so one MR becomes
-one commit on `develop` and no feature branch is left behind.
+Merge into `develop` only after CI passes. Keep **Delete source branch when
+merge request is accepted** enabled so no feature branch is left behind.
 
-For `develop` -> `master`, turn both options off: `develop` must survive, and
-squashing its history causes conflicts on the next promotion.
+**Squash commits** defaults to off. Tick it when the branch is a pile of
+trial-and-error commits (wip, test fixes, typos), so the MR lands as one commit
+on `develop`. Leave it off when each commit is an independent logical change
+worth keeping.
+
+For `develop` -> `master`, never tick Squash — the default (off) is already
+correct. Squashing a promotion splits `master`'s history from `develop`'s and
+causes conflicts on every later promotion. Untick the delete-source option too;
+`develop` is protected and cannot actually be deleted, but leaving the option
+off keeps the intent clear.
 
 Nothing needs to happen after a `develop` -> `master` merge. Do not back-merge.
 
