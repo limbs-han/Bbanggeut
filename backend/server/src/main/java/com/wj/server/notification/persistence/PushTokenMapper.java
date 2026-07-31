@@ -76,8 +76,10 @@ public interface PushTokenMapper {
         SELECT DISTINCT pt.token
           FROM notification_push_tokens pt
           JOIN users u ON u.id = pt.user_id
-          JOIN device_memberships m ON m.user_id = pt.user_id
-         WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'
+          JOIN vault_memberships m ON m.user_id = pt.user_id
+          JOIN device_bindings b
+            ON b.vault_id = m.vault_id AND b.status = 'ACTIVE'
+         WHERE b.device_id = #{deviceId} AND m.status = 'ACTIVE'
            AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
          ORDER BY pt.token
         """)
