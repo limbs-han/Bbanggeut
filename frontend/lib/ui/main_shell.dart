@@ -38,8 +38,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        _presenceTabs.contains(index)) {
+    if (state == AppLifecycleState.resumed && _presenceTabs.contains(index)) {
       widget.controller.refreshPresence().catchError((_) {});
     }
   }
@@ -47,8 +46,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    if (widget.controller.consumeOpenFamilyAfterDeviceClaim() ||
-        widget.controller.pendingMembershipRequestPreview != null) {
+    if (widget.controller.consumeOpenHomeAfterDeviceClaim()) {
+      index = 2;
+    } else if (widget.controller.pendingMembershipRequestPreview != null) {
       index = 3;
     }
     _lastDeviceId = widget.controller.selectedDevice?.id;
@@ -60,11 +60,11 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     final currentDeviceId = widget.controller.selectedDevice?.id;
     final deviceWasReleased = _lastDeviceId != null && currentDeviceId == null;
     _lastDeviceId = currentDeviceId;
+    final openHome = widget.controller.consumeOpenHomeAfterDeviceClaim();
     final openFamily =
-        widget.controller.consumeOpenFamilyAfterDeviceClaim() ||
         widget.controller.pendingMembershipRequestPreview != null;
     if (!mounted) return;
-    if (deviceWasReleased && index != 2) {
+    if ((deviceWasReleased || openHome) && index != 2) {
       setState(() => index = 2);
     } else if (openFamily && index != 3) {
       setState(() => index = 3);
