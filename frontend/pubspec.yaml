@@ -49,6 +49,7 @@ dependencies:
   whisper_ggml_plus: ^1.5.2
   banuba_sdk: ^3.1.5
   video_thumbnail: ^0.5.6
+  image_picker: ^1.2.3
 
 dev_dependencies:
   flutter_test:

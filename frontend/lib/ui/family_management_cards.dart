@@ -82,6 +82,10 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (vault.isOwner) ...[
+          _buildOwnerInvitationCard(),
+          const SizedBox(height: 14),
+        ],
         Row(
           children: [
             Expanded(
@@ -107,29 +111,42 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
           ],
         ),
         const SizedBox(height: 8),
-        SoftCard(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          child: controller.members.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 18),
-                  child: Text(
-                    '아직 등록된 가족 구성원이 없어요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.muted),
-                  ),
-                )
-              : Column(
+        if (controller.members.isEmpty)
+          const SoftCard(
+            child: Text(
+              '아직 등록된 가족 구성원이 없어요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.muted),
+            ),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final visibleCount = controller.members.length.clamp(1, 3);
+              final cardWidth =
+                  (constraints.maxWidth - ((visibleCount - 1) * 8)) /
+                  visibleCount;
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   children: controller.members.indexed.map((entry) {
-                    return Column(
-                      children: [
-                        _MemberTile(controller: controller, member: entry.$2),
-                        if (entry.$1 != controller.members.length - 1)
-                          const Divider(height: 1),
-                      ],
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        right: entry.$1 == controller.members.length - 1
+                            ? 0
+                            : 8,
+                      ),
+                      child: _MemberTile(
+                        controller: controller,
+                        member: entry.$2,
+                        width: cardWidth,
+                      ),
                     );
                   }).toList(),
                 ),
-        ),
+              );
+            },
+          ),
         if (vault.isOwner && controller.sentInvitations.isNotEmpty) ...[
           const SizedBox(height: 18),
           const Text(
@@ -148,11 +165,10 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
             ),
           ),
         ],
-        const SizedBox(height: 18),
-        if (vault.isOwner)
-          _buildOwnerInvitationCard()
-        else
+        if (!vault.isOwner) ...[
+          const SizedBox(height: 18),
           _buildMemberLinkCard(),
+        ],
         const SizedBox(height: 10),
         const Center(
           child: Text(
@@ -165,75 +181,91 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
   }
 
   Widget _buildOwnerInvitationCard() {
-    return SoftCard(
-      color: AppColors.greenCard,
-      borderColor: AppColors.greenCard,
-      child: Column(
-        children: [
-          const Row(
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        SoftCard(
+          color: AppColors.greenCard,
+          borderColor: AppColors.greenCard,
+          padding: const EdgeInsets.fromLTRB(118, 24, 18, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _OverlappingDots(),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '함께할 가족을 초대해요',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+              const Text(
+                '함께할 가족을 초대해요',
+                style: TextStyle(
+                  color: AppColors.sageDark,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (controller.pendingMembershipRequestPreview != null) ...[
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                '${controller.pendingMembershipRequestPreview!.displayName}님이 멤버 초대를 요청했어요. 이메일을 확인하고 초대를 보내 주세요.',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.inkSoft,
-                ),
-              ),
-            ),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('settings-family-invite-email'),
-                  controller: inviteEmail,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.send,
-                  autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(
-                    labelText: '이메일',
-                    hintText: 'family@example.com',
+              const SizedBox(height: 12),
+              if (controller.pendingMembershipRequestPreview != null) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withValues(alpha: .82),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  onSubmitted: (_) => _sendInvitation(),
+                  child: Text(
+                    '${controller.pendingMembershipRequestPreview!.displayName}님이 멤버 초대를 요청했어요. 이메일을 확인하고 초대를 보내 주세요.',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkSoft,
+                    ),
+                  ),
                 ),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('settings-family-invite-email'),
+                      controller: inviteEmail,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.send,
+                      autofillHints: const [AutofillHints.email],
+                      decoration: InputDecoration(
+                        hintText: '이메일 입력',
+                        filled: true,
+                        fillColor: AppColors.surface.withValues(alpha: .94),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 15,
+                          vertical: 15,
+                        ),
+                      ),
+                      onSubmitted: (_) => _sendInvitation(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: controller.busy ? null : _sendInvitation,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(88, 54),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    child: const Text(
+                      '초대하기',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: controller.busy ? null : _sendInvitation,
-                style: FilledButton.styleFrom(minimumSize: const Size(72, 56)),
-                child: const Text('초대'),
+              const SizedBox(height: 8),
+              const Text(
+                '입력한 이메일 계정으로 초대장을 보내요.',
+                style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          const Text(
-            '입력한 이메일 계정의 받은 초대함으로 초대를 보내요.',
-            style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
-          ),
-        ],
-      ),
+        ),
+        const Positioned(left: 14, top: 25, child: _InviteEnvelopeDecoration()),
+        const Positioned(right: 13, top: -14, child: _InviteRibbonDecoration()),
+      ],
     );
   }
 
@@ -357,10 +389,15 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
 }
 
 class _MemberTile extends StatelessWidget {
-  const _MemberTile({required this.controller, required this.member});
+  const _MemberTile({
+    required this.controller,
+    required this.member,
+    required this.width,
+  });
 
   final AppController controller;
   final DeviceMember member;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -372,45 +409,71 @@ class _MemberTile extends StatelessWidget {
     ];
     final color =
         colors[member.user.displayName.hashCode.abs() % colors.length];
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(vertical: 4),
-      leading: CircleAvatar(
-        backgroundColor: color,
-        child: Text(
-          member.user.displayName.characters.firstOrNull ?? '?',
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: AppColors.inkSoft,
-          ),
-        ),
-      ),
-      title: Text(
-        member.user.displayName,
-        style: const TextStyle(fontWeight: FontWeight.w900),
-      ),
-      subtitle: Text(
-        member.user.email,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          StatusPill(
-            label: normalizeRole(member.role) == 'OWNER' ? 'OWNER' : 'MEMBER',
-            color: AppColors.sageSoft,
-          ),
-          if (normalizeRole(member.role) != 'OWNER' &&
-              controller.selectedVault?.isOwner == true)
-            PopupMenuButton<String>(
-              onSelected: (action) =>
-                  action == 'transfer' ? _transfer(context) : _revoke(context),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'transfer', child: Text('소유권 넘기기')),
-                PopupMenuItem(value: 'revoke', child: Text('구성원 내보내기')),
+    final isOwner = normalizeRole(member.role) == 'OWNER';
+    return SizedBox(
+      width: width,
+      child: SoftCard(
+        padding: const EdgeInsets.fromLTRB(10, 12, 8, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: color,
+                  child: Text(
+                    member.user.displayName.characters.firstOrNull ?? '?',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.inkSoft,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    member.user.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                if (!isOwner && controller.selectedVault?.isOwner == true)
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: PopupMenuButton<String>(
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      onSelected: (action) => action == 'transfer'
+                          ? _transfer(context)
+                          : _revoke(context),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'transfer',
+                          child: Text('소유권 넘기기'),
+                        ),
+                        PopupMenuItem(value: 'revoke', child: Text('구성원 내보내기')),
+                      ],
+                    ),
+                  ),
               ],
             ),
-        ],
+            const SizedBox(height: 8),
+            StatusPill(
+              label: isOwner ? 'OWNER' : 'MEMBER',
+              color: AppColors.sageSoft,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              member.user.email,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: AppColors.inkSoft),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -542,31 +605,26 @@ String _invitationStatusLabel(String status) => switch (status) {
   _ => status,
 };
 
-class _OverlappingDots extends StatelessWidget {
-  const _OverlappingDots();
+class _InviteEnvelopeDecoration extends StatelessWidget {
+  const _InviteEnvelopeDecoration();
 
   @override
-  Widget build(BuildContext context) => const SizedBox(
-    width: 62,
-    height: 34,
-    child: Stack(
-      children: [
-        Positioned(
-          left: 0,
-          child: CircleAvatar(
-            radius: 17,
-            backgroundColor: AppColors.yellowSoft,
-          ),
-        ),
-        Positioned(
-          left: 20,
-          child: CircleAvatar(radius: 17, backgroundColor: AppColors.greenCard),
-        ),
-        Positioned(
-          left: 40,
-          child: CircleAvatar(radius: 17, backgroundColor: AppColors.pink),
-        ),
-      ],
-    ),
+  Widget build(BuildContext context) => Image.asset(
+    'assets/images/family_invite_envelope.png',
+    width: 102,
+    fit: BoxFit.contain,
+    filterQuality: FilterQuality.high,
+  );
+}
+
+class _InviteRibbonDecoration extends StatelessWidget {
+  const _InviteRibbonDecoration();
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+    'assets/images/family_invite_ribbon.png',
+    width: 105,
+    fit: BoxFit.contain,
+    filterQuality: FilterQuality.high,
   );
 }

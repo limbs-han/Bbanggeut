@@ -231,6 +231,33 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.muted, fontSize: 12),
               ),
+              const SizedBox(height: 12),
+              const SoftCard(
+                color: AppColors.surfaceWarm,
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '연결 카테고리 안내',
+                      style: TextStyle(
+                        color: AppColors.ink,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Owner · 새 기기를 처음 등록하고 가족을 초대해요.\n'
+                      'Member · 이미 등록된 기기의 Owner에게 초대를 요청해요.',
+                      style: TextStyle(
+                        color: AppColors.inkSoft,
+                        fontSize: 12,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               SegmentedButton<int>(
                 key: const Key('device-registration-mode'),

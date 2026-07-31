@@ -39,7 +39,7 @@ void main() {
 
     expect(find.text('추억 1'), findsOneWidget);
     expect(find.text('추억 2'), findsNothing);
-    expect(find.text('더보기 (4)'), findsOneWidget);
+    expect(find.text('더보기'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('calendar-memory-more')));
     await tester.pumpAndSettle();
