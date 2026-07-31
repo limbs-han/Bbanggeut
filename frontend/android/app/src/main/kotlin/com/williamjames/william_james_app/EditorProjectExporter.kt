@@ -11,9 +11,11 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.DefaultGainProvider
 import androidx.media3.common.audio.GainProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.MatrixTransformation
+import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -32,6 +34,12 @@ import kotlin.math.roundToInt
 class EditorProjectExporter(
     private val activity: Activity,
 ) {
+    companion object {
+        /// Flutter 미리보기가 글자 크기를 계산할 때 쓰는 기준 캔버스 너비
+        /// (local_edit_screen.dart의 `_referenceCanvasWidth`와 같은 값).
+        private const val REFERENCE_CANVAS_WIDTH = 1280f
+    }
+
     private var transformer: Transformer? = null
     private var pendingResult: MethodChannel.Result? = null
     private var phase = "idle"
@@ -121,6 +129,10 @@ class EditorProjectExporter(
             call.argument<List<Map<String, Any?>>>("stickerLayers") ?: emptyList()
         val blurLayers = call.argument<List<Map<String, Any?>>>("blurLayers") ?: emptyList()
         val captions = call.argument<List<Map<String, Any?>>>("captions") ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val sourceSize = call.argument<Map<String, Any?>>("sourceSize") ?: emptyMap()
+        // 앱 안 AR 효과와 필터가 정한 색감. 미리보기의 ColorFilter와 짝이다.
+        val look = call.argument<String>("look") ?: "none"
 
         if (outputPath.isNullOrBlank() || rawClips.isEmpty()) {
             result.error(
@@ -195,15 +207,28 @@ class EditorProjectExporter(
             return
         }
 
-        val overlays = EditorLayerOverlay.from(textLayers, stickerLayers).toMutableList()
+        // 글자·스티커 크기는 Flutter 미리보기가 기준 너비 1280으로 계산한다.
+        // 실제 출력이 그보다 크거나 작으면 같은 비율로 맞춰 줘야 미리보기에서
+        // 본 크기가 저장된 영상에서도 같다.
+        val overlayCanvasWidth = if (presentation == null) {
+            number(sourceSize, "width")?.toInt()?.takeIf { it > 0 } ?: targetWidth
+        } else {
+            targetWidth
+        }
+        val fontScale = overlayCanvasWidth / REFERENCE_CANVAS_WIDTH
+        val overlays =
+            EditorLayerOverlay.from(textLayers, stickerLayers, fontScale).toMutableList()
         if (textLayers.isEmpty()) {
             SubtitleOverlay.of(captions, 0xFFFFFFFF.toInt())?.let(overlays::add)
         }
-        val compositionEffects = if (overlays.isEmpty()) {
-            Effects(emptyList(), emptyList())
-        } else {
-            Effects(emptyList(), listOf(OverlayEffect(overlays)))
+        val compositionVideoEffects = mutableListOf<Effect>()
+        // 색감을 먼저 입히고 그 위에 글자를 얹는다. 순서를 바꾸면 흑백 필터가
+        // 자막까지 회색으로 만든다.
+        lookEffect(look)?.let(compositionVideoEffects::add)
+        if (overlays.isNotEmpty()) {
+            compositionVideoEffects += OverlayEffect(overlays)
         }
+        val compositionEffects = Effects(emptyList(), compositionVideoEffects)
         val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
         val composition = Composition.Builder(sequence)
             .setEffects(compositionEffects)
@@ -353,6 +378,25 @@ class EditorProjectExporter(
         pendingResult = null
         phase = "failed"
         result?.error(code, message, null)
+    }
+
+    /// 미리보기 `_lookFilter`와 같은 색감을 media3 쪽에서 재현한다.
+    private fun lookEffect(look: String): Effect? = when (look) {
+        "mono" -> RgbFilter.createGrayscaleFilter()
+        "warm" -> HslAdjustment.Builder()
+            .adjustHue(6f)
+            .adjustSaturation(12f)
+            .adjustLightness(3f)
+            .build()
+        "vivid" -> HslAdjustment.Builder()
+            .adjustSaturation(28f)
+            .adjustLightness(4f)
+            .build()
+        "soft" -> HslAdjustment.Builder()
+            .adjustSaturation(-10f)
+            .adjustLightness(8f)
+            .build()
+        else -> null
     }
 
     private fun outputSize(aspectRatio: Double): Pair<Int, Int> =

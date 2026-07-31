@@ -81,7 +81,12 @@ class EditorPlatform {
       }
       return result;
     } on PlatformException catch (failure) {
-      throw EditorPlatformException(failure.message ?? '영상 내보내기에 실패했어요.');
+      // 네이티브 코드와 메시지를 그대로 붙인다. 예전에는 사람 말로만 바꿔
+      // 던져서 실제 실패 이유(코덱, 용량, 효과 미지원)를 알 수 없었다.
+      throw EditorPlatformException(
+        '영상 내보내기에 실패했어요. '
+        '[${failure.code}] ${failure.message ?? '알 수 없는 오류'}',
+      );
     }
   }
 
@@ -111,7 +116,8 @@ class EditorPlatform {
       throw EditorPlatformException(
         failure.code == 'INVALID_FILE'
             ? '저장할 편집 영상 파일을 찾지 못했어요.'
-            : '갤러리에 영상을 저장하지 못했어요. 저장 공간과 권한을 확인해 주세요.',
+            : '갤러리에 영상을 저장하지 못했어요. 저장 공간과 권한을 확인해 주세요. '
+                  '(${failure.message ?? failure.code})',
       );
     }
   }

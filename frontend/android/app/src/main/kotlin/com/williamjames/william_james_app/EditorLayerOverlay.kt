@@ -12,20 +12,29 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.TextureOverlay
+import kotlin.math.roundToInt
 
 @UnstableApi
 object EditorLayerOverlay {
+    /// 스티커 기본 글자 크기. 미리보기(local_edit_screen.dart의
+    /// `_referenceStickerFontSize`)와 같은 값이어야 한다.
+    private const val STICKER_FONT_SIZE = 110
+
+    /// [fontScale]은 출력 영상 너비 / 기준 너비(1280)다. 미리보기에서 본 글자
+    /// 크기를 해상도가 다른 출력에서도 같은 비율로 재현한다.
     fun from(
         rawTextLayers: List<Map<String, Any?>>,
         rawStickerLayers: List<Map<String, Any?>>,
+        fontScale: Float = 1f,
     ): List<TextureOverlay> {
+        val safeScale = fontScale.coerceIn(0.25f, 4f)
         val overlays = mutableListOf<TextureOverlay>()
-        rawTextLayers.mapNotNullTo(overlays, ::textLayer)
-        rawStickerLayers.mapNotNullTo(overlays, ::stickerLayer)
+        rawTextLayers.mapNotNullTo(overlays) { textLayer(it, safeScale) }
+        rawStickerLayers.mapNotNullTo(overlays) { stickerLayer(it, safeScale) }
         return overlays
     }
 
-    private fun textLayer(raw: Map<String, Any?>): TextureOverlay? {
+    private fun textLayer(raw: Map<String, Any?>, fontScale: Float): TextureOverlay? {
         val text = raw["text"] as? String ?: return null
         if (text.isBlank()) return null
         val startMs = number(raw, "startMs")?.toLong() ?: return null
@@ -42,13 +51,13 @@ object EditorLayerOverlay {
             value = text,
             color = color,
             backgroundColor = backgroundColor,
-            fontSize = fontSize,
+            fontSize = scaled(fontSize, fontScale),
             bold = bold,
             settings = settings(raw),
         )
     }
 
-    private fun stickerLayer(raw: Map<String, Any?>): TextureOverlay? {
+    private fun stickerLayer(raw: Map<String, Any?>, fontScale: Float): TextureOverlay? {
         val value = raw["value"] as? String ?: return null
         if (value.isBlank()) return null
         val startMs = number(raw, "startMs")?.toLong() ?: return null
@@ -60,11 +69,14 @@ object EditorLayerOverlay {
             value = value,
             color = 0xFFFFFFFF.toInt(),
             backgroundColor = 0x00000000,
-            fontSize = 110,
+            fontSize = scaled(STICKER_FONT_SIZE, fontScale),
             bold = false,
             settings = settings(raw),
         )
     }
+
+    private fun scaled(fontSize: Int, fontScale: Float): Int =
+        (fontSize * fontScale).roundToInt().coerceIn(8, 640)
 
     private fun settings(raw: Map<String, Any?>): OverlaySettings {
         @Suppress("UNCHECKED_CAST")

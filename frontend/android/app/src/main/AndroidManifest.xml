@@ -10,6 +10,11 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- 편집 영상을 갤러리에 저장하고 다시 확인하기 위한 권한. 안드로이드 13
+         이상에서 gal 플러그인이 이 권한들을 확인한다. 선언이 없으면 권한 확인이
+         항상 실패해 저장 자체가 시작되지 않았다. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

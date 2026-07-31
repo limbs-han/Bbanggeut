@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
+import 'editor_ar_effects.dart';
 import 'editor_project.dart';
 
 class EditorProjectController extends ChangeNotifier {
@@ -10,6 +11,10 @@ class EditorProjectController extends ChangeNotifier {
 
   static const minimumClipDurationMs = 100;
   static const _historyLimit = 60;
+
+  /// AR 효과가 놓은 스티커의 id 앞에 붙는다. 효과를 바꾸거나 지울 때 사용자가
+  /// 손으로 놓은 스티커는 남기고 이것만 걷어낸다.
+  static const _arLayerPrefix = 'ar-sticker-';
 
   EditorProject _project;
   final List<EditorProject> _undoStack = [];
@@ -29,6 +34,23 @@ class EditorProjectController extends ChangeNotifier {
         selected.sourceEndMs < _project.sourceDurationMs;
   }
 
+  /// 지금 재생 위치에서 분할이 가능한지. 버튼을 눌러 보고 실패 안내를 띄우는
+  /// 대신 미리 흐리게 만들어 "왜 안 되지"를 없앤다.
+  bool get canSplitAtPlayhead {
+    final location = _locateTimelinePosition(_project.playheadMs);
+    if (location == null) return false;
+    final clip = location.clip;
+    final sourceSplitMs = clip.sourceStartMs + location.offsetMs;
+    return sourceSplitMs - clip.sourceStartMs >= minimumClipDurationMs &&
+        clip.sourceEndMs - sourceSplitMs >= minimumClipDurationMs;
+  }
+
+  /// 선택 클립을 더 잘라낼 여유가 있는지. 트림 손잡이를 흐리게 할 때 쓴다.
+  bool get canTrimSelectedClip {
+    final selected = _project.selectedClip;
+    return selected != null && selected.durationMs > minimumClipDurationMs;
+  }
+
   void selectTool(EditorTool tool) {
     if (_project.selectedTool == tool) return;
     _project = _project.copyWith(selectedTool: tool);
@@ -44,15 +66,31 @@ class EditorProjectController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 타임라인에서 어느 시각을 짚었을 때 그 자리의 클립을 고른다.
+  void selectClipAtTimeline(int timelineMs) {
+    final location = _locateTimelinePosition(timelineMs);
+    if (location == null) return;
+    selectClip(location.clip.id);
+  }
+
+  /// 글자·스티커 레이어를 고른다.
+  ///
+  /// **클립 선택은 건드리지 않는다.** 예전에는 여기서 선택 클립을 지웠는데,
+  /// 그러면 텍스트를 한 번 만진 뒤로는 컷 편집의 분할·삭제·복제가 전부
+  /// 조용히 실패했다(선택 클립이 없으니 전부 false를 돌려준다).
   void selectLayer(String layerId) {
     final exists =
         _project.textLayers.any((layer) => layer.id == layerId) ||
         _project.stickerLayers.any((layer) => layer.id == layerId);
     if (!exists || _project.selectedLayerId == layerId) return;
-    _project = _project.copyWith(
-      selectedLayerId: layerId,
-      clearSelectedClip: true,
-    );
+    _project = _project.copyWith(selectedLayerId: layerId);
+    notifyListeners();
+  }
+
+  /// 영상 빈 곳을 눌렀을 때. 조절 손잡이를 감춘다.
+  void deselectLayer() {
+    if (_project.selectedLayerId == null) return;
+    _project = _project.copyWith(clearSelectedLayer: true);
     notifyListeners();
   }
 
@@ -233,6 +271,61 @@ class EditorProjectController extends ChangeNotifier {
     _commit(_project.copyWith(audio: _project.audio.copyWith(muted: muted)));
   }
 
+  void setLook(EditorLook look) {
+    if (_project.look == look) return;
+    _commit(_project.copyWith(look: look));
+  }
+
+  /// 앱 안 AR 효과를 입힌다. 색감과 얼굴 스티커를 한 번에 바꾼다.
+  ///
+  /// 앞서 켰던 AR 스티커는 걷어내고 새 것으로 갈아 끼운다. 사용자가 스티커
+  /// 탭에서 손으로 놓은 것들은 그대로 남는다.
+  void applyArEffect(EditorArEffect effect) {
+    final kept = _project.stickerLayers
+        .where((layer) => !layer.id.startsWith(_arLayerPrefix))
+        .toList();
+    final timelineEndMs = math.max(_project.durationMs, 1);
+    final added = [
+      for (final sticker in effect.stickers)
+        EditorStickerLayer(
+          id: '$_arLayerPrefix${_idSeed++}',
+          value: sticker.value,
+          position: sticker.position,
+          startMs: 0,
+          endMs: timelineEndMs,
+          scale: sticker.scale,
+        ),
+    ];
+    _commit(
+      _project.copyWith(
+        stickerLayers: [...kept, ...added],
+        look: effect.look,
+        arEffectId: effect.id,
+        selectedLayerId: added.isEmpty ? null : added.first.id,
+        clearSelectedLayer: added.isEmpty,
+      ),
+    );
+  }
+
+  void clearArEffect() {
+    final kept = _project.stickerLayers
+        .where((layer) => !layer.id.startsWith(_arLayerPrefix))
+        .toList();
+    if (kept.length == _project.stickerLayers.length &&
+        _project.look == EditorLook.none &&
+        _project.arEffectId == null) {
+      return;
+    }
+    _commit(
+      _project.copyWith(
+        stickerLayers: kept,
+        look: EditorLook.none,
+        clearArEffect: true,
+        clearSelectedLayer: true,
+      ),
+    );
+  }
+
   void addTextLayer({
     required String text,
     int? startMs,
@@ -328,6 +421,23 @@ class EditorProjectController extends ChangeNotifier {
                 rotationDegrees: rotationDegrees,
               )
             : layer,
+    ];
+    _project = _project.copyWith(textLayers: texts, stickerLayers: stickers);
+    notifyListeners();
+  }
+
+  /// 모서리 손잡이를 한 손가락으로 끌 때. 위치와 회전은 그대로 두고 크기만
+  /// 바꾼다. 확정은 [endLayerGesture]가 한다.
+  void updateSelectedLayerScale(double scale) {
+    final selected = _project.selectedLayerId;
+    if (selected == null) return;
+    final texts = [
+      for (final layer in _project.textLayers)
+        layer.id == selected ? layer.copyWith(scale: scale) : layer,
+    ];
+    final stickers = [
+      for (final layer in _project.stickerLayers)
+        layer.id == selected ? layer.copyWith(scale: scale) : layer,
     ];
     _project = _project.copyWith(textLayers: texts, stickerLayers: stickers);
     notifyListeners();
