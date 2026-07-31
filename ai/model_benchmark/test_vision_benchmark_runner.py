@@ -7,6 +7,7 @@ from vision_benchmark_runner import (
     build_progress_payload,
     infer_runtime,
     percentile,
+    run_sample,
     summarize_measurements,
 )
 
@@ -60,6 +61,9 @@ class VisionBenchmarkTests(unittest.TestCase):
                 repeats=1,
                 imgsz=640,
                 device="0",
+                confidence=0.25,
+                iou=0.7,
+                class_ids=[0],
             )
 
         self.assertEqual(summary["metrics"]["measuredFrames"], 2)
@@ -67,6 +71,38 @@ class VisionBenchmarkTests(unittest.TestCase):
         self.assertEqual(summary["metrics"]["inferenceMeanMs"], 32.5)
         self.assertEqual(summary["metrics"]["classCounts"], {"person": 3})
         self.assertEqual(summary["accuracy"]["status"], "not-computed")
+        self.assertEqual(summary["configuration"]["confidence"], 0.25)
+        self.assertEqual(summary["configuration"]["iou"], 0.7)
+        self.assertEqual(summary["configuration"]["classIds"], [0])
+
+    def test_run_sample_forwards_explicit_detection_filters(self):
+        class FakeModel:
+            def __init__(self):
+                self.options = None
+
+            def predict(self, **options):
+                self.options = options
+                return []
+
+        model = FakeModel()
+        rows = run_sample(
+            model,
+            sample_id="sample-001",
+            media_path=Path("scene.mp4"),
+            repeat=1,
+            device="0",
+            imgsz=640,
+            warmup_frames=30,
+            max_frames=300,
+            confidence=0.25,
+            iou=0.7,
+            class_ids=[0],
+        )
+
+        self.assertEqual(rows, [])
+        self.assertEqual(model.options["conf"], 0.25)
+        self.assertEqual(model.options["iou"], 0.7)
+        self.assertEqual(model.options["classes"], [0])
 
     def test_progress_uses_measured_frames_and_completes_at_100_percent(self):
         running = build_progress_payload(

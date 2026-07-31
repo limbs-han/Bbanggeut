@@ -161,6 +161,9 @@ def summarize_measurements(
     repeats: int,
     imgsz: int,
     device: str,
+    confidence: float,
+    iou: float,
+    class_ids: list[int] | None,
 ) -> dict[str, Any]:
     wall_values = [row.wall_ms for row in measurements]
     inference_values = [
@@ -194,6 +197,9 @@ def summarize_measurements(
             "imgsz": imgsz,
             "warmupFrames": warmup_frames,
             "repeats": repeats,
+            "confidence": confidence,
+            "iou": iou,
+            "classIds": class_ids,
         },
         "environment": {
             "python": platform.python_version(),
@@ -259,15 +265,23 @@ def run_sample(
     imgsz: int,
     warmup_frames: int,
     max_frames: int,
+    confidence: float,
+    iou: float,
+    class_ids: list[int] | None,
     progress_callback: Callable[[int], None] | None = None,
 ) -> list[FrameMeasurement]:
-    results = model.predict(
-        source=str(media_path),
-        stream=True,
-        verbose=False,
-        device=device,
-        imgsz=imgsz,
-    )
+    predict_options: dict[str, Any] = {
+        "source": str(media_path),
+        "stream": True,
+        "verbose": False,
+        "device": device,
+        "imgsz": imgsz,
+        "conf": confidence,
+        "iou": iou,
+    }
+    if class_ids:
+        predict_options["classes"] = class_ids
+    results = model.predict(**predict_options)
     measurements: list[FrameMeasurement] = []
     previous = time.perf_counter()
     for frame_index, result in enumerate(results):
@@ -337,6 +351,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-frames", type=int, default=30)
     parser.add_argument("--max-frames", type=int, default=300)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument(
+        "--confidence",
+        "--conf",
+        dest="confidence",
+        type=float,
+        default=0.25,
+    )
+    parser.add_argument("--iou", type=float, default=0.7)
+    parser.add_argument(
+        "--class-id",
+        action="append",
+        dest="class_ids",
+        type=int,
+        default=[],
+        help=(
+            "Limit inference to this class ID. Repeat the option for multiple "
+            "classes; omit it to evaluate every model class."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -360,6 +393,15 @@ def main() -> int:
     if args.repeats < 1:
         print("ERROR: repeats must be positive")
         return 1
+    if not 0.0 <= args.confidence <= 1.0:
+        print("ERROR: confidence must be between 0 and 1")
+        return 1
+    if not 0.0 <= args.iou <= 1.0:
+        print("ERROR: IoU must be between 0 and 1")
+        return 1
+    if any(class_id < 0 for class_id in args.class_ids):
+        print("ERROR: class IDs must be non-negative")
+        return 1
 
     try:
         from ultralytics import YOLO
@@ -371,6 +413,7 @@ def main() -> int:
     run_id = datetime.now(timezone.utc).strftime("vision-%Y%m%dT%H%M%SZ")
     model_name = args.model_name or model_path.stem
     runtime = infer_runtime(model_path)
+    class_ids = sorted(set(args.class_ids)) or None
     model = YOLO(str(model_path))
     measurements: list[FrameMeasurement] = []
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -444,6 +487,9 @@ def main() -> int:
                     imgsz=args.imgsz,
                     warmup_frames=args.warmup_frames,
                     max_frames=args.max_frames,
+                    confidence=args.confidence,
+                    iou=args.iou,
+                    class_ids=class_ids,
                     progress_callback=update_sample_progress,
                 )
                 measurements.extend(sample_measurements)
@@ -480,6 +526,9 @@ def main() -> int:
         repeats=args.repeats,
         imgsz=args.imgsz,
         device=args.device,
+        confidence=args.confidence,
+        iou=args.iou,
+        class_ids=class_ids,
     )
     write_json(
         output_dir / "summary.json",
