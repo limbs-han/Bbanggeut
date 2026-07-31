@@ -325,7 +325,7 @@ ai/
 실제 PCA9685 출력은 별도 5V 전원과 실물 보정이 완료된 뒤에만 명시적으로
 활성화한다. 기본 실행은 드라이런이다. 연결·보정·정지 절차는
 `SERVO_PCA9685_RUNBOOK.md`를 따르고, 2026-07-29 실물 결과와 인수인계는
-`SERVO_OBJECT_TRACKING_HANDOFF_20260729.txt`를 참고한다.
+`../llm/handoff/SERVO_OBJECT_TRACKING_HANDOFF_20260729.txt`를 참고한다.
 
 ### YAMNet 웃음 감지
 
