@@ -88,6 +88,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       VideosScreen(controller: widget.controller),
       HomeScreen(
         controller: widget.controller,
+        isActive: index == 2,
         openVideos: () => _selectIndex(1),
         openCalendar: () => _selectIndex(0),
       ),

@@ -19,6 +19,9 @@ staging=""
 backup_root="${release_root}/${timestamp}"
 required_infra_files=(docker-compose.yml mediamtx.yml mosquitto.conf)
 required_bundle_files=("${required_infra_files[@]}" nginx-william-james.conf)
+# 이 스크립트 자신의 사본. 아직 이 파일을 담지 않는 릴리스도 배포할 수 있어야
+# 하므로 선택 항목으로 둔다. 담겨 있으면 설치본과 대조한다.
+optional_bundle_files=(wj-deploy-backend)
 previous_jar=""
 had_current_jar=false
 infra_replaced=false
@@ -255,12 +258,22 @@ if ! validate_spring_boot_jar "${incoming_jar}"; then
 fi
 
 bundle_entries="$(tar --list --gzip --file "${incoming_bundle}" | LC_ALL=C sort)"
-expected_entries="$(printf '%s\n' "${required_bundle_files[@]}" | LC_ALL=C sort)"
-if [[ "${bundle_entries}" != "${expected_entries}" ]]; then
+allowed_entries="$(
+  printf '%s\n' "${required_bundle_files[@]}" "${optional_bundle_files[@]}" |
+    LC_ALL=C sort
+)"
+if [[ -n "$(comm -23 <(printf '%s\n' "${bundle_entries}") \
+  <(printf '%s\n' "${allowed_entries}"))" ]]; then
   echo "Infrastructure artifact contains an unexpected file set." >&2
-  printf 'Expected:\n%s\nActual:\n%s\n' "${expected_entries}" "${bundle_entries}" >&2
+  printf 'Allowed:\n%s\nActual:\n%s\n' "${allowed_entries}" "${bundle_entries}" >&2
   exit 1
 fi
+for file in "${required_bundle_files[@]}"; do
+  if ! printf '%s\n' "${bundle_entries}" | grep -Fxq "${file}"; then
+    echo "Infrastructure artifact is missing a required file: ${file}" >&2
+    exit 1
+  fi
+done
 tar --extract --gzip --file "${incoming_bundle}" \
   --directory "${staging}" --no-same-owner --no-same-permissions
 
@@ -270,6 +283,29 @@ for file in "${required_bundle_files[@]}"; do
     exit 1
   fi
 done
+
+# 이 스크립트는 저장소 파일의 복사본이고 Jenkins 는 그것을 갱신하지 않는다.
+# 저장소에서 고쳐도 재설치 전까지 운영에는 반영되지 않으며, 그동안 배포는
+# 계속 성공으로 끝난다. Redis 서비스가 몇 주 동안 빠진 채 배포된 원인이
+# 이것이므로, 어긋난 것을 확인하면 배포를 진행하지 않는다.
+installed_wrapper="${BASH_SOURCE[0]}"
+if [[ -s "${staging}/wj-deploy-backend" ]]; then
+  if ! cmp --silent "${staging}/wj-deploy-backend" "${installed_wrapper}"; then
+    cat >&2 <<EOF
+설치된 배포 스크립트가 이번 릴리스의 저장소 사본과 다릅니다.
+  설치본: ${installed_wrapper}
+  릴리스: ${staging}/wj-deploy-backend
+저장소를 체크아웃한 위치에서 아래를 실행해 설치본을 갱신한 뒤 다시 배포하세요.
+  sudo install -o root -g root -m 0755 \\
+    ci/jenkins/server/deploy/wj-deploy-backend \\
+    /usr/local/sbin/wj-deploy-backend
+EOF
+    exit 1
+  fi
+  echo "배포 스크립트 설치본이 릴리스와 일치합니다."
+else
+  echo "경고: 이번 릴리스에 배포 스크립트 사본이 없어 설치본 일치를 확인하지 못했습니다." >&2
+fi
 
 # Validate the candidate Compose model against server-owned secrets before
 # replacing any live file. Relative bind mounts resolve inside staging.

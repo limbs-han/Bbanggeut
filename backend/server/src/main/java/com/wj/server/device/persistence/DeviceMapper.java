@@ -145,13 +145,6 @@ public interface DeviceMapper {
 
     @Update("""
         UPDATE devices
-           SET status = 'REVOKED', revoked_at = now(), recording = false, updated_at = now()
-         WHERE id = #{deviceId} AND status IN ('ONLINE', 'OFFLINE')
-        """)
-    int markRevoked(@Param("deviceId") UUID deviceId);
-
-    @Update("""
-        UPDATE devices
            SET status = 'UNCLAIMED', claimed_at = NULL, claimed_by = NULL,
                revoked_at = NULL, registration_mode_expires_at = NULL,
                recording = false, person_count = NULL, updated_at = now()
@@ -165,34 +158,6 @@ public interface DeviceMapper {
          WHERE device_id = #{deviceId} AND status = 'ACTIVE'
         """)
     int revokeAllMemberships(@Param("deviceId") UUID deviceId, @Param("ownerId") UUID ownerId);
-
-    @Update("""
-        UPDATE device_credentials
-           SET status = 'REVOKED', revoked_at = now()
-         WHERE device_id = #{deviceId} AND status = 'ACTIVE'
-        """)
-    int revokeActiveCredentials(@Param("deviceId") UUID deviceId);
-
-    @Update("""
-        UPDATE invitations
-           SET status = 'REVOKED', decided_at = now(), updated_at = now()
-         WHERE device_id = #{deviceId} AND status = 'PENDING'
-        """)
-    int cancelPendingInvitations(@Param("deviceId") UUID deviceId);
-
-    @Update("""
-        UPDATE videos
-           SET status = 'DELETING', delete_requested_at = now(), deleted_by = #{userId}, updated_at = now()
-         WHERE device_id = #{deviceId} AND status NOT IN ('DELETING', 'DELETED')
-        """)
-    int markAllVideosDeleting(@Param("deviceId") UUID deviceId, @Param("userId") UUID userId);
-
-    @Insert("""
-        INSERT INTO video_deletion_jobs (video_id)
-        SELECT id FROM videos WHERE device_id = #{deviceId} AND status = 'DELETING'
-        ON CONFLICT (video_id) DO NOTHING
-        """)
-    int enqueueDeletionJobsForDevice(@Param("deviceId") UUID deviceId);
 
     @Select("""
         SELECT id, user_id, role::text, status::text

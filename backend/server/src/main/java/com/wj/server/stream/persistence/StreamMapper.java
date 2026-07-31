@@ -221,12 +221,6 @@ public interface StreamMapper {
     int closeSessionsForStoppedStream(@Param("streamId") UUID streamId);
 
     @Select("""
-        SELECT id, device_id, status::text, edge_hard_expires_at, stop_deadline_at, failure_code
-          FROM device_streams WHERE id = #{streamId}
-        """)
-    Optional<DeviceStreamRow> findStream(@Param("streamId") UUID streamId);
-
-    @Select("""
         SELECT EXISTS (
             SELECT 1 FROM stream_sessions s
             JOIN device_memberships m ON m.device_id = s.device_id AND m.user_id = s.user_id

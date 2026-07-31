@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -19,6 +20,7 @@ from segment_clip_uploader import (
     group_triggers,
     http_error_body,
     is_retryable_http_status,
+    keyframe_offset,
     parse_trigger,
     parse_segment,
     retry_delay,
@@ -267,6 +269,57 @@ class SegmentClipUploaderTests(unittest.TestCase):
             )
             self.assertEqual(status["status"], "BLOCKED")
             self.assertEqual(status["httpStatus"], 409)
+
+    def test_cut_point_snaps_back_to_the_previous_keyframe(self) -> None:
+        # 30 fps with a 1 s GOP, phase-shifted like a real MPEG-TS segment.
+        probe_output = "".join(
+            f"{index / 30 + 0.021333:.6f},{'K__' if index % 30 == 0 else '___'}\n"
+            for index in range(0, 260)
+        )
+        with patch("segment_clip_uploader.subprocess.run") as runner:
+            runner.return_value = SimpleNamespace(stdout=probe_output)
+            snapped = keyframe_offset("/usr/bin/ffmpeg", Path("c.txt"), 7.4)
+        # Audio can start anywhere, but video only resumes on a keyframe, so the
+        # cut has to land on one or the clip opens with video trailing audio.
+        self.assertAlmostEqual(snapped, 7.021333, places=6)
+        self.assertLessEqual(snapped, 7.4)
+
+    def test_cut_point_is_unchanged_when_it_already_sits_on_a_keyframe(self) -> None:
+        with patch("segment_clip_uploader.subprocess.run") as runner:
+            runner.return_value = SimpleNamespace(stdout="12.000000,K__\n")
+            self.assertAlmostEqual(
+                keyframe_offset("/usr/bin/ffmpeg", Path("c.txt"), 12.0),
+                12.0,
+                places=6,
+            )
+
+    def test_probe_failure_keeps_the_requested_cut_point(self) -> None:
+        # A clip that is slightly out of sync still beats no clip at all.
+        for failure in (OSError("ffprobe missing"), subprocess.TimeoutExpired("x", 1)):
+            with self.subTest(failure=type(failure).__name__):
+                with patch(
+                    "segment_clip_uploader.subprocess.run",
+                    side_effect=failure,
+                ):
+                    self.assertAlmostEqual(
+                        keyframe_offset("/usr/bin/ffmpeg", Path("c.txt"), 41.75),
+                        41.75,
+                        places=6,
+                    )
+
+    def test_probe_without_keyframes_keeps_the_requested_cut_point(self) -> None:
+        with patch("segment_clip_uploader.subprocess.run") as runner:
+            runner.return_value = SimpleNamespace(stdout="3.000000,___\nbroken\n")
+            self.assertAlmostEqual(
+                keyframe_offset("/usr/bin/ffmpeg", Path("c.txt"), 9.5),
+                9.5,
+                places=6,
+            )
+
+    def test_zero_cut_point_skips_probing(self) -> None:
+        with patch("segment_clip_uploader.subprocess.run") as runner:
+            self.assertEqual(keyframe_offset("/usr/bin/ffmpeg", Path("c.txt"), 0.0), 0.0)
+            runner.assert_not_called()
 
 
 if __name__ == "__main__":
