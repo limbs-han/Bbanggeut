@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
@@ -47,25 +46,8 @@ class MemoryVideoCard extends StatelessWidget {
   }
 
   Future<void> _delete(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('영상을 삭제할까요?'),
-        content: const Text('삭제한 영상은 다시 복구할 수 없습니다.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
+    final confirmed = await confirmVideoDeletion(context);
+    if (!confirmed || !context.mounted || controller.busy) return;
     final ok = await controller.removeVideo(video);
     if (!context.mounted) return;
     if (ok) {
@@ -78,14 +60,6 @@ class MemoryVideoCard extends StatelessWidget {
         controller.errorMessage ?? '영상을 삭제하지 못했어요.',
         error: true,
       );
-    }
-  }
-
-  Future<void> _share(BuildContext context) async {
-    // TODO(content-share): share_plus가 승인되면 실제 시스템 공유 시트로 교체합니다.
-    await Clipboard.setData(ClipboardData(text: '${video.title}\n$_timeRange'));
-    if (context.mounted) {
-      showAppSnack(context, '영상 정보가 복사되었습니다. 공유할 곳에 붙여 넣어 주세요.');
     }
   }
 
@@ -118,7 +92,12 @@ class MemoryVideoCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                MemoryThumbnail(video: video, width: 132, height: 100),
+                MemoryThumbnail(
+                  api: controller.api,
+                  video: video,
+                  width: 132,
+                  height: 100,
+                ),
                 Positioned(
                   right: 7,
                   bottom: 7,
@@ -198,11 +177,6 @@ class MemoryVideoCard extends StatelessWidget {
                         tooltip: '영상 편집하기',
                         onPressed: () => _edit(context),
                         icon: const Icon(Icons.content_cut_rounded),
-                      ),
-                      IconButton(
-                        tooltip: '공유하기',
-                        onPressed: () => _share(context),
-                        icon: const Icon(Icons.share_outlined),
                       ),
                       IconButton(
                         tooltip: '삭제하기',

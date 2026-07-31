@@ -106,14 +106,32 @@ class _MediaPlayerSurfaceState extends State<MediaPlayerSurface> {
   }
 
   Future<void> _openFullscreen() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => _FullscreenPlayer(
-          controller: widget.controller,
-          isLive: widget.isLive,
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    try {
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => _FullscreenPlayer(
+            controller: widget.controller,
+            isLive: widget.isLive,
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      if (mounted) _showTemporarily();
+    }
+  }
+
+  Future<void> _returnToLive() async {
+    final duration = widget.controller.value.duration;
+    if (duration > Duration.zero) {
+      await widget.controller.seekTo(duration);
+    }
+    await widget.controller.play();
     if (mounted) _showTemporarily();
   }
 
@@ -202,6 +220,7 @@ class _MediaPlayerSurfaceState extends State<MediaPlayerSurface> {
                           ? _LiveControls(
                               muted: value.volume == 0,
                               fullscreen: widget.isFullscreen,
+                              onLiveEdge: _returnToLive,
                               onMute: _toggleMute,
                               onFullscreen: widget.isFullscreen
                                   ? () => Navigator.of(context).pop()
@@ -292,23 +311,31 @@ class _LiveControls extends StatelessWidget {
   const _LiveControls({
     required this.muted,
     required this.fullscreen,
+    required this.onLiveEdge,
     required this.onMute,
     required this.onFullscreen,
   });
 
   final bool muted;
   final bool fullscreen;
+  final VoidCallback onLiveEdge;
   final VoidCallback onMute;
   final VoidCallback onFullscreen;
 
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      const Icon(Icons.circle, color: Colors.redAccent, size: 10),
-      const SizedBox(width: 7),
-      const Text(
-        'LIVE',
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+      TextButton.icon(
+        onPressed: onLiveEdge,
+        style: TextButton.styleFrom(
+          foregroundColor: Colors.redAccent,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        icon: const Icon(Icons.circle, size: 10),
+        label: const Text(
+          'LIVE',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
       ),
       const Spacer(),
       IconButton(
@@ -372,32 +399,20 @@ class _FullscreenPlayerState extends State<_FullscreenPlayer> {
   @override
   void initState() {
     super.initState();
-    unawaited(
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
-    );
-    unawaited(
-      SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]),
-    );
-  }
-
-  @override
-  void dispose() {
-    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-    unawaited(
-      SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.portraitUp,
-      ]),
-    );
-    super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
-    body: SafeArea(
+    body: SizedBox.expand(
       child: MediaPlayerSurface(
         controller: widget.controller,
         isLive: widget.isLive,

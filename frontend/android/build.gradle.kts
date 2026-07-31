@@ -1,3 +1,5 @@
+import com.android.build.api.dsl.LibraryExtension
+
 extra["bnb_sdk_version"] = "1.18.+"
 
 allprojects {
@@ -20,6 +22,13 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+    if (name == "video_thumbnail") {
+        afterEvaluate {
+            extensions.configure<LibraryExtension> {
+                compileSdk = 36
+            }
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

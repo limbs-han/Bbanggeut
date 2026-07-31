@@ -167,6 +167,46 @@ class ApiClient {
     }
   }
 
+  Future<List<AppNotification>> listNotifications({int limit = 100}) async =>
+      (await _getList(
+        '/api/notifications',
+        query: {'limit': limit.clamp(1, 100)},
+      )).map(AppNotification.fromJson).toList(growable: false);
+
+  Future<int> countUnreadNotifications() async =>
+      ((await _get('/api/notifications/unread-count'))['count'] as num?)
+          ?.toInt() ??
+      0;
+
+  Future<void> markNotificationRead(String notificationId) async =>
+      _patch('/api/notifications/$notificationId/read');
+
+  Future<void> markAllNotificationsRead() async =>
+      _patch('/api/notifications/read-all');
+
+  Future<void> registerPushToken({
+    required String installationId,
+    required String token,
+    required String platform,
+  }) async {
+    try {
+      await _dio.put<void>(
+        '/api/notifications/push-tokens',
+        data: {
+          'installationId': installationId,
+          'token': token,
+          'platform': platform,
+        },
+      );
+    } on DioException catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  Future<void> unregisterPushToken(String installationId) async => _delete(
+    '/api/notifications/push-tokens/${Uri.encodeComponent(installationId)}',
+  );
+
   Future<UserProfile> updateProfile(String displayName) async {
     final updated = UserProfile.fromJson(
       await _patchMap(
@@ -213,17 +253,16 @@ class ApiClient {
     String registrationCode, {
     String? vaultId,
     String? vaultName,
-  }) async =>
-      DeviceSummary.fromJson(
-        await _post(
-          '/api/devices/claim',
-          data: {
-            'registrationCode': registrationCode.trim(),
-            'vaultId': ?vaultId,
-            'vaultName': ?vaultName,
-          },
-        ),
-      );
+  }) async => DeviceSummary.fromJson(
+    await _post(
+      '/api/devices/claim',
+      data: {
+        'registrationCode': registrationCode.trim(),
+        'vaultId': ?vaultId,
+        'vaultName': ?vaultName,
+      },
+    ),
+  );
   Future<DeviceStatus> getDeviceStatus(String id) async =>
       DeviceStatus.fromJson(await _get('/api/devices/$id/status'));
   Future<VideoStats> getVideoStats(String id) async =>
@@ -254,6 +293,47 @@ class ApiClient {
       SignedUrl.fromJson(await _post('/api/videos/$id/play-url'));
   Future<SignedUrl> createDownloadUrl(String id) async =>
       SignedUrl.fromJson(await _post('/api/videos/$id/download-url'));
+  Future<void> downloadVideoToFile(
+    String id,
+    String destinationPath, {
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final signed = await createDownloadUrl(id);
+      final downloadClient = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(minutes: 5),
+          headers: const {'Accept': 'video/*,application/octet-stream'},
+        ),
+      );
+      try {
+        // MinIO/S3 presigned URLs already contain their own authentication.
+        // The API client's Bearer interceptor must not run for this request.
+        await downloadClient.download(
+          signed.url,
+          destinationPath,
+          onReceiveProgress: onReceiveProgress,
+          options: Options(responseType: ResponseType.bytes),
+        );
+        return;
+      } on DioException catch (error) {
+        final statusCode = error.response?.statusCode;
+        final signedUrlMayHaveExpired = statusCode == 401 || statusCode == 403;
+        if (attempt == 0 && signedUrlMayHaveExpired) {
+          continue;
+        }
+        throw ApiFailure(
+          statusCode == null
+              ? '영상 다운로드 서버에 연결하지 못했어요.'
+              : '영상을 다운로드하지 못했어요. (HTTP $statusCode)',
+          code: 'VIDEO_DOWNLOAD_FAILED',
+          statusCode: statusCode,
+        );
+      }
+    }
+  }
+
   Future<void> updateVideo(
     String id, {
     String? title,
@@ -572,9 +652,16 @@ class ApiClient {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _getList(String path) async {
+  Future<List<Map<String, dynamic>>> _getList(
+    String path, {
+    Map<String, dynamic>? query,
+  }) async {
     try {
-      return ((await _dio.get<List<dynamic>>(path)).data ?? const [])
+      return ((await _dio.get<List<dynamic>>(
+                path,
+                queryParameters: query,
+              )).data ??
+              const [])
           .cast<Map<String, dynamic>>();
     } on DioException catch (e) {
       throw _failure(e);

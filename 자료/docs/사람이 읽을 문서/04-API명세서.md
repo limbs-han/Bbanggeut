@@ -6,7 +6,7 @@
 
 - API/MQTT ID는 기존 as-built 문서(API-01~50, MQTT-01~15)의 번호를 그대로 재사용한다. 문서 배치는 MVP 7단계 순서로 재구성했지만 번호 자체는 바뀌지 않았다.
 - 프로토콜 사실(경로·요청/응답 필드·에러 코드·MQTT 토픽·미디어 경로)은 코드에서 직접 검증된 as-built본(git 이력 `723bdbc`)에서 그대로 가져온 것이며, 이번 재작성에서 재검증하지 않았다.
-- **신규 API-51**(`GET /api/devices/{deviceId}/laugh-report`)은 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 **초안**이다. 표·본문 전체에 **[제안]** 배지를 붙여 기존 구현 API와 구분한다.
+- **신규 API-62**(`GET /api/devices/{deviceId}/laugh-report`)은 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 **초안**이다. 표·본문 전체에 **[제안]** 배지를 붙여 기존 구현 API와 구분한다.
 - MVP 7단계·가족 공유 밖의 API는 **부록 A**에 표 하나로 축약했다. 구현 상태는 본문에 넣지 않고 **부록 B**에서만 요약한다.
 - as-built본의 "사용 상태(✅/🔶/🔴)" 열과 교차검증 절은 이 문서(to-be 기획서)의 성격에 맞지 않아 제거했다. 필요 시 git 이력의 as-built본을 참조한다.
 
@@ -509,7 +509,7 @@
 ### 사용자 흐름
 
 1. 영상 상세 화면에서 편집을 시작하면 원본을 임시로 내려받는다(API-32 재사용).
-2. 폰 내 편집기(Banuba)로 화면 비율 변환 등 수동 편집을 진행한다.
+2. 앱 자체 로컬 편집기로 자르기·화면 비율·음량·자막·필터·스티커 등 수동 편집을 진행한다.
 3. 편집 결과는 폰에 로컬로 저장된다.
 
 **별도 서버 API는 필요하지 않다** — 편집은 전적으로 폰에서 이루어지며, 원본 다운로드는 ⑥ 단계와 동일한 API-32(다운로드 URL)를 재사용한다.
@@ -530,7 +530,7 @@
 - 요청: PathVariable `videoId`
 - 응답: `200 SignedUrlResponse` (API-31과 동일 스키마, `response-content-disposition=attachment` 쿼리가 추가된 URL)
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_NOT_READY`, 503 `OBJECT_STORAGE_UNAVAILABLE`
-- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/공유 시트로 실행하며, 편집 결과물(Banuba 산출물) 자체는 앱 로컬(`edited_videos/`)에 저장 후 공유 시트로 SNS/메신저에 전달한다(서버 API 불요).
+- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/공유 시트로 실행하며, 자체 편집 결과물은 앱 로컬(`edited_videos/`)과 기기 갤러리에 저장한 뒤 공유 시트로 SNS/메신저에 전달한다(서버 API 불요).
 
 ---
 
@@ -541,7 +541,7 @@
 1. 캘린더에서 날짜별 저장 영상 개수를 확인한다(API-27 재사용).
 2. 웃음 통계 화면에서 월평균·전체 포착 수·주간 추이·연간 히트맵(웃음 잔디)을 확인한다(API-33).
 3. Flutter 리포트 화면은 기존 영상 목록에서 `LAUGHTER` 영상을 단말 집계해 전체 횟수, 최근 날짜별 횟수, 웃음 잔디와 날짜별 영상을 표시한다.
-4. 주간/월간·시간대 분포·베스트 클립을 서버에서 집계하는 기능은 **API-51 제안·미구현** 범위다.
+4. 주간/월간·시간대 분포·베스트 클립을 서버에서 집계하는 기능은 **API-62 제안·미구현** 범위다.
 
 ### API-27 `GET /api/videos` — 캘린더 범위 조회로 재사용
 
@@ -569,7 +569,7 @@
 
 - 에러: 404 `RESOURCE_NOT_FOUND`, 422 `VALIDATION_FAILED`(기간/timeZone)
 
-### API-51 `GET /api/devices/{deviceId}/laugh-report` **[제안]**
+### API-62 `GET /api/devices/{deviceId}/laugh-report` **[제안]**
 
 > **[제안]** — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 API 초안이다. 서버 endpoint·DTO·service는 미구현 상태이며, 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**한다(이 API의 응답에는 재생 URL을 직접 담지 않는다).
 
@@ -609,11 +609,11 @@
 
 ## 9. 가족 공유 API
 
-기기 단위로 **OWNER / EDITOR / VIEWER** 3개 역할이 존재한다. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다.
+기기 단위로 **OWNER / MEMBER** 2개 역할이 존재한다. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다. 초대로 만들어지는 역할은 항상 MEMBER다.
 
 ### 사용자 흐름
 
-1. OWNER가 이메일과 역할(EDITOR/VIEWER)을 지정해 초대를 발송한다.
+1. OWNER가 이메일을 지정해 초대를 발송한다.
 2. 초대받은 사용자는 받은 초대함에서 목록을 확인하고 수락 또는 거절한다.
 3. 수락 시점에 실제 멤버십이 생성된다.
 4. 별도로 "내 계정으로 초대해달라"는 요청 링크를 만들어 공유할 수 있지만, 링크 자체는 멤버십을 만들지 않는다.
@@ -626,8 +626,9 @@
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | email | String | 필수 | `@NotBlank @Email @Size≤320` |
-| role | String | 필수 | `@NotBlank @Pattern "EDITOR\|VIEWER"` |
 | membershipRequestToken | String | 옵션 | `@Size≤200` |
+
+> `role` 필드는 받지 않는다. 초대로 만들어지는 역할은 항상 `MEMBER`로 고정된다(DB 제약 `ck_invitations_member_only`).
 
 응답: `201 InvitationResponse`
 
@@ -637,7 +638,7 @@
 | deviceId | UUID | 필수 | 기기 ID |
 | deviceName | String | 필수 | 기기 이름 |
 | inviteeEmail | String | 필수 | 초대받는 이메일 |
-| role | String | 필수 | EDITOR/VIEWER |
+| role | String | 필수 | MEMBER 고정 |
 | inviter.id | UUID | 옵션(nullable) | 초대자 ID |
 | inviter.email | String | 옵션 | 초대자 이메일 |
 | inviter.displayName | String | 옵션 | 초대자 표시이름 |
@@ -645,7 +646,7 @@
 | expiresAt | Instant | 필수 | 만료 시각(초대 유효기간 7일) |
 | createdAt | Instant | 필수 | 생성 시각 |
 
-- 에러: 403 `FORBIDDEN_ROLE`, 422 `VALIDATION_FAILED`(role 아님), 409 `ALREADY_DEVICE_MEMBER`, 409 `INVITATION_PENDING`, 409 `MEMBERSHIP_REQUEST_EMAIL_MISMATCH`, 404 `MEMBERSHIP_REQUEST_NOT_FOUND`
+- 에러: 403 `FORBIDDEN_ROLE`, 422 `VALIDATION_FAILED`(이메일 형식 오류 등), 409 `ALREADY_DEVICE_MEMBER`, 409 `INVITATION_PENDING`, 409 `MEMBERSHIP_REQUEST_EMAIL_MISMATCH`, 404 `MEMBERSHIP_REQUEST_NOT_FOUND`
 
 ### API-15 `POST /api/membership-request-links`
 
@@ -799,6 +800,39 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-52 | `PUT /api/vaults/{vaultId}/subscription` | 금고 구독 활성화 |
 | API-53 | `DELETE /api/vaults/{vaultId}/subscription` | 금고 구독 해지 |
 | API-54 | `GET /api/vaults/{vaultId}/access-logs` | 금고 접근 기록 커서 조회 |
+| API-55 | `POST /api/auth/password/change` | 비밀번호 변경(로그인 상태, 현재 비밀번호 확인) |
+| API-56 | `POST /api/auth/password/forgot` | 비밀번호 재설정 링크 발급 요청(공개) |
+| API-57 | `POST /api/auth/password/reset` | 토큰으로 비밀번호 재설정(공개) |
+| API-58 | `GET /api/notifications` | 알림 목록 조회(최신순, limit 기본 30·최대 100) |
+| API-59 | `GET /api/notifications/unread-count` | 안 읽은 알림 개수 |
+| API-60 | `PATCH /api/notifications/{notificationId}/read` | 알림 1건 읽음 처리 |
+| API-61 | `PATCH /api/notifications/read-all` | 전체 읽음 처리 |
+
+#### 비밀번호 API 동작 규칙 (API-55~57)
+
+| 항목 | 변경(API-55) | 재설정(API-56·57) |
+|---|---|---|
+| 인증 | 사용자 JWT + 현재 비밀번호 | 불필요(이메일로 받은 1회용 토큰) |
+| 요청 | `currentPassword`, `newPassword`(10~72자) | 56: `email` / 57: `token`(32~200), `newPassword` |
+| 응답 | `204` | 56: `202` / 57: `204` |
+| 세션 처리 | 현재 세션만 유지, 나머지 폐기 | **전 세션 폐기** |
+| 에러 | 401 `INVALID_CREDENTIALS`, 422 `PASSWORD_UNCHANGED` | 401 `INVALID_PASSWORD_RESET_TOKEN` |
+
+- 재설정 토큰은 **30분 TTL·1회용**이며, DB에는 원문이 아닌 SHA-256 해시만 저장한다(`password_reset_tokens`).
+- API-56은 **가입되지 않은 이메일에도 동일하게 `202`를 반환**한다. 계정 존재 여부를 노출하지 않기 위함이며, 로그인(API-02)의 동일 메시지 원칙과 같은 이유다.
+- 새 forgot 요청은 이전 토큰을 먼저 만료시키므로 항상 최신 링크 1개만 유효하다.
+- 메일 서버(`spring.mail.host`)가 비어 있으면 발송을 건너뛰고 경고 로그만 남긴다(개발 환경 대응).
+
+#### 알림 생성 시점 (API-58~61은 조회·읽음 전용)
+
+알림을 만드는 별도 API는 없다. 서버가 다음 두 시점에 자동으로 생성한다.
+
+| 종류 | 생성 시점 | 대상 | dedupe_key |
+|---|---|---|---|
+| `LAUGHTER_VIDEO_READY` | 영상 업로드 완료(API-26)로 `READY` 확정 + `triggerType=LAUGHTER` | 해당 기기의 활성 구성원 **전원** | `laughter-video:{videoId}` |
+| `INVITATION_RECEIVED` | 초대 발송(API-14) | 초대받은 이메일의 사용자 1명 | `invitation:{invitationId}` |
+
+`notifications` 테이블에 `UNIQUE (user_id, dedupe_key)`가 있고 INSERT에 `ON CONFLICT DO NOTHING`이 붙어 있어, 같은 업로드 완료가 여러 번 들어와도 사용자별 알림은 1건만 남는다.
 
 ### 실험 MQTT(`homecam/v2`, 6개)
 
@@ -825,10 +859,10 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |
-| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 Flutter 단말 집계 화면은 구현. **API-51 서버 집계는 미구현(제안 초안)** |
+| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 Flutter 단말 집계 화면은 구현. **API-62 서버 집계는 미구현(제안 초안)** |
 | 가족 공유 | API-14~24 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작 |
 
-MVP 7단계의 API 중 새로 제안된 **API-51(리포트 서버 집계)**은 미구현이다. Flutter 리포트 화면 자체는 기존 영상 목록 데이터로 동작한다.
+MVP 7단계의 API 중 새로 제안된 **API-62(리포트 서버 집계)**는 미구현이다. Flutter 리포트 화면 자체는 기존 영상 목록 데이터로 동작한다.
 
 ### API-06 제외 사유
 
@@ -836,11 +870,11 @@ MVP 7단계의 API 중 새로 제안된 **API-51(리포트 서버 집계)**은 �
 
 ### ID 검증
 
-- 본문(2~10절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, (신규)51 — 31개 + 신규 1개.
-- 부록 A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50 — 18개.
-- 합계 31 + 18 = 49개 + API-06(의도적 제외, 위 사유 참고) = as-built 기준 50개 전수 반영. 중복 배치 없음(API-27만 4절·8절에서 의도적으로 재사용 표기, API-32는 6·7절에서 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
+- 본문(2~10절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, (신규)62 — 31개 + 신규 1개.
+- 부록 A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~61 — 29개.
+- 합계 31 + 29 = 60개 + 리포트 제안 API-62 = **API-01~62 중 API-06(의도적 제외, 위 사유 참고)만 결번인 61개**다. 중복 배치 없음(API-27만 4절·8절에서 의도적으로 재사용 표기, API-32는 6·7절에서 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 3절(01, 04) + 10절(02, 03, 05~09) + 부록 A(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
-- 신규 API-51은 기존 max(API-50) 다음 번호로 부여했다.
+- 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 현재 max는 **API-62**다.
 
 ---
 
