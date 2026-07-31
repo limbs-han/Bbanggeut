@@ -161,16 +161,23 @@ class EditorProjectExporter(
         val aspectRatio = number(canvas, "aspectRatio")?.toDouble()?.coerceIn(0.4, 2.5)
             ?: (16.0 / 9.0)
         val (targetWidth, targetHeight) = outputSize(aspectRatio)
+        val canvasRatio = canvas["ratio"] as? String ?: "original"
         val scale = number(canvas, "scale")?.toFloat()?.coerceIn(1f, 4f) ?: 1f
         val rotation = number(canvas, "rotationDegrees")?.toFloat() ?: 0f
         val offsetX = number(canvas, "offsetX")?.toFloat()?.coerceIn(-1f, 1f) ?: 0f
         val offsetY = number(canvas, "offsetY")?.toFloat()?.coerceIn(-1f, 1f) ?: 0f
         val volume = number(audio, "sourceVolume")?.toFloat()?.coerceIn(0f, 1f) ?: 1f
-        val presentation = Presentation.createForWidthAndHeight(
-            targetWidth,
-            targetHeight,
-            Presentation.LAYOUT_SCALE_TO_FIT,
-        )
+        // 컷 편집만 한 경우 Presentation을 넣지 않아 Transformer가 가능한
+        // 입력에서는 재인코딩 대신 빠른 스트림 복사를 선택할 수 있게 한다.
+        val presentation = if (canvasRatio == "original") {
+            null
+        } else {
+            Presentation.createForWidthAndHeight(
+                targetWidth,
+                targetHeight,
+                Presentation.LAYOUT_SCALE_TO_FIT,
+            )
+        }
 
         val items = rawClips.mapNotNull { raw ->
             editedItem(
@@ -243,7 +250,7 @@ class EditorProjectExporter(
 
     private fun editedItem(
         raw: Map<String, Any?>,
-        presentation: Effect,
+        presentation: Effect?,
         scale: Float,
         rotation: Float,
         offsetX: Float,
@@ -271,7 +278,8 @@ class EditorProjectExporter(
                 DefaultGainProvider.Builder(volume).build(),
             )
         }
-        val videoEffects = mutableListOf(presentation)
+        val videoEffects = mutableListOf<Effect>()
+        presentation?.let(videoEffects::add)
         if (scale != 1f || rotation != 0f || offsetX != 0f || offsetY != 0f) {
             videoEffects += CanvasMatrixTransformation(
                 scale = scale,

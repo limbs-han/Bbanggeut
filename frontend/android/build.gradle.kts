@@ -1,7 +1,5 @@
 import com.android.build.api.dsl.LibraryExtension
 
-extra["bnb_sdk_version"] = "1.18.+"
-
 allprojects {
     repositories {
         google()

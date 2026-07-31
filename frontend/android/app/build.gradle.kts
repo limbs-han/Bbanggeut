@@ -32,7 +32,7 @@ val gitIsDirty = gitOutput("status", "--porcelain")?.isNotEmpty() == true
 
 android {
     namespace = "com.williamjames.william_james_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -104,6 +104,4 @@ dependencies {
     implementation("androidx.media3:media3-common:1.9.2")
     implementation("androidx.media3:media3-effect:1.9.2")
     implementation("androidx.media3:media3-transformer:1.9.2")
-    implementation("com.banuba.sdk:face_tracker:1.18.+")
-    implementation("com.banuba.sdk:background:1.18.+")
 }

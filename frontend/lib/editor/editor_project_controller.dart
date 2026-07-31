@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
@@ -15,10 +16,18 @@ class EditorProjectController extends ChangeNotifier {
   final List<EditorProject> _redoStack = [];
   int _idSeed = 1;
   EditorProject? _canvasGestureOrigin;
+  EditorProject? _layerGestureOrigin;
 
   EditorProject get project => _project;
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+  bool get canDeleteSelectedClip {
+    final selected = _project.selectedClip;
+    if (selected == null) return false;
+    return _project.clips.length > 1 ||
+        selected.sourceStartMs > 0 ||
+        selected.sourceEndMs < _project.sourceDurationMs;
+  }
 
   void selectTool(EditorTool tool) {
     if (_project.selectedTool == tool) return;
@@ -31,6 +40,18 @@ class EditorProjectController extends ChangeNotifier {
     _project = _project.copyWith(
       selectedClipId: clipId,
       clearSelectedLayer: true,
+    );
+    notifyListeners();
+  }
+
+  void selectLayer(String layerId) {
+    final exists =
+        _project.textLayers.any((layer) => layer.id == layerId) ||
+        _project.stickerLayers.any((layer) => layer.id == layerId);
+    if (!exists || _project.selectedLayerId == layerId) return;
+    _project = _project.copyWith(
+      selectedLayerId: layerId,
+      clearSelectedClip: true,
     );
     notifyListeners();
   }
@@ -64,7 +85,33 @@ class EditorProjectController extends ChangeNotifier {
 
   bool deleteSelectedClip() {
     final selected = _project.selectedClip;
-    if (selected == null || _project.clips.length <= 1) return false;
+    if (selected == null || !canDeleteSelectedClip) return false;
+    if (_project.clips.length == 1) {
+      final remaining = <EditorClip>[
+        if (selected.sourceStartMs >= minimumClipDurationMs)
+          selected.copyWith(
+            id: _nextId('clip'),
+            sourceStartMs: 0,
+            sourceEndMs: selected.sourceStartMs,
+          ),
+        if (_project.sourceDurationMs - selected.sourceEndMs >=
+            minimumClipDurationMs)
+          selected.copyWith(
+            id: _nextId('clip'),
+            sourceStartMs: selected.sourceEndMs,
+            sourceEndMs: _project.sourceDurationMs,
+          ),
+      ];
+      if (remaining.isEmpty) return false;
+      _commit(
+        _project.copyWith(
+          clips: remaining,
+          selectedClipId: remaining.first.id,
+          playheadMs: 0,
+        ),
+      );
+      return true;
+    }
     final index = _project.clips.indexWhere((clip) => clip.id == selected.id);
     final next = [..._project.clips]..removeAt(index);
     final nextIndex = math.min(index, next.length - 1);
@@ -186,7 +233,14 @@ class EditorProjectController extends ChangeNotifier {
     _commit(_project.copyWith(audio: _project.audio.copyWith(muted: muted)));
   }
 
-  void addTextLayer({required String text, int? startMs, int? endMs}) {
+  void addTextLayer({
+    required String text,
+    int? startMs,
+    int? endMs,
+    Color color = const Color(0xFFFFFFFF),
+    double fontSize = 42,
+    bool bold = true,
+  }) {
     final cleanText = text.trim();
     if (cleanText.isEmpty) return;
     final layer = EditorTextLayer(
@@ -195,6 +249,9 @@ class EditorProjectController extends ChangeNotifier {
       position: NormalizedPoint(0.5, 0.78),
       startMs: startMs ?? _project.playheadMs,
       endMs: endMs ?? _project.durationMs,
+      color: color,
+      fontSize: fontSize,
+      bold: bold,
     );
     _commit(
       _project.copyWith(
@@ -210,7 +267,7 @@ class EditorProjectController extends ChangeNotifier {
       id: _nextId('sticker'),
       value: value,
       position: NormalizedPoint.center,
-      startMs: _project.playheadMs,
+      startMs: 0,
       endMs: _project.durationMs,
     );
     _commit(
@@ -226,43 +283,98 @@ class EditorProjectController extends ChangeNotifier {
     if (selected == null) return false;
     final texts = [
       for (final layer in _project.textLayers)
-        if (layer.id == selected)
-          EditorTextLayer(
-            id: layer.id,
-            text: layer.text,
-            position: position,
-            startMs: layer.startMs,
-            endMs: layer.endMs,
-            scale: layer.scale,
-            rotationDegrees: layer.rotationDegrees,
-            color: layer.color,
-            backgroundColor: layer.backgroundColor,
-            fontSize: layer.fontSize,
-            bold: layer.bold,
-          )
-        else
-          layer,
+        if (layer.id == selected) layer.copyWith(position: position) else layer,
     ];
     final stickers = [
       for (final layer in _project.stickerLayers)
-        if (layer.id == selected)
-          EditorStickerLayer(
-            id: layer.id,
-            value: layer.value,
-            position: position,
-            startMs: layer.startMs,
-            endMs: layer.endMs,
-            scale: layer.scale,
-            rotationDegrees: layer.rotationDegrees,
-          )
-        else
-          layer,
+        if (layer.id == selected) layer.copyWith(position: position) else layer,
     ];
     if (listEquals(texts, _project.textLayers) &&
         listEquals(stickers, _project.stickerLayers)) {
       return false;
     }
     _commit(_project.copyWith(textLayers: texts, stickerLayers: stickers));
+    return true;
+  }
+
+  void beginLayerGesture(String layerId) {
+    selectLayer(layerId);
+    _layerGestureOrigin ??= _project;
+  }
+
+  void updateSelectedLayerTransform({
+    required NormalizedPoint position,
+    required double scale,
+    required double rotationDegrees,
+  }) {
+    final selected = _project.selectedLayerId;
+    if (selected == null) return;
+    final texts = [
+      for (final layer in _project.textLayers)
+        layer.id == selected
+            ? layer.copyWith(
+                position: position,
+                scale: scale,
+                rotationDegrees: rotationDegrees,
+              )
+            : layer,
+    ];
+    final stickers = [
+      for (final layer in _project.stickerLayers)
+        layer.id == selected
+            ? layer.copyWith(
+                position: position,
+                scale: scale,
+                rotationDegrees: rotationDegrees,
+              )
+            : layer,
+    ];
+    _project = _project.copyWith(textLayers: texts, stickerLayers: stickers);
+    notifyListeners();
+  }
+
+  void endLayerGesture() {
+    final origin = _layerGestureOrigin;
+    _layerGestureOrigin = null;
+    if (origin == null ||
+        listEquals(origin.textLayers, _project.textLayers) &&
+            listEquals(origin.stickerLayers, _project.stickerLayers)) {
+      return;
+    }
+    _undoStack.add(origin);
+    if (_undoStack.length > _historyLimit) _undoStack.removeAt(0);
+    _redoStack.clear();
+    _project = _project.copyWith(revision: origin.revision + 1);
+    notifyListeners();
+  }
+
+  bool updateSelectedTextLayer({
+    required String text,
+    required Color color,
+    required double fontSize,
+    required bool bold,
+  }) {
+    final selected = _project.selectedLayerId;
+    final cleanText = text.trim();
+    if (selected == null || cleanText.isEmpty) return false;
+    var updated = false;
+    final texts = [
+      for (final layer in _project.textLayers)
+        if (layer.id == selected)
+          (() {
+            updated = true;
+            return layer.copyWith(
+              text: cleanText,
+              color: color,
+              fontSize: fontSize,
+              bold: bold,
+            );
+          })()
+        else
+          layer,
+    ];
+    if (!updated) return false;
+    _commit(_project.copyWith(textLayers: texts));
     return true;
   }
 

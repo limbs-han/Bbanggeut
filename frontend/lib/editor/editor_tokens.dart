@@ -58,7 +58,7 @@ class EditorLayoutTokens {
       return EditorLayoutTokens._(
         layoutClass: EditorLayoutClass.compact,
         topBarHeight: 44,
-        timelineHeight: 128,
+        timelineHeight: 148,
         bottomNavigationHeight: 56,
         minimumPreviewHeight: keyboardVisible ? 190 : 240,
       );
@@ -67,7 +67,7 @@ class EditorLayoutTokens {
       return EditorLayoutTokens._(
         layoutClass: EditorLayoutClass.normal,
         topBarHeight: 48,
-        timelineHeight: 168,
+        timelineHeight: 184,
         bottomNavigationHeight: 60,
         minimumPreviewHeight: keyboardVisible ? 190 : 280,
       );
@@ -75,7 +75,7 @@ class EditorLayoutTokens {
     return EditorLayoutTokens._(
       layoutClass: EditorLayoutClass.tall,
       topBarHeight: 52,
-      timelineHeight: 184,
+      timelineHeight: 198,
       bottomNavigationHeight: 64,
       minimumPreviewHeight: keyboardVisible ? 190 : 280,
     );

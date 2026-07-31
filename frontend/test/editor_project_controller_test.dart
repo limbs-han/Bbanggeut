@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
@@ -19,6 +21,16 @@ void main() {
     subject.setCanvasRatio(EditorCanvasRatio.vertical);
 
     expect(subject.project.canvas.aspectRatio, 9 / 16);
+  });
+
+  test('편집하지 않은 원본만 재인코딩을 생략한다', () {
+    final subject = controller();
+
+    expect(subject.project.requiresRendering(), isFalse);
+    expect(subject.project.requiresRendering(hasCaptions: true), isTrue);
+
+    subject.trimSelectedClip(sourceStartMs: 1000);
+    expect(subject.project.requiresRendering(), isTrue);
   });
 
   test('재생 헤드에서 분할하고 타임라인 길이를 보존한다', () {
@@ -53,6 +65,19 @@ void main() {
     expect(subject.project.selectedClip?.sourceEndMs, 7600);
     expect(subject.project.durationMs, 6400);
     expect(subject.trimSelectedClip(sourceStartMs: 7550), isFalse);
+  });
+
+  test('단일 영상에서 설정한 구간을 삭제하면 앞뒤 구간을 보존한다', () {
+    final subject = controller();
+    subject.trimSelectedClip(sourceStartMs: 1200, sourceEndMs: 7600);
+
+    expect(subject.canDeleteSelectedClip, isTrue);
+    expect(subject.deleteSelectedClip(), isTrue);
+    expect(subject.project.clips, hasLength(2));
+    expect(subject.project.clips[0].sourceStartMs, 0);
+    expect(subject.project.clips[0].sourceEndMs, 1200);
+    expect(subject.project.clips[1].sourceStartMs, 7600);
+    expect(subject.project.clips[1].sourceEndMs, 10000);
   });
 
   test('선택 클립을 복제·삭제하고 재생 헤드를 유효 범위로 보정한다', () {
@@ -119,5 +144,57 @@ void main() {
     expect(clips[1]['timelineStartMs'], 2500);
     expect(texts.single['position'], {'x': 0.5, 'y': 0.78});
     expect(dto['outputPath'], '/tmp/out.mp4');
+  });
+
+  test('텍스트 굵기와 크기를 바꾸고 영상 위에서 이동·확대할 수 있다', () {
+    final subject = controller();
+    subject.addTextLayer(text: '우리 가족', startMs: 0, fontSize: 48, bold: false);
+    final id = subject.project.selectedLayerId!;
+
+    expect(
+      subject.updateSelectedTextLayer(
+        text: '행복한 우리 가족',
+        color: const Color(0xFFFF725B),
+        fontSize: 72,
+        bold: true,
+      ),
+      isTrue,
+    );
+    subject.beginLayerGesture(id);
+    subject.updateSelectedLayerTransform(
+      position: NormalizedPoint(0.25, 0.35),
+      scale: 1.8,
+      rotationDegrees: 12,
+    );
+    subject.endLayerGesture();
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.text, '행복한 우리 가족');
+    expect(layer.bold, isTrue);
+    expect(layer.fontSize, 72);
+    expect(layer.position, NormalizedPoint(0.25, 0.35));
+    expect(layer.scale, 1.8);
+    expect(layer.rotationDegrees, 12);
+  });
+
+  test('스티커를 영상 위에서 이동하고 크기와 회전을 조절할 수 있다', () {
+    final subject = controller();
+    subject.addSticker('⭐');
+    final id = subject.project.selectedLayerId!;
+
+    subject.beginLayerGesture(id);
+    subject.updateSelectedLayerTransform(
+      position: NormalizedPoint(0.72, 0.18),
+      scale: 2.2,
+      rotationDegrees: -18,
+    );
+    subject.endLayerGesture();
+
+    final layer = subject.project.stickerLayers.single;
+    expect(layer.startMs, 0);
+    expect(layer.endMs, subject.project.durationMs);
+    expect(layer.position, NormalizedPoint(0.72, 0.18));
+    expect(layer.scale, 2.2);
+    expect(layer.rotationDegrees, -18);
   });
 }

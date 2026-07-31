@@ -198,6 +198,31 @@ class EditorTextLayer extends EditorTimedLayer {
   final double fontSize;
   final bool bold;
 
+  EditorTextLayer copyWith({
+    String? text,
+    NormalizedPoint? position,
+    int? startMs,
+    int? endMs,
+    double? scale,
+    double? rotationDegrees,
+    Color? color,
+    Color? backgroundColor,
+    double? fontSize,
+    bool? bold,
+  }) => EditorTextLayer(
+    id: id,
+    text: text ?? this.text,
+    position: position ?? this.position,
+    startMs: startMs ?? this.startMs,
+    endMs: endMs ?? this.endMs,
+    scale: (scale ?? this.scale).clamp(0.2, 4.0),
+    rotationDegrees: rotationDegrees ?? this.rotationDegrees,
+    color: color ?? this.color,
+    backgroundColor: backgroundColor ?? this.backgroundColor,
+    fontSize: (fontSize ?? this.fontSize).clamp(16.0, 160.0),
+    bold: bold ?? this.bold,
+  );
+
   Map<String, Object> toMap() => {
     'id': id,
     'text': text,
@@ -225,6 +250,23 @@ class EditorStickerLayer extends EditorTimedLayer {
   });
 
   final String value;
+
+  EditorStickerLayer copyWith({
+    String? value,
+    NormalizedPoint? position,
+    int? startMs,
+    int? endMs,
+    double? scale,
+    double? rotationDegrees,
+  }) => EditorStickerLayer(
+    id: id,
+    value: value ?? this.value,
+    position: position ?? this.position,
+    startMs: startMs ?? this.startMs,
+    endMs: endMs ?? this.endMs,
+    scale: (scale ?? this.scale).clamp(0.2, 4.0),
+    rotationDegrees: rotationDegrees ?? this.rotationDegrees,
+  );
 
   Map<String, Object> toMap() => {
     'id': id,
@@ -375,11 +417,52 @@ class EditorProject {
   int get durationMs =>
       clips.fold(0, (duration, clip) => duration + clip.durationMs);
 
+  bool requiresRendering({bool hasCaptions = false}) {
+    final clip = clips.length == 1 ? clips.single : null;
+    final directSource =
+        clip != null &&
+        clip.sourcePath == sourceVideoPath &&
+        clip.sourceStartMs == 0 &&
+        clip.sourceEndMs == sourceDurationMs;
+    final originalCanvas =
+        canvas.ratio == EditorCanvasRatio.original &&
+        canvas.scale == 1 &&
+        canvas.offsetX == 0 &&
+        canvas.offsetY == 0 &&
+        canvas.rotationDegrees == 0;
+    final originalAudio = !audio.muted && audio.sourceVolume == 1;
+    return !directSource ||
+        !originalCanvas ||
+        !originalAudio ||
+        textLayers.isNotEmpty ||
+        stickerLayers.isNotEmpty ||
+        blurLayers.isNotEmpty ||
+        hasCaptions;
+  }
+
   EditorClip? get selectedClip {
     final id = selectedClipId;
     if (id == null) return null;
     for (final clip in clips) {
       if (clip.id == id) return clip;
+    }
+    return null;
+  }
+
+  EditorTextLayer? get selectedTextLayer {
+    final id = selectedLayerId;
+    if (id == null) return null;
+    for (final layer in textLayers) {
+      if (layer.id == id) return layer;
+    }
+    return null;
+  }
+
+  EditorStickerLayer? get selectedStickerLayer {
+    final id = selectedLayerId;
+    if (id == null) return null;
+    for (final layer in stickerLayers) {
+      if (layer.id == id) return layer;
     }
     return null;
   }

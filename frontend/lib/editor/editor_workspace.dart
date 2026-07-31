@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -30,6 +31,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.onVolumeChanged,
     required this.onMutedChanged,
     required this.onStickerSelected,
+    required this.onAr,
     required this.onToolSelected,
   });
 
@@ -54,6 +56,7 @@ class EditorWorkspace extends StatelessWidget {
   final ValueChanged<double> onVolumeChanged;
   final ValueChanged<bool> onMutedChanged;
   final ValueChanged<String> onStickerSelected;
+  final VoidCallback onAr;
   final ValueChanged<EditorTool> onToolSelected;
 
   @override
@@ -103,7 +106,9 @@ class EditorWorkspace extends StatelessWidget {
                       project: project,
                       thumbnails: thumbnails,
                       expanded: project.selectedTool == EditorTool.cut,
+                      canDelete: controller.canDeleteSelectedClip,
                       onSeek: onSeek,
+                      onClipSelected: controller.selectClip,
                       onSplit: onSplit,
                       onDelete: onDelete,
                       onDuplicate: onDuplicate,
@@ -121,6 +126,7 @@ class EditorWorkspace extends StatelessWidget {
                         onVolumeChanged: onVolumeChanged,
                         onMutedChanged: onMutedChanged,
                         onStickerSelected: onStickerSelected,
+                        onAr: onAr,
                       ),
                     ),
                   if (!keyboardVisible)
@@ -353,7 +359,9 @@ class EditorTimelineSection extends StatelessWidget {
     required this.project,
     required this.thumbnails,
     required this.expanded,
+    required this.canDelete,
     required this.onSeek,
+    required this.onClipSelected,
     required this.onSplit,
     required this.onDelete,
     required this.onDuplicate,
@@ -366,7 +374,9 @@ class EditorTimelineSection extends StatelessWidget {
   final EditorProject project;
   final List<String> thumbnails;
   final bool expanded;
+  final bool canDelete;
   final ValueChanged<int> onSeek;
+  final ValueChanged<String> onClipSelected;
   final VoidCallback onSplit;
   final VoidCallback onDelete;
   final VoidCallback onDuplicate;
@@ -406,14 +416,69 @@ class EditorTimelineSection extends StatelessWidget {
                     )
                   : null,
             ),
+            if (expanded)
+              if (project.selectedClip case final selectedClip?)
+                SizedBox(
+                  height: 38,
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 42,
+                        child: Text(
+                          _formatMs(selectedClip.sourceStartMs),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: EditorColorTokens.muted,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: RangeSlider(
+                          key: const Key('editor-trim-range'),
+                          min: 0,
+                          max: project.sourceDurationMs.toDouble(),
+                          values: RangeValues(
+                            selectedClip.sourceStartMs.toDouble(),
+                            selectedClip.sourceEndMs.toDouble(),
+                          ),
+                          labels: RangeLabels(
+                            _formatMs(selectedClip.sourceStartMs),
+                            _formatMs(selectedClip.sourceEndMs),
+                          ),
+                          onChanged: (values) {
+                            final nextStart = values.start.round();
+                            final nextEnd = values.end.round();
+                            if (nextStart != selectedClip.sourceStartMs) {
+                              onTrimStartChanged(nextStart);
+                            }
+                            if (nextEnd != selectedClip.sourceEndMs) {
+                              onTrimEndChanged(nextEnd);
+                            }
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 42,
+                        child: Text(
+                          _formatMs(selectedClip.sourceEndMs),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: EditorColorTokens.muted,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             Expanded(
               child: _ThumbnailTrack(
                 height: thumbnailHeight,
                 project: project,
                 thumbnails: thumbnails,
                 onSeek: onSeek,
-                onTrimStartChanged: onTrimStartChanged,
-                onTrimEndChanged: onTrimEndChanged,
+                onClipSelected: onClipSelected,
               ),
             ),
             if (expanded)
@@ -430,7 +495,7 @@ class EditorTimelineSection extends StatelessWidget {
                     _TimelineAction(
                       label: '삭제',
                       icon: Icons.delete_outline_rounded,
-                      onPressed: project.clips.length > 1 ? onDelete : null,
+                      onPressed: canDelete ? onDelete : null,
                     ),
                     _TimelineAction(
                       label: '복제',
@@ -453,217 +518,154 @@ class _ThumbnailTrack extends StatelessWidget {
     required this.project,
     required this.thumbnails,
     required this.onSeek,
-    required this.onTrimStartChanged,
-    required this.onTrimEndChanged,
+    required this.onClipSelected,
   });
 
   final double height;
   final EditorProject project;
   final List<String> thumbnails;
   final ValueChanged<int> onSeek;
-  final ValueChanged<int> onTrimStartChanged;
-  final ValueChanged<int> onTrimEndChanged;
+  final ValueChanged<String> onClipSelected;
 
   @override
   Widget build(BuildContext context) {
     final progress = project.durationMs <= 0
         ? 0.0
         : project.playheadMs / project.durationMs;
-    final selectedClip = project.selectedClip;
-    var selectedTimelineStartMs = 0;
-    if (selectedClip != null) {
-      for (final clip in project.clips) {
-        if (clip.id == selectedClip.id) break;
-        selectedTimelineStartMs += clip.durationMs;
-      }
-    }
-    final selectedStartProgress =
-        selectedClip == null || project.durationMs <= 0
-        ? 0.0
-        : selectedTimelineStartMs / project.durationMs;
-    final selectedEndProgress = selectedClip == null || project.durationMs <= 0
-        ? 1.0
-        : (selectedTimelineStartMs + selectedClip.durationMs) /
-              project.durationMs;
     return LayoutBuilder(
       builder: (context, constraints) {
         final trackWidth = constraints.maxWidth <= 0
             ? 1.0
             : constraints.maxWidth;
-        final startX = trackWidth * selectedStartProgress;
-        final endX = trackWidth * selectedEndProgress;
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(EditorRadiusTokens.video),
-              child: Row(
-                children: [
-                  for (var index = 0; index < thumbnails.length; index++)
-                    Expanded(
-                      child: _Thumbnail(
-                        path: thumbnails[index],
-                        isFirst: index == 0,
+        return Listener(
+          onPointerDown: (event) {
+            if (project.durationMs <= 0) return;
+            final timelineMs =
+                (event.localPosition.dx / trackWidth * project.durationMs)
+                    .round()
+                    .clamp(0, project.durationMs);
+            var startMs = 0;
+            for (final clip in project.clips) {
+              final endMs = startMs + clip.durationMs;
+              if (timelineMs >= startMs && timelineMs <= endMs) {
+                onClipSelected(clip.id);
+                break;
+              }
+              startMs = endMs;
+            }
+          },
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(EditorRadiusTokens.video),
+                child: Row(
+                  children: [
+                    for (var index = 0; index < thumbnails.length; index++)
+                      Expanded(
+                        child: _Thumbnail(
+                          path: thumbnails[index],
+                          isFirst: index == 0,
+                        ),
                       ),
-                    ),
-                  if (thumbnails.isEmpty)
-                    const Expanded(
-                      child: ColoredBox(
-                        color: EditorColorTokens.border,
-                        child: Center(
-                          child: SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: EditorColorTokens.coral,
+                    if (thumbnails.isEmpty)
+                      const Expanded(
+                        child: ColoredBox(
+                          color: EditorColorTokens.border,
+                          child: Center(
+                            child: SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: EditorColorTokens.coral,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Positioned.fill(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 0,
-                  thumbColor: Colors.transparent,
-                  overlayColor: Colors.transparent,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 12,
-                    elevation: 0,
-                    pressedElevation: 0,
+              Positioned.fill(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 0,
+                    thumbColor: Colors.transparent,
+                    overlayColor: Colors.transparent,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 12,
+                      elevation: 0,
+                      pressedElevation: 0,
+                    ),
+                  ),
+                  child: Slider(
+                    key: const Key('editor-timeline-slider'),
+                    value: progress.clamp(0.0, 1.0),
+                    onChanged: (value) =>
+                        onSeek((project.durationMs * value).round()),
                   ),
                 ),
-                child: Slider(
-                  value: progress.clamp(0.0, 1.0),
-                  onChanged: (value) =>
-                      onSeek((project.durationMs * value).round()),
-                ),
               ),
-            ),
-            IgnorePointer(
-              child: Align(
-                alignment: Alignment(-1 + progress * 2, 0),
-                child: Container(
-                  width: 2,
-                  height: height,
-                  color: EditorColorTokens.coral,
-                ),
-              ),
-            ),
-            IgnorePointer(
-              child: Align(
-                alignment: Alignment(-1 + progress * 2, -1),
-                child: Container(
-                  width: 10,
-                  height: 8,
-                  decoration: const BoxDecoration(
+              IgnorePointer(
+                child: Align(
+                  key: const Key('editor-playhead'),
+                  alignment: Alignment(-1 + progress * 2, 0),
+                  child: Container(
+                    width: 2,
+                    height: height,
                     color: EditorColorTokens.coral,
-                    borderRadius: BorderRadius.vertical(
-                      bottom: Radius.circular(4),
+                  ),
+                ),
+              ),
+              IgnorePointer(
+                child: Align(
+                  alignment: Alignment(-1 + progress * 2, -1),
+                  child: Container(
+                    width: 10,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: EditorColorTokens.coral,
+                      borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(4),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            if (selectedClip != null)
-              Positioned(
-                left: startX,
-                width: (endX - startX).clamp(1, trackWidth),
-                top: 0,
-                bottom: 0,
+              Positioned.fill(
                 child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: EditorColorTokens.coral,
-                        width: 2,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        EditorRadiusTokens.video,
-                      ),
-                    ),
+                  child: Row(
+                    children: [
+                      for (final clip in project.clips)
+                        Expanded(
+                          flex: math.max(1, clip.durationMs),
+                          child: Container(
+                            key: Key('editor-clip-${clip.id}'),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: clip.id == project.selectedClipId
+                                    ? EditorColorTokens.coral
+                                    : Colors.white54,
+                                width: clip.id == project.selectedClipId
+                                    ? 3
+                                    : 1,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                EditorRadiusTokens.video,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
-            if (selectedClip != null)
-              _TrimHandle(
-                left: (startX - 12).clamp(0, trackWidth - 24),
-                height: height,
-                leading: true,
-                onDrag: (deltaX) {
-                  final deltaMs = deltaX / trackWidth * project.durationMs;
-                  onTrimStartChanged(
-                    selectedClip.sourceStartMs + deltaMs.round(),
-                  );
-                },
-              ),
-            if (selectedClip != null)
-              _TrimHandle(
-                left: (endX - 12).clamp(0, trackWidth - 24),
-                height: height,
-                leading: false,
-                onDrag: (deltaX) {
-                  final deltaMs = deltaX / trackWidth * project.durationMs;
-                  onTrimEndChanged(selectedClip.sourceEndMs + deltaMs.round());
-                },
-              ),
-          ],
+            ],
+          ),
         );
       },
     );
   }
-}
-
-class _TrimHandle extends StatelessWidget {
-  const _TrimHandle({
-    required this.left,
-    required this.height,
-    required this.leading,
-    required this.onDrag,
-  });
-
-  final double left;
-  final double height;
-  final bool leading;
-  final ValueChanged<double> onDrag;
-
-  @override
-  Widget build(BuildContext context) => Positioned(
-    left: left,
-    width: 24,
-    height: height,
-    child: Semantics(
-      label: leading ? '클립 시작점 조절' : '클립 끝점 조절',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
-        child: Align(
-          alignment: leading ? Alignment.centerLeft : Alignment.centerRight,
-          child: Container(
-            width: 8,
-            height: height,
-            decoration: BoxDecoration(
-              color: EditorColorTokens.coral,
-              borderRadius: BorderRadius.horizontal(
-                left: Radius.circular(leading ? 4 : 0),
-                right: Radius.circular(leading ? 0 : 4),
-              ),
-            ),
-            child: const Center(
-              child: SizedBox(
-                width: 2,
-                height: 18,
-                child: ColoredBox(color: Colors.white),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 class _Thumbnail extends StatelessWidget {
@@ -700,6 +702,7 @@ class SelectedToolPanel extends StatelessWidget {
     required this.onVolumeChanged,
     required this.onMutedChanged,
     required this.onStickerSelected,
+    required this.onAr,
   });
 
   final EditorProject project;
@@ -708,6 +711,7 @@ class SelectedToolPanel extends StatelessWidget {
   final ValueChanged<double> onVolumeChanged;
   final ValueChanged<bool> onMutedChanged;
   final ValueChanged<String> onStickerSelected;
+  final VoidCallback onAr;
 
   @override
   Widget build(BuildContext context) {
@@ -745,7 +749,7 @@ class SelectedToolPanel extends StatelessWidget {
           onMutedChanged: onMutedChanged,
         ),
         EditorTool.sticker => _StickerPanel(onSelected: onStickerSelected),
-        EditorTool.ar => const _UnavailableArPanel(),
+        EditorTool.ar => _ArPanel(onOpen: onAr),
         EditorTool.cut => const SizedBox.shrink(),
       },
     );
@@ -884,22 +888,28 @@ class _StickerPanel extends StatelessWidget {
   );
 }
 
-class _UnavailableArPanel extends StatelessWidget {
-  const _UnavailableArPanel();
+class _ArPanel extends StatelessWidget {
+  const _ArPanel({required this.onOpen});
+
+  final VoidCallback onOpen;
 
   @override
-  Widget build(BuildContext context) => const Column(
+  Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _PanelTitle('AR 효과'),
-      SizedBox(height: 10),
-      Text(
-        '현재 설치된 Banuba Video Editor는 사용하지 않습니다. '
-        '로컬 영상 입력을 지원하는 Face AR SDK와 라이선스가 확인되면 이 패널에서 연결됩니다.',
-        style: TextStyle(
-          color: EditorColorTokens.muted,
-          fontSize: 12,
-          height: 1.4,
+      const _PanelTitle('앱 안에서 Banuba 얼굴 AR'),
+      const SizedBox(height: 8),
+      Expanded(
+        child: FilledButton.icon(
+          key: const Key('open-banuba-ar-editor'),
+          onPressed: onOpen,
+          icon: const Icon(Icons.face_retouching_natural, size: 21),
+          label: const Text('현재 영상에 AR 적용'),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(double.infinity, 44),
+            backgroundColor: EditorColorTokens.coral,
+            foregroundColor: Colors.white,
+          ),
         ),
       ),
     ],

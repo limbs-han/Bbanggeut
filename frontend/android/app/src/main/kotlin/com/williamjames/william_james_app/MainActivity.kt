@@ -484,47 +484,56 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        try {
+        Thread {
             val resolver = contentResolver
-            val fileName = buildUniqueGalleryFileName(title)
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+            var uri: Uri? = null
+            try {
+                val fileName = buildUniqueGalleryFileName(title)
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/WilliamJames")
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                }
+
+                val insertedUri = resolver.insert(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    contentValues,
+                ) ?: throw IllegalStateException("Could not create a gallery entry.")
+                uri = insertedUri
+
+                resolver.openOutputStream(insertedUri)?.use { outputStream ->
+                    FileInputStream(inputFile).use { inputStream ->
+                        inputStream.copyTo(outputStream, 128 * 1024)
+                    }
+                } ?: throw IllegalStateException("Could not write the video to the gallery.")
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/${"WilliamJames"}")
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    contentValues.clear()
+                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(insertedUri, contentValues, null, null)
+                }
+
+                runOnUiThread { result.success(insertedUri.toString()) }
+            } catch (failure: Exception) {
+                uri?.let {
+                    try {
+                        resolver.delete(it, null, null)
+                    } catch (_: Exception) {
+                        // The original save error is more useful to Flutter.
+                    }
+                }
+                runOnUiThread {
+                    result.error(
+                        "GALLERY_SAVE_FAILED",
+                        failure.message ?: "Could not save the video to the gallery.",
+                        null,
+                    )
                 }
             }
-
-            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-            } else {
-                resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-            }
-            if (uri == null) {
-                result.error("GALLERY_INSERT_FAILED", "Could not create a gallery entry.", null)
-                return
-            }
-
-            resolver.openOutputStream(uri)?.use { outputStream ->
-                FileInputStream(inputFile).use { inputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            } ?: run {
-                result.error("GALLERY_WRITE_FAILED", "Could not write the video to the gallery.", null)
-                return
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(uri, contentValues, null, null)
-            }
-
-            result.success(uri.toString())
-        } catch (failure: Exception) {
-            result.error("GALLERY_SAVE_FAILED", failure.message ?: "Could not save the video to the gallery.", null)
-        }
+        }.start()
     }
 
     private fun buildUniqueGalleryFileName(title: String): String {

@@ -7,8 +7,8 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:william_james_app/app/app_controller.dart';
 import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
+import 'package:william_james_app/core/banuba_video_editor.dart';
 import 'package:william_james_app/core/models.dart';
-import 'package:william_james_app/editor/face_ar_capability.dart';
 import 'package:william_james_app/ui/auth_screen.dart';
 import 'package:william_james_app/ui/local_edit_screen.dart';
 import 'package:william_james_app/ui/main_shell.dart';
@@ -20,7 +20,7 @@ void main() {
 
   testWidgets('로컬 Banuba 토큰 설정을 자동으로 불러온다', (tester) async {
     expect(
-      await FaceArCapability(
+      await BanubaVideoEditor(
         assetBundle: _BanubaConfigAssetBundle(),
       ).isConfigured,
       isTrue,

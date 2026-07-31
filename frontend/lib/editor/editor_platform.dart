@@ -98,13 +98,21 @@ class EditorPlatform {
     required String inputPath,
     required String title,
   }) async {
-    final result = await _channel.invokeMethod<String>('saveToGallery', {
-      'inputPath': inputPath,
-      'title': title,
-    });
-    if (result == null || result.isEmpty) {
-      throw const EditorPlatformException('갤러리에 저장하지 못했어요.');
+    try {
+      final result = await _channel.invokeMethod<String>('saveToGallery', {
+        'inputPath': inputPath,
+        'title': title,
+      });
+      if (result == null || result.isEmpty) {
+        throw const EditorPlatformException('갤러리에 저장하지 못했어요.');
+      }
+      return result;
+    } on PlatformException catch (failure) {
+      throw EditorPlatformException(
+        failure.code == 'INVALID_FILE'
+            ? '저장할 편집 영상 파일을 찾지 못했어요.'
+            : '갤러리에 영상을 저장하지 못했어요. 저장 공간과 권한을 확인해 주세요.',
+      );
     }
-    return result;
   }
 }
