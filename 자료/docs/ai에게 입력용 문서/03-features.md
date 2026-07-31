@@ -5,7 +5,7 @@
 
 ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호. 앱39(A01~A39) + 서버26(S01~S26) + 엣지10(E01~10) + 하드웨어4(H01~04) = **79개**. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조).
 
-**FN-A38 Flutter 리포트 화면은 구현됐다. FN-S26 서버 집계만 `[제안·미구현]`이다. 코드 경로가 없는 FN-S26/API-51을 존재하는 코드로 가정하지 말 것.**
+**FN-A38 Flutter 리포트 화면은 구현됐다. FN-S26 서버 집계만 `[제안·미구현]`이다. 코드 경로가 없는 FN-S26/API-62을 존재하는 코드로 가정하지 말 것.**
 
 ---
 
@@ -26,7 +26,7 @@ ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호
 | provisioning | FN-S23 | API-47~49 | `provisioning/api/`, `provisioning/application/` |
 | audit | FN-S24 | API-50 | `audit/api/`, `audit/application/` |
 | MQTT 공통 | FN-S25 | MQTT-01~09 | `iot/mqtt/`, `iot/telemetry/`, `stream/application/StreamCommandPublisher.java`, `stream/application/StreamEventService.java`, `iot/event/DeviceEventService.java` |
-| **report(제안)** | **FN-S26** | **API-51 [제안]** | **코드 없음 — 기존 `video/api/VideoStatsController.java`(API-33)·`iot/event/EventStatsController.java`(API-46) 확장 검토 대상** |
+| **report(제안)** | **FN-S26** | **API-62 [제안]** | **코드 없음 — 기존 `video/api/VideoStatsController.java`(API-33)·`iot/event/EventStatsController.java`(API-46) 확장 검토 대상** |
 | 공통 | - | - | `common/api/`, `common/web/`, `config/` |
 
 ### 0.2 화면 → dart 파일 경로 (`frontend/lib/`)
@@ -113,7 +113,7 @@ flowchart TD
 - 탭 순서(인덱스 0~4): 홈 / 캘린더 / 추억 / 가족 / 설정.
 - 앱 최상위 선택 상태는 물리 기기(`selectedDevice`)가 아니라 추억 금고(`selectedVault`)다. 기기 해제 후에도 금고·영상·멤버십·구독은 유지되며, `GET /api/vaults` 재조회 결과에 따라 `VaultArchiveScreen` 또는 5탭 화면으로 이동한다.
 - `LiveScreen`(FN-A12, 부록A)은 도달 불가 코드여서 WebRTC 전용 전환에서 삭제했다(ID는 결번 방지를 위해 부록A에 제거 표기로 유지). 기념일 편집(`AnniversaryEditorScreen`), 알림 목록(`NotificationsScreen`) 등 MVP·가족공유 밖 보조 화면도 생략(부록A 참고).
-- **`LaughReportContentScreen`(FN-A38)은 구현됐다** — `AppController.videos`의 `LAUGHTER` 항목을 날짜별로 단말 집계한다. 주간/월간 서버 집계는 FN-S26/API-51 범위다.
+- **`LaughReportContentScreen`(FN-A38)은 구현됐다** — `AppController.videos`의 `LAUGHTER` 항목을 날짜별로 단말 집계한다. 주간/월간 서버 집계는 FN-S26/API-62 범위다.
 
 | ID | 기능 | 사용 API | 소스 파일(`frontend/lib/`) | 비고/에러코드 |
 |---|---|---|---|---|
@@ -252,7 +252,7 @@ flowchart TD
 | FN-S15 | 영상 통계 | 서버 | 기간별 트리거타입/일별 집계, 최다 요일·시간대 통계 | REQ-F-36 / API-33 | `video/api/VideoStatsController.java`, `VideoStatsService.java` |
 | FN-S22 | 이벤트 통계 | 서버 | 기간별 감지 이벤트/업로드 영상 수 집계. FN-A38/FN-S26 확장 시 기반 로직 후보 | REQ-F-36 / API-46 | `iot/event/EventStatsController.java`, `EventStatsService.java` — 서버 정교히 구현되었으나 `LaughReportScreen`은 API-33만 사용 |
 | **FN-A38** `[구현]` | 웃음 리포트 화면 | 폰 | 로드된 `LAUGHTER` 영상을 날짜별 단말 집계. 전체 횟수·웃음 날짜 수·최근 날짜별 횟수·연간 잔디·선택 날짜 영상 제공 | REQ-F-42 / 기존 영상 목록 | `ui/laugh_report_content_screen.dart` |
-| **FN-S26** `[제안·미구현]` | 리포트 집계 API | 서버 | 기간(주간/월간) 파라미터로 웃음 횟수 합계·시간대별 분포·베스트 클립 목록 집계. FN-S15/FN-S22 로직·`device_events` 데이터를 확장 기반으로 검토 가능(정렬 기준·개수는 상세 설계 시 확정) | REQ-F-42 / API-51 [제안] | **경로 없음 — 미구현, 신규 개발 필요** |
+| **FN-S26** `[제안·미구현]` | 리포트 집계 API | 서버 | 기간(주간/월간) 파라미터로 웃음 횟수 합계·시간대별 분포·베스트 클립 목록 집계. FN-S15/FN-S22 로직·`device_events` 데이터를 확장 기반으로 검토 가능(정렬 기준·개수는 상세 설계 시 확정) | REQ-F-42 / API-62 [제안] | **경로 없음 — 미구현, 신규 개발 필요** |
 
 ---
 
@@ -371,7 +371,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 
 ## 12. 부록 B: 현재 구현 현황
 
-MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 집계는 제안·미구현이다.
+MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-62 서버 집계는 제안·미구현이다.
 
 | # | MVP 단계 | 상태 | 비고 |
 |---|---|---|---|
@@ -381,6 +381,6 @@ MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 �
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지 → 자동 업로드 → 목록/재생 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 폰 내 수동 편집(Banuba) 동작 |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장+공유, 원본 서버 다운로드 동작 |
-| 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-51 서버 집계는 제안·미구현** |
+| 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-62 서버 집계는 제안·미구현** |
 
 **ID 검증**: 본문(2~9절) 고유 FN 개수 = 앱24(A01,A02,A03,A06,A07,A08,A10,A11,A13,A15,A17,A20,A21,A22,A23,A24,A25,A27,A32,A33,A36,A37,A38,A39) + 서버20(S01,S02,S03,S04,S05,S07,S08,S09,S10,S11,S12,S14,S15,S16,S17,S20,S21,S22,S25,S26) + 엣지7(E01~E07) = 51. 부록A 고유 FN 개수 = 앱15(A04,A05,A09,A12,A14,A16,A18,A19,A26,A28,A29,A30,A31,A34,A35) + 서버6(S06,S13,S18,S19,S23,S24) + 엣지3(E08,E09,E10) + 하드웨어4(H01~H04) = 28. 51+28=79, FN-A01~39·FN-S01~26·FN-E01~10·FN-H01~04 전수 반영(결번·중복 없음, FN-A21/FN-S12/FN-S14는 여러 단계에서 의도적으로 재사용 표기). MQTT-01~15 전수는 10절에서 확인.
