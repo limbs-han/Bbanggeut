@@ -4,6 +4,7 @@
 /// 자막을 얹어 갤러리에 저장한다. 로직은 ComicController에 있고 여기는 화면만 본다.
 library;
 
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -11,7 +12,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 
 import '../../app/app_theme.dart';
 import '../../core/api_client.dart';
@@ -87,7 +87,9 @@ class _ComicScreenState extends State<ComicScreen> {
           key: const ValueKey('comic-dialogue-field'),
           controller: _dialogueField,
           autofocus: true,
-          maxLength: 24,
+          // 자막 편집칸(caption_auto_section)과 같은 40자다. 같은 성격의 글을 담는데
+          // 두 화면이 다른 길이를 쓰면 한쪽에서 고친 대사가 다른 쪽에서 잘린다.
+          maxLength: 40,
           decoration: const InputDecoration(hintText: '들린 그대로 적어 주세요'),
         ),
         actions: [
@@ -142,7 +144,14 @@ class _ComicScreenState extends State<ComicScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('4컷 만화 만들기')),
-    body: SafeArea(child: _body()),
+    body: SafeArea(
+      child: Column(
+        children: [
+          if (!comicServerReady) const _SampleNotice(),
+          Expanded(child: _body()),
+        ],
+      ),
+    ),
   );
 
   Widget _body() => switch (_controller.state) {
@@ -217,6 +226,11 @@ class _ComicScreenState extends State<ComicScreen> {
         )
       : _cutList(cuts, error: reason);
 
+  /// 완성 화면에서 되돌아갈 두 길을 함께 둔다.
+  ///
+  /// 글자가 섞여 나오거나 격자가 2x2로 안 나오는 것은 앱이 막을 수 없다(설계의
+  /// "막을 수 없다"). 그때 사용자가 하는 일이 다시 만들기 또는 대사 고치기다. 없으면
+  /// 뒤로 나가야 하고, 그러면 컨트롤러가 사라져 고친 대사 네 줄이 전부 날아간다.
   Widget _finished(List<ComicCut> cuts, Uint8List image) => Column(
     children: [
       Expanded(
@@ -229,17 +243,64 @@ class _ComicScreenState extends State<ComicScreen> {
       ),
       Padding(
         padding: const EdgeInsets.all(16),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            key: const ValueKey('comic-save'),
-            onPressed: _saving ? null : _save,
-            icon: const Icon(Icons.ios_share_rounded),
-            label: Text(_saving ? '저장하는 중이에요' : '만화 저장하기'),
-          ),
+        child: Column(
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('comic-save'),
+                onPressed: _saving ? null : _save,
+                icon: const Icon(Icons.ios_share_rounded),
+                label: Text(_saving ? '저장하는 중이에요' : '만화 저장하기'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('comic-remake'),
+                    onPressed: _saving ? null : _controller.makeImage,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('다시 만들기'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('comic-edit-cuts'),
+                    onPressed: _saving ? null : _controller.backToCuts,
+                    icon: const Icon(Icons.edit_rounded),
+                    label: const Text('대사 고치기'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     ],
+  );
+}
+
+/// 서버 통로가 없을 때 화면에 붙는 알림.
+///
+/// 가짜 통로는 고정된 대사와 색 블록 그림을 돌려준다. 알리지 않으면 사용자가 그것을
+/// 자기 가족의 말과 그림으로 오해한다. `COMIC_SERVER=true`로 켜면 사라진다.
+class _SampleNotice extends StatelessWidget {
+  const _SampleNotice();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const ValueKey('comic-sample-notice'),
+    width: double.infinity,
+    color: AppColors.yellowSoft,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    child: const Text(
+      '아직 만화 서버가 준비되지 않아 견본을 보여드려요.\n'
+      '여기 나오는 대사와 그림은 이 영상에서 만든 것이 아니에요.',
+      style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+    ),
   );
 }
 

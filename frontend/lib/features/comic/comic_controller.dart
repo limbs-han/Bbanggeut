@@ -104,6 +104,15 @@ class ComicController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 완성된 만화에서 컷 목록으로 되돌린다 — 대사를 고쳐 다시 만들려는 경우다.
+  ///
+  /// **구성을 다시 받지 않는다.** 구성 요청은 호출마다 돈이 들고, 새로 받으면 서버가
+  /// 준 원문이 사용자가 고친 대사를 덮어쓴다. 들고 있는 _cuts를 그대로 다시 보여준다.
+  void backToCuts() {
+    if (_cuts.isEmpty) return;
+    _set(ComicScriptReady(_cuts));
+  }
+
   /// 실패해도 _cuts를 그대로 둔다 — 사용자가 고친 것을 잃으면 처음부터 다시
   /// 고쳐야 한다.
   Future<void> makeImage() async {

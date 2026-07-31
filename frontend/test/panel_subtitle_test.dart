@@ -41,17 +41,66 @@ void main() {
     png = await onePixelPng();
   });
 
-  group('subtitleAlignment', () {
+  group('panelAlignment', () {
     test('읽는 순서대로 네 칸에 배치한다', () {
-      expect(subtitleAlignment(0).x, lessThan(0), reason: '0컷은 왼쪽');
-      expect(subtitleAlignment(0).y, lessThan(0), reason: '0컷은 위');
-      expect(subtitleAlignment(1).x, greaterThan(0), reason: '1컷은 오른쪽');
-      expect(subtitleAlignment(1).y, lessThan(0), reason: '1컷은 위');
-      expect(subtitleAlignment(2).x, lessThan(0), reason: '2컷은 왼쪽');
-      expect(subtitleAlignment(2).y, greaterThan(0), reason: '2컷은 아래');
-      expect(subtitleAlignment(3).x, greaterThan(0), reason: '3컷은 오른쪽');
-      expect(subtitleAlignment(3).y, greaterThan(0), reason: '3컷은 아래');
+      expect(panelAlignment(0), Alignment.topLeft, reason: '0컷은 왼쪽 위');
+      expect(panelAlignment(1), Alignment.topRight, reason: '1컷은 오른쪽 위');
+      expect(panelAlignment(2), Alignment.bottomLeft, reason: '2컷은 왼쪽 아래');
+      expect(panelAlignment(3), Alignment.bottomRight, reason: '3컷은 오른쪽 아래');
     });
+  });
+
+  /// 부호만 보던 예전 검사는 이것을 놓쳤다 — Align이 `부모 − 자식` 범위로 자식을
+  /// 움직이기 때문에 좌표 부호가 맞아도 띠가 가운데를 넘어 겹칠 수 있다.
+  testWidgets('자막 띠는 자기 칸을 벗어나지 않는다', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 400,
+            height: 400,
+            child: ComicCanvas(
+              image: png,
+              cuts: cuts(third: '세 번째 대사'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final canvas = tester.getRect(find.byType(ComicCanvas));
+    Rect panel(int index) => Rect.fromLTWH(
+      canvas.left + (index % 2) * canvas.width / 2,
+      canvas.top + (index ~/ 2) * canvas.height / 2,
+      canvas.width / 2,
+      canvas.height / 2,
+    );
+    final lines = ['그거 만지지 마', '안 만졌는데요', '세 번째 대사', '안 만졌다면서'];
+    Rect band(int index) => tester.getRect(find.text('- ${lines[index]}'));
+
+    for (var index = 0; index < 4; index++) {
+      final own = panel(index);
+      expect(
+        band(index).left,
+        greaterThanOrEqualTo(own.left),
+        reason: '$index컷',
+      );
+      expect(
+        band(index).right,
+        lessThanOrEqualTo(own.right),
+        reason: '$index컷',
+      );
+      expect(band(index).top, greaterThanOrEqualTo(own.top), reason: '$index컷');
+      expect(
+        band(index).bottom,
+        lessThanOrEqualTo(own.bottom),
+        reason: '$index컷',
+      );
+    }
+
+    expect(band(0).right, lessThan(band(1).left), reason: '위 두 띠가 겹치면 안 된다');
+    expect(band(2).right, lessThan(band(3).left), reason: '아래 두 띠가 겹치면 안 된다');
   });
 
   testWidgets('대사 있는 컷만 자막을 그린다', (tester) async {

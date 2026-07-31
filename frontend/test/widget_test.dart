@@ -331,6 +331,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 만화 버튼이 죽은 화면(_LegacyVideoDetailScreen)에 들어가면 빌드도 되고 위젯
+    // 테스트도 통과하면서 실제 앱에는 안 보인다 — 실제로 그렇게 넣었던 적이 있다.
+    // 실제로 뜨는 화면에 있는지, PROCESSING에서 잠기는지를 여기서 함께 잡는다.
+    final comicButton = find.byKey(const ValueKey('open-comic'));
+    expect(comicButton, findsOneWidget);
+    expect(
+      tester.widget<ButtonStyleButton>(comicButton).onPressed,
+      isNull,
+      reason: '전사문이 없으니 PROCESSING에서는 누를 수 없어야 한다',
+    );
+
     final editButton = find.widgetWithText(FilledButton, '영상 편집하기');
     await tester.ensureVisible(editButton);
     await tester.tap(editButton);

@@ -1,6 +1,14 @@
-/// 서버 통로 계약.
-/// 서버가 아직 없으므로 기본값은 가짜다. 진짜 통로는 요청 본문 모양만 고정한다 —
-/// 키 이름이 바뀌면 서버가 조용히 못 알아듣는다.
+/// 서버 통로 계약. 서버가 아직 없으므로 기본값은 가짜다.
+///
+/// **여기서 고정되는 것**: `linesToJson`·`cutsToJson`이 각 항목에 담는 값(startMs와
+/// text만, endMs 없음 / 고친 dialogue), 기본 화풍 `webtoon`, 응답 `image`의 base64
+/// 복호화와 없을 때의 예외.
+///
+/// **고정되지 않는 것**: `_RecordingApi`가 [ApiClient]의 메서드를 갈아끼우므로 URL
+/// 경로와 감싸는 키(`lines`/`cuts`/`style`)는 이 파일이 검사하지 않는다. 그것을 바꿔도
+/// 테스트는 통과한다. 저장소에 Dio를 태우는 테스트가 없어 망 하네스를 새로 짜지
+/// 않았다 — 전선 계약(경로·키·에러 모양)의 원천은 `자료/docs`의 API 명세서
+/// **API-52·API-53**이고, 그쪽과 어긋나면 서버가 조용히 못 알아듣는다.
 library;
 
 import 'dart:convert';
@@ -44,7 +52,9 @@ class _RecordingApi extends ApiClient {
     imageVideoId = videoId;
     sentCuts = cuts;
     sentStyle = style;
-    return {'image': base64Encode(Uint8List.fromList([1, 2, 3, 4]))};
+    return {
+      'image': base64Encode(Uint8List.fromList([1, 2, 3, 4])),
+    };
   }
 }
 
