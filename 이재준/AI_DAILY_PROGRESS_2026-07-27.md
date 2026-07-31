@@ -4,7 +4,7 @@
 > 대상 장치: NVIDIA Jetson Orin Nano 8GB  
 > 회사 목표 장치: Logitech BRIO 100  
 > 현재 집 시험 장치: 일반 USB 웹캠·마이크  
-> 관련 문서: [전체 규격](./AI_EDGE_INTEGRATION_SPEC.md), [이벤트 녹화 절차](./LAUGHTER_EVENT_RECORDING_RUNBOOK.md), [직전 진행 기록](./AI_DAILY_PROGRESS_2026-07-24.md)
+> 관련 문서: [전체 규격](../ai/AI_EDGE_INTEGRATION_SPEC.md), [이벤트 녹화 절차](../ai/LAUGHTER_EVENT_RECORDING_RUNBOOK.md), [직전 진행 기록](./AI_DAILY_PROGRESS_2026-07-24.md)
 
 이 문서는 코드 구현, Jetson 실기 검증과 아직 남은 서버·앱 검증을 구분한다.
 실제 기기 ID, 토큰, 등록 코드와 인증정보는 기록하지 않는다.

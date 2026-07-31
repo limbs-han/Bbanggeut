@@ -3,7 +3,7 @@
 > 작성일: 2026-07-24  
 > 대상 장치: NVIDIA Jetson Orin Nano 8GB + Logitech BRIO 100  
 > 프로젝트 범위: Edge Media, YOLO 자동 구도, YAMNet 웃음 감지, 이벤트 영상 생성·업로드  
-> 관련 문서: [전체 규격](./AI_EDGE_INTEGRATION_SPEC.md), [YOLO RTSP 검증](./AI_YOLO_RTSP_VALIDATION_2026-07-24.md), [웃음 이벤트 녹화 절차](./LAUGHTER_EVENT_RECORDING_RUNBOOK.md)
+> 관련 문서: [전체 규격](../ai/AI_EDGE_INTEGRATION_SPEC.md), [YOLO RTSP 검증](./AI_YOLO_RTSP_VALIDATION_2026-07-24.md), [웃음 이벤트 녹화 절차](../ai/LAUGHTER_EVENT_RECORDING_RUNBOOK.md)
 
 이 문서는 코드에 기능이 존재하는 상태와 실제 Jetson에서 동작을 확인한 상태를
 구분한다. 실제 기기 ID, 인증정보와 토큰은 기록하지 않는다.
