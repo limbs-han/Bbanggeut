@@ -16,21 +16,4 @@ public record AuditEvent(
     String userAgent,
     String requestId
 ) {
-    public AuditEvent(
-        UUID deviceId,
-        UUID actorUserId,
-        UUID actorDeviceId,
-        String action,
-        String targetType,
-        UUID targetId,
-        String outcome,
-        String reasonCode,
-        String ipAddress,
-        String userAgent,
-        String requestId
-    ) {
-        this(
-            deviceId, null, actorUserId, actorDeviceId, action, targetType,
-            targetId, outcome, reasonCode, ipAddress, userAgent, requestId);
-    }
 }
