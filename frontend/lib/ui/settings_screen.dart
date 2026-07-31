@@ -8,6 +8,7 @@ import 'family_management_cards.dart';
 import 'invitation_inbox_screen.dart';
 import 'notification_settings_screen.dart';
 import 'password_change_screen.dart';
+import 'profile_avatar.dart';
 import 'profile_edit_screen.dart';
 import 'widgets.dart';
 
@@ -94,22 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       padding: const EdgeInsets.all(14),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 24,
-                            backgroundColor: AppColors.surfaceWarm,
-                            child: Text(
-                              controller
-                                      .user
-                                      ?.displayName
-                                      .characters
-                                      .firstOrNull ??
-                                  '나',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: AppColors.sageDark,
-                              ),
-                            ),
-                          ),
+                          const ProfileAvatarView(radius: 24),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -133,13 +119,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    ProfileEditScreen(controller: controller),
-                              ),
-                            ),
+                            onPressed: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ProfileEditScreen(controller: controller),
+                                ),
+                              );
+                              if (mounted) setState(() {});
+                            },
                             child: const Text('수정하기'),
                           ),
                         ],
