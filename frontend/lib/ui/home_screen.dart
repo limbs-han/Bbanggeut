@@ -53,19 +53,6 @@ class HomeScreen extends StatelessWidget {
                     _HomeSectionTitle(
                       title: placeHomeQuestion(controller.selectedPlaceName),
                       icon: Icons.cottage_rounded,
-                      actionLabel: '실시간 보기',
-                      onAction: device == null
-                          ? null
-                          : () => Navigator.push<void>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => LiveViewingScreen(
-                                  controller: controller,
-                                  device: device,
-                                  status: status,
-                                ),
-                              ),
-                            ),
                     ),
                     const SizedBox(height: 12),
                     if (device == null)
@@ -474,7 +461,7 @@ class _NoDeviceLiveCard extends StatelessWidget {
       child: Column(
         children: [
           AspectRatio(
-            aspectRatio: 16 / 9,
+            aspectRatio: 4 / 3,
             child: ColoredBox(
               color: const Color(0xFF4D493F),
               child: Center(
@@ -774,13 +761,9 @@ class _HomeSectionTitle extends StatelessWidget {
   const _HomeSectionTitle({
     required this.title,
     required this.icon,
-    this.actionLabel,
-    this.onAction,
   });
   final String title;
   final IconData icon;
-  final String? actionLabel;
-  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -795,19 +778,6 @@ class _HomeSectionTitle extends StatelessWidget {
       const SizedBox(width: 8),
       Icon(icon, size: 23, color: AppColors.coral),
       const Spacer(),
-      if (actionLabel != null)
-        FilledButton(
-          onPressed: onAction,
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.coralSoft,
-            foregroundColor: AppColors.coralDark,
-            elevation: 0,
-            minimumSize: const Size(0, 44),
-            maximumSize: const Size(150, 44),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          ),
-          child: Text(actionLabel!),
-        ),
     ],
   );
 }
