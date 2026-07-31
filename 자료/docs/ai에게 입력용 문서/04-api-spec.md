@@ -3,7 +3,7 @@
 > 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 5979279
 > 사람용 원본: [../사람이 읽을 문서/04-API명세서.md](../사람이%20읽을%20문서/04-API명세서.md)
 
-ID 체계: API-01~62(REST, `API-06`은 서버 부재로 본문·부록 모두 제외, 금고 `API-51~54`는 이 문서에 아직 미반영) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
+ID 체계: API-01~62(REST, `API-06`은 서버 부재로 본문·부록 모두 제외) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
 
 **API-62는 `[제안]` — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
 
@@ -120,6 +120,49 @@ ID 체계: API-01~62(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - `POST /api/vaults`: 물리 기기 없이 독립적인 추억 금고 생성
 - 응답 핵심 필드: `id`, `name`, `status`, `myRole`, `retentionDays`, `subscriptionActive`, `devices[]`
 - 비고: `devices`가 빈 배열이어도 금고는 유효하다. 영상·구독·가족 권한은 물리 기기가 아니라 금고에 귀속된다. 연결 기기의 온라인 상태는 Redis presence를 합성하고 Redis 장애 시 PostgreSQL 값으로 폴백한다.
+
+### API-51·52·53 `GET|PUT|DELETE /api/vaults/{vaultId}/subscription`
+- 인증: 사용자 JWT / 컨트롤러: `subscription/api/VaultSubscriptionController.java`
+- `GET`(API-51): 금고 구성원이면 조회 가능 / `PUT`(API-52) 활성화·`DELETE`(API-53) 해지는 **OWNER만**
+- 응답 200 (`SubscriptionResponse` — 기기 기준 API-39~41과 같은 레코드):
+```json
+{
+  "deviceId": null,            // 금고 경로로 조회하면 항상 null
+  "vaultId": "uuid",
+  "active": true,
+  "graceUntil": null,          // 해지 시에만 값 존재(유예 만료 시각)
+  "premiumRetentionDays": 365  // app.subscription.premium-retention-days 기본값
+}
+```
+- 에러: 403 `FORBIDDEN_ROLE`(PUT/DELETE에 OWNER 아님), 404 `RESOURCE_NOT_FOUND`, 409 `SUBSCRIPTION_NOT_ACTIVE`(활성 구독이 없는데 해지 시도)
+- 비고: 구독은 금고에 귀속되므로 연결된 기기가 한 대도 없어도 조회·변경할 수 있다. 기기 기준 API-39~41은 호환을 위해 유지하며 같은 금고 행을 갱신한다. 해지는 즉시 삭제가 아니라 유예 기간(`app.subscription.grace` 기본 30일) 뒤 만료되도록 보관 기간을 기본값으로 되돌린다.
+
+### API-54 `GET /api/vaults/{vaultId}/access-logs`
+- 인증: 사용자 JWT, 금고 **OWNER만** / 컨트롤러: `audit/api/VaultAccessLogController.java`
+- 요청: `cursor`(선택), `size`(기본 20, **1~100 벗어나면 422 `VALIDATION_FAILED`**)
+- 응답 200 (`AccessLogPageResponse` — API-50과 같은 커서 페이지):
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "deviceId": "uuid",
+      "actorUserId": "uuid",
+      "actorDeviceId": null,
+      "action": "VAULT_UPDATE",
+      "targetType": "SUBSCRIPTION",
+      "targetId": "uuid",
+      "outcome": "SUCCESS",     // SUCCESS | DENIED
+      "reasonCode": null,       // DENIED일 때 사유(예: FORBIDDEN_ROLE)
+      "createdAt": "2026-07-30T00:00:00Z"
+    }
+  ],
+  "nextCursor": "string",       // hasNext=false면 null
+  "hasNext": false
+}
+```
+- 에러: 403 `FORBIDDEN_ROLE`, 404 `RESOURCE_NOT_FOUND`
+- 비고: V30 이전에 기록되어 `vault_id`가 비어 있는 행은, 그 금고에 Binding된 적이 있는 기기의 `device_id`로도 함께 조회한다.
 
 ### API-43 `POST /api/iot/registration-codes`
 - 인증: 기기 credential(Bearer, ROLE_DEVICE_OPERATING) / 요청 본문 없음(`DevicePrincipal`만 사용)
@@ -662,8 +705,8 @@ MVP 7단계의 신규 API 중 **API-62 서버 집계는 미구현**이다. FN-A3
 
 ### ID 검증
 
-- 본문(2~9절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, (신규)62 — 31개 + 신규 1개.
+- 본문(2~9절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, 51~54, (신규)62 — 35개 + 신규 1개.
 - 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50, 55~61 — 25개.
-- 합계 31 + 25 = 56개 + 리포트 제안 API-62 = **57개 배치**. API-01~62 중 API-06(의도적 제외)과 금고 API-51~54(이 문서 미반영)가 결번이다. 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
+- 합계 35 + 25 = 60개 + 리포트 제안 API-62 = **61개 배치**. API-01~62 중 API-06(의도적 제외)만 결번이다. 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 4절(01, 04) + 10절(02, 03, 05~09) + 12절(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
-- 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 현재 max는 **API-62**다. 금고 API가 이 문서에 누락된 건 별도 정리 대상이다.
+- 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 현재 max는 **API-62**다.
