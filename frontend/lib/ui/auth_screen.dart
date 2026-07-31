@@ -93,6 +93,14 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
     if (widget.controller.busy) return;
     FocusScope.of(context).unfocus();
     if (mounted) setState(() => submissionError = null);
+    if (signUp) {
+      final validationMessage = _validateSignUp();
+      if (validationMessage != null) {
+        setState(() => submissionError = validationMessage);
+        showAppSnack(context, validationMessage, error: true);
+        return;
+      }
+    }
     final ok = signUp
         ? await widget.controller.signUp(
             name.text,
@@ -110,6 +118,20 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
       setState(() => submissionError = message);
       showAppSnack(context, message, error: true);
     }
+  }
+
+  String? _validateSignUp() {
+    if (name.text.trim().isEmpty) {
+      return '이름을 입력해 주세요.';
+    }
+    final normalizedEmail = email.text.trim();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(normalizedEmail)) {
+      return '올바른 이메일 주소를 입력해 주세요.';
+    }
+    if (password.text.length < 10) {
+      return '비밀번호는 10자 이상 입력해 주세요.';
+    }
+    return null;
   }
 
   void unavailable(String feature) =>

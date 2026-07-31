@@ -177,6 +177,7 @@ class _VideosScreenState extends State<_LegacyVideosScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _MemoryCard(
+                            controller: widget.controller,
                             video: video,
                             onTap: () => Navigator.push(
                               context,
@@ -321,24 +322,8 @@ class _VideosScreenState extends State<_LegacyVideosScreen> {
   }
 
   Future<void> _confirmDelete(VideoMemory video) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('영상을 삭제할까요?'),
-        content: const Text('저장소에서도 삭제되며 되돌릴 수 없습니다.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
+    final confirmed = await confirmVideoDeletion(context);
+    if (confirmed && !widget.controller.busy) {
       final ok = await widget.controller.removeVideo(video);
       if (mounted) {
         showAppSnack(
@@ -470,11 +455,13 @@ class _CategoryButton extends StatelessWidget {
 
 class _MemoryCard extends StatelessWidget {
   const _MemoryCard({
+    required this.controller,
     required this.video,
     required this.onTap,
     required this.onFavorite,
     this.onDelete,
   });
+  final AppController controller;
   final VideoMemory video;
   final VoidCallback onTap;
   final VoidCallback onFavorite;
@@ -497,7 +484,12 @@ class _MemoryCard extends StatelessWidget {
         children: [
           Stack(
             children: [
-              MemoryThumbnail(video: video, width: 136, height: 98),
+              MemoryThumbnail(
+                api: controller.api,
+                video: video,
+                width: 136,
+                height: 98,
+              ),
               Positioned(
                 left: 8,
                 top: 8,

@@ -32,8 +32,6 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
-/banuba.local.json
-/assets/config/banuba.local.json
 
 # Symbolication related
 app.*.symbols

@@ -1,12 +1,12 @@
 # API 명세서
 
-> 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 5979279
+> 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 cb65eff
 
 본 문서는 **목표(to-be) 기준**의 API 명세서다. `03-기능명세서.md`에서 정의한 **MVP 7단계**를 뼈대로, 각 단계에서 사용하는 REST API·MQTT 토픽·미디어 경로를 실제 요청/응답 스키마와 함께 배치한다.
 
 - API/MQTT ID는 기존 as-built 문서(API-01~50, MQTT-01~15)의 번호를 그대로 재사용한다. 문서 배치는 MVP 7단계 순서로 재구성했지만 번호 자체는 바뀌지 않았다.
 - 프로토콜 사실(경로·요청/응답 필드·에러 코드·MQTT 토픽·미디어 경로)은 코드에서 직접 검증된 as-built본(git 이력 `723bdbc`)에서 그대로 가져온 것이며, 이번 재작성에서 재검증하지 않았다.
-- **신규 API-51**(`GET /api/devices/{deviceId}/laugh-report`)은 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 **초안**이다. 표·본문 전체에 **[제안]** 배지를 붙여 기존 구현 API와 구분한다.
+- **신규 API-62**(`GET /api/devices/{deviceId}/laugh-report`)은 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 **초안**이다. 표·본문 전체에 **[제안]** 배지를 붙여 기존 구현 API와 구분한다.
 - MVP 7단계·가족 공유 밖의 API는 **부록 A**에 표 하나로 축약했다. 구현 상태는 본문에 넣지 않고 **부록 B**에서만 요약한다.
 - as-built본의 "사용 상태(✅/🔶/🔴)" 열과 교차검증 절은 이 문서(to-be 기획서)의 성격에 맞지 않아 제거했다. 필요 시 git 이력의 as-built본을 참조한다.
 
@@ -27,7 +27,7 @@
 | 2 | 기기 credential(Bearer) | `/api/iot/**` | `DeviceAuthenticationFilter`+`DeviceCredentialAuthenticator` — `Authorization: Bearer <keyId>.<secret>`. `/api/iot/enrollment`는 `ROLE_DEVICE_BOOTSTRAP`, 나머지는 `ROLE_DEVICE_OPERATING` | **401 DEVICE_AUTHENTICATION_FAILED** | `IotRegistrationController`, `DeviceCredentialController`, `IotVideoController` |
 | 3 | 사용자 JWT | 나머지 전부 | OAuth2 Resource Server + HS256 JWT. `sub`=사용자 UUID, `sid`=세션 UUID | 미인증 **401 AUTHENTICATION_REQUIRED**, 인가 실패 **403 ACCESS_DENIED** 또는 **403 FORBIDDEN_ROLE** 등 | 그 외 전 컨트롤러 |
 
-`permitAll`(인증 불필요): `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/refresh`, `GET /api/membership-request-links/*/open`, `GET /actuator/health`, `GET /api/live/introspect`.
+`permitAll`(인증 불필요): `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/password/forgot`, `POST /api/auth/password/reset`, `GET /api/membership-request-links/*/open`, `GET /actuator/health`, `GET /api/live/introspect`.
 
 ### 1.3 공통 에러 형식
 
@@ -117,7 +117,7 @@
 ### 사용자 흐름
 
 1. 젯슨이 등록 모드에 진입해 서버에서 등록 코드를 발급받아 표시한다.
-2. 폰이 QR 코드를 스캔하거나 8자리 코드를 직접 입력해 서버에 제출(claim)한다.
+2. 폰이 8자리 코드를 직접 입력해 서버에 제출(claim)한다.
 3. 젯슨은 별도로 1회용 부트스트랩 자격증명을 정식 운영 자격증명으로 교환하고, 만료 전에 회전한다.
 4. 등록 후 폰은 기기 목록과 상태를 조회할 수 있다.
 
@@ -132,6 +132,7 @@
 | registrationCode | String | 필수 | `@NotBlank @Size 8~12` |
 | name | String | 옵션 | `@Size 1~80`, 공백만 불가 |
 | vaultId | UUID | 옵션 | 기존 추억 금고에 기기를 추가할 때 사용. 생략하면 새 금고를 생성 |
+| vaultName | String | 옵션 | `@Size 1~80`, 공백만 불가. 새 금고 생성 시 금고 이름 지정 |
 
 응답: `201 DeviceResponse`
 
@@ -156,7 +157,7 @@
 - 인증: 사용자 JWT
 - `GET /api/vaults`: 사용자가 참여 중인 추억 금고와 현재 연결 기기 목록 조회
 - `GET /api/vaults/{vaultId}`: 추억 금고 단건 조회
-- `POST /api/vaults`: 기기 없이도 독립적인 추억 금고 생성
+- `POST /api/vaults`: 기기 없이도 독립적인 추억 금고 생성 — 요청 본문 `{name}`(필수, `@NotBlank @Size≤80`)
 
 `VaultResponse` 핵심 필드:
 
@@ -168,10 +169,11 @@
 | myRole | String | OWNER/MEMBER |
 | retentionDays | int | 금고 공통 영상 보관 기간 |
 | subscriptionActive | boolean | 금고 구독 상태 |
-| devices | List | 활성 Device Binding과 물리 기기 정보. 연결 기기가 없으면 빈 배열 |
+| subscriptionGraceUntil | Instant(nullable) | 구독 해지 후 유예 만료 시각 |
+| devices | List\<VaultDeviceResponse\> | 활성 Device Binding과 물리 기기 정보(`bindingId`, `generation`, `deviceId`, `name`, `model`, `status`, `lastSeenAt`). 연결 기기가 없으면 빈 배열 |
 
 - 비고: 금고는 기기가 없어도 유지된다. 멤버십·구독·영상 접근 권한은 기기가 아니라 금고에 귀속된다.
-- 앱 연동: 로그인 직후 목록을 조회해 `selectedVault`를 복원한다. `devices`가 비어 있으면 `VaultArchiveScreen`에서 `GET /api/videos?vaultId=...`로 과거 영상을 조회하고, 새 기기 연결 시 claim 요청에 이 금고의 `id`를 넣는다.
+- 앱 연동: 로그인 직후 목록을 조회해 `selectedVault`를 복원하고, 홈·가족 탭 진입과 앱 재개 시에도 재조회해 기기 온라인 상태를 갱신한다. `devices`가 비어 있어도 앱은 5탭 홈으로 진입해 `GET /api/videos?vaultId=...`로 과거 영상을 조회하고, 새 기기 연결 시 claim 요청에 이 금고의 `id`를 넣는다.
 
 ### Vault 구독 API `/api/vaults/{vaultId}/subscription`
 
@@ -219,8 +221,7 @@
 
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
-| deviceId | UUID | 조건부 필수 | 특정 기기로 촬영한 영상 조회 |
-| vaultId | UUID | 조건부 필수 | 기기 연결 여부와 무관하게 금고 전체 영상 조회 |
+| deviceId | UUID | 필수 | 기기 ID |
 | serialNumber | String | 옵션(nullable) | 시리얼 번호 |
 | keyId | String | 필수 | 자격증명 키 ID |
 | bearerToken | String | 필수 | `{keyId}.{secret}` 형식 |
@@ -284,8 +285,8 @@
 
 ### 사용자 흐름
 
-1. 홈 화면에 진입하면 기기가 온라인일 때 라이브 미리보기 카드가 자동으로 재생을 시작한다.
-2. 카드를 탭하면 전체화면으로 전환된다.
+1. 홈 화면의 라이브 카드를 탭하면 재생이 시작된다(진입 시 자동 재생은 없다).
+2. 연결된 뒤 컨트롤바의 전체화면 버튼으로 전체화면에 진입한다.
 3. 화면을 벗어나거나 세션이 만료되면 시청이 자동으로 종료된다.
 
 ### API-35 `POST /api/devices/{deviceId}/stream-sessions`
@@ -442,7 +443,8 @@
 
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
-| deviceId | UUID | 필수 | 기기 ID |
+| deviceId | UUID | 옵션 | 기기 ID — `vaultId`와 둘 중 정확히 하나만 전달 |
+| vaultId | UUID | 옵션 | 금고 ID — 기기 연결 여부와 무관하게 금고 전체 영상 조회 |
 | triggerType | String | 옵션 | 트리거 타입 필터 |
 | from | Instant | 옵션 | 조회 시작 |
 | to | Instant | 옵션 | 조회 종료 |
@@ -509,7 +511,7 @@
 ### 사용자 흐름
 
 1. 영상 상세 화면에서 편집을 시작하면 원본을 임시로 내려받는다(API-32 재사용).
-2. 폰 내 편집기(Banuba)로 화면 비율 변환 등 수동 편집을 진행한다.
+2. 앱 자체 편집 화면에서 자르기·화면 비율·음량·자막·필터·이모지 스티커 수동 편집을 진행한다.
 3. 편집 결과는 폰에 로컬로 저장된다.
 
 **별도 서버 API는 필요하지 않다** — 편집은 전적으로 폰에서 이루어지며, 원본 다운로드는 ⑥ 단계와 동일한 API-32(다운로드 URL)를 재사용한다.
@@ -521,7 +523,7 @@
 ### 사용자 흐름
 
 1. 편집을 마치면 결과 영상을 기기 갤러리에 저장한다.
-2. 저장된 영상은 SNS나 메신저 등 외부 앱으로 바로 공유한다.
+2. 저장된 영상은 갤러리에서 다른 앱으로 공유한다(앱 안에 별도 공유 기능은 없다).
 3. 원본 클립이 별도로 필요하면 서버에서 다운로드한다.
 
 ### API-32 `POST /api/videos/{videoId}/download-url`
@@ -530,7 +532,7 @@
 - 요청: PathVariable `videoId`
 - 응답: `200 SignedUrlResponse` (API-31과 동일 스키마, `response-content-disposition=attachment` 쿼리가 추가된 URL)
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_NOT_READY`, 503 `OBJECT_STORAGE_UNAVAILABLE`
-- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/공유 시트로 실행하며, 편집 결과물(Banuba 산출물) 자체는 앱 로컬(`edited_videos/`)에 저장 후 공유 시트로 SNS/메신저에 전달한다(서버 API 불요).
+- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/앱으로 실행하며, 편집 결과물 자체는 네이티브 저장 경로(MediaStore)로 기기 갤러리에 저장한다(서버 API 불요).
 
 ---
 
@@ -539,9 +541,9 @@
 ### 사용자 흐름
 
 1. 캘린더에서 날짜별 저장 영상 개수를 확인한다(API-27 재사용).
-2. 웃음 통계 화면에서 월평균·전체 포착 수·주간 추이·연간 히트맵(웃음 잔디)을 확인한다(API-33).
+2. 웃음 리포트 화면에서 전체 감지 수·웃음이 있던 날 수·최근 감지 목록·연간 히트맵(웃음 잔디)을 확인한다. 이 화면의 집계는 단말에서 이루어지고, API-33 통계는 홈 통계 카드에 쓰인다.
 3. Flutter 리포트 화면은 기존 영상 목록에서 `LAUGHTER` 영상을 단말 집계해 전체 횟수, 최근 날짜별 횟수, 웃음 잔디와 날짜별 영상을 표시한다.
-4. 주간/월간·시간대 분포·베스트 클립을 서버에서 집계하는 기능은 **API-51 제안·미구현** 범위다.
+4. 주간/월간·시간대 분포·베스트 클립을 서버에서 집계하는 기능은 **API-62 제안·미구현** 범위다.
 
 ### API-27 `GET /api/videos` — 캘린더 범위 조회로 재사용
 
@@ -569,7 +571,7 @@
 
 - 에러: 404 `RESOURCE_NOT_FOUND`, 422 `VALIDATION_FAILED`(기간/timeZone)
 
-### API-51 `GET /api/devices/{deviceId}/laugh-report` **[제안]**
+### API-62 `GET /api/devices/{deviceId}/laugh-report` **[제안]**
 
 > **[제안]** — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 API 초안이다. 서버 endpoint·DTO·service는 미구현 상태이며, 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**한다(이 API의 응답에는 재생 URL을 직접 담지 않는다).
 
@@ -609,11 +611,11 @@
 
 ## 9. 가족 공유 API
 
-기기 단위로 **OWNER / EDITOR / VIEWER** 3개 역할이 존재한다. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다.
+추억 금고 단위로 **OWNER / MEMBER** 2개 역할이 존재한다. 멤버십·초대·권한 판정은 금고에 귀속되며, 아래 기기 경로 API는 해당 기기가 속한 금고의 멤버십을 다룬다. 앱은 금고 경로(API-63~68, 이 절 마지막 참고)를 기본으로 호출하고 기기 경로는 금고 정보가 없을 때의 폴백으로 쓴다. 가입은 초대 승인제로만 이루어지며, 링크만으로 자동 가입되는 경로는 없다. 초대로 만들어지는 역할은 항상 MEMBER다.
 
 ### 사용자 흐름
 
-1. OWNER가 이메일과 역할(EDITOR/VIEWER)을 지정해 초대를 발송한다.
+1. OWNER가 이메일을 지정해 초대를 발송한다.
 2. 초대받은 사용자는 받은 초대함에서 목록을 확인하고 수락 또는 거절한다.
 3. 수락 시점에 실제 멤버십이 생성된다.
 4. 별도로 "내 계정으로 초대해달라"는 요청 링크를 만들어 공유할 수 있지만, 링크 자체는 멤버십을 만들지 않는다.
@@ -626,8 +628,9 @@
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | email | String | 필수 | `@NotBlank @Email @Size≤320` |
-| role | String | 필수 | `@NotBlank @Pattern "EDITOR\|VIEWER"` |
 | membershipRequestToken | String | 옵션 | `@Size≤200` |
+
+> `role` 필드는 받지 않는다. 초대로 만들어지는 역할은 항상 `MEMBER`로 고정된다(DB 제약 `ck_invitations_member_only`).
 
 응답: `201 InvitationResponse`
 
@@ -636,8 +639,10 @@
 | id | UUID | 필수 | 초대 ID |
 | deviceId | UUID | 필수 | 기기 ID |
 | deviceName | String | 필수 | 기기 이름 |
+| vaultId | UUID | 필수 | 초대 대상 금고 ID |
+| vaultName | String | 필수 | 금고 이름 |
 | inviteeEmail | String | 필수 | 초대받는 이메일 |
-| role | String | 필수 | EDITOR/VIEWER |
+| role | String | 필수 | MEMBER 고정 |
 | inviter.id | UUID | 옵션(nullable) | 초대자 ID |
 | inviter.email | String | 옵션 | 초대자 이메일 |
 | inviter.displayName | String | 옵션 | 초대자 표시이름 |
@@ -645,7 +650,7 @@
 | expiresAt | Instant | 필수 | 만료 시각(초대 유효기간 7일) |
 | createdAt | Instant | 필수 | 생성 시각 |
 
-- 에러: 403 `FORBIDDEN_ROLE`, 422 `VALIDATION_FAILED`(role 아님), 409 `ALREADY_DEVICE_MEMBER`, 409 `INVITATION_PENDING`, 409 `MEMBERSHIP_REQUEST_EMAIL_MISMATCH`, 404 `MEMBERSHIP_REQUEST_NOT_FOUND`
+- 에러: 403 `FORBIDDEN_ROLE`, 422 `VALIDATION_FAILED`(이메일 형식 오류 등), 409 `ALREADY_DEVICE_MEMBER`, 409 `INVITATION_PENDING`, 409 `MEMBERSHIP_REQUEST_EMAIL_MISMATCH`, 404 `MEMBERSHIP_REQUEST_NOT_FOUND`
 
 ### API-15 `POST /api/membership-request-links`
 
@@ -715,7 +720,8 @@
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | id | UUID | 필수 | 멤버십 ID |
-| deviceId | UUID | 필수 | 기기 ID |
+| deviceId | UUID | 옵션(nullable) | 기기 ID — 금고 경로(API-66) 조회 시 null일 수 있다 |
+| vaultId | UUID | 옵션(nullable) | 금고 ID |
 | user.id | UUID | 필수 | 사용자 ID |
 | user.email | String | 필수 | 이메일 |
 | user.displayName | String | 필수 | 표시이름 |
@@ -746,6 +752,22 @@
 - 응답: `204 No Content`
 - 에러: 403 `FORBIDDEN_ROLE`, 404 `RESOURCE_NOT_FOUND`, 409 `OWNER_CANNOT_BE_REVOKED`, 409 `MEMBERSHIP_NOT_ACTIVE`
 - 비고: OWNER는 추방 불가, 이미 비활성인 멤버십은 재추방 불가.
+
+### 금고 경로 가족 공유 API (API-63~68)
+
+앱이 기본으로 호출하는 금고 스코프 경로다. 요청·응답 스키마는 위 기기 경로의 대응 API와 동일하다(`InvitationResponse`, `DeviceMemberResponse` 공유).
+
+| ID | 메서드/경로 | 응답 | 대응 기기 경로 |
+|---|---|---|---|
+| API-63 | `POST /api/vaults/{vaultId}/invitations` | `201 InvitationResponse` | API-14 |
+| API-64 | `GET /api/vaults/{vaultId}/invitations` | `200 List<InvitationResponse>` | API-18 |
+| API-65 | `DELETE /api/vaults/{vaultId}/invitations/{invitationId}` | `204` | API-19 |
+| API-66 | `GET /api/vaults/{vaultId}/members` | `200 List<DeviceMemberResponse>` | API-23 |
+| API-67 | `DELETE /api/vaults/{vaultId}/members/{membershipId}` | `204` | API-24 |
+| API-68 | `POST /api/vaults/{vaultId}/transfer-ownership` | `204` | API-12 |
+
+- API-68 요청 본문: `{newOwnerMembershipId}`(UUID, 필수)
+- 금고 경로 고유 에러: 409 `ALREADY_VAULT_MEMBER`(이미 금고 구성원), 409 `TRANSFER_TARGET_NOT_ACTIVE_MEMBER`(이전 대상이 활성 구성원이 아님), 409 `ALREADY_OWNER`(대상이 이미 OWNER)
 
 ---
 
@@ -799,6 +821,43 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-52 | `PUT /api/vaults/{vaultId}/subscription` | 금고 구독 활성화 |
 | API-53 | `DELETE /api/vaults/{vaultId}/subscription` | 금고 구독 해지 |
 | API-54 | `GET /api/vaults/{vaultId}/access-logs` | 금고 접근 기록 커서 조회 |
+| API-55 | `POST /api/auth/password/change` | 비밀번호 변경(로그인 상태, 현재 비밀번호 확인) |
+| API-56 | `POST /api/auth/password/forgot` | 비밀번호 재설정 링크 발급 요청(공개) |
+| API-57 | `POST /api/auth/password/reset` | 토큰으로 비밀번호 재설정(공개) |
+| API-58 | `GET /api/notifications` | 알림 목록 조회(최신순, limit 기본 30·최대 100) |
+| API-59 | `GET /api/notifications/unread-count` | 안 읽은 알림 개수 |
+| API-60 | `PATCH /api/notifications/{notificationId}/read` | 알림 1건 읽음 처리 |
+| API-61 | `PATCH /api/notifications/read-all` | 전체 읽음 처리 |
+| API-69 | `PUT /api/notifications/push-tokens` | FCM 푸시 토큰 등록(`{installationId, token, platform}`, 204) — 로그인·세션 복원 시 앱이 자동 호출 |
+| API-70 | `DELETE /api/notifications/push-tokens/{installationId}` | 푸시 토큰 해제(204) — 로그아웃·탈퇴 시 앱이 자동 호출 |
+
+#### 비밀번호 API 동작 규칙 (API-55~57)
+
+| 항목 | 변경(API-55) | 재설정(API-56·57) |
+|---|---|---|
+| 인증 | 사용자 JWT + 현재 비밀번호 | 불필요(이메일로 받은 1회용 토큰) |
+| 요청 | `currentPassword`, `newPassword`(10~72자) | 56: `email` / 57: `token`(32~200), `newPassword` |
+| 응답 | `204` | 56: `202` / 57: `204` |
+| 세션 처리 | 현재 세션만 유지, 나머지 폐기 | **전 세션 폐기** |
+| 에러 | 401 `INVALID_CREDENTIALS`, 422 `PASSWORD_UNCHANGED` | 401 `INVALID_PASSWORD_RESET_TOKEN` |
+
+- 재설정 토큰은 **30분 TTL·1회용**이며, DB에는 원문이 아닌 SHA-256 해시만 저장한다(`password_reset_tokens`).
+- API-56은 **가입되지 않은 이메일에도 동일하게 `202`를 반환**한다. 계정 존재 여부를 노출하지 않기 위함이며, 로그인(API-02)의 동일 메시지 원칙과 같은 이유다.
+- 새 forgot 요청은 이전 토큰을 먼저 만료시키므로 항상 최신 링크 1개만 유효하다.
+- 메일 서버(`spring.mail.host`)가 비어 있으면 발송을 건너뛰고 경고 로그만 남긴다(개발 환경 대응).
+
+#### 알림 생성 시점 (API-58~61은 조회·읽음 전용)
+
+알림을 만드는 별도 API는 없다. 서버가 다음 두 시점에 자동으로 생성한다.
+
+| 종류 | 생성 시점 | 대상 | dedupe_key |
+|---|---|---|---|
+| `LAUGHTER_VIDEO_READY` | 영상 업로드 완료(API-26)로 `READY` 확정 + `triggerType=LAUGHTER` | 해당 기기의 활성 구성원 **전원** | `laughter-video:{videoId}` |
+| `INVITATION_RECEIVED` | 초대 발송(API-14) | 초대받은 이메일의 사용자 1명 | `invitation:{invitationId}` |
+
+`notifications` 테이블에 `UNIQUE (user_id, dedupe_key)`가 있고 INSERT에 `ON CONFLICT DO NOTHING`이 붙어 있어, 같은 업로드 완료가 여러 번 들어와도 사용자별 알림은 1건만 남는다.
+
+앱 알림함은 API-58(목록)·API-60(개별 읽음)·API-61(전체 읽음)을 사용하고, FCM payload의 알림 종류에 따라 해당 화면(영상 상세/받은 초대함)으로 이동한다. API-59(미읽음 개수)는 아직 앱에서 호출하지 않는다.
 
 ### 실험 MQTT(`homecam/v2`, 6개)
 
@@ -825,10 +884,10 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |
-| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 Flutter 단말 집계 화면은 구현. **API-51 서버 집계는 미구현(제안 초안)** |
-| 가족 공유 | API-14~24 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작 |
+| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 Flutter 단말 집계 화면은 구현. **API-62 서버 집계는 미구현(제안 초안)** |
+| 가족 공유 | API-14~24, 63~68 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작(앱은 금고 경로 API-63~68을 기본 사용) |
 
-MVP 7단계의 API 중 새로 제안된 **API-51(리포트 서버 집계)**은 미구현이다. Flutter 리포트 화면 자체는 기존 영상 목록 데이터로 동작한다.
+MVP 7단계의 API 중 새로 제안된 **API-62(리포트 서버 집계)**는 미구현이다. Flutter 리포트 화면 자체는 기존 영상 목록 데이터로 동작한다.
 
 ### API-06 제외 사유
 
@@ -836,14 +895,14 @@ MVP 7단계의 API 중 새로 제안된 **API-51(리포트 서버 집계)**은 �
 
 ### ID 검증
 
-- 본문(2~10절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, (신규)51 — 31개 + 신규 1개.
-- 부록 A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50 — 18개.
-- 합계 31 + 18 = 49개 + API-06(의도적 제외, 위 사유 참고) = as-built 기준 50개 전수 반영. 중복 배치 없음(API-27만 4절·8절에서 의도적으로 재사용 표기, API-32는 6·7절에서 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
+- 본문(2~10절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, 63~68, (신규)62 — 37개 + 신규 1개.
+- 부록 A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~61, 69, 70 — 31개.
+- 합계 37 + 31 = 68개 + 리포트 제안 API-62 = **API-01~70 중 API-06(의도적 제외, 위 사유 참고)만 결번인 69개**다. 중복 배치 없음(API-27만 4절·8절에서 의도적으로 재사용 표기, API-32는 6·7절에서 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 3절(01, 04) + 10절(02, 03, 05~09) + 부록 A(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
-- 신규 API-51은 기존 max(API-50) 다음 번호로 부여했다.
+- 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 금고 가족 공유(API-63~68)·푸시 토큰(API-69, 70)을 새로 문서화해 현재 max는 **API-70**이다.
 
 ---
 
-## 참고 — 사람용 문서 재작성 범위 고지
+## 참고 — 파생 문서 동기화 고지
 
-이번 재작성은 `자료/docs/사람이 읽을 문서/` 산출물에 한정된다. `자료/docs/ai에게 입력용 문서/` 산하 AI용 문서는 이번 범위 밖이며, 본 문서(04) 재작성 이후 두 문서군 간 내용이 일시적으로 불일치한 상태가 된다. AI용 문서는 사람용 검토가 끝난 뒤 별도로 파생 작업이 필요하다.
+본 문서(04)를 고칠 때는 파생본인 `자료/docs/ai에게 입력용 문서/04-api-spec.md`도 같은 내용으로 함께 갱신한다. 사람용 문서가 사실·ID·구조의 1차 원천이다.

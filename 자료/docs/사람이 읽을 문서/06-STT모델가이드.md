@@ -25,7 +25,7 @@
 네이티브에서 파일 경로를 열기 때문에 APK 안에 압축된 에셋을 직접 읽을 수 없다.
 
 **대가**: 저장소가 약 181MiB 커지고 히스토리에 영구히 남는다. 설치 용량도 그만큼 늘어난다
-(디버그 APK 366MB — Banuba SDK가 이미 무겁다). 팀 결정으로 받아들였다.
+(기존 디버그 APK에는 대용량 상용 편집 SDK도 포함되어 있었다. 해당 SDK는 제거했으며 현재 앱 용량의 큰 비중은 온디바이스 STT 모델이 차지한다). 팀 결정으로 받아들였다.
 
 q5_0 → q5_1 교체로 히스토리에는 **두 파일이 모두 남는다**(약 348MiB). 삭제해도 git
 히스토리에서는 사라지지 않는다. 모델을 또 바꿀 일이 잦아지면 "첫 사용 시 내려받기"
@@ -70,7 +70,7 @@ phone의 3.5배 격차는 **8kHz라는 특수 조건**에 기댄 것이었다 �
 
 | 배포 형태 | phone (8kHz) | meeting (잡음 회의) | 크기 | 잡음 조건 추론 |
 |---|---|---|---|---|
-| `SenseVoiceSmall` int8 | **27.3%** | **13.9%** | 239MB | **8.9초 (15.7배 빠름)** |
+| `SenseVoiceSmall` int8 | **27.3%** | **13.9%** | 228MB | **8.9초 (15.7배 빠름)** |
 | **`small-ko` q5_1 — 최종 채택** | 35.6% | 16.3% | **181MB** | 139.6초 |
 | `small-ko` q8_0 | 37.8% | 16.8% | 252MB | 108.4초 |
 | `small-ko` q5_0 (교체 전) | 37.6% | 19.4% | 167MB | 130.7초 |
@@ -120,7 +120,6 @@ small-ko가 양자화에 3.5배 취약하기 때문이다.
 ## turbo는 왜 탈락했나 — 실기기 측정
 
 갤럭시 S24, 120초 오디오(phone 이어붙임), 6스레드, 앱과 같은 디코딩 설정으로 쟀다.
-앱은 모델 헤더로 turbo를 감지해 자동으로 beam search 3을 쓴다(`whisper_ggml_plus`).
 
 | | small-ko q5_1 | turbo q5_0 |
 |---|---|---|
@@ -132,14 +131,14 @@ small-ko가 양자화에 3.5배 취약하기 때문이다.
 빠르지만(3.2초 대 22.3초) encoder가 6.6배 무거워 전체의 82%를 먹는다. GPU 기준으로 세운
 판단이 폰에서 뒤집히는 지점이다.
 
-기존 앱 실측(120초 → 168초)에 3.7배를 적용하면 **10분 영상에 약 34분**(침묵 제외 반영)이다.
+기존 앱 실측(120초 → 93초)에 3.7배를 적용하면 **10분 영상에 약 29분**이다.
 설계 규칙("영상 길이의 2배 이내" = 20분)을 크게 넘는다.
 
 세 축 모두 걸린다.
 
 | 축 | 결과 |
 |---|---|
-| 속도 | 3.7배. 10분 영상에 약 34분 |
+| 속도 | 3.7배. 10분 영상에 약 29분 |
 | 용량 | 547MB, 앱이 복사하면 1.1GB. 시험 기기가 이미 99%(여유 4.3GB)였다 |
 | 메모리 | 에셋 복사가 파일 전체를 한 번에 올린다(Flutter에 스트림 API 없음). 547MB는 위험하다 |
 
@@ -345,7 +344,7 @@ huggingface-cli download SungBeom/whisper-small-ko --local-dir C:\Users\SSAFY\de
 python whisper.cpp/models/convert-h5-to-ggml.py <hf-dir> <site-packages> <out-dir>
 ```
 
-`<out-dir>/ggml-model.bin`이 나온다 — **487,601,984바이트(465MB), 양자화 안 된 상태.**
+`<out-dir>/ggml-model.bin`이 나온다 — **487,601,984바이트(465MB), fp16 — 양자화 전 상태.**
 출력 폴더는 미리 만들어야 한다(없으면 그냥 죽는다).
 
 ## 3. 양자화한다 — PC에서 된다
@@ -469,9 +468,12 @@ conda create -n stt_bench python=3.11 -y
 conda activate stt_bench
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install -r ai/stt_benchmark/requirements.txt
+# requirements.txt에 없는 나머지 — 양자화 CPU 측정(pywhispercpp), SenseVoice(sherpa-onnx),
+# zeroth/kspon 내려받기(datasets)에 필요하다
+pip install pywhispercpp sherpa-onnx datasets numpy
 
 cd ai/stt_benchmark
-python test_run_benchmark.py          # normalize() / read_truth() 점검
+python test_run_benchmark.py          # normalize() / read_truth() / to_jamo() 점검
 
 python fetch_dataset.py --name zeroth --minutes 5 --out dataset/zeroth
 python fetch_dataset.py --name kspon  --minutes 5 --out dataset/kspon
@@ -479,8 +481,9 @@ python fetch_dataset.py --name phone  --minutes 5 --out dataset/phone \
   --labels-zip "<571>/2.Validation/라벨링데이터_230316/VL_D03.zip" \
   --audio-zip  "<571>/2.Validation/원천데이터_230316/VS_D03.zip"
 
-# meeting은 environment 필터가 기본으로 켜져 있다(잡음·배경음악).
-# 끄면 발화의 94%가 깨끗해서 kspon과 다를 바 없는 측정이 된다.
+# meeting은 environment 필터가 기본으로 켜져 있다(잡음·배경 음악).
+# --environment 반복 지정으로 값을 바꿀 수만 있고 끄는 스위치는 없다 —
+# 필터 없이 뽑으면 발화의 94%가 깨끗해서 kspon과 다를 바 없는 측정이 되기 때문이다.
 python fetch_dataset.py --name meeting --minutes 5 --out dataset/meeting \
   --labels-zip "<464>/2.Validation/라벨링데이터_260312_add/VL1.zip" \
   --audio-zip  "<464>/2.Validation/원천데이터/VS1.zip"
@@ -494,22 +497,26 @@ python run_benchmark.py --dir dataset/kspon --only small-ko   # 라벨로 선별
 python run_benchmark.py --audio <직접만든클립.m4a>       # 정답은 <이름>_original.txt
 
 # 디코딩 파라미터 A/B — 모델을 바꾸지 않고 얻을 개선이 남았는지 본다.
-# 잡음 두 조건에서 일관되게 나아져야 채택한다(한 조건만 보면 속는다).
+# 채택선: 모든 조건에서 +0.6%p 이상(한 글자 0.06%p의 10배). 한 조건만 보면 속는다.
 python tune_params.py --dir dataset/meeting --dir dataset/phone
 ```
 
-`test_run_benchmark.py`는 `normalize()`와 `read_truth()`를 검사한다 — **둘 다 조용히
-틀려서 CER을 오염시킨 전력이 있으므로 손대면 반드시 돌려라.**
+`test_run_benchmark.py`는 `normalize()`, `read_truth()`, `to_jamo()`(자모 CER)를 검사한다 —
+**조용히 틀려서 CER을 오염시킨 전력이 있으므로 손대면 반드시 돌려라.**
 
 ## 속도 (갤럭시 S24)
 
-| 처리 | 시간 |
+| 처리 | 시간 / 결과 |
 |---|---|
-| 120초 클립 전체 | 168초 |
-| 침묵을 빼고 발화 구간만 (`_condense`) | **109초** |
+| 120초 클립 전체(원본 그대로) | **93초 / 143자** |
+| 침묵을 빼고 발화 구간만 이어붙임 (폐기) | 75초 / 65자 — 문맥이 끊겨 인식률 붕괴 |
 
-실시간과 비슷한 속도다. 그래서 화면을 붙잡지 않고 백그라운드로 돌린다. 10분 영상이면
-10분 걸린다.
+침묵 제거 경로는 빨랐지만 버렸다 — 발화 구간만 잘라 이어붙이면 문맥이 끊겨 알아듣는
+양이 절반 아래로 떨어진다. 지금은 원본 전체를 그대로 넘기고, 발화 구간 검출은 말소리
+유무 판정(조용한 영상 건너뛰기)에만 쓴다.
+
+실시간보다 조금 빠른 속도다(120초 영상에 93초). 그래서 화면을 붙잡지 않고 백그라운드로
+돌린다. 10분 영상이면 8분 안팎 걸린다.
 
 **스레드 수는 실측으로 정했다** — 4개 68~73초, 6개 56초로 약 18% 빠르다. 알아듣는 양은
 스레드와 무관했다. 값을 바꿀 때는 **같은 영상으로 시간과 글자 수를 함께** 재라.
@@ -529,7 +536,7 @@ python tune_params.py --dir dataset/meeting --dir dataset/phone
 |---|---|---|
 | 양자화 개선 | ❌ **닫혔다** | q5_1이 최적점. q8_0·q4_0·q5_0 전부 열세 |
 | 디코딩 파라미터 튜닝 | ❌ **닫혔다** (측정 완료) | 아래 참조 |
-| 자막 생성 시점 이동 | 미착수 | 저장 직후가 아니라 요청 시·충전 중에 생성. 모델로 못 얻는 속도를 UX로 흡수하는 카드 |
+| 자막 생성 시점 이동 | 미착수 | 지금은 영상을 내려받은 직후(편집 화면 진입 시) 시작한다. 요청 시·충전 중 생성으로 옮겨 모델로 못 얻는 속도를 UX로 흡수하는 카드 |
 | SenseVoice 재검토 | 조건 확인 후 | 속도 15.7배가 유인 |
 | **양자화 손실 줄이기 (미세조정)** | **가장 큰 표적** | 실제 홈캠 클립에서 fp32 15.5% → q5_1 35.0%(**+19.5%p**). 포맷으로는 최적점이라 남은 길은 **모델을 잡음 데이터로 미세조정해 양자화에 견고하게 만드는 것**이다. AI Hub 데이터 이용 조건 확인 필요. **미세조정 후 GGML 변환·양자화가 되는지 먼저 확인해야 한다** — 안 되면 전부 헛일이다 |
 
@@ -595,16 +602,20 @@ python prepare_clips.py --input ../../recordings/rec.mp4 \
   --out dataset/homecam --prefix homecam
 ```
 
-`--at`은 여러 번 줄 수 있고 `mm:ss`·`hh:mm:ss`·초를 다 받는다. 클립마다 16kHz 모노 wav와
-**빈 `_original.txt`**가 짝으로 생긴다. 그 빈 파일에 정답을 적고 돌린다.
+`--at`은 여러 번 줄 수 있고 `mm:ss`·`hh:mm:ss`·초를 다 받는다. `--duration`(기본 30초)으로
+클립 길이를 바꿀 수 있으며, 1초 미만이 되는 클립과 파일 길이를 넘는 시작점은 건너뛴다.
+클립마다 16kHz 모노 wav와 **빈 `_original.txt`**가 짝으로 생긴다. 그 빈 파일에 정답을
+적고 돌린다.
 
 ```bash
 python run_benchmark.py --dir dataset/homecam
 ```
 
-**30초로 자르는 이유가 하나 더 있다.** 30초를 넘으면 fp32 경로가 long-form 생성으로 넘어가고
-`small-ko`는 낡은 generation config 때문에 청킹으로 우회해야 한다. 스크립트가 처리하지만,
-30초 클립이면 그 경로를 아예 타지 않아 조건이 단순해진다.
+**30초로 자르는 이유가 하나 더 있다.** 30초를 넘으면 fp32 경로가 long-form 생성으로 넘어가는데,
+`small-ko`는 generation config가 낡아 폴백이 둘 필요하다 — `language` 인자를 거부하면 기본
+설정으로 재시도하고, 그와 별개로 `return_timestamps`를 거부하면 `chunk_length_s=30` 청킹으로
+우회한다. whisper.cpp 경로는 자체 청킹이라 해당 없다. 스크립트가 다 처리하지만, 30초
+클립이면 그 경로를 아예 타지 않아 조건이 단순해진다.
 
 ## 3. 첫 사용 시 내려받기
 

@@ -561,6 +561,7 @@ class _ReportBody extends StatelessWidget {
               child: Row(
                 children: [
                   MemoryThumbnail(
+                    api: controller.api,
                     video: controller.videos.first,
                     width: 80,
                     height: 56,

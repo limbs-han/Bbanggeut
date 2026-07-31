@@ -1,18 +1,18 @@
 """한국어 STT 모델을 같은 조건에서 비교한다.
 
-**같은 조건이 이 스크립트의 존재 이유다.** 세 모델은 런타임이 서로 다르지만
-(whisper 2개는 transformers, SenseVoice는 funasr) 아래를 전부 공유한다.
+**같은 조건이 이 스크립트의 존재 이유다.** 모델들은 런타임이 서로 다르지만
+(transformers, funasr, whisper.cpp, sherpa-onnx) 아래를 전부 공유한다.
 
   - 같은 오디오: 파일을 한 번만 디코딩해 16kHz 모노 float32 numpy로 만들고
-    그 배열을 세 모델에 그대로 넘긴다. 모델이 파일을 각자 읽게 하면
+    그 배열을 모든 모델에 그대로 넘긴다. 모델이 파일을 각자 읽게 하면
     디코더·리샘플러가 갈려서 입력이 달라진다.
-  - 같은 정밀도: fp32. fp16으로 맞추려 하면 funasr 쪽 경로가 불확실해서
-    whisper만 fp16이 되고 조건이 깨진다.
   - 같은 정규화와 같은 CER 계산: `normalize()` 하나를 통과한다.
-  - 같은 GPU, 순차 실행: 동시에 올리지 않는다(VRAM 6GB).
+  - 순차 실행: 동시에 올리지 않는다(VRAM 6GB).
 
-양자화는 하지 않는다. 모델마다 양자화 방식이 달라(q5_0 대 int8) 변수를
-더하는 일이 되고, 그러면 무엇 때문에 순위가 갈렸는지 알 수 없다.
+모델은 두 묶음이다(MODELS 주석 참조). fp32 GPU 묶음은 양자화 손실이 없는
+"모델 자체의 실력"을 재고 — funasr는 fp16 경로가 불확실해 fp32로 통일한다 —
+양자화 CPU 묶음은 앱이 실제로 배포하는 형태를 잰다. CER은 묶음을 넘어
+비교할 수 있지만 추론 시간은 묶음 안에서만 비교한다(GPU 대 CPU).
 
 돌리는 법:
 
@@ -51,7 +51,7 @@ APP_ASSET = HERE.parent.parent / "frontend" / "assets" / "models" / "ggml-small-
 # (표시 이름, 런타임, 모델 ID 또는 파일 경로)
 #
 # 위 3개는 fp32 GPU — 양자화 손실이 없는 "모델 자체의 실력"이다.
-# 아래 3개는 실제 배포 형태(양자화 + CPU) — 앱에서 무엇을 얻는지다.
+# 아래 4개는 실제 배포 형태(양자화 + CPU) — 앱에서 무엇을 얻는지다.
 # 두 묶음의 추론 시간은 서로 비교할 수 없다(GPU 대 CPU). CER은 비교할 수 있다.
 MODELS = [
     ("small-ko fp32 (transformers)", "transformers", "SungBeom/whisper-small-ko"),
@@ -440,7 +440,7 @@ def main() -> int:
         f"(한 글자 = CER {100 / total_chars:.2f}%p)",
         file=sys.stderr,
     )
-    print(f"[환경] {device}, fp32, 양자화 없음\n", file=sys.stderr)
+    print(f"[환경] fp32 묶음: {device} / 양자화 묶음: CPU {THREADS}스레드\n", file=sys.stderr)
 
     summary = []
     details: dict[str, list[tuple[float, str, str, str]]] = {}
