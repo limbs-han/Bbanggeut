@@ -18,7 +18,7 @@
 | 크기 | 190,085,504바이트 (약 181MiB) |
 | 런타임 | whisper.cpp (`whisper_ggml_plus` pub 패키지) |
 | 추론 스레드 | 6 (`whisper_transcriber.dart`, 실측으로 정함) |
-| 속도 (S24, 앱) | 120초 클립 → 168초 / 침묵 제외 시 109초 |
+| 속도 (S24, 앱) | 120초 클립 전체(원본 그대로) → **93초 / 143자**. 10분 영상이면 8분 안팎. 침묵 제거 이어붙임은 **폐기**(75초/65자 — 문맥 단절로 인식률 붕괴). 발화 구간 검출은 말소리 유무 판정에만 쓴다 |
 | 속도 (S24, whisper-cli 실측) | 120초 오디오 → **49.3초** (앱 조건: greedy + best_of 5, 6스레드). turbo는 같은 조건에서 184.2초 |
 | 외부 전송 | 없음. 오디오·전사문이 기기 밖으로 나가지 않는다 |
 
@@ -112,7 +112,7 @@
 | 항목 | 상태 |
 |---|---|
 | **`small-ko` q5_1** | ✅ **최종 채택.** 2026-07-29 q5_0에서 교체 완료 |
-| `turbo` 채택 | ❌ **탈락 (실기기).** 앱 조건 3.7배 느림(184.2초 대 49.3초/120초). 10분 영상에 약 34분. 에셋 547MB·복사 시 1.1GB·메모리에 한 번에 올림 |
+| `turbo` 채택 | ❌ **탈락 (실기기).** 앱 조건 3.7배 느림(184.2초 대 49.3초/120초). 앱 실측(120초→93초)에 3.7배 적용 시 10분 영상에 약 29분. 에셋 547MB·복사 시 1.1GB·메모리에 한 번에 올림 |
 | q8_0 / q4_0 / q5_0 | ❌ **탈락.** 잡음 두 조건에서 q5_1보다 나쁘다 (4절) |
 | **`SenseVoiceSmall`** | ⚠️ **보류(탈락 아님).** 잡음에서 앞서지만(phone 8.3%p, **meeting 2.4%p**) meeting이 3%p 기준 미달. **속도 15.7배가 유인** |
 | 양자화 추가 개선 | ❌ **경로 없음.** q5_1이 최적점 |
@@ -132,7 +132,7 @@ Source License Agreement, 상업적 사용 조항이 회색.
 | 경로 | 왜 닫혔나 |
 |---|---|
 | 양자화 개선 | q5_1이 최적점. q8_0·q4_0·q5_0 전부 잡음 조건에서 열세 |
-| **디코딩 파라미터 튜닝** | `suppress_nst` / `no_speech_thold` / `entropy_thold`를 A/B했더니 다섯 설정이 **소수점까지 동일**(meeting 16.3%, phone 35.6%). 파라미터는 `get_params()`로 적용 확인됨. **temperature fallback 경로에서만 쓰이는 값이라 temperature=0에서는 무효다.** `best_of`도 같은 이유로 무효였다. 재현: `tune_params.py` |
+| **디코딩 파라미터 튜닝** | `suppress_nst` / `no_speech_thold` / `entropy_thold`를 A/B했더니 다섯 설정이 **소수점까지 동일**(meeting 16.3%, phone 35.6%). 파라미터는 `get_params()`로 적용 확인됨. **temperature fallback 경로에서만 쓰이는 값이라 temperature=0에서는 무효다.** `best_of`도 같은 이유로 무효였다. 재현: `tune_params.py` (채택선: **모든 조건에서 +0.6%p 이상**, 한 글자 0.06%p) |
 
 **남은 개선 경로**: 자막 생성 시점 이동(UX) → SenseVoice 재검토 → 잡음 미세조정.
 **데이터셋 하나에 맞춘 후처리는 하지 마라** — CER은 낮아지지만 앱에서 아무것도 개선하지
@@ -174,7 +174,7 @@ build/bin/whisper-quantize ggml-model.bin ggml-small-ko-q5_1.bin q5_1
 
 ```bash
 cd ai/stt_benchmark
-python test_run_benchmark.py                                  # 정규화 점검 (필수)
+python test_run_benchmark.py                # normalize()/read_truth()/to_jamo() 점검 (필수)
 python fetch_dataset.py --name kspon --minutes 5 --out dataset/kspon
 python run_benchmark.py --dir dataset/kspon --only small-ko    # --only는 라벨 부분일치
 python run_benchmark.py --audio <클립.m4a>                     # 정답: <이름>_original.txt
@@ -194,7 +194,7 @@ python run_benchmark.py --audio <클립.m4a>                     # 정답: <이�
 | **`/(bgm)` `/(noise)` 배경음 표기** | 괄호·슬래시만 지우면 `bgm`이 정답에 남는다 — meeting에서 **정답의 8.7%** | `_TAG`가 `/\([^)]*\)`를 제거. 순위는 안 바뀌지만 절대값이 오염돼 데이터셋 간 비교가 깨진다 |
 | **이중 표기 순서가 데이터셋마다 반대** | phone은 앞이 철자, meeting은 뒤가 철자. 잘못 택하면 모델이 "9건"을 낼 때 정답이 "아홉 건"이라 전부 오류 | `fetch_dataset.py`의 `DUAL_SPELLING_GROUP`이 추출 시 푼다. `normalize()`는 하나를 공유 |
 | **양자화 정밀도 순서 위반** | 이 모델은 q4_0>q5_0(낭독), q5_1>q8_0(잡음)이다. "비트 늘리면 정확"이 성립하지 않는다 | 추정하지 말고 **조건별로 재라**. 4절 표가 기록 |
-| **30초 초과 오디오에서 fp32 경로가 죽는다** | transformers가 long-form 생성으로 넘어가며 타임스탬프 토큰을 요구한다. 게다가 `small-ko`는 낡은 generation config 때문에 **타임스탬프도 못 낸다**(`language` 거부와 같은 원인) | `transcribe_transformers`의 `run()`이 세 경로를 순서대로 시도한다: 그대로 → `return_timestamps=True` → `chunk_length_s=30`. 데이터셋 클립은 전부 30초 미만이라 드러나지 않았고 실제 녹음 75초에서 터졌다 |
+| **30초 초과 오디오에서 fp32 경로가 죽는다** | transformers가 long-form 생성으로 넘어가며 타임스탬프 토큰을 요구한다. 게다가 `small-ko`는 낡은 generation config 때문에 **타임스탬프도 못 낸다**(`language` 거부와 같은 원인) | `transcribe_transformers`의 `run()`에 폴백 2종(서로 독립): `language` 인자 거부 시 기본 설정으로 재시도, `return_timestamps` 거부 시 `chunk_length_s=30` 청킹으로 우회. whisper.cpp 경로는 자체 청킹이라 해당 없음. 데이터셋 클립은 전부 30초 미만이라 드러나지 않았고 실제 녹음 75초에서 터졌다 |
 
 ## 9. 외부 비교 (rtzr, KsponSpeech eval clean)
 
