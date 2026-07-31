@@ -1,24 +1,30 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
+import '../core/saved_video_edit.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
+import '../editor/editor_project.dart';
+import '../editor/editor_project_controller.dart';
+import '../editor/editor_platform.dart';
+import '../editor/editor_workspace.dart';
 import '../features/stt/caption_auto_section.dart';
 import '../features/stt/caption_controller.dart';
 import 'widgets.dart';
 
-const _editorBackground = Color(0xFF1E1B18);
 const _editorSurface = Color(0xFF292521);
-const _editorSurfaceRaised = Color(0xFF35302B);
 const _editorMuted = Color(0xFFAAA198);
 
 class LocalEditScreen extends StatefulWidget {
@@ -27,11 +33,13 @@ class LocalEditScreen extends StatefulWidget {
     required this.controller,
     required this.video,
     this.openDrafts = false,
+    this.cacheDirectoryProvider,
   });
 
   final AppController controller;
   final VideoMemory video;
   final bool openDrafts;
+  final Future<Directory> Function()? cacheDirectoryProvider;
 
   @override
   State<LocalEditScreen> createState() => _LocalEditScreenState();
@@ -39,24 +47,28 @@ class LocalEditScreen extends StatefulWidget {
 
 class _LocalEditScreenState extends State<LocalEditScreen> {
   final _exporter = VideoEditorExporter();
+  final _editorPlatform = const EditorPlatform();
+  final _banubaEditor = BanubaVideoEditor();
   VideoPlayerController? _preview;
   String? _sourcePath;
   List<String> _thumbnails = [];
   double _progress = 0;
   bool _loading = true;
   bool _saving = false;
-  bool _clipSelected = true;
   final Set<String> _appliedTools = <String>{};
   String _captionText = '';
   Color _captionColor = AppColors.cream;
   double _audioVolume = 1;
-  String _selectedFilter = 'none';
+  final String _selectedFilter = 'none';
   String _arSticker = '';
-  String _selectedAnimation = 'none';
   String? _status;
   String? _error;
   late VideoEditState _editState;
-  String _selectedTool = 'cut';
+  EditorProjectController? _projectController;
+  int _playingClipIndex = 0;
+  int? _pendingPreviewSeekMs;
+  bool _seekingPreview = false;
+  bool _captionsBakedIntoSource = false;
 
   /// 들린 대사로 만드는 자동 자막. 상태와 편집 로직은 전부 이쪽에 있다.
   final _autoCaptions = CaptionController();
@@ -106,31 +118,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           _status = '편집 화면과 미리보기를 준비하고 있어요';
         });
       }
-      final preview = VideoPlayerController.file(File(sourcePath));
-      await preview.initialize();
-      preview.addListener(_onPreviewChanged);
-      if (!mounted) {
-        await preview.dispose();
-        return;
-      }
-      final durationMs = preview.value.duration.inMilliseconds;
-      final aspectRatio = preview.value.size.aspectRatio > 0
-          ? preview.value.size.aspectRatio
-          : 16 / 9;
-      setState(() {
-        _sourcePath = sourcePath;
-        _preview = preview;
-        _progress = 1;
-        _loading = false;
-        _editState = VideoEditState(
-          durationMs: durationMs,
-          originalAspectRatio: aspectRatio,
-        );
-        _status = null;
-        // 영상이 기기에 내려온 직후 한 번. 캐시가 있으면 즉시 끝난다.
-        _autoCaptions.start(widget.video.id, sourcePath);
-      });
-      await _loadThumbnails();
+      await _replaceEditorSource(sourcePath, restartCaptions: true);
     } catch (failure) {
       if (!mounted) return;
       setState(() {
@@ -138,6 +126,63 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         _error = '$failure';
       });
     }
+  }
+
+  Future<void> _replaceEditorSource(
+    String sourcePath, {
+    required bool restartCaptions,
+  }) async {
+    final nextPreview = VideoPlayerController.file(File(sourcePath));
+    await nextPreview.initialize();
+    if (!mounted) {
+      await nextPreview.dispose();
+      return;
+    }
+
+    final durationMs = nextPreview.value.duration.inMilliseconds;
+    final aspectRatio = nextPreview.value.size.aspectRatio > 0
+        ? nextPreview.value.size.aspectRatio
+        : 16 / 9;
+    final sourceWidth = nextPreview.value.size.width.round();
+    final sourceHeight = nextPreview.value.size.height.round();
+    final nextProjectController = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: sourcePath,
+        sourceDurationMs: durationMs,
+        sourceSize: EditorSourceSize(width: sourceWidth, height: sourceHeight),
+      ),
+    );
+
+    final previousPreview = _preview;
+    final previousProjectController = _projectController;
+    previousPreview?.removeListener(_onPreviewChanged);
+    nextPreview.addListener(_onPreviewChanged);
+    setState(() {
+      _sourcePath = sourcePath;
+      _preview = nextPreview;
+      _thumbnails = const [];
+      _projectController = nextProjectController;
+      _playingClipIndex = 0;
+      _pendingPreviewSeekMs = null;
+      _seekingPreview = false;
+      _progress = 1;
+      _loading = false;
+      _editState = VideoEditState(
+        durationMs: durationMs,
+        originalAspectRatio: aspectRatio,
+      );
+      _status = null;
+    });
+
+    previousProjectController?.dispose();
+    await previousPreview?.dispose();
+    if (restartCaptions) {
+      // 영상이 기기에 내려온 직후 한 번. 캐시가 있으면 즉시 끝난다.
+      _autoCaptions.start(widget.video.id, sourcePath);
+    }
+    // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
+    // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
+    unawaited(_loadThumbnails());
   }
 
   Future<void> _loadThumbnails() async {
@@ -148,14 +193,35 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         inputPath: sourcePath,
         count: 8,
       );
-      if (!mounted) return;
+      if (!mounted || _sourcePath != sourcePath) return;
       setState(() => _thumbnails = generated);
     } catch (_) {
-      if (mounted) setState(() => _thumbnails = const <String>[]);
+      if (mounted && _sourcePath == sourcePath) {
+        setState(() => _thumbnails = const <String>[]);
+      }
     }
   }
 
   Future<String> _downloadSource() async {
+    final temporary =
+        await (widget.cacheDirectoryProvider?.call() ??
+            getTemporaryDirectory());
+    final input = File(
+      '${temporary.path}${Platform.pathSeparator}event-${widget.video.id}.mp4',
+    );
+
+    // 같은 영상을 다시 편집할 때 매번 전체 파일을 내려받지 않는다. 다운로드는
+    // 임시 파일에 완료한 뒤 이름을 바꾸므로 이 경로의 파일은 완성본만 남는다.
+    if (await input.exists() && await input.length() > 0) {
+      if (mounted) {
+        setState(() {
+          _progress = 0.86;
+          _status = '저장된 영상을 바로 불러오고 있어요';
+        });
+      }
+      return input.path;
+    }
+
     final signed = await widget.controller.api.createDownloadUrl(
       widget.video.id,
     );
@@ -165,13 +231,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         _status = '추억 영상을 휴대폰으로 가져오고 있어요';
       });
     }
-    final temporary = await getTemporaryDirectory();
-    final input = File(
-      '${temporary.path}${Platform.pathSeparator}event-${widget.video.id}.mp4',
-    );
+    final partial = File('${input.path}.download');
+    if (await partial.exists()) await partial.delete();
     await Dio().download(
       signed.url,
-      input.path,
+      partial.path,
       deleteOnError: true,
       onReceiveProgress: (received, total) {
         if (mounted && total > 0) {
@@ -182,66 +246,110 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         }
       },
     );
+    if (await input.exists()) await input.delete();
+    await partial.rename(input.path);
     return input.path;
   }
 
   void _onPreviewChanged() {
     final preview = _preview;
-    if (!mounted || preview == null) return;
-    if (preview.value.isPlaying &&
-        preview.value.position.inMilliseconds >= _editState.endMs) {
-      preview.pause();
-      preview.seekTo(Duration(milliseconds: _editState.startMs));
-      if (mounted) setState(() {});
-      return;
+    final projectController = _projectController;
+    if (!mounted || preview == null || projectController == null) return;
+    if (_seekingPreview) return;
+    final project = projectController.project;
+    if (project.clips.isEmpty) return;
+    _playingClipIndex = _playingClipIndex.clamp(0, project.clips.length - 1);
+    final clip = project.clips[_playingClipIndex];
+    final sourcePositionMs = preview.value.position.inMilliseconds;
+    final timelineStartMs = project.timelineStartFor(clip.id);
+    projectController.setPlayhead(
+      timelineStartMs +
+          (sourcePositionMs - clip.sourceStartMs).clamp(0, clip.durationMs),
+      notify: false,
+    );
+    if (preview.value.isPlaying && sourcePositionMs >= clip.sourceEndMs) {
+      if (_playingClipIndex + 1 < project.clips.length) {
+        _playingClipIndex++;
+        final next = project.clips[_playingClipIndex];
+        unawaited(
+          preview.seekTo(Duration(milliseconds: next.sourceStartMs)).then((_) {
+            if (mounted && !preview.value.isPlaying) {
+              return preview.play();
+            }
+          }),
+        );
+      } else {
+        unawaited(preview.pause());
+        projectController.setPlaying(false);
+        projectController.setPlayhead(project.durationMs, notify: false);
+      }
     }
     if (mounted) setState(() {});
   }
 
   Future<void> _togglePlayback() async {
     final preview = _preview;
-    if (preview == null) return;
+    final projectController = _projectController;
+    if (preview == null || projectController == null) return;
     if (preview.value.isPlaying) {
       await preview.pause();
+      projectController.setPlaying(false);
     } else {
-      final startMs = _editState.startMs;
-      final target = preview.value.position.inMilliseconds >= _editState.endMs
-          ? startMs
-          : preview.value.position.inMilliseconds;
-      if (target != preview.value.position.inMilliseconds) {
-        await preview.seekTo(Duration(milliseconds: target));
+      if (projectController.project.playheadMs >=
+          projectController.project.durationMs) {
+        await _seekToPosition(0);
+      } else {
+        await _seekToPosition(projectController.project.playheadMs);
       }
       await preview.play();
+      projectController.setPlaying(true);
     }
   }
 
   Future<void> _seekToPosition(int milliseconds) async {
-    await _preview?.seekTo(Duration(milliseconds: milliseconds));
-    if (mounted) setState(() {});
-  }
-
-  void _selectTool(String tool) {
-    if (_saving) return;
-    setState(() {
-      _selectedTool = tool;
-      _editState.selectTool(tool);
-      _clipSelected = tool == 'cut';
-    });
-    switch (tool) {
-      case 'caption':
-        unawaited(_showCaptionEditor());
-      case 'audio':
-        unawaited(_showAudioEditor());
-      case 'effect':
-        unawaited(_showEffectEditor());
-      case 'ar':
-        unawaited(_showArEditor());
+    final preview = _preview;
+    final projectController = _projectController;
+    if (preview == null || projectController == null) return;
+    final project = projectController.project;
+    var timelineStartMs = 0;
+    for (var index = 0; index < project.clips.length; index++) {
+      final clip = project.clips[index];
+      final timelineEndMs = timelineStartMs + clip.durationMs;
+      if (milliseconds <= timelineEndMs || index == project.clips.length - 1) {
+        _playingClipIndex = index;
+        projectController.selectClip(clip.id);
+        final offsetMs = (milliseconds - timelineStartMs).clamp(
+          0,
+          clip.durationMs,
+        );
+        projectController.setPlayhead(milliseconds);
+        _pendingPreviewSeekMs = clip.sourceStartMs + offsetMs;
+        break;
+      }
+      timelineStartMs = timelineEndMs;
+    }
+    if (_pendingPreviewSeekMs == null || _seekingPreview) return;
+    _seekingPreview = true;
+    try {
+      while (_pendingPreviewSeekMs != null) {
+        final targetMs = _pendingPreviewSeekMs!;
+        _pendingPreviewSeekMs = null;
+        await preview.seekTo(Duration(milliseconds: targetMs));
+      }
+    } finally {
+      _seekingPreview = false;
+      if (mounted) setState(() {});
     }
   }
 
   Future<void> _showCaptionEditor() async {
-    _captionField.text = _captionText;
-    var pendingColor = _captionColor;
+    final projectController = _projectController;
+    if (projectController == null) return;
+    final existing = projectController.project.selectedTextLayer;
+    _captionField.text = existing?.text ?? '';
+    var pendingColor = existing?.color ?? _captionColor;
+    var pendingBold = existing?.bold ?? true;
+    var pendingFontSize = existing?.fontSize ?? 42.0;
     final applied = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -292,6 +400,65 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                         )
                         .toList(),
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '굵게',
+                      style: TextStyle(
+                        color: AppColors.cream,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    key: const Key('editor-text-bold'),
+                    value: pendingBold,
+                    onChanged: (value) =>
+                        setSheetState(() => pendingBold = value),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const Text(
+                    '크기',
+                    style: TextStyle(
+                      color: AppColors.cream,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      key: const Key('editor-text-size'),
+                      min: 16,
+                      max: 96,
+                      divisions: 20,
+                      label: pendingFontSize.round().toString(),
+                      value: pendingFontSize.clamp(16, 96),
+                      onChanged: (value) =>
+                          setSheetState(() => pendingFontSize = value),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 38,
+                    child: Text(
+                      pendingFontSize.round().toString(),
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(color: AppColors.cream),
+                    ),
+                  ),
+                ],
+              ),
+              const Text(
+                '적용 후 영상 위 텍스트 상자를 드래그하고 두 손가락으로 크기와 회전을 조절할 수 있어요.',
+                style: TextStyle(
+                  color: _editorMuted,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
               CaptionAutoSection(
                 controller: _autoCaptions,
                 // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
@@ -314,293 +481,230 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       ),
     );
     if (applied == true && mounted) {
+      final text = _captionField.text.trim();
+      if (text.isEmpty) return;
+      final updated = projectController.updateSelectedTextLayer(
+        text: text,
+        color: pendingColor,
+        fontSize: pendingFontSize,
+        bold: pendingBold,
+      );
+      if (!updated) {
+        projectController.addTextLayer(
+          text: text,
+          startMs: 0,
+          endMs: projectController.project.durationMs,
+          color: pendingColor,
+          fontSize: pendingFontSize,
+          bold: pendingBold,
+        );
+      }
       setState(() {
-        _captionText = _captionField.text.trim();
+        _captionText = '';
         _captionColor = pendingColor;
         _editState.markExternalEditApplied();
-        if (_captionText.isEmpty) {
-          _appliedTools.remove('caption');
-        } else {
-          _appliedTools.add('caption');
-        }
+        _appliedTools.add('caption');
       });
     }
   }
 
-  Future<void> _showAudioEditor() async {
-    var pendingVolume = _audioVolume;
-    final selected = await showModalBottomSheet<double>(
-      context: context,
-      backgroundColor: _editorSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _EditorSheetHeader(title: '볼륨'),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Icon(
-                      pendingVolume == 0
-                          ? Icons.volume_off_rounded
-                          : Icons.volume_up_rounded,
-                      color: AppColors.sage,
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: pendingVolume,
-                        min: 0,
-                        max: 1,
-                        divisions: 20,
-                        label: '${(pendingVolume * 100).round()}%',
-                        onChanged: (value) {
-                          setSheetState(() => pendingVolume = value);
-                          _preview?.setVolume(value);
-                        },
-                      ),
-                    ),
-                    Text(
-                      '${(pendingVolume * 100).round()}%',
-                      style: const TextStyle(
-                        color: AppColors.cream,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _SheetApplyButton(
-                  label: '볼륨 적용',
-                  onPressed: () => Navigator.pop(sheetContext, pendingVolume),
-                ),
-              ],
-            ),
-          ),
+  EditorProject _projectWithManualCaption(EditorProject project) {
+    final text = _captionText.trim();
+    if (text.isEmpty) return project;
+    return project.copyWith(
+      textLayers: [
+        ...project.textLayers,
+        EditorTextLayer(
+          id: 'manual-caption',
+          text: text,
+          position: NormalizedPoint(0.5, 0.82),
+          startMs: 0,
+          endMs: project.durationMs,
+          color: _captionColor,
         ),
-      ),
+      ],
     );
-    if (selected == null) {
-      await _preview?.setVolume(_audioVolume);
+  }
+
+  List<Map<String, Object>> _sourceCaptionsForExport() {
+    if (_captionsBakedIntoSource || !_autoCaptions.hasUserEdits) {
+      return const [];
+    }
+    return _autoCaptions.forExport(startMs: 0, endMs: _editState.durationMs);
+  }
+
+  Future<void> _openBanubaArEditor() async {
+    final preview = _preview;
+    final projectController = _projectController;
+    if (_saving ||
+        preview == null ||
+        _sourcePath == null ||
+        projectController == null) {
       return;
     }
-    if (!mounted) return;
+
     setState(() {
-      _audioVolume = selected;
-      _editState.markExternalEditApplied();
-      _appliedTools.add('audio');
+      _saving = true;
+      _error = null;
+      _status = '현재 컷 편집을 Banuba AR 편집기로 넘기고 있어요';
     });
-  }
 
-  Future<void> _showEffectEditor() async {
-    final selected = await _showChoiceSheet(
-      title: '편집효과',
-      selected: _selectedFilter,
-      choices: const {
-        'none': ('원본', Icons.hide_image_outlined),
-        'warm': ('따뜻하게', Icons.wb_sunny_outlined),
-        'vivid': ('선명하게', Icons.color_lens_outlined),
-        'mono': ('흑백', Icons.monochrome_photos_outlined),
-      },
-    );
-    if (selected != null && mounted) {
+    try {
+      if (!await _banubaEditor.isConfigured) {
+        throw const BanubaEditorException(
+          'Banuba Video Editor SDK용 라이선스 토큰을 설정해 주세요.',
+        );
+      }
+      if (preview.value.isPlaying) await preview.pause();
+      projectController.setPlaying(false);
+
+      final stagedProject = _projectWithManualCaption(
+        projectController.project,
+      );
+      final stagedCaptions = _captionsForProject(
+        stagedProject,
+        _sourceCaptionsForExport(),
+      );
+      final stagedPath =
+          stagedProject.requiresRendering(
+            hasCaptions: stagedCaptions.isNotEmpty,
+          )
+          ? await _editorPlatform.exportProject(
+              project: stagedProject,
+              outputPath: _buildOutputPath(prefix: 'banuba_input'),
+              captions: stagedCaptions,
+            )
+          : stagedProject.sourceVideoPath;
+      if (!mounted) return;
+
+      final result = await _banubaEditor.edit(
+        sourcePaths: [stagedPath],
+        outputName: _safeTitle(widget.video.title),
+      );
+      if (!mounted) return;
+      if (result == null) {
+        setState(() {
+          _saving = false;
+          _status = null;
+        });
+        return;
+      }
+
       setState(() {
-        _selectedFilter = selected;
-        _editState.markExternalEditApplied();
-        if (selected == 'none') {
-          _appliedTools.remove('effect');
-        } else {
-          _appliedTools.add('effect');
-        }
+        _status = 'Banuba AR 결과를 편집 화면에 적용하고 있어요';
       });
-    }
-  }
-
-  Future<void> _showArEditor() async {
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: _editorSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _EditorSheetHeader(title: 'AR 스티커'),
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: ['', '😊', '😂', '🥳', '❤️']
-                    .map(
-                      (sticker) => _StickerOption(
-                        sticker: sticker,
-                        selected: sticker == _arSticker,
-                        onTap: () => Navigator.pop(sheetContext, sticker),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (selected != null && mounted) {
+      await _replaceEditorSource(result.videoPath, restartCaptions: false);
+      if (!mounted) return;
       setState(() {
-        _arSticker = selected;
+        _captionsBakedIntoSource = true;
+        _captionText = '';
+        _arSticker = '';
+        _audioVolume = 1;
+        _appliedTools
+          ..clear()
+          ..add('ar');
         _editState.markExternalEditApplied();
-        if (selected.isEmpty) {
-          _appliedTools.remove('ar');
-        } else {
-          _appliedTools.add('ar');
-        }
+        _saving = false;
+        _status = null;
       });
-    }
-  }
-
-  Future<void> _showAnimationEditor() async {
-    final selected = await _showChoiceSheet(
-      title: '애니메이션',
-      selected: _selectedAnimation,
-      choices: const {
-        'none': ('없음', Icons.block_rounded),
-        'fade': ('페이드', Icons.blur_on_rounded),
-        'zoom': ('확대', Icons.zoom_out_map_rounded),
-      },
-    );
-    if (selected != null && mounted) {
+      showAppSnack(context, 'Banuba 얼굴 AR 효과를 적용했어요.');
+    } catch (failure) {
+      if (!mounted) return;
       setState(() {
-        _selectedAnimation = selected;
-        _editState.markExternalEditApplied();
+        _saving = false;
+        _status = null;
+        _error = '$failure';
       });
-    }
-  }
-
-  Future<String?> _showChoiceSheet({
-    required String title,
-    required String selected,
-    required Map<String, (String, IconData)> choices,
-  }) => showModalBottomSheet<String>(
-    context: context,
-    backgroundColor: _editorSurface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-    ),
-    builder: (sheetContext) => SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _EditorSheetHeader(title: title),
-            const SizedBox(height: 18),
-            Row(
-              children: choices.entries
-                  .map(
-                    (entry) => Expanded(
-                      child: _ChoiceOption(
-                        label: entry.value.$1,
-                        icon: entry.value.$2,
-                        selected: entry.key == selected,
-                        onTap: () => Navigator.pop(sheetContext, entry.key),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  void _selectRatio(VideoEditRatio ratio) {
-    setState(() {
-      _editState.selectRatio(ratio);
-    });
-  }
-
-  Future<void> _discardSelectedClip() async {
-    final discard = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('클립을 제거할까요?'),
-        content: const Text('편집 타임라인에서만 제거되며 원본 영상은 삭제되지 않아요.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('클립 제거'),
-          ),
-        ],
-      ),
-    );
-    if (discard == true && mounted) {
-      _editState.markSaved();
-      Navigator.pop(context);
+      showAppSnack(context, '$failure', error: true);
     }
   }
 
   Future<void> _saveEdit() async {
-    if (_saving || _preview == null || _sourcePath == null) return;
+    final projectController = _projectController;
+    if (_saving ||
+        _preview == null ||
+        _sourcePath == null ||
+        projectController == null) {
+      return;
+    }
 
     setState(() {
       _saving = true;
       _error = null;
       _status = '편집 영상을 렌더링하고 있어요';
     });
+    projectController.setExportState(
+      const EditorExportState(phase: EditorExportPhase.preparing, progress: 0),
+    );
 
     try {
-      final outputPath = await _exporter.exportEditedVideo(
-        inputPath: _sourcePath!,
-        outputPath: _buildOutputPath(),
-        startMs: _editState.startMs,
-        endMs: _editState.endMs,
-        aspectRatio: _editState.previewAspectRatio,
-        audioVolume: _audioVolume,
-        captionText: _captionText,
-        captionColor: _captionColor.toARGB32(),
-        filter: _selectedFilter,
-        arSticker: _arSticker,
-        // 자른 구간 밖은 버리고 시각을 클립 기준으로 옮긴다. 전사가 실패했으면
-        // 빈 목록이 되어 종전과 똑같이 저장된다.
-        captions: _autoCaptions.forExport(
-          startMs: _editState.startMs,
-          endMs: _editState.endMs,
-        ),
+      final exportProject = _projectWithManualCaption(
+        projectController.project,
       );
+      final exportCaptions = _captionsForProject(
+        exportProject,
+        _sourceCaptionsForExport(),
+      );
+      final requiresRendering = exportProject.requiresRendering(
+        hasCaptions: exportCaptions.isNotEmpty,
+      );
+      late final String outputPath;
+      if (requiresRendering) {
+        projectController.setExportState(
+          const EditorExportState(
+            phase: EditorExportPhase.rendering,
+            progress: 0,
+          ),
+        );
+        outputPath = await _editorPlatform.exportProject(
+          project: exportProject,
+          outputPath: _buildOutputPath(),
+          captions: exportCaptions,
+        );
+      } else {
+        outputPath = exportProject.sourceVideoPath;
+      }
       final file = File(outputPath);
       if (!await file.exists() || (await file.length()) == 0) {
         throw const VideoExportException('렌더링된 파일이 비어 있어요.');
       }
-      await _exporter.saveToGallery(
+      if (mounted) {
+        setState(
+          () => _status = requiresRendering
+              ? '렌더링을 마쳤어요. 갤러리에 저장하고 있어요'
+              : '원본 화질 그대로 바로 저장하고 있어요',
+        );
+      }
+      var hasGalleryAccess = await Gal.hasAccess();
+      if (!hasGalleryAccess) {
+        hasGalleryAccess = await Gal.requestAccess();
+      }
+      if (!hasGalleryAccess) {
+        throw const EditorPlatformException('갤러리에 저장하려면 사진 및 동영상 저장 권한이 필요해요.');
+      }
+      await _editorPlatform.saveToGallery(
         inputPath: outputPath,
         title: _safeTitle(widget.video.title),
       );
       if (!mounted) return;
       _editState.markSaved();
+      projectController.setExportState(
+        const EditorExportState(
+          phase: EditorExportPhase.completed,
+          progress: 1,
+        ),
+      );
       setState(() {
         _saving = false;
         _status = '갤러리에 저장되었습니다';
       });
       showAppSnack(context, '갤러리에 저장되었습니다');
-      Navigator.pop(context);
-    } on VideoExportException catch (failure) {
+      Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
+    } on EditorPlatformException catch (failure) {
       if (!mounted) return;
+      projectController.setExportState(
+        EditorExportState(phase: EditorExportPhase.failed, message: '$failure'),
+      );
       setState(() {
         _saving = false;
         _error = '$failure';
@@ -609,6 +713,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       showAppSnack(context, '$failure', error: true);
     } catch (failure) {
       if (!mounted) return;
+      projectController.setExportState(
+        EditorExportState(phase: EditorExportPhase.failed, message: '$failure'),
+      );
       setState(() {
         _saving = false;
         _error = '$failure';
@@ -616,6 +723,43 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       });
       showAppSnack(context, '$failure', error: true);
     }
+  }
+
+  List<Map<String, Object>> _captionsForProject(
+    EditorProject project,
+    List<Map<String, Object>> sourceCaptions,
+  ) {
+    if (project.textLayers.isNotEmpty || sourceCaptions.isEmpty) {
+      return const [];
+    }
+    final mapped = <Map<String, Object>>[];
+    var timelineStartMs = 0;
+    for (final clip in project.clips) {
+      for (final caption in sourceCaptions) {
+        final startMs = (caption['startMs'] as num?)?.toInt();
+        final endMs = (caption['endMs'] as num?)?.toInt();
+        final text = caption['text'] as String?;
+        if (startMs == null ||
+            endMs == null ||
+            text == null ||
+            text.trim().isEmpty) {
+          continue;
+        }
+        final overlapStart = startMs.clamp(
+          clip.sourceStartMs,
+          clip.sourceEndMs,
+        );
+        final overlapEnd = endMs.clamp(clip.sourceStartMs, clip.sourceEndMs);
+        if (overlapEnd <= overlapStart) continue;
+        mapped.add({
+          'startMs': timelineStartMs + overlapStart - clip.sourceStartMs,
+          'endMs': timelineStartMs + overlapEnd - clip.sourceStartMs,
+          'text': text,
+        });
+      }
+      timelineStartMs += clip.durationMs;
+    }
+    return mapped;
   }
 
   String _buildOutputPath({String? prefix}) {
@@ -642,6 +786,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       preview.removeListener(_onPreviewChanged);
       preview.dispose();
     }
+    _projectController?.dispose();
     _captionField.dispose();
     _autoCaptions
       ..removeListener(_onCaptionsChanged)
@@ -679,85 +824,24 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         Navigator.pop(context);
       }
     },
-    child: _loading
-        ? AnnotatedRegion<SystemUiOverlayStyle>(
-            value: SystemUiOverlayStyle.dark,
-            child: Scaffold(
-              backgroundColor: const Color(0xFFFFFAF1),
-              body: _preparing(),
-            ),
-          )
-        : Scaffold(
-            backgroundColor: _editorBackground,
-            appBar: AppBar(
-              toolbarHeight: 64,
-              leadingWidth: 104,
-              titleSpacing: 0,
-              systemOverlayStyle: SystemUiOverlayStyle.light,
-              backgroundColor: _editorBackground,
-              foregroundColor: AppColors.cream,
-              centerTitle: true,
-              leading: Row(
-                children: [
-                  IconButton(
-                    tooltip: '닫기',
-                    onPressed: () => Navigator.maybePop(context),
-                    icon: const Icon(Icons.close_rounded, size: 30),
-                  ),
-                  if (_editorReady)
-                    IconButton(
-                      tooltip: '미리보기 확대',
-                      onPressed: _showFullscreenPreview,
-                      icon: const Icon(Icons.zoom_out_map_rounded, size: 25),
-                    ),
-                ],
-              ),
-              title: _editorReady
-                  ? _RatioMenu(
-                      ratio: _editState.selectedRatio,
-                      onSelected: _selectRatio,
-                    )
-                  : const Text(
-                      '편집',
-                      style: TextStyle(
-                        color: AppColors.cream,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-              actions: [
-                if (_editorReady)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: FilledButton(
-                      onPressed: _saving ? null : _saveEdit,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.sage,
-                        foregroundColor: AppColors.ink,
-                        disabledBackgroundColor: _editorSurfaceRaised,
-                        disabledForegroundColor: _editorMuted,
-                        minimumSize: const Size(92, 46),
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      child: Text(
-                        _saving ? '저장 중' : '내보내기',
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            body: SafeArea(child: !_editorReady ? _failed() : _editorShell()),
-          ),
+    child: AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFF7EE),
+        resizeToAvoidBottomInset: true,
+        body: _loading
+            ? _preparing()
+            : !_editorReady
+            ? SafeArea(child: _failed())
+            : _editorShell(),
+      ),
+    ),
   );
 
   Widget _preparing() => LayoutBuilder(
     builder: (context, constraints) {
-      final compact = constraints.maxHeight < 740;
       final percent = (_progress * 100).round().clamp(1, 99);
+      final contentWidth = math.max(0.0, constraints.maxWidth - 48);
       return Stack(
         key: const Key('editor-preparing-screen'),
         children: [
@@ -794,157 +878,138 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             ),
           ),
           SafeArea(
-            child: SingleChildScrollView(
-              physics: const ClampingScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight:
-                      constraints.maxHeight -
-                      MediaQuery.paddingOf(context).vertical,
-                ),
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    24,
-                    compact ? 8 : 14,
-                    24,
-                    compact ? 20 : 28,
-                  ),
-                  child: Column(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              child: Column(
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            key: const Key('editor-preparing-close'),
-                            tooltip: '닫기',
-                            onPressed: () => Navigator.maybePop(context),
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.72,
-                              ),
-                              foregroundColor: AppColors.inkSoft,
-                            ),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                          const Spacer(),
-                          const _PreparingWordmark(),
-                          const Spacer(),
-                          const SizedBox(width: 48),
-                        ],
-                      ),
-                      SizedBox(height: compact ? 4 : 10),
-                      Text(
-                        '추억 영상을\n불러오고 있어요',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: const Color(0xFF4D3425),
-                          fontSize: compact ? 30 : 35,
-                          height: 1.25,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -1.2,
+                      IconButton(
+                        key: const Key('editor-preparing-close'),
+                        tooltip: '닫기',
+                        onPressed: () => Navigator.maybePop(context),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.72),
+                          foregroundColor: AppColors.inkSoft,
                         ),
+                        icon: const Icon(Icons.close_rounded),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '곧 편집을 시작할 수 있어요',
-                        style: TextStyle(
-                          color: Color(0xFF8D7968),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      SizedBox(height: compact ? 8 : 14),
-                      _PreparingMascot(height: compact ? 205 : 255),
-                      SizedBox(height: compact ? 8 : 14),
-                      KeyedSubtree(
-                        key: const Key('editor-loading-percentage'),
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              const TextSpan(text: '준비 중 '),
-                              TextSpan(
-                                text: '$percent%',
-                                style: const TextStyle(color: AppColors.coral),
-                              ),
-                            ],
-                          ),
-                          key: const Key('editor-preparing-percent'),
-                          style: TextStyle(
-                            color: const Color(0xFF4D3425),
-                            fontSize: compact ? 21 : 24,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _PreparingProgressBar(value: _progress),
-                      const SizedBox(height: 9),
-                      Text(
-                        _status ?? '편집기를 준비하는 중이에요',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF8D7968),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      SizedBox(height: compact ? 14 : 20),
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('🌱', style: TextStyle(fontSize: 15)),
-                          SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              '기다리는 동안 편집 기능을 확인해 보세요',
+                      const Spacer(),
+                      const _PreparingWordmark(),
+                      const Spacer(),
+                      const SizedBox(width: 48),
+                    ],
+                  ),
+                  Expanded(
+                    child: FittedBox(
+                      key: const Key('editor-preparing-fitted-content'),
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.center,
+                      child: SizedBox(
+                        width: contentWidth,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              '추억 영상을\n불러오고 있어요',
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                color: Color(0xFF796555),
-                                fontSize: 13,
+                                color: Color(0xFF4D3425),
+                                fontSize: 35,
+                                height: 1.2,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              '곧 편집을 시작할 수 있어요',
+                              style: TextStyle(
+                                color: Color(0xFF8D7968),
+                                fontSize: 15,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                          SizedBox(width: 6),
-                          Text('🌱', style: TextStyle(fontSize: 15)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: compact ? 92 : 108,
-                        child: const Row(
-                          children: [
-                            Expanded(
-                              child: _PreparingFeatureCard(
-                                icon: Icons.content_cut_rounded,
-                                label: '자르기',
-                                iconColor: Color(0xFF82A84C),
-                                iconBackground: Color(0xFFEAF2C9),
+                            const SizedBox(height: 10),
+                            const _PreparingMascot(height: 235),
+                            const SizedBox(height: 10),
+                            KeyedSubtree(
+                              key: const Key('editor-loading-percentage'),
+                              child: Text.rich(
+                                TextSpan(
+                                  children: [
+                                    const TextSpan(text: '준비 중 '),
+                                    TextSpan(
+                                      text: '$percent%',
+                                      style: const TextStyle(
+                                        color: AppColors.coral,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                key: const Key('editor-preparing-percent'),
+                                style: const TextStyle(
+                                  color: Color(0xFF4D3425),
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: _PreparingFeatureCard(
-                                icon: Icons.music_note_rounded,
-                                label: '음악',
-                                iconColor: AppColors.coral,
-                                iconBackground: Color(0xFFFFE1D7),
+                            const SizedBox(height: 8),
+                            _PreparingProgressBar(value: _progress),
+                            const SizedBox(height: 8),
+                            Text(
+                              _status ?? '편집기를 준비하는 중이에요',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF8D7968),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: _PreparingFeatureCard(
-                                icon: Icons.star_rounded,
-                                label: '스티커',
-                                iconColor: Color(0xFFF1AD39),
-                                iconBackground: Color(0xFFFFF0B8),
+                            const SizedBox(height: 14),
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('🌱', style: TextStyle(fontSize: 15)),
+                                SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    '기다리는 동안 편집 기능을 확인해 보세요',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Color(0xFF796555),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 6),
+                                Text('🌱', style: TextStyle(fontSize: 15)),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              key: const Key(
+                                'editor-preparing-feature-illustration',
+                              ),
+                              width: contentWidth,
+                              height: 72,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: Image.asset(
+                                  'assets/images/editor_loading_features.png',
+                                  fit: BoxFit.cover,
+                                  filterQuality: FilterQuality.high,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -955,154 +1020,153 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   Widget _editorShell() {
     final preview = _preview!;
-    final duration = preview.value.duration;
-    final position = preview.value.position > duration
-        ? duration
-        : preview.value.position;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxHeight < 690;
-        return Column(
-          children: [
-            Expanded(
-              child: ColoredBox(
-                color: _editorBackground,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    compact ? 24 : 34,
-                    compact ? 2 : 8,
-                    compact ? 24 : 34,
-                    compact ? 2 : 8,
-                  ),
-                  child: Center(
-                    child: _PreviewSurface(
-                      controller: preview,
-                      canvasAspectRatio: _editState.previewAspectRatio,
-                      captionText: _captionText,
-                      captionColor: _captionColor,
-                      filter: _selectedFilter,
-                      arSticker: _arSticker,
-                      autoCaptionText: autoCaptionAt(
-                        _autoCaptions,
-                        preview.value.position.inMilliseconds,
-                      ),
-                    ),
-                  ),
-                ),
+    final projectController = _projectController!;
+    final project = projectController.project;
+    return EditorWorkspace(
+      controller: projectController,
+      preview: _PreviewSurface(
+        controller: preview,
+        projectController: projectController,
+        canvas: project.canvas,
+        captionText: _captionText,
+        captionColor: _captionColor,
+        filter: _selectedFilter,
+        arSticker: _arSticker,
+        autoCaptionText: _captionsBakedIntoSource
+            ? null
+            : autoCaptionAt(
+                _autoCaptions,
+                preview.value.position.inMilliseconds,
               ),
-            ),
-            _PreviewControlBar(
-              playing: preview.value.isPlaying,
-              currentTime: _time(position),
-              totalTime: _time(duration),
-              onPlay: _togglePlayback,
-              onFullscreen: _showFullscreenPreview,
-              onEffect: () => _selectTool('effect'),
-            ),
-            SizedBox(
-              height: 176,
-              child: _TrackTimeline(
-                state: _editState,
-                thumbnails: _thumbnails,
-                position: position,
-                duration: duration,
-                onSeek: _seekToPosition,
-                onStartChanged: (ms) => _updateTrim(startMs: ms),
-                onEndChanged: (ms) => _updateTrim(endMs: ms),
-                onAddClip: () => _selectTool('cut'),
-                onAudio: () => _selectTool('audio'),
-                onCaption: () => _selectTool('caption'),
-                onClipSelected: () => setState(() => _clipSelected = true),
-                captionApplied: _appliedTools.contains('caption'),
-                audioApplied: _appliedTools.contains('audio'),
-              ),
-            ),
-            _ToolToolbar(
-              selectedTool: _selectedTool,
-              onToolChanged: _selectTool,
-              busy: _saving,
-              clipSelected: _clipSelected,
-              onCloseClipTools: () => setState(() => _clipSelected = false),
-              onSplit: () => _selectTool('cut'),
-              onVolume: _showAudioEditor,
-              onAnimation: _showAnimationEditor,
-              onEffect: _showEffectEditor,
-              onDelete: _discardSelectedClip,
-              onAr: _showArEditor,
-            ),
-          ],
-        );
-      },
+      ),
+      thumbnails: _thumbnails,
+      playing: preview.value.isPlaying,
+      currentTime: _time(Duration(milliseconds: project.playheadMs)),
+      totalTime: _time(Duration(milliseconds: project.durationMs)),
+      saving: _saving,
+      onBack: () => Navigator.maybePop(context),
+      onSave: _saveEdit,
+      onPlay: _togglePlayback,
+      onSeek: _seekToPosition,
+      onSplit: _splitClip,
+      onDelete: _deleteClip,
+      onDuplicate: _duplicateClip,
+      onTrimStartChanged: _trimSelectedClipStart,
+      onTrimEndChanged: _trimSelectedClipEnd,
+      onRatioSelected: _selectCanvasRatio,
+      onText: _showCaptionEditor,
+      onVolumeChanged: _setAudioVolume,
+      onMutedChanged: _setMuted,
+      onStickerSelected: _addSticker,
+      onAr: _openBanubaArEditor,
+      onToolSelected: _selectEditorTool,
     );
   }
 
-  Future<void> _showFullscreenPreview() async {
-    final preview = _preview;
-    if (preview == null) return;
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black,
-      builder: (dialogContext) => Dialog.fullscreen(
-        backgroundColor: Colors.black,
-        child: SafeArea(
-          child: Stack(
-            children: [
-              Center(
-                child: AspectRatio(
-                  aspectRatio: preview.value.aspectRatio,
-                  child: VideoPlayer(preview),
-                ),
-              ),
-              Positioned(
-                left: 12,
-                top: 12,
-                child: IconButton.filled(
-                  tooltip: '미리보기 닫기',
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black54,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () => Navigator.pop(dialogContext),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ),
-              Center(
-                child: ValueListenableBuilder<VideoPlayerValue>(
-                  valueListenable: preview,
-                  builder: (context, value, _) => IconButton.filled(
-                    tooltip: value.isPlaying ? '일시정지' : '재생',
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.black54,
-                      foregroundColor: Colors.white,
-                      iconSize: 40,
-                    ),
-                    onPressed: _togglePlayback,
-                    icon: Icon(
-                      value.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+  void _selectEditorTool(EditorTool tool) {
+    if (_saving) return;
+    _projectController?.selectTool(tool);
+    if (mounted) setState(() {});
+  }
+
+  void _selectCanvasRatio(EditorCanvasRatio ratio) {
+    _projectController?.setCanvasRatio(ratio);
+    _editState.selectRatio(switch (ratio) {
+      EditorCanvasRatio.original => VideoEditRatio.original,
+      EditorCanvasRatio.vertical => VideoEditRatio.shortForm,
+      EditorCanvasRatio.landscape => VideoEditRatio.landscape,
+      EditorCanvasRatio.square => VideoEditRatio.square,
+      EditorCanvasRatio.portrait => VideoEditRatio.portrait,
+    });
+    if (mounted) setState(() {});
+  }
+
+  void _splitClip() {
+    final projectController = _projectController;
+    if (projectController == null) return;
+    if (!projectController.splitAt(projectController.project.playheadMs)) {
+      showAppSnack(context, '클립 양쪽에 최소 0.1초가 남는 위치에서 분할해 주세요.');
+      return;
+    }
+    _editState.markExternalEditApplied();
+    if (mounted) setState(() {});
+  }
+
+  void _deleteClip() {
+    final projectController = _projectController;
+    if (projectController == null || !projectController.deleteSelectedClip()) {
+      showAppSnack(context, '마지막 클립은 삭제할 수 없어요.');
+      return;
+    }
+    _playingClipIndex = _playingClipIndex.clamp(
+      0,
+      projectController.project.clips.length - 1,
+    );
+    _editState.markExternalEditApplied();
+    unawaited(
+      _seekToPosition(
+        projectController.project.playheadMs.clamp(
+          0,
+          projectController.project.durationMs,
         ),
       ),
     );
   }
 
-  void _updateTrim({int? startMs, int? endMs}) {
+  void _duplicateClip() {
+    final projectController = _projectController;
+    if (projectController == null ||
+        !projectController.duplicateSelectedClip()) {
+      return;
+    }
+    _editState.markExternalEditApplied();
+    if (mounted) setState(() {});
+  }
+
+  void _trimSelectedClipStart(int sourceStartMs) {
+    final projectController = _projectController;
+    if (projectController == null ||
+        !projectController.trimSelectedClip(sourceStartMs: sourceStartMs)) {
+      return;
+    }
+    _editState.markExternalEditApplied();
+    unawaited(_seekToPosition(projectController.project.playheadMs));
+  }
+
+  void _trimSelectedClipEnd(int sourceEndMs) {
+    final projectController = _projectController;
+    if (projectController == null ||
+        !projectController.trimSelectedClip(sourceEndMs: sourceEndMs)) {
+      return;
+    }
+    _editState.markExternalEditApplied();
+    unawaited(_seekToPosition(projectController.project.playheadMs));
+  }
+
+  void _setAudioVolume(double volume) {
+    _projectController?.setSourceVolume(volume);
+    _audioVolume = volume;
+    _editState.markExternalEditApplied();
+    unawaited(_preview?.setVolume(volume) ?? Future<void>.value());
+    if (mounted) setState(() {});
+  }
+
+  void _setMuted(bool muted) {
+    final projectController = _projectController;
+    if (projectController == null) return;
+    projectController.setMuted(muted);
+    _audioVolume = projectController.project.audio.effectiveVolume;
+    _editState.markExternalEditApplied();
+    unawaited(_preview?.setVolume(_audioVolume) ?? Future<void>.value());
+    if (mounted) setState(() {});
+  }
+
+  void _addSticker(String sticker) {
+    _projectController?.addSticker(sticker);
     setState(() {
-      if (startMs != null) {
-        _editState.updateTrimRange(startMs: startMs, endMs: _editState.endMs);
-      }
-      if (endMs != null) {
-        _editState.updateTrimRange(startMs: _editState.startMs, endMs: endMs);
-      }
-      if (_preview != null && _preview!.value.isInitialized) {
-        _preview!.seekTo(Duration(milliseconds: _editState.startMs));
-      }
+      _arSticker = '';
+      _appliedTools.add('sticker');
+      _editState.markExternalEditApplied();
     });
   }
 
@@ -1335,59 +1399,6 @@ class _PreparingProgressBar extends StatelessWidget {
   );
 }
 
-class _PreparingFeatureCard extends StatelessWidget {
-  const _PreparingFeatureCard({
-    required this.icon,
-    required this.label,
-    required this.iconColor,
-    required this.iconBackground,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color iconColor;
-  final Color iconBackground;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.7),
-      borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: const Color(0xFFEBDCCB)),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x0F7B5A3B),
-          blurRadius: 12,
-          offset: Offset(0, 5),
-        ),
-      ],
-    ),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: iconBackground,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Icon(icon, color: iconColor, size: 27),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF574133),
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
 class _PreparingBlob extends StatelessWidget {
   const _PreparingBlob({required this.size, required this.colors});
 
@@ -1492,97 +1503,11 @@ class _ColorOption extends StatelessWidget {
   );
 }
 
-class _StickerOption extends StatelessWidget {
-  const _StickerOption({
-    required this.sticker,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String sticker;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(16),
-    onTap: onTap,
-    child: Container(
-      width: 58,
-      height: 58,
-      decoration: BoxDecoration(
-        color: selected
-            ? AppColors.sage.withValues(alpha: 0.18)
-            : _editorSurfaceRaised,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: selected ? AppColors.sage : Colors.transparent,
-          width: 2,
-        ),
-      ),
-      alignment: Alignment.center,
-      child: sticker.isEmpty
-          ? const Icon(Icons.block_rounded, color: _editorMuted)
-          : Text(sticker, style: const TextStyle(fontSize: 30)),
-    ),
-  );
-}
-
-class _ChoiceOption extends StatelessWidget {
-  const _ChoiceOption({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 4),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Container(
-        height: 84,
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.sage.withValues(alpha: 0.18)
-              : _editorSurfaceRaised,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? AppColors.sage : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: selected ? AppColors.sage : AppColors.cream),
-            const SizedBox(height: 7),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? AppColors.sage : _editorMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 class _PreviewSurface extends StatelessWidget {
   const _PreviewSurface({
     required this.controller,
-    required this.canvasAspectRatio,
+    required this.projectController,
+    required this.canvas,
     required this.captionText,
     required this.captionColor,
     required this.filter,
@@ -1591,7 +1516,8 @@ class _PreviewSurface extends StatelessWidget {
   });
 
   final VideoPlayerController controller;
-  final double canvasAspectRatio;
+  final EditorProjectController projectController;
+  final EditorCanvas canvas;
   final String captionText;
   final Color captionColor;
   final String filter;
@@ -1619,7 +1545,7 @@ class _PreviewSurface extends StatelessWidget {
         final availableHeight = constraints.maxHeight;
         return Center(
           child: AspectRatio(
-            aspectRatio: canvasAspectRatio,
+            aspectRatio: canvas.aspectRatio,
             child: Container(
               constraints: BoxConstraints(
                 maxWidth: availableWidth,
@@ -1627,34 +1553,86 @@ class _PreviewSurface extends StatelessWidget {
               ),
               decoration: BoxDecoration(
                 color: Colors.black,
-                border: Border.all(color: AppColors.sage, width: 2),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x33000000),
-                    blurRadius: 22,
-                    offset: Offset(0, 8),
-                  ),
-                ],
+                borderRadius: BorderRadius.circular(4),
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(4),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Center(
-                      child: ColorFiltered(
-                        colorFilter: _colorFilter(filter),
-                        child: FittedBox(
-                          fit: BoxFit.contain,
-                          child: SizedBox(
-                            width: width,
-                            height: height,
-                            child: VideoPlayer(controller),
+                    _CanvasGestureLayer(
+                      controller: projectController,
+                      canvas: canvas,
+                      child: Center(
+                        child: ColorFiltered(
+                          colorFilter: _colorFilter(filter),
+                          child: FittedBox(
+                            fit: BoxFit.contain,
+                            child: SizedBox(
+                              width: width,
+                              height: height,
+                              child: VideoPlayer(controller),
+                            ),
                           ),
                         ),
                       ),
                     ),
+                    for (final layer
+                        in projectController.project.textLayers.where(
+                          (layer) => layer.isVisibleAt(
+                            projectController.project.playheadMs,
+                          ),
+                        ))
+                      _EditableLayerOverlay(
+                        key: ValueKey(layer.id),
+                        controller: projectController,
+                        layer: layer,
+                        childBuilder: (context, previewWidth) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: layer.backgroundColor,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            layer.text,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: layer.color,
+                              fontSize: (layer.fontSize * previewWidth / 1280)
+                                  .clamp(12.0, 48.0),
+                              fontWeight: layer.bold
+                                  ? FontWeight.w900
+                                  : FontWeight.w400,
+                              shadows: const [
+                                Shadow(color: Colors.black38, blurRadius: 2),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    for (final layer
+                        in projectController.project.stickerLayers.where(
+                          (layer) => layer.isVisibleAt(
+                            projectController.project.playheadMs,
+                          ),
+                        ))
+                      _EditableLayerOverlay(
+                        key: ValueKey(layer.id),
+                        controller: projectController,
+                        layer: layer,
+                        childBuilder: (_, previewWidth) => Text(
+                          layer.value,
+                          style: TextStyle(
+                            fontSize: (previewWidth * 0.12).clamp(34.0, 68.0),
+                            shadows: const [
+                              Shadow(color: Colors.black38, blurRadius: 6),
+                            ],
+                          ),
+                        ),
+                      ),
                     if (arSticker.isNotEmpty)
                       Align(
                         alignment: const Alignment(0, -0.28),
@@ -1778,993 +1756,150 @@ class _PreviewSurface extends StatelessWidget {
   };
 }
 
-class _RatioMenu extends StatelessWidget {
-  const _RatioMenu({required this.ratio, required this.onSelected});
+typedef _LayerChildBuilder =
+    Widget Function(BuildContext context, double previewWidth);
 
-  final VideoEditRatio ratio;
-  final ValueChanged<VideoEditRatio> onSelected;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: _editorSurfaceRaised,
-    borderRadius: BorderRadius.circular(15),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(15),
-      onTap: () => _showRatioSheet(context),
-      child: Container(
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.auto_awesome_rounded,
-              size: 17,
-              color: AppColors.sage,
-            ),
-            const SizedBox(width: 7),
-            Text(
-              'AI ${_ratioLabel(ratio)}',
-              style: const TextStyle(
-                color: AppColors.cream,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(width: 6),
-            const Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 20,
-              color: AppColors.cream,
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Future<void> _showRatioSheet(BuildContext context) async {
-    var pendingRatio = ratio;
-    final selected = await showModalBottomSheet<VideoEditRatio>(
-      context: context,
-      backgroundColor: _editorSurface,
-      barrierColor: Colors.black54,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 292,
-            child: Column(
-              children: [
-                const SizedBox(height: 12),
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  height: 150,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    children: VideoEditRatio.values
-                        .map(
-                          (option) => _RatioOption(
-                            ratio: option,
-                            selected: option == pendingRatio,
-                            onTap: () =>
-                                setSheetState(() => pendingRatio = option),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-                const Divider(height: 1, color: Colors.white10),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 14, 18, 10),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '비율',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: AppColors.cream,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: '비율 적용',
-                          onPressed: () =>
-                              Navigator.pop(sheetContext, pendingRatio),
-                          color: AppColors.sage,
-                          iconSize: 34,
-                          icon: const Icon(Icons.check_rounded),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (selected != null) onSelected(selected);
-  }
-
-  static String _ratioLabel(VideoEditRatio ratio) => switch (ratio) {
-    VideoEditRatio.original => '원본',
-    VideoEditRatio.shortForm => '9:16',
-    VideoEditRatio.square => '1:1',
-    VideoEditRatio.landscape => '16:9',
-    VideoEditRatio.classic => '4:3',
-    VideoEditRatio.portrait => '3:4',
-  };
-}
-
-class _RatioOption extends StatelessWidget {
-  const _RatioOption({
-    required this.ratio,
-    required this.selected,
-    required this.onTap,
+class _EditableLayerOverlay extends StatefulWidget {
+  const _EditableLayerOverlay({
+    super.key,
+    required this.controller,
+    required this.layer,
+    required this.childBuilder,
   });
 
-  final VideoEditRatio ratio;
-  final bool selected;
-  final VoidCallback onTap;
+  final EditorProjectController controller;
+  final EditorTimedLayer layer;
+  final _LayerChildBuilder childBuilder;
 
   @override
-  Widget build(BuildContext context) {
-    final previewRatio = switch (ratio) {
-      VideoEditRatio.original => 4 / 3,
-      VideoEditRatio.shortForm => 9 / 16,
-      VideoEditRatio.square => 1.0,
-      VideoEditRatio.landscape => 16 / 9,
-      VideoEditRatio.classic => 4 / 3,
-      VideoEditRatio.portrait => 3 / 4,
-    };
-    return Padding(
-      padding: const EdgeInsets.only(right: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: onTap,
-          child: SizedBox(
-            width: 86,
-            child: Column(
-              children: [
-                Container(
-                  width: 78,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? AppColors.sage.withValues(alpha: 0.16)
-                        : _editorSurfaceRaised,
-                    borderRadius: BorderRadius.circular(17),
-                    border: Border.all(
-                      color: selected ? AppColors.sage : Colors.transparent,
-                      width: 2.5,
-                    ),
-                  ),
-                  child: Center(
-                    child: SizedBox(
-                      width: previewRatio >= 1 ? 48 : 34,
-                      child: AspectRatio(
-                        aspectRatio: previewRatio,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: selected
-                                  ? AppColors.sage
-                                  : AppColors.cream,
-                              width: 2,
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _RatioMenu._ratioLabel(ratio),
-                  style: TextStyle(
-                    color: selected ? AppColors.sage : _editorMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  State<_EditableLayerOverlay> createState() => _EditableLayerOverlayState();
 }
 
-class _PreviewControlBar extends StatelessWidget {
-  const _PreviewControlBar({
-    required this.playing,
-    required this.currentTime,
-    required this.totalTime,
-    required this.onPlay,
-    required this.onFullscreen,
-    required this.onEffect,
-  });
-
-  final bool playing;
-  final String currentTime;
-  final String totalTime;
-  final VoidCallback onPlay;
-  final VoidCallback onFullscreen;
-  final VoidCallback onEffect;
+class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
+  late NormalizedPoint _position;
+  double _startScale = 1;
+  double _startRotation = 0;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 50,
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        Positioned(
-          left: 12,
-          child: Row(
-            children: [
-              IconButton(
-                tooltip: '미리보기 확대',
-                onPressed: onFullscreen,
-                color: AppColors.cream,
-                icon: const Icon(Icons.fullscreen_rounded, size: 26),
-              ),
-              Text(
-                '$currentTime / $totalTime',
-                style: const TextStyle(
-                  color: _editorMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        IconButton(
-          tooltip: playing ? '일시정지' : '재생',
-          onPressed: onPlay,
-          color: AppColors.cream,
-          iconSize: 34,
-          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-        ),
-        Positioned(
-          right: 12,
-          child: Row(
-            children: [
-              IconButton(
-                tooltip: '효과 추가',
-                onPressed: onEffect,
-                color: AppColors.sage,
-                icon: const Icon(Icons.auto_awesome_motion_rounded),
-              ),
-              const IconButton(
-                tooltip: '실행 취소',
-                onPressed: null,
-                icon: Icon(Icons.undo_rounded, color: Colors.white24),
-              ),
-              const IconButton(
-                tooltip: '다시 실행',
-                onPressed: null,
-                icon: Icon(Icons.redo_rounded, color: Colors.white24),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _TrackTimeline extends StatelessWidget {
-  const _TrackTimeline({
-    required this.state,
-    required this.thumbnails,
-    required this.position,
-    required this.duration,
-    required this.onSeek,
-    required this.onStartChanged,
-    required this.onEndChanged,
-    required this.onAddClip,
-    required this.onAudio,
-    required this.onCaption,
-    required this.onClipSelected,
-    required this.captionApplied,
-    required this.audioApplied,
-  });
-
-  final VideoEditState state;
-  final List<String> thumbnails;
-  final Duration position;
-  final Duration duration;
-  final ValueChanged<int> onSeek;
-  final ValueChanged<int> onStartChanged;
-  final ValueChanged<int> onEndChanged;
-  final VoidCallback onAddClip;
-  final VoidCallback onAudio;
-  final VoidCallback onCaption;
-  final VoidCallback onClipSelected;
-  final bool captionApplied;
-  final bool audioApplied;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    color: _editorSurface,
-    padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+  Widget build(BuildContext context) => Positioned.fill(
     child: LayoutBuilder(
       builder: (context, constraints) {
-        const labelWidth = 54.0;
-        const addWidth = 42.0;
-        const gap = 8.0;
-        final trackWidth =
-            constraints.maxWidth - labelWidth - addWidth - gap * 2;
-        final durationMs = duration.inMilliseconds;
-        final progress = durationMs <= 0
-            ? 0.0
-            : (position.inMilliseconds / durationMs).clamp(0.0, 1.0);
-        final playheadLeft = labelWidth + gap + trackWidth * progress;
-
-        return Stack(
-          children: [
-            Column(
-              children: [
-                SizedBox(
-                  height: 24,
+        final selected =
+            widget.controller.project.selectedLayerId == widget.layer.id;
+        return Align(
+          alignment: Alignment(
+            widget.layer.position.x * 2 - 1,
+            widget.layer.position.y * 2 - 1,
+          ),
+          child: GestureDetector(
+            key: Key('editor-layer-${widget.layer.id}'),
+            behavior: HitTestBehavior.translucent,
+            onTap: () => widget.controller.selectLayer(widget.layer.id),
+            onScaleStart: (_) {
+              _position = widget.layer.position;
+              _startScale = widget.layer.scale;
+              _startRotation = widget.layer.rotationDegrees;
+              widget.controller.beginLayerGesture(widget.layer.id);
+            },
+            onScaleUpdate: (details) {
+              final width = constraints.maxWidth <= 0
+                  ? 1.0
+                  : constraints.maxWidth;
+              final height = constraints.maxHeight <= 0
+                  ? 1.0
+                  : constraints.maxHeight;
+              _position = _position.translate(
+                details.focalPointDelta.dx / width,
+                details.focalPointDelta.dy / height,
+              );
+              widget.controller.updateSelectedLayerTransform(
+                position: _position,
+                scale: _startScale * details.scale,
+                rotationDegrees:
+                    _startRotation + details.rotation * 180 / math.pi,
+              );
+            },
+            onScaleEnd: (_) => widget.controller.endLayerGesture(),
+            child: Transform.rotate(
+              angle: widget.layer.rotationDegrees * math.pi / 180,
+              child: Transform.scale(
+                scale: widget.layer.scale,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: selected
+                        ? Border.all(color: AppColors.coral, width: 2)
+                        : null,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
                   child: Padding(
-                    padding: const EdgeInsets.only(
-                      left: labelWidth + gap,
-                      right: addWidth + gap,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: List.generate(
-                        3,
-                        (index) => Text(
-                          _formatTrackTime(durationMs * index ~/ 2),
-                          style: const TextStyle(
-                            color: _editorMuted,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
+                    padding: const EdgeInsets.all(3),
+                    child: widget.childBuilder(context, constraints.maxWidth),
                   ),
-                ),
-                SizedBox(
-                  height: 58,
-                  child: Row(
-                    children: [
-                      const _TrackLabel(
-                        icon: Icons.movie_creation_outlined,
-                        label: '영상',
-                      ),
-                      const SizedBox(width: gap),
-                      Expanded(
-                        child: _TrimTimeline(
-                          state: state,
-                          thumbnails: thumbnails,
-                          onTap: (milliseconds) {
-                            onClipSelected();
-                            onSeek(milliseconds);
-                          },
-                          onStartChanged: onStartChanged,
-                          onEndChanged: onEndChanged,
-                        ),
-                      ),
-                      const SizedBox(width: gap),
-                      SizedBox.square(
-                        dimension: addWidth,
-                        child: IconButton.filled(
-                          tooltip: '클립 추가',
-                          onPressed: onAddClip,
-                          style: IconButton.styleFrom(
-                            backgroundColor: AppColors.cream,
-                            foregroundColor: AppColors.ink,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.add_rounded, size: 29),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                _TrackActionRow(
-                  icon: Icons.music_note_rounded,
-                  label: '오디오',
-                  hint: audioApplied ? '오디오 편집됨' : '+ 오디오 추가',
-                  color: AppColors.sage,
-                  onTap: onAudio,
-                ),
-                const SizedBox(height: 4),
-                _TrackActionRow(
-                  icon: Icons.title_rounded,
-                  label: '자막',
-                  hint: captionApplied ? '자막 편집됨' : '+ 자막 추가',
-                  color: AppColors.coral,
-                  onTap: onCaption,
-                ),
-              ],
-            ),
-            Positioned(
-              left: playheadLeft,
-              top: 20,
-              bottom: 0,
-              child: IgnorePointer(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: AppColors.cream,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    Expanded(
-                      child: Container(width: 2, color: AppColors.cream),
-                    ),
-                  ],
                 ),
               ),
             ),
-          ],
+          ),
         );
       },
     ),
   );
-
-  static String _formatTrackTime(int milliseconds) {
-    final value = Duration(milliseconds: milliseconds);
-    final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
 }
 
-class _TrackLabel extends StatelessWidget {
-  const _TrackLabel({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 54,
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 21, color: _editorMuted),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            color: _editorMuted,
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _TrackActionRow extends StatelessWidget {
-  const _TrackActionRow({
-    required this.icon,
-    required this.label,
-    required this.hint,
-    required this.color,
-    required this.onTap,
+class _CanvasGestureLayer extends StatefulWidget {
+  const _CanvasGestureLayer({
+    required this.controller,
+    required this.canvas,
+    required this.child,
   });
 
-  final IconData icon;
-  final String label;
-  final String hint;
-  final Color color;
-  final VoidCallback onTap;
+  final EditorProjectController controller;
+  final EditorCanvas canvas;
+  final Widget child;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 36,
-    child: Row(
-      children: [
-        _TrackLabel(icon: icon, label: label),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Material(
-            color: color.withValues(alpha: 0.17),
-            borderRadius: BorderRadius.circular(9),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(9),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    hint,
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 50),
-      ],
-    ),
-  );
+  State<_CanvasGestureLayer> createState() => _CanvasGestureLayerState();
 }
 
-class _TrimTimeline extends StatefulWidget {
-  const _TrimTimeline({
-    required this.state,
-    required this.thumbnails,
-    required this.onTap,
-    required this.onStartChanged,
-    required this.onEndChanged,
-  });
-
-  final VideoEditState state;
-  final List<String> thumbnails;
-  final ValueChanged<int> onTap;
-  final ValueChanged<int> onStartChanged;
-  final ValueChanged<int> onEndChanged;
+class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
+  double _startScale = 1;
+  double _startRotation = 0;
+  double _startOffsetX = 0;
+  double _startOffsetY = 0;
 
   @override
-  State<_TrimTimeline> createState() => _TrimTimelineState();
-}
-
-class _TrimTimelineState extends State<_TrimTimeline> {
-  @override
-  Widget build(BuildContext context) {
-    final duration = widget.state.durationMs;
-    final startRatio = duration <= 0 ? 0.0 : widget.state.startMs / duration;
-    final endRatio = duration <= 0 ? 1.0 : widget.state.endMs / duration;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final startX = startRatio * width;
-        final endX = endRatio * width;
-        final selectionLeft = startX.clamp(0.0, width);
-        final selectionRight = endX.clamp(0.0, width);
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                onTapDown: (details) {
-                  final x = details.localPosition.dx.clamp(0.0, width);
-                  final ms = ((x / width) * duration).round().clamp(
-                    0,
-                    duration,
-                  );
-                  widget.onTap(ms);
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF11100F),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: List.generate(
-                      widget.thumbnails.isEmpty ? 6 : widget.thumbnails.length,
-                      (index) {
-                        final imagePath = widget.thumbnails.length > index
-                            ? widget.thumbnails[index]
-                            : null;
-                        return Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 1),
-                            child: imagePath == null
-                                ? ColoredBox(
-                                    color: index.isEven
-                                        ? _editorSurfaceRaised
-                                        : const Color(0xFF423A33),
-                                  )
-                                : Image.file(
-                                    File(imagePath),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) =>
-                                        const SizedBox.expand(),
-                                  ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: selectionLeft,
-              right: width - selectionRight,
-              top: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.sage, width: 3),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: selectionLeft - 8,
-              top: 0,
-              bottom: 0,
-              child: GestureDetector(
-                onHorizontalDragUpdate: (details) {
-                  final nextX = (selectionLeft + (details.primaryDelta ?? 0))
-                      .clamp(0.0, width);
-                  widget.onStartChanged(
-                    ((nextX / width) * duration).round().clamp(0, duration),
-                  );
-                },
-                child: Container(
-                  width: 16,
-                  decoration: BoxDecoration(
-                    color: AppColors.cream,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.drag_handle_rounded,
-                    size: 13,
-                    color: AppColors.ink,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: selectionRight - 8,
-              top: 0,
-              bottom: 0,
-              child: GestureDetector(
-                onHorizontalDragUpdate: (details) {
-                  final nextX = (selectionRight + (details.primaryDelta ?? 0))
-                      .clamp(0.0, width);
-                  widget.onEndChanged(
-                    ((nextX / width) * duration).round().clamp(0, duration),
-                  );
-                },
-                child: Container(
-                  width: 16,
-                  decoration: BoxDecoration(
-                    color: AppColors.cream,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.drag_handle_rounded,
-                    size: 13,
-                    color: AppColors.ink,
-                  ),
-                ),
-              ),
-            ),
-          ],
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onDoubleTap: widget.controller.resetCanvasTransform,
+      onScaleStart: (_) {
+        final canvas = widget.controller.project.canvas;
+        _startScale = canvas.scale;
+        _startRotation = canvas.rotationDegrees;
+        _startOffsetX = canvas.offsetX;
+        _startOffsetY = canvas.offsetY;
+        widget.controller.beginCanvasGesture();
+      },
+      onScaleUpdate: (details) {
+        final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
+        final height = constraints.maxHeight <= 0 ? 1.0 : constraints.maxHeight;
+        widget.controller.updateCanvasGesture(
+          scale: _startScale * details.scale,
+          offsetX: _startOffsetX + details.focalPointDelta.dx / width * 2,
+          offsetY: _startOffsetY + details.focalPointDelta.dy / height * 2,
+          rotationDegrees: _startRotation + details.rotation * 180 / math.pi,
         );
       },
-    );
-  }
-}
-
-class _ToolToolbar extends StatelessWidget {
-  const _ToolToolbar({
-    required this.selectedTool,
-    required this.onToolChanged,
-    required this.busy,
-    required this.clipSelected,
-    required this.onCloseClipTools,
-    required this.onSplit,
-    required this.onVolume,
-    required this.onAnimation,
-    required this.onEffect,
-    required this.onDelete,
-    required this.onAr,
-  });
-
-  final String selectedTool;
-  final ValueChanged<String> onToolChanged;
-  final bool busy;
-  final bool clipSelected;
-  final VoidCallback onCloseClipTools;
-  final VoidCallback onSplit;
-  final VoidCallback onVolume;
-  final VoidCallback onAnimation;
-  final VoidCallback onEffect;
-  final VoidCallback onDelete;
-  final VoidCallback onAr;
-
-  @override
-  Widget build(BuildContext context) {
-    if (clipSelected) {
-      return _ClipToolToolbar(
-        busy: busy,
-        onBack: onCloseClipTools,
-        onSplit: onSplit,
-        onVolume: onVolume,
-        onAnimation: onAnimation,
-        onEffect: onEffect,
-        onDelete: onDelete,
-        onAr: onAr,
-      );
-    }
-    return Container(
-      height: 80,
-      decoration: const BoxDecoration(
-        color: _editorSurfaceRaised,
-        border: Border(top: BorderSide(color: Colors.white10)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        children: [
-          _Tool(
-            icon: Icons.content_cut_rounded,
-            label: '분할',
-            selected: selectedTool == 'cut',
-            onTap: busy ? null : () => onToolChanged('cut'),
-          ),
-          _Tool(
-            icon: Icons.subtitles_rounded,
-            label: '자막',
-            selected: selectedTool == 'caption',
-            onTap: busy ? null : () => onToolChanged('caption'),
-          ),
-          _Tool(
-            icon: Icons.volume_up_rounded,
-            label: '오디오',
-            selected: selectedTool == 'audio',
-            onTap: busy ? null : () => onToolChanged('audio'),
-          ),
-          _Tool(
-            icon: Icons.auto_awesome_rounded,
-            label: '편집효과',
-            selected: selectedTool == 'effect',
-            onTap: busy ? null : () => onToolChanged('effect'),
-          ),
-          _Tool(
-            icon: Icons.face_retouching_natural_rounded,
-            label: 'AR',
-            selected: selectedTool == 'ar',
-            onTap: busy ? null : () => onToolChanged('ar'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ClipToolToolbar extends StatelessWidget {
-  const _ClipToolToolbar({
-    required this.busy,
-    required this.onBack,
-    required this.onSplit,
-    required this.onVolume,
-    required this.onAnimation,
-    required this.onEffect,
-    required this.onDelete,
-    required this.onAr,
-  });
-
-  final bool busy;
-  final VoidCallback onBack;
-  final VoidCallback onSplit;
-  final VoidCallback onVolume;
-  final VoidCallback onAnimation;
-  final VoidCallback onEffect;
-  final VoidCallback onDelete;
-  final VoidCallback onAr;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    height: 92,
-    decoration: const BoxDecoration(
-      color: _editorSurfaceRaised,
-      border: Border(top: BorderSide(color: Colors.white10)),
-    ),
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    child: Row(
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 10, right: 6),
-          child: SizedBox(
-            width: 54,
-            height: 72,
-            child: IconButton.filled(
-              tooltip: '기본 도구로 돌아가기',
-              onPressed: busy ? null : onBack,
-              style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFF4A443E),
-                foregroundColor: AppColors.cream,
-                disabledBackgroundColor: _editorSurface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              icon: const Icon(Icons.chevron_left_rounded, size: 34),
-            ),
-          ),
+      onScaleEnd: (_) => widget.controller.endCanvasGesture(),
+      child: Transform.translate(
+        offset: Offset(
+          widget.canvas.offsetX * constraints.maxWidth / 2,
+          widget.canvas.offsetY * constraints.maxHeight / 2,
         ),
-        Expanded(
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              _ClipAction(
-                icon: Icons.vertical_split_rounded,
-                label: '분할',
-                onTap: busy ? null : onSplit,
-              ),
-              _ClipAction(
-                icon: Icons.volume_up_rounded,
-                label: '볼륨',
-                onTap: busy ? null : onVolume,
-              ),
-              _ClipAction(
-                icon: Icons.animation_rounded,
-                label: '애니메이션',
-                onTap: busy ? null : onAnimation,
-              ),
-              _ClipAction(
-                icon: Icons.auto_awesome_rounded,
-                label: '편집효과',
-                onTap: busy ? null : onEffect,
-              ),
-              _ClipAction(
-                icon: Icons.delete_outline_rounded,
-                label: '삭제',
-                onTap: busy ? null : onDelete,
-              ),
-              _ClipAction(
-                icon: Icons.face_retouching_natural_rounded,
-                label: 'AR',
-                accent: true,
-                onTap: busy ? null : onAr,
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _ClipAction extends StatelessWidget {
-  const _ClipAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.accent = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool accent;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 70,
-    child: InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(
-                  icon,
-                  size: 24,
-                  color: accent ? AppColors.sage : AppColors.cream,
-                ),
-                if (accent)
-                  const Positioned(
-                    right: -8,
-                    top: -8,
-                    child: Icon(
-                      Icons.auto_awesome_rounded,
-                      size: 13,
-                      color: AppColors.sage,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 7),
-            Text(
-              label,
-              maxLines: 1,
-              style: TextStyle(
-                color: accent ? AppColors.sage : _editorMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _Tool extends StatelessWidget {
-  const _Tool({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.selected = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Material(
-      color: selected
-          ? AppColors.sage.withValues(alpha: 0.16)
-          : Colors.transparent,
-      borderRadius: BorderRadius.circular(15),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(15),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: selected ? AppColors.sage : AppColors.cream,
-                size: 23,
-              ),
-              const SizedBox(height: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? AppColors.sage : _editorMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
+        child: Transform.rotate(
+          angle: widget.canvas.rotationDegrees * math.pi / 180,
+          child: Transform.scale(
+            scale: widget.canvas.scale,
+            child: widget.child,
           ),
         ),
       ),
