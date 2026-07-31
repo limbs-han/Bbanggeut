@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import threading
@@ -23,6 +24,38 @@ DEFAULT_I2C_ADDRESS = 0x27
 DEFAULT_COLUMNS = 16
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_DEBOUNCE_SECONDS = 0.3
+DEFAULT_FAILURE_REASON_SECONDS = 3
+DEFAULT_FAILURE_READY_SECONDS = 5
+
+# provision.py reports a rejected request as "... (<status>, <ERROR_CODE>)" on
+# stderr. The exit code is always 1, so stderr is the only way to tell an
+# already-claimed device apart from a bad token or an unreachable server.
+FAILURE_STATUS_PATTERN = re.compile(r"\((\d{3}),\s*([A-Za-z_][A-Za-z0-9_]*)\)")
+
+# The fractional seconds of an ISO-8601 timestamp; the UTC offset carries no
+# decimal point, so the first match is always the fraction.
+FRACTIONAL_SECONDS_PATTERN = re.compile(r"\.(\d+)")
+
+ALREADY_REGISTERED_CODE = "DEVICE_ALREADY_CLAIMED"
+ALREADY_REGISTERED_STATUS = 409
+
+# Lines are ASCII and at most 16 characters: the LCD replaces anything else and
+# truncates to the configured column count.
+ALREADY_REGISTERED_LINES = ("Device already", "registered")
+TEMPORARY_FAILURE_LINES = ("Temporary error", "Try again later")
+
+
+class RegistrationFailure(RuntimeError):
+    """A failed registration attempt carrying the two lines to display."""
+
+    def __init__(
+        self,
+        lines: tuple[str, str],
+        *,
+        message: str | None = None,
+    ) -> None:
+        super().__init__(message or " ".join(lines))
+        self.lines = lines
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -68,8 +101,11 @@ class RegistrationDisplay:
     def show_expired(self) -> None:
         self._show("Code expired", "Press button")
 
-    def show_error(self, message: str = "Request failed") -> None:
-        self._show("Registration", message)
+    def show_failed(self) -> None:
+        self._show("Registration", "Failed")
+
+    def show_reason(self, line1: str, line2: str) -> None:
+        self._show(line1, line2)
 
     def close(self) -> None:
         self._lcd.close()
@@ -93,18 +129,33 @@ def environment_integer(
     return value
 
 
-def seconds_until_expiry(
-    expires_at: str,
-    *,
-    now: datetime | None = None,
-) -> float:
+def normalize_expiry(expires_at: str) -> str:
+    """Rewrite a server timestamp into what fromisoformat on 3.10 accepts.
+
+    The server serialises Instant through ISO_INSTANT, which emits 0, 3, 6, or
+    9 fractional digits, while Python 3.10 accepts only 0, 3, or 6 - a
+    nanosecond expiry would otherwise be rejected. Pad or truncate to the
+    microseconds datetime keeps anyway, matching what 3.11 does natively.
+    """
     normalized = (
         f"{expires_at[:-1]}+00:00"
         if expires_at.endswith(("Z", "z"))
         else expires_at
     )
+    return FRACTIONAL_SECONDS_PATTERN.sub(
+        lambda match: "." + match.group(1)[:6].ljust(6, "0"),
+        normalized,
+        count=1,
+    )
+
+
+def seconds_until_expiry(
+    expires_at: str,
+    *,
+    now: datetime | None = None,
+) -> float:
     try:
-        expiry = datetime.fromisoformat(normalized)
+        expiry = datetime.fromisoformat(normalize_expiry(expires_at))
     except ValueError as error:
         raise ValueError(f"Invalid registration expiry: {expires_at}") from error
     if expiry.tzinfo is None:
@@ -159,6 +210,72 @@ class CodeExpiryTimer:
         self._display.show_expired()
 
 
+class FailureNotice:
+    """Show the failure, then why it failed, then return to the ready screen.
+
+    Both steps run on timers so the button stays responsive: a new press
+    cancels the pending steps instead of letting a stale one overwrite the
+    fresh code.
+    """
+
+    def __init__(
+        self,
+        display: RegistrationDisplay,
+        *,
+        reason_delay: float = DEFAULT_FAILURE_REASON_SECONDS,
+        ready_delay: float = DEFAULT_FAILURE_READY_SECONDS,
+        timer_factory: Callable[..., Any] = threading.Timer,
+    ) -> None:
+        self._display = display
+        self._reason_delay = reason_delay
+        self._ready_delay = ready_delay
+        self._timer_factory = timer_factory
+        self._lock = threading.Lock()
+        self._timers: list[Any] = []
+        self._generation = 0
+
+    def start(self, line1: str, line2: str) -> None:
+        self._display.show_failed()
+        steps = (
+            (self._reason_delay, self._display.show_reason, (line1, line2)),
+            (self._reason_delay + self._ready_delay, self._display.show_ready, ()),
+        )
+        with self._lock:
+            self._generation += 1
+            generation = self._generation
+            self._cancel_timers()
+            for delay, action, action_args in steps:
+                timer = self._timer_factory(
+                    delay,
+                    self._run,
+                    args=(generation, action, action_args),
+                )
+                timer.daemon = True
+                self._timers.append(timer)
+                timer.start()
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._generation += 1
+            self._cancel_timers()
+
+    def _cancel_timers(self) -> None:
+        for timer in self._timers:
+            timer.cancel()
+        self._timers = []
+
+    def _run(
+        self,
+        generation: int,
+        action: Callable[..., None],
+        action_args: tuple[Any, ...],
+    ) -> None:
+        with self._lock:
+            if generation != self._generation:
+                return
+        action(*action_args)
+
+
 def wait_until_expired(
     display: RegistrationDisplay,
     expires_at: str,
@@ -190,6 +307,26 @@ def parse_registration_response(output: str) -> tuple[str, str]:
     return code, expires_at
 
 
+def last_error_line(stderr: str | None) -> str:
+    lines = [line.strip() for line in (stderr or "").splitlines() if line.strip()]
+    return lines[-1] if lines else "no stderr output"
+
+
+def describe_failure(stderr: str | None) -> tuple[str, str]:
+    """Summarise a failed registration command as two LCD lines.
+
+    Only an already-registered device gets a specific message, because it is
+    the one cause the person at the device can act on. Every other cause - a
+    rejected token, a server fault, an unreachable network - stays generic so
+    the LCD never exposes why the request was refused. The journal keeps the
+    real reason for whoever is debugging the device.
+    """
+    for raw_status, code in FAILURE_STATUS_PATTERN.findall(stderr or ""):
+        if code == ALREADY_REGISTERED_CODE or int(raw_status) == ALREADY_REGISTERED_STATUS:
+            return ALREADY_REGISTERED_LINES
+    return TEMPORARY_FAILURE_LINES
+
+
 def request_registration_code(
     display: RegistrationDisplay,
     *,
@@ -210,8 +347,12 @@ def request_registration_code(
         env=environment,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Registration command failed with exit code {result.returncode}",
+        raise RegistrationFailure(
+            describe_failure(result.stderr),
+            message=(
+                f"Registration command failed with exit code "
+                f"{result.returncode}: {last_error_line(result.stderr)}"
+            ),
         )
     code, expires_at = parse_registration_response(result.stdout)
     display.show_code(code)
@@ -245,6 +386,16 @@ def main(argv: list[str] | None = None) -> None:
         DEFAULT_TIMEOUT_SECONDS,
         minimum=1,
     )
+    reason_delay = environment_integer(
+        "REGISTRATION_FAILURE_REASON_SECONDS",
+        DEFAULT_FAILURE_REASON_SECONDS,
+        minimum=1,
+    )
+    ready_delay = environment_integer(
+        "REGISTRATION_FAILURE_READY_SECONDS",
+        DEFAULT_FAILURE_READY_SECONDS,
+        minimum=1,
+    )
 
     lcd = I2CLcd(lgpio, bus=bus, address=address)
     display = RegistrationDisplay(lcd, columns=columns)
@@ -259,14 +410,18 @@ def main(argv: list[str] | None = None) -> None:
             wait_until_expired(display, expires_at)
             print("Registration code expired.", flush=True)
         except subprocess.TimeoutExpired:
-            display.show_error("Request timeout")
+            display.show_reason(*TEMPORARY_FAILURE_LINES)
             print(
                 f"Registration command timed out after {timeout} seconds.",
                 flush=True,
             )
             raise SystemExit(1)
+        except RegistrationFailure as error:
+            display.show_reason(*error.lines)
+            print(f"Registration request failed: {error}", flush=True)
+            raise SystemExit(1)
         except Exception as error:
-            display.show_error()
+            display.show_reason(*TEMPORARY_FAILURE_LINES)
             print(f"Registration request failed: {error}", flush=True)
             raise SystemExit(1)
         finally:
@@ -276,6 +431,11 @@ def main(argv: list[str] | None = None) -> None:
     execution_lock = threading.Lock()
     debounce_lock = threading.Lock()
     expiry_timer = CodeExpiryTimer(display)
+    failure_notice = FailureNotice(
+        display,
+        reason_delay=reason_delay,
+        ready_delay=ready_delay,
+    )
     last_press = 0.0
 
     def run_request() -> None:
@@ -284,6 +444,7 @@ def main(argv: list[str] | None = None) -> None:
             return
         try:
             expiry_timer.cancel()
+            failure_notice.cancel()
             code, expires_at = request_registration_code(display, timeout=timeout)
             expiry_timer.schedule(expires_at)
             print(
@@ -291,11 +452,14 @@ def main(argv: list[str] | None = None) -> None:
                 flush=True,
             )
         except subprocess.TimeoutExpired:
-            display.show_error("Request timeout")
             print(f"Registration command timed out after {timeout} seconds.", flush=True)
-        except Exception as error:
-            display.show_error()
+            failure_notice.start(*TEMPORARY_FAILURE_LINES)
+        except RegistrationFailure as error:
             print(f"Registration request failed: {error}", flush=True)
+            failure_notice.start(*error.lines)
+        except Exception as error:
+            print(f"Registration request failed: {error}", flush=True)
+            failure_notice.start(*TEMPORARY_FAILURE_LINES)
         finally:
             execution_lock.release()
 
@@ -318,7 +482,7 @@ def main(argv: list[str] | None = None) -> None:
     gpio_handle = lgpio.gpiochip_open(chip)
     callback = None
     try:
-        lgpio.gpio_claim_input(gpio_handle, line, lgpio.SET_BIAS_PULL_UP)
+        lgpio.gpio_claim_alert(gpio_handle, line, lgpio.FALLING_EDGE)
         callback = lgpio.callback(
             gpio_handle,
             line,
@@ -334,6 +498,7 @@ def main(argv: list[str] | None = None) -> None:
         signal.pause()
     finally:
         expiry_timer.cancel()
+        failure_notice.cancel()
         if callback is not None:
             callback.cancel()
         try:
