@@ -152,12 +152,12 @@ idle timeout 이후 라이브 relay FFmpeg 하나만 종료되는지 확인한�
 7. 편집 후에도 서버의 원본 영상이 변경되지 않았는지 재확인
 
 편집 기능에서 코드 수정이 필요하면 현재 Device 브랜치에 섞지 않고
-`develop/frontend`에서 `feat/frontend/<기능명>` 브랜치를 새로 만든다.
+`develop`에서 `feat/frontend/<기능명>` 브랜치를 새로 만든다.
 
 #### P0-3. Git 작업 마무리
 
 - 현재 기능 브랜치: `feat/device/event-upload-mvp`
-- Merge Request 대상: `develop/device`
+- Merge Request 대상: `develop`
 - MR의 Device CI 결과를 확인하고 성공한 경우에만 병합한다.
 - 병합 후 기능 브랜치를 삭제한다.
 

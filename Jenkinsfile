@@ -25,8 +25,9 @@ pipeline {
                         beforeAgent true
                         anyOf {
                             branch 'master'
-                            branch 'develop/backend'
+                            branch 'develop'
                             branch pattern: 'feat/backend/**', comparator: 'GLOB'
+                            branch pattern: 'fix/backend/**', comparator: 'GLOB'
                             branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
@@ -61,8 +62,9 @@ pipeline {
                         beforeAgent true
                         anyOf {
                             branch 'master'
-                            branch 'develop/frontend'
+                            branch 'develop'
                             branch pattern: 'feat/frontend/**', comparator: 'GLOB'
+                            branch pattern: 'fix/frontend/**', comparator: 'GLOB'
                             branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }
@@ -92,11 +94,10 @@ pipeline {
                         beforeAgent true
                         anyOf {
                             branch 'master'
-                            branch pattern: 'develop/**', comparator: 'GLOB'
+                            branch 'develop'
                             branch pattern: 'feat/**', comparator: 'GLOB'
+                            branch pattern: 'fix/**', comparator: 'GLOB'
                             branch pattern: 'docs/**', comparator: 'GLOB'
-                            // 역머지 브랜치도 계약을 확인한다. 이 검사가 없으면
-                            // master 를 되돌려 받는 MR 이 아무 CI 도 타지 않는다.
                             branch pattern: 'chore/**', comparator: 'GLOB'
                         }
                     }
@@ -122,8 +123,9 @@ pipeline {
                         beforeAgent true
                         anyOf {
                             branch 'master'
-                            branch 'develop/device'
+                            branch 'develop'
                             branch pattern: 'feat/device/**', comparator: 'GLOB'
+                            branch pattern: 'fix/device/**', comparator: 'GLOB'
                             branch pattern: 'feat/jenkins-*', comparator: 'GLOB'
                         }
                     }

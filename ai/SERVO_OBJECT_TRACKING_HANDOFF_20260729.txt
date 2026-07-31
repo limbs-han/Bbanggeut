@@ -18,8 +18,8 @@ S15P11E201 Jetson PAN/TILT 객체 추적 인수인계
 2. Git 기준
 
 - 기능 브랜치: feat/device/servo-autoframing
-- MR 대상: develop/device
-- master 또는 develop/device에 직접 push하지 않는다.
+- MR 대상: develop
+- master 또는 develop에 직접 push하지 않는다.
 - 주요 파일:
   - ai/yolo/yolov8_autoframe_jetson.py
   - ai/yolo/servo_controller.py
@@ -162,7 +162,7 @@ SERVO_MAXIMUM_PULSE_US=2000
 7. 다음 작업
 
 1. 이 기능 브랜치의 CI와 MR을 완료한다.
-2. MR 병합 후 최신 develop/device 기준으로 Jetson용 릴리스를 준비한다.
+2. MR 병합 후 최신 develop 기준으로 Jetson용 릴리스를 준비한다.
 3. 장치 자동 배포는 하지 않는다. 작업자 승인 후 Jetson에서 수동 설치한다.
 4. Jetson YOLO venv에 requirements-servo-controller.txt를 설치한다.
 5. /etc/william-james/device-agent.env에 4절의 실제 보정값을 적용한다.
