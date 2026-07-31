@@ -149,4 +149,6 @@ green rather than failing. That is why the naming rule matters.
   user approval. Never approve a production deployment without the user's
   request. Abort unnecessary deployment jobs.
 
-The complete Korean policy is stored in `ai/GIT_BRANCH_RULES.txt`.
+The complete Korean policy is stored in `llm/GIT_BRANCH_RULES.md`. LLM working
+documents (session handoffs, integration reports) belong in `llm/handoff/` —
+`ai/` is the Jetson AI product code only.

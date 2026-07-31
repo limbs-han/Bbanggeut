@@ -38,7 +38,7 @@ AI는 각도와 PWM을 직접 만들지 않는다. AI가 화면 기준 정규화
 | 대상 소실 | 5초 뒤 HOME 실물 복귀 확인 |
 
 상세 시험 결과와 다음 작업은
-`SERVO_OBJECT_TRACKING_HANDOFF_20260729.txt`에 기록했다.
+`../llm/handoff/SERVO_OBJECT_TRACKING_HANDOFF_20260729.txt`에 기록했다.
 
 ## 2. 전원 안전 조건
 
