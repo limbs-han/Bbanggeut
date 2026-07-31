@@ -3,7 +3,7 @@
 > 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 5979279
 > 사람용 원본: [../사람이 읽을 문서/04-API명세서.md](../사람이%20읽을%20문서/04-API명세서.md)
 
-ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 제외) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
+ID 체계: API-01~61(REST, `API-06`은 서버 부재로 본문·부록 모두 제외, 금고 `API-52~54`는 이 문서에 아직 미반영) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
 
 **API-51은 `[제안]` — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
 
@@ -161,7 +161,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   {
     "id": "uuid", "name": "string", "model": "string",
     "status": "UNCLAIMED|ONLINE|OFFLINE|REVOKED",
-    "myRole": "OWNER|EDITOR|VIEWER", "retentionDays": 30,
+    "myRole": "OWNER|MEMBER", "retentionDays": 30,
     "lastSeenAt": "2026-07-27T00:00:00Z"
   }
 ]
@@ -438,15 +438,15 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "email": "user@example.com",           // required, @Email @Size<=320
-  "role": "EDITOR",                       // required, "EDITOR"|"VIEWER"
   "membershipRequestToken": "string"      // optional, @Size<=200
+  // role 필드 없음 — 초대는 항상 MEMBER (DB CHECK ck_invitations_member_only)
 }
 ```
 - 응답 201:
 ```json
 {
   "id": "uuid", "deviceId": "uuid", "deviceName": "string",
-  "inviteeEmail": "string", "role": "EDITOR|VIEWER",
+  "inviteeEmail": "string", "role": "MEMBER",
   "inviter": { "id": "uuid", "email": "string", "displayName": "string" },
   "status": "PENDING|ACCEPTED|DECLINED|EXPIRED|REVOKED",
   "expiresAt": "2026-08-03T00:00:00Z", "createdAt": "2026-07-27T00:00:00Z"
@@ -493,7 +493,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 {
   "id": "uuid", "deviceId": "uuid",
   "user": { "id": "uuid", "email": "string", "displayName": "string" },
-  "role": "EDITOR|VIEWER", "status": "ACTIVE|REVOKED", "joinedAt": "2026-07-27T00:00:00Z"
+  "role": "OWNER|MEMBER", "status": "ACTIVE|REVOKED", "joinedAt": "2026-07-27T00:00:00Z"
 }
 ```
 - 에러: 404, 409 `INVITATION_EXPIRED`, 409 `INVITATION_NOT_PENDING`
@@ -614,6 +614,15 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-48 | `POST /internal/admin/devices/{deviceId}/credentials/rotate` | (내부 관리자 키) 자격증명 강제 회전 |
 | API-49 | `DELETE /internal/admin/devices/{deviceId}/credentials` | (내부 관리자 키) 자격증명 폐기 |
 | API-50 | `GET /api/devices/{deviceId}/access-logs` | 접근 기록 커서 조회 |
+| API-55 | `POST /api/auth/password/change` | 비밀번호 변경(JWT + `currentPassword` 확인). 204. 현재 세션만 유지하고 나머지 폐기. 401 `INVALID_CREDENTIALS`, 422 `PASSWORD_UNCHANGED` |
+| API-56 | `POST /api/auth/password/forgot` | 재설정 링크 요청(공개). `{email}` → **항상 202**(미가입 이메일도 동일 — 계정 존재 노출 방지). 토큰 30분·1회용, DB엔 SHA-256 해시만 저장 |
+| API-57 | `POST /api/auth/password/reset` | 토큰으로 재설정(공개). `{token(32~200), newPassword(10~72)}` → 204. **전 세션 폐기**. 401 `INVALID_PASSWORD_RESET_TOKEN` |
+| API-58 | `GET /api/notifications?limit=` | 알림 목록(최신순, 기본 30·최대 100) |
+| API-59 | `GET /api/notifications/unread-count` | 안 읽은 개수 |
+| API-60 | `PATCH /api/notifications/{notificationId}/read` | 1건 읽음. 남의 알림 id는 404 `RESOURCE_NOT_FOUND` |
+| API-61 | `PATCH /api/notifications/read-all` | 전체 읽음 |
+
+**알림 생성 API는 없다.** 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 `READY` 확정 + `triggerType=LAUGHTER` → `LAUGHTER_VIDEO_READY`를 그 기기 활성 구성원 **전원**에게, ② 초대 발송(API-14) → `INVITATION_RECEIVED`를 초대받은 1명에게. `UNIQUE (user_id, dedupe_key)` + `ON CONFLICT DO NOTHING`으로 재시도해도 사용자당 1건만 남는다.
 
 ---
 
@@ -654,7 +663,7 @@ MVP 7단계의 신규 API 중 **API-51 서버 집계는 미구현**이다. FN-A3
 ### ID 검증
 
 - 본문(2~9절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, (신규)51 — 31개 + 신규 1개.
-- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50 — 18개.
-- 합계 31 + 18 = 49개 + API-06(의도적 제외) = as-built 기준 50개 전수 반영 + 신규 API-51 = **총 51개 ID(API-01~51) 중 API-06만 결번**. 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
+- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50, 55~61 — 25개.
+- 합계 31 + 25 = 56개 + 신규 API-51 = **57개 배치**. API-01~61 중 API-06(의도적 제외)과 API-52~54(금고 구독·접근 기록, 이 문서 미반영)가 결번이다. 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 4절(01, 04) + 10절(02, 03, 05~09) + 12절(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
-- 신규 API-51은 기존 max(API-50) 다음 번호로 부여했다.
+- 리포트 제안은 당시 max(API-50) 다음 번호로 API-51을 부여했다. 이후 금고 구독·접근 기록(API-51~54, 이 문서 미반영)에 이어 비밀번호(API-55~57)·알림(API-58~61)을 부여해 현재 max는 **API-61**이다. 리포트 제안과 금고 구독이 같은 API-51을 쓰는 문제와 금고 API의 이 문서 누락은 별도 정리 대상이다.

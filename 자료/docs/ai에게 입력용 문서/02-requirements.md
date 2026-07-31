@@ -96,26 +96,26 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 
 ## 부록 A: 확장 요구사항
 
-MVP 7단계·가족공유 밖이지만 문서·기능 자체는 유지하는 항목이다. `F06~09, F20, F35`는 현재 프런트 UI만 있고 서버가 없는 **미구현 스텁**으로, 향후 확장 시 서버 연동부터 새로 개발해야 한다.
+MVP 7단계·가족공유 밖이지만 문서·기능 자체는 유지하는 항목이다. `F06, F07, F20`은 현재 프런트 UI만 있고 서버가 없는 **미구현 스텁**이다. `F08, F09, F35`는 **서버 API가 구현 완료**되었고 앱 연동만 남아 있다.
 
 | ID | 요구사항 | 관련 FN | 비고(코드 경로) |
 |---|---|---|---|
 | REQ-F-06 | 프로필 표시 이름 수정 | FN-A26, FN-S02 | 향후 확장(스텁) — 프런트가 API-06(`PATCH /api/auth/me`) 호출하나 `AuthController.java`에 매핑 없음(grep 0건) |
 | REQ-F-07 | Apple/Google/카카오 간편 로그인 | FN-A04 | 향후 확장(스텁) — 로컬 스낵바만, 프런트·백엔드 모두 없음(`auth_screen.dart:284-298`) |
-| REQ-F-08 | 비밀번호 재설정(찾기) | FN-A05 | 향후 확장(스텁) — 로컬 스낵바만, 양쪽 다 없음(`auth_screen.dart:249-256`) |
-| REQ-F-09 | 로그인 상태에서 비밀번호 변경 | FN-A29 | 향후 확장(스텁) — 로컬 스낵바만, 양쪽 다 없음(`settings_screen.dart:271-274`) |
+| REQ-F-08 | 비밀번호 재설정(찾기) | FN-A05 | **서버 구현 완료(API-56, 57)** — 토큰 30분·1회용, 재설정 시 전 세션 폐기. 앱은 미연동(`auth_screen.dart:249-256` 로컬 스낵바) |
+| REQ-F-09 | 로그인 상태에서 비밀번호 변경 | FN-A29 | **서버 구현 완료(API-55)** — 현재 비밀번호 확인 후 변경, 현재 세션만 유지. 앱은 미연동(`settings_screen.dart:271-274` 로컬 스낵바) |
 | REQ-F-14 | (OWNER) 기기 소유권 이전 | FN-A24, FN-S06 | 확장 — API-12, 이전대상 ACTIVE 멤버 필요(409 `ALREADY_OWNER`) |
 | REQ-F-15 | (OWNER) 금고에서 물리 기기 연결 해제 | FN-A34, FN-S06 | API-13은 활성 `device_bindings`만 종료. 금고·영상·구독·금고 멤버십은 보존 |
 | REQ-F-16 | (운영자) 신규 기기 등록, 자격증명 회전/폐기 | FN-S23 | 확장/운영 프로비저닝 — API-47~49, 내부 관리자 키+loopback(`ProvisioningController`) |
 | REQ-F-17 | 홈 화면 오늘의 통계·최근 하이라이트 | FN-A09, FN-S19 | 확장 — API-42, `HomeSummaryService` |
 | REQ-F-20 | 기념일 등록·수정·반복/알림시간 설정 | FN-A14 | 향후 확장(스텁) — `AnniversaryEditorScreen` UI만, 서버 anniversary 코드 0건 |
-| REQ-F-23 | (OWNER/EDITOR) 제목·메모 수정 | FN-A18, FN-S13 | 확장 — API-29 |
-| REQ-F-24 | (OWNER/EDITOR) 즐겨찾기 토글 | FN-A19, FN-S13 | 확장 — API-29(`isFavorite`) |
+| REQ-F-23 | (OWNER/MEMBER) 제목·메모 수정 | FN-A18, FN-S13 | 확장 — API-29 |
+| REQ-F-24 | (OWNER/MEMBER) 즐겨찾기 토글 | FN-A19, FN-S13 | 확장 — API-29(`isFavorite`) |
 | REQ-F-25 | (OWNER) 영상 삭제(비동기) | FN-A16, FN-S13 | 확장 — API-30, `video_deletion_jobs` 큐 워커 |
 | REQ-F-32 | 알림 수신 여부 설정 변경 | FN-A28 | 확장 — `flutter_secure_storage` 로컬 저장만, 서버 미반영(테이블/엔드포인트 없음) |
 | REQ-F-33 | (OWNER) 구독(보관 플랜) 조회/활성화/해지 | FN-A30, FN-S18 | 확장 — API-39~41, 보관 365일/해지 유예 30일 |
 | REQ-F-34 | (OWNER) 접근/조작 기록 조회 | FN-A31, FN-S24 | 확장 — API-50(커서 페이지네이션) |
-| REQ-F-35 | 기념일·받은초대·최근영상 알림 목록 | FN-A35 | 향후 확장(스텁) — 목록 표시는 됨, "모두 읽음"은 로컬만(알림 테이블 없음) |
+| REQ-F-35 | 받은초대·웃음영상 준비완료 알림 목록 | FN-A35 | **서버 구현 완료(API-58~61)** — `notifications` 테이블 + dedupe_key 멱등성. 앱은 미연동("모두 읽음"이 아직 로컬만) |
 | REQ-F-38 | 팬틸트 자동 추적·프레이밍 | FN-E08, FN-H01~H04 | 향후 확장(범위 외) — CAD 완료(FN-H01)이나 서보 구동 코드 없음(발행자만, MQTT-11 구독자 전무). 운영 배포는 MQTT 연결 자체 비활성(`MQTT_HOST=` 빈 값) |
 | REQ-F-39 | 웃음 감지 시 인물/반려동물 정보 동시 기록 | FN-E09 | 향후 확장(범위 외) — `event_fusion_service.py` 코드 완성·로컬검증 확인, 운영 배포는 MQTT 비활성 |
 | REQ-F-40 | 라즈베리파이 기반 카메라 송출 프로토타입 검증 | FN-E10 | 향후 확장 — 로컬 MediaMTX RTSP 단순 송출만, 이벤트 로직 없음, 운영과 무관 |

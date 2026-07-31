@@ -258,13 +258,13 @@ flowchart TD
 
 ## 9. 가족 공유
 
-기기 단위 **OWNER / EDITOR / VIEWER** 3역할. 가입은 초대 승인제로만 이루어진다.
+기기 단위 **OWNER / MEMBER** 2역할. 가입은 초대 승인제로만 이루어지며, 초대로 만들어지는 역할은 항상 MEMBER다.
 
 | FN ID | 기능 | 담당 | 동작 규칙 | 관련 REQ·API | 코드 경로 |
 |---|---|---|---|---|---|
 | FN-A08 | 멤버십 요청 링크 생성/공유 | 폰+서버 | 요청 링크 생성해 공유, OWNER가 열면 요청자 정보 미리보기+초대 폼 자동채움 | REQ-F-11 / API-15,16 | `ui/device_registration_screen.dart`, `app/app_controller.dart` — 403, 404 |
 | FN-S08 | 멤버십 요청 링크 | 서버 | 요청자당 활성 링크 1개, 링크 자체는 멤버십 미생성(정식 초대 FN-S07 별도 필요) | REQ-F-11 / API-15,16,17 | `invitation/api/InvitationController.java`, `MembershipRequestService.java` — `/open`은 302 리다이렉트(앱 미호출) |
-| FN-A22 | 가족 구성원 목록/초대 | 폰+서버 | 이메일+역할(EDITOR/VIEWER)로 초대, 구성원/보낸초대 목록 조회 | REQ-F-28 / API-14,18,23 | `ui/family_screen.dart` — 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
+| FN-A22 | 가족 구성원 목록/초대 | 폰+서버 | 이메일로 MEMBER 초대(role 필드 없음), 구성원/보낸초대 목록 조회 | REQ-F-28 / API-14,18,23 | `ui/family_screen.dart` — 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
 | FN-S07 | 초대 발송/보낸 초대 조회/취소 | 서버 | 유효기간 7일, 이미 구성원/동일대상 PENDING 있으면 거부 | REQ-F-28,29 / API-14,18,19 | `invitation/api/InvitationController.java`, `InvitationService.java` |
 | FN-S10 | 구성원 목록/추방 | 서버 | OWNER 추방 불가, 비활성 멤버십 재추방 불가 | REQ-F-28,30 / API-23,24 | `invitation/api/InvitationController.java` — 409 `OWNER_CANNOT_BE_REVOKED` |
 | FN-A23 | 보낸 초대 취소 | 폰+서버 | PENDING 상태만 취소 가능 | REQ-F-29 / API-19 | `ui/family_screen.dart` — 403, 409 `INVITATION_NOT_PENDING` |
@@ -324,7 +324,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN ID | 기능(한 줄) | 비고(코드 경로) |
 |---|---|---|
 | FN-A04 | 소셜 로그인 버튼(Apple/Google/카카오) | 미구현(스텁) — REQ-F-07 · `ui/auth_screen.dart:284-298` |
-| FN-A05 | 비밀번호 찾기 | 미구현(스텁) — REQ-F-08 · `ui/auth_screen.dart:249-256` |
+| FN-A05 | 비밀번호 찾기(이메일 재설정 링크) | 서버 구현 완료(API-56, 57), 앱 미연동 — REQ-F-08 · `ui/auth_screen.dart:249-256` 로컬 스낵바 |
 | FN-A09 | 홈 요약 카드(오늘의 촬영·저장·메모 통계, 최근 하이라이트) | 확장 — REQ-F-17 · `ui/home_screen.dart`(homeSummary 실패는 best-effort 무시) |
 | FN-A12 | 독립형 라이브 화면(`LiveScreen`) | **제거됨** — 도달 불가 HLS 기반 코드로 WebRTC 전용 전환에서 삭제 |
 | FN-A14 | 기념일 배너/편집 | 미구현(스텁) — REQ-F-20 · `ui/calendar_screen.dart`, `ui/extra_screens.dart:193,296` |
@@ -333,11 +333,11 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN-A19 | 즐겨찾기 토글 | 확장 — REQ-F-24 · `ui/video_detail_screen.dart`, `app/app_controller.dart` |
 | FN-A26 | 프로필 이름 수정 | 미구현(서버 API 부재) — REQ-F-06 · `ui/settings_screen.dart`, `core/api_client.dart:152-158` |
 | FN-A28 | 알림 설정(로컬 저장, 서버 미연동) | 확장 — REQ-F-32 · `ui/settings_screen.dart`(`flutter_secure_storage`) |
-| FN-A29 | 비밀번호 변경 | 미구현(스텁) — REQ-F-09 · `ui/settings_screen.dart:271-274` |
+| FN-A29 | 비밀번호 변경 | 서버 구현 완료(API-55), 앱 미연동 — REQ-F-09 · `ui/settings_screen.dart:271-274` 로컬 스낵바 |
 | FN-A30 | 구독(보관 플랜) 관리 | 확장 — REQ-F-33 · `ui/settings_screen.dart` |
 | FN-A31 | 접근 기록 조회 | 확장 — REQ-F-34 · `ui/settings_screen.dart` |
 | FN-A34 | 기기 해제 | 확장 — REQ-F-15 · `ui/settings_screen.dart` |
-| FN-A35 | 알림 목록/읽음 처리(읽음 처리는 로컬만) | 미구현(스텁) — REQ-F-35 · `ui/extra_screens.dart:46`(NotificationsScreen) |
+| FN-A35 | 알림 목록/안읽은개수/읽음 처리 | 서버 구현 완료(API-58~61), 앱 미연동(읽음 처리는 아직 로컬만) — REQ-F-35 · `ui/extra_screens.dart:46`(NotificationsScreen) |
 
 ### 서버(Server)
 
