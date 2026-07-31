@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -5,6 +7,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../core/video_gallery_saver.dart';
+import '../core/video_source_cache.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
 import 'widgets.dart';
@@ -49,8 +52,24 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
       return;
     }
     try {
-      final playUrl = await widget.controller.api.createPlayUrl(_video.id);
-      final player = VideoPlayerController.networkUrl(Uri.parse(playUrl.url));
+      // 이미 받아 둔 원본이 있으면 그걸로 튼다. 재생 URL 왕복도, 스트리밍
+      // 트래픽도 없어진다 — 같은 파일을 저장·편집도 그대로 쓴다.
+      final cached = await VideoSourceCache.cachedPath(_video.id);
+      if (cached == null) {
+        // 이 화면에서 다음에 누를 버튼은 대개 '갤러리에 저장'이나 '영상
+        // 편집하기'고, 둘 다 같은 원본을 필요로 한다. 보는 동안 받아 둔다.
+        VideoSourceCache.prefetch(
+          api: widget.controller.api,
+          videoId: _video.id,
+        );
+      }
+      final player = cached != null
+          ? VideoPlayerController.file(File(cached))
+          : VideoPlayerController.networkUrl(
+              Uri.parse(
+                (await widget.controller.api.createPlayUrl(_video.id)).url,
+              ),
+            );
       await player.initialize();
       if (!mounted) {
         await player.dispose();
@@ -145,6 +164,7 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
       await VideoGallerySaver.save(
         api: widget.controller.api,
         videoId: _video.id,
+        title: _video.title,
         onProgress: (received, total) {
           if (!mounted || total <= 0) return;
           setState(() => _saveProgress = received / total);

@@ -38,6 +38,9 @@ class EditorProjectExporter(
         /// Flutter 미리보기가 글자 크기를 계산할 때 쓰는 기준 캔버스 너비
         /// (local_edit_screen.dart의 `_referenceCanvasWidth`와 같은 값).
         private const val REFERENCE_CANVAS_WIDTH = 1280f
+
+        /// 다시 인코딩할 때 만드는 영상의 긴 변 상한.
+        private const val MAX_OUTPUT_LONG_EDGE = 1280
     }
 
     private var transformer: Transformer? = null
@@ -172,7 +175,19 @@ class EditorProjectExporter(
 
         val aspectRatio = number(canvas, "aspectRatio")?.toDouble()?.coerceIn(0.4, 2.5)
             ?: (16.0 / 9.0)
-        val (targetWidth, targetHeight) = outputSize(aspectRatio)
+        // 원본보다 크게 만들지 않는다. 예전에는 비율만 보고 언제나 긴 변을
+        // 1280으로 잡아, 720p보다 작은 원본을 굳이 키워 인코딩했다 — 화질은
+        // 그대로인데 그릴 픽셀만 늘어난다.
+        val sourceLongEdge = maxOf(
+            number(sourceSize, "width")?.toInt() ?: 0,
+            number(sourceSize, "height")?.toInt() ?: 0,
+        )
+        val longEdge = if (sourceLongEdge > 0) {
+            minOf(MAX_OUTPUT_LONG_EDGE, sourceLongEdge)
+        } else {
+            MAX_OUTPUT_LONG_EDGE
+        }
+        val (targetWidth, targetHeight) = outputSize(aspectRatio, longEdge)
         val canvasRatio = canvas["ratio"] as? String ?: "original"
         val scale = number(canvas, "scale")?.toFloat()?.coerceIn(1f, 4f) ?: 1f
         val rotation = number(canvas, "rotationDegrees")?.toFloat() ?: 0f
@@ -234,8 +249,24 @@ class EditorProjectExporter(
             .setEffects(compositionEffects)
             .build()
 
+        // 자르기만 한 내보내기는 화면에 그릴 것이 하나도 없다. media3에 알려
+        // 주면 프레임을 다시 인코딩하지 않고 그대로 옮겨 담아(맨 앞 GOP만
+        // 다시 만든다) 몇십 초 걸리던 저장이 몇 초로 끝난다.
+        //
+        // 조건을 여기서 직접 따진다. media3도 못 쓰는 경우를 스스로 알아채
+        // 보통 경로로 되돌아가지만, 그 판단에 드는 시간을 애초에 만들지 않는다.
+        val trimOnly = presentation == null &&
+            compositionVideoEffects.isEmpty() &&
+            items.size == 1 &&
+            volume >= 0.999f &&
+            scale == 1f &&
+            rotation == 0f &&
+            offsetX == 0f &&
+            offsetY == 0f
+
         val active = Transformer.Builder(activity)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .experimentalSetTrimOptimizationEnabled(trimOnly)
             .addListener(
                 object : Transformer.Listener {
                     override fun onCompleted(
@@ -399,12 +430,14 @@ class EditorProjectExporter(
         else -> null
     }
 
-    private fun outputSize(aspectRatio: Double): Pair<Int, Int> =
-        if (aspectRatio >= 1.0) {
-            1280 to ((1280 / aspectRatio).roundToInt() / 2 * 2).coerceAtLeast(2)
+    private fun outputSize(aspectRatio: Double, longEdge: Int): Pair<Int, Int> {
+        val edge = (longEdge / 2 * 2).coerceAtLeast(2)
+        return if (aspectRatio >= 1.0) {
+            edge to ((edge / aspectRatio).roundToInt() / 2 * 2).coerceAtLeast(2)
         } else {
-            ((1280 * aspectRatio).roundToInt() / 2 * 2).coerceAtLeast(2) to 1280
+            ((edge * aspectRatio).roundToInt() / 2 * 2).coerceAtLeast(2) to edge
         }
+    }
 
     private fun number(raw: Map<String, Any?>, key: String): Number? =
         raw[key] as? Number
