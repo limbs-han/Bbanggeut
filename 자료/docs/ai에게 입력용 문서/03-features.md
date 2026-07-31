@@ -140,7 +140,7 @@ flowchart TD
 | FN-A20 | 영상 다운로드 | API-32 | `ui/video_detail_screen.dart` | 409, 503 |
 | FN-A21 | 로컬 영상 편집 | API-32 | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt`(exportWithTrim) | ⚠️ 서버 재업로드 API 호출 미발견 |
 | FN-A39 | 온디바이스 자동 자막 | 없음 | `features/stt/*`, `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `SttChannel.kt`, `SubtitleOverlay.kt` | 오디오·전사문이 기기 밖으로 나가지 않음. 모델은 `assets/models/ggml-small-ko-q5_1.bin`(약 181MiB) — 앱이 첫 실행 때 파일로 복사. 자르기·자막·효과는 인코딩 1회에 함께 처리 |
-| FN-A40 | 4컷 만화 만들기 | `POST /api/videos/{id}/comic/script`, `POST /api/videos/{id}/comic/image` | `features/comic/*`, `ui/content_video_detail_screen.dart`, `core/api_client.dart` | 전사문(글)만 서버로 보냄. 키는 서버 보관. COMIC_SERVER가 없으면 FakeComicGateway |
+| FN-A40 | 4컷 만화 만들기 | API-52, API-53 **[제안·미구현]** | `features/comic/*`, `ui/content_video_detail_screen.dart`, `core/api_client.dart` | 전사문(글)만 서버로 보냄. 키는 서버 보관. **앱만 구현, 서버 없음** — COMIC_SERVER가 없으면 FakeComicGateway |
 | FN-A22 | 가족 목록/초대 | API-23, API-14, API-18 | `ui/family_screen.dart` | 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
 | FN-A23 | 보낸 초대 취소 | API-19 | `ui/family_screen.dart` | 403, 409 INVITATION_NOT_PENDING |
 | FN-A24 | 소유권 이전/구성원 내보내기 | API-12, API-24 | `ui/family_screen.dart` | transfer는 `controller.api` 직접호출(래퍼 미사용); 409 ALREADY_OWNER/TRANSFER_TARGET_NOT_ACTIVE_MEMBER/OWNER_CANNOT_BE_REVOKED |
@@ -229,7 +229,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | FN-A21 | 로컬 영상 편집 | 폰 | 서명 다운로드 URL로 원본을 내려받아 자르기·비율 변환·자막·효과를 적용하고 결과를 갤러리에 저장 | REQ-F-27 / API-32(재사용) | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt` |
 | FN-A39 | 온디바이스 자동 자막 | 폰 | 원본을 내려받은 직후 기기에서 음성을 분석해 시각별 자막을 만들고 줄마다 수정할 수 있게 한다. 오디오·전사문은 외부로 전송하지 않으며 저장 시 다른 편집 효과와 한 번에 인코딩한다 | REQ-F-27 / 서버 API 없음 | `features/stt/*`, `SttChannel.kt`, `SubtitleOverlay.kt` |
-| FN-A40 | 4컷 만화 만들기 | 폰+서버 | 자막이 만든 전사문을 서버에 보내 4컷 구성을 받고, 사용자가 대사를 고친 뒤 만화 그림 한 장(2x2 격자)을 받는다. 대사는 영화 자막처럼 각 컷에 앱이 얹고, 완성작은 갤러리에 저장한다 | REQ-F-27 / `POST /api/videos/{id}/comic/script`, `POST /api/videos/{id}/comic/image` | `features/comic/*`, `ui/content_video_detail_screen.dart` |
+| FN-A40 | 4컷 만화 만들기 | 폰+서버 | 자막이 만든 전사문을 서버에 보내 4컷 구성을 받고, 사용자가 대사를 고친 뒤 만화 그림 한 장(2x2 격자)을 받는다. 대사는 영화 자막처럼 각 컷에 앱이 얹고, 완성작은 갤러리에 저장한다 | REQ-F-27 / API-52, API-53 **[제안·미구현]**(`04-api-spec.md` 6절) | `features/comic/*`, `ui/content_video_detail_screen.dart` |
 
 별도 서버 API는 필요하지 않다. 편집과 자막 생성은 전적으로 폰에서 이루어지고, 원본 다운로드는 6절과 같은 API-32를 재사용한다. 음성 인식 모델 `frontend/assets/models/ggml-small-ko-q5_0.bin`은 약 167MiB이며, 전사 실패나 무음 판정은 자르기·저장을 막지 않는다. 직접 입력한 한 줄 자막이 있으면 자동 자막보다 우선한다. 서버를 쓰는 것은 FN-A40 만화뿐이며, 그것도 전사문(글)만 보낸다 — 영상·오디오·프레임은 기기를 떠나지 않고, 이미지 생성 키는 서버가 보관한다.
 
@@ -374,7 +374,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 
 ## 12. 부록 B: 현재 구현 현황
 
-MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 집계는 제안·미구현이다.
+MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 집계는 제안·미구현이다. FN-A40 4컷 만화도 앱만 구현됐고 API-52·API-53 서버는 미구현이다.
 
 | # | MVP 단계 | 상태 | 비고 |
 |---|---|---|---|
@@ -382,7 +382,7 @@ MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-51 서버 �
 | 2 | 기기 등록 | 구현됨 | QR/8자리 코드 claim, 자격증명 발급/회전 포함 전체 동작 |
 | 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지 → 자동 업로드 → 목록/재생 전체 동작 |
-| 5 | 영상 편집 | 구현됨 | 폰 내 수동 편집(Banuba) 동작 |
+| 5 | 영상 편집 | 부분 구현 | 폰 내 수동 편집(Banuba)·온디바이스 자동 자막(FN-A39) 동작. **FN-A40 4컷 만화는 앱만 구현 — API-52·API-53 서버 미구현** |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장+공유, 원본 서버 다운로드 동작 |
 | 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-51 서버 집계는 제안·미구현** |
 

@@ -135,14 +135,21 @@ features/comic/
 
 ### 가짜 게이트웨이가 기본값이다
 
-`COMIC_GATEWAY` 실행 인자가 없으면 `FakeComicGateway`가 붙는다. 고정 구성 4개와
+`COMIC_SERVER` 실행 인자가 없으면 `FakeComicGateway`가 붙는다. 고정 구성 4개와
 4칸으로 나뉜 그림을 돌려주므로, **서버 없이 화면 전부를 만들고 테스트할 수 있다.**
 자막에서 `FakeCaptions`를 쓴 것과 같은 방식이다.
 
 ```dart
-const comicGateway = String.fromEnvironment('COMIC_GATEWAY');
-// 비어 있으면 Fake, 있으면 Http
+const comicServerReady = bool.fromEnvironment('COMIC_SERVER');
+// false면 Fake, true면 Http
 ```
+
+`bool.fromEnvironment`는 `true`/`false` 문자열만 알아본다 — `1`, `yes`, `TRUE`는
+오류 없이 false가 된다. 서버를 켤 때는 `--dart-define=COMIC_SERVER=true`로 정확히
+적는다(`frontend/README.md`에도 적어 두었다).
+
+가짜가 붙어 있는 동안 만화 화면 위쪽에 견본이라는 알림을 띄운다. 고정 대사를 자기
+가족의 말로 오해하면 안 된다.
 
 ## 화면 흐름
 
