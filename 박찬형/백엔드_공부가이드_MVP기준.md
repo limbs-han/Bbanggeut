@@ -1,10 +1,17 @@
 # ChanHyeong 백엔드 공부 가이드 — MVP 7개 흐름으로 코드 읽기
 
 > 대상: 백엔드를 처음 공부하는 팀원  
-> 기준일: 2026-07-30
-> 기준 브랜치: `codex/chanhyeong-study`  
+> 기준일: 2026-07-31 (코드 재검증 반영)
+> 기준 브랜치: `master` (`codex/chanhyeong-study`는 커밋 `d0ade0e`로 master에 병합 완료)  
 > 가장 중요한 기준 문서: `자료/docs/사람이 읽을 문서/01-서비스기획.md`의 **8. MVP 정의**  
 > 성격: 설계 희망사항이 아니라, 현재 저장소의 문서와 구현 코드를 함께 확인한 **공부용 as-built 가이드**
+
+> **2026-07-31 전체 재검증 요약** — 백엔드 전 도메인을 코드와 대조해 다음을 정정했다. 예전 판을 이미 읽은 사람은 이 4개를 먼저 확인하면 된다.
+>
+> 1. **라이브는 WebRTC/WHEP 전용이 됐다.** MediaMTX가 `hls: false`이고 `StreamSessionResponse`에 `whepUrl`만 남아 **HLS 재생과 폴백이 없다**. 오디오도 AAC가 아니라 **Opus**다. (§4, §23.1)
+> 2. **“검토 중인 MR !92”는 이미 master에 병합됐다.** 기기 presence는 Redis `presence:device:{id}`(TTL 90초)가 우선 경로이고 PostgreSQL이 fallback이며, 로그인 성공 시 IP bucket 정리도 구현돼 있다. (§1.8, §2.4.1, §10.1)
+> 3. **이름이 다른 것들**: `device_claim_attempts`(옛 `claim_attempts`), `rl:claim:user:`(옛 `rl:claim:account:`), `IotVideoService.complete`(옛 `completeUpload`), MQTT 토픽 접두어 기본값은 `local`(운영만 `prod`). `CLAIMED`라는 기기 상태는 없다(UNCLAIMED/ONLINE/OFFLINE/REVOKED).
+> 4. **리포트 서버 집계 제안 API는 `API-62`**다. 지금 `API-51`은 금고 구독 조회 API이므로 옛 번호로 코드를 짜면 안 된다. (§8.1, §23.2)
 
 ---
 
@@ -189,7 +196,8 @@ localhost:8080
 | 9000 | MinIO | S3 호환 API |
 | 9001 | MinIO | 관리자 웹 화면 |
 | 8554 | MediaMTX | RTSP ingest |
-| 8888 | MediaMTX | HLS 제공 |
+| 8889 | MediaMTX | WebRTC/WHEP 시그널링 (HLS 8888은 비활성) |
+| 8189/udp | MediaMTX | WebRTC 미디어/ICE |
 
 포트 번호 자체가 보안 기능은 아니다. 포트를 안다고 접속 권한이 생겨서는 안 된다. 방화벽, 인증, TLS, ACL이 따로 필요하다.
 
@@ -514,7 +522,7 @@ Gradle은 Java 프로젝트의 build 도구다.
 
 ```text
 Spring Boot :8080
-MediaMTX HLS :8888
+MediaMTX WHEP :8889
 MinIO :9000
 ```
 
@@ -544,7 +552,7 @@ Nginx는 이 프로젝트에서 reverse proxy다. 사용자는 뒤에 Spring과 
 - 443에서 HTTPS 요청 수신
 - TLS 인증서와 private key 사용
 - `/api/**`를 Spring Boot로 전달
-- HLS playlist/segment 요청 전에 live token 검사
+- WHEP(WebRTC) 시그널링 요청 전에 live token 검사
 - 허용되면 MediaMTX로 전달
 - PostgreSQL, MinIO, Spring 내부 포트를 외부에서 숨김
 - 실제 client IP와 원래 HTTPS 정보를 header로 전달
@@ -865,7 +873,7 @@ Nginx     = HTTP를 처리하는 실제 서버 프로그램 중 하나
 전달하지 않는 것:
 
 - MP4 파일
-- 라이브 H.264/AAC 전체
+- 라이브 H.264/Opus 전체
 - 사용자 JWT
 - 등록 코드 평문
 - presigned URL
@@ -924,7 +932,7 @@ Docker container와 영상 container는 이름만 같고 전혀 다른 개념이
 
 #### RTSP
 
-RTSP는 라이브 미디어 session을 제어하는 프로토콜이다. 이 프로젝트에서는 홈캠이 MediaMTX에 H.264/AAC stream을 publish하는 ingest 쪽에서 사용한다.
+RTSP는 라이브 미디어 session을 제어하는 프로토콜이다. 이 프로젝트에서는 홈캠이 MediaMTX에 H.264/Opus stream을 publish하는 ingest 쪽에서 사용한다.
 
 #### HLS
 
@@ -937,7 +945,7 @@ index.m3u8 playlist
   └─ segment003
 ```
 
-앱 player는 playlist를 반복해서 읽고 새 segment를 이어 재생한다.
+앱 player는 playlist를 반복해서 읽고 새 segment를 이어 재생한다. HLS는 널리 쓰이는 방식이지만, **현재 이 프로젝트는 재생에 HLS를 쓰지 않는다**(MediaMTX `hls: false`). 저지연을 위해 WebRTC/WHEP로 재생한다(§23.1). 아래 설명에서 “playback”은 HLS가 아니라 WHEP 경로다.
 
 #### ingest와 playback
 
@@ -947,7 +955,7 @@ index.m3u8 playlist
 이 프로젝트:
 
 ```text
-홈캠 --RTSP(S) ingest--> MediaMTX --HLS playback--> 앱
+홈캠 --RTSP(S) ingest--> MediaMTX --WHEP/WebRTC playback--> 앱
 ```
 
 #### MediaMTX
@@ -957,8 +965,8 @@ index.m3u8 playlist
 이 프로젝트에서:
 
 - 홈캠의 RTSP(S) publish를 받음
-- H.264/AAC를 가능하면 다시 인코딩하지 않음
-- HLS playlist/segment로 제공
+- H.264/Opus를 가능하면 다시 인코딩하지 않음
+- WebRTC/WHEP로 제공 (HLS는 비활성)
 - 한 입력을 여러 시청자에게 전달
 
 MediaMTX가 하지 않는 일:
@@ -972,7 +980,7 @@ MediaMTX가 하지 않는 일:
 #### remux와 transcode
 
 - transcode: 압축을 풀고 다른 설정/코덱으로 다시 압축. 비용이 큼.
-- remux: 압축된 H.264/AAC는 유지하고 포장·전달 형식만 변경. 비용이 작음.
+- remux: 압축된 H.264/Opus는 유지하고 포장·전달 형식만 변경. 비용이 작음.
 
 MediaMTX를 쓴 핵심 이유 중 하나는 가능한 경로에서 remux와 fan-out을 전문 프로그램에 맡기는 것이다.
 
@@ -996,7 +1004,7 @@ MediaMTX를 쓴 핵심 이유 중 하나는 가능한 경로에서 remux와 fan-
 | MQTT | pub/sub 통신 프로토콜 | 작은 기기 메시지 규칙 |
 | Mosquitto | MQTT broker 프로그램 | MQTT 메시지 중개 |
 | Paho | MQTT client library | Spring이 Mosquitto와 연결 |
-| MediaMTX | 미디어 서버 | RTSP ingest를 HLS로 전달 |
+| MediaMTX | 미디어 서버 | RTSP ingest를 WebRTC/WHEP로 전달 |
 | Docker | container 실행 도구 | 의존 프로그램 환경 격리 |
 | Docker Compose | 다중 container 정의 도구 | 인프라를 함께 실행 |
 | Flutter | 앱 framework | Android 사용자 화면과 API 호출 |
@@ -1017,7 +1025,7 @@ Spring Boot = 우리 비즈니스 로직을 실행하는 프로그램 기반
 
 앞의 정의를 바탕으로 처음 문장을 다시 풀면 다음과 같다.
 
-> Flutter 앱은 HTTP라는 요청·응답 규칙으로 Nginx라는 외부 정문에 요청한다. Nginx는 API 요청을 Spring Boot 프로그램에 넘긴다. Spring은 사용자와 권한을 확인하고 PostgreSQL에 metadata를 저장한다. 홈캠과 Spring 사이의 작은 비동기 상태·명령은 MQTT 규칙을 사용하고 Mosquitto가 중개한다. 완성된 MP4는 파일 전문 저장소인 MinIO에 보관한다. 라이브 H.264/AAC stream은 홈캠에서 MediaMTX로 들어가고, 앱은 지연이 짧은 WebRTC/WHEP를 먼저 시도하며 실패하면 HLS로 재생한다.
+> Flutter 앱은 HTTP라는 요청·응답 규칙으로 Nginx라는 외부 정문에 요청한다. Nginx는 API 요청을 Spring Boot 프로그램에 넘긴다. Spring은 사용자와 권한을 확인하고 PostgreSQL에 metadata를 저장한다. 홈캠과 Spring 사이의 작은 비동기 상태·명령은 MQTT 규칙을 사용하고 Mosquitto가 중개한다. 완성된 MP4는 파일 전문 저장소인 MinIO에 보관한다. 라이브 H.264/Opus stream은 홈캠에서 MediaMTX로 들어가고, 앱은 지연이 짧은 WebRTC/WHEP로 재생한다(현재 HLS는 비활성이라 폴백이 없다).
 
 이 문장을 자기 말로 설명할 수 있으면 뒤의 MVP 흐름을 읽을 준비가 된 것이다.
 
@@ -1053,15 +1061,15 @@ MVP 동선에 필요한 전제 기능은 다음 3개다.
 [Flutter Android 앱]
   ├─ HTTPS REST + 사용자 JWT ───────────────┐
   ├─ presigned GET으로 영상 재생/다운로드 ─┼──> [Nginx]
-  └─ HLS playlist/segment 요청 ─────────────┘       │
+  └─ WHEP(WebRTC) 시그널링 요청 ────────────┘       │
                                                     ├─> [Spring Boot API]
-                                                    └─> [MediaMTX HLS]
+                                                    └─> [MediaMTX WebRTC/WHEP]
 
 [Jetson / Raspberry Pi 홈캠]
   ├─ HTTPS REST + 기기 credential ───────────────> [Spring Boot API]
   ├─ MQTTS publish/subscribe ────────────────────> [Mosquitto]
   ├─ presigned PUT ──────────────────────────────> [MinIO]
-  └─ H.264/AAC RTSP(S) publish ──────────────────> [MediaMTX]
+  └─ H.264/Opus RTSP(S) publish ─────────────────> [MediaMTX]
 
 [Spring Boot API]
   ├─ 메타데이터·권한·세션·상태 ────────────────> [PostgreSQL]
@@ -1078,12 +1086,12 @@ MVP 동선에 필요한 전제 기능은 다음 3개다.
 | MQTT | 작은 비동기 메시지, pub/sub | heartbeat, 감지 이벤트, 라이브 명령 | 큰 MP4를 보내면 브로커 메모리·재전송 부담 |
 | MinIO/S3 | 큰 객체 저장·전송 | MP4 업로드, 재생, 다운로드 | API 서버를 거치면 네트워크·메모리 병목 |
 | RTSP(S) | 카메라의 연속 스트림 ingest | 홈캠 → MediaMTX | REST 요청 하나로 끝나지 않는 장시간 연결 |
-| HLS | 앱·웹 친화적 재생 | MediaMTX → 앱 | RTSP를 앱이 직접 재생하면 호환성과 보안이 어려움 |
+| WebRTC/WHEP | 저지연 앱 재생 | MediaMTX → 앱 | RTSP를 앱이 직접 재생하면 호환성과 보안이 어려움 (HLS는 현재 비활성) |
 
 ### 핵심 구분
 
 - **저장 영상**: 완성된 MP4 파일이다. MinIO에 객체로 보관한다.
-- **라이브 영상**: 계속 들어오는 H.264/AAC 패킷이다. MediaMTX가 HLS로 내보낸다.
+- **라이브 영상**: 계속 들어오는 H.264/Opus 패킷이다. MediaMTX가 WebRTC/WHEP로 내보낸다.
 - **이벤트**: “웃음이 발생했다”는 작은 JSON 사실이다. MQTT와 PostgreSQL이 다룬다.
 - **명령**: “라이브를 시작하라”는 작은 JSON이다. MQTT가 다룬다.
 
@@ -1104,8 +1112,8 @@ MVP 동선에 필요한 전제 기능은 다음 3개다.
 | MinIO | S3 호환 객체 저장소 | 로컬/EC2에서도 S3 방식 사용, presigned URL | DB BLOB은 백업·전송·용량 부담 |
 | Mosquitto | MQTT broker | 가볍고 IoT pub/sub와 ACL 지원 | Kafka는 이 규모의 기기 제어에 지나치게 무거움 |
 | Eclipse Paho | Java MQTT client | Mosquitto와 연결·구독·QoS 발행 | 직접 프로토콜 구현 불필요 |
-| MediaMTX | RTSP ingest, HLS fan-out | 트랜스코딩 없이 remux 가능, 구성이 단순 | 서버 직접 FFmpeg는 프로세스·부하 관리가 복잡 |
-| Nginx | 외부 정문·리버스 프록시 | TLS 종료, 내부 포트 은닉, HLS 인증 연계 | 각 서비스를 직접 공개하면 공격 면적 증가 |
+| MediaMTX | RTSP ingest, WebRTC/WHEP fan-out | 트랜스코딩 없이 remux 가능, 구성이 단순 | 서버 직접 FFmpeg는 프로세스·부하 관리가 복잡 |
+| Nginx | 외부 정문·리버스 프록시 | TLS 종료, 내부 포트 은닉, WHEP 인증 연계 | 각 서비스를 직접 공개하면 공격 면적 증가 |
 | Docker Compose | 로컬/운영 의존 서비스 | PostgreSQL·MinIO·Mosquitto·MediaMTX 재현 | PC에 직접 설치하면 버전과 설정이 달라짐 |
 | Gradle | 빌드·테스트 | 의존성 관리, bootJar 생성 | Maven도 가능하나 현재 Gradle로 통일 |
 
@@ -1126,6 +1134,8 @@ backend/server/src/main/java/com/wj/server/
 ├─ subscription/   금고/기기의 보관 정책과 구독
 ├─ audit/          누가 언제 무엇에 접근했는지 기록
 ├─ provisioning/   내부 관리자가 새 물리 기기를 출고 등록
+├─ home/           홈 화면 요약 응답(HomeSummary)
+├─ storage/        MinIO presigned URL 발급·객체 검사·삭제(ObjectStorageService)
 ├─ common/         공통 오류, rate limit, web filter
 └─ config/         Spring Security와 환경설정 binding
 ```
@@ -1156,10 +1166,10 @@ api/*Controller
 | 저장소/프로세스 | 저장하는 것 | 수명과 특성 | 장애·재시작 시 기대 |
 |---|---|---|---|
 | PostgreSQL | 사용자, BCrypt 비밀번호 해시, refresh session 해시, 금고·멤버십·기기 binding, 영상 metadata, 초대, 라이브 session, 알림, 감사 이력 | 권한·돈·복구에 필요한 영속 데이터, 트랜잭션 필요 | 재시작 후에도 반드시 남아야 함 |
-| Redis | 로그인·claim 시도의 슬라이딩 윈도우 ZSET | 짧은 TTL의 고빈도 운영 상태, 원자적 check-and-add 필요 | 유실 가능. 장애 시 로그인 자체는 허용하는 fail-open 정책 |
+| Redis | 로그인·claim 시도의 슬라이딩 윈도우 ZSET, 기기 presence(`presence:device:{id}` TTL 90초) | 짧은 TTL의 고빈도 운영 상태, 원자적 check-and-add 필요 | 유실 가능. rate limit은 fail-open으로 로그인 허용, presence는 PostgreSQL `last_seen_at`로 fallback |
 | MinIO | MP4 영상 객체 | 큰 binary, DB transaction과 별도 | 객체와 PostgreSQL metadata를 함께 백업해야 함 |
 | Mosquitto | MQTT 연결, retained status, 전달 중 message | 실시간 전달 통로이지 업무 원장 DB가 아님 | 끊기면 재연결·LWT·재발행으로 회복 |
-| MediaMTX | 현재 들어오는 RTSP stream과 HLS/WHEP 출력 | 라이브 중에만 의미 있는 휘발 상태 | 중단돼도 사용자·영상 metadata는 손상되지 않음 |
+| MediaMTX | 현재 들어오는 RTSP stream과 WebRTC/WHEP 출력 | 라이브 중에만 의미 있는 휘발 상태 | 중단돼도 사용자·영상 metadata는 손상되지 않음 |
 | Flutter secure storage | access/refresh token 등 앱의 로그인 재개 정보 | 해당 단말의 민감 로컬 상태 | 로그아웃/refresh 실패 시 삭제 |
 | Jetson 로컬 디스크 | 24시간 순환 녹화 buffer, 업로드 전 clip | 서버로 상시 전송하지 않는 privacy 경계 | 업로드 완료 전까지 edge가 책임 |
 
@@ -1222,13 +1232,13 @@ Flutter도 로그인 후 `GET /api/vaults`를 먼저 호출해 `selectedVault`�
 | 로그인 | 이메일+비밀번호 | rate limit, BCrypt, 계정 상태 | 사용자·session·실패 감사 이력 | 이메일/IP 시도 window | 없음 |
 | access JWT API | Bearer JWT | 서명·만료·issuer·sid·tv 검증 | session과 user 상태를 매 요청 조회 | 사용 안 함 | 없음 |
 | 기기 claim | 1회용 등록 코드 | 코드 유효성, OWNER 권한, binding 불변식 | 코드·기기·Vault·binding | 코드/IP 시도 window | 없음 |
-| heartbeat | MQTT message | 기기 식별·payload 검증 | 현재 master는 `devices` 상태 갱신 | 현재 master에서는 사용 안 함 | Mosquitto |
+| heartbeat | MQTT message | 기기 식별·payload 검증 | Redis 장애 시 `devices.last_seen_at` fallback | `presence:device:{id}` TTL 90초(우선 경로) | Mosquitto |
 | 영상 업로드 | 기기의 metadata | credential, 멱등 키, 크기·checksum | `videos` 상태 머신 | 사용 안 함 | MinIO presigned PUT |
 | 영상 조회 | vaultId/deviceId | VaultMembership 권한 | 영상 metadata·cursor | 사용 안 함 | 재생 시 MinIO GET URL |
 | 라이브 | 앱의 session 생성 | 기기 online, 멤버 권한, lease | stream/viewer session | 사용 안 함 | MQTT 명령 + MediaMTX |
 | 초대 | OWNER 요청/수신자 수락 | role·상태·이메일 일치 | invitation·membership | 사용 안 함 | email/FCM |
 
-> Redis 운영 상태 확장 MR !92는 heartbeat presence를 `presence:device:{id}` TTL 키에 두고 DB를 장애 fallback으로 사용하는 변경이다. 이 스터디 브랜치가 병합한 현재 master에는 아직 반영되지 않았으므로, 위 표는 master의 as-built와 MR 이후 구조를 구분해 적었다.
+> 예전 학습 노트에서 “검토 중인 MR !92”로 부르던 Redis 운영 상태 확장(heartbeat presence를 `presence:device:{id}` TTL 키에 두고 PostgreSQL을 장애 fallback으로 쓰는 변경, 그리고 로그인/claim 성공 시 예약 정리)은 **현재 master에 이미 병합**됐다. 따라서 위 표의 heartbeat·presence 경로는 as-built 그대로다.
 
 ---
 
@@ -1305,7 +1315,7 @@ BCrypt는 다음 특징이 있다.
      │   → PostgreSQL auth_login_attempts에 이메일/IP SHA-256 digest 기록
      │   → 401 INVALID_CREDENTIALS
      └─ 성공
-         → Redis 이메일 bucket 정리
+         → Redis 이메일 bucket 삭제 + 이 요청이 IP bucket에 넣은 member 제거
          → PostgreSQL users.last_login_at 갱신
          → PostgreSQL auth_sessions에 refresh token SHA-256 hash INSERT
          → access JWT + refresh 원문을 앱에 반환
@@ -1334,7 +1344,7 @@ rl:login:ip:{sha256(ip)}
 
 Redis 장애 때는 **fail-open**이다. `SlidingWindowRateLimiter`가 경고 로그를 남기고 요청을 허용한다. Redis 장애 하나로 모든 사용자의 로그인을 막지 않기 위한 선택이며, 외부 Nginx의 volumetric limit은 별도로 유지해야 한다. 보안과 가용성 사이의 명시적 trade-off다.
 
-현재 master 구현은 성공 시 이메일 bucket만 삭제하고 IP bucket은 남긴다. IP 전체 제한을 유효한 계정 하나로 초기화하는 공격을 막기 위한 의도지만, 성공 요청 자체도 IP ZSET member로 남아 정상 로그인 5회가 제한에 포함되는 문제가 있다. MR !92는 `Reservation`과 성공 완료 Lua를 도입해 **성공한 요청 member 하나만 IP bucket에서 제거**하고 이메일 bucket을 정리하도록 수정한다.
+성공 로그인의 bucket 정리는 `complete-successful-attempt.lua`가 담당한다. 이 Lua는 이메일 bucket 전체를 삭제하고, **성공한 그 요청이 IP bucket에 넣었던 member 하나만** IP bucket에서 제거한다. 이렇게 하면 정상 로그인이 IP 제한 카운트에 쌓이지 않으면서도, 같은 IP에서 다른 계정을 노린 실패 이력이 로그인 성공 한 번으로 통째로 초기화되지는 않는다. 이 정리는 `reserveOrReject`가 돌려준 `Reservation`(요청별 member 식별자)과 성공 완료 Lua로 원자적으로 처리한다(`AuthService.login` → `SlidingWindowRateLimiter.completeSuccess`).
 
 ### 2.4.2 PostgreSQL이 맡는 것
 
@@ -1360,8 +1370,9 @@ Redis 장애 때는 **fail-open**이다. `SlidingWindowRateLimiter`가 경고 �
 
 ```text
 Authorization: Bearer {access JWT}
-  → JwtDecoder: HS256 서명, exp, issuer 검증
+  → JwtDecoder: HS256 서명 + exp(만료) 검증 (기본 검증기는 서명·시각만 확인)
   → AccessTokenValidator:
+       iss == wj-server 확인
        sid로 PostgreSQL auth_sessions + users 조회
        session userId == JWT sub
        user status == ACTIVE
@@ -1434,6 +1445,7 @@ CSRF를 끈 이유도 쿠키 기반 서버 세션이 아니라 Authorization hea
 - `config/SecurityConfig.java`
 - `config/JwtConfig.java`
 - `resources/redis/sliding-window.lua`
+- `resources/redis/complete-successful-attempt.lua` (성공 로그인 시 bucket 정리)
 - `db/migration/V1__auth.sql`
 - `db/migration/V14__login_rate_limit.sql`
 - `db/migration/V27__attempt_retention_indexes.sql`
@@ -1475,7 +1487,7 @@ A. access token은 짧게 쓰고, 민감 저장소에는 refresh token을 두며
   → 지금 세션만 남기고 다른 세션 전부 폐기
 ```
 
-마지막 줄이 중요하다. 비밀번호를 바꾸면 예전 비밀번호로 로그인해 둔 **다른 기기 세션은 끊는다**(`revokeOtherSessionsForUser`). 지금 조작 중인 세션 하나만 살린다.
+마지막 줄이 중요하다. 비밀번호를 바꾸면 예전 비밀번호로 로그인해 둔 **다른 기기 세션은 끊는다**(`revokeOtherSessionsForUser`). 지금 조작 중인 세션 하나만 살린다. 다만 비밀번호 교체는 `users.token_version`도 올린다. 그래서 살아남은 현재 세션이라도 **이미 발급된 access token은 즉시 무효**가 되고 refresh로 새 access token을 받아야 한다(세션 행 자체는 유지). 2.4.4의 `tv` 검증이 이를 강제한다.
 
 ### 재설정 — 비밀번호를 잊은 사람이 되찾는다
 
@@ -1575,16 +1587,16 @@ refresh token과 같은 사고방식이다. DB에는 토큰의 **SHA-256 해시�
   → TTL·미사용·UNCLAIMED·rate limit 확인
   ├─ vaultId 없음: Memory Vault 생성 + 사용자 OWNER 멤버십 생성
   └─ vaultId 있음: 기존 Vault의 OWNER인지 검증
-  → device를 CLAIMED로 변경
+  → device를 claimed 처리 (claimed_at/claimed_by 기록, 상태 ONLINE/OFFLINE 전환)
   → 다음 generation의 ACTIVE DeviceBinding 생성
   → 코드를 사용 처리
 ```
 
 claim에서 Redis와 PostgreSQL의 역할도 로그인과 같은 원칙으로 나뉜다.
 
-- Redis: `rl:claim:account:{userId}`, `rl:claim:ip:{sha256(ip)}`의 최근 요청 window
+- Redis: `rl:claim:user:{userId}`, `rl:claim:ip:{sha256(ip)}`의 최근 요청 window
 - PostgreSQL: 등록 코드, 기기 상태, Vault, OWNER 멤버십, binding generation
-- 성공/실패 감사 이력: PostgreSQL `claim_attempts`
+- 성공/실패 감사 이력: PostgreSQL `device_claim_attempts`
 
 rate limit은 공격 속도를 줄일 뿐이고 소유권을 결정하지 않는다. 최종 권한과 1회용 코드 소비는 반드시 PostgreSQL transaction과 row lock으로 보장한다.
 
@@ -1604,13 +1616,13 @@ QR 코드는 별도 권한 체계가 아니다. 사람이 입력할 등록 코�
 
 ## 3.5 claim이 트랜잭션이어야 하는 이유
 
-기기를 `CLAIMED`로 바꿨는데 Vault/OWNER/binding 생성이 실패하면 “연결된 금고는 없는데 이미 등록된 기기”가 된다. 반대로 binding만 생기고 코드가 미사용이면 재사용 공격이 가능하다.
+기기를 claimed 처리(UNCLAIMED 해제)했는데 Vault/OWNER/binding 생성이 실패하면 “연결된 금고는 없는데 이미 등록된 기기”가 된다. 반대로 binding만 생기고 코드가 미사용이면 재사용 공격이 가능하다.
 
 따라서 아래가 한 트랜잭션으로 모두 성공하거나 모두 롤백되어야 한다.
 
 - 코드 검증과 잠금
 - `vaultId`가 있으면 기존 Vault OWNER 권한 검증, 없으면 새 Vault 생성
-- device claim 상태 변경
+- device를 claimed 처리 (UNCLAIMED 해제, claimed_at/claimed_by 기록)
 - registration code 사용 처리
 - Vault OWNER membership과 다음 generation DeviceBinding 생성
 
@@ -1693,9 +1705,11 @@ Spring Boot가 영상을 직접 중계하지 않는다.
 
 - Spring Boot: 시청 권한, 세션, 단기 token, 시작·연장·종료 판단
 - Mosquitto: 서버의 제어 명령과 기기의 상태 이벤트 운반
-- 홈캠: H.264/AAC 인코딩과 RTSP(S) publish
-- MediaMTX: RTSP ingest를 HLS로 remux하고 여러 시청자에게 fan-out
-- Nginx: 외부 HTTPS 정문과 HLS token introspection
+- 홈캠: H.264/Opus 인코딩과 RTSP(S) publish
+- MediaMTX: RTSP(S) ingest를 WebRTC로 패키징해 WHEP로 여러 시청자에게 fan-out
+- Nginx: 외부 HTTPS 정문과 WHEP(라이브) token introspection
+
+> 중요: 현재 master의 라이브 재생 경로는 **WebRTC/WHEP 전용**이다. MediaMTX 설정이 `hls: false, webrtc: true`(`backend/infra/mediamtx/mediamtx.yml`, `backend/deploy/mediamtx.yml`)라 **HLS는 생성하지 않고 HLS 폴백도 없다**. 서버 응답(`StreamSessionResponse`)에도 `whepUrl` 하나만 있고 HLS/playUrl 필드는 없다. (2026-07-29 학습 노트 §23.1이 설명한 “WHEP 우선 + HLS 폴백”에서 이후 HLS를 완전히 걷어낸 상태다.)
 
 ## 4.2 프로토콜 기초
 
@@ -1703,16 +1717,16 @@ Spring Boot가 영상을 직접 중계하지 않는다.
 
 카메라·미디어 서버 사이에서 라이브 스트림을 제어하는 데 흔히 쓴다. 이 프로젝트에서는 홈캠이 MediaMTX에 publish하는 ingest 경로다.
 
-### HLS
+### WebRTC와 WHEP
 
-앱이 `.m3u8` playlist를 받고 짧은 segment 파일을 이어 재생한다. HTTP 기반이라 프록시, CDN, 모바일 플레이어와 잘 맞는다. 대신 segment가 준비되어야 하므로 초저지연 프로토콜보다 지연이 조금 있다.
+WebRTC는 앱·브라우저가 초저지연으로 실시간 미디어를 주고받는 기술이다. ICE로 연결 경로를 뚫고 RTP로 미디어를 받는다. 이 프로젝트는 MediaMTX가 제공하는 **WHEP(WebRTC-HTTP Egress Protocol)**로 재생한다. WHEP는 “앱이 HTTP로 SDP offer를 보내고 answer를 받아 WebRTC 세션을 여는” 시그널링 규칙이라, 별도의 WebSocket 시그널링 서버를 만들지 않아도 된다. HLS처럼 segment를 만들어 버퍼링하지 않으므로 체감 지연이 훨씬 짧다.
 
 ### remux와 transcode
 
 - **transcode**: 코덱을 풀고 다시 인코딩한다. CPU/GPU 비용이 크다.
-- **remux**: H.264/AAC 압축 내용은 유지하고 컨테이너·전달 형식만 바꾼다.
+- **remux/passthrough**: H.264/Opus 압축 내용은 유지하고 전달 형식(WebRTC 패키징)만 바꾼다.
 
-홈캠이 이미 H.264/AAC로 보내므로 MediaMTX는 가능하면 HLS로 remux한다. 이것이 서버 비용을 크게 줄이는 핵심이다.
+홈캠이 이미 WebRTC 친화 코덱(H.264 영상 + Opus 오디오, START 명령 profile `LIVE_720P_H264_OPUS`)으로 보내므로 MediaMTX는 가능한 경우 재인코딩 없이 그대로 WebRTC로 내보낸다. 재인코딩을 피하는 것이 서버 비용을 크게 줄이는 핵심이다.
 
 ## 4.3 세션 생성부터 재생까지
 
@@ -1720,21 +1734,19 @@ Spring Boot가 영상을 직접 중계하지 않는다.
 1. 앱 → POST /api/devices/{deviceId}/stream-sessions
 2. 서버 → 활성 membership 확인
 3. 서버 → DB에 viewer session 생성
-4-A. 이미 같은 기기의 READY stream이 있음
-     → 기존 streamId 공유, MQTT START 생략
-4-B. 송출 없음
-     → device_stream 생성
-     → MQTT commands에 START_STREAM 발행
+4. 서버 → 재사용 가능한 송출이 있으면 그 streamId를 공유하고, 없으면 device_stream을 새로 만든다
+     → 운영에서는 어느 경우든 세션을 PENDING으로 두고 멱등 START_STREAM을 (재)발행한다
+     → 기존 READY stream을 즉시 공유하고 START를 생략하는 것은 데모 모드(`demo.enabled`) 한정이다
 5. 기기 → MediaMTX에 live/{streamId} RTSP(S) publish
 6. 기기 → MQTT stream/events에 STREAM_READY
 7. 서버 → 세션을 READY로 전환
-8. 앱 → GET /api/stream-sessions/{sessionId} polling
-9. 앱 → 받은 HLS URL로 playlist와 segment 요청
-10. Nginx → /api/live/introspect로 token과 streamId 검증
-11. 통과하면 Nginx → MediaMTX HLS 전달
+8. 앱 → GET /api/stream-sessions/{sessionId} polling → READY면 whepUrl 수령
+9. 앱 → 받은 whepUrl에 SDP offer를 POST (WHEP 시그널링)
+10. Nginx → auth_request(/api/live/introspect)로 token과 streamId 검증
+11. 통과하면 Nginx → MediaMTX WHEP(8889)로 프록시, 미디어는 UDP 8189 ICE로 재생
 ```
 
-앱은 세션 생성 직후 영상이 바로 나온다고 가정하면 안 된다. 기기 인코더와 첫 HLS segment가 준비될 시간이 필요해 `PENDING → READY` 상태를 polling한다.
+앱은 세션 생성 직후 영상이 바로 나온다고 가정하면 안 된다. 기기 인코더가 붙고 WebRTC 연결(ICE)이 맺어질 시간이 필요해 `PENDING → READY` 상태를 polling한 뒤에야 whepUrl을 받는다.
 
 ## 4.4 다중 시청자
 
@@ -1743,7 +1755,7 @@ Spring Boot가 영상을 직접 중계하지 않는다.
 - edge publisher는 하나
 - `device_streams`의 stream 하나
 - `stream_sessions`의 viewer session은 두 개
-- MediaMTX가 같은 입력을 여러 HLS 시청자에게 fan-out
+- MediaMTX가 같은 입력을 여러 WebRTC(WHEP) 시청자에게 fan-out
 
 새 시청자마다 홈캠이 별도 인코딩하면 기기 자원과 업로드 대역폭이 배로 든다. 공유 stream 설계가 이를 막는다.
 
@@ -1755,7 +1767,7 @@ Spring Boot가 영상을 직접 중계하지 않는다.
 | viewer TTL | 45초 | 이 시간 동안 heartbeat가 없으면 viewer 만료 |
 | idle timeout | 60초 | 마지막 시청 활동 후 송출 중지 판단 |
 | edge hard lease | 120초 | 서버가 사라져도 기기가 스스로 끄는 최종 안전장치 |
-| live token TTL | 30초 | HLS 접근 token 수명 |
+| live token TTL | 30초 | WHEP(라이브) 접근 token 수명 |
 
 앱이 강제 종료되면 정상 `DELETE`가 오지 않는다. 그래서 heartbeat TTL이 필요하다. 서버나 MQTT가 죽어 `STOP_STREAM`을 못 보내도 hard lease가 지나면 기기가 스스로 종료해야 카메라가 무기한 송출되지 않는다.
 
@@ -1778,7 +1790,7 @@ QoS 1은 정확히 한 번 실행을 보장하지 않는다. **전송 품질과 
 
 ## 4.7 live token이 필요한 이유
 
-MediaMTX의 HLS 포트를 공개하고 URL만 알면 재생되게 하면 접근 제어를 우회할 수 있다. 서버가 짧은 token에 stream ID를 서명하고, Nginx가 playlist/segment 요청 전에 introspection을 호출한다.
+MediaMTX의 WebRTC 포트를 공개하고 URL만 알면 재생되게 하면 접근 제어를 우회할 수 있다. 서버가 짧은 token에 stream ID를 서명하고, Nginx가 WHEP 시그널링 요청 전에 introspection을 호출한다.
 
 검증해야 할 것:
 
@@ -1794,9 +1806,9 @@ MQTT가 영상을 운반하는 것이 아니다.
 
 ```text
 MQTT: "streamId 123으로 송출 시작해"
-RTSP(S): 실제 H.264/AAC 바이트
+RTSP(S): 실제 H.264/Opus 바이트 (홈캠 → MediaMTX)
 MQTT: "streamId 123 준비됐어"
-HLS: 앱이 실제 영상 재생
+WHEP/WebRTC: 앱이 실제 영상 재생 (MediaMTX → 앱)
 ```
 
 ## 4.9 코드 위치
@@ -1819,7 +1831,7 @@ HLS: 앱이 실제 영상 재생
 ## 4.10 예상 질문
 
 **Q. 왜 WebSocket으로 영상을 안 보내나요?**  
-A. WebSocket도 바이트를 보낼 수 있지만 미디어 playlist, segment, 재접속, player 호환, fan-out을 직접 구현해야 한다. 검증된 미디어 서버와 HLS를 쓰는 편이 단순하다.
+A. WebSocket도 바이트를 보낼 수 있지만 미디어 세션 협상, 재접속, player 호환, fan-out을 직접 구현해야 한다. 검증된 미디어 서버(MediaMTX)와 표준 WebRTC/WHEP를 쓰는 편이 단순하다.
 
 **Q. MQTT만으로 라이브 시작과 영상을 다 처리하면 안 되나요?**  
 A. MQTT는 작은 상태·명령에 적합하다. 연속 고대역폭 영상은 브로커 메모리, QoS 재전송, subscriber 처리 지연에 부적합하다.
@@ -1827,8 +1839,8 @@ A. MQTT는 작은 상태·명령에 적합하다. 연속 고대역폭 영상은 
 **Q. MediaMTX는 DB인가요?**  
 A. 아니다. 미디어 라우터/서버다. 영구 보관은 MinIO, 메타데이터는 PostgreSQL이다.
 
-**Q. HLS URL을 DB에 저장하나요?**  
-A. 영구 공개 URL로 저장하는 구조가 아니다. streamId와 세션 상태를 저장하고 짧은 token이 붙은 URL을 동적으로 만든다.
+**Q. 라이브(WHEP) URL을 DB에 저장하나요?**  
+A. 영구 공개 URL로 저장하는 구조가 아니다. streamId와 세션 상태를 저장하고, READY이면서 만료 전일 때만 짧은 token이 붙은 whepUrl을 동적으로 만든다(`StreamService.toResponse`).
 
 **Q. 앱 heartbeat와 기기 heartbeat는 같은 건가요?**  
 A. 아니다. 앱 heartbeat는 viewer가 시청 중인지, 기기 heartbeat는 홈캠이 온라인이고 어떤 상태인지 나타낸다.
@@ -1956,19 +1968,21 @@ MQTT가 끊겼다고 클립 생성까지 멈추면 사용자의 추억을 잃는
 - `DELETING`: 목록에서는 숨겼고 비동기 삭제 대기
 - `DELETED`: 객체 삭제 완료
 
-`UploadStateSweepWorker`는 오래 멈춘 `UPLOADING`을 `FAILED`로 바꾼다. 같은 이벤트는 재시도할 수 있다.
+`UploadStateSweepWorker`는 오래 멈춘 `UPLOADING`을 `FAILED`로 바꾼다(기본 stale-after 30분). 같은 이벤트는 재시도할 수 있다.
+
+참고: DB의 `video_status` enum에는 위 5개 외에 `PROCESSING`도 정의돼 있으나(V4), 현재 IoT 업로드 흐름은 `UPLOADING → READY`로 바로 확정하므로 `PROCESSING`은 실제로 쓰이지 않는다(과거 서버 편집 흐름의 잔재).
 
 ## 5.7 영상 목록
 
 `GET /api/videos`는 다음을 받는다.
 
-- `deviceId`
+- `deviceId` 또는 `vaultId` (둘 중 정확히 하나)
 - `triggerType`
 - `from`, `to`
 - `cursor`
-- `size` 1~100
+- `size` 1~100 (기본 20)
 
-먼저 활성 membership을 확인한다. 조회 가능한 영상은 삭제되지 않은 정상 범위로 제한된다.
+먼저 해당 금고(vault)의 활성 membership을 확인한다(`vault_memberships`). `deviceId`로 조회하면 그 기기가 연결된 vault로, `vaultId`로 조회하면 직접 그 vault로 권한을 검사한다. 조회 가능한 영상은 삭제되지 않은 정상 범위로 제한된다.
 
 ### 왜 offset 대신 cursor pagination인가
 
@@ -1979,7 +1993,7 @@ MQTT가 끊겼다고 클립 생성까지 멈추면 사용자의 추억을 잃는
 `POST /api/videos/{videoId}/play-url`
 
 - 사용자 JWT 확인
-- 영상이 속한 기기의 활성 membership 확인
+- 영상이 속한 금고(vault)의 활성 membership 확인 (device → vault_id → `vault_memberships`)
 - 상태가 `READY`인지 확인
 - MinIO presigned GET URL 발급
 - 기본 TTL 5분
@@ -2028,7 +2042,7 @@ UUID와 경로를 안다고 읽을 수 있어서는 안 된다. 버킷은 privat
 4. 성공하면 `DELETED`
 5. 실패하면 재시도
 
-기본 보존 기간은 30일이다. 구독 확장 코드에는 365일과 해지 유예 30일도 있으나 MVP 핵심은 아니다. `RetentionSweepWorker`가 만료 대상을 비동기 삭제 흐름으로 넘긴다.
+보존 기간은 금고별 `memory_vaults.retention_days` 값으로 결정되며 기본값은 30일이다(V29의 컬럼 default 30). 구독이 활성인 금고는 프리미엄 보존일(기본 365일)을 쓰고, 해지 유예(기본 30일)도 config에 있으나 MVP 핵심은 아니다. `markReady`가 `CASE WHEN subscription_active THEN 프리미엄일수 ELSE retention_days END`로 만료 시각을 정하고, `RetentionSweepWorker`가 만료 대상을 비동기 삭제 흐름으로 넘긴다.
 
 ## 5.11 알림 생성과 FCM 푸시 — 웃음 영상 준비 완료
 
@@ -2039,7 +2053,7 @@ UUID와 경로를 안다고 읽을 수 있어서는 안 된다. 버킷은 privat
 5.4의 완료 통지(2단계)에서 서버가 업로드 무결성을 확인하고 영상을 `READY`로 확정한 **바로 그 트랜잭션 안**에서 만든다.
 
 ```text
-IotVideoService.completeUpload
+IotVideoService.complete
   → 크기·체크섬 검증
   → videos 상태 READY로 확정 (markReady)
   → device_events에 업로드 연결
@@ -2051,19 +2065,25 @@ IotVideoService.completeUpload
 
 ### 누구에게 만들어지나 — 팬아웃
 
-알림은 영상을 올린 한 사람이 아니라 그 기기를 **함께 보는 가족 전원**에게 필요하다. 그래서 한 건을 넣는 게 아니라, `device_memberships`에서 그 기기의 활성 구성원을 조회해 사람마다 한 행씩 INSERT한다.
+알림은 영상을 올린 한 사람이 아니라 그 영상을 **함께 보는 가족 전원**에게 필요하다. 그래서 한 건을 넣는 게 아니라, 기기의 활성 binding을 따라 **그 금고(vault)의 활성 구성원**을 조회해 사람마다 한 행씩 INSERT한다.
 
 ```sql
 INSERT INTO notifications (...)
 SELECT gen_random_uuid(), m.user_id, 'LAUGHTER_VIDEO_READY', ...
-  FROM device_memberships m
+  FROM device_bindings b
+  JOIN vault_memberships m ON m.vault_id = b.vault_id
   JOIN users u ON u.id = m.user_id
- WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'
+ WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+   AND m.status = 'ACTIVE'
    AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
 ON CONFLICT (user_id, dedupe_key) DO NOTHING
 ```
 
+수신자 조건이 §5.7·§5.8의 영상 접근 조건(`VideoMapper.hasActiveMembership`)과 **같은 경로**라는 점이 중요하다. “영상을 볼 수 있는 사람 = 알림을 받는 사람”이 구조적으로 보장된다. FCM 토큰 조회(`PushTokenMapper.findActiveTokensByDevice`)도 같은 규칙을 쓴다.
+
 애플리케이션에서 for 문으로 사람 수만큼 INSERT를 반복하지 않고, `SELECT ... INSERT` 한 문장으로 DB가 팬아웃을 처리한다. 탈퇴했거나 비활성인 구성원은 `WHERE` 조건에서 걸러진다.
+
+> 참고(예전 구현과 달라진 점): 이 두 쿼리는 원래 `device_memberships`(기기-사용자)를 조회했다. Vault 도입 이후 그 표는 레거시 미러(§12.4)여서, 미러 행이 없는 금고 멤버는 **영상은 볼 수 있는데 알림만 못 받는** 상태가 될 수 있었다. 그래서 수신자 판정을 영상 접근과 같은 `vault_memberships` 경로로 통일했다. 회귀를 막는 테스트는 `NotificationRecipientMapperIntegrationTest`이며, 이 테스트는 `device_memberships` 행을 **일부러 하나도 만들지 않고** 팬아웃이 동작하는지 확인한다.
 
 ### 두 번 눌러도 한 번만 — 멱등성
 
@@ -2299,7 +2319,7 @@ A. 객체 저장소의 서명 검증 시점과 연결 동작에 따라 달라질
 - API-33 `VideoStatsService`: 프론트가 실제 사용
 - API-46 `EventStatsService`: 백엔드 구현은 있으나 현재 클라이언트 사용 경로는 사실상 없음
 - REQ-F-42 이벤트 전용 리포트 화면: Flutter UI 구현. 기존 영상 목록의 `LAUGHTER` 항목을 단말에서 날짜별 집계
-- FN-S26/API-51 주간·월간 서버 집계 API: 미구현, 제안 계약만 존재
+- FN-S26/API-62 주간·월간 서버 집계 API: 미구현, 제안 계약만 존재 (초안은 처음 API-51 번호를 받았으나 금고 구독 API와 충돌해 **API-62**로 재번호됨. 지금 `API-51`은 금고 구독 상태 조회 API다)
 
 따라서 시연에서는 Flutter 리포트 화면을 보여줄 수 있지만, 전용 서버 집계 API까지 완성됐다고 말하면 안 된다. 화면 구현과 서버 집계 구현을 분리해서 설명한다.
 
@@ -2436,21 +2456,20 @@ heartbeat 예:
 - `bufferSeconds`
 - `personCount`
 - `firmwareVersion`
-- CPU, 메모리, 디스크 등 계약 필드
 
-현재 master의 서버는 전체 원문을 모두 저장하기보다 UI와 운영에 필요한 최소 상태와 `last_seen_at`을 PostgreSQL에 갱신한다. 조회 시 `last_seen_at`이 90초보다 오래됐으면 offline으로 계산한다.
+(서버 파서 `MqttInboundHandler`는 위 5개 필드만 읽어 저장한다. CPU·메모리·디스크 같은 다른 자원 값은 계약에 있더라도 현재 서버가 파싱·저장하지 않는다.)
 
-Redis 운영 상태 확장 MR !92가 반영되면 경로가 다음처럼 바뀐다.
+현재 master의 서버는 heartbeat를 받으면 다음 경로로 처리한다. (예전 학습 노트에서 “검토 중인 MR !92”로 불렀던 Redis presence 확장이 **이미 master에 병합**됐다.)
 
 ```text
 heartbeat 수신
-  → Redis presence:device:{deviceId}에 전체 UI 상태 JSON 저장
-  → TTL 90초 갱신
-  → 목록·상태·Vault·라이브 생성은 Redis를 우선 조회
-  → Redis 장애 때만 기존 PostgreSQL heartbeat UPDATE/조회로 fallback
+  → DeviceTelemetryService가 Redis presence:device:{deviceId}에 UI 상태 저장 (TTL 90초)
+  → 기기 목록·상태·Vault·라이브 생성은 이 Redis presence를 우선 조회
+     (StreamService도 라이브 시작 전 Redis로 기기 online 여부를 확인)
+  → Redis 장애 때만 PostgreSQL last_seen_at UPDATE/조회로 fallback
 ```
 
-heartbeat처럼 30초마다 계속 덮어쓰고 90초 뒤 자연스럽게 무효가 되는 값은 Redis TTL과 잘 맞는다. 반대로 기기 binding, 영상, 권한은 TTL 만료로 사라지면 안 되므로 PostgreSQL에 남긴다.
+조회 시 presence 키가 없거나(90초 TTL 만료), fallback 경로의 `last_seen_at`이 90초보다 오래됐으면 offline으로 계산한다. heartbeat처럼 30초마다 계속 덮어쓰고 90초 뒤 자연스럽게 무효가 되는 값은 Redis TTL과 잘 맞는다. 반대로 기기 binding, 영상, 권한은 TTL 만료로 사라지면 안 되므로 PostgreSQL에 남긴다.
 
 현재 최신 요구사항 문서는 실제 기기 경로에서 `recording=false`, `uploadQueueDepth=0` 스텁 가능성을 지적한다. API 필드가 존재한다고 실제 센서 값이 연결됐다고 단정하면 안 된다.
 
@@ -2513,13 +2532,13 @@ DTO는 API 계약용이고 DB row는 영속 모델용이다. 둘을 분리하면
 |---:|---|---|
 | 200/201 | 성공 | 조회, 생성 |
 | 204 | 본문 없는 성공 | 삭제, introspection 허용 |
-| 400 | 문법적으로 잘못된 요청 | JSON 파싱 등 |
+| 400 | 문법적으로 잘못된 요청 | (이 서비스 공통 핸들러는 400을 쓰지 않음 — JSON 파싱 실패도 아래 422로 응답) |
 | 401 | 인증 실패 | JWT/기기 credential 불일치 |
 | 403 | 인증됐지만 권한 없음 | OWNER 전용 작업 |
 | 404 | 없거나 존재를 숨김 | 남의 영상/기기 |
 | 409 | 현재 상태와 충돌 | 이미 claim, idempotency 충돌 |
 | 413 | 너무 큰 payload | 500 MiB 초과 영상 |
-| 422 | 값 형식은 읽었으나 규칙 위반 | 날짜 범위, enum |
+| 422 | 값 형식은 읽었으나 규칙 위반 | `MALFORMED_JSON`(JSON 파싱 실패), 날짜 범위, enum, Bean Validation |
 | 429 | 요청 제한 | 로그인/claim 반복 실패 |
 | 503 | 외부 의존성 사용 불가 | MinIO/MQTT 관리 실패 |
 
@@ -2581,19 +2600,19 @@ GET /api/videos/{videoId}
 
 ```text
 user
-  └─ device_membership
-       └─ device
-            ├─ videos
-            ├─ device_events
-            ├─ stream_sessions
-            └─ access_logs
+  └─ vault_memberships (OWNER/MEMBER)
+       └─ memory_vault
+            ├─ videos (vault_id = 소유 경계, device_id = 촬영 출처)
+            ├─ device_bindings ── device ──┬─ device_events
+            │                              └─ stream_sessions
+            └─ (invitation / subscription / notification / access_logs)
 ```
 
-“활성 멤버만 영상 조회”, “기기 하나에 활성 OWNER 하나”, “같은 eventId 영상 하나” 같은 규칙은 JOIN, UNIQUE, FK, 트랜잭션이 잘 맞는다.
+소유 경계는 device가 아니라 **vault**다(§1.7과 동일). “활성 vault 멤버만 영상 조회”, “한 금고에 활성 OWNER 하나”, “같은 eventId 영상 하나” 같은 규칙은 JOIN, UNIQUE, FK, 트랜잭션이 잘 맞는다. (테이블명은 복수형 `vault_memberships`·`device_memberships`이며, 후자는 레거시 호환용으로 남아 있다.)
 
 ## 12.2 Flyway
 
-`V1__...sql`부터 `V23__...sql`까지 순서대로 실행한다. 서버 시작 시 아직 적용되지 않은 버전만 적용하고 이력을 남긴다.
+`V1__...sql`부터 `V31__...sql`까지 순서대로 실행한다(현재 master 기준). 서버 시작 시 아직 적용되지 않은 버전만 적용하고 이력을 남긴다.
 
 원칙:
 
@@ -2654,7 +2673,7 @@ HTTP는 보통 요청자가 상대 주소를 알고 응답을 기다린다. MQTT
 {env}/wj/v2/devices/{deviceId}/{suffix}
 ```
 
-- `env`: dev/prod 격리
+- `env`: 환경 격리 (`MQTT_ENV`, 기본값 `local`, 운영은 `prod`). 앞선 예의 `prod/wj/v2/...`는 운영 배포 기준 표기다
 - `wj`: 서비스 namespace
 - `v2`: 계약 major version
 - `deviceId`: 권한 단위
@@ -2738,8 +2757,8 @@ PostgreSQL만 백업하면 영상 metadata만 있고 MP4가 없다. MinIO만 백
 
 - PostgreSQL 5432
 - MinIO API 9000 / console 9001
-- Spring 8080
-- MediaMTX HLS 8888
+- Spring (로컬 기본 8080, 배포는 내부 8081로 프록시)
+- MediaMTX WebRTC 8889 (WHEP 시그널링) — 배포에서는 Nginx가 loopback 8889로만 전달하고 직접 공개하지 않음
 - 평문 MQTT 1883
 
 MQTT 기기 연결이 필요하면 TLS 8883을 공개하되 기기별 인증·ACL을 적용한다. 운영 MediaMTX RTSPS publish 포트는 인증과 방화벽 정책을 함께 확인한다.
@@ -2748,7 +2767,7 @@ MQTT 기기 연결이 필요하면 TLS 8883을 공개하되 기기별 인증·AC
 
 - HTTPS TLS 종료
 - `/api`를 Spring으로 reverse proxy
-- HLS 요청을 인증 후 MediaMTX로 proxy
+- WHEP(WebRTC) 요청을 라이브 토큰(`auth_request /_live_auth` → `/api/live/introspect`)으로 인증한 뒤 MediaMTX(8889)로 proxy. 실제 미디어는 UDP 8189 ICE
 - 내부 서비스 포트 은닉
 - 외부 hostname 통일
 
@@ -2791,7 +2810,7 @@ MQTT 기기 연결이 필요하면 TLS 8883을 공개하되 기기별 인증·AC
 | Mosquitto 중단 | 상태·명령 유실/지연, 로컬 클립 생성은 계속 | broker, 재연결 backoff |
 | MinIO 중단 | presigned/stat 실패, 업로드 queue 재시도 | 503, MinIO health |
 | PostgreSQL 중단 | 권한·상태 판단 불가, API 실패 | DB health, connection |
-| MediaMTX 중단 | 로그인·목록은 되지만 라이브 불가 | WHEP/HLS/RTSP health |
+| MediaMTX 중단 | 로그인·목록은 되지만 라이브 불가 | WHEP/RTSP health |
 | 앱 강제 종료 | viewer heartbeat 만료 후 stream 정리 | lifecycle worker |
 | 서버+MQTT 동시 중단 | edge hard lease 후 라이브 자체 종료 | device stream agent |
 | PUT 성공, complete 유실 | DB는 UPLOADING, 같은 eventId complete 재시도 | idempotency |
@@ -2804,11 +2823,11 @@ MQTT 기기 연결이 필요하면 TLS 8883을 공개하되 기기별 인증·AC
 
 1. Banuba 편집은 Android 전용이며 라이선스 token이 필요하다.
 2. 편집 결과 서버 재업로드는 MVP 요구가 아니고 현재 제품 흐름에 없다.
-3. REQ-F-42 Flutter 리포트 화면은 구현됐지만, FN-S26/API-51 서버 집계는 미구현이다.
+3. REQ-F-42 Flutter 리포트 화면은 구현됐지만, FN-S26/API-62(옛 API-51) 서버 집계는 미구현이다.
 4. API-46 원시 이벤트 통계는 백엔드 구현이 있지만 프론트가 현재 실사용하지 않는다.
 5. 기기 status 응답의 `recording`, `uploadQueueDepth`는 실제 edge 연동에서 스텁 값일 수 있다.
 6. 과거 문서와 migration에 서버 편집·확장 기능 흔적이 있어도 최신 MVP와 구분한다.
-7. 라이브 준비는 기기 `STREAM_READY`뿐 아니라 WHEP 연결 가능 여부와 HLS 폴백 playlist/segment 준비를 함께 봐야 한다.
+7. 라이브 준비는 기기 `STREAM_READY`뿐 아니라 WHEP(WebRTC) 연결이 실제로 맺어지는지까지 봐야 한다. 현재는 HLS 폴백이 없으므로 WHEP 실패는 곧 재생 실패다.
 8. presigned URL은 권한을 영구 위임하는 것이 아니지만 만료 전 유출 위험은 있다.
 9. MQTT QoS 1은 중복 가능하므로 eventId/requestId 멱등 처리가 필수다.
 10. DB와 MinIO/MQTT 사이에는 단일 ACID 트랜잭션이 없으므로 worker와 상태 머신이 필요하다.
@@ -2854,13 +2873,13 @@ MQTT 기기 연결이 필요하면 TLS 8883을 공개하되 기기별 인증·AC
 ## 라이브
 
 26. **Spring이 스트리밍하나?** 제어만 하고 실제 영상은 MediaMTX가 전달한다.
-27. **RTSP와 HLS 차이?** RTSP는 기기 ingest, HLS는 앱 재생에 사용한다.
+27. **RTSP와 WebRTC(WHEP) 차이?** RTSP는 기기 ingest, WHEP는 앱 재생에 사용한다(HLS는 현재 비활성).
 28. **remux가 뭔가?** 재인코딩 없이 포장/전달 형식만 바꾸는 것이다.
-29. **왜 START 후 polling하나?** 인코더와 첫 HLS segment 준비 시간이 필요하다.
+29. **왜 START 후 polling하나?** 기기 인코더가 붙고 WebRTC 연결(ICE)이 맺어질 시간이 필요하다.
 30. **시청자가 두 명이면 stream도 두 개인가?** viewer session은 둘, 공유 edge stream은 하나다.
 31. **앱이 죽으면 stream은?** heartbeat TTL과 lifecycle worker가 회수한다.
 32. **서버가 죽으면 카메라가 계속 송출하나?** hard lease에서 자체 종료해야 한다.
-33. **HLS URL만 알면 볼 수 있나?** Nginx introspection과 짧은 token으로 막아야 한다.
+33. **WHEP URL만 알면 볼 수 있나?** Nginx introspection과 짧은 라이브 token으로 막아야 한다.
 
 ## DB·통계·인프라
 
@@ -2970,9 +2989,9 @@ cd server
 - MinIO console: 9001
 - MQTTS: 8883
 - MediaMTX RTSP: 8554
-- MediaMTX HLS: 8888
 - MediaMTX WHEP/WebRTC signaling: 8889
 - MediaMTX WebRTC media/ICE: UDP 8189
+- (HLS는 비활성 `hls: false` — 8888 미사용)
 
 로컬 포트가 열려 있다는 것과 운영에서 인터넷에 공개해도 된다는 것은 전혀 다르다.
 
@@ -3017,10 +3036,10 @@ claim 성공 → OWNER membership
 [3 라이브]
 REST: viewer session
 MQTT: START/EXTEND/STOP + STREAM_READY
-RTSP(S): 기기 → MediaMTX
-WebRTC/WHEP: MediaMTX → 앱 우선 재생
-HLS: WebRTC 실패 시 폴백
+RTSP(S): 기기 → MediaMTX (H.264/Opus)
+WebRTC/WHEP: MediaMTX → 앱 재생 (HLS 미사용, 폴백 없음)
 Spring은 제어 평면
+whepUrl은 READY + 만료 전에만 발급
 
 [4 이벤트 영상]
 YAMNet edge 감지
@@ -3044,7 +3063,7 @@ Banuba Android 로컬 편집
 이벤트 통계 = raw device_events
 Asia/Seoul 날짜를 UTC instant 범위로 변환
 REQ-F-42 Flutter 화면 = 기존 LAUGHTER 영상 단말 집계
-FN-S26/API-51 서버 집계 = 아직 미구현
+FN-S26/API-62 서버 집계 = 아직 미구현
 
 [공통]
 PostgreSQL = 관계·권한·상태·통계
@@ -3089,34 +3108,36 @@ HLS는 HTTP 기반이라 프록시·CDN·방화벽과 잘 맞고 재생 호환�
 
 WebRTC는 ICE 연결 뒤 실시간 RTP 미디어를 받아 지연이 짧다. 이 프로젝트는 MediaMTX가 지원하는 **WHEP(WebRTC-HTTP Egress Protocol)**를 사용한다. WHEP는 “MediaMTX에서 앱으로 WebRTC를 꺼내는 HTTP 기반 시그널링 규칙”이다. 별도 WebSocket 시그널링 서버를 만들지 않아도 된다.
 
+> 갱신(현재 master): 이 노트를 처음 쓸 때는 “WHEP 우선 + HLS 폴백”이었으나, 이후 **HLS를 완전히 제거**했다. `mediamtx.yml`이 `hls: false`이고 `StreamSessionResponse`에는 `whepUrl` 하나만 남았다(playUrl/HLS 필드 없음). 아래 순서는 그 as-built 기준으로 고쳐 적었다.
+
 현재 재생 순서는 다음과 같다.
 
 ```text
 1. 앱이 기존 stream session API 호출
-2. Spring이 READY 세션에 playUrl + whepUrl + 같은 권한 토큰 발급
+2. Spring이 READY 세션에 whepUrl + 짧은 수명 라이브 토큰 발급 (HLS/playUrl 없음)
 3. 앱이 whepUrl에 SDP offer POST
 4. MediaMTX가 SDP answer와 session Location 반환
 5. ICE 연결 성공 → WebRTC 영상 재생
-6. WHEP/ICE 실패 → 기존 playUrl(HLS)로 폴백
+6. WHEP/ICE 실패 → 폴백 없음(재생 실패). 앱은 재시도하거나 세션을 다시 만든다
 7. 화면 종료 → WHEP session URI DELETE + 기존 viewer session 종료
 ```
 
 중요한 코드:
 
-- `StreamSessionResponse`: `whepUrl` 응답 필드
-- `StreamService.toResponse`: READY·만료 전일 때만 HLS/WHEP 토큰 URL 생성
-- `WhepPlayerController`: recv-only peer connection, non-trickle SDP 교환, WHEP 세션 삭제
-- `LiveScreen`: WHEP 우선 연결과 HLS 폴백
+- `StreamSessionResponse`: `whepUrl` 응답 필드 (HLS/playUrl 필드 없음)
+- `StreamService.toResponse`: READY·만료 전일 때만 `whepUrl` + 라이브 토큰 생성
+- `WhepPlayerController`(프론트): recv-only peer connection, non-trickle SDP 교환, WHEP 세션 삭제
+- `LiveScreen`(프론트): WHEP 연결 (서버가 HLS를 끄면서 HLS 폴백 경로는 사실상 비활성)
 - `nginx-william-james.conf`: `/webrtc/.../whep` 요청의 토큰 검증과 MediaMTX 프록시
-- `mediamtx.yml`: TCP 8889 시그널링, UDP 8189 ICE 미디어
+- `mediamtx.yml`: `hls: false`, `webrtc: true`, TCP 8889 시그널링, UDP 8189 ICE 미디어
 
 ### 보안 관점
 
-8889를 공인망에 직접 열지 않는다. 사용자는 HTTPS 443의 Nginx로 접근하고 Nginx가 loopback 8889로 전달한다. 실제 WebRTC 미디어는 UDP 8189를 사용한다. WHEP URL에도 HLS와 같은 짧은 수명의 라이브 토큰이 붙으며, Nginx introspection으로 현재 세션·멤버십을 확인한다.
+8889를 공인망에 직접 열지 않는다. 사용자는 HTTPS 443의 Nginx로 접근하고 Nginx가 loopback 8889로 전달한다. 실제 WebRTC 미디어는 UDP 8189를 사용한다. WHEP URL에는 짧은 수명의 라이브 토큰이 붙으며, Nginx introspection(`/api/live/introspect`)으로 현재 세션·멤버십을 확인한다.
 
 면접식 한 문장:
 
-> Spring은 누가 언제 라이브를 볼 수 있는지 결정하고 토큰을 발급하는 제어 평면이고, MediaMTX는 WHEP/WebRTC를 우선 제공하되 연결 실패에 대비해 HLS도 유지하는 데이터 평면이다.
+> Spring은 누가 언제 라이브를 볼 수 있는지 결정하고 토큰을 발급하는 제어 평면이고, MediaMTX는 WHEP/WebRTC로 저지연 미디어를 전달하는 데이터 평면이다(현재 HLS는 비활성).
 
 ## 23.2 웃음 리포트의 “화면 구현”과 “서버 집계 구현”
 
@@ -3128,14 +3149,14 @@ WebRTC는 ICE 연결 뒤 실시간 RTP 미디어를 받아 지연이 짧다. 이
 - 올해 날짜별 웃음 잔디
 - 선택한 날짜의 영상 목록
 
-하지만 API-51은 없다. 즉 서버가 주간/월간 범위, 시간대별 분포, 베스트 클립을 한 응답으로 집계해 주는 구조는 아직 제안 단계다.
+하지만 API-62(리포트 서버 집계)는 없다. 즉 서버가 주간/월간 범위, 시간대별 분포, 베스트 클립을 한 응답으로 집계해 주는 구조는 아직 제안 단계다. (이 제안은 처음 API-51 번호였다가 금고 구독 API와 충돌해 API-62로 옮겨졌다.)
 
 ```text
 현재: 기존 영상 목록 API → Flutter 메모리 집계 → 리포트 UI
 미구현: GET /api/devices/{deviceId}/laugh-report → 서버 집계 DTO
 ```
 
-데이터가 적은 MVP에서는 현재 방식이 단순하다. 데이터가 많아지면 모든 영상을 앱에 내려받아 집계하는 비용이 커지고, 사용자마다 로드한 페이지 범위에 따라 통계가 달라질 수 있다. 그때 API-51 같은 서버 집계가 필요하다.
+데이터가 적은 MVP에서는 현재 방식이 단순하다. 데이터가 많아지면 모든 영상을 앱에 내려받아 집계하는 비용이 커지고, 사용자마다 로드한 페이지 범위에 따라 통계가 달라질 수 있다. 그때 API-62 같은 서버 집계가 필요하다.
 
 ## 23.3 운영 배포 계약
 
@@ -3173,10 +3194,13 @@ SSE-KMS/KES는 불필요하다는 뜻이 아니다. 키 생성·권한·회전·
 
 2026-07-30 기준 이 스터디 브랜치는 최신 `master`를 병합했다. 따라서 온디바이스 Whisper 기반 STT, FN-A39 자동 자막, Memory Vault와 기기 없는 보관함 화면은 현재 master의 코드로 직접 공부할 수 있다.
 
+이미 master에 병합된 변경(예전엔 “검토 중”으로 적었던 것):
+
+- Backend MR !92: Redis heartbeat presence(`presence:device:{id}` TTL 90초)와 로그인/claim 성공 시 예약 정리 → §1.8·§2.4.1·§10.1에 as-built로 반영됨
+
 아직 master가 아닌 변경도 있다.
 
 - `develop/device`: LCD에 등록 코드를 한 번 표시하는 후속 흐름
-- Backend MR !92: Redis heartbeat presence와 로그인/claim 성공 예약 정리
 
 이 항목들은 해당 MR이 역할별 develop과 master에 차례로 병합되기 전까지 운영 반영 완료로 발표하면 안 된다. 문서에서는 “현재 master의 as-built”와 “검토 중인 MR 이후 구조”를 문장으로 구분한다.
 
@@ -3284,7 +3308,7 @@ OWNER가 한다.
 4. `VaultMapper`의 활성 Binding 생성·종료와 generation 계산
 5. `VideoQueryService`와 `VideoCommandService`의 Vault 멤버십 기반
    권한 검사
-6. `InvitationService`의 Vault 초대·회수·OWNER 양도
+6. `InvitationService`의 Vault 초대·회수(구성원 관리), 그리고 `DeviceService.transferOwnership`의 OWNER 양도 (`POST /api/devices/{deviceId}/transfer-ownership`) — 양도는 InvitationService가 아니라 DeviceService에 있다
 7. Flyway `V29__memory_vaults_and_device_bindings.sql`
 8. Flyway `V30__vault_lifecycle_and_vault_invitations.sql`
 9. Flutter의 기기 등록 선택 화면과 기기 없는 Vault 보관함 화면
