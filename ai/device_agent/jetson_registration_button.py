@@ -32,6 +32,10 @@ DEFAULT_FAILURE_READY_SECONDS = 5
 # already-claimed device apart from a bad token or an unreachable server.
 FAILURE_STATUS_PATTERN = re.compile(r"\((\d{3}),\s*([A-Za-z_][A-Za-z0-9_]*)\)")
 
+# The fractional seconds of an ISO-8601 timestamp; the UTC offset carries no
+# decimal point, so the first match is always the fraction.
+FRACTIONAL_SECONDS_PATTERN = re.compile(r"\.(\d+)")
+
 ALREADY_REGISTERED_CODE = "DEVICE_ALREADY_CLAIMED"
 ALREADY_REGISTERED_STATUS = 409
 
@@ -125,18 +129,33 @@ def environment_integer(
     return value
 
 
-def seconds_until_expiry(
-    expires_at: str,
-    *,
-    now: datetime | None = None,
-) -> float:
+def normalize_expiry(expires_at: str) -> str:
+    """Rewrite a server timestamp into what fromisoformat on 3.10 accepts.
+
+    The server serialises Instant through ISO_INSTANT, which emits 0, 3, 6, or
+    9 fractional digits, while Python 3.10 accepts only 0, 3, or 6 - a
+    nanosecond expiry would otherwise be rejected. Pad or truncate to the
+    microseconds datetime keeps anyway, matching what 3.11 does natively.
+    """
     normalized = (
         f"{expires_at[:-1]}+00:00"
         if expires_at.endswith(("Z", "z"))
         else expires_at
     )
+    return FRACTIONAL_SECONDS_PATTERN.sub(
+        lambda match: "." + match.group(1)[:6].ljust(6, "0"),
+        normalized,
+        count=1,
+    )
+
+
+def seconds_until_expiry(
+    expires_at: str,
+    *,
+    now: datetime | None = None,
+) -> float:
     try:
-        expiry = datetime.fromisoformat(normalized)
+        expiry = datetime.fromisoformat(normalize_expiry(expires_at))
     except ValueError as error:
         raise ValueError(f"Invalid registration expiry: {expires_at}") from error
     if expiry.tzinfo is None:

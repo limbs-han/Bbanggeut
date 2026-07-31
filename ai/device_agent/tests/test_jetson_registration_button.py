@@ -15,6 +15,7 @@ from jetson_registration_button import (
     describe_failure,
     environment_integer,
     last_error_line,
+    normalize_expiry,
     parse_args,
     parse_registration_response,
     request_registration_code,
@@ -164,6 +165,37 @@ class JetsonRegistrationButtonTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             seconds_until_expiry("2026-07-29T06:02:00", now=now)
+
+    def test_expiry_accepts_every_fractional_precision_the_server_sends(self):
+        now = datetime(2026, 7, 29, 6, 0, 0, tzinfo=timezone.utc)
+
+        # ISO_INSTANT emits 0, 3, 6, or 9 digits; 3.10 accepts only 0, 3, 6.
+        for digits, expected in (
+            ("", 120.0),
+            (".5", 120.5),
+            (".123", 120.123),
+            (".123456", 120.123456),
+            (".123456789", 120.123456),
+        ):
+            with self.subTest(digits=digits):
+                self.assertAlmostEqual(
+                    seconds_until_expiry(f"2026-07-29T06:02:00{digits}Z", now=now),
+                    expected,
+                )
+
+    def test_expiry_normalisation_keeps_the_offset_intact(self):
+        self.assertEqual(
+            normalize_expiry("2026-07-29T06:02:00.123456789Z"),
+            "2026-07-29T06:02:00.123456+00:00",
+        )
+        self.assertEqual(
+            normalize_expiry("2026-07-29T06:02:00.5+09:00"),
+            "2026-07-29T06:02:00.500000+09:00",
+        )
+        self.assertEqual(
+            normalize_expiry("2026-07-29T06:02:00+09:00"),
+            "2026-07-29T06:02:00+09:00",
+        )
 
     @patch(
         "jetson_registration_button.seconds_until_expiry",
