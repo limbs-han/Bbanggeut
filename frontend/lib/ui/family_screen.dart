@@ -469,6 +469,7 @@ class _MemberTile extends StatelessWidget {
     ];
     final color =
         colors[member.user.displayName.hashCode.abs() % colors.length];
+    final isOwner = normalizeRole(member.role) == 'OWNER';
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 4),
       leading: CircleAvatar(
@@ -481,9 +482,20 @@ class _MemberTile extends StatelessWidget {
           ),
         ),
       ),
-      title: Text(
-        member.user.displayName,
-        style: const TextStyle(fontWeight: FontWeight.w900),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isOwner)
+            const Text(
+              '👑',
+              key: Key('family-owner-crown'),
+              style: TextStyle(fontSize: 22, height: 1),
+            ),
+          Text(
+            member.user.displayName,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ],
       ),
       subtitle: Text(
         member.user.email,
@@ -494,11 +506,10 @@ class _MemberTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           StatusPill(
-            label: normalizeRole(member.role) == 'OWNER' ? 'OWNER' : 'MEMBER',
+            label: isOwner ? 'OWNER' : 'MEMBER',
             color: AppColors.sageSoft,
           ),
-          if (normalizeRole(member.role) != 'OWNER' &&
-              controller.selectedVault?.isOwner == true)
+          if (!isOwner && controller.selectedVault?.isOwner == true)
             PopupMenuButton<String>(
               onSelected: (action) =>
                   action == 'transfer' ? _transfer(context) : _revoke(context),
