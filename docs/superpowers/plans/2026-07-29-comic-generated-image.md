@@ -10,9 +10,20 @@
 
 **설계 문서:** [docs/superpowers/specs/2026-07-29-comic-generated-image-design.md](../specs/2026-07-29-comic-generated-image-design.md)
 
+## 현재 상태 (2026-07-30 갱신)
+
+- **Task 1~3 완료** — 커밋 `7a8dfc5`(ComicCut), `8fe2a9f`(게이트웨이), `cd0a649`(컨트롤러). 새 테스트 25개 통과.
+- **베이스가 뒤처졌다.** 이 브랜치는 `861cc2b`에서 시작했는데 그 뒤 `develop/frontend`에
+  STT 모델 교체(q5_0 → **q5_1**, 벤치마킹 완료)와 캘린더·볼트 작업이 합쳐져 master까지 갔다.
+  `git merge-tree`로 확인한 결과 **충돌 없이** 올라간다. Task 3.5에서 리베이스한다.
+- 문서가 재편됐다: STT 가이드가 `자료/docs/.../06-stt-model-guide.md`로 들어갔고
+  `docs/whisper-model.md`는 삭제됐다. FN-A40 번호는 여전히 비어 있다.
+- 만화 코드는 `transcriptStore`만 읽으므로 모델 교체(q5_1)의 영향이 없다. 단, 전사
+  품질 실측이 갱신됐다 — 아래 "남는 천장" 참조.
+
 ## Global Constraints
 
-- **작업트리** `C:\Users\SSAFY\dev\stt-captions`, **브랜치** `feat/frontend/comic` (base `develop/frontend`). ASCII 경로여야 Gradle이 빌드한다.
+- **작업트리** `C:\Users\SSAFY\dev\stt-captions`, **브랜치** `feat/frontend/comic`. 베이스는 Task 3.5 이후 `origin/develop/frontend`(= master 내용, `2adf277`)다. ASCII 경로여야 Gradle이 빌드한다 — 원본 폴더(`Desktop\실습\...`)에서는 `jni` CMake 빌드가 죽는다.
 - **전사문(글)만 서버로 보낸다.** 영상·오디오·프레임은 기기를 떠나지 않는다.
 - **이미지 생성 키를 앱에 넣지 않는다.** 앱은 우리 서버만 부른다. `ApiClient`가 이미 인증 토큰을 붙인다.
 - **전사는 다시 하지 않는다.** `features/stt`의 `transcriptStore`가 캐시한 것을 읽는다.
@@ -38,7 +49,7 @@
 
 ---
 
-### Task 1: ComicCut 자료형과 응답 검증
+### Task 1: ComicCut 자료형과 응답 검증 ✅ 완료 — 커밋 `7a8dfc5`
 
 서버 응답을 자료형으로 옮기고 **컷이 정확히 4개인지** 검증한다. 4개가 아니면 계약 위반이므로 오류로 다룬다 — 그러지 않으면 자막을 얹을 칸이 안 맞는다.
 
@@ -257,7 +268,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 2: 서버 통로 (가짜가 기본값)
+### Task 2: 서버 통로 (가짜가 기본값) ✅ 완료 — 커밋 `8fe2a9f`
 
 앱이 서버를 부르는 자리를 만든다. **서버가 아직 없으므로 가짜가 기본값이다** — 고정 구성과 4칸으로 나뉜 그림을 돌려주므로 화면 전부를 만들고 검증할 수 있다.
 
@@ -280,7 +291,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `ApiClient.createComicScript(String videoId, List<Map<String, Object>> lines) → Future<Map<String, dynamic>>`
   - `ApiClient.createComicImage(String videoId, {required List<Map<String, Object?>> cuts, required String style}) → Future<Map<String, dynamic>>`
 
-> 설계 문서에는 `COMIC_GATEWAY`를 문자열로 적었지만 **주소가 필요 없다** — 우리 서버는
+> 설계 문서에도 `COMIC_SERVER`로 고쳐 적었다(예전 이름 `COMIC_GATEWAY`는 코드에 없다 —
+> 그 이름으로 `--dart-define`을 주면 아무 일도 일어나지 않고 가짜가 그대로 나간다).
+> 문자열이 아니라 참·거짓 하나로 둔 이유: **주소가 필요 없다** — 우리 서버는
 > `API_BASE_URL`과 같은 곳이고 `ApiClient`가 인증까지 붙인다. 그래서 켜고 끄는
 > 플래그(`COMIC_SERVER`) 하나로 바꿨다.
 
@@ -614,7 +627,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: 상태 컨트롤러
+### Task 3: 상태 컨트롤러 ✅ 완료 — 커밋 `cd0a649`
 
 전사문 읽기부터 그림 받기까지의 상태를 한 클래스가 들고 있는다. 화면은 이걸 만들고
 부르기만 한다.
@@ -975,7 +988,53 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 4: 2x2 그림 위에 자막 얹기
+### Task 3.5: 베이스를 master 최신으로 옮긴다
+
+`develop/frontend`가 `2adf277`(= master 내용)까지 갔다. MR을 낼 때 뒤처진 베이스로
+내면 리뷰 diff에 남의 작업이 섞여 보이고, CI도 최신 코드와 합친 상태를 검증하지
+못한다. `git merge-tree`로 충돌이 없는 것은 확인했다 — 리베이스가 안전하다.
+
+**Files:** 없음 (git 작업만)
+
+- [ ] **Step 1: 리베이스한다**
+
+```bash
+git -C C:\Users\SSAFY\dev\stt-captions fetch origin
+git -C C:\Users\SSAFY\dev\stt-captions rebase origin/develop/frontend feat/frontend/comic
+```
+
+기대: 충돌 없이 5개 커밋(문서 2 + 코드 3)이 그대로 올라간다. 충돌이 나면 멈추고
+사용자에게 알린다 — merge-tree 확인 시점 이후 develop/frontend가 또 움직였다는 뜻이다.
+
+- [ ] **Step 2: 합쳐진 상태로 전체 검증한다**
+
+```bash
+cd C:\Users\SSAFY\dev\stt-captions\frontend && dart analyze lib test && flutter test
+```
+
+기대: analyze 무경고, 전부 통과 (master의 새 테스트 + 만화 25개).
+특히 `whisper_model_test.dart`가 q5_1 경로로 바뀌었으니 그것까지 포함해 통과해야 한다.
+
+- [ ] **Step 3: 커밋 없음** — 리베이스 자체가 이력 정리다. push는 MR 낼 때 한다.
+
+---
+
+### Task 4: 2x2 그림 위에 자막 얹기 ✅ 완료 — 커밋 `cffd089`, 이후 `b03a0d8`으로 재설계
+
+> **⚠️ 아래 코드는 폐기됐다. 실제 구현은 `frontend/lib/features/comic/panel_subtitle.dart`를 보라.**
+>
+> 여기 적힌 `subtitleAlignment(int)` + `Align(±0.5)` + `widthFactor: 0.44` 조합은 **자막 띠가
+> 칸 경계를 넘어 서로 겹치게 만든다.** `Align`은 자식을 `(1+x)/2 × (부모폭 − 자식폭)`에
+> 놓는데, 띠 폭이 화면의 44%라 이동 범위가 0.56W로 줄어든다. 그래서 `x = ±0.5`는
+> 왼쪽 띠를 14~58%, 오른쪽 띠를 42~86%에 놓아 **가운데 16%가 겹친다.**
+>
+> 실제 구현은 각 컷에 사분면을 하나씩 주는 방식으로 바꿨다 —
+> `FractionallySizedBox(widthFactor: 0.5, heightFactor: 0.5)` 안에 띠를 놓으면 보정 상수가
+> 아예 필요 없다. `subtitleAlignment(int)`는 사라지고 `panelAlignment(int)`(컷 → 사분면)로
+> 대체됐다. 테스트도 부호만 보던 것을 **띠 사각형이 자기 칸을 벗어나지 않는지** 재는
+> 기하 단정으로 바꿨다.
+>
+> 아래 본문은 무엇을 만들려 했는지의 기록으로만 남긴다.
 
 그림을 네 칸으로 나눠 각 칸 아래쪽에 영화 자막처럼 대사를 얹는다.
 
@@ -1032,6 +1091,14 @@ List<ComicCut> cuts({String? third}) => [
 ];
 
 void main() {
+  // testWidgets는 가짜 시계(FakeAsync) 위에서 돈다 — picture.toImage()의 실제
+  // 이미지 디코딩은 진짜 이벤트 루프가 필요해 그 안에서는 절대 끝나지 않는다.
+  // setUpAll은 진짜 이벤트 루프에서 돌기 때문에 여기서 한 번만 만들어 재사용한다.
+  late Uint8List png;
+  setUpAll(() async {
+    png = await onePixelPng();
+  });
+
   group('subtitleAlignment', () {
     test('읽는 순서대로 네 칸에 배치한다', () {
       expect(subtitleAlignment(0).x, lessThan(0), reason: '0컷은 왼쪽');
@@ -1046,7 +1113,6 @@ void main() {
   });
 
   testWidgets('대사 있는 컷만 자막을 그린다', (tester) async {
-    final png = await onePixelPng();
     await tester.pumpWidget(
       MaterialApp(home: ComicCanvas(image: png, cuts: cuts())),
     );
@@ -1060,7 +1126,6 @@ void main() {
   });
 
   testWidgets('대사에 - 접두어를 붙인다 — 영화 자막 관례다', (tester) async {
-    final png = await onePixelPng();
     await tester.pumpWidget(
       MaterialApp(
         home: ComicCanvas(
@@ -1193,7 +1258,12 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: 만화 화면
+### Task 5: 만화 화면 ✅ 완료 — 커밋 `ebd2538`·`1f25901`, 이후 `b03a0d8`으로 보강
+
+> 아래 코드에서 바뀐 것: 완성 화면에 **[다시 만들기]**와 **[대사 고치기]** 두 버튼이
+> 추가됐다(뒤로 가기만 있으면 고친 대사를 전부 잃는다). 대사 입력칸 `maxLength`는
+> 24에서 **40**으로 올렸다(자막 편집기와 같은 값 — 24는 사용자가 한 글자 고치는 순간
+> 뒷글자를 잘라냈다). 가짜 게이트웨이일 때는 **예시임을 알리는 안내**를 띄운다.
 
 앞의 조각들을 붙여 화면을 만든다. 저장은 `RepaintBoundary`로 화면을 떠서 공유 시트로
 넘긴다 — 예전 만화 편집기가 쓴 방식이고 새 의존성이 없다.
@@ -1245,9 +1315,16 @@ class _MemoryStore extends TranscriptStore {
   Future<List<CaptionLine>?> read(String videoId) async => _saved;
 }
 
+/// 미리 만들어 둔 PNG를 그대로 돌려준다.
+///
+/// **왜 여기서 그림을 만들지 않나**: testWidgets는 가짜 시계(FakeAsync) 위에서
+/// 돈다. `picture.toImage()`로 진짜 PNG를 만드는 일은 진짜 이벤트 루프가 필요해서
+/// 그 안에서는 절대 끝나지 않는다 — 테스트가 무한 대기에 걸린다(Task 4에서 실제로
+/// 겪었다). 그래서 그림은 setUpAll에서 한 번 만들어 넣어 준다.
 class _StubGateway implements ComicGateway {
-  _StubGateway({this.imageError});
+  _StubGateway({required this.png, this.imageError});
 
+  final Uint8List png;
   final Object? imageError;
 
   @override
@@ -1264,7 +1341,7 @@ class _StubGateway implements ComicGateway {
     String style = comicDefaultStyle,
   }) async {
     if (imageError != null) throw imageError!;
-    return FakeComicGateway().image(videoId, cuts);
+    return png;
   }
 }
 
@@ -1289,20 +1366,24 @@ Future<void> pump(
   await tester.pumpAndSettle();
 }
 
-ComicController build({
-  List<CaptionLine>? saved,
-  _StubGateway? gateway,
-}) => ComicController(
-  gateway: gateway ?? _StubGateway(),
-  videoId: 'v1',
-  store: _MemoryStore(saved),
-);
-
 List<CaptionLine> _lines() => [
   CaptionLine(startMs: 1000, endMs: 3000, text: '그거 만지지 마'),
 ];
 
 void main() {
+  // 진짜 PNG는 진짜 이벤트 루프에서만 만들어진다 — _StubGateway의 주석 참조.
+  late Uint8List png;
+  setUpAll(() async {
+    png = await FakeComicGateway().image('v1', const []);
+  });
+
+  ComicController build({List<CaptionLine>? saved, Object? imageError}) =>
+      ComicController(
+        gateway: _StubGateway(png: png, imageError: imageError),
+        videoId: 'v1',
+        store: _MemoryStore(saved),
+      );
+
   testWidgets('전사문이 없으면 안내를 보여준다', (tester) async {
     await pump(tester, build());
 
@@ -1347,7 +1428,7 @@ void main() {
   testWidgets('그림이 실패해도 고친 대사가 남고 다시 만들 수 있다', (tester) async {
     await pump(
       tester,
-      build(saved: _lines(), gateway: _StubGateway(imageError: StateError('생성 실패'))),
+      build(saved: _lines(), imageError: StateError('생성 실패')),
     );
 
     await tester.tap(find.byKey(const ValueKey('comic-cut-0')));
@@ -1679,7 +1760,12 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: 진입 버튼과 문서
+### Task 6: 진입 버튼과 문서 ✅ 완료 — 커밋 `1060592`·`0fd1a74`, 이후 `f3459d8`·`2ecbd91`
+
+> 계획보다 늘어난 것: **REQ-F-27이 "전사문 외부 전송 없음"이라고 못 박아 둔 것과 충돌**해서
+> 문구를 고쳤다(FN-A39는 아무것도 보내지 않고 FN-A40만 글을 보낸다고 구분해 적었다).
+> 그리고 엔드포인트 2개를 **API-52·API-53**으로 API 명세서 양쪽에 넣었다 — 서버를 만들
+> 사람이 읽는 문서는 그쪽이고, 거기 없으면 계약을 볼 방법이 없다.
 
 영상 상세에 버튼을 넣고, 규칙대로 `자료/docs`를 갱신한다.
 
@@ -1750,7 +1836,8 @@ grep -rn "ComicScreen(" C:\Users\SSAFY\dev\stt-captions\frontend\lib
 cd C:\Users\SSAFY\dev\stt-captions\frontend && dart analyze lib test && flutter test
 ```
 
-기대: analyze 무경고, 기존 95개 + 새로 만든 34개 전부 통과.
+기대: analyze 무경고, 전부 통과 (master 기존 테스트 + 만화 33개: Task 1~3의 25개,
+Task 4의 3개, Task 5의 5개).
 
 - [ ] **Step 4: 기능명세서에 FN-A40을 넣는다**
 
@@ -1776,6 +1863,10 @@ FN-A39 다음 줄로 추가한다 (앱 max가 FN-A39이므로 새 번호는 FN-A
 - 만화는 서버나 앱에 보관하지 않는다. 갤러리 저장으로 끝낸다.
 - 컷 하나만 다시 그릴 수 없다 — 격자 한 장으로 받기 때문이다.
 ```
+
+같은 문서 첫머리의 **"전체 기능 ID는 총 79개다"를 80개로** 고치고, FN-A39와 나란히
+FN-A40을 신규 항목 목록에 덧붙인다. `자료/docs/ai에게 입력용 문서/01-service-overview.md`에도
+"79개"가 한 번 나온다(141행 부근) — 함께 80개로 고친다.
 
 - [ ] **Step 5: 영문판에도 같은 항목을 넣는다**
 
@@ -1822,6 +1913,20 @@ cd C:\Users\SSAFY\dev\stt-captions\frontend && flutter run --dart-define=API_BAS
 
 ---
 
+## MR 내기 (Task 6까지 끝난 뒤)
+
+브랜치 규칙 그대로: `develop/frontend`에 직접 push하지 않고 MR을 낸다.
+
+```bash
+git -C C:\Users\SSAFY\dev\stt-captions push -u origin feat/frontend/comic
+```
+
+- 대상: `develop/frontend`, 원본 브랜치 삭제 옵션 켬
+- 본문에 적을 것: 서버가 없으므로 기본은 FakeComicGateway이며 실기기에서는 색 블록
+  4칸으로 흐름만 확인된다는 것, 진짜 그림은 `feat/backend/*` 통로가 생기고
+  `--dart-define=COMIC_SERVER=true`를 켠 뒤부터라는 것
+- Jenkins CI(`flutter analyze`, `flutter test`)가 초록인 것을 확인하고 나서 머지한다
+
 ## 서버 쪽에 넘길 것
 
 이 계획은 앱만 다룬다. 서버 통로는 `feat/backend/*` 브랜치에서 만들며, 설계 문서의
@@ -1842,4 +1947,6 @@ cd C:\Users\SSAFY\dev\stt-captions\frontend && flutter run --dart-define=API_BAS
 - 화풍 고르기 UI 없음(요청에는 `style`이 있지만 `webtoon` 고정)
 - 만화를 다시 열어 보는 기능 없음 — 갤러리 저장으로 끝낸다
 - 컷 하나만 다시 그리기 없음 — 격자 한 장이라 부분 재생성이 안 된다
-- 전사문이 부실하면 구성 품질도 그만큼이다 (자막 실측: 2분 영상에 143자)
+- 전사문이 부실하면 구성 품질도 그만큼이다. 벤치마킹 확정치(06-stt-model-guide.md):
+  앱이 쓰는 q5_1 양자화 모델의 CER은 **11.3%** — 열 글자에 한 글자꼴로 틀린 전사가
+  구성의 입력이 된다. 대사 수정 단계가 이 오차를 사람 손으로 메우는 자리다
