@@ -1,4 +1,4 @@
-![빵긋](frontend\assets\images\bbanggeut_mascot.png)
+![빵긋](frontend/assets/images/bbanggeut_mascot.png)
 
 # 빵긋
 
