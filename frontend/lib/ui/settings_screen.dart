@@ -442,16 +442,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _notificationSettings(BuildContext context) => showDialog<void>(
-    context: context,
-    barrierColor: Colors.black54,
-    builder: (dialogContext) => Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-      child: SizedBox(child: const NotificationSettingsScreen(compact: true)),
-    ),
-  );
+  Future<void> _notificationSettings(BuildContext context) async {
+    final initialValues = await NotificationSettingsScreen.loadPreferences();
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        child: NotificationSettingsScreen(
+          compact: true,
+          initialValues: initialValues,
+        ),
+      ),
+    );
+  }
 
   Future<void> _logs(BuildContext context) async {
     final controller = widget.controller;

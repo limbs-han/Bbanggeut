@@ -4,10 +4,54 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../app/app_theme.dart';
 import 'widgets.dart';
 
+class NotificationPreferenceValues {
+  const NotificationPreferenceValues({
+    required this.anniversaryAlerts,
+    required this.weeklyReport,
+    required this.newMemoryAlerts,
+  });
+
+  const NotificationPreferenceValues.defaults()
+    : anniversaryAlerts = true,
+      weeklyReport = true,
+      newMemoryAlerts = false;
+
+  final bool anniversaryAlerts;
+  final bool weeklyReport;
+  final bool newMemoryAlerts;
+}
+
 class NotificationSettingsScreen extends StatefulWidget {
-  const NotificationSettingsScreen({super.key, this.compact = false});
+  const NotificationSettingsScreen({
+    super.key,
+    this.compact = false,
+    this.initialValues,
+  });
 
   final bool compact;
+  final NotificationPreferenceValues? initialValues;
+
+  static const _storage = FlutterSecureStorage();
+  static const _anniversaryKey = 'wj_pref_anniversary_alerts';
+  static const _weeklyKey = 'wj_pref_weekly_report';
+  static const _memoryKey = 'wj_pref_new_memory_alerts';
+
+  static Future<NotificationPreferenceValues> loadPreferences() async {
+    try {
+      final values = await Future.wait([
+        _storage.read(key: _anniversaryKey),
+        _storage.read(key: _weeklyKey),
+        _storage.read(key: _memoryKey),
+      ]);
+      return NotificationPreferenceValues(
+        anniversaryAlerts: values[0] != 'false',
+        weeklyReport: values[1] != 'false',
+        newMemoryAlerts: values[2] == 'true',
+      );
+    } catch (_) {
+      return const NotificationPreferenceValues.defaults();
+    }
+  }
 
   @override
   State<NotificationSettingsScreen> createState() =>
@@ -16,37 +60,34 @@ class NotificationSettingsScreen extends StatefulWidget {
 
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
-  static const _storage = FlutterSecureStorage();
-  static const _anniversaryKey = 'wj_pref_anniversary_alerts';
-  static const _weeklyKey = 'wj_pref_weekly_report';
-  static const _memoryKey = 'wj_pref_new_memory_alerts';
+  static const _storage = NotificationSettingsScreen._storage;
+  static const _anniversaryKey = NotificationSettingsScreen._anniversaryKey;
+  static const _weeklyKey = NotificationSettingsScreen._weeklyKey;
+  static const _memoryKey = NotificationSettingsScreen._memoryKey;
 
-  bool anniversaryAlerts = true;
-  bool weeklyReport = true;
-  bool newMemoryAlerts = false;
+  late bool anniversaryAlerts;
+  late bool weeklyReport;
+  late bool newMemoryAlerts;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    final initialValues =
+        widget.initialValues ?? const NotificationPreferenceValues.defaults();
+    anniversaryAlerts = initialValues.anniversaryAlerts;
+    weeklyReport = initialValues.weeklyReport;
+    newMemoryAlerts = initialValues.newMemoryAlerts;
+    if (widget.initialValues == null) _load();
   }
 
   Future<void> _load() async {
-    try {
-      final values = await Future.wait([
-        _storage.read(key: _anniversaryKey),
-        _storage.read(key: _weeklyKey),
-        _storage.read(key: _memoryKey),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        anniversaryAlerts = values[0] != 'false';
-        weeklyReport = values[1] != 'false';
-        newMemoryAlerts = values[2] == 'true';
-      });
-    } catch (_) {
-      // 보안 저장소를 사용할 수 없는 환경에서는 현재 실행의 상태를 유지한다.
-    }
+    final values = await NotificationSettingsScreen.loadPreferences();
+    if (!mounted) return;
+    setState(() {
+      anniversaryAlerts = values.anniversaryAlerts;
+      weeklyReport = values.weeklyReport;
+      newMemoryAlerts = values.newMemoryAlerts;
+    });
   }
 
   Future<void> _save(String key, bool value) async {
