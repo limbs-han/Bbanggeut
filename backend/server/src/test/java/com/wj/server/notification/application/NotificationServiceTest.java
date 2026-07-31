@@ -2,6 +2,7 @@ package com.wj.server.notification.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -19,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class NotificationServiceTest {
     @Mock
     private NotificationMapper mapper;
+    @Mock
+    private PushNotificationDispatcher pushDispatcher;
 
     @Test
     void listCapsLimitAndMapsRows() {
@@ -29,7 +32,7 @@ class NotificationServiceTest {
             UUID.randomUUID(), UUID.randomUUID(), null,
             Instant.parse("2026-07-27T10:00:00Z"))));
 
-        var result = new NotificationService(mapper).list(userId, 1_000);
+        var result = new NotificationService(mapper, pushDispatcher).list(userId, 1_000);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(notificationId);
@@ -40,8 +43,26 @@ class NotificationServiceTest {
         UUID deviceId = UUID.randomUUID();
         UUID videoId = UUID.randomUUID();
 
-        new NotificationService(mapper).laughterVideoReady(deviceId, videoId, "웃음 영상");
+        when(mapper.insertLaughterVideoNotifications(deviceId, videoId, "웃음 영상"))
+            .thenReturn(2);
+
+        new NotificationService(mapper, pushDispatcher)
+            .laughterVideoReady(deviceId, videoId, "웃음 영상");
 
         verify(mapper).insertLaughterVideoNotifications(deviceId, videoId, "웃음 영상");
+        verify(pushDispatcher).laughterVideoReady(deviceId, videoId, "웃음 영상");
+    }
+
+    @Test
+    void duplicateNotificationDoesNotSendPushAgain() {
+        UUID deviceId = UUID.randomUUID();
+        UUID videoId = UUID.randomUUID();
+        when(mapper.insertLaughterVideoNotifications(deviceId, videoId, "웃음 영상"))
+            .thenReturn(0);
+
+        new NotificationService(mapper, pushDispatcher)
+            .laughterVideoReady(deviceId, videoId, "웃음 영상");
+
+        verifyNoInteractions(pushDispatcher);
     }
 }

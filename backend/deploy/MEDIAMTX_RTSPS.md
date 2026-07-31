@@ -42,7 +42,7 @@ sudo docker compose up -d mediamtx
 
 The Pi and Jetson accounts each have only `publish` permission and only for
 canonical `live/{UUID}` paths. Neither has `read`, `playback`, `api`, `metrics`,
-or `pprof` permission. App HLS reads use a separate anonymous MediaMTX identity
+or `pprof` permission. App WHEP reads use a separate anonymous MediaMTX identity
 restricted to loopback and the private Docker bridge, reachable only through
 host-loopback Nginx. Nginx remains responsible for viewer authentication.
 
@@ -56,7 +56,7 @@ authentication. Validate all of the following before tightening encryption:
 1. No credential and a wrong credential cannot publish.
 2. The Jetson credential cannot publish outside a canonical `live/{UUID}` path.
 3. The Jetson credential cannot read the stream it published.
-4. Direct RTSPS publish succeeds and the app plays the corresponding HLS stream.
+4. Direct RTSPS publish succeeds and the app receives video and Opus audio over WebRTC.
 5. Viewer close and idle timeout stop only the on-demand relay.
 
 Then disable `wj-media-tunnel` on the Jetson, set:

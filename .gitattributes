@@ -1,0 +1,6 @@
+*.sh text eol=lf
+Jenkinsfile text eol=lf
+Dockerfile* text eol=lf
+*.groovy text eol=lf
+*.yml text eol=lf
+ci/jenkins/server/deploy/wj-deploy-backend text eol=lf

@@ -17,7 +17,7 @@
 | PostgreSQL | 배포 완료 | Docker, EC2 Flyway V14 적용 확인 |
 | MinIO | 배포 완료 | 비공개 영상 버킷 생성, loopback 전용 |
 | Mosquitto MQTT | 배포 완료 | 백엔드 연결 정상, loopback 전용 |
-| MediaMTX | 기본 설치 완료 | RTSP/HLS loopback 전용 |
+| MediaMTX | 기본 설치 완료 | RTSPS ingest + WHEP/WebRTC 전용 |
 | Nginx·HTTPS | 배포 완료 | HTTP→HTTPS, API reverse proxy |
 | 실제 Jetson/Raspberry Pi 연결 | 미완료 | MQTTS·미디어 publish 인증 필요 |
 | 프론트엔드 연동 | 미완료 | API와 라이브 heartbeat 연동 필요 |
@@ -41,6 +41,9 @@
 - refresh token 해시 저장 및 rotation
 - 로그아웃 시 소유 세션 회수
 - 사용자·세션 상태 검증
+- 로그인 실패 제한
+  - Redis 슬라이딩 윈도우로 이메일·IP 지문 기준 5회/10분 제한
+  - 정상 로그인 예약은 IP 버킷에서 제거하고, 실제 실패 해시는 PostgreSQL 감사 이력으로 별도 보관
 - **비밀번호 변경·재설정** (2026-07-27)
   - 로그인 사용자는 현재 비밀번호를 확인한 뒤 변경하고 다른 세션을 회수
   - 비밀번호 찾기는 계정 존재 여부를 노출하지 않는 202 응답
@@ -58,11 +61,14 @@
 - claim 성공 시 OWNER 멤버십 생성
 - **소유권 이전** (2026-07-20): 현 OWNER가 같은 기기의 활성 MEMBER에게 `POST /transfer-ownership` — 강등+승격 한 트랜잭션, 영상·구성원·구독 유지. 외부 양도는 기기 해제 경로 사용
 - **회원 탈퇴** (2026-07-20): `DELETE /api/auth/me` — 활성 OWNER 멤버십이 있으면 409로 차단, 통과 시 멤버십·세션 회수 후 `WITHDRAWN` 처리
-- claim 실패 계정·IP당 5회/10분 제한 (코드는 기기에 귀속되지 않으므로 추측 주체 기준)
+- claim 실패 계정·IP당 Redis 슬라이딩 윈도우 5회/10분 제한 (코드는 기기에 귀속되지 않으므로 추측 주체 기준, 성공 예약은 IP 버킷에서 제거)
 - 사용자 기기 목록·상세·상태 조회
+  - MQTT heartbeat의 온라인·녹화·업로드 큐·버퍼·인원수·펌웨어 상태는 Redis 90초 TTL로 관리
+  - 목록·상세·금고·라이브 시작 판정은 Redis presence 우선, Redis 장애 시 PostgreSQL 마지막 상태로 폴백
+  - 정상 heartbeat는 DB 행을 갱신하지 않아 30초 주기 고빈도 UPDATE와 stale OFFLINE UPDATE를 제거
 - 기기 이름·영상 보존 일수 변경
 - 기기 해제·양도: 기존 행 REVOKED 종결 + credential·초대·멤버십 회수 + 영상 삭제 작업 등록 + 같은 시리얼의 새 UNCLAIMED 행 생성
-- heartbeat가 오래된 기기의 OFFLINE 판정
+- Redis presence TTL 만료로 별도 sweep 없이 OFFLINE 판정
 
 ### 2.3 초대와 구성원
 
@@ -72,7 +78,7 @@
   - OWNER가 가입 상태가 ACTIVE인 이메일 계정만 초대
   - 초대받은 계정이 앱 받은 초대함에서 수락하면 MEMBER 멤버십 생성·재활성화
   - 존재하지 않거나 탈퇴한 이메일은 `INVITEE_ACCOUNT_NOT_FOUND`로 거절
-  - 초대 생성 시 초대받은 사용자에게 인앱 알림 생성
+  - 초대 생성 시 초대받은 사용자에게 인앱 알림 생성 및 등록 토큰으로 FCM 푸시
 - MEMBER 목록 조회
 - MEMBER 권한 회수
 
@@ -99,7 +105,7 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 - 기기 영상 업로드 URL 발급
 - MinIO 직접 PUT 업로드
 - 객체 크기·SHA-256 검증 후 업로드 완료 확정
-- LAUGHTER 영상이 READY가 되면 해당 기기의 활성 OWNER·MEMBER에게 인앱 알림 생성
+- LAUGHTER 영상이 READY가 되면 해당 기기의 활성 OWNER·MEMBER에게 인앱 알림 생성 및 FCM 푸시
 - 영상 목록·상세·재생·다운로드
 - 제목·설명·즐겨찾기 변경
 - 비동기 영상 삭제 worker
@@ -119,8 +125,8 @@ MQTT 메시지 계약은 [`../자료/api/mqtt-contract.md`](../자료/api/mqtt-c
 - 시청자 heartbeat와 TTL 갱신
 - 마지막 활동 후 idle timeout에 MQTT STOP 발행
 - edge hard lease와 EXTEND 명령
-- 시청 세션과 stream ID에 귀속된 단기 HLS 토큰
-- Nginx 내부 introspection을 통한 HLS 접근 제어
+- 시청 세션과 stream ID에 귀속된 단기 WHEP 토큰
+- Nginx 내부 introspection을 통한 WHEP 접근 제어
 
 ### 2.6.1 홈 대시보드 요약 (2026-07-21 추가)
 
@@ -260,7 +266,8 @@ UFW에서 허용된 포트는 다음과 같다.
 | 9000·9001 | MinIO API·console |
 | 1883 | Mosquitto MQTT |
 | 8554 | MediaMTX RTSP ingest |
-| 8888 | MediaMTX HLS |
+| 8889 | MediaMTX WHEP signaling(loopback 전용) |
+| 8189/UDP | MediaMTX WebRTC 미디어 |
 
 ### 3.5 HTTPS와 reverse proxy
 
@@ -326,10 +333,10 @@ GitLab CI는 test·bootJar와 기본 브랜치의 수동 승인형 production �
 - live session 생성 후 `PENDING` polling
 - 15초 heartbeat
 - 30초 단기 live token 갱신
-- HLS playlist·segment 요청의 token/cookie 동작 검증
+- WHEP 요청의 단기 token 동작과 영상·오디오 RTP 검증
 - 앱 종료·화면 이탈 시 stream session DELETE
 
-특히 HLS 인증은 실제 브라우저와 HLS.js 환경에서 cross-origin/cookie 동작을 추가 검증해야 한다.
+특히 WHEP 인증과 8189/UDP ICE 연결은 Wi-Fi·LTE 환경에서 각각 검증해야 한다.
 
 ### P1: 운영 전에 필요
 
@@ -380,7 +387,7 @@ GitLab CI는 test·bootJar와 기본 브랜치의 수동 승인형 production �
 3. Jetson/Raspberry Pi heartbeat·명령 처리 연결(자동 인물 추적 제어는 IoT/AI 범위)
 4. 실제 카메라 live end-to-end 검증
 5. 영상 업로드 end-to-end 검증
-6. 프론트엔드 API·HLS·로컬 편집 연동
+6. 프론트엔드 API·WebRTC·로컬 편집 연동
 7. off-instance 백업·외부 알림·자동 rollback 보강
 ```
 

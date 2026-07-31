@@ -11,6 +11,17 @@ public record DeviceMemberResponse(
     UserSummary user,
     String role,
     String status,
-    Instant joinedAt
+    Instant joinedAt,
+    UUID vaultId
 ) {
+    public DeviceMemberResponse(
+        UUID id,
+        UUID deviceId,
+        UserSummary user,
+        String role,
+        String status,
+        Instant joinedAt
+    ) {
+        this(id, deviceId, user, role, status, joinedAt, null);
+    }
 }

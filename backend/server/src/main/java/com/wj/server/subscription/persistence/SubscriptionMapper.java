@@ -14,11 +14,12 @@ import org.apache.ibatis.annotations.Update;
 public interface SubscriptionMapper {
 
     @Select("""
-        SELECT d.subscription_active, d.subscription_grace_until
-          FROM devices d
-          JOIN device_memberships m ON m.device_id = d.id
-         WHERE d.id = #{deviceId} AND m.user_id = #{userId}
-           AND m.status = 'ACTIVE' AND d.status != 'REVOKED'
+        SELECT v.subscription_active, v.subscription_grace_until
+          FROM device_bindings b
+          JOIN memory_vaults v ON v.id = b.vault_id
+          JOIN vault_memberships m ON m.vault_id = v.id
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+           AND m.user_id = #{userId} AND m.status = 'ACTIVE'
         """)
     Optional<SubscriptionRow> findAccessibleSubscription(
         @Param("userId") UUID userId,
@@ -26,16 +27,21 @@ public interface SubscriptionMapper {
     );
 
     @Update("""
-        UPDATE devices
+        UPDATE memory_vaults v
            SET subscription_active = true, subscription_grace_until = NULL, updated_at = now()
-         WHERE id = #{deviceId} AND status != 'REVOKED'
+          FROM device_bindings b
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+           AND v.id = b.vault_id AND v.status = 'ACTIVE'
         """)
     int activate(@Param("deviceId") UUID deviceId);
 
     @Update("""
-        UPDATE devices
+        UPDATE memory_vaults v
            SET subscription_active = false, subscription_grace_until = #{graceUntil}, updated_at = now()
-         WHERE id = #{deviceId} AND status != 'REVOKED' AND subscription_active = true
+          FROM device_bindings b
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+           AND v.id = b.vault_id AND v.status = 'ACTIVE'
+           AND v.subscription_active = true
         """)
     int cancel(@Param("deviceId") UUID deviceId, @Param("graceUntil") Instant graceUntil);
 
@@ -46,7 +52,10 @@ public interface SubscriptionMapper {
                    COALESCE(retention_until, 'epoch'::timestamptz),
                    COALESCE(uploaded_at, created_at) + make_interval(days => #{premiumRetentionDays})),
                updated_at = now()
-         WHERE device_id = #{deviceId} AND status NOT IN ('DELETING', 'DELETED')
+         WHERE vault_id = (
+             SELECT vault_id FROM device_bindings
+              WHERE device_id = #{deviceId} AND status = 'ACTIVE'
+         ) AND status NOT IN ('DELETING', 'DELETED')
         """)
     int extendRetentionToPremium(
         @Param("deviceId") UUID deviceId,
@@ -63,10 +72,92 @@ public interface SubscriptionMapper {
                    COALESCE(v.uploaded_at, v.created_at) + make_interval(days => d.retention_days),
                    #{graceUntil}),
                updated_at = now()
-          FROM devices d
-         WHERE d.id = v.device_id
-           AND v.device_id = #{deviceId}
+          FROM memory_vaults d
+         WHERE d.id = v.vault_id
+           AND v.vault_id = (
+               SELECT vault_id FROM device_bindings
+                WHERE device_id = #{deviceId} AND status = 'ACTIVE'
+           )
            AND v.status NOT IN ('DELETING', 'DELETED')
         """)
     int resetRetentionToBaseline(@Param("deviceId") UUID deviceId, @Param("graceUntil") Instant graceUntil);
+
+    // --- vault-scoped API (works while no device is connected) ---
+
+    @Select("""
+        SELECT v.subscription_active, v.subscription_grace_until
+          FROM memory_vaults v
+          JOIN vault_memberships m ON m.vault_id = v.id
+         WHERE v.id = #{vaultId}
+           AND m.user_id = #{userId} AND m.status = 'ACTIVE'
+        """)
+    Optional<SubscriptionRow> findAccessibleVaultSubscription(
+        @Param("userId") UUID userId,
+        @Param("vaultId") UUID vaultId
+    );
+
+    @Select("""
+        SELECT m.role::text
+          FROM memory_vaults v
+          JOIN vault_memberships m ON m.vault_id = v.id
+         WHERE v.id = #{vaultId} AND v.status = 'ACTIVE'
+           AND m.user_id = #{userId} AND m.status = 'ACTIVE'
+         FOR UPDATE OF v
+        """)
+    Optional<String> lockVaultRole(
+        @Param("userId") UUID userId,
+        @Param("vaultId") UUID vaultId
+    );
+
+    @Update("""
+        UPDATE memory_vaults
+           SET subscription_active = true, subscription_grace_until = NULL,
+               updated_at = now()
+         WHERE id = #{vaultId} AND status = 'ACTIVE'
+        """)
+    int activateVault(@Param("vaultId") UUID vaultId);
+
+    @Update("""
+        UPDATE memory_vaults
+           SET subscription_active = false,
+               subscription_grace_until = #{graceUntil}, updated_at = now()
+         WHERE id = #{vaultId} AND status = 'ACTIVE'
+           AND subscription_active = true
+        """)
+    int cancelVault(
+        @Param("vaultId") UUID vaultId,
+        @Param("graceUntil") Instant graceUntil
+    );
+
+    @Update("""
+        UPDATE videos
+           SET retention_until = GREATEST(
+                   COALESCE(retention_until, 'epoch'::timestamptz),
+                   COALESCE(uploaded_at, created_at)
+                       + make_interval(days => #{premiumRetentionDays})),
+               updated_at = now()
+         WHERE vault_id = #{vaultId}
+           AND status NOT IN ('DELETING', 'DELETED')
+        """)
+    int extendVaultRetentionToPremium(
+        @Param("vaultId") UUID vaultId,
+        @Param("premiumRetentionDays") int premiumRetentionDays
+    );
+
+    @Update("""
+        UPDATE videos v
+           SET retention_until = GREATEST(
+                   COALESCE(v.uploaded_at, v.created_at)
+                       + make_interval(days => d.retention_days),
+                   #{graceUntil}),
+               updated_at = now()
+          FROM memory_vaults d
+         WHERE d.id = v.vault_id
+           AND v.vault_id = #{vaultId}
+           AND v.status NOT IN ('DELETING', 'DELETED')
+        """)
+    int resetVaultRetentionToBaseline(
+        @Param("vaultId") UUID vaultId,
+        @Param("graceUntil") Instant graceUntil
+    );
 }

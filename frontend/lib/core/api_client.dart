@@ -87,7 +87,9 @@ class ApiClient {
   bool _isPublicAuthPath(String path) =>
       path.contains('/api/auth/login') ||
       path.contains('/api/auth/signup') ||
-      path.contains('/api/auth/refresh');
+      path.contains('/api/auth/refresh') ||
+      path.contains('/api/auth/password/forgot') ||
+      path.contains('/api/auth/password/reset');
 
   Future<bool> get hasSession async {
     _memoryAccessToken = await _storage.read(key: _accessKey);
@@ -141,6 +143,22 @@ class ApiClient {
     return session;
   }
 
+  Future<void> requestPasswordReset(String email) async {
+    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 실제 환경 응답을 검증한다.
+    await _post('/api/auth/password/forgot', data: {'email': email.trim()});
+  }
+
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 세션 유지 정책을 검증한다.
+    await _post(
+      '/api/auth/password/change',
+      data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+    );
+  }
+
   Future<void> logout() async {
     try {
       await _dio.post<void>('/api/auth/logout');
@@ -186,11 +204,24 @@ class ApiClient {
 
   Future<List<DeviceSummary>> listDevices() async =>
       (await _getList('/api/devices')).map(DeviceSummary.fromJson).toList();
-  Future<DeviceSummary> claimDevice(String registrationCode) async =>
+  Future<List<MemoryVault>> listVaults() async =>
+      (await _getList('/api/vaults')).map(MemoryVault.fromJson).toList();
+  Future<MemoryVault> createVault(String name) async => MemoryVault.fromJson(
+    await _post('/api/vaults', data: {'name': name.trim()}),
+  );
+  Future<DeviceSummary> claimDevice(
+    String registrationCode, {
+    String? vaultId,
+    String? vaultName,
+  }) async =>
       DeviceSummary.fromJson(
         await _post(
           '/api/devices/claim',
-          data: {'registrationCode': registrationCode.trim()},
+          data: {
+            'registrationCode': registrationCode.trim(),
+            'vaultId': ?vaultId,
+            'vaultName': ?vaultName,
+          },
         ),
       );
   Future<DeviceStatus> getDeviceStatus(String id) async =>
@@ -243,6 +274,10 @@ class ApiClient {
       (await _getList(
         '/api/devices/$deviceId/members',
       )).map(DeviceMember.fromJson).toList();
+  Future<List<DeviceMember>> listVaultMembers(String vaultId) async =>
+      (await _getList(
+        '/api/vaults/$vaultId/members',
+      )).map(DeviceMember.fromJson).toList();
   Future<DeviceSummary> updateDevice(
     String deviceId, {
     String? name,
@@ -268,6 +303,20 @@ class ApiClient {
       },
     ),
   );
+  Future<Invitation> createVaultInvitation(
+    String vaultId,
+    String email, {
+    String? membershipRequestToken,
+  }) async => Invitation.fromJson(
+    await _post(
+      '/api/vaults/$vaultId/invitations',
+      data: {
+        'email': email.trim(),
+        'role': 'MEMBER',
+        'membershipRequestToken': ?membershipRequestToken,
+      },
+    ),
+  );
   Future<MembershipRequestLink> createMembershipRequestLink() async =>
       MembershipRequestLink.fromJson(
         await _post('/api/membership-request-links'),
@@ -281,8 +330,16 @@ class ApiClient {
       (await _getList(
         '/api/devices/$deviceId/invitations',
       )).map(Invitation.fromJson).toList();
+  Future<List<Invitation>> listVaultInvitations(String vaultId) async =>
+      (await _getList(
+        '/api/vaults/$vaultId/invitations',
+      )).map(Invitation.fromJson).toList();
   Future<void> revokeInvitation(String deviceId, String invitationId) async =>
       _delete('/api/devices/$deviceId/invitations/$invitationId');
+  Future<void> revokeVaultInvitation(
+    String vaultId,
+    String invitationId,
+  ) async => _delete('/api/vaults/$vaultId/invitations/$invitationId');
   Future<List<Invitation>> listMyInvitations() async =>
       (await _getList('/api/invitations')).map(Invitation.fromJson).toList();
   Future<DeviceMember> acceptInvitation(String invitationId) async =>
@@ -293,11 +350,20 @@ class ApiClient {
       _post('/api/invitations/$invitationId/decline');
   Future<void> revokeMember(String deviceId, String memberId) async =>
       _delete('/api/devices/$deviceId/members/$memberId');
+  Future<void> revokeVaultMember(String vaultId, String memberId) async =>
+      _delete('/api/vaults/$vaultId/members/$memberId');
   Future<void> transferOwnership(String deviceId, String membershipId) async =>
       _post(
         '/api/devices/$deviceId/transfer-ownership',
         data: {'newOwnerMembershipId': membershipId},
       );
+  Future<void> transferVaultOwnership(
+    String vaultId,
+    String membershipId,
+  ) async => _post(
+    '/api/vaults/$vaultId/transfer-ownership',
+    data: {'newOwnerMembershipId': membershipId},
+  );
   Future<void> releaseDevice(String deviceId) async =>
       _delete('/api/devices/$deviceId');
   Future<StreamSession> createStream(String deviceId) async =>
@@ -344,6 +410,46 @@ class ApiClient {
     return result;
   }
 
+  // Subscription and audit logs belong to the vault, so these keep working
+  // while the vault has no connected device.
+  Future<SubscriptionInfo> getVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _get('/api/vaults/$vaultId/subscription'),
+      );
+  Future<SubscriptionInfo> activateVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _put('/api/vaults/$vaultId/subscription'),
+      );
+  Future<SubscriptionInfo> cancelVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _deleteMap('/api/vaults/$vaultId/subscription'),
+      );
+  Future<AccessLogPage> listVaultAccessLogPage(
+    String vaultId, {
+    String? cursor,
+    int size = 30,
+  }) async => AccessLogPage.fromJson(
+    await _get(
+      '/api/vaults/$vaultId/access-logs',
+      query: {'size': size.clamp(1, 100), 'cursor': ?cursor},
+    ),
+  );
+
+  Future<List<AccessLogEntry>> listVaultAccessLogs(String vaultId) async {
+    final result = <AccessLogEntry>[];
+    String? cursor;
+    do {
+      final page = await listVaultAccessLogPage(
+        vaultId,
+        cursor: cursor,
+        size: 100,
+      );
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
+  }
+
   Future<List<VideoMemory>> listAllVideos(
     String deviceId, {
     String? triggerType,
@@ -360,6 +466,34 @@ class ApiClient {
         from: from,
         to: to,
         size: 100,
+      );
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
+  }
+
+  Future<List<VideoMemory>> listAllVaultVideos(
+    String vaultId, {
+    String? triggerType,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final result = <VideoMemory>[];
+    String? cursor;
+    do {
+      final page = VideoPage.fromJson(
+        await _get(
+          '/api/videos',
+          query: {
+            'vaultId': vaultId,
+            'triggerType': ?triggerType,
+            'cursor': ?cursor,
+            'from': ?from?.toUtc().toIso8601String(),
+            'to': ?to?.toUtc().toIso8601String(),
+            'size': 100,
+          },
+        ),
       );
       result.addAll(page.items);
       cursor = page.hasNext ? page.nextCursor : null;

@@ -24,7 +24,7 @@
 | 피봇 일자 | 2026-07-21 (홈캠으로 전환) |
 | MVP 확정 일자 | 2026-07-27, 시연 기준 7단계 확정 |
 | 재사용 도메인 | auth, device, invitation, video, stream, subscription |
-| 신규 기획 항목(7단계) | 이벤트 감지 영상 기반 전용 리포트 화면 — REQ-F-42 / FN-A38·FN-S26 / API-51, 전부 **[제안·미구현]** |
+| 리포트 구현 경계(7단계) | FN-A38 Flutter 화면은 기존 `LAUGHTER` 영상 단말 집계로 구현. FN-S26/API-51 서버 집계는 **[제안·미구현]** |
 | 서버 계약 제외 범위 | 인물 탐지·중심 계산·자동 추적(팬틸트) — AIoT/엣지 전용, REQ-F-38(부록 A) |
 
 ## 3. MVP 7단계 (코드 경로 참조, 상세는 02·03·04 각 절)
@@ -33,12 +33,21 @@
 |---|---|---|---|---|---|
 | 1 | 회원가입/로그인 | REQ-F-01,02(,03,04,05) | FN-A02,A03,S01(,A32,A33,S02) | API-01,02(,03,04,05) | 이메일+비밀번호만. 소셜로그인·비밀번호찾기는 부록 A(스텁) |
 | 2 | 기기 등록 | REQ-F-10(,12,13) | FN-A07,S04,S20,S21,E01,E02(,A27,S05) | API-08,43(,44,45,07,10,11) | QR/8자리 코드 claim. 코드 TTL 120초 |
-| 3 | 홈 라이브 스트리밍 시청 | REQ-F-18(,41) | FN-A10,A11,A37,S16,S17,S25,E04,E05(,A06) | API-34~38, MQTT-01,04 | `EmbeddedLivePlayer` 실사용, `LiveScreen`(FN-A12) 도달불가 코드(부록 A) |
+| 3 | 홈 라이브 스트리밍 시청 | REQ-F-18(,41) | FN-A10,A11,A37,S16,S17,S25,E04,E05(,A06) | API-34~38, MQTT-01,04 | 운영 WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | REQ-F-37,21,22 | FN-E06,E07,S11,A15,S12,A17,A37,S14 | API-25,26,27,31 | YAMNet 임계값 0.25·연속 2윈도우 → presigned 업로드 |
-| 5 | 영상 편집 | REQ-F-27 | FN-A21 | API-32(원본 다운로드 재사용) | Banuba 수동 편집(Android 전용), 서버 API 불요 |
+| 5 | 영상 편집 | REQ-F-27 | FN-A21,A39 | API-32(원본 다운로드 재사용) | 로컬 편집·온디바이스 자동 자막, 서버 API 불요 |
 | 6 | 편집 영상 다운로드 | REQ-F-26,27 | FN-A20,S14,A21 | API-32 | 편집본은 로컬 저장+공유(SNS/메신저), 원본만 서버 다운로드 |
-| 7 | 통계/리포트 | REQ-F-19,36(현행)+REQ-F-42(신규) | FN-A13,S12,A36,S15,S22(현행)+**FN-A38,FN-S26(신규)** | API-27,33(현행)+**API-51 [제안](신규)** | 캘린더/웃음통계는 구현됨. 리포트 화면은 **[제안·미구현]** |
+| 7 | 통계/리포트 | REQ-F-19,36,42 | FN-A13,S12,A36,S15,S22+**FN-A38(구현), FN-S26(제안)** | API-27,33+**API-51 [제안]** | Flutter 리포트 단말 집계 구현. 서버 집계는 미구현 |
 | 가족공유(본문 유지) | REQ-F-28,29,30,31,11 | FN-A08,A22~A25,S07~S10 | API-14~24 | 초대 승인제만 유효, 링크는 멤버십 미생성 |
+
+### 3.1 Memory Vault 수명주기와 앱 진입 불변식
+
+- 영속 콘텐츠와 권한의 루트는 물리 기기가 아니라 `memory_vaults`다. `vault_memberships`가 사용자 권한, `device_bindings`가 시점별 물리 기기 연결, `videos.vault_id`가 영상 소속을 나타낸다.
+- claim에서 `vaultId`를 생략하면 새 금고와 OWNER 멤버십을 만들고, 전달하면 해당 금고의 OWNER 권한을 검증한 뒤 새 binding generation을 만든다.
+- 기기 해제는 활성 binding만 닫는다. 금고·영상·구독·금고 멤버십은 삭제하지 않는다. 재판매된 동일 물리 기기는 새 금고에 새로운 generation으로 연결되어 이전 금고 데이터에 접근할 수 없다.
+- Flutter 최상위 선택 상태는 `selectedVault`다. 로그인 후 `GET /api/vaults`로 금고를 복원하고, 활성 기기가 있으면 5탭 화면, 기기 없는 금고면 `VaultArchiveScreen`, 금고가 전혀 없으면 기기 등록 화면으로 이동한다.
+- `VaultArchiveScreen`은 `GET /api/videos?vaultId=...`로 과거 영상을 계속 보여준다. 기기 해제 후에도 선택 금고와 영상 목록을 유지하고, 새 기기 연결 시 claim에 `vaultId`를 포함한다.
+- 상세 근거: `../23_Memory_Vault_기기_수명주기.md`, `../24_Flutter_Memory_Vault_UI.md`.
 
 ## 4. 핵심 가치(제약 조건 — 에이전트가 어길 수 없는 불변식)
 
@@ -51,7 +60,7 @@
 | 라이브 토큰 TTL | 30초 (20초 주기 재조회) |
 | 업로드 URL TTL | 15분 |
 | 재생/다운로드 URL TTL | 5분 |
-| 명령·미디어 경로 분리 | MQTT=제어만, RTSPS(기기→미디어서버)/HLS(미디어서버→앱)=영상 |
+| 명령·미디어 경로 분리 | MQTT=제어만, RTSPS(기기→미디어서버)/WHEP·WebRTC(미디어서버→앱)=영상 |
 
 ## 5. 시스템 아키텍처
 
@@ -71,7 +80,7 @@ flowchart LR
         SPRING <--> DB
         SPRING <--> MQTT
         SPRING --> STORE
-        MEDIA -->|"HLS 재생 요청 전달"| NGINX
+        MEDIA -->|"WHEP"| NGINX
     end
     APP["Flutter Application"]
     J <-->|"① MQTTS 라이브 시작/종료 명령·상태"| MQTT
@@ -79,7 +88,7 @@ flowchart LR
     J <-->|"③ HTTPS 웃음 클립 업로드URL요청/완료통지"| SPRING
     J -->|"③' HTTPS(presigned PUT) 웃음 클립 업로드"| STORE
     APP <-->|"④ HTTPS+JWT 로그인·기기·라이브세션·서명URL발급"| NGINX
-    NGINX -->|"⑤ HTTPS+HLS 라이브영상재생"| APP
+    NGINX -->|"⑤ WHEP/WebRTC"| APP
     STORE -->|"⑥ HTTPS 서명URL(발급은④경유) 저장영상재생/다운로드"| APP
 ```
 
@@ -90,10 +99,10 @@ flowchart LR
 | Jetson↔Spring(업로드) | HTTPS | `ai/yolo/laughter_clip_uploader.py`, `backend/.../video/api/IotVideoController.java` |
 | Jetson→MinIO | HTTPS PUT(presigned) | `backend/.../storage/ObjectStorageService.java` |
 | App↔Nginx→Spring | HTTPS+JWT | `frontend/lib/core/api_client.dart`, 각 `backend/.../*/api/*Controller.java` |
-| Nginx→App | HTTPS+HLS | `frontend/lib/ui/live_screen.dart`(`EmbeddedLivePlayer`) |
+| Nginx/MediaMTX→App | HTTPS WHEP signaling + WebRTC | `frontend/lib/core/whep_player_controller.dart`, `frontend/lib/ui/live_screen.dart` |
 | MinIO→App(서명URL 발급은 Spring 경유) | HTTPS | `backend/.../video/application/VideoQueryService.java` |
 
-- **명령과 미디어 분리**: MQTT는 짧은 제어 메시지(시작/종료 명령, 상태)만, 실제 영상은 라이브(RTSPS→HLS)와 클립(HTTPS presigned)로만 흐른다.
+- **명령과 미디어 분리**: MQTT는 짧은 제어 메시지(시작/종료 명령, 상태)만, 실제 영상은 라이브(RTSPS→WHEP/WebRTC)와 클립(HTTPS presigned)로만 흐른다.
 - 인물 탐지·팬틸트 자동 추적 등 영상 기반 AI 기능은 아키텍처 범위 밖(부록 A). 이벤트 판단은 웃음소리(오디오) 감지 하나로 단순화.
 - ⚠️ MQTT `events`(MQTT-07)는 서버 핸들러가 존재하나 기기가 발행하지 않는 죽은 구독 — 이벤트 통지는 전부 HTTP(API-25/26)로만 동작.
 
@@ -128,19 +137,19 @@ flowchart LR
 ## 8. 참조
 
 - `02-requirements.md` — REQ-F-01~42, REQ-NF-01~12
-- `03-features.md` — FN-A/S/E/H 78개(신규 FN-A38/FN-S26 포함) + 경로 매핑 총람
+- `03-features.md` — FN-A/S/E/H 79개(FN-A39 온디바이스 자막 포함) + 경로 매핑 총람
 - `04-api-spec.md` — API-01~51(06 제외), MQTT-01~15 + JSON 스키마
 
 ## 9. 부록 B: 현재 구현 현황 요약
 
-MVP 7단계 기준. 유일한 미구현 항목은 신규 리포트 화면(7단계)이다.
+MVP 7단계 기준. FN-A38 Flutter 리포트 화면은 구현됐고 FN-S26/API-51 서버 집계는 제안·미구현이다.
 
 | # | MVP 단계 | 상태 | 비고 |
 |---|---|---|---|
 | 1 | 회원가입/로그인 | 구현됨 | 세션 유지 포함 |
 | 2 | 기기 등록 | 구현됨 | QR/8자리 코드 claim |
-| 3 | 홈 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면. `LiveScreen`(FN-A12) 자체는 미사용 코드 |
+| 3 | 홈 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지→자동업로드→목록/재생 |
-| 5 | 영상 편집 | 부분 구현 | Banuba 동작(Android 전용). 판정기준(로컬편집+기기저장) 충족 |
+| 5 | 영상 편집 | 구현됨 | 로컬 편집과 온디바이스 자동 자막(FN-A39), 갤러리 저장 동작 |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장, 원본 서버 다운로드 |
-| 7 | 통계/리포트 | 부분 구현 | 캘린더·웃음통계는 구현. **신규 리포트 화면(FN-A38/FN-S26/API-51)은 미구현** |
+| 7 | 통계/리포트 | 부분 구현 | 캘린더·웃음통계와 **FN-A38 Flutter 화면 구현**. **FN-S26/API-51 서버 집계 미구현** |

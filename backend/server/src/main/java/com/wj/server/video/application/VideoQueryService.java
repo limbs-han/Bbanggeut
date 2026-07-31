@@ -77,6 +77,44 @@ public class VideoQueryService {
     }
 
     @Transactional(readOnly = true)
+    public VideoPageResponse listByVault(
+        UUID userId,
+        UUID vaultId,
+        String triggerType,
+        Instant from,
+        Instant to,
+        String cursor,
+        int size
+    ) {
+        if (size < 1 || size > 100) {
+            throw validation("size는 1 이상 100 이하여야 합니다.");
+        }
+        if (triggerType != null && !TRIGGER_TYPES.contains(triggerType)) {
+            throw validation("지원하지 않는 triggerType입니다.");
+        }
+        if (from != null && to != null && !from.isBefore(to)) {
+            throw validation("from은 to보다 이전이어야 합니다.");
+        }
+        if (!videoMapper.hasVaultMembership(userId, vaultId)) {
+            throw notFound();
+        }
+
+        VideoCursorCodec.Cursor decoded = cursorCodec.decode(cursor);
+        List<VideoRow> rows = videoMapper.findAccessibleVideosByVault(
+            userId, vaultId, triggerType, from, to,
+            decoded.createdAt(), decoded.id(), size + 1);
+        boolean hasNext = rows.size() > size;
+        List<VideoRow> pageRows = hasNext ? rows.subList(0, size) : rows;
+        String nextCursor = hasNext
+            ? cursorCodec.encode(
+                pageRows.get(pageRows.size() - 1).createdAt(),
+                pageRows.get(pageRows.size() - 1).id())
+            : null;
+        return new VideoPageResponse(
+            pageRows.stream().map(this::toResponse).toList(), nextCursor, hasNext);
+    }
+
+    @Transactional(readOnly = true)
     public VideoResponse get(UUID userId, UUID videoId) {
         VideoRow video = accessibleVideo(userId, videoId);
         auditService.success(video.deviceId(), userId, "VIDEO_VIEW", "VIDEO", videoId);

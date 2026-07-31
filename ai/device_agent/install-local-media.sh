@@ -63,11 +63,18 @@ if [[ -f "${YOLO_DIR}/wj-edge-ai-recording.service" ]]; then
     install -m 0644 "${YOLO_DIR}/wj-edge-ai-recording.service" \
         /etc/systemd/system/wj-edge-ai-recording.service
 fi
+if [[ -f "${YOLO_DIR}/wj-servo-controller.service" ]]; then
+    install -m 0644 "${YOLO_DIR}/wj-servo-controller.service" \
+        /etc/systemd/system/wj-servo-controller.service
+fi
 
 systemctl daemon-reload
 
 cat <<'EOF'
 Local media services were installed but not started.
+
+The servo controller unit was staged in dry-run mode. Install its Python
+requirements and start it only after reviewing the servo runbook.
 
 Activate for a non-destructive RTSP trial:
   sudo systemctl restart wj-media-source

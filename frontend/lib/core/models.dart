@@ -1,6 +1,25 @@
 DateTime? parseDate(Object? value) =>
     value is String ? DateTime.tryParse(value)?.toLocal() : null;
 
+String normalizeRole(Object? value) {
+  final role = '$value'.trim().toUpperCase();
+  return switch (role) {
+    'OWNER' || '소유자' => 'OWNER',
+    'MEMBER' || 'VIEWER' || 'EDITOR' || '멤버' || '구성원' || '뷰어' => 'MEMBER',
+    _ => 'MEMBER',
+  };
+}
+
+String normalizeVideoTrigger(Object? value) {
+  final trigger = '$value'.trim().toUpperCase();
+  return switch (trigger) {
+    'LAUGH' || 'LAUGHTER' || 'SMILE' || '웃음' || '웃음 감지' => 'LAUGHTER',
+    'EDIT' || 'EDITED' || 'EDIT_OUTPUT' || '편집' => 'EDIT',
+    '' || 'NULL' => 'MANUAL',
+    _ => trigger,
+  };
+}
+
 class UserProfile {
   const UserProfile({
     required this.id,
@@ -82,17 +101,95 @@ class DeviceSummary {
   final int retentionDays;
   final DateTime? lastSeenAt;
   bool get isOnline => status == 'ONLINE';
-  bool get isOwner => myRole == 'OWNER';
-  bool get canEditVideos => myRole == 'OWNER' || myRole == 'EDITOR';
+  bool get isOwner => normalizeRole(myRole) == 'OWNER';
+  bool get canEditVideos => isOwner || myRole.trim().toUpperCase() == 'EDITOR';
   factory DeviceSummary.fromJson(Map<String, dynamic> json) => DeviceSummary(
     id: json['id'] as String,
     name: json['name'] as String? ?? '내 카메라',
     model: json['model'] as String? ?? '',
     status: json['status'] as String? ?? 'OFFLINE',
-    myRole: json['myRole'] as String? ?? 'VIEWER',
+    myRole: normalizeRole(json['myRole']),
     retentionDays: (json['retentionDays'] as num?)?.toInt() ?? 30,
     lastSeenAt: parseDate(json['lastSeenAt']),
   );
+}
+
+class VaultDevice {
+  const VaultDevice({
+    required this.bindingId,
+    required this.generation,
+    required this.device,
+  });
+
+  final String bindingId;
+  final int generation;
+  final DeviceSummary device;
+
+  factory VaultDevice.fromJson(
+    Map<String, dynamic> json, {
+    required String myRole,
+    required int retentionDays,
+  }) => VaultDevice(
+    bindingId: json['bindingId'] as String,
+    generation: (json['generation'] as num?)?.toInt() ?? 1,
+    device: DeviceSummary(
+      id: json['deviceId'] as String,
+      name: json['name'] as String? ?? '내 카메라',
+      model: json['model'] as String? ?? '',
+      status: json['status'] as String? ?? 'OFFLINE',
+      myRole: myRole,
+      retentionDays: retentionDays,
+      lastSeenAt: parseDate(json['lastSeenAt']),
+    ),
+  );
+}
+
+class MemoryVault {
+  const MemoryVault({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.myRole,
+    required this.retentionDays,
+    required this.subscriptionActive,
+    required this.devices,
+    this.subscriptionGraceUntil,
+  });
+
+  final String id;
+  final String name;
+  final String status;
+  final String myRole;
+  final int retentionDays;
+  final bool subscriptionActive;
+  final DateTime? subscriptionGraceUntil;
+  final List<VaultDevice> devices;
+
+  bool get isOwner => normalizeRole(myRole) == 'OWNER';
+  bool get hasConnectedDevice => devices.isNotEmpty;
+
+  factory MemoryVault.fromJson(Map<String, dynamic> json) {
+    final role = normalizeRole(json['myRole']);
+    final retention = (json['retentionDays'] as num?)?.toInt() ?? 30;
+    return MemoryVault(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '나의 추억',
+      status: json['status'] as String? ?? 'ACTIVE',
+      myRole: role,
+      retentionDays: retention,
+      subscriptionActive: json['subscriptionActive'] as bool? ?? false,
+      subscriptionGraceUntil: parseDate(json['subscriptionGraceUntil']),
+      devices: (json['devices'] as List? ?? const [])
+          .map(
+            (item) => VaultDevice.fromJson(
+              item as Map<String, dynamic>,
+              myRole: role,
+              retentionDays: retention,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
 }
 
 class DeviceStatus {
@@ -174,7 +271,9 @@ class VideoMemory {
   factory VideoMemory.fromJson(Map<String, dynamic> json) => VideoMemory(
     id: json['id'] as String,
     deviceId: json['deviceId'] as String,
-    triggerType: json['triggerType'] as String? ?? 'MANUAL',
+    triggerType: normalizeVideoTrigger(
+      json['triggerType'] ?? json['eventType'] ?? json['category'],
+    ),
     title: json['title'] as String? ?? '이름 없는 추억',
     description: json['description'] as String?,
     status: json['status'] as String? ?? 'PROCESSING',
@@ -222,7 +321,7 @@ class VideoStats {
     totalCount: (json['totalCount'] as num?)?.toInt() ?? 0,
     byTriggerType: {
       for (final item in (json['byTriggerType'] as List? ?? const []))
-        item['name'] as String: (item['count'] as num).toInt(),
+        normalizeVideoTrigger(item['name']): (item['count'] as num).toInt(),
     },
     dailyCounts: (json['dailyCounts'] as List? ?? const [])
         .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
@@ -274,7 +373,7 @@ class DeviceMember {
   factory DeviceMember.fromJson(Map<String, dynamic> json) => DeviceMember(
     id: json['id'] as String,
     user: UserProfile.fromJson(json['user'] as Map<String, dynamic>),
-    role: json['role'] as String? ?? 'VIEWER',
+    role: normalizeRole(json['role']),
     status: json['status'] as String? ?? 'ACTIVE',
     joinedAt: parseDate(json['joinedAt']),
   );
@@ -307,6 +406,8 @@ class Invitation {
     this.inviter,
     this.expiresAt,
     this.createdAt,
+    this.vaultId,
+    this.vaultName,
   });
   final String id;
   final String deviceId;
@@ -317,6 +418,8 @@ class Invitation {
   final String status;
   final DateTime? expiresAt;
   final DateTime? createdAt;
+  final String? vaultId;
+  final String? vaultName;
   bool get isPending => status == 'PENDING';
   factory Invitation.fromJson(Map<String, dynamic> json) => Invitation(
     id: json['id'] as String? ?? '',
@@ -330,6 +433,8 @@ class Invitation {
     status: json['status'] as String? ?? 'PENDING',
     expiresAt: parseDate(json['expiresAt']),
     createdAt: parseDate(json['createdAt']),
+    vaultId: json['vaultId'] as String?,
+    vaultName: json['vaultName'] as String?,
   );
 }
 
@@ -338,21 +443,21 @@ class StreamSession {
     required this.id,
     required this.status,
     required this.heartbeatIntervalSeconds,
-    this.playUrl,
+    this.whepUrl,
     this.viewerExpiresAt,
     this.failureCode,
   });
   final String id;
   final String status;
-  final String? playUrl;
+  final String? whepUrl;
   final int heartbeatIntervalSeconds;
   final DateTime? viewerExpiresAt;
   final String? failureCode;
-  bool get isReady => status == 'READY' && playUrl != null;
+  bool get isReady => status == 'READY' && whepUrl != null;
   factory StreamSession.fromJson(Map<String, dynamic> json) => StreamSession(
     id: json['sessionId'] as String,
     status: json['status'] as String? ?? 'PENDING',
-    playUrl: json['playUrl'] as String?,
+    whepUrl: json['whepUrl'] as String?,
     heartbeatIntervalSeconds:
         (json['heartbeatIntervalSeconds'] as num?)?.toInt() ?? 15,
     viewerExpiresAt: parseDate(json['viewerExpiresAt']),

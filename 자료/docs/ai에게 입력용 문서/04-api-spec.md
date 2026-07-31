@@ -5,7 +5,7 @@
 
 ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 제외) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
 
-**API-51은 `[제안]` — 신규 리포트 화면(FN-A38/FN-S26, `03-기능명세서.md` 8절)을 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
+**API-51은 `[제안]` — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
 
 ---
 
@@ -98,7 +98,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "registrationCode": "string",   // required, @Size 8~12
-  "name": "string"                 // optional, @Size 1~80, 공백만 불가
+  "name": "string",                // optional, @Size 1~80, 공백만 불가
+  "vaultId": "uuid"                // optional, 기존 금고에 연결할 때 지정
 }
 ```
 - 응답 201:
@@ -110,7 +111,15 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - 에러: 429 `CLAIM_RATE_LIMITED`(5회/10분), 409 `DEVICE_CLAIM_REJECTED`
-- 비고: claim된 기기는 활성 OWNER가 정확히 1명이 되도록 보장된다.
+- 비고: `vaultId` 생략 시 새 추억 금고와 요청 사용자의 OWNER 멤버십을 만든다. 지정 시 해당 금고의 OWNER 권한을 확인하고 활성 Device Binding을 생성한다. 물리 기기의 연결 이력은 generation별로 보존된다.
+
+### Vault API `GET/POST /api/vaults`
+- 인증: 사용자 JWT
+- `GET /api/vaults`: `vault_memberships` 기준 참여 금고와 활성 연결 기기 목록 조회
+- `GET /api/vaults/{vaultId}`: 접근권한을 검증한 추억 금고 단건 조회
+- `POST /api/vaults`: 물리 기기 없이 독립적인 추억 금고 생성
+- 응답 핵심 필드: `id`, `name`, `status`, `myRole`, `retentionDays`, `subscriptionActive`, `devices[]`
+- 비고: `devices`가 빈 배열이어도 금고는 유효하다. 영상·구독·가족 권한은 물리 기기가 아니라 금고에 귀속된다. 연결 기기의 온라인 상태는 Redis presence를 합성하고 Redis 장애 시 PostgreSQL 값으로 폴백한다.
 
 ### API-43 `POST /api/iot/registration-codes`
 - 인증: 기기 credential(Bearer, ROLE_DEVICE_OPERATING) / 요청 본문 없음(`DevicePrincipal`만 사용)
@@ -165,8 +174,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "deviceId": "uuid", "status": "string",
-  "recording": false,            // MQTT-05 heartbeat 기반, 기기측 항상 false 스텁
-  "uploadQueueDepth": 0,          // 기기측 항상 0 스텁
+  "recording": false,            // 최근 MQTT-05 heartbeat 보고값
+  "uploadQueueDepth": 0,          // 최근 MQTT-05 heartbeat 보고값
   "bufferSeconds": null,          // nullable
   "personCount": null,            // nullable
   "checkedAt": "2026-07-27T00:00:00Z"
@@ -187,7 +196,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 {
   "sessionId": "uuid", "streamId": "uuid", "deviceId": "uuid",
   "status": "PENDING|READY|FAILED|CLOSED|EXPIRED",
-  "playUrl": null,                     // READY일 때만 값 존재, HLS URL
+  "whepUrl": null,                     // READY일 때만 값 존재, 운영 WebRTC/WHEP 전용 URL
   "heartbeatIntervalSeconds": 15,
   "viewerExpiresAt": "2026-07-27T00:00:45Z",
   "edgeHardExpiresAt": "2026-07-27T00:02:00Z",
@@ -196,7 +205,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `DEVICE_OFFLINE`(기기 오프라인이면 세션 생성 거부)
-- 실사용: `EmbeddedLivePlayer._start`(`HomeScreen`); `LiveScreen._start`는 도달 불가 화면(부록A FN-A12)
+- 실사용: `EmbeddedLivePlayer`와 전체화면 라이브. 운영 앱은 `WhepPlayerController`로 WHEP/WebRTC만 연결하며 HLS로 폴백하지 않음
 
 ### API-36 `GET /api/stream-sessions/{sessionId}`
 - 인증: 사용자 JWT
@@ -218,7 +227,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "issuedAt": "2026-07-27T00:00:00Z", "expiresAt": "2026-07-27T00:00:15Z",
   "payload": {
     "sessionId": "uuid", "streamId": "uuid",
-    "profile": "LIVE_720P_H264_AAC", "segmentDurationSeconds": 2,
+    "profile": "LIVE_720P_H264_OPUS",
     "hardExpiresAt": "2026-07-27T00:02:00Z"
   }
 }
@@ -240,9 +249,13 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 ### 미디어 경로
 
-- **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. ffmpeg: `-f v4l2` 입력→`-c:v libx264 -preset ultrafast -tune zerolatency`(기본 2500kbps)→`-f rtsp -rtsp_transport tcp`. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`
-- **HLS 재생(앱)**: 세션 생성(API-35)의 `playUrl`을 그대로 사용. 구성: `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`. 타이밍: 뷰어TTL45초/유휴60초/엣지하드만료120초/하트비트15초/HLS토큰30초. 상태 폴링 2초 간격(API-36), 토큰 20초마다 선제 재조회, 종료 시 API-37 호출
-- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — MediaMTX가 재생 시점마다 호출하는 내부 인가 확인 경로로, 앱/젯슨이 직접 호출하지 않는다. 호출 주체는 ⚠️ 미확인(MediaMTX 추정).
+- **RTSPS publish(Jetson→MediaMTX)**: `rtsps://{username}:{password}@{host}:8322/live/{stream_id}` — 자격증명 포함, 경로 고정, TLS CA 필수. 로컬 공유 스트림의 H.264는 `-c:v copy`, AAC 원본 오디오는 WebRTC 호환 Opus 48kHz 모노·64kbps(`-c:a libopus -application lowdelay`)로 변환해 `-f rtsp -rtsp_transport tcp`로 송출한다. 이 변환은 앱 Live View 릴레이에만 적용하며 로컬 AI·녹화 AAC는 유지한다. 소스: `ai/device_agent/wj_device_agent/stream.py`, `configure_media.py`, `config.py`, `device-agent.jetson.env.example`
+- **WebRTC/WHEP 전용(앱)**: `whepUrl`에 video+audio recv-only SDP offer를 `POST application/sdp`, MediaMTX answer 적용. 원격 audio/video track을 동일 renderer stream에 연결하고 `setMuted`로 볼륨 제어. 별도 WebSocket signaling 없음. 종료 시 WHEP `Location` URI에 DELETE
+- **연결 성공 조건**: answer의 audio `m=` section이 non-zero이고 원격 송신 방향(`sendonly`/`sendrecv`)이어야 하며, 원격 video/audio track 수신 후 2초 안에 inbound audio RTP 패킷이 확인되어야 함. 하나라도 실패하면 HLS 전환 없이 오류·재시도 표시. 소스: `frontend/lib/core/whep_player_controller.dart`
+- **오디오 코덱**: Jetson publish는 H.264+Opus 필수. AAC-only publish는 MediaMTX가 WebRTC 오디오를 건너뛸 수 있어 운영 재생에서 지원하지 않음
+- **HLS 범위**: 없음. 운영 API는 `playUrl`을 반환하지 않고(`StreamSessionResponse`에서 제거) 앱에도 HLS 재생 코드가 없다
+- **운영 경로**: Nginx HTTPS 443 `/webrtc/.../whep`→MediaMTX loopback 8889, WebRTC media/ICE UDP 8189. 8889 직접 외부 노출 금지
+- **API-34** `GET /api/live/introspect`(공개, `token`/`streamId` 서명검증→204/401) — Nginx가 WHEP 접근 인가에 사용. 앱/젯슨 직접 호출 금지
 - 기기당 스트림 1개만 유지(`DEVICE_BUSY`로 거부). `EXTEND_STREAM`은 동일 `streamId`의 하드 만료 시각만 갱신.
 
 ---
@@ -283,7 +296,8 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "expiresAt": "2026-07-27T00:15:00Z"
 }
 ```
-- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- 에러: 413 `VIDEO_TOO_LARGE`, 422 `VALIDATION_FAILED`, 409 `DEVICE_NOT_CLAIMED`, 409 `DEVICE_VAULT_BINDING_MISSING`(ACTIVE `device_bindings` 없음), 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_CONFLICT`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- `V31__repair_missing_initial_vault_bindings.sql`: binding 이력이 전혀 없는 ONLINE/OFFLINE 레거시 기기만 device UUID 기반 Vault·OWNER membership·generation 1 ACTIVE binding으로 안전 복구. binding 이력이 있으면 소유 Vault 오판 방지를 위해 자동 복구하지 않음.
 - 호출부: `ai/yolo/laughter_clip_uploader.py`, `ai/yolo/segment_clip_uploader.py`
 
 ### API-26 `POST /api/iot/videos/complete`
@@ -291,11 +305,11 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 { "videoId": "uuid", "objectETag": "string" }   // objectETag optional, @Size<=200
 ```
-- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`, 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
+- 응답 200: `VideoResponse`(아래 스키마) / 에러: 404, 409 `VIDEO_STATE_CONFLICT`(Vault 기반 READY 전환 0건 포함), 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503
 
 ### API-27 `GET /api/videos`
 - 인증: 사용자 JWT
-- Query: `deviceId`(필수,uuid), `triggerType?`, `from?`(Instant), `to?`(Instant), `cursor?`, `size?`(기본20, 1~100)
+- Query: `deviceId` 또는 `vaultId` 중 정확히 하나(필수, uuid), `triggerType?`, `from?`(Instant), `to?`(Instant), `cursor?`, `size?`(기본20, 1~100)
 - 응답 200:
 ```json
 {
@@ -303,7 +317,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "nextCursor": "string", "hasNext": false
 }
 ```
-- 에러: 422 `VALIDATION_FAILED`, 404, 422 `INVALID_CURSOR`
+- 에러: 422 `VALIDATION_FAILED`(조회 기준 중복/누락 포함), 404, 422 `INVALID_CURSOR`
 
 `VideoResponse` 스키마(API-26/27/28/29 공통):
 ```json
@@ -375,7 +389,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 ### API-51 `GET /api/devices/{deviceId}/laugh-report` **[제안·미구현]**
 
-> 신규 리포트 화면(FN-A38/FN-S26, `03-기능명세서.md` 8절)을 위한 초안이다. **코드 없음.** 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**(이 API 응답 자체는 재생 URL을 담지 않음).
+> 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이다. **API-51 서버 코드 없음.** 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**(이 API 응답 자체는 재생 URL을 담지 않음).
 
 - 인증: 사용자 JWT **[제안]**
 - Query **[제안]**:
@@ -539,7 +553,7 @@ ID 체계: API-01~51(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "streaming": false
 }
 ```
-- 30초 주기. `recording`/`uploadQueueDepth`는 `DeviceStatusResponse`(API-11)에 실제 상태 미반영.
+- 30초 주기. 서버는 전체 heartbeat payload를 Redis `presence:device:{deviceId}`에 90초 TTL로 저장하고 API-07/11·금고 목록·라이브 시작 판정에 반영한다. TTL 만료는 OFFLINE이며 Redis 장애 시 PostgreSQL heartbeat 기록으로 폴백한다.
 - 발행: `agent.py:211-225` / 구독: `MqttInboundHandler.java`(heartbeat())
 
 #### MQTT-06 `{base}/devices/+/registration` — 구독(설계상, 실제 발행자 없음), QoS1
@@ -600,13 +614,13 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-48 | `POST /internal/admin/devices/{deviceId}/credentials/rotate` | (내부 관리자 키) 자격증명 강제 회전 |
 | API-49 | `DELETE /internal/admin/devices/{deviceId}/credentials` | (내부 관리자 키) 자격증명 폐기 |
 | API-50 | `GET /api/devices/{deviceId}/access-logs` | 접근 기록 커서 조회 |
-| API-52 | `POST /api/auth/password/change` | 비밀번호 변경(JWT + `currentPassword` 확인). 204. 현재 세션만 유지하고 나머지 폐기. 401 `INVALID_CREDENTIALS`, 422 `PASSWORD_UNCHANGED` |
-| API-53 | `POST /api/auth/password/forgot` | 재설정 링크 요청(공개). `{email}` → **항상 202**(미가입 이메일도 동일 — 계정 존재 노출 방지). 토큰 30분·1회용, DB엔 SHA-256 해시만 저장 |
-| API-54 | `POST /api/auth/password/reset` | 토큰으로 재설정(공개). `{token(32~200), newPassword(10~72)}` → 204. **전 세션 폐기**. 401 `INVALID_PASSWORD_RESET_TOKEN` |
-| API-55 | `GET /api/notifications?limit=` | 알림 목록(최신순, 기본 30·최대 100) |
-| API-56 | `GET /api/notifications/unread-count` | 안 읽은 개수 |
-| API-57 | `PATCH /api/notifications/{notificationId}/read` | 1건 읽음. 남의 알림 id는 404 `RESOURCE_NOT_FOUND` |
-| API-58 | `PATCH /api/notifications/read-all` | 전체 읽음 |
+| API-55 | `POST /api/auth/password/change` | 비밀번호 변경(JWT + `currentPassword` 확인). 204. 현재 세션만 유지하고 나머지 폐기. 401 `INVALID_CREDENTIALS`, 422 `PASSWORD_UNCHANGED` |
+| API-56 | `POST /api/auth/password/forgot` | 재설정 링크 요청(공개). `{email}` → **항상 202**(미가입 이메일도 동일 — 계정 존재 노출 방지). 토큰 30분·1회용, DB엔 SHA-256 해시만 저장 |
+| API-57 | `POST /api/auth/password/reset` | 토큰으로 재설정(공개). `{token(32~200), newPassword(10~72)}` → 204. **전 세션 폐기**. 401 `INVALID_PASSWORD_RESET_TOKEN` |
+| API-58 | `GET /api/notifications?limit=` | 알림 목록(최신순, 기본 30·최대 100) |
+| API-59 | `GET /api/notifications/unread-count` | 안 읽은 개수 |
+| API-60 | `PATCH /api/notifications/{notificationId}/read` | 1건 읽음. 남의 알림 id는 404 `RESOURCE_NOT_FOUND` |
+| API-61 | `PATCH /api/notifications/read-all` | 전체 읽음 |
 
 **알림 생성 API는 없다.** 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 `READY` 확정 + `triggerType=LAUGHTER` → `LAUGHTER_VIDEO_READY`를 그 기기 활성 구성원 **전원**에게, ② 초대 발송(API-14) → `INVITATION_RECEIVED`를 초대받은 1명에게. `UNIQUE (user_id, dedupe_key)` + `ON CONFLICT DO NOTHING`으로 재시도해도 사용자당 1건만 남는다.
 
@@ -633,14 +647,14 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 |---|---|---|---|
 | 1 | 회원가입 / 로그인 | 구현됨 | API-01~03 전체 동작 |
 | 2 | 기기 등록 | 구현됨 | API-08, 43~45, 07, 11 포함 전체 동작 |
-| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS/HLS 미디어 경로 포함 전체 동작 |
+| 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
 | 5 | 영상 편집 | 구현됨 | 서버 API 불요(로컬 편집) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |
-| 7 | 통계 / 리포트 | 부분 구현 | API-27, 33은 구현됨. **API-51(리포트 집계 API)은 미구현(제안 초안)** |
+| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 FN-A38 Flutter 단말 집계 구현. **API-51 서버 집계는 미구현** |
 | 가족 공유 | API-14~24 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작 |
 
-**유일한 미구현 항목은 API-51(리포트 집계, 제안)이다.**
+MVP 7단계의 신규 API 중 **API-51 서버 집계는 미구현**이다. FN-A38 Flutter 리포트 화면 자체는 기존 영상 목록으로 동작한다.
 
 ### API-06 제외 사유
 
@@ -652,4 +666,4 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 - 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50 — 18개.
 - 합계 31 + 18 = 49개 + API-06(의도적 제외) = as-built 기준 50개 전수 반영 + 신규 API-51 = **총 51개 ID(API-01~51) 중 API-06만 결번**. 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 4절(01, 04) + 10절(02, 03, 05~09) + 12절(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
-- 신규 API-51(리포트 제안)은 당시 max(API-50) 다음 번호로 부여했다. 이후 비밀번호(API-52~54)·알림(API-55~58)을 추가해 현재 max는 **API-58**이다.
+- 리포트 제안은 당시 max(API-50) 다음 번호로 API-51을 부여했다. 이후 금고 구독·접근 기록(API-51~54, 이 문서 미반영)에 이어 비밀번호(API-55~57)·알림(API-58~61)을 부여해 현재 max는 **API-61**이다. 리포트 제안과 금고 구독이 같은 API-51을 쓰는 문제와 금고 API의 이 문서 누락은 별도 정리 대상이다.

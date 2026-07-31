@@ -11,8 +11,8 @@ Flutter POST stream session
   -> Spring publishes START_STREAM over MQTT
   -> agent starts FFmpeg at .../live/{streamId}
   -> agent publishes STREAM_READY
-  -> Spring returns the protected HLS URL
-  -> Flutter plays HLS and sends viewer heartbeats
+  -> Spring returns the protected WebRTC/WHEP URL
+  -> Flutter plays WHEP and sends viewer heartbeats
   -> STOP_STREAM or hardExpiresAt terminates FFmpeg
 ```
 
@@ -38,11 +38,22 @@ hardware. Only the live relay crosses the network, and it exists only between
 On the Jetson, from the repository checkout:
 
 ```bash
+install -d -m 0700 /home/ssafy/.ssh
+# Add lab.ssafy.com's independently verified host key to known_hosts first.
+GIT_SSH_COMMAND='ssh -i /home/ssafy/.ssh/wj_gitlab_deploy -o IdentitiesOnly=yes' \
+git clone git@lab.ssafy.com:s15-webmobile3-sub1/S15P11E201.git \
+  /home/ssafy/william-james
+cd /home/ssafy/william-james
+git config core.sshCommand \
+  'ssh -i /home/ssafy/.ssh/wj_gitlab_deploy -o IdentitiesOnly=yes'
+git switch master
+git pull --ff-only origin master
+git rev-parse HEAD
 cd ai/device_agent
 chmod +x install-jetson.sh media-source.sh media-tunnel.sh check-jetson.sh \
-  configure-jetson-rtsps.sh verify-mediamtx-rtsps.sh
+  configure-jetson-rtsps.sh verify-mediamtx-rtsps.sh \
+  diagnose-mediamtx-publish.sh
 sudo ./install-jetson.sh
-sudoedit /etc/william-james/device-agent.env
 ```
 
 Use `device-agent.jetson.env.example` as the reference. Set the device ID and
@@ -54,7 +65,12 @@ the server private key:
 sudo install -m 0644 mqtt-ca.crt /etc/william-james/certs/mqtt-ca.crt
 sudo install -m 0644 mediamtx-ca.crt \
   /etc/william-james/certs/mediamtx-ca.crt
-sudo ./configure-jetson-rtsps.sh --username wj-jetson-001
+sudo install -m 0600 jetson-mediamtx-credentials.env \
+  /etc/william-james/jetson-mediamtx-credentials.env
+sudo ./configure-jetson-rtsps.sh \
+  --credentials-env /etc/william-james/jetson-mediamtx-credentials.env \
+  --ca-cert /etc/william-james/certs/mediamtx-ca.crt \
+  --ca-fingerprint-file mediamtx-ca.sha256
 sudo -u williamjames ./verify-mediamtx-rtsps.sh
 ```
 
@@ -92,8 +108,37 @@ endpoint and start the services:
 
 ```bash
 sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
-sudo systemctl start wj-media-source wj-device-agent
+sudo -u williamjames \
+  /opt/william-james/device-agent/diagnose-mediamtx-publish.sh
+sudo systemctl start wj-media-source
+# Only after the server confirms the final MQTT v2 ACL:
+sudo systemctl restart wj-device-agent
 sudo systemctl status wj-media-source wj-device-agent --no-pager
+```
+
+Neither `install-jetson.sh` nor `configure-jetson-rtsps.sh` restarts the agent.
+The latter keeps `/etc/william-james/device-agent.env.rollback` and restores it
+automatically when certificate, hostname, fingerprint, or FFmpeg TLS
+verification fails. Do not pass `--restart` until the final MQTT v2 device ACL
+has been checked on the running broker.
+
+For a code rollback, use the revision recorded before installation:
+
+```bash
+previous="$(cat /opt/william-james/device-agent/PREVIOUS_DEPLOYED_COMMIT)"
+cd /home/ssafy/william-james
+git fetch origin master
+git checkout --detach "$previous"
+sudo ./ai/device_agent/install-jetson.sh
+sudo -u williamjames /opt/william-james/device-agent/check-jetson.sh
+sudo systemctl restart wj-device-agent
+```
+
+Return to the tracked deployment branch after the incident:
+
+```bash
+git switch master
+git pull --ff-only origin master
 ```
 
 The camera must be provisioned, claimed by the owner/admin account, and ONLINE.
@@ -295,6 +340,120 @@ without a JetPack-specific FFmpeg build. Hardware encoder names vary by JetPack
 and FFmpeg package, so only replace `FFMPEG_VIDEO_ARGS` after checking
 `ffmpeg -encoders` and making a short capture. For a USB webcam, confirm its
 actual modes with `v4l2-ctl --device=/dev/video0 --list-formats-ext`.
+
+### Jetson Orin Nano I2C character LCD test
+
+`lcd_test.py` drives the common PCF8574-backed HD44780 16x2 or 20x4 LCD with
+the local `lgpio` library. On the developer kit's J12 header, use physical pin
+3 for SDA, pin 5 for SCL, and pin 6 for GND. The Jetson signals are 3.3V-only.
+If the LCD backpack is powered from physical pin 2 or 4 (5V), connect SDA and
+SCL through a bidirectional I2C level shifter so the backpack pull-ups cannot
+apply 5V to the Jetson.
+
+Install the tools and inspect the bus before running the test:
+
+```bash
+sudo apt install i2c-tools python3-lgpio
+ls -l /dev/i2c-*
+sudo i2cdetect -y 7
+```
+
+JetPack 6.x commonly exposes J12 pins 3 and 5 as `/dev/i2c-7`, but use the bus
+number and address shown on the target device. Most backpacks respond at
+`0x27` or `0x3f`.
+
+```bash
+cd ai/device_agent
+python3 lcd_test.py
+python3 lcd_test.py --bus 7 --address 0x3f --columns 20 \
+  --line1 "Jetson Orin Nano" --line2 "I2C LCD OK"
+```
+
+The LCD keeps the written text after the command exits. A standard HD44780
+character ROM cannot display Korean, so the test replaces unsupported
+characters with `?`.
+
+### Jetson registration button with LCD
+
+`jetson_registration_button.py` requests the existing two-minute registration
+code and shows it on the LCD. On the current Orin Nano developer kit, physical
+pin 7 is `gpiochip0` line 144 (`PAC.06`). Wire a normally-open button between
+physical pin 7 and GND pin 6. The service requests an internal pull-up; an
+external 10 kohm pull-up from pin 7 to 3.3V is recommended for long wires.
+Never pull the button input up to 5V.
+
+The LCD stays on physical pins 3 and 5. If its backpack uses 5V, put a
+bidirectional I2C level shifter between the LCD and the Jetson's 3.3V-only SDA
+and SCL signals. Confirm the current mapping before enabling the service:
+
+```bash
+gpioinfo | grep PAC.06
+sudo i2cdetect -y -r 7
+```
+
+Install the checked-out code and enable the optional service only after the
+device has an OPERATING bearer token:
+
+```bash
+cd ai/device_agent
+sudo apt install python3-lgpio i2c-tools
+sudo ./install-jetson.sh
+sudo systemctl enable --now wj-registration-button-jetson
+sudo journalctl -u wj-registration-button-jetson -f
+```
+
+The LCD shows `Press button`, then `Requesting code`, followed by the issued
+`XXXX-XXXX` value. At the server-provided expiry time (normally two minutes),
+the LCD replaces the stale code with `Code expired` / `Press button`. Issuing a
+new code cancels the previous expiry timer. A failed or timed-out request
+displays a short error instead.
+Override `REGISTRATION_BUTTON_CHIP`, `REGISTRATION_BUTTON_LINE`,
+`LCD_I2C_BUS`, `LCD_I2C_ADDRESS`, or `LCD_COLUMNS` in
+`/etc/william-james/device-agent.env` when the target differs.
+
+To issue one code and show it on the LCD without a physical button, stop the
+button service temporarily and run the same program once:
+
+```bash
+sudo systemctl stop wj-registration-button-jetson
+sudo /usr/bin/python3 \
+  /opt/william-james/device-agent/jetson_registration_button.py --once
+sudo systemctl start wj-registration-button-jetson
+```
+
+In `--once` mode the process remains active until the code expires, updates the
+LCD to the expired message, and then exits.
+
+### Jetson PCA9685 servo test
+
+Use a PCA9685 rather than driving an SG90 directly from a Jetson GPIO. Connect
+PCA9685 `VCC` to Jetson 3.3V, SDA/SCL to physical pins 3/5, and GND to Jetson
+GND. Connect the servo signal to PCA9685 channel 0. Power PCA9685 `V+` and the
+servo from a separate regulated 5V supply, and join that supply's GND to Jetson
+GND. Do not power the servo from the Jetson 3.3V or 5V header.
+
+The LCD and PCA9685 can share the I2C bus because their normal addresses differ:
+
+```text
+LCD      0x27 (sometimes 0x3f)
+PCA9685  0x40
+```
+
+Scan first, disconnect the servo horn or unload the mechanism, and run only the
+conservative 1200-1800 microsecond test range:
+
+```bash
+sudo i2cdetect -y -r 7
+cd ai/device_agent
+sudo python3 servo_test.py \
+  --bus 7 --address 0x40 --channel 0 \
+  --pulses 1500 1200 1500 1800 1500
+```
+
+The script disables channel output when it finishes. Use `--keep-powered` only
+when holding the final position is intentional. Do not expand toward the
+allowed 500-2500 microsecond software limits until the physical mechanism's
+safe endpoints have been measured.
 
 ## Operations
 

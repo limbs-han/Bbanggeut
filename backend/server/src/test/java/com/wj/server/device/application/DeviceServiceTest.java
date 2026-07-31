@@ -3,6 +3,7 @@ package com.wj.server.device.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,7 @@ import java.util.UUID;
 
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.device.api.ClaimDeviceRequest;
 import com.wj.server.device.api.UpdateDeviceRequest;
 import com.wj.server.device.domain.DeviceStatusRow;
@@ -22,6 +24,9 @@ import com.wj.server.device.domain.RegistrationCodeRow;
 import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.device.persistence.RegistrationCodeMapper;
 import com.wj.server.iot.mqtt.DeviceMqttIdentityManager;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
+import com.wj.server.iot.telemetry.DevicePresenceSnapshot;
+import com.wj.server.vault.persistence.VaultMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +47,10 @@ class DeviceServiceTest {
     private AuditService auditService;
     @Mock
     private DeviceMqttIdentityManager mqttIdentityManager;
+    @Mock
+    private VaultMapper vaultMapper;
+    @Mock
+    private DevicePresenceStore presenceStore;
 
     private RegistrationCodeHasher registrationCodeHasher;
     private DeviceService deviceService;
@@ -49,9 +58,11 @@ class DeviceServiceTest {
     @BeforeEach
     void setUp() {
         registrationCodeHasher = new RegistrationCodeHasher();
+        lenient().when(presenceStore.find(org.mockito.ArgumentMatchers.any()))
+            .thenReturn(new DevicePresenceStore.Lookup(false, null));
         deviceService = new DeviceService(
             deviceMapper, registrationCodeMapper, registrationCodeHasher,
-            claimAttemptService, auditService, mqttIdentityManager,
+            claimAttemptService, auditService, mqttIdentityManager, vaultMapper, presenceStore,
             Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -60,25 +71,32 @@ class DeviceServiceTest {
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UUID codeId = UUID.randomUUID();
+        UUID vaultId = UUID.randomUUID();
         RegistrationCodeRow code = new RegistrationCodeRow(
             codeId, deviceId, NOW.plusSeconds(30), null, "UNCLAIMED");
         DeviceViewRow claimed = new DeviceViewRow(
             deviceId, "거실", "WJ-DEV-01", "OFFLINE", "OWNER", 30,
             null, "WJ-0001", null, NOW);
+        SlidingWindowRateLimiter.Reservation reservation =
+            new SlidingWindowRateLimiter.Reservation(
+                "rl:claim:user:" + userId, "rl:claim:ip:test", "member-id");
+        when(claimAttemptService.reserveOrReject(userId, "127.0.0.1")).thenReturn(reservation);
         when(registrationCodeMapper.findByHashForUpdate(registrationCodeHasher.hash("7F3K9XQM")))
             .thenReturn(Optional.of(code));
         when(deviceMapper.markClaimed(deviceId, userId, "거실")).thenReturn(1);
         when(registrationCodeMapper.markUsed(codeId, userId)).thenReturn(1);
+        when(vaultMapper.findActiveRole(userId, vaultId)).thenReturn(Optional.of("OWNER"));
         when(deviceMapper.insertOwnerMembership(deviceId, userId)).thenReturn(1);
         when(deviceMapper.findAccessibleDevice(userId, deviceId)).thenReturn(Optional.of(claimed));
 
         var response = deviceService.claim(
-            userId, new ClaimDeviceRequest(" 7f3k-9xqm ", " 거실 "), "127.0.0.1");
+            userId, new ClaimDeviceRequest(" 7f3k-9xqm ", " 거실 ", vaultId), "127.0.0.1");
 
         verify(deviceMapper).markClaimed(deviceId, userId, "거실");
         verify(registrationCodeMapper).markUsed(codeId, userId);
+        verify(vaultMapper).insertActiveBinding(deviceId, vaultId);
         verify(deviceMapper).insertOwnerMembership(deviceId, userId);
-        verify(claimAttemptService).recordSuccess(userId, "127.0.0.1");
+        verify(claimAttemptService).completeSuccess(reservation);
         assertThat(response.status()).isEqualTo("OFFLINE");
         assertThat(response.myRole()).isEqualTo("OWNER");
         assertThat(response.name()).isEqualTo("거실");
@@ -199,21 +217,57 @@ class DeviceServiceTest {
     }
 
     @Test
-    void ownerRevocationClosesDataAndMqttIdentityWithoutCreatingGhostDevice() {
+    void statusUsesRedisTelemetryWithoutWritingTheDeviceRow() {
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(deviceMapper.findAccessibleDevice(userId, deviceId))
+            .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "MEMBER")));
+        when(presenceStore.find(deviceId)).thenReturn(new DevicePresenceStore.Lookup(
+            true, new DevicePresenceSnapshot(NOW, true, 2, 120, 3, "0.4.0")));
+
+        var response = deviceService.status(userId, deviceId);
+
+        assertThat(response.status()).isEqualTo("ONLINE");
+        assertThat(response.recording()).isTrue();
+        assertThat(response.uploadQueueDepth()).isEqualTo(2);
+        assertThat(response.personCount()).isEqualTo(3);
+        verify(deviceMapper, never()).markOfflineIfStale(deviceId);
+        verify(deviceMapper, never()).findAccessibleStatus(userId, deviceId);
+    }
+
+    @Test
+    void missingRedisPresenceMeansOfflineWithoutAStaleRowUpdate() {
+        UUID userId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        when(deviceMapper.findAccessibleDevice(userId, deviceId))
+            .thenReturn(Optional.of(view(deviceId, "Camera", "ONLINE", "MEMBER")));
+        when(presenceStore.find(deviceId))
+            .thenReturn(new DevicePresenceStore.Lookup(true, null));
+
+        var response = deviceService.status(userId, deviceId);
+
+        assertThat(response.status()).isEqualTo("OFFLINE");
+        verify(deviceMapper, never()).markOfflineIfStale(deviceId);
+    }
+
+    @Test
+    void ownerDisconnectPreservesVaultAndMemories() {
         UUID ownerId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         when(deviceMapper.lockAccessibleDevice(ownerId, deviceId))
             .thenReturn(Optional.of(view(deviceId, "Camera", "OFFLINE", "OWNER")));
-        when(deviceMapper.markRevoked(deviceId)).thenReturn(1);
+        UUID vaultId = UUID.randomUUID();
+        when(vaultMapper.lockActiveVaultId(deviceId)).thenReturn(Optional.of(vaultId));
+        when(vaultMapper.endActiveBinding(deviceId, ownerId, "DISCONNECTED")).thenReturn(1);
+        when(deviceMapper.markUnclaimed(deviceId)).thenReturn(1);
 
         deviceService.revoke(ownerId, deviceId);
 
-        verify(deviceMapper).revokeActiveCredentials(deviceId);
-        verify(deviceMapper).cancelPendingInvitations(deviceId);
+        verify(deviceMapper, never()).cancelPendingInvitations(deviceId);
         verify(deviceMapper).revokeAllMemberships(deviceId, ownerId);
-        verify(deviceMapper).markAllVideosDeleting(deviceId, ownerId);
-        verify(deviceMapper).enqueueDeletionJobsForDevice(deviceId);
-        verify(mqttIdentityManager).revoke(deviceId);
+        verify(deviceMapper, never()).markAllVideosDeleting(deviceId, ownerId);
+        verify(deviceMapper, never()).enqueueDeletionJobsForDevice(deviceId);
+        verify(mqttIdentityManager, never()).revoke(deviceId);
     }
 
     @Test
@@ -227,6 +281,8 @@ class DeviceServiceTest {
         when(deviceMapper.lockMembership(deviceId, membershipId))
             .thenReturn(Optional.of(new com.wj.server.device.domain.MembershipStateRow(
                 membershipId, memberId, "MEMBER", "ACTIVE")));
+        when(vaultMapper.demoteOwnerForDevice(deviceId, ownerId)).thenReturn(1);
+        when(vaultMapper.promoteMemberForDevice(deviceId, membershipId)).thenReturn(1);
         when(deviceMapper.demoteOwnerToMember(deviceId, ownerId)).thenReturn(1);
         when(deviceMapper.promoteNonOwnerToOwner(deviceId, membershipId)).thenReturn(1);
 

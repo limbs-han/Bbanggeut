@@ -6,6 +6,7 @@ pipeline {
         copyArtifactPermission('/Production/S15P11E201-backend-deploy')
         disableConcurrentBuilds(abortPrevious: true)
         gitLabConnection('s15p11e201-gitlab-api')
+        parallelsAlwaysFailFast()
         skipDefaultCheckout(true)
         timestamps()
         timeout(time: 45, unit: 'MINUTES')
@@ -33,14 +34,18 @@ pipeline {
                         label 'backend'
                     }
                     steps {
-                        deleteDir()
-                        checkout scm
-                        sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
                         gitlabCommitStatus(name: 'ci/backend') {
+                            deleteDir()
+                            checkout scm
+                            sh 'git rev-parse HEAD > ci/jenkins/commit.txt'
+                            sh 'bash ci/jenkins/scripts/test-backend-deploy-contract.sh'
+                            sh 'bash ci/jenkins/scripts/test-deploy-jar-validation.sh'
                             sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
+                            sh 'bash ci/jenkins/scripts/package-backend-deploy.sh backend-deploy.tar.gz'
+                            sh 'bash ci/jenkins/server/deploy/wj-deploy-backend --validate-only backend/server/build/libs/server-*.jar'
                             junit allowEmptyResults: false,
                                 testResults: 'backend/server/build/test-results/test/TEST-*.xml'
-                            archiveArtifacts artifacts: 'backend/server/build/libs/server-*.jar,ci/jenkins/commit.txt',
+                            archiveArtifacts artifacts: 'backend/server/build/libs/server-*.jar,backend-deploy.tar.gz,ci/jenkins/commit.txt',
                                 fingerprint: true
                         }
                     }
@@ -65,14 +70,44 @@ pipeline {
                         label 'frontend'
                     }
                     steps {
-                        deleteDir()
-                        checkout scm
                         gitlabCommitStatus(name: 'ci/frontend') {
+                            deleteDir()
+                            checkout scm
                             dir('frontend') {
                                 sh 'flutter pub get'
                                 sh 'flutter analyze'
                                 sh 'flutter test --reporter expanded'
                             }
+                        }
+                    }
+                    post {
+                        cleanup {
+                            cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+                        }
+                    }
+                }
+
+                stage('API Contract') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            branch 'master'
+                            branch pattern: 'develop/**', comparator: 'GLOB'
+                            branch pattern: 'feat/**', comparator: 'GLOB'
+                            branch pattern: 'docs/**', comparator: 'GLOB'
+                            // 역머지 브랜치도 계약을 확인한다. 이 검사가 없으면
+                            // master 를 되돌려 받는 MR 이 아무 CI 도 타지 않는다.
+                            branch pattern: 'chore/**', comparator: 'GLOB'
+                        }
+                    }
+                    agent {
+                        label 'backend'
+                    }
+                    steps {
+                        gitlabCommitStatus(name: 'ci/api-contract') {
+                            deleteDir()
+                            checkout scm
+                            sh 'bash ci/jenkins/scripts/run-api-contract-ci.sh'
                         }
                     }
                     post {
@@ -96,9 +131,9 @@ pipeline {
                         label 'device'
                     }
                     steps {
-                        deleteDir()
-                        checkout scm
                         gitlabCommitStatus(name: 'ci/device') {
+                            deleteDir()
+                            checkout scm
                             dir('ai/device_agent') {
                                 sh 'python3 -m venv .venv-ci'
                                 sh '.venv-ci/bin/python -m pip install -r requirements.txt'

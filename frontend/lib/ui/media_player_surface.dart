@@ -80,11 +80,8 @@ class _MediaPlayerSurfaceState extends State<MediaPlayerSurface> {
       await controller.seekTo(Duration.zero);
     }
     await controller.play();
-    if (mounted) {
-      _hideTimer?.cancel();
-      setState(() => _showControls = widget.isLive);
-      if (widget.isLive) _scheduleHide();
-    }
+    _hideTimer?.cancel();
+    if (mounted) setState(() => _showControls = false);
   }
 
   Future<void> _seekBy(Duration delta) async {
@@ -389,7 +386,11 @@ class _FullscreenPlayerState extends State<_FullscreenPlayer> {
   @override
   void dispose() {
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-    unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]),
+    );
     super.dispose();
   }
 

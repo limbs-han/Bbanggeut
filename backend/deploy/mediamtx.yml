@@ -15,15 +15,11 @@ rtspAuthMethods: [basic]
 rtspServerCert: /certs/server.crt
 rtspServerKey: /certs/server.key
 rtmp: false
-hls: true
-hlsAddress: :8888
-hlsAllowOrigins: ["https://i15e201.p.ssafy.io"]
-# Build HLS as soon as the Jetson starts publishing. Native players treat the
-# first on-demand muxer 404 as a fatal source error instead of retrying it.
-hlsAlwaysRemux: true
-hlsVariant: fmp4
-hlsSegmentDuration: 2s
-webrtc: false
+hls: false
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["https://i15e201.p.ssafy.io"]
+webrtcLocalUDPAddress: :8189
 srt: false
 moq: false
 playback: false
@@ -31,7 +27,7 @@ api: false
 metrics: false
 pprof: false
 
-# Publishing is authorized by the device-specific Compose user. HLS stays on
-# loopback and is exposed only through the authenticated Nginx route.
+# Publishing is authorized by device-specific Compose users. WHEP signaling
+# stays on loopback and is exposed only through the authenticated Nginx route.
 paths:
   all_others:

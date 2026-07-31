@@ -24,21 +24,50 @@ public class AccessLogQueryService {
 
     @Transactional(readOnly = true)
     public AccessLogPageResponse list(UUID userId, UUID deviceId, String cursor, int size) {
-        if (size < 1 || size > 100) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED", "size는 1 이상 100 이하여야 합니다.");
-        }
+        requireSize(size);
         String role = mapper.findActiveRole(userId, deviceId).orElseThrow(this::notFound);
         if (!"OWNER".equals(role)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "OWNER 권한이 필요합니다.");
         }
         AccessLogCursorCodec.Cursor decoded = cursorCodec.decode(cursor);
         List<AccessLogRow> rows = mapper.findPage(deviceId, decoded.createdAt(), decoded.id(), size + 1);
+        return toPage(rows, size);
+    }
+
+    @Transactional(readOnly = true)
+    public AccessLogPageResponse listForVault(
+        UUID userId, UUID vaultId, String cursor, int size
+    ) {
+        requireSize(size);
+        String role = mapper.findActiveVaultRole(userId, vaultId)
+            .orElseThrow(this::notFound);
+        if (!"OWNER".equals(role)) {
+            throw new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "OWNER 권한이 필요합니다.");
+        }
+        AccessLogCursorCodec.Cursor decoded = cursorCodec.decode(cursor);
+        List<AccessLogRow> rows = mapper.findVaultPage(
+            vaultId, decoded.createdAt(), decoded.id(), size + 1);
+        return toPage(rows, size);
+    }
+
+    private AccessLogPageResponse toPage(List<AccessLogRow> rows, int size) {
         boolean hasNext = rows.size() > size;
         List<AccessLogRow> page = hasNext ? rows.subList(0, size) : rows;
         String nextCursor = hasNext
-            ? cursorCodec.encode(page.get(page.size() - 1).createdAt(), page.get(page.size() - 1).id())
+            ? cursorCodec.encode(
+                page.get(page.size() - 1).createdAt(), page.get(page.size() - 1).id())
             : null;
-        return new AccessLogPageResponse(page.stream().map(this::toResponse).toList(), nextCursor, hasNext);
+        return new AccessLogPageResponse(
+            page.stream().map(this::toResponse).toList(), nextCursor, hasNext);
+    }
+
+    private void requireSize(int size) {
+        if (size < 1 || size > 100) {
+            throw new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED",
+                "size는 1 이상 100 이하여야 합니다.");
+        }
     }
 
     private AccessLogResponse toResponse(AccessLogRow row) {

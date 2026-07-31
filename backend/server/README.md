@@ -31,6 +31,7 @@ cd server
 - 감지 이벤트 멱등 저장과 영상 업로드 상태 연결
 - 완료되지 않은 업로드의 `FAILED` 전환과 동일 이벤트 재시도
 - 공유 라이브 송출 세션, 시청자 heartbeat/TTL, START·EXTEND·STOP 명령
+- 사용자별 FCM 토큰 등록·해제와 초대·웃음 영상 운영체제 푸시
 - 주요 접근·변경 감사 로그
 
 API 계약은 [`../../자료/api/openapi.yaml`](../../자료/api/openapi.yaml), MQTT 계약은 [`../../자료/api/mqtt-contract.md`](../../자료/api/mqtt-contract.md)에서 관리한다.
@@ -40,25 +41,34 @@ API 계약은 [`../../자료/api/openapi.yaml`](../../자료/api/openapi.yaml), 
 실제 값은 `.env`나 배포 서버의 secret 환경 파일에 두고 Git에 커밋하지 않는다. 전체 목록은 [`.env.example`](.env.example)을 참고한다.
 
 - `DB_URL`, `DB_USER`, `DB_PASSWORD`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`: 로그인/claim 제한과 기기 presence 저장소
+- `DEVICE_PRESENCE_TTL`: heartbeat 기반 ONLINE 유지 시간, 기본 90초
 - `JWT_SIGNING_KEY`: 32바이트 이상 임의 문자열
 - `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`
 - `MQTT_BROKER_URL`, `MQTT_CLIENT_ID`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_ENV`
-- `MEDIA_BASE_URL`: 외부 앱이 접근할 HLS 기준 URL
+- `WEBRTC_BASE_URL`: 외부 앱이 접근할 WHEP 기준 URL
 - `DEVICE_PROVISIONING_ENABLED`, `DEVICE_PROVISIONING_ADMIN_KEY`: loopback 운영 API 활성화와 32자 이상 관리자 키
 - `LOGIN_MAX_FAILURES`, `LOGIN_FAILURE_WINDOW`: 기본 5회/10분 로그인 제한
 - `UPLOAD_STALE_AFTER`, `UPLOAD_SWEEP_DELAY_MS`: 중단 업로드 실패 전환 기준과 점검 주기
+- `FCM_ENABLED`, `FIREBASE_PROJECT_ID`: FCM 푸시 활성화와 Firebase 프로젝트 ID
+- `GOOGLE_APPLICATION_CREDENTIALS`: 서버에만 저장한 Firebase 서비스 계정 JSON의 절대 경로
+
+FCM은 기본적으로 비활성화되어 로컬·CI에서 Google 자격 증명을 요구하지 않는다.
+운영에서 서비스 계정 JSON을 `/home/ubuntu/william-james/secrets`처럼 저장소 밖의
+읽기 제한 경로에 두고 위 세 환경변수를 설정하면 활성화된다. 서비스 계정 JSON과
+서버 키는 저장소나 Flutter 앱에 포함하지 않는다.
 
 ## 라이브 미디어 경계
 
-백엔드는 라이브 제어 평면을 담당한다. MQTT로 기기에 송출 시작/연장/종료를 명령하고 시청자별 단기 토큰을 발급한다. 실제 H.264/AAC ingest와 HLS remux/fan-out은 별도 미디어 서버가 담당한다.
+백엔드는 라이브 제어 평면을 담당한다. MQTT로 기기에 H.264/Opus 송출 시작·연장·종료를 명령하고 시청자별 단기 토큰을 발급한다. MediaMTX는 RTSPS 입력을 WHEP/WebRTC로만 전달한다.
 
 미디어 서버는 MediaMTX를 기본 선택으로 권장한다. 송출 경로를 `live/{streamId}`로 맞추면 백엔드의 기본 재생 URL 형식은 다음과 같다.
 
 ```text
-{MEDIA_BASE_URL}/{streamId}/index.m3u8?token={short-lived-token}
+{WEBRTC_BASE_URL}/{streamId}/whep?token={short-lived-token}
 ```
 
-미디어 서버 또는 앞단 reverse proxy는 playlist와 segment 요청 전에 `GET /api/live/introspect?streamId={path-stream-id}&token=...`를 호출하고 204일 때만 전달해야 한다. 서버는 토큰에 서명된 stream ID와 경로의 ID를 대조한다. 미디어 포트(기본 HLS 8888)를 인터넷에 그대로 공개하지 않는다. 기기 publish 인증/ACL도 시청 토큰과 별도로 설정한다.
+앞단 reverse proxy는 WHEP 요청 전에 `GET /api/live/introspect?streamId={path-stream-id}&token=...`를 호출하고 204일 때만 전달해야 한다. 서버는 토큰에 서명된 stream ID와 경로의 ID를 대조한다. MediaMTX WHEP signaling 포트 8889는 loopback에만 바인딩하고, WebRTC 미디어용 8189/UDP만 허용한다. 기기 publish 인증/ACL도 시청 토큰과 별도로 설정한다.
 
 ## EC2 배포 원칙
 
@@ -74,7 +84,7 @@ PEM 파일은 개발 PC의 `~/.ssh` 같은 로컬 보안 경로에만 둔다. �
 6. Nginx/Caddy로 443만 공개하고 `/actuator/health`로 확인한다.
 7. MQTT를 외부 기기에 열어야 한다면 1883 대신 TLS 8883과 기기별 인증/ACL을 사용한다.
 
-UFW에서는 기존 SSH 세션을 유지한 채 22를 먼저 허용하고, reverse proxy가 준비된 다음 80/443을 연다. 5432, 9000, 9001, 1883, 8080, 8888은 공개하지 않는다.
+UFW에서는 기존 SSH 세션을 유지한 채 22를 먼저 허용하고, reverse proxy가 준비된 다음 80/443과 WebRTC 미디어용 8189/UDP를 연다. 5432, 9000, 9001, 1883, 8080, 8888, 8889는 공개하지 않는다.
 
 ## 데이터 정책 기본값
 

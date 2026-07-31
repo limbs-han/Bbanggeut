@@ -18,6 +18,27 @@ services:
       timeout: 5s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # noeviction is deliberate. Under an "allkeys" policy Redis would be free to
+    # discard rate limit counters when memory tightens, which hands an attacker
+    # a way to clear their own record by inflating memory pressure.
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   minio:
     image: quay.io/minio/minio:latest
     restart: unless-stopped
@@ -25,16 +46,11 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_KMS_KES_ENDPOINT: ${MINIO_KMS_KES_ENDPOINT:?Set MINIO_KMS_KES_ENDPOINT}
-      MINIO_KMS_KES_API_KEY: ${MINIO_KMS_KES_API_KEY:?Set MINIO_KMS_KES_API_KEY}
-      MINIO_KMS_KES_CAPATH: /opt/kes/certs
-      MINIO_KMS_KES_KEY_NAME: ${MINIO_KMS_KES_KEY_NAME:?Set MINIO_KMS_KES_KEY_NAME}
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
-      - ${MINIO_KES_CA_DIR:?Set MINIO_KES_CA_DIR}:/opt/kes/certs:ro
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -51,7 +67,6 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_VIDEO_BUCKET: ${MINIO_VIDEO_BUCKET}
-      MINIO_KMS_KES_KEY_NAME: ${MINIO_KMS_KES_KEY_NAME}
     entrypoint:
       - /bin/sh
       - -ec
@@ -59,7 +74,6 @@ services:
         mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         mc mb --ignore-existing "local/$${MINIO_VIDEO_BUCKET}"
         mc anonymous set none "local/$${MINIO_VIDEO_BUCKET}"
-        mc encrypt set sse-kms "$${MINIO_KMS_KES_KEY_NAME}" "local/$${MINIO_VIDEO_BUCKET}"
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -100,6 +114,18 @@ services:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ${MQTT_TLS_CERT_DIR:?Set MQTT_TLS_CERT_DIR}:/mosquitto/certs:ro
       - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mosquitto_ctrl --cafile /mosquitto/certs/ca.crt
+          -h "$${MQTT_TLS_HOST:-i15e201.p.ssafy.io}" -p 8883
+          -u "$${MQTT_USERNAME}" -P "$${MQTT_PASSWORD}"
+          dynsec listClients >/dev/null
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 20s
 
   mediamtx:
     image: bluenviron/mediamtx:1
@@ -118,11 +144,9 @@ services:
       MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: publish
       MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
-      # HLS is reachable only from host-loopback Nginx, which authenticates app
-      # viewers before proxying requests to MediaMTX.
+      # WHEP read access is limited to Nginx through the host loopback mapping.
       MTX_AUTHINTERNALUSERS_2_USER: any
-      # HLS reaches the container through the host-side loopback mapping and
-      # Docker bridge. Public RTSPS clients must not inherit this read identity.
+      # Public RTSPS clients must not inherit this read identity.
       MTX_AUTHINTERNALUSERS_2_IPS: "127.0.0.1/32,::1/128,172.16.0.0/12"
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
@@ -130,15 +154,19 @@ services:
       # optional preserves the existing plaintext loopback tunnel as rollback.
       # Change only this secret-file value to strict after migration validation.
       MTX_RTSPENCRYPTION: ${MEDIAMTX_RTSP_ENCRYPTION:-optional}
+      # ICE candidates must advertise a host reachable by mobile clients.
+      MTX_WEBRTCADDITIONALHOSTS: ${MEDIAMTX_WEBRTC_ADDITIONAL_HOSTS:-i15e201.p.ssafy.io}
     ports:
       - "127.0.0.1:8554:8554"
       - "8322:8322"
-      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:8889:8889"
+      - "8189:8189/udp"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - ${MEDIAMTX_TLS_CERT_DIR:?Set MEDIAMTX_TLS_CERT_DIR}:/certs:ro
 
 volumes:
   postgres-data:
+  redis-data:
   minio-data:
   mosquitto-data:

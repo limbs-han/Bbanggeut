@@ -27,6 +27,7 @@ import com.wj.server.auth.domain.PasswordResetTokenRow;
 import com.wj.server.auth.domain.UserRow;
 import com.wj.server.auth.persistence.AuthMapper;
 import com.wj.server.common.api.ApiException;
+import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.AuthProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -109,6 +110,28 @@ class AuthServiceTest {
             .isEqualTo("INVALID_CREDENTIALS");
 
         verify(authMapper, never()).insertSession(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void loginCompletesTheExactRedisReservationAfterSuccessfulPasswordCheck() {
+        UUID userId = UUID.randomUUID();
+        UserRow user = new UserRow(
+            userId, "user@example.com", passwordEncoder.encode("correct-password"),
+            "사용자", "ACTIVE", 0);
+        SlidingWindowRateLimiter.Reservation reservation =
+            new SlidingWindowRateLimiter.Reservation(
+                "rl:login:email:test", "rl:login:ip:test", "member-id");
+        when(loginAttemptService.reserveOrReject("user@example.com", CLIENT.ipAddress()))
+            .thenReturn(reservation);
+        when(authMapper.findUserByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(authMapper.insertSession(any(), any(), anyString(), any(), any(), any(), any())).thenReturn(1);
+        when(jwtTokenService.createAccessToken(any(), any())).thenReturn("access-token");
+
+        authService.login(
+            new LoginRequest("user@example.com", "correct-password"), CLIENT);
+
+        verify(loginAttemptService).completeSuccess(reservation);
+        verify(authMapper).updateLastLogin(userId);
     }
 
     @Test

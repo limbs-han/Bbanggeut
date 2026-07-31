@@ -2,6 +2,7 @@
 
 set -Eeuo pipefail
 
+INSTALL_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${DEVICE_AGENT_ENV_FILE:-/etc/william-james/device-agent.env}"
 if [[ ! -r "$ENV_FILE" ]]; then
     echo "Device environment is not readable: ${ENV_FILE}" >&2
@@ -15,8 +16,20 @@ API_BASE_URL="$(
 )"
 API_BASE_URL="${API_BASE_URL:-https://i15e201.p.ssafy.io}"
 
-exec /opt/william-james/device-agent/venv/bin/python \
+cd "$INSTALL_DIR"
+
+output_format="${REGISTRATION_CODE_OUTPUT_FORMAT:-text}"
+case "$output_format" in
+    text|json) ;;
+    *)
+        echo "Unsupported registration code output format: ${output_format}" >&2
+        exit 2
+        ;;
+esac
+
+exec "$INSTALL_DIR/venv/bin/python" \
     -m wj_device_agent.provision \
     --api-base-url "$API_BASE_URL" \
     --env-file "$ENV_FILE" \
-    registration-code
+    registration-code \
+    --output-format "$output_format"

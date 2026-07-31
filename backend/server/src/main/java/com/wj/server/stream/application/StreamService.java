@@ -8,6 +8,7 @@ import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.StreamProperties;
 import com.wj.server.config.DemoProperties;
+import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.stream.api.StreamSessionResponse;
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
@@ -26,6 +27,7 @@ public class StreamService {
     private final AuditService auditService;
     private final Clock clock;
     private final DemoProperties demoProperties;
+    private final DevicePresenceStore presenceStore;
 
     @Autowired
     public StreamService(
@@ -34,9 +36,11 @@ public class StreamService {
         LiveTokenService liveTokenService,
         StreamProperties properties,
         AuditService auditService,
-        DemoProperties demoProperties
+        DemoProperties demoProperties,
+        DevicePresenceStore presenceStore
     ) {
-        this(mapper, publisher, liveTokenService, properties, auditService, demoProperties, Clock.systemUTC());
+        this(mapper, publisher, liveTokenService, properties, auditService,
+            demoProperties, presenceStore, Clock.systemUTC());
     }
 
     StreamService(
@@ -46,6 +50,7 @@ public class StreamService {
         StreamProperties properties,
         AuditService auditService,
         DemoProperties demoProperties,
+        DevicePresenceStore presenceStore,
         Clock clock
     ) {
         this.mapper = mapper;
@@ -54,14 +59,19 @@ public class StreamService {
         this.properties = properties;
         this.auditService = auditService;
         this.demoProperties = demoProperties;
+        this.presenceStore = presenceStore;
         this.clock = clock;
     }
 
     @Transactional
     public StreamSessionResponse create(UUID userId, UUID deviceId) {
         mapper.findActiveRole(userId, deviceId).orElseThrow(this::notFound);
-        String deviceStatus = mapper.findAccessibleDeviceStatus(userId, deviceId).orElseThrow(this::notFound);
-        if (!"ONLINE".equals(deviceStatus)) {
+        DevicePresenceStore.Lookup presence = presenceStore.find(deviceId);
+        boolean online = presence.storeAvailable()
+            ? presence.online()
+            : "ONLINE".equals(
+                mapper.findAccessibleDeviceStatus(userId, deviceId).orElseThrow(this::notFound));
+        if (!online) {
             throw new ApiException(HttpStatus.CONFLICT, "DEVICE_OFFLINE", "온라인 기기만 실시간 보기를 시작할 수 있습니다.");
         }
         mapper.lockDevice(deviceId);
@@ -85,7 +95,7 @@ public class StreamService {
                 || "STOP_PENDING".equals(stream.status());
             // A RUNNING database row does not prove that the edge publisher
             // survived a reboot or network loss. Production viewers wait for
-            // a fresh idempotent START/READY handshake before receiving HLS.
+            // a fresh idempotent START/READY handshake before receiving WHEP.
             sessionStatus = demoProperties.enabled() && reusableSourceWasReady
                 ? "READY" : "PENDING";
         }
@@ -159,22 +169,22 @@ public class StreamService {
     }
 
     private StreamSessionResponse toResponse(StreamSessionRow row) {
-        String playUrl = null;
+        String whepUrl = null;
         if ("READY".equals(row.status()) && row.viewerExpiresAt().isAfter(clock.instant())) {
             String token = liveTokenService.issue(row.id(), row.userId(), row.deviceId(), row.streamId());
-            String configuredDemoUrl = demoProperties.liveHlsUrl();
-            boolean explicitDemoUrl = demoProperties.enabled()
-                && configuredDemoUrl != null && !configuredDemoUrl.isBlank();
-            String baseUrl = explicitDemoUrl
-                ? configuredDemoUrl
-                : properties.mediaBaseUrl().replaceAll("/$", "") + "/" + row.streamId() + "/index.m3u8";
-            if (explicitDemoUrl) {
-                baseUrl += (baseUrl.contains("?") ? "&" : "?") + "streamId=" + row.streamId();
+            String configuredDemoWhepUrl = demoProperties.liveWhepUrl();
+            boolean explicitDemoWhepUrl = demoProperties.enabled()
+                && configuredDemoWhepUrl != null && !configuredDemoWhepUrl.isBlank();
+            String whepBaseUrl = explicitDemoWhepUrl
+                ? configuredDemoWhepUrl
+                : properties.webrtcBaseUrl().replaceAll("/$", "") + "/" + row.streamId() + "/whep";
+            if (explicitDemoWhepUrl) {
+                whepBaseUrl += (whepBaseUrl.contains("?") ? "&" : "?") + "streamId=" + row.streamId();
             }
-            playUrl = baseUrl + (baseUrl.contains("?") ? "&" : "?") + "token=" + token;
+            whepUrl = whepBaseUrl + (whepBaseUrl.contains("?") ? "&" : "?") + "token=" + token;
         }
         return new StreamSessionResponse(
-            row.id(), row.streamId(), row.deviceId(), row.status(), playUrl,
+            row.id(), row.streamId(), row.deviceId(), row.status(), whepUrl,
             Math.toIntExact(properties.heartbeatInterval().toSeconds()),
             row.viewerExpiresAt(), row.edgeHardExpiresAt(), row.failureCode(), row.createdAt());
     }

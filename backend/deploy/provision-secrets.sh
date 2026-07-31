@@ -66,9 +66,13 @@ MQTT_CLIENT_ID=wj-backend-prod
 MQTT_USERNAME=$MQTT_USERNAME
 MQTT_PASSWORD=$MQTT_PASSWORD
 MQTT_ENV=prod
-MEDIA_BASE_URL=https://i15e201.p.ssafy.io/live
+WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live
 FFMPEG_PATH=/usr/bin/ffmpeg
 EOF
+fi
+
+if ! grep -q '^WEBRTC_BASE_URL=' "$APP_ENV"; then
+  printf '%s\n' 'WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live' >>"$APP_ENV"
 fi
 
 chmod 600 "$INFRA_ENV" "$APP_ENV"

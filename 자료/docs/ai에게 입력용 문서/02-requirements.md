@@ -23,15 +23,15 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 
 | ID | 요구사항 | 관련 FN | 근거(코드 경로) |
 |---|---|---|---|
-| REQ-F-10 | QR/8자리 코드로 홈캠 기기 등록 | FN-A07, FN-S04, FN-S20, FN-S21, FN-E01, FN-E02 | API-08(claim), API-43(코드발급), API-44/45(자격증명); 코드 TTL 120초·sha256 해시, claim 5회/10분 레이트리밋 |
-| REQ-F-12 | 접근 가능 기기 목록·온라인상태 확인 | FN-S03, FN-S05, FN-S25, FN-E03 | API-07/11; `recording`/`uploadQueueDepth`는 항상 스텁(`false`/`0`) |
+| REQ-F-10 | QR/8자리 코드로 홈캠 기기 등록 | FN-A07, FN-S04, FN-S20, FN-S21, FN-E01, FN-E02 | API-08(claim), API-43(코드발급), API-44/45(자격증명); `vaultId` 생략 시 새 금고+OWNER, 지정 시 OWNER 검증 후 기존 금고 binding 생성; 코드 TTL 120초·sha256 해시, claim 5회/10분 레이트리밋 |
+| REQ-F-12 | 접근 가능한 금고·기기 목록과 온라인상태 확인 | FN-S03, FN-S05, FN-S25, FN-E03 | Vault API/API-07/11; 금고는 기기가 없어도 반환. MQTT heartbeat 상태는 Redis `presence:device:{id}`에 90초 TTL로 저장되어 목록·상태·금고·라이브 시작 판정에 반영 |
 | REQ-F-13 | (OWNER) 기기 이름·보관기간(1~3650일) 변경 | FN-A27, FN-S05 | API-10, 422 `VALIDATION_FAILED` |
 
 ### 1.3 홈에서 라이브 스트리밍 시청
 
 | ID | 요구사항 | 관련 FN | 근거(코드 경로) |
 |---|---|---|---|
-| REQ-F-18 | 요청 시점에만 홈캠 라이브(카드/전체화면) | FN-A10, FN-A11, FN-A37, FN-S16, FN-S17, FN-S25, FN-E04, FN-E05 | API-35~38, MQTT-01/04, `stream.py`; 실사용은 `EmbeddedLivePlayer`(FN-A10), `LiveScreen`(FN-A12, 부록A)은 도달 불가 코드 |
+| REQ-F-18 | 요청 시점에만 홈캠 라이브(카드/전체화면) | FN-A10, FN-A11, FN-A37, FN-S16, FN-S17, FN-S25, FN-E04, FN-E05 | API-35~38, MQTT-01/04, `stream.py`; 실사용은 `EmbeddedLivePlayer`(FN-A10). 도달 불가 코드였던 `LiveScreen`(FN-A12, 부록A)은 WebRTC 전용 전환에서 삭제 |
 | REQ-F-41 | 홈/캘린더/추억/가족/설정 탭 이동, 당겨서 새로고침 | FN-A06 | `main_shell.dart`(`IndexedStack`, `RefreshIndicator`) |
 
 ### 1.4 이벤트(웃음) 감지 영상 확인
@@ -46,7 +46,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 
 | ID | 요구사항 | 관련 FN | 근거(코드 경로) |
 |---|---|---|---|
-| REQ-F-27 | 폰 내 편집기(Banuba)로 화면 비율 변환 등 수동 편집 | FN-A21 | Banuba 연동(Android 전용), 로컬 편집+기기 저장 기준 충족. 서버 재업로드 여부는 ⚠️ 미확인이나 MVP 판정에는 불요 |
+| REQ-F-27 | 폰에서 자르기·비율·효과·자막을 편집하고 온디바이스 음성 인식으로 자동 자막 생성 | FN-A21, FN-A39 | 오디오·전사문 외부 전송 없음. 자동 자막은 수정 가능하며 저장 시 편집 효과와 한 번에 인코딩. 서버 API 불요 |
 
 ### 1.6 편집 영상 다운로드
 
@@ -61,7 +61,7 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 |---|---|---|---|
 | REQ-F-19 | 월별 캘린더 일자별 영상 개수·목록 | FN-A13, FN-S12 | API-27(`from`/`to` 월범위) |
 | REQ-F-36 | 기간별 웃음 통계(월평균·전체포착수·주간추이)·연간 히트맵 | FN-A36, FN-S15, FN-S22 | API-33(`VideoStatsService`); API-46(`EventStatsService`)는 서버 구현되었으나 클라이언트 미사용 |
-| REQ-F-42 | 이벤트 영상 기반 전용 리포트 화면(주간/월간 웃음횟수·시간대분포·베스트클립) | FN-A38, FN-S26 (신규 **[제안·미구현]**) | 대응 코드 없음 — API-51 **[제안]** 초안(`04-api-spec.md` 8절) |
+| REQ-F-42 | 이벤트 영상 기반 웃음 리포트. 현재 앱은 로드된 `LAUGHTER` 영상을 날짜별 단말 집계하며 주간/월간·시간대분포·베스트클립 서버 집계는 확장 목표 | FN-A38 **[구현]**, FN-S26 **[제안·미구현]** | `ui/laugh_report_content_screen.dart`; API-51 **[제안·미구현]** |
 
 ### 1.8 가족 공유
 
@@ -83,14 +83,14 @@ ID 체계: REQ-F-01~42(기능) + REQ-NF-01~12(비기능) = 54건. FN 참조는 `
 | REQ-NF-02 | 보안 | JWT HS256 액세스(15분)+리프레시(14일, rotate-on-use) | `config/JwtConfig.java`, `application.yml`(`access-token-ttl`,`refresh-token-ttl`), `auth/application/AuthService.java` |
 | REQ-NF-03 | 보안 | 리프레시토큰·등록코드 sha256 해시 저장(평문 미저장) | `auth_sessions.refresh_token_hash`, `registration_codes.code_hash`(둘다 unique) |
 | REQ-NF-04 | 보안 | 기기 자격증명 BOOTSTRAP(15분)/OPERATING(30일) 분리, 기기당 1개 | `device-credential.bootstrap-ttl`/`operating-ttl`, `device_credentials` 부분 unique index |
-| REQ-NF-05 | 보안 | 로그인/claim 실패 5회/10분 레이트리밋(이메일·IP 지문) | `LoginAttemptService`/`auth_login_attempts`, `ClaimAttemptService`/`device_claim_attempts` |
+| REQ-NF-05 | 보안 | 로그인/claim 실패는 Redis 슬라이딩 윈도우에서 계정·IP 지문 기준 5회/10분 레이트리밋. 성공 예약은 IP 버킷에서 제거하며, 실패 해시는 PostgreSQL 감사 이력으로 별도 보관 | `SlidingWindowRateLimiter`, `LoginAttemptService`/`auth_login_attempts`, `ClaimAttemptService`/`device_claim_attempts` |
 | REQ-NF-06 | 프라이버시 | 웃음감지는 엣지 전용(YAMNet), 트리거 시에만 업로드 | `ai/yamnet/yamnet_laughter_detect_jetson.py`(임계값0.25/연속2윈도우), `ai/yolo/laughter_clip_uploader.py` |
 | REQ-NF-07 | 프라이버시 | 라이브는 명시적 요청 시만, 유휴60s/뷰어45s/엣지120s 자동중단 | `stream/application/StreamService.java`, `StreamProperties`(`viewer-ttl`,`idle-timeout`,`edge-lease`) |
 | REQ-NF-08 | 운영 | PostgreSQL/MinIO 일 03:30 KST 자동 백업, 14일 보관 | `backup-william-james.sh`(`pg_dump -Fc`), `WJ_BACKUP_RETENTION_DAYS:-14`, `william-james-backup.timer` |
 | REQ-NF-09 | 운영 | 앱/프록시/컨테이너 상태·디스크 헬스체크 | `management.endpoints.web.exposure.include: health,info,metrics`, `check-william-james.sh`, `william-james-monitor.timer` |
 | REQ-NF-10 | 운영 | 테스트→빌드→배포 CI/CD | `.gitlab-ci.yml`(`test-backend`,`test-device-agent`,`package-backend`,`deploy-production`) |
-| REQ-NF-11 | 미디어 | H.264+AAC 인코딩 | MQTT `START_STREAM.payload.profile:"LIVE_720P_H264_AAC"`, `stream.py`(ffmpeg) |
-| REQ-NF-12 | 미디어 | HLS(m3u8) 스트리밍, 토큰 30초 만료 전 선제 갱신 | `{media-base-url}/{streamId}/index.m3u8?token={liveToken}`, `StreamProperties.live-token-ttl`, `frontend/lib/ui/live_screen.dart`(20초 주기) |
+| REQ-NF-11 | 미디어 | 실시간 송출 H.264+Opus 인코딩 | MQTT `START_STREAM.payload.profile:"LIVE_720P_H264_OPUS"`, `stream.py`(ffmpeg) |
+| REQ-NF-12 | 미디어 | 운영 WHEP/WebRTC 전용 재생. video/audio track과 inbound audio RTP를 모두 확인하며 실패 시 HLS 폴백 없이 오류·재시도 표시 | `StreamSessionResponse.whepUrl`, `WhepPlayerController`, `live_screen.dart` |
 
 ---
 
@@ -102,10 +102,10 @@ MVP 7단계·가족공유 밖이지만 문서·기능 자체는 유지하는 항
 |---|---|---|---|
 | REQ-F-06 | 프로필 표시 이름 수정 | FN-A26, FN-S02 | 향후 확장(스텁) — 프런트가 API-06(`PATCH /api/auth/me`) 호출하나 `AuthController.java`에 매핑 없음(grep 0건) |
 | REQ-F-07 | Apple/Google/카카오 간편 로그인 | FN-A04 | 향후 확장(스텁) — 로컬 스낵바만, 프런트·백엔드 모두 없음(`auth_screen.dart:284-298`) |
-| REQ-F-08 | 비밀번호 재설정(찾기) | FN-A05 | **서버 구현 완료(API-53, 54)** — 토큰 30분·1회용, 재설정 시 전 세션 폐기. 앱은 미연동(`auth_screen.dart:249-256` 로컬 스낵바) |
-| REQ-F-09 | 로그인 상태에서 비밀번호 변경 | FN-A29 | **서버 구현 완료(API-52)** — 현재 비밀번호 확인 후 변경, 현재 세션만 유지. 앱은 미연동(`settings_screen.dart:271-274` 로컬 스낵바) |
+| REQ-F-08 | 비밀번호 재설정(찾기) | FN-A05 | **서버 구현 완료(API-56, 57)** — 토큰 30분·1회용, 재설정 시 전 세션 폐기. 앱은 미연동(`auth_screen.dart:249-256` 로컬 스낵바) |
+| REQ-F-09 | 로그인 상태에서 비밀번호 변경 | FN-A29 | **서버 구현 완료(API-55)** — 현재 비밀번호 확인 후 변경, 현재 세션만 유지. 앱은 미연동(`settings_screen.dart:271-274` 로컬 스낵바) |
 | REQ-F-14 | (OWNER) 기기 소유권 이전 | FN-A24, FN-S06 | 확장 — API-12, 이전대상 ACTIVE 멤버 필요(409 `ALREADY_OWNER`) |
-| REQ-F-15 | (OWNER) 기기 계정 완전 해제 | FN-A34, FN-S06 | 확장 — API-13 |
+| REQ-F-15 | (OWNER) 금고에서 물리 기기 연결 해제 | FN-A34, FN-S06 | API-13은 활성 `device_bindings`만 종료. 금고·영상·구독·금고 멤버십은 보존 |
 | REQ-F-16 | (운영자) 신규 기기 등록, 자격증명 회전/폐기 | FN-S23 | 확장/운영 프로비저닝 — API-47~49, 내부 관리자 키+loopback(`ProvisioningController`) |
 | REQ-F-17 | 홈 화면 오늘의 통계·최근 하이라이트 | FN-A09, FN-S19 | 확장 — API-42, `HomeSummaryService` |
 | REQ-F-20 | 기념일 등록·수정·반복/알림시간 설정 | FN-A14 | 향후 확장(스텁) — `AnniversaryEditorScreen` UI만, 서버 anniversary 코드 0건 |
@@ -115,7 +115,7 @@ MVP 7단계·가족공유 밖이지만 문서·기능 자체는 유지하는 항
 | REQ-F-32 | 알림 수신 여부 설정 변경 | FN-A28 | 확장 — `flutter_secure_storage` 로컬 저장만, 서버 미반영(테이블/엔드포인트 없음) |
 | REQ-F-33 | (OWNER) 구독(보관 플랜) 조회/활성화/해지 | FN-A30, FN-S18 | 확장 — API-39~41, 보관 365일/해지 유예 30일 |
 | REQ-F-34 | (OWNER) 접근/조작 기록 조회 | FN-A31, FN-S24 | 확장 — API-50(커서 페이지네이션) |
-| REQ-F-35 | 받은초대·웃음영상 준비완료 알림 목록 | FN-A35 | **서버 구현 완료(API-55~58)** — `notifications` 테이블 + dedupe_key 멱등성. 앱은 미연동("모두 읽음"이 아직 로컬만) |
+| REQ-F-35 | 받은초대·웃음영상 준비완료 알림 목록 | FN-A35 | **서버 구현 완료(API-58~61)** — `notifications` 테이블 + dedupe_key 멱등성. 앱은 미연동("모두 읽음"이 아직 로컬만) |
 | REQ-F-38 | 팬틸트 자동 추적·프레이밍 | FN-E08, FN-H01~H04 | 향후 확장(범위 외) — CAD 완료(FN-H01)이나 서보 구동 코드 없음(발행자만, MQTT-11 구독자 전무). 운영 배포는 MQTT 연결 자체 비활성(`MQTT_HOST=` 빈 값) |
 | REQ-F-39 | 웃음 감지 시 인물/반려동물 정보 동시 기록 | FN-E09 | 향후 확장(범위 외) — `event_fusion_service.py` 코드 완성·로컬검증 확인, 운영 배포는 MQTT 비활성 |
 | REQ-F-40 | 라즈베리파이 기반 카메라 송출 프로토타입 검증 | FN-E10 | 향후 확장 — 로컬 MediaMTX RTSP 단순 송출만, 이벤트 로직 없음, 운영과 무관 |
@@ -134,17 +134,17 @@ MVP 7단계 관련 REQ만 간추린 구현 현황이다.
 | REQ-F-04 | 구현됨 | API-04 |
 | REQ-F-05 | 구현됨 | API-05(소유 기기 있으면 거부) |
 | REQ-F-10 | 구현됨 | API-08, 코드 TTL 120초 + claim 레이트리밋 |
-| REQ-F-12 | 부분 구현 | `recording`/`uploadQueueDepth`는 항상 스텁 값만 반환 |
+| REQ-F-12 | 구현됨 | Redis TTL 기반 ONLINE/OFFLINE 및 heartbeat telemetry를 API-07/11·금고·라이브 판정에 반영 |
 | REQ-F-13 | 구현됨 | API-10 |
-| REQ-F-18 | 구현됨 | API-35~38, MQTT-01/04. `LiveScreen`은 미사용 코드지만 `EmbeddedLivePlayer`로 실제 구현됨 |
+| REQ-F-18 | 구현됨 | API-35~38, MQTT-01/04. `EmbeddedLivePlayer`로 구현됨(미사용 `LiveScreen`은 삭제) |
 | REQ-F-41 | 구현됨 | `main_shell.dart` |
 | REQ-F-37 | 구현됨 | YAMNet 임계값 판정 → presigned 업로드, systemd 상시 구동 |
 | REQ-F-21 | 구현됨 | API-27 커서 페이지네이션 |
 | REQ-F-22 | 구현됨 | API-31, 재생 URL TTL 5분 |
-| REQ-F-27 | 부분 구현 | Banuba 연동은 동작(Android 전용). 로컬 편집+기기 저장 기준은 충족. 서버 재업로드 여부는 ⚠️ 미확인이나 MVP 판정에는 불요 |
+| REQ-F-27 | 구현됨 | 로컬 편집·온디바이스 자동 자막·기기 저장 동작. 서버 API 불요 |
 | REQ-F-26 | 구현됨 | API-32(다운로드 URL) |
 | REQ-F-19 | 구현됨 | API-27(월 범위 조회) |
 | REQ-F-36 | 구현됨 | API-33. 별도 이벤트 전용 통계 API(API-46)는 구현돼 있으나 클라이언트 미사용 |
-| REQ-F-42 | 미구현 | 신규 계획 항목(개발 예정). 시연은 REQ-F-19·REQ-F-36으로 대체 가능 |
+| REQ-F-42 | 부분 구현 | FN-A38 Flutter 단말 집계 화면 구현. FN-S26/API-51 서버 집계는 제안·미구현 |
 
-**ID 검증**: 본문(1.1~1.8절) 고유 REQ-F ID = 01,02,03,04,05,10,12,13,18,41,37,21,22,27,26,19,36,42,28,29,30,31,11 = 23개(REQ-F-27은 1.5·1.6절에 중복 표기되나 동일 ID). 부록 A 고유 REQ-F ID = 06,07,08,09,14,15,16,17,20,23,24,25,32,33,34,35,38,39,40 = 19개. 23+19=42, REQ-F-01~42 전수 반영(결번 없음, 중복 없음). REQ-NF-01~12 전부 2절에 존재(12개). FN 78개·API 51개(06 제외)·MQTT 15개는 각각 `03-features.md`, `04-api-spec.md`에서 확인.
+**ID 검증**: 본문(1.1~1.8절) 고유 REQ-F ID = 01,02,03,04,05,10,12,13,18,41,37,21,22,27,26,19,36,42,28,29,30,31,11 = 23개(REQ-F-27은 1.5·1.6절에 중복 표기되나 동일 ID). 부록 A 고유 REQ-F ID = 06,07,08,09,14,15,16,17,20,23,24,25,32,33,34,35,38,39,40 = 19개. 23+19=42, REQ-F-01~42 전수 반영(결번 없음, 중복 없음). REQ-NF-01~12 전부 2절에 존재(12개). FN 79개·API 51개(06 제외)·MQTT 15개는 각각 `03-features.md`, `04-api-spec.md`에서 확인.

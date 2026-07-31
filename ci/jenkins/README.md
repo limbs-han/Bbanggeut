@@ -11,10 +11,11 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 | `frontend-agent` | JDK 21, Flutter 3.44.7, Dart 3.12.2 | `frontend/` |
 | `device-agent` | JDK 21, Python 3, venv, Bash | `ai/device_agent/`와 `ai/yolo/` |
 | `postgres-ci` | PostgreSQL 16 | Backend 통합 테스트 전용 |
+| `redis-ci` | Redis 7 | 로그인 시도 제한 통합 테스트 전용 |
 
 서버 구성 파일은 `ci/jenkins/server/`에 있습니다.
 
-- `compose.yml`: Controller, 네 Agent, `postgres-ci`, 전용 네트워크 정의
+- `compose.yml`: Controller, 네 Agent, `postgres-ci`, `redis-ci`, 전용 네트워크 정의
 - `Dockerfile.controller`: Jenkins Controller와 플러그인
 - `Dockerfile.agent`: Backend·IoT·AI 공통 Agent
 - `Dockerfile.frontend-agent`: Flutter Agent
@@ -26,10 +27,11 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 ## 보안 및 격리
 
 - Controller와 Agent에는 `/var/run/docker.sock`을 연결하지 않습니다.
-- Agent와 `postgres-ci`는 `william-james-jenkins-agents` 네트워크만 사용합니다.
+- Agent와 `postgres-ci`, `redis-ci`는 `william-james-jenkins-agents` 네트워크만 사용합니다.
 - 운영 서비스가 사용하는 `william-james_default` 네트워크에는 들어가지 않습니다.
-- `postgres-ci`의 5432 포트는 호스트에 공개하지 않습니다.
+- `postgres-ci`의 5432 포트와 `redis-ci`의 6379 포트는 호스트에 공개하지 않습니다.
 - `postgres-ci` 데이터 디렉터리는 메모리 기반 `tmpfs`입니다.
+- `redis-ci`는 영속화를 끄고 실행하므로 빌드 데이터가 디스크에 남지 않습니다.
 - GitLab 저장소는 만료일이 있는 `read_repository` 전용 Deploy Token으로 읽습니다.
 - Deploy Token은 Jenkins Credentials에 저장하고 작업에는 Credential ID만 기록합니다.
 - GitLab 상태 기록은 프로젝트 전용 `api` 토큰을 별도 사용하며
@@ -38,6 +40,29 @@ Jenkins Controller는 작업을 관리하기만 하며 프로젝트 코드를 �
 Jenkins Controller가 Java 21로 실행되므로 Agent 연결 프로그램도 Java 21을 사용합니다.
 Backend Gradle 설정은 Java 17 toolchain을 요구하므로 공통 Agent에는 Java 17을 별도 경로로
 함께 설치했습니다.
+
+## Agent 프로세스 회수
+
+네 Jenkins Agent는 Compose의 `init: true`를 공통 적용합니다. 컨테이너 안에서 빌드 프로세스가
+비정상 종료되더라도 init 프로세스가 고아·좀비 프로세스를 회수하므로 `pids_limit`이 소진되어
+`Cannot fork` 또는 `unable to create native thread`가 발생하는 것을 방지합니다.
+
+설정 변경 후에는 실행 중인 빌드가 없는지 확인한 다음 서버에서 Agent 컨테이너를 다시 생성해야
+합니다.
+
+```bash
+cd "$(git rev-parse --show-toplevel)/ci/jenkins/server"
+docker compose up -d --force-recreate \
+  backend-agent frontend-agent device-agent deploy-agent
+```
+
+재생성 후 `docker inspect`에서 `Init=true`인지 확인합니다.
+
+```bash
+for agent in backend frontend device deploy; do
+  docker inspect "jenkins-${agent}-agent" --format '{{.Name}} Init={{.HostConfig.Init}}'
+done
+```
 
 ## GitLab 연결과 Webhook
 
@@ -65,9 +90,30 @@ SHA를 지정해 특정 빌드를 직접 실행하는 요청은 HTTP 401로 차�
 | `develop/backend`, `feat/backend/**` | Backend |
 | `develop/frontend`, `feat/frontend/**` | Frontend |
 | `develop/device`, `feat/device/**` | IoT와 AI |
+| 모든 `feat/**`, `develop/**`, `docs/**` | API Contract |
 
 Jenkins 자체 구성을 바꾸는 검증 브랜치에서는 Backend, Frontend, Device 전체 CI를 실행하도록
 해당 브랜치 이름을 `Jenkinsfile`에 명시합니다.
+
+## API Contract
+
+`자료/api/openapi.yaml`은 손으로 유지하는 계약이며 세 역할이 함께 편집합니다.
+그동안 이 파일을 검사하는 유일한 설정이 `자료/.github/workflows/ci.yml`, 즉 GitHub
+Actions 워크플로였습니다. 이 저장소는 GitLab이므로 그 워크플로는 한 번도 실행되지
+않았고, Memory Vault 전환에서 추가된 경로 7개가 계약에 빠진 채로 병합됐습니다.
+
+`ci/jenkins/scripts/run-api-contract-ci.sh`가 두 가지를 확인합니다.
+
+1. `자료/tools/check_api_spec_coverage.py` — 컨트롤러의 `@RequestMapping`·
+   `@GetMapping` 계열을 모아 계약의 `paths`와 대조합니다. 누락이 있으면 실패합니다.
+   표준 라이브러리만 사용하므로 Agent에 PyYAML이나 Node가 없어도 동작합니다.
+2. Redocly CLI lint — `npx`가 있을 때만 실행하고, 없으면 경고를 남기고 계속합니다.
+   경로 누락 검사는 어느 경우에도 건너뛰지 않습니다.
+
+공개 계약에 싣지 않는 경로는 검사 스크립트의 `UNDOCUMENTED_ON_PURPOSE`에 사유와
+함께 적습니다. 내부 관리자 경로처럼 존재 자체를 404로 숨기는 엔드포인트가 여기
+해당합니다. 컨트롤러에서 사라진 경로가 목록에 남아 있어도 실패하므로 목록이 낡지
+않습니다.
 
 현재 GitLab의 `master`나 `develop/*` 브랜치는 자동으로 생성하거나 변경하지 않습니다.
 브랜치 정책 적용은 별도의 GitLab 관리 단계에서 진행합니다.
@@ -94,6 +140,7 @@ Jenkins Agent에는 운영 Docker를 제어할 수 있는 Docker 소켓이 없�
 Jenkins Backend Agent
   -> Docker 소켓 없음
   -> postgres-ci에 빌드별 임시 데이터베이스 생성
+  -> redis-ci로 로그인 시도 제한 테스트 실행
   -> Flyway 통합 테스트 실행
   -> 테스트가 끝나면 임시 데이터베이스 삭제
 ```
@@ -133,16 +180,22 @@ NDK를 설치하지 않으며 APK·AAB 생성, 기기 설치, 앱 스토어 업�
 S15P11E201/master CI 성공
   -> Production 작업 자동 생성
   -> 사람의 배포 승인 대기
-  -> master 빌드의 JAR artifact만 복사
+  -> 같은 master 빌드의 JAR와 Backend 인프라 artifact 복사
   -> 전용 jenkins-deploy 계정으로 EC2에 업로드
-  -> 현재 JAR 백업
-  -> Spring Boot systemd 서비스만 재시작
-  -> health 성공 시 완료
-  -> health 실패 시 이전 JAR로 복구
+  -> 현재 JAR와 Compose 설정 백업
+  -> PostgreSQL·MinIO·Mosquitto·MediaMTX 구성 반영과 health 확인
+  -> Spring Boot systemd 서비스 재시작과 health 확인
+  -> 실패 시 이전 JAR와 Compose 설정으로 복구
 ```
 
-운영 PostgreSQL·MinIO·Mosquitto·MediaMTX Compose는 Backend JAR 배포 과정에서 재시작하지
-않습니다. Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+운영 데이터와 비밀정보는 배포 artifact에 포함하지 않습니다. PostgreSQL·MinIO·Mosquitto의
+기존 named volume과 서버의 `infra/.env`, 인증서 디렉터리를 그대로 유지합니다. 자세한 배포
+및 최초 서버 설치 절차는 [`BACKEND_INFRA_DEPLOY.md`](./BACKEND_INFRA_DEPLOY.md)에 있습니다.
+Frontend, IoT, AI는 CI까지만 수행하며 자동 CD 대상이 아닙니다.
+
+운영 EC2에는 실행용 JRE만 설치합니다. 배포 스크립트는 JDK의 `jar` 명령에 의존하지 않고
+`unzip`으로 압축 손상과 `META-INF/MANIFEST.MF`, `BOOT-INF/classes/`, `BOOT-INF/lib/`
+구조를 확인합니다. Backend CI도 같은 검증기로 실제 빌드 결과물을 검사합니다.
 
 ## GitLab 상태 알림
 

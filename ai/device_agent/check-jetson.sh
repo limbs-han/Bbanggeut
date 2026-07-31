@@ -58,7 +58,9 @@ case "${MEDIA_PUBLISH_URL_TEMPLATE:-}" in
         ;;
 esac
 
-if [[ -x "$FFMPEG_PATH" && -r "$CAMERA_DEVICE" ]]; then
+if systemctl is-active --quiet wj-media-source.service; then
+    printf '[OK]   camera is owned by wj-media-source; direct capture check skipped\n'
+elif [[ -x "$FFMPEG_PATH" && -r "$CAMERA_DEVICE" ]]; then
     check "one-second camera capture" timeout 8 "$FFMPEG_PATH" \
         -hide_banner -loglevel error \
         -f v4l2 -input_format "$CAMERA_INPUT_FORMAT" \

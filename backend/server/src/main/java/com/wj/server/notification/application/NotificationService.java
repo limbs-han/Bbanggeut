@@ -13,22 +13,45 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class NotificationService {
     private final NotificationMapper mapper;
+    private final PushNotificationDispatcher pushDispatcher;
 
-    public NotificationService(NotificationMapper mapper) {
+    public NotificationService(
+        NotificationMapper mapper,
+        PushNotificationDispatcher pushDispatcher
+    ) {
         this.mapper = mapper;
+        this.pushDispatcher = pushDispatcher;
     }
 
     @Transactional
     public void invitationReceived(
         String email, UUID deviceId, String deviceName, UUID invitationId
     ) {
-        mapper.insertInvitationNotification(
+        int inserted = mapper.insertInvitationNotification(
             UUID.randomUUID(), email, deviceId, deviceName, invitationId);
+        if (inserted > 0) {
+            pushDispatcher.invitationReceived(email, deviceId, deviceName, invitationId);
+        }
+    }
+
+    @Transactional
+    public void vaultInvitationReceived(
+        String email, UUID vaultId, String vaultName, UUID invitationId
+    ) {
+        int inserted = mapper.insertVaultInvitationNotification(
+            UUID.randomUUID(), email, vaultId, vaultName, invitationId);
+        if (inserted > 0) {
+            pushDispatcher.vaultInvitationReceived(
+                email, vaultId, vaultName, invitationId);
+        }
     }
 
     @Transactional
     public void laughterVideoReady(UUID deviceId, UUID videoId, String title) {
-        mapper.insertLaughterVideoNotifications(deviceId, videoId, title);
+        int inserted = mapper.insertLaughterVideoNotifications(deviceId, videoId, title);
+        if (inserted > 0) {
+            pushDispatcher.laughterVideoReady(deviceId, videoId, title);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -37,7 +60,7 @@ public class NotificationService {
         return mapper.findForUser(userId, safeLimit).stream()
             .map(row -> new NotificationResponse(
                 row.id(), row.type(), row.title(), row.body(), row.deviceId(),
-                row.resourceId(), row.readAt(), row.createdAt()))
+                row.vaultId(), row.resourceId(), row.readAt(), row.createdAt()))
             .toList();
     }
 
