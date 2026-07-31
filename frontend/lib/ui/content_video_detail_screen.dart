@@ -1,13 +1,10 @@
-import 'dart:io';
-
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import '../core/video_gallery_saver.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
 import 'widgets.dart';
@@ -31,9 +28,9 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   late VideoMemory _video;
   VideoPlayerController? _player;
   bool _loading = true;
-  bool _downloading = false;
+  bool _saving = false;
+  double? _saveProgress;
   bool _deleting = false;
-  double? _downloadProgress;
   String? _error;
 
   @override
@@ -139,45 +136,28 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _saveVideo() async {
-    if (_downloading) return;
+    if (_saving) return;
     setState(() {
-      _downloading = true;
-      _downloadProgress = null;
+      _saving = true;
+      _saveProgress = null;
     });
     try {
-      final download = await widget.controller.api.createDownloadUrl(_video.id);
-      final directory = Platform.isAndroid
-          ? await getExternalStorageDirectory()
-          : await getApplicationDocumentsDirectory();
-      if (directory == null) {
-        throw StateError('저장할 폴더를 찾지 못했어요.');
-      }
-      final safeTitle = _video.title
-          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
-          .trim();
-      final fileName =
-          '${safeTitle.isEmpty ? '빵긋_영상' : safeTitle}_${_video.id}.mp4';
-      final filePath = '${directory.path}${Platform.pathSeparator}$fileName';
-      await Dio().download(
-        download.url,
-        filePath,
-        onReceiveProgress: (received, total) {
+      await VideoGallerySaver.save(
+        api: widget.controller.api,
+        videoId: _video.id,
+        onProgress: (received, total) {
           if (!mounted || total <= 0) return;
-          setState(() => _downloadProgress = received / total);
+          setState(() => _saveProgress = received / total);
         },
       );
-      if (mounted) {
-        showAppSnack(context, '영상 저장을 완료했어요.');
-      }
-    } catch (_) {
-      if (mounted) {
-        showAppSnack(context, '영상을 저장하지 못했어요. 다시 시도해 주세요.', error: true);
-      }
+      if (mounted) showAppSnack(context, '휴대폰 갤러리에 영상을 저장했어요.');
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
     } finally {
       if (mounted) {
         setState(() {
-          _downloading = false;
-          _downloadProgress = null;
+          _saving = false;
+          _saveProgress = null;
         });
       }
     }
@@ -322,21 +302,25 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                   ),
                   const SizedBox(height: 28),
                   OutlinedButton.icon(
-                    onPressed: _downloading ? null : _saveVideo,
-                    icon: _downloading
+                    onPressed: _saving ? null : _saveVideo,
+                    icon: _saving
                         ? const SizedBox.square(
                             dimension: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.download_rounded),
                     label: Text(
-                      _downloading
-                          ? _downloadProgress == null
-                                ? '저장 준비 중'
-                                : '저장 중 ${(_downloadProgress! * 100).round()}%'
-                          : '저장',
+                      _saving
+                          ? _saveProgress == null
+                                ? '다운로드 중…'
+                                : '저장 중 ${(_saveProgress! * 100).round()}%'
+                          : '갤러리에 저장',
                     ),
                   ),
+                  if (_saving) ...[
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(value: _saveProgress),
+                  ],
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _openEditor,

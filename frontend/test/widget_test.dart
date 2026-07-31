@@ -1,13 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:william_james_app/app/app_controller.dart';
 import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
-import 'package:william_james_app/core/banuba_video_editor.dart';
 import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/auth_screen.dart';
 import 'package:william_james_app/ui/local_edit_screen.dart';
@@ -17,15 +13,6 @@ import 'package:william_james_app/ui/video_detail_screen.dart';
 
 void main() {
   setUpAll(() => initializeDateFormatting('ko'));
-
-  testWidgets('로컬 Banuba 토큰 설정을 자동으로 불러온다', (tester) async {
-    expect(
-      await BanubaVideoEditor(
-        assetBundle: _BanubaConfigAssetBundle(),
-      ).isConfigured,
-      isTrue,
-    );
-  });
 
   testWidgets('로그인과 회원가입 화면을 전환한다', (tester) async {
     final controller = AppController();
@@ -340,16 +327,6 @@ void main() {
     expect(find.text('편집'), findsOneWidget);
     controller.dispose();
   });
-}
-
-class _BanubaConfigAssetBundle extends CachingAssetBundle {
-  @override
-  Future<ByteData> load(String key) async {
-    final bytes = utf8.encode(
-      jsonEncode({'BANUBA_LICENSE_TOKEN': 'test-license-token'}),
-    );
-    return ByteData.sublistView(Uint8List.fromList(bytes));
-  }
 }
 
 class _FakeApiClient extends ApiClient {

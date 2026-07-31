@@ -5,14 +5,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// CI can build without private Firebase configuration. Once the real
+// google-services.json is placed in this module, FCM resources are generated.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // pubspec.yaml pins version to 1.0.0+1, so without this every build would ship
-// versionCode 1 and versionName 1.0.0. Two APKs built minutes apart were then
-// indistinguishable on-device and a stale install looked identical to a fresh
-// one. Derive the identity from git instead: the commit count is monotonic, and
-// the short SHA says exactly which code is on the phone.
-//
-// Falls back to the pubspec values when git is unavailable (no repo, git not on
-// PATH), so an archive build still succeeds.
+// versionCode 1 and versionName 1.0.0. Derive the identity from git instead.
 fun gitOutput(vararg args: String): String? =
     try {
         val process = ProcessBuilder(listOf("git", *args))
@@ -26,9 +26,8 @@ fun gitOutput(vararg args: String): String? =
     }
 
 val gitCommitCount = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull()
-val gitShortSha = gitOutput("rev-parse", "--short=7", "HEAD")?.takeIf { it.isNotEmpty() }
-// Uncommitted changes are flagged: a build from a dirty tree is not reproducible
-// from the SHA alone, and that is worth seeing in `adb shell dumpsys package`.
+val gitShortSha =
+    gitOutput("rev-parse", "--short=7", "HEAD")?.takeIf { it.isNotEmpty() }
 val gitIsDirty = gitOutput("status", "--porcelain")?.isNotEmpty() == true
 
 android {
@@ -42,12 +41,10 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.williamjames.william_james_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
+
         versionCode = gitCommitCount ?: flutter.versionCode
         versionName = if (gitShortSha != null) {
             "${flutter.versionName}+${gitCommitCount ?: 0}.$gitShortSha" +
@@ -57,21 +54,16 @@ android {
         }
 
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
-        }
-    }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-            pickFirsts += "**/libbanuba-ve-yuv.so"
+            abiFilters += listOf(
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86_64",
+            )
         }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
     }

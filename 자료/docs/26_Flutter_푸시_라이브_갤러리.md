@@ -1,0 +1,102 @@
+# Flutter 푸시·라이브·갤러리 연동
+
+## 영상 편집 SDK
+
+- Banuba `ve_sdk_flutter` 의존성과 Android 네이티브 패키징 설정을 제거했다.
+- 영상 편집은 `LocalEditScreen`과 `VideoEditorExporter` 기반의 앱 자체 로컬 편집기를 사용한다.
+- 편집 결과의 기기 갤러리 저장은 `gal` 플러그인을 사용한다.
+
+## 푸시 알림
+
+Flutter 앱은 Firebase Cloud Messaging 토큰을 발급받아 다음 기존 API에
+연결한다.
+
+- 로그인 또는 저장된 세션 복원: `PUT /api/notifications/push-tokens`
+- FCM 토큰 갱신: 같은 API로 새 토큰 재등록
+- 로그아웃 또는 회원 탈퇴: `DELETE /api/notifications/push-tokens/{installationId}`
+
+`installationId`는 앱 설치별 임의 값이며 Secure Storage에 저장한다.
+포그라운드에서는 OS 알림과 중복되지 않도록 Firebase의 전경 alert/sound를
+끄고 앱 내부의 크림·핑크 알림 카드 하나만 표시한다. 백그라운드와 종료
+상태에서는 서버가 보낸 notification payload를 OS가 표시한다.
+
+알림 payload의 `type`과 `resourceId`를 사용한다.
+
+- `INVITATION_RECEIVED`: 받은 초대함으로 이동하고 목록을 다시 조회한다.
+- `LAUGHTER_VIDEO_READY`: 서버에서 영상 상세를 조회한 뒤 상세 화면으로
+  이동한다.
+
+알림 센터는 `GET /api/notifications`의 실제 응답을 사용하고, 개별 읽음과
+모두 읽음 API를 호출한다.
+
+### 필수 운영 설정
+
+현재 저장소에는 `frontend/android/app/google-services.json`이 없다.
+실제 Firebase 프로젝트에서 Android application id
+`com.williamjames.william_james_app`으로 발급한 파일을 추가해야 FCM이
+초기화된다. 파일이 없으면 앱의 로그인·일반 기능은 계속 동작하지만 푸시만
+비활성화된다.
+
+현재 저장소에는 `frontend/ios` 플랫폼 프로젝트 자체가 없다. iOS 지원 시
+Flutter iOS 플랫폼을 생성·통합하고 실제 `GoogleService-Info.plist`,
+Push Notifications capability, Background Modes의 Remote notifications,
+`NSPhotoLibraryAddUsageDescription`을 추가해야 한다.
+
+백엔드 운영 환경에서는 `FCM_ENABLED=true`, `FIREBASE_PROJECT_ID`, Firebase
+Admin 자격 증명이 실제 프로젝트와 일치해야 한다.
+
+## WHEP 라이브와 전체 화면
+
+운영 라이브 규격은 MediaMTX의 WHEP/WebRTC 수신 전용이다. 현재 API와 WHEP
+응답에는 재생 위치, DVR 윈도우, seek 가능 범위가 없으므로 과거 구간
+진행 바를 만들지 않는다. 프런트에서 임의 길이의 가짜 진행 바도 표시하지
+않는다.
+
+연결 중에는 빨간 점과 빨간 `LIVE`를 표시한다. 이를 누르면 기존 세션을
+닫고 새 WHEP 세션을 열어 최신 프레임으로 복귀한다. 전체 화면은 임베디드
+화면과 같은 `RTCVideoRenderer`를 재사용하며 별도 플레이어를 만들지 않는다.
+전체 화면 라우트가 검정 배경으로 먼저 덮인 뒤 가로 방향을 적용하고, 종료
+후 세로 방향과 edge-to-edge 시스템 UI 복원을 기다린다.
+
+DVR이 필요하면 MediaMTX 앞단 또는 별도 재생 API가 실제 seek window와
+재생 위치를 제공하도록 서버 계약을 먼저 확장해야 한다.
+
+## 영상 갤러리 저장
+
+영상 상세의 저장 버튼은 다음 순서로 동작한다.
+
+1. 인증된 `POST /api/videos/{videoId}/download-url` 호출
+2. 서명 URL 전용 Dio로 영상 파일을 앱 임시 디렉터리에 다운로드
+3. Android MediaStore 또는 iOS Photos를 사용하는 `gal` 플러그인으로 저장
+4. 임시 파일 삭제
+
+MinIO/S3 서명 URL에는 저장소 인증 정보가 쿼리에 이미 포함되어 있으므로
+2번 요청에는 앱의 `Authorization: Bearer` 헤더를 붙이지 않는다. 401 또는
+403이면 만료 가능성을 고려해 다운로드 URL을 한 번 새로 발급받아 재시도한다.
+
+외부 브라우저나 WebView를 열지 않는다. 다운로드 진행률을 표시하고 저장
+중 버튼을 비활성화해 중복 다운로드를 막는다. 영상 카드의 동작하지 않던
+공유 버튼과 복사 콜백은 제거했다.
+
+## 편집 준비 화면
+
+영상 상세에서 `영상 편집하기`를 누르면 검은 미리보기 기반 로딩 화면 대신
+크림 배경의 전용 준비 화면을 먼저 표시한다. 준비 화면은 빵긋 마스코트,
+자르기·음악·스티커 기능 카드와 실제 준비 진행률을 표시한다.
+
+진행률은 고정된 장식 숫자가 아니다. 다운로드 URL 발급, 원본 영상 다운로드,
+로컬 미리보기 초기화 단계를 반영하며 원본 다운로드 중에는 수신 바이트
+비율에 따라 증가한다. 준비가 끝나면 기존 편집 화면으로 자동 전환한다.
+
+## 설정과 가족 상태
+
+설정 메인에는 알림 항목을 하나만 표시하고, 상세 화면에서 기존 세 토글을
+Secure Storage의 기존 키로 읽고 저장한다. 설정의 웃음 리포트 행만
+제거했으며 홈의 웃음 리포트 기능은 유지한다.
+
+설정의 기존 알림 위치에는 가족 구성원 목록과 OWNER용 이메일 초대 카드
+(MEMBER는 초대 요청 링크 카드)를 직접 표시한다. 기존 가족 관리 행 위치에는
+알림 설정 행을 배치한다. 설정의 가족 카드와 받은 초대함은 하단 가족 탭과
+동일한 `AppController` 상태와 API를 사용하므로 별도 가짜 데이터가 없다.
+초대 수락 성공 직후 초대·Vault·구성원·권한·기기·영상 데이터를 다시
+조회하고 수락한 기기가 들어 있는 Vault를 선택하므로 앱 재시작이 필요 없다.

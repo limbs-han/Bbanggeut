@@ -320,19 +320,28 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   Future<void> _openFullscreen() async {
     if (!whepPlayer.connected) return;
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FullscreenWhepView(
-          player: whepPlayer,
-          title: widget.device.name,
-          initialMuted: muted,
-          onMutedChanged: (value) {
-            if (mounted) setState(() => muted = value);
-          },
+    try {
+      if (!mounted) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FullscreenWhepView(
+            player: whepPlayer,
+            title: widget.device.name,
+            initialMuted: muted,
+            onReturnToLive: _restart,
+            onMutedChanged: (value) {
+              if (mounted) setState(() => muted = value);
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
   }
 
   void _scheduleControlsHide() {
@@ -405,7 +414,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                     ),
                   Positioned(
                     left: 12,
-                    top: 12,
+                    top: widget.houseMode ? 30 : 12,
                     child: InkWell(
                       key: const Key('live-edge-button'),
                       borderRadius: BorderRadius.circular(99),
@@ -611,7 +620,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         color: Colors.black,
         child: RTCVideoView(
           whepPlayer.renderer,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
         ),
       );
     }
@@ -660,12 +669,14 @@ class FullscreenWhepView extends StatefulWidget {
     required this.player,
     required this.title,
     required this.initialMuted,
+    required this.onReturnToLive,
     required this.onMutedChanged,
   });
 
   final WhepPlayerController player;
   final String title;
   final bool initialMuted;
+  final Future<void> Function() onReturnToLive;
   final ValueChanged<bool> onMutedChanged;
 
   @override
@@ -726,7 +737,7 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
         children: [
           RTCVideoView(
             widget.player.renderer,
-            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
           ),
           AnimatedOpacity(
             opacity: controlsVisible ? 1 : 0,
@@ -778,6 +789,46 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
                                 ? Icons.volume_off_rounded
                                 : Icons.volume_up_rounded,
                           ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          AnimatedOpacity(
+            opacity: controlsVisible ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: IgnorePointer(
+              ignoring: !controlsVisible,
+              child: SafeArea(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        TextButton.icon(
+                          key: const Key('fullscreen-live-edge-button'),
+                          onPressed: () async {
+                            await widget.onReturnToLive();
+                            if (mounted) _scheduleControlsHide();
+                          },
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xCCFFF9F5),
+                            foregroundColor: const Color(0xFFE53935),
+                          ),
+                          icon: const Icon(Icons.circle, size: 9),
+                          label: const Text(
+                            'LIVE',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'WebRTC 실시간 · DVR 미지원',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
                         ),
                       ],
                     ),

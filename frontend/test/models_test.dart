@@ -42,6 +42,24 @@ void main() {
     expect(video.capturedStartAt, isNotNull);
   });
 
+  test('백엔드 알림 payload의 화면 이동 식별자를 보존한다', () {
+    final notification = AppNotification.fromJson({
+      'id': 'notification-id',
+      'type': 'LAUGHTER_VIDEO_READY',
+      'title': '웃음 영상이 도착했어요',
+      'body': '저녁 식사 웃음',
+      'deviceId': 'device-id',
+      'resourceId': 'video-id',
+      'createdAt': '2026-07-30T10:00:00Z',
+    });
+
+    expect(notification.type, 'LAUGHTER_VIDEO_READY');
+    expect(notification.deviceId, 'device-id');
+    expect(notification.resourceId, 'video-id');
+    expect(notification.isRead, isFalse);
+    expect(notification.copyWith(readAt: DateTime.now()).isRead, isTrue);
+  });
+
   test('영상 통계의 일별·피크 정보를 보존한다', () {
     final stats = VideoStats.fromJson({
       'totalCount': 4,
