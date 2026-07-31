@@ -302,6 +302,60 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('홈의 기기 목록에는 선택한 장소의 기기만 표시한다', (tester) async {
+    const homeCamera = DeviceSummary(
+      id: 'home-camera',
+      name: '집 카메라',
+      model: 'test',
+      status: 'ONLINE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+    );
+    const cafeCamera = DeviceSummary(
+      id: 'cafe-camera',
+      name: '카페 카메라',
+      model: 'test',
+      status: 'OFFLINE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+    );
+    final controller = AppController()
+      ..devices = const [homeCamera, cafeCamera]
+      ..selectedDevice = homeCamera
+      ..addPlace('카페')
+      ..assignDeviceToPlace('home-camera', '집')
+      ..assignDeviceToPlace('cafe-camera', '카페');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: Scaffold(
+          body: HomeScreen(
+            controller: controller,
+            isActive: true,
+            openVideos: () {},
+            openCalendar: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('home-place-device-selector')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('카페 카메라'), findsOneWidget);
+    expect(find.text('집 카메라'), findsNothing);
+
+    await tester.tap(find.text('집').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home-place-device-selector')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('집 카메라'), findsOneWidget);
+    expect(find.text('카페 카메라'), findsNothing);
+    controller.dispose();
+  });
+
   testWidgets('새로 시작하기는 최종 확인을 한 번 더 요구한다', (tester) async {
     MemoryConnectionChoice? result;
     await tester.pumpWidget(

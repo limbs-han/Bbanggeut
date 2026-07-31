@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
-import 'family_screen.dart';
 import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
 
@@ -99,15 +98,25 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
       );
       return;
     }
-    showAppSnack(context, '기기가 연결됐어요. 가족을 초대해 보세요.');
-    if (widget.canGoBack) {
-      widget.controller.consumeOpenFamilyAfterDeviceClaim();
-      await Navigator.pushReplacement<void, void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => FamilyScreen(controller: widget.controller),
-        ),
-      );
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('기기 연결 완료'),
+        content: Text('$selectedPlaceName 카테고리에 새 기기가 성공적으로 연결됐어요.'),
+        actions: [
+          FilledButton(
+            key: const Key('device-registration-success-home'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('홈으로 가기'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    widget.controller.completeDeviceRegistration();
+    if (widget.canGoBack && mounted) {
+      Navigator.pop(context);
     }
   }
 

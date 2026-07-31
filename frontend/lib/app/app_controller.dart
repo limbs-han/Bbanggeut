@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/api_client.dart';
 import '../core/models.dart';
@@ -7,10 +11,15 @@ import '../core/push_notification_service.dart';
 const devHomeCam = bool.fromEnvironment('DEV_HOME_CAM');
 
 class AppController extends ChangeNotifier {
-  AppController({ApiClient? api, this.pushNotifications})
-    : api = api ?? ApiClient();
+  AppController({
+    ApiClient? api,
+    this.pushNotifications,
+    FlutterSecureStorage? placeStorage,
+  }) : api = api ?? ApiClient(),
+       _placeStorage = placeStorage ?? const FlutterSecureStorage();
   final ApiClient api;
   final PushNotificationService? pushNotifications;
+  final FlutterSecureStorage _placeStorage;
 
   bool initialized = false;
   bool authenticated = false;
@@ -33,9 +42,10 @@ class AppController extends ChangeNotifier {
   List<Invitation> receivedInvitations = const [];
   final List<String> _placeNames = ['집'];
   String _selectedPlaceName = '집';
+  final Map<String, String> _devicePlaces = {};
   String? pendingMembershipRequestToken;
   MembershipRequestPreview? pendingMembershipRequestPreview;
-  bool openFamilyAfterDeviceClaim = false;
+  bool openHomeAfterDeviceClaim = false;
 
   bool get isOwner =>
       selectedVault?.isOwner ?? selectedDevice?.isOwner ?? false;
@@ -43,11 +53,93 @@ class AppController extends ChangeNotifier {
   bool get canRegisterDevice => selectedVault == null || isOwner;
   List<String> get placeNames => List.unmodifiable(_placeNames);
   String get selectedPlaceName => _selectedPlaceName;
+  List<DeviceSummary> get devicesForSelectedPlace => devices
+      .where(
+        (device) =>
+            (_devicePlaces[device.id] ?? _placeNames.first) ==
+            _selectedPlaceName,
+      )
+      .toList(growable: false);
+
+  String? get _placeStorageKey {
+    final userId = user?.id;
+    return userId == null ? null : 'bbanggeut_device_places_v1_$userId';
+  }
+
+  Future<void> _loadPlacePreferences() async {
+    final key = _placeStorageKey;
+    if (key == null) return;
+    try {
+      final raw = await _placeStorage.read(key: key);
+      if (raw == null) return;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final places = (decoded['places'] as List? ?? const [])
+          .whereType<String>()
+          .map((place) => place.trim())
+          .where((place) => place.isNotEmpty)
+          .toSet()
+          .toList();
+      _placeNames
+        ..clear()
+        ..addAll(places.isEmpty ? const ['집'] : places);
+      _devicePlaces
+        ..clear()
+        ..addAll(
+          (decoded['devicePlaces'] as Map<String, dynamic>? ?? const {}).map(
+            (deviceId, place) => MapEntry(deviceId, place.toString()),
+          ),
+        );
+      final selected = decoded['selectedPlace'] as String?;
+      _selectedPlaceName = _placeNames.contains(selected)
+          ? selected!
+          : _placeNames.first;
+    } catch (_) {
+      // 저장값이 없거나 손상돼도 기본 장소로 앱을 계속 사용할 수 있다.
+    }
+  }
+
+  Future<void> _savePlacePreferences() async {
+    final key = _placeStorageKey;
+    if (key == null) return;
+    try {
+      await _placeStorage.write(
+        key: key,
+        value: jsonEncode({
+          'places': _placeNames,
+          'selectedPlace': _selectedPlaceName,
+          'devicePlaces': _devicePlaces,
+        }),
+      );
+    } catch (_) {
+      // 장소 저장 실패가 기기 연결 자체를 실패시키지는 않는다.
+    }
+  }
 
   void selectPlace(String placeName) {
     final normalized = placeName.trim();
     if (!_placeNames.contains(normalized)) return;
     _selectedPlaceName = normalized;
+    final placeDevices = devicesForSelectedPlace;
+    if (placeDevices.isNotEmpty &&
+        !placeDevices.any((device) => device.id == selectedDevice?.id)) {
+      selectedDevice = placeDevices.first;
+      deviceStatus = null;
+      videoStats = null;
+      homeSummary = null;
+      unawaited(refreshDeviceData().catchError((_) {}));
+    }
+    unawaited(_savePlacePreferences());
+    notifyListeners();
+  }
+
+  void assignDeviceToPlace(String deviceId, String placeName) {
+    final normalized = placeName.trim();
+    if (!_placeNames.contains(normalized) ||
+        !devices.any((device) => device.id == deviceId)) {
+      return;
+    }
+    _devicePlaces[deviceId] = normalized;
+    unawaited(_savePlacePreferences());
     notifyListeners();
   }
 
@@ -62,6 +154,7 @@ class AppController extends ChangeNotifier {
     }
     _placeNames.add(normalized);
     _selectedPlaceName = normalized;
+    unawaited(_savePlacePreferences());
     notifyListeners();
     return true;
   }
@@ -122,6 +215,7 @@ class AppController extends ChangeNotifier {
     if (authenticated) {
       user = await api.cachedUser;
       try {
+        await _loadPlacePreferences();
         await refreshAll();
         await resolvePendingMembershipRequest();
         await pushNotifications?.activate(api);
@@ -150,6 +244,7 @@ class AppController extends ChangeNotifier {
         persistSession: persistSession,
       );
       user = session.user;
+      await _loadPlacePreferences();
       await refreshAll();
       await resolvePendingMembershipRequest();
       requiresInitialDeviceRegistration = false;
@@ -175,6 +270,7 @@ class AppController extends ChangeNotifier {
       persistSession: persistSession,
     );
     user = session.user;
+    await _loadPlacePreferences();
     await refreshAll();
     await resolvePendingMembershipRequest();
     requiresInitialDeviceRegistration = selectedDevice == null;
@@ -481,26 +577,47 @@ class AppController extends ChangeNotifier {
     String? vaultId,
     String? newVaultName,
   }) async => _guard(() async {
-    final completingInitialRegistration = requiresInitialDeviceRegistration;
     if (!canRegisterDevice) {
       throw const ApiFailure('OWNER만 새 기기를 등록할 수 있어요.', statusCode: 403);
     }
-    await api.claimDevice(
+    final claimedDevice = await api.claimDevice(
       code,
       vaultId: vaultId,
       vaultName: vaultId == null ? newVaultName : null,
     );
     await refreshVaults();
-    if (selectedDevice == null) {
+    MemoryVault? claimedVault;
+    for (final vault in vaults) {
+      if (vault.devices.any(
+        (binding) => binding.device.id == claimedDevice.id,
+      )) {
+        claimedVault = vault;
+        break;
+      }
+    }
+    if (claimedVault == null) {
       throw const ApiFailure('기기 연결 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.');
     }
-    requiresInitialDeviceRegistration = false;
-    openFamilyAfterDeviceClaim = !completingInitialRegistration;
+    selectedVault = claimedVault;
+    devices = claimedVault.devices
+        .map((binding) => binding.device)
+        .toList(growable: false);
+    selectedDevice = devices.firstWhere(
+      (device) => device.id == claimedDevice.id,
+    );
+    assignDeviceToPlace(claimedDevice.id, _selectedPlaceName);
+    await refreshDeviceData();
   });
 
-  bool consumeOpenFamilyAfterDeviceClaim() {
-    if (!openFamilyAfterDeviceClaim) return false;
-    openFamilyAfterDeviceClaim = false;
+  void completeDeviceRegistration() {
+    requiresInitialDeviceRegistration = false;
+    openHomeAfterDeviceClaim = true;
+    notifyListeners();
+  }
+
+  bool consumeOpenHomeAfterDeviceClaim() {
+    if (!openHomeAfterDeviceClaim) return false;
+    openHomeAfterDeviceClaim = false;
     return true;
   }
 
@@ -770,7 +887,8 @@ class AppController extends ChangeNotifier {
     receivedInvitations = const [];
     pendingMembershipRequestToken = null;
     pendingMembershipRequestPreview = null;
-    openFamilyAfterDeviceClaim = false;
+    _devicePlaces.clear();
+    openHomeAfterDeviceClaim = false;
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;
