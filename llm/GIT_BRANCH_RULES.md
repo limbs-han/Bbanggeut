@@ -118,7 +118,10 @@ CI가 통과하면 기능 브랜치를 develop에 병합한다.
 
 Merge Request 옵션:
 
-- Squash commits를 켠다. MR 하나가 develop에 커밋 하나로 남는다.
+- Squash commits: 기본은 꺼져 있다.
+  브랜치가 시행착오 커밋 뭉치(wip, 테스트 수정, 오타 등)면 켜서
+  develop에 커밋 하나로 남긴다.
+  각 커밋이 독립된 논리 변경이면 끈 채로 병합한다.
 - Delete source branch when merge request is accepted를 켠다.
 
 삭제하면 안 되는 브랜치:
@@ -134,9 +137,12 @@ Merge Request 옵션:
 
     develop -> master
 
-이때는 source branch 삭제 옵션과 Squash를 모두 끈다.
-develop은 살아 있어야 하고, 커밋 이력을 눌러 붙이면
-다음 번 develop -> master 병합에서 충돌이 생긴다.
+이때 Squash를 켜지 않는다. 기본값이 꺼져 있으므로 그대로 두면 된다.
+커밋 이력을 눌러 붙이면 master와 develop의 이력이 갈라져
+다음 번 develop -> master 병합부터 충돌이 생긴다.
+
+source branch 삭제 옵션도 끈다. develop은 보호 브랜치라 실제로
+삭제되지는 않지만, 옵션을 꺼 두는 쪽이 의도가 분명하다.
 
 병합 후에 할 일은 없다. 역머지하지 않는다.
 
