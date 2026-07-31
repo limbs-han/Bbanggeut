@@ -1,5 +1,5 @@
-<img src="frontend/assets/images/bbanggeut_mascot.png" alt="빵긋" width="160">
 # 빵긋
+<img src="frontend/assets/images/bbanggeut_mascot.png" alt="빵긋" width="160">
 
 > 일반 가정의 웃긴 순간을 젯슨(엣지 AI)이 자동 포착하고 폰에서 편집해 추억으로 만드는 서비스.
 
