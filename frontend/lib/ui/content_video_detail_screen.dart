@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import '../features/comic/comic_screen.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
 import 'widgets.dart';
@@ -157,6 +158,15 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
     );
   }
 
+  Future<void> _openComic() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ComicScreen(api: widget.controller.api, video: _video),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     body: AppBackdrop(
@@ -263,6 +273,14 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                     style: FilledButton.styleFrom(backgroundColor: Colors.red),
                     icon: const Icon(Icons.content_cut_rounded),
                     label: const Text('영상 편집하기'),
+                  ),
+                  const SizedBox(height: 10),
+                  // 처리가 끝나기 전에는 전사문이 없어 만화를 만들 수 없다.
+                  OutlinedButton.icon(
+                    key: const ValueKey('open-comic'),
+                    onPressed: _video.status == 'READY' ? _openComic : null,
+                    icon: const Icon(Icons.auto_stories_rounded),
+                    label: const Text('4컷 만화 만들기'),
                   ),
                 ],
               ),
