@@ -45,7 +45,7 @@ Future<String> resolveWhisperModel({
     return target.path;
   }
 
-  // ponytail: 에셋 전체를 메모리에 올린다(167MB). Flutter에 에셋을 스트림으로
+  // ponytail: 에셋 전체를 메모리에 올린다(181MB). Flutter에 에셋을 스트림으로
   // 읽는 API가 없다. 첫 실행에 한 번뿐이라 그대로 둔다 — 저사양 기기에서
   // 문제가 되면 네이티브에서 AssetManager로 스트리밍하는 경로가 필요하다.
   final ByteData data;
