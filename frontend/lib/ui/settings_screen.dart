@@ -40,12 +40,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(
-                      height: 100,
+                      height: 132,
                       child: Stack(
                         children: [
+                          Positioned(
+                            left: 4,
+                            top: 0,
+                            width: 112,
+                            height: 48,
+                            child: Image.asset(
+                              'assets/images/bbanggeut_logo.png',
+                              fit: BoxFit.contain,
+                              alignment: Alignment.centerLeft,
+                            ),
+                          ),
                           const Positioned(
                             left: 4,
-                            top: 22,
+                            bottom: 8,
                             child: Text(
                               '설정',
                               style: TextStyle(
@@ -56,18 +67,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           Positioned(
-                            right: 40,
-                            bottom: -6,
-                            width: 116,
-                            height: 104,
+                            right: 18,
+                            bottom: -2,
+                            width: 126,
+                            height: 118,
                             child: Image.asset(
                               'assets/images/bbanggeut_mascot.png',
                               fit: BoxFit.contain,
                             ),
                           ),
                           const Positioned(
-                            right: 142,
-                            top: 23,
+                            right: 146,
+                            top: 38,
                             child: Icon(
                               Icons.favorite_rounded,
                               color: AppColors.sageSoft,
@@ -171,6 +182,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: Icons.notifications_active_outlined,
                         title: '알림 설정',
                         subtitle: '기념일 · 주간 리포트 · 새로운 추억',
+                        trailingText: '설정하기',
                         onTap: () => _notificationSettings(context),
                       ),
                     ),
@@ -437,10 +449,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 24),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-      child: SizedBox(
-        height: MediaQuery.sizeOf(dialogContext).height * .68,
-        child: const NotificationSettingsScreen(),
-      ),
+      child: SizedBox(child: const NotificationSettingsScreen(compact: true)),
     ),
   );
 
@@ -660,12 +669,14 @@ class _SettingRow extends StatelessWidget {
     required this.icon,
     required this.title,
     this.subtitle,
+    this.trailingText,
     this.onTap,
     this.danger = false,
   });
   final IconData icon;
   final String title;
   final String? subtitle;
+  final String? trailingText;
   final VoidCallback? onTap;
   final bool danger;
   @override
@@ -697,7 +708,21 @@ class _SettingRow extends StatelessWidget {
           ),
     trailing: onTap == null
         ? null
-        : const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (trailingText != null)
+                Text(
+                  trailingText!,
+                  style: const TextStyle(
+                    color: AppColors.sageDark,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              if (trailingText != null) const SizedBox(width: 4),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+            ],
+          ),
     onTap: onTap,
   );
 }

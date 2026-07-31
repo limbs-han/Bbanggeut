@@ -82,6 +82,10 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (vault.isOwner) ...[
+          _buildOwnerInvitationCard(),
+          const SizedBox(height: 14),
+        ],
         Row(
           children: [
             Expanded(
@@ -107,29 +111,42 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
           ],
         ),
         const SizedBox(height: 8),
-        SoftCard(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          child: controller.members.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 18),
-                  child: Text(
-                    '아직 등록된 가족 구성원이 없어요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.muted),
-                  ),
-                )
-              : Column(
+        if (controller.members.isEmpty)
+          const SoftCard(
+            child: Text(
+              '아직 등록된 가족 구성원이 없어요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.muted),
+            ),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final visibleCount = controller.members.length.clamp(1, 3);
+              final cardWidth =
+                  (constraints.maxWidth - ((visibleCount - 1) * 8)) /
+                  visibleCount;
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   children: controller.members.indexed.map((entry) {
-                    return Column(
-                      children: [
-                        _MemberTile(controller: controller, member: entry.$2),
-                        if (entry.$1 != controller.members.length - 1)
-                          const Divider(height: 1),
-                      ],
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        right: entry.$1 == controller.members.length - 1
+                            ? 0
+                            : 8,
+                      ),
+                      child: _MemberTile(
+                        controller: controller,
+                        member: entry.$2,
+                        width: cardWidth,
+                      ),
                     );
                   }).toList(),
                 ),
-        ),
+              );
+            },
+          ),
         if (vault.isOwner && controller.sentInvitations.isNotEmpty) ...[
           const SizedBox(height: 18),
           const Text(
@@ -148,11 +165,10 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
             ),
           ),
         ],
-        const SizedBox(height: 18),
-        if (vault.isOwner)
-          _buildOwnerInvitationCard()
-        else
+        if (!vault.isOwner) ...[
+          const SizedBox(height: 18),
           _buildMemberLinkCard(),
+        ],
         const SizedBox(height: 10),
         const Center(
           child: Text(
@@ -357,10 +373,15 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
 }
 
 class _MemberTile extends StatelessWidget {
-  const _MemberTile({required this.controller, required this.member});
+  const _MemberTile({
+    required this.controller,
+    required this.member,
+    required this.width,
+  });
 
   final AppController controller;
   final DeviceMember member;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -372,45 +393,71 @@ class _MemberTile extends StatelessWidget {
     ];
     final color =
         colors[member.user.displayName.hashCode.abs() % colors.length];
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(vertical: 4),
-      leading: CircleAvatar(
-        backgroundColor: color,
-        child: Text(
-          member.user.displayName.characters.firstOrNull ?? '?',
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: AppColors.inkSoft,
-          ),
-        ),
-      ),
-      title: Text(
-        member.user.displayName,
-        style: const TextStyle(fontWeight: FontWeight.w900),
-      ),
-      subtitle: Text(
-        member.user.email,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          StatusPill(
-            label: normalizeRole(member.role) == 'OWNER' ? 'OWNER' : 'MEMBER',
-            color: AppColors.sageSoft,
-          ),
-          if (normalizeRole(member.role) != 'OWNER' &&
-              controller.selectedVault?.isOwner == true)
-            PopupMenuButton<String>(
-              onSelected: (action) =>
-                  action == 'transfer' ? _transfer(context) : _revoke(context),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'transfer', child: Text('소유권 넘기기')),
-                PopupMenuItem(value: 'revoke', child: Text('구성원 내보내기')),
+    final isOwner = normalizeRole(member.role) == 'OWNER';
+    return SizedBox(
+      width: width,
+      child: SoftCard(
+        padding: const EdgeInsets.fromLTRB(10, 12, 8, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: color,
+                  child: Text(
+                    member.user.displayName.characters.firstOrNull ?? '?',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.inkSoft,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    member.user.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                if (!isOwner && controller.selectedVault?.isOwner == true)
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: PopupMenuButton<String>(
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      onSelected: (action) => action == 'transfer'
+                          ? _transfer(context)
+                          : _revoke(context),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'transfer',
+                          child: Text('소유권 넘기기'),
+                        ),
+                        PopupMenuItem(value: 'revoke', child: Text('구성원 내보내기')),
+                      ],
+                    ),
+                  ),
               ],
             ),
-        ],
+            const SizedBox(height: 8),
+            StatusPill(
+              label: isOwner ? 'OWNER' : 'MEMBER',
+              color: AppColors.sageSoft,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              member.user.email,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: AppColors.inkSoft),
+            ),
+          ],
+        ),
       ),
     );
   }
