@@ -1,4 +1,4 @@
-![빵긋](frontend/assets/images/bbanggeut_mascot.png)
+<img src="frontend/assets/images/bbanggeut_mascot.png" alt="빵긋" width="160">
 
 # 빵긋
 
