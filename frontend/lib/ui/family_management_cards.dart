@@ -416,16 +416,6 @@ class _MemberTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isOwner) ...[
-              const Center(
-                child: Text(
-                  '👑',
-                  key: Key('settings-owner-crown'),
-                  style: TextStyle(fontSize: 25, height: 1),
-                ),
-              ),
-              const SizedBox(height: 5),
-            ],
             Row(
               children: [
                 CircleAvatar(
@@ -470,9 +460,21 @@ class _MemberTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            StatusPill(
-              label: isOwner ? 'OWNER' : 'MEMBER',
-              color: AppColors.sageSoft,
+            Row(
+              children: [
+                StatusPill(
+                  label: isOwner ? 'OWNER' : 'MEMBER',
+                  color: AppColors.sageSoft,
+                ),
+                if (isOwner) ...[
+                  const SizedBox(width: 5),
+                  const Text(
+                    '👑',
+                    key: Key('settings-owner-crown'),
+                    style: TextStyle(fontSize: 18, height: 1),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 8),
             Text(

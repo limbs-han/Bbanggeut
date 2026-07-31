@@ -482,20 +482,9 @@ class _MemberTile extends StatelessWidget {
           ),
         ),
       ),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (isOwner)
-            const Text(
-              '👑',
-              key: Key('family-owner-crown'),
-              style: TextStyle(fontSize: 22, height: 1),
-            ),
-          Text(
-            member.user.displayName,
-            style: const TextStyle(fontWeight: FontWeight.w900),
-          ),
-        ],
+      title: Text(
+        member.user.displayName,
+        style: const TextStyle(fontWeight: FontWeight.w900),
       ),
       subtitle: Text(
         member.user.email,
@@ -509,6 +498,14 @@ class _MemberTile extends StatelessWidget {
             label: isOwner ? 'OWNER' : 'MEMBER',
             color: AppColors.sageSoft,
           ),
+          if (isOwner) ...[
+            const SizedBox(width: 5),
+            const Text(
+              '👑',
+              key: Key('family-owner-crown'),
+              style: TextStyle(fontSize: 18, height: 1),
+            ),
+          ],
           if (!isOwner && controller.selectedVault?.isOwner == true)
             PopupMenuButton<String>(
               onSelected: (action) =>
