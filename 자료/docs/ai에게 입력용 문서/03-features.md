@@ -48,7 +48,7 @@ ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호
 | `ui/media_player_surface.dart` | FN-A37 |
 | `ui/laugh_report_content_screen.dart`(`LaughReportContentScreen`) | **FN-A38 [구현]** |
 | `core/api_client.dart` | (전 화면 공용 API 호출 지점) |
-| `core/banuba_video_editor.dart`, `core/portrait_video_canvas.dart` | FN-A21 보조 |
+| `core/video_exporter.dart`, `core/video_edit_state.dart`, `core/portrait_video_canvas.dart`, `ui/local_edit_screen.dart` | FN-A21 자체 로컬 편집기 |
 | `features/stt/`(pcm_wav, speech_analysis, android_audio, whisper_model, whisper_transcriber, caption_line, transcript_store, caption_controller, caption_auto_section) | FN-A39 |
 
 ### 0.3 엣지/하드웨어 경로
@@ -152,7 +152,7 @@ flowchart TD
 | FN-A32 | 로그아웃 | API-04 | `ui/settings_screen.dart`, `ui/device_registration_screen.dart` | - |
 | FN-A33 | 회원 탈퇴 | API-05 | `ui/settings_screen.dart` | 409 OWNER_MEMBERSHIP_EXISTS |
 | FN-A34 | 기기 해제 | API-13 | `ui/settings_screen.dart` | 403, 404 |
-| FN-A35 | 알림 목록/읽음처리(로컬만) | 없음 | `ui/extra_screens.dart:46`(NotificationsScreen) | 서버 notification 테이블 없음 |
+| FN-A35 | 알림 목록/읽음처리·FCM 화면 이동 | API-58, API-60, API-61 (API-59는 클라이언트 정의만) | `ui/content_notifications_screen.dart`, `core/push_notification_service.dart` | 서버 알림 목록과 읽음 API 사용. FCM의 초대·웃음 영상 payload를 대상 화면에 연결 |
 | FN-A36 | 웃음 리포트/웃음 잔디 | API-33, API-27(간접) | `ui/extra_screens.dart`(LaughReportScreen) | - |
 | FN-A37 | 재생 공용 컴포넌트 | 없음(순수 UI) | `ui/media_player_surface.dart` | isLive 여부로 컨트롤 분기 |
 
@@ -337,7 +337,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN-A30 | 구독(보관 플랜) 관리 | 확장 — REQ-F-33 · `ui/settings_screen.dart` |
 | FN-A31 | 접근 기록 조회 | 확장 — REQ-F-34 · `ui/settings_screen.dart` |
 | FN-A34 | 기기 해제 | 확장 — REQ-F-15 · `ui/settings_screen.dart` |
-| FN-A35 | 알림 목록/안읽은개수/읽음 처리 | 서버 구현 완료(API-58~61), 앱 미연동(읽음 처리는 아직 로컬만) — REQ-F-35 · `ui/extra_screens.dart:46`(NotificationsScreen) |
+| FN-A35 | 알림 목록/안읽은개수/읽음 처리·FCM 화면 이동 | 구현(서버+앱, API-58~61) — REQ-F-35 · `ui/content_notifications_screen.dart`(실제 화면), `core/push_notification_service.dart`. `ui/extra_screens.dart:14` `NotificationsScreen`은 위임 래퍼이고 같은 파일 `_LegacyNotificationsScreen`은 미사용. 개별·모두 읽음은 서버 연동이나 `countUnreadNotifications`(API-59)는 클라이언트 정의만 있고 호출처 없음 |
 
 ### 서버(Server)
 
@@ -379,7 +379,7 @@ MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-62 서버 �
 | 2 | 기기 등록 | 구현됨 | QR/8자리 코드 claim, 자격증명 발급/회전 포함 전체 동작 |
 | 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지 → 자동 업로드 → 목록/재생 전체 동작 |
-| 5 | 영상 편집 | 구현됨 | 폰 내 수동 편집(Banuba) 동작 |
+| 5 | 영상 편집 | 구현됨 | 앱 자체 로컬 수동 편집기 동작 |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 로컬 저장+공유, 원본 서버 다운로드 동작 |
 | 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-62 서버 집계는 제안·미구현** |
 

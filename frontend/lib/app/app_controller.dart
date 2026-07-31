@@ -2,15 +2,19 @@ import 'package:flutter/foundation.dart';
 
 import '../core/api_client.dart';
 import '../core/models.dart';
+import '../core/push_notification_service.dart';
 
 const devHomeCam = bool.fromEnvironment('DEV_HOME_CAM');
 
 class AppController extends ChangeNotifier {
-  AppController({ApiClient? api}) : api = api ?? ApiClient();
+  AppController({ApiClient? api, this.pushNotifications})
+    : api = api ?? ApiClient();
   final ApiClient api;
+  final PushNotificationService? pushNotifications;
 
   bool initialized = false;
   bool authenticated = false;
+  bool requiresInitialDeviceRegistration = false;
   bool busy = false;
   bool videosLoading = false;
   String? errorMessage;
@@ -27,6 +31,8 @@ class AppController extends ChangeNotifier {
   List<DeviceMember> members = const [];
   List<Invitation> sentInvitations = const [];
   List<Invitation> receivedInvitations = const [];
+  final List<String> _placeNames = ['집'];
+  String _selectedPlaceName = '집';
   String? pendingMembershipRequestToken;
   MembershipRequestPreview? pendingMembershipRequestPreview;
   bool openFamilyAfterDeviceClaim = false;
@@ -35,6 +41,30 @@ class AppController extends ChangeNotifier {
       selectedVault?.isOwner ?? selectedDevice?.isOwner ?? false;
   bool get isMember => selectedVault != null && !selectedVault!.isOwner;
   bool get canRegisterDevice => selectedVault == null || isOwner;
+  List<String> get placeNames => List.unmodifiable(_placeNames);
+  String get selectedPlaceName => _selectedPlaceName;
+
+  void selectPlace(String placeName) {
+    final normalized = placeName.trim();
+    if (!_placeNames.contains(normalized)) return;
+    _selectedPlaceName = normalized;
+    notifyListeners();
+  }
+
+  bool addPlace(String placeName) {
+    final normalized = placeName.trim();
+    if (normalized.isEmpty ||
+        normalized.length > 15 ||
+        _placeNames.any(
+          (place) => place.toLowerCase() == normalized.toLowerCase(),
+        )) {
+      return false;
+    }
+    _placeNames.add(normalized);
+    _selectedPlaceName = normalized;
+    notifyListeners();
+    return true;
+  }
 
   Future<void> initialize() async {
     if (devHomeCam) {
@@ -94,6 +124,7 @@ class AppController extends ChangeNotifier {
       try {
         await refreshAll();
         await resolvePendingMembershipRequest();
+        await pushNotifications?.activate(api);
       } on ApiFailure catch (error) {
         if (error.statusCode == 401) {
           await api.clearSession();
@@ -119,9 +150,11 @@ class AppController extends ChangeNotifier {
         persistSession: persistSession,
       );
       user = session.user;
-      authenticated = true;
       await refreshAll();
       await resolvePendingMembershipRequest();
+      requiresInitialDeviceRegistration = false;
+      authenticated = true;
+      await pushNotifications?.activate(api);
     },
     failureMessage: (error) =>
         error.code == 'INVALID_CREDENTIALS' || error.statusCode == 401
@@ -142,15 +175,18 @@ class AppController extends ChangeNotifier {
       persistSession: persistSession,
     );
     user = session.user;
-    authenticated = true;
     await refreshAll();
     await resolvePendingMembershipRequest();
+    requiresInitialDeviceRegistration = selectedDevice == null;
+    authenticated = true;
+    await pushNotifications?.activate(api);
   });
 
   Future<void> logout() async {
     busy = true;
     notifyListeners();
     try {
+      await pushNotifications?.deactivate(api);
       await api.logout();
     } finally {
       // 서버가 응답하지 않더라도 로컬 세션은 ApiClient에서 삭제된다.
@@ -162,6 +198,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> withdraw() async {
+    await pushNotifications?.deactivate(api);
     await api.withdraw();
     _reset();
     notifyListeners();
@@ -444,6 +481,7 @@ class AppController extends ChangeNotifier {
     String? vaultId,
     String? newVaultName,
   }) async => _guard(() async {
+    final completingInitialRegistration = requiresInitialDeviceRegistration;
     if (!canRegisterDevice) {
       throw const ApiFailure('OWNER만 새 기기를 등록할 수 있어요.', statusCode: 403);
     }
@@ -453,7 +491,11 @@ class AppController extends ChangeNotifier {
       vaultName: vaultId == null ? newVaultName : null,
     );
     await refreshVaults();
-    openFamilyAfterDeviceClaim = true;
+    if (selectedDevice == null) {
+      throw const ApiFailure('기기 연결 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    }
+    requiresInitialDeviceRegistration = false;
+    openFamilyAfterDeviceClaim = !completingInitialRegistration;
   });
 
   bool consumeOpenFamilyAfterDeviceClaim() {
@@ -620,8 +662,16 @@ class AppController extends ChangeNotifier {
         receivedInvitations = receivedInvitations
             .where((item) => item.id != invitation.id)
             .toList(growable: false);
-        await refreshVaults();
-        receivedInvitations = await api.listMyInvitations();
+        await refreshAll();
+        final acceptedVaults = vaults.where(
+          (vault) => vault.devices.any(
+            (binding) => binding.device.id == invitation.deviceId,
+          ),
+        );
+        if (acceptedVaults.isNotEmpty &&
+            selectedVault?.id != acceptedVaults.first.id) {
+          await selectVault(acceptedVaults.first);
+        }
         notifyListeners();
       });
 
@@ -704,6 +754,11 @@ class AppController extends ChangeNotifier {
 
   void _reset() {
     authenticated = false;
+    requiresInitialDeviceRegistration = false;
+    _placeNames
+      ..clear()
+      ..add('집');
+    _selectedPlaceName = '집';
     user = null;
     vaults = const [];
     selectedVault = null;

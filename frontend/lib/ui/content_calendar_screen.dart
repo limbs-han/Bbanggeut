@@ -319,7 +319,7 @@ class _CalendarMonthCard extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Color(0xFF513521),
-                    fontSize: 22,
+                    fontSize: 24,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -.5,
                   ),
@@ -334,13 +334,13 @@ class _CalendarMonthCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const _WeekdayHeader(),
-          const SizedBox(height: 7),
+          const SizedBox(height: 10),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisExtent: 49,
+              mainAxisExtent: 64,
             ),
             itemCount: cellCount,
             itemBuilder: (_, index) {
@@ -385,6 +385,7 @@ class _WeekdayHeader extends StatelessWidget {
                   ? const Color(0xFF6E9339)
                   : const Color(0xFF755E4B),
               fontSize: 14,
+              height: 1.2,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -417,85 +418,88 @@ class _CalendarDayCell extends StatelessWidget {
         : saturday
         ? const Color(0xFF6E9339)
         : const Color(0xFF715A48);
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Center(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: 42,
-          height: 46,
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFFFF3E5) : Colors.transparent,
-            borderRadius: BorderRadius.circular(15),
-            border: selected
-                ? Border.all(color: const Color(0xFFF49A7C), width: 1.7)
-                : null,
-            boxShadow: selected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x25DC8A68),
-                      blurRadius: 7,
-                      offset: Offset(0, 3),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 50,
+            height: 58,
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFFFFF3E5) : Colors.transparent,
+              borderRadius: BorderRadius.circular(15),
+              border: selected
+                  ? Border.all(color: const Color(0xFFF49A7C), width: 1.7)
+                  : null,
+              boxShadow: selected
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x25DC8A68),
+                        blurRadius: 7,
+                        offset: Offset(0, 3),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                if (selected)
+                  const Positioned(
+                    right: 5,
+                    top: -8,
+                    child: Icon(
+                      Icons.eco_rounded,
+                      color: Color(0xFF8FAA4F),
+                      size: 14,
                     ),
-                  ]
-                : null,
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              if (selected)
-                const Positioned(
-                  right: 5,
-                  top: -8,
-                  child: Icon(
-                    Icons.eco_rounded,
-                    color: Color(0xFF8FAA4F),
-                    size: 14,
                   ),
-                ),
-              Positioned(
-                top: selected ? 7 : 5,
-                child: Text(
-                  '${date.day}',
-                  style: TextStyle(
-                    color: selected ? const Color(0xFFFF725E) : numberColor,
-                    fontSize: selected ? 18 : 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              if (hasVideos)
-                const Positioned(
-                  bottom: 3,
-                  child: Icon(
-                    Icons.videocam_outlined,
-                    size: 12,
-                    color: Color(0xFF71943D),
-                  ),
-                )
-              else if (schedules.isNotEmpty)
                 Positioned(
-                  bottom: 0,
+                  top: selected ? 7 : 5,
                   child: Text(
-                    schedules.first.emoji,
-                    style: const TextStyle(fontSize: 13, height: 1),
-                  ),
-                )
-              else if (selected)
-                const Positioned(
-                  bottom: 4,
-                  child: Text(
-                    '•ᴗ•',
+                    '${date.day}',
                     style: TextStyle(
-                      color: Color(0xFF8A5E49),
-                      fontSize: 7,
+                      color: selected ? const Color(0xFFFF725E) : numberColor,
+                      fontSize: selected ? 21 : 18,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
-            ],
+                if (hasVideos)
+                  const Positioned(
+                    bottom: 3,
+                    child: Icon(
+                      Icons.videocam_outlined,
+                      size: 12,
+                      color: Color(0xFF71943D),
+                    ),
+                  )
+                else if (schedules.isNotEmpty)
+                  Positioned(
+                    bottom: 0,
+                    child: Text(
+                      schedules.first.emoji,
+                      style: const TextStyle(fontSize: 13, height: 1),
+                    ),
+                  )
+                else if (selected)
+                  const Positioned(
+                    bottom: 4,
+                    child: Text(
+                      '•ᴗ•',
+                      style: TextStyle(
+                        color: Color(0xFF8A5E49),
+                        fontSize: 7,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -590,13 +594,15 @@ class _SelectedMemoryCard extends StatelessWidget {
         : videos.isEmpty
         ? const Text('등록된 영상이 없습니다', style: TextStyle(color: Color(0xFF806B5A)))
         : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final video in videos.take(3))
-                ListTile(
+              Material(
+                color: Colors.transparent,
+                child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    video.title,
+                    videos.first.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -606,13 +612,82 @@ class _SelectedMemoryCard extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => VideoDetailScreen(
                         controller: controller,
-                        video: video,
+                        video: videos.first,
                       ),
                     ),
                   ),
                 ),
+              ),
+              if (videos.length > 1)
+                TextButton.icon(
+                  key: const Key('calendar-memory-more'),
+                  onPressed: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => _DayMemoriesScreen(
+                        date: date,
+                        videos: videos,
+                        controller: controller,
+                      ),
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 42),
+                    foregroundColor: const Color(0xFF6E7F3E),
+                  ),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: Text(
+                    '더보기 (${videos.length - 1})',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
             ],
           ),
+  );
+}
+
+class _DayMemoriesScreen extends StatelessWidget {
+  const _DayMemoriesScreen({
+    required this.date,
+    required this.videos,
+    required this.controller,
+  });
+
+  final DateTime date;
+  final List<VideoMemory> videos;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text('${DateFormat('M월 d일').format(date)}의 추억')),
+    body: AppBackdrop(
+      child: SafeArea(
+        top: false,
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+          itemCount: videos.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final video = videos[index];
+            return SoftCard(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: MemoryTile(
+                api: controller.api,
+                video: video,
+                onTap: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        VideoDetailScreen(controller: controller, video: video),
+                  ),
+                ),
+                onFavorite: () => controller.toggleFavorite(video),
+              ),
+            );
+          },
+        ),
+      ),
+    ),
   );
 }
 

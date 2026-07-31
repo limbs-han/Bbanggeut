@@ -509,7 +509,7 @@
 ### 사용자 흐름
 
 1. 영상 상세 화면에서 편집을 시작하면 원본을 임시로 내려받는다(API-32 재사용).
-2. 폰 내 편집기(Banuba)로 화면 비율 변환 등 수동 편집을 진행한다.
+2. 앱 자체 로컬 편집기로 자르기·화면 비율·음량·자막·필터·스티커 등 수동 편집을 진행한다.
 3. 편집 결과는 폰에 로컬로 저장된다.
 
 **별도 서버 API는 필요하지 않다** — 편집은 전적으로 폰에서 이루어지며, 원본 다운로드는 ⑥ 단계와 동일한 API-32(다운로드 URL)를 재사용한다.
@@ -530,7 +530,7 @@
 - 요청: PathVariable `videoId`
 - 응답: `200 SignedUrlResponse` (API-31과 동일 스키마, `response-content-disposition=attachment` 쿼리가 추가된 URL)
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_NOT_READY`, 503 `OBJECT_STORAGE_UNAVAILABLE`
-- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/공유 시트로 실행하며, 편집 결과물(Banuba 산출물) 자체는 앱 로컬(`edited_videos/`)에 저장 후 공유 시트로 SNS/메신저에 전달한다(서버 API 불요).
+- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/공유 시트로 실행하며, 자체 편집 결과물은 앱 로컬(`edited_videos/`)과 기기 갤러리에 저장한 뒤 공유 시트로 SNS/메신저에 전달한다(서버 API 불요).
 
 ---
 

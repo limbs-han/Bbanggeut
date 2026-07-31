@@ -454,6 +454,7 @@ class _MemoriesOfDay extends StatelessWidget {
               .take(3)
               .map(
                 (video) => MemoryTile(
+                  api: controller.api,
                   compact: true,
                   video: video,
                   onTap: () => Navigator.push(
