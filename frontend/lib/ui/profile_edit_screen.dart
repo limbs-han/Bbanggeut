@@ -262,59 +262,63 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            SizedBox(
-              height: 154,
-              child: Stack(
-                alignment: Alignment.center,
-                clipBehavior: Clip.none,
-                children: [
-                  const Positioned(
-                    left: 0,
-                    bottom: 0,
-                    width: 92,
-                    height: 90,
-                    child: Image(
-                      image: AssetImage('assets/images/bbanggeut_mascot.png'),
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                  ProfileAvatarView(radius: 66, selection: avatar),
-                  Align(
-                    alignment: const Alignment(.43, .72),
-                    child: Material(
-                      color: Colors.white,
-                      elevation: 4,
-                      shape: const CircleBorder(),
-                      child: IconButton(
-                        key: const Key('profile-avatar-change'),
-                        onPressed: avatarBusy ? null : _chooseAvatarSource,
-                        icon: avatarBusy
-                            ? const SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.camera_alt_outlined,
-                                color: AppColors.ink,
-                              ),
+            Column(
+              children: [
+                SizedBox(
+                  height: 142,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    clipBehavior: Clip.none,
+                    children: [
+                      ProfileAvatarView(radius: 66, selection: avatar),
+                      Align(
+                        alignment: const Alignment(.43, .72),
+                        child: Material(
+                          color: Colors.white,
+                          elevation: 4,
+                          shape: const CircleBorder(),
+                          child: IconButton(
+                            key: const Key('profile-avatar-change'),
+                            onPressed: avatarBusy ? null : _chooseAvatarSource,
+                            icon: avatarBusy
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.camera_alt_outlined,
+                                    color: AppColors.ink,
+                                  ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const Positioned(
+                        right: 30,
+                        top: 22,
+                        child: Icon(
+                          Icons.auto_awesome_rounded,
+                          color: AppColors.yellowSoft,
+                          size: 26,
+                        ),
+                      ),
+                    ],
                   ),
-                  const Positioned(
-                    right: 30,
-                    top: 28,
-                    child: Icon(
-                      Icons.auto_awesome_rounded,
-                      color: AppColors.yellowSoft,
-                      size: 26,
-                    ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  widget.controller.user?.email ?? '',
+                  key: const Key('profile-email'),
+                  style: const TextStyle(
+                    color: AppColors.inkSoft,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 34),
+            const SizedBox(height: 26),
             SoftCard(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
               child: Column(

@@ -27,6 +27,9 @@ void main() {
 
     expect(find.text('프로필 수정'), findsOneWidget);
     expect(find.text('공계'), findsOneWidget);
+    expect(find.byKey(const Key('profile-email')), findsOneWidget);
+    expect(find.text('user@example.com'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('profile-avatar-change')));
     await tester.pumpAndSettle();
