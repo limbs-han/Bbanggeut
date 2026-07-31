@@ -59,6 +59,9 @@ python3 vision_benchmark_runner.py \
   --model-name YOLO11n \
   --output-dir ~/ai_benchmark_results/yolo11n-trt-fp16 \
   --device 0 \
+  --confidence 0.25 \
+  --iou 0.7 \
+  --class-id 0 \
   --warmup-frames 30 \
   --max-frames 300 \
   --repeats 3
@@ -68,6 +71,10 @@ python3 vision_benchmark_runner.py \
 `progress.json`에 저장됩니다.
 프레임 단위 바운딩박스 정답이 없는 데이터셋에서는 정확도나 mAP를 계산했다고
 표시하지 않고 `not-computed`로 남깁니다.
+
+`--class-id 0`은 COCO의 `person` 클래스만 비교한다는 뜻입니다. 공정한 모델
+비교를 위해 confidence, IoU, 클래스 필터를 모든 실행에서 같은 값으로
+명시하고, 해당 값은 `summary.json`의 `configuration`에 기록합니다.
 
 ## 데이터셋 조건
 

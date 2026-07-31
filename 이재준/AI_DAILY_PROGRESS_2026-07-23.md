@@ -4,7 +4,7 @@
 > 팀 합의 반영일: 2026-07-24  
 > 대상 장치: NVIDIA Jetson Orin Nano 8GB + Logitech BRIO 100  
 > 문서 성격: 2026-07-23 진행 보고와 이후 개발에 사용할 AI·Edge Media 기준안  
-> 관련 문서: [README.md](./README.md), [AI_EDGE_INTEGRATION_SPEC.md](./AI_EDGE_INTEGRATION_SPEC.md), [10분 시험 결과](./AI_RTSP_10MIN_TEST_2026-07-23.md)
+> 관련 문서: [README.md](../ai/README.md), [AI_EDGE_INTEGRATION_SPEC.md](../ai/AI_EDGE_INTEGRATION_SPEC.md), [10분 시험 결과](./AI_RTSP_10MIN_TEST_2026-07-23.md)
 
 이 문서는 구현된 기능과 실제 Jetson에서 검증한 기능을 구분한다. 다른 보드나
 개발 환경에서 검증한 결과는 Jetson 검증 완료로 간주하지 않는다. 실제 `device_id`,
