@@ -609,52 +609,11 @@ class _InviteEnvelopeDecoration extends StatelessWidget {
   const _InviteEnvelopeDecoration();
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 92,
-    height: 96,
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        Transform.rotate(
-          angle: -.12,
-          child: Container(
-            width: 76,
-            height: 55,
-            decoration: BoxDecoration(
-              color: const Color(0xFFD4DDA4),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFA6B471), width: 2),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x246E7F45),
-                  blurRadius: 8,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.mail_outline_rounded,
-              color: AppColors.sageDark,
-              size: 38,
-            ),
-          ),
-        ),
-        const Positioned(
-          right: 5,
-          top: 10,
-          child: Icon(Icons.favorite_rounded, color: AppColors.coral, size: 24),
-        ),
-        const Positioned(
-          left: 3,
-          bottom: 5,
-          child: Icon(
-            Icons.auto_awesome_rounded,
-            color: AppColors.yellow,
-            size: 23,
-          ),
-        ),
-      ],
-    ),
+  Widget build(BuildContext context) => Image.asset(
+    'assets/images/family_invite_envelope.png',
+    width: 102,
+    fit: BoxFit.contain,
+    filterQuality: FilterQuality.high,
   );
 }
 
@@ -662,85 +621,10 @@ class _InviteRibbonDecoration extends StatelessWidget {
   const _InviteRibbonDecoration();
 
   @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: const Size(92, 60), painter: _InviteRibbonPainter());
-}
-
-class _InviteRibbonPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final ribbon = Paint()
-      ..color = const Color(0xFFC4CD91)
-      ..style = PaintingStyle.fill;
-    final edge = Paint()
-      ..color = const Color(0xFF98A667)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-
-    final left = Path()
-      ..moveTo(size.width * .49, size.height * .34)
-      ..cubicTo(
-        size.width * .34,
-        size.height * .02,
-        size.width * .05,
-        size.height * .05,
-        size.width * .1,
-        size.height * .42,
-      )
-      ..cubicTo(
-        size.width * .16,
-        size.height * .72,
-        size.width * .38,
-        size.height * .58,
-        size.width * .49,
-        size.height * .42,
-      )
-      ..close();
-    final right = Path()
-      ..moveTo(size.width * .51, size.height * .34)
-      ..cubicTo(
-        size.width * .66,
-        size.height * .02,
-        size.width * .95,
-        size.height * .05,
-        size.width * .9,
-        size.height * .42,
-      )
-      ..cubicTo(
-        size.width * .84,
-        size.height * .72,
-        size.width * .62,
-        size.height * .58,
-        size.width * .51,
-        size.height * .42,
-      )
-      ..close();
-    final tails = Path()
-      ..moveTo(size.width * .43, size.height * .45)
-      ..lineTo(size.width * .2, size.height)
-      ..lineTo(size.width * .43, size.height * .8)
-      ..lineTo(size.width * .5, size.height * .5)
-      ..lineTo(size.width * .57, size.height * .8)
-      ..lineTo(size.width * .8, size.height)
-      ..lineTo(size.width * .57, size.height * .45)
-      ..close();
-    final knot = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-        center: Offset(size.width * .5, size.height * .4),
-        width: size.width * .2,
-        height: size.height * .28,
-      ),
-      const Radius.circular(7),
-    );
-
-    for (final path in [tails, left, right]) {
-      canvas.drawPath(path, ribbon);
-      canvas.drawPath(path, edge);
-    }
-    canvas.drawRRect(knot, ribbon);
-    canvas.drawRRect(knot, edge);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget build(BuildContext context) => Image.asset(
+    'assets/images/family_invite_ribbon.png',
+    width: 105,
+    fit: BoxFit.contain,
+    filterQuality: FilterQuality.high,
+  );
 }
