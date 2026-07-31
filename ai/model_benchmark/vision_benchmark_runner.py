@@ -51,6 +51,10 @@ def infer_runtime(model_path: Path) -> str:
     return suffix.lstrip(".") or "unknown"
 
 
+def normalize_class_ids(class_ids: Iterable[int]) -> list[int] | None:
+    return sorted(set(class_ids)) or None
+
+
 @dataclass(frozen=True)
 class FrameMeasurement:
     sample_id: str
@@ -413,7 +417,7 @@ def main() -> int:
     run_id = datetime.now(timezone.utc).strftime("vision-%Y%m%dT%H%M%SZ")
     model_name = args.model_name or model_path.stem
     runtime = infer_runtime(model_path)
-    class_ids = sorted(set(args.class_ids)) or None
+    class_ids = normalize_class_ids(args.class_ids)
     model = YOLO(str(model_path))
     measurements: list[FrameMeasurement] = []
     output_dir.mkdir(parents=True, exist_ok=True)
