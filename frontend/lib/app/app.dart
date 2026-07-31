@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../ui/auth_screen.dart';
+import '../ui/device_registration_screen.dart';
 import '../ui/main_shell.dart';
 import '../ui/onboarding_screen.dart';
 import 'app_controller.dart';
@@ -89,9 +90,16 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
         if (onboardingSeen == false) {
           return OnboardingScreen(onFinished: _finishOnboarding);
         }
-        return controller.authenticated
-            ? MainShell(controller: controller)
-            : AuthScreen(controller: controller);
+        if (!controller.authenticated) {
+          return AuthScreen(controller: controller);
+        }
+        if (controller.requiresInitialDeviceRegistration) {
+          return DeviceRegistrationScreen(
+            controller: controller,
+            canGoBack: false,
+          );
+        }
+        return MainShell(controller: controller);
       },
     ),
   );
