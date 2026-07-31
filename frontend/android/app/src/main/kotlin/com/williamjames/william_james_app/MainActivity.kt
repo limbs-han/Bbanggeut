@@ -3,8 +3,10 @@ package com.williamjames.william_james_app
 import android.content.ContentValues
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import android.text.Spannable
 import android.text.SpannableString
@@ -485,6 +487,12 @@ class MainActivity : FlutterActivity() {
         }
 
         Thread {
+            // 안드로이드 9 이하에는 MediaStore RELATIVE_PATH가 없다. 공용
+            // Movies 폴더에 직접 쓰고 미디어 스캐너에 알린다.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                saveToLegacyGallery(inputFile, title, result)
+                return@Thread
+            }
             val resolver = contentResolver
             var uri: Uri? = null
             try {
@@ -534,6 +542,44 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun saveToLegacyGallery(
+        inputFile: File,
+        title: String,
+        result: MethodChannel.Result,
+    ) {
+        try {
+            val galleryDirectory = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+                "WilliamJames",
+            )
+            if (!galleryDirectory.isDirectory && !galleryDirectory.mkdirs()) {
+                throw IllegalStateException("Could not create the gallery folder.")
+            }
+            val destination = File(galleryDirectory, buildUniqueGalleryFileName(title))
+            FileInputStream(inputFile).use { inputStream ->
+                FileOutputStream(destination).use { outputStream ->
+                    inputStream.copyTo(outputStream, 128 * 1024)
+                }
+            }
+            // 스캐너에 알리지 않으면 갤러리 앱 목록에 뜨지 않는다.
+            MediaScannerConnection.scanFile(
+                this,
+                arrayOf(destination.absolutePath),
+                arrayOf("video/mp4"),
+                null,
+            )
+            runOnUiThread { result.success(destination.absolutePath) }
+        } catch (failure: Exception) {
+            runOnUiThread {
+                result.error(
+                    "GALLERY_SAVE_FAILED",
+                    failure.message ?: "Could not save the video to the gallery.",
+                    null,
+                )
+            }
+        }
     }
 
     private fun buildUniqueGalleryFileName(title: String): String {

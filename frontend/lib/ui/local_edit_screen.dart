@@ -11,11 +11,11 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
-import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
 import '../core/saved_video_edit.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
+import '../editor/editor_ar_effects.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
 import '../editor/editor_platform.dart';
@@ -48,7 +48,6 @@ class LocalEditScreen extends StatefulWidget {
 class _LocalEditScreenState extends State<LocalEditScreen> {
   final _exporter = VideoEditorExporter();
   final _editorPlatform = const EditorPlatform();
-  final _banubaEditor = BanubaVideoEditor();
   VideoPlayerController? _preview;
   String? _sourcePath;
   List<String> _thumbnails = [];
@@ -59,16 +58,26 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   String _captionText = '';
   Color _captionColor = AppColors.cream;
   double _audioVolume = 1;
-  final String _selectedFilter = 'none';
-  String _arSticker = '';
   String? _status;
   String? _error;
+
+  /// 렌더링 진행률(0~1). 네이티브에서 주기적으로 읽어 온다. null이면 아직 모른다.
+  double? _exportProgress;
+  Timer? _exportProgressTimer;
+
+  /// 사용자가 렌더링을 그만뒀는지. 실패 안내와 취소 안내를 구별한다.
+  bool _exportCancelled = false;
   late VideoEditState _editState;
   EditorProjectController? _projectController;
   int _playingClipIndex = 0;
   int? _pendingPreviewSeekMs;
   bool _seekingPreview = false;
-  bool _captionsBakedIntoSource = false;
+  /// 원본 영상에 자막이 이미 구워져 있는지.
+  ///
+  /// 외부 편집기(Banuba)를 다녀오면 결과 영상에 자막이 박혀 돌아왔기 때문에
+  /// 이 값이 true가 됐다. AR을 앱 안에서 처리하도록 바꾼 뒤로는 원본이 바뀌지
+  /// 않으므로 항상 false다 — 자막은 저장할 때 한 번만 얹힌다.
+  final bool _captionsBakedIntoSource = false;
 
   /// 들린 대사로 만드는 자동 자막. 상태와 편집 로직은 전부 이쪽에 있다.
   final _autoCaptions = CaptionController();
@@ -349,7 +358,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _captionField.text = existing?.text ?? '';
     var pendingColor = existing?.color ?? _captionColor;
     var pendingBold = existing?.bold ?? true;
-    var pendingFontSize = existing?.fontSize ?? 42.0;
+    // 기준 캔버스 1280 기준 크기다. 64면 화면 너비의 5% 정도로, 배경 없이도
+    // 한눈에 읽힌다.
+    var pendingFontSize = existing?.fontSize ?? 64.0;
     final applied = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -432,11 +443,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                   Expanded(
                     child: Slider(
                       key: const Key('editor-text-size'),
-                      min: 16,
-                      max: 96,
-                      divisions: 20,
+                      min: 24,
+                      max: 144,
+                      divisions: 24,
                       label: pendingFontSize.round().toString(),
-                      value: pendingFontSize.clamp(16, 96),
+                      value: pendingFontSize.clamp(24, 144),
                       onChanged: (value) =>
                           setSheetState(() => pendingFontSize = value),
                     ),
@@ -452,27 +463,17 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                 ],
               ),
               const Text(
-                '적용 후 영상 위 텍스트 상자를 드래그하고 두 손가락으로 크기와 회전을 조절할 수 있어요.',
+                '배경 없는 글자로 얹혀요. 적용한 뒤 영상 위 글자 상자를 끌어 옮기고, '
+                '오른쪽 아래 모서리를 끌어 크기를 바꿀 수 있어요.',
                 style: TextStyle(
                   color: _editorMuted,
                   fontSize: 12,
                   height: 1.35,
                 ),
               ),
-              CaptionAutoSection(
-                controller: _autoCaptions,
-                // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
-                // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
-                estimateSeconds: _editState.durationMs > 0
-                    ? (_editState.durationMs / 1000 * 0.9).round()
-                    : null,
-                // 자막 수정도 저장 안 된 변경이다.
-                onChanged: () =>
-                    setState(() => _editState.markExternalEditApplied()),
-              ),
               const SizedBox(height: 18),
               _SheetApplyButton(
-                label: '자막 적용',
+                label: '텍스트 적용',
                 onPressed: () => Navigator.pop(sheetContext, true),
               ),
             ],
@@ -533,7 +534,102 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     return _autoCaptions.forExport(startMs: 0, endMs: _editState.durationMs);
   }
 
-  Future<void> _openBanubaArEditor() async {
+  /// AR 효과를 앱 안에서 바로 입힌다.
+  ///
+  /// 예전에는 이 버튼이 Banuba 편집 화면(별도 Activity)을 띄웠다. 앱을 벗어나
+  /// 다른 UI로 넘어갔고, 라이선스나 Activity 문제로 아무 일도 일어나지 않는
+  /// 경우가 많았다. 이제 효과는 미리보기 위에 즉시 올라가고 저장할 때 함께
+  /// 구워진다 — 화면을 벗어나지 않는다.
+  void _applyArEffect(EditorArEffect effect) {
+    final projectController = _projectController;
+    if (_saving || projectController == null) return;
+    projectController.applyArEffect(effect);
+    setState(() {
+      _appliedTools.add('ar');
+      _editState.markExternalEditApplied();
+    });
+    showAppSnack(context, '${effect.label} 효과를 켰어요. ${effect.hint}');
+  }
+
+  void _clearArEffect() {
+    final projectController = _projectController;
+    if (_saving || projectController == null) return;
+    projectController.clearArEffect();
+    setState(() {
+      _appliedTools.remove('ar');
+      _editState.markExternalEditApplied();
+    });
+  }
+
+  /// AI 자막 시트. 자막을 만들고 고치는 일은 전부 [CaptionAutoSection]이
+  /// 그대로 한다 — 여기서는 열어 주기만 한다.
+  Future<void> _showAiCaptionSheet() async {
+    if (_saving) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFFFFDFC),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          16,
+          20,
+          MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'AI 자막',
+                  style: TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: '닫기',
+                  onPressed: () => Navigator.pop(sheetContext),
+                  color: AppColors.muted,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            CaptionAutoSection(
+              controller: _autoCaptions,
+              // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
+              // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
+              estimateSeconds: _editState.durationMs > 0
+                  ? (_editState.durationMs / 1000 * 0.9).round()
+                  : null,
+              // 자막 수정도 저장 안 된 변경이다.
+              onChanged: () =>
+                  setState(() => _editState.markExternalEditApplied()),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              '만들어진 자막은 저장할 때 영상에 함께 구워져요. 줄을 눌러 고칠 수 있어요.',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveEdit() async {
     final preview = _preview;
     final projectController = _projectController;
     if (_saving ||
@@ -543,95 +639,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       return;
     }
 
-    setState(() {
-      _saving = true;
-      _error = null;
-      _status = '현재 컷 편집을 Banuba AR 편집기로 넘기고 있어요';
-    });
-
-    try {
-      if (!await _banubaEditor.isConfigured) {
-        throw const BanubaEditorException(
-          'Banuba Video Editor SDK용 라이선스 토큰을 설정해 주세요.',
-        );
-      }
-      if (preview.value.isPlaying) await preview.pause();
+    // 렌더링 중 재생이 계속 돌면 디코더를 나눠 쓰다 내보내기가 깨진다.
+    if (preview.value.isPlaying) {
+      await preview.pause();
       projectController.setPlaying(false);
-
-      final stagedProject = _projectWithManualCaption(
-        projectController.project,
-      );
-      final stagedCaptions = _captionsForProject(
-        stagedProject,
-        _sourceCaptionsForExport(),
-      );
-      final stagedPath =
-          stagedProject.requiresRendering(
-            hasCaptions: stagedCaptions.isNotEmpty,
-          )
-          ? await _editorPlatform.exportProject(
-              project: stagedProject,
-              outputPath: _buildOutputPath(prefix: 'banuba_input'),
-              captions: stagedCaptions,
-            )
-          : stagedProject.sourceVideoPath;
-      if (!mounted) return;
-
-      final result = await _banubaEditor.edit(
-        sourcePaths: [stagedPath],
-        outputName: _safeTitle(widget.video.title),
-      );
-      if (!mounted) return;
-      if (result == null) {
-        setState(() {
-          _saving = false;
-          _status = null;
-        });
-        return;
-      }
-
-      setState(() {
-        _status = 'Banuba AR 결과를 편집 화면에 적용하고 있어요';
-      });
-      await _replaceEditorSource(result.videoPath, restartCaptions: false);
-      if (!mounted) return;
-      setState(() {
-        _captionsBakedIntoSource = true;
-        _captionText = '';
-        _arSticker = '';
-        _audioVolume = 1;
-        _appliedTools
-          ..clear()
-          ..add('ar');
-        _editState.markExternalEditApplied();
-        _saving = false;
-        _status = null;
-      });
-      showAppSnack(context, 'Banuba 얼굴 AR 효과를 적용했어요.');
-    } catch (failure) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _status = null;
-        _error = '$failure';
-      });
-      showAppSnack(context, '$failure', error: true);
-    }
-  }
-
-  Future<void> _saveEdit() async {
-    final projectController = _projectController;
-    if (_saving ||
-        _preview == null ||
-        _sourcePath == null ||
-        projectController == null) {
-      return;
     }
 
     setState(() {
       _saving = true;
       _error = null;
-      _status = '편집 영상을 렌더링하고 있어요';
+      _exportProgress = null;
+      _exportCancelled = false;
+      _status = '편집 내용을 영상으로 만들고 있어요';
     });
     projectController.setExportState(
       const EditorExportState(phase: EditorExportPhase.preparing, progress: 0),
@@ -648,7 +667,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       final requiresRendering = exportProject.requiresRendering(
         hasCaptions: exportCaptions.isNotEmpty,
       );
-      late final String outputPath;
+      final String outputPath;
       if (requiresRendering) {
         projectController.setExportState(
           const EditorExportState(
@@ -656,36 +675,32 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             progress: 0,
           ),
         );
-        outputPath = await _editorPlatform.exportProject(
-          project: exportProject,
-          outputPath: _buildOutputPath(),
-          captions: exportCaptions,
-        );
+        _startExportProgressPolling();
+        try {
+          outputPath = await _editorPlatform.exportProject(
+            project: exportProject,
+            outputPath: _buildOutputPath(),
+            captions: exportCaptions,
+          );
+        } finally {
+          _stopExportProgressPolling();
+        }
       } else {
         outputPath = exportProject.sourceVideoPath;
       }
       final file = File(outputPath);
       if (!await file.exists() || (await file.length()) == 0) {
-        throw const VideoExportException('렌더링된 파일이 비어 있어요.');
+        throw const VideoExportException('만들어진 영상 파일이 비어 있어요.');
       }
       if (mounted) {
-        setState(
-          () => _status = requiresRendering
-              ? '렌더링을 마쳤어요. 갤러리에 저장하고 있어요'
-              : '원본 화질 그대로 바로 저장하고 있어요',
-        );
+        setState(() {
+          _exportProgress = null;
+          _status = requiresRendering
+              ? '휴대폰 갤러리에 저장하고 있어요'
+              : '원본 화질 그대로 갤러리에 저장하고 있어요';
+        });
       }
-      var hasGalleryAccess = await Gal.hasAccess();
-      if (!hasGalleryAccess) {
-        hasGalleryAccess = await Gal.requestAccess();
-      }
-      if (!hasGalleryAccess) {
-        throw const EditorPlatformException('갤러리에 저장하려면 사진 및 동영상 저장 권한이 필요해요.');
-      }
-      await _editorPlatform.saveToGallery(
-        inputPath: outputPath,
-        title: _safeTitle(widget.video.title),
-      );
+      await _saveToPhoneGallery(outputPath);
       if (!mounted) return;
       _editState.markSaved();
       projectController.setExportState(
@@ -696,33 +711,99 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       );
       setState(() {
         _saving = false;
+        _exportProgress = null;
         _status = '갤러리에 저장되었습니다';
       });
-      showAppSnack(context, '갤러리에 저장되었습니다');
+      showAppSnack(context, '휴대폰 갤러리에 저장되었습니다');
       Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
-    } on EditorPlatformException catch (failure) {
-      if (!mounted) return;
-      projectController.setExportState(
-        EditorExportState(phase: EditorExportPhase.failed, message: '$failure'),
-      );
-      setState(() {
-        _saving = false;
-        _error = '$failure';
-        _status = null;
-      });
-      showAppSnack(context, '$failure', error: true);
     } catch (failure) {
+      _stopExportProgressPolling();
       if (!mounted) return;
+      final cancelled = _exportCancelled;
       projectController.setExportState(
-        EditorExportState(phase: EditorExportPhase.failed, message: '$failure'),
+        EditorExportState(
+          phase: cancelled
+              ? EditorExportPhase.cancelled
+              : EditorExportPhase.failed,
+          message: '$failure',
+        ),
       );
       setState(() {
         _saving = false;
-        _error = '$failure';
+        _exportProgress = null;
+        _exportCancelled = false;
+        // 사용자가 그만둔 것은 오류가 아니다. 편집 내용은 그대로 남는다.
+        _error = cancelled ? null : '$failure';
         _status = null;
       });
-      showAppSnack(context, '$failure', error: true);
+      showAppSnack(
+        context,
+        cancelled ? '저장을 그만뒀어요. 편집 내용은 그대로 있어요.' : '저장하지 못했어요. $failure',
+        error: !cancelled,
+      );
     }
+  }
+
+  /// 편집 결과를 휴대폰 갤러리에 넣는다.
+  ///
+  /// **왜 권한으로 막지 않는가**: 예전에는 `Gal.hasAccess()`가 false면 곧바로
+  /// 예외를 던져 저장이 시작조차 못 했다. 안드로이드 10부터 MediaStore에 내
+  /// 앱이 만든 영상을 넣는 데는 권한이 필요 없다 — 거절된 권한 하나 때문에
+  /// 저장 전체가 막히는 게 실제 증상이었다. 그래서 권한은 요청만 해 보고,
+  /// 저장은 MediaStore로 직접 한다. 그쪽이 실패하면 gal로 한 번 더 시도한다.
+  Future<void> _saveToPhoneGallery(String videoPath) async {
+    try {
+      if (!await Gal.hasAccess()) await Gal.requestAccess();
+    } catch (_) {
+      // 권한 확인 자체가 실패하는 기기도 있다. 저장은 그대로 시도한다.
+    }
+    try {
+      await _editorPlatform.saveToGallery(
+        inputPath: videoPath,
+        title: _safeTitle(widget.video.title),
+      );
+    } on EditorPlatformException catch (failure) {
+      try {
+        await Gal.putVideo(videoPath, album: '빵긋');
+      } on GalException catch (galFailure) {
+        throw EditorPlatformException('$failure (${galFailure.type.message})');
+      }
+    }
+  }
+
+  /// 렌더링을 중간에 그만둔다. 긴 영상에서 화면에 갇히지 않게 한다.
+  Future<void> _cancelExport() async {
+    if (!_saving || _exportCancelled) return;
+    setState(() {
+      _exportCancelled = true;
+      _status = '만들던 영상을 정리하고 있어요';
+    });
+    try {
+      await _editorPlatform.cancelExport();
+    } catch (_) {
+      // 이미 끝났거나 취소를 못 받아도 아래 catch에서 상태를 되돌린다.
+    }
+  }
+
+  void _startExportProgressPolling() {
+    _exportProgressTimer?.cancel();
+    _exportProgressTimer = Timer.periodic(
+      const Duration(milliseconds: 400),
+      (_) async {
+        try {
+          final progress = await _editorPlatform.getExportProgress();
+          if (!mounted || _exportProgressTimer == null) return;
+          setState(() => _exportProgress = progress);
+        } catch (_) {
+          // 진행률은 부가 정보다. 못 읽어도 내보내기는 계속 돈다.
+        }
+      },
+    );
+  }
+
+  void _stopExportProgressPolling() {
+    _exportProgressTimer?.cancel();
+    _exportProgressTimer = null;
   }
 
   List<Map<String, Object>> _captionsForProject(
@@ -781,6 +862,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   @override
   void dispose() {
+    _stopExportProgressPolling();
     final preview = _preview;
     if (preview != null) {
       preview.removeListener(_onPreviewChanged);
@@ -1028,10 +1110,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         controller: preview,
         projectController: projectController,
         canvas: project.canvas,
+        look: project.look,
         captionText: _captionText,
         captionColor: _captionColor,
-        filter: _selectedFilter,
-        arSticker: _arSticker,
+        onLayerChanged: () => setState(_editState.markExternalEditApplied),
         autoCaptionText: _captionsBakedIntoSource
             ? null
             : autoCaptionAt(
@@ -1044,6 +1126,14 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       currentTime: _time(Duration(milliseconds: project.playheadMs)),
       totalTime: _time(Duration(milliseconds: project.durationMs)),
       saving: _saving,
+      exportProgress: _exportProgress,
+      exportStatus: _status,
+      onExportCancel: _cancelExport,
+      aiCaptionSummary: _autoCaptions.message(
+        estimateSeconds: _editState.durationMs > 0
+            ? (_editState.durationMs / 1000 * 0.9).round()
+            : null,
+      ),
       onBack: () => Navigator.maybePop(context),
       onSave: _saveEdit,
       onPlay: _togglePlayback,
@@ -1058,7 +1148,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onVolumeChanged: _setAudioVolume,
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
-      onAr: _openBanubaArEditor,
+      onArEffectSelected: _applyArEffect,
+      onArEffectCleared: _clearArEffect,
+      onAiCaption: _showAiCaptionSheet,
       onToolSelected: _selectEditorTool,
     );
   }
@@ -1164,10 +1256,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   void _addSticker(String sticker) {
     _projectController?.addSticker(sticker);
     setState(() {
-      _arSticker = '';
       _appliedTools.add('sticker');
       _editState.markExternalEditApplied();
     });
+    showAppSnack(context, '스티커를 놓았어요. 끌어 옮기고 모서리로 크기를 바꿔 보세요.');
   }
 
   String _time(Duration value) {
@@ -1508,20 +1600,26 @@ class _PreviewSurface extends StatelessWidget {
     required this.controller,
     required this.projectController,
     required this.canvas,
+    required this.look,
     required this.captionText,
     required this.captionColor,
-    required this.filter,
-    required this.arSticker,
+    required this.onLayerChanged,
     this.autoCaptionText,
   });
 
   final VideoPlayerController controller;
   final EditorProjectController projectController;
   final EditorCanvas canvas;
+
+  /// 영상 전체 색감. AR 효과가 정해 준다.
+  final EditorLook look;
+
   final String captionText;
   final Color captionColor;
-  final String filter;
-  final String arSticker;
+
+  /// 글자·스티커를 옮기거나 크기를 바꾸거나 지웠을 때. 화면이 "저장 안 된
+  /// 변경"으로 표시한다.
+  final VoidCallback onLayerChanged;
 
   /// 지금 재생 위치의 자동 자막. 손 자막이 있으면 그리지 않는다 — 같은 자리라
   /// 겹치면 읽을 수 없다.
@@ -1565,7 +1663,7 @@ class _PreviewSurface extends StatelessWidget {
                       canvas: canvas,
                       child: Center(
                         child: ColorFiltered(
-                          colorFilter: _colorFilter(filter),
+                          colorFilter: _lookFilter(look),
                           child: FittedBox(
                             fit: BoxFit.contain,
                             child: SizedBox(
@@ -1587,31 +1685,50 @@ class _PreviewSurface extends StatelessWidget {
                         key: ValueKey(layer.id),
                         controller: projectController,
                         layer: layer,
-                        childBuilder: (context, previewWidth) => Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: layer.backgroundColor,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
+                        onChanged: onLayerChanged,
+                        // 배경 없는 글자. 크기는 Transform이 아니라 글자 크기
+                        // 자체에 곱한다 — 그래야 상자(테두리·손잡이)가 글자와
+                        // 같이 커지고 줄어든다.
+                        childBuilder: (context, previewWidth, scale) {
+                          final text = Text(
                             layer.text,
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: layer.color,
-                              fontSize: (layer.fontSize * previewWidth / 1280)
-                                  .clamp(12.0, 48.0),
+                              height: 1.2,
+                              fontSize:
+                                  (layer.fontSize *
+                                          previewWidth /
+                                          _referenceCanvasWidth *
+                                          scale)
+                                      .clamp(9.0, 220.0),
                               fontWeight: layer.bold
                                   ? FontWeight.w900
                                   : FontWeight.w400,
                               shadows: const [
-                                Shadow(color: Colors.black38, blurRadius: 2),
+                                Shadow(
+                                  color: Color(0xB3000000),
+                                  blurRadius: 6,
+                                  offset: Offset(0, 1),
+                                ),
                               ],
                             ),
-                          ),
-                        ),
+                          );
+                          return ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: previewWidth * 0.86,
+                            ),
+                            child: layer.backgroundColor.a == 0
+                                ? text
+                                : DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: layer.backgroundColor,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: text,
+                                  ),
+                          );
+                        },
                       ),
                     for (final layer
                         in projectController.project.stickerLayers.where(
@@ -1623,25 +1740,20 @@ class _PreviewSurface extends StatelessWidget {
                         key: ValueKey(layer.id),
                         controller: projectController,
                         layer: layer,
-                        childBuilder: (_, previewWidth) => Text(
+                        onChanged: onLayerChanged,
+                        childBuilder: (_, previewWidth, scale) => Text(
                           layer.value,
                           style: TextStyle(
-                            fontSize: (previewWidth * 0.12).clamp(34.0, 68.0),
+                            // 내보내기(EditorLayerOverlay.kt)가 쓰는 기준
+                            // 크기와 같은 비율로 그린다.
+                            fontSize:
+                                (previewWidth *
+                                        _referenceStickerFontSize /
+                                        _referenceCanvasWidth *
+                                        scale)
+                                    .clamp(14.0, 260.0),
                             shadows: const [
                               Shadow(color: Colors.black38, blurRadius: 6),
-                            ],
-                          ),
-                        ),
-                      ),
-                    if (arSticker.isNotEmpty)
-                      Align(
-                        alignment: const Alignment(0, -0.28),
-                        child: Text(
-                          arSticker,
-                          style: const TextStyle(
-                            fontSize: 64,
-                            shadows: [
-                              Shadow(color: Colors.black38, blurRadius: 8),
                             ],
                           ),
                         ),
@@ -1685,8 +1797,10 @@ class _PreviewSurface extends StatelessWidget {
     );
   }
 
-  ColorFilter _colorFilter(String filter) => switch (filter) {
-    'mono' => const ColorFilter.matrix([
+  /// 미리보기 색감. 내보내기 쪽(EditorProjectExporter.kt)이 같은 이름으로
+  /// media3 필터를 붙인다.
+  ColorFilter _lookFilter(EditorLook look) => switch (look) {
+    EditorLook.mono => const ColorFilter.matrix([
       0.2126,
       0.7152,
       0.0722,
@@ -1708,7 +1822,7 @@ class _PreviewSurface extends StatelessWidget {
       1,
       0,
     ]),
-    'warm' => const ColorFilter.matrix([
+    EditorLook.warm => const ColorFilter.matrix([
       1.08,
       0.04,
       0,
@@ -1730,7 +1844,7 @@ class _PreviewSurface extends StatelessWidget {
       1,
       0,
     ]),
-    'vivid' => const ColorFilter.matrix([
+    EditorLook.vivid => const ColorFilter.matrix([
       1.2,
       -0.1,
       -0.1,
@@ -1752,95 +1866,264 @@ class _PreviewSurface extends StatelessWidget {
       1,
       0,
     ]),
-    _ => const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+    // 살짝 밝고 채도를 낮춘 보정. 얼굴에 쓰는 부드러운 톤이다.
+    EditorLook.soft => const ColorFilter.matrix([
+      0.9056,
+      0.0858,
+      0.0086,
+      0,
+      12,
+      0.0256,
+      0.9658,
+      0.0086,
+      0,
+      12,
+      0.0256,
+      0.0858,
+      0.8886,
+      0,
+      14,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ]),
+    EditorLook.none => const ColorFilter.mode(
+      Colors.transparent,
+      BlendMode.dst,
+    ),
   };
 }
 
-typedef _LayerChildBuilder =
-    Widget Function(BuildContext context, double previewWidth);
+/// 글자·스티커 크기의 기준 캔버스 너비. 내보내기 쪽도 같은 값을 쓴다 —
+/// 미리보기에서 본 크기가 저장된 영상에서도 같아야 한다.
+const _referenceCanvasWidth = 1280.0;
 
+/// 스티커 기본 글자 크기(EditorLayerOverlay.kt와 같은 값).
+const _referenceStickerFontSize = 110.0;
+
+typedef _LayerChildBuilder =
+    Widget Function(BuildContext context, double previewWidth, double scale);
+
+/// 영상 위에 얹힌 글자·스티커 하나를 그리고 조작한다.
+///
+/// **왜 [CustomSingleChildLayout]인가**: 예전에는 [Align]에 정규화 좌표를
+/// 그대로 넣었다. Align의 alignment는 "부모 크기 - 자식 크기" 안에서의 비율
+/// 이어서, 손가락을 1px 옮기면 상자는 1px보다 더 움직였다 — 끌면 손끝에서
+/// 달아나 위치를 맞출 수 없었다. 이 델리게이트는 자식의 **중심**을 좌표에
+/// 정확히 놓으므로 드래그가 손가락을 그대로 따라온다.
+///
+/// 손잡이는 상자 바깥이 아니라 [_handleInset]만큼 넓힌 여백 안쪽에 놓는다.
+/// RenderBox는 자기 크기 밖의 좌표를 hit test에서 걸러내므로, 바깥에 두면
+/// 눌러도 반응하지 않는다.
 class _EditableLayerOverlay extends StatefulWidget {
   const _EditableLayerOverlay({
     super.key,
     required this.controller,
     required this.layer,
     required this.childBuilder,
+    required this.onChanged,
   });
 
   final EditorProjectController controller;
   final EditorTimedLayer layer;
   final _LayerChildBuilder childBuilder;
+  final VoidCallback onChanged;
 
   @override
   State<_EditableLayerOverlay> createState() => _EditableLayerOverlayState();
 }
 
 class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
+  static const _handleInset = 15.0;
+  static const _handleSize = 30.0;
+
   late NormalizedPoint _position;
   double _startScale = 1;
   double _startRotation = 0;
+  double _resizeStartScale = 1;
+  double _resizeTravel = 0;
 
   @override
   Widget build(BuildContext context) => Positioned.fill(
     child: LayoutBuilder(
       builder: (context, constraints) {
+        final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
+        final height = constraints.maxHeight <= 0 ? 1.0 : constraints.maxHeight;
         final selected =
             widget.controller.project.selectedLayerId == widget.layer.id;
-        return Align(
-          alignment: Alignment(
-            widget.layer.position.x * 2 - 1,
-            widget.layer.position.y * 2 - 1,
-          ),
-          child: GestureDetector(
-            key: Key('editor-layer-${widget.layer.id}'),
-            behavior: HitTestBehavior.translucent,
-            onTap: () => widget.controller.selectLayer(widget.layer.id),
-            onScaleStart: (_) {
-              _position = widget.layer.position;
-              _startScale = widget.layer.scale;
-              _startRotation = widget.layer.rotationDegrees;
-              widget.controller.beginLayerGesture(widget.layer.id);
-            },
-            onScaleUpdate: (details) {
-              final width = constraints.maxWidth <= 0
-                  ? 1.0
-                  : constraints.maxWidth;
-              final height = constraints.maxHeight <= 0
-                  ? 1.0
-                  : constraints.maxHeight;
-              _position = _position.translate(
-                details.focalPointDelta.dx / width,
-                details.focalPointDelta.dy / height,
-              );
-              widget.controller.updateSelectedLayerTransform(
-                position: _position,
-                scale: _startScale * details.scale,
-                rotationDegrees:
-                    _startRotation + details.rotation * 180 / math.pi,
-              );
-            },
-            onScaleEnd: (_) => widget.controller.endLayerGesture(),
-            child: Transform.rotate(
-              angle: widget.layer.rotationDegrees * math.pi / 180,
-              child: Transform.scale(
-                scale: widget.layer.scale,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: selected
-                        ? Border.all(color: AppColors.coral, width: 2)
-                        : null,
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(3),
-                    child: widget.childBuilder(context, constraints.maxWidth),
+        return CustomSingleChildLayout(
+          delegate: _LayerCenterLayout(widget.layer.position),
+          child: Transform.rotate(
+            angle: widget.layer.rotationDegrees * math.pi / 180,
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(_handleInset),
+                  child: GestureDetector(
+                    key: Key('editor-layer-${widget.layer.id}'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => widget.controller.selectLayer(widget.layer.id),
+                    onScaleStart: (_) {
+                      _position = widget.layer.position;
+                      _startScale = widget.layer.scale;
+                      _startRotation = widget.layer.rotationDegrees;
+                      widget.controller.beginLayerGesture(widget.layer.id);
+                    },
+                    onScaleUpdate: (details) {
+                      _position = _position.translate(
+                        details.focalPointDelta.dx / width,
+                        details.focalPointDelta.dy / height,
+                      );
+                      widget.controller.updateSelectedLayerTransform(
+                        position: _position,
+                        scale: _startScale * details.scale,
+                        rotationDegrees:
+                            _startRotation + details.rotation * 180 / math.pi,
+                      );
+                    },
+                    onScaleEnd: (_) {
+                      widget.controller.endLayerGesture();
+                      widget.onChanged();
+                    },
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: selected
+                            ? Border.all(color: AppColors.coral, width: 1.6)
+                            : null,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 3,
+                        ),
+                        child: widget.childBuilder(
+                          context,
+                          width,
+                          widget.layer.scale,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                if (selected)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: _LayerHandle(
+                      dimension: _handleSize,
+                      icon: Icons.close_rounded,
+                      background: const Color(0xE6231A14),
+                      onTap: _deleteLayer,
+                    ),
+                  ),
+                if (selected)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: _LayerHandle(
+                      key: Key('editor-layer-resize-${widget.layer.id}'),
+                      dimension: _handleSize,
+                      icon: Icons.open_in_full_rounded,
+                      background: AppColors.coral,
+                      onPanStart: () {
+                        _resizeStartScale = widget.layer.scale;
+                        _resizeTravel = 0;
+                        widget.controller.beginLayerGesture(widget.layer.id);
+                      },
+                      onPanUpdate: (delta) {
+                        // 오른쪽 아래로 끌면 커진다. 두 축을 평균 내면
+                        // 대각선으로 끄는 느낌이 자연스럽다.
+                        _resizeTravel += (delta.dx + delta.dy) / 2;
+                        widget.controller.updateSelectedLayerScale(
+                          (_resizeStartScale * (1 + _resizeTravel / 90)).clamp(
+                            0.2,
+                            4.0,
+                          ),
+                        );
+                      },
+                      onPanEnd: () {
+                        widget.controller.endLayerGesture();
+                        widget.onChanged();
+                      },
+                    ),
+                  ),
+              ],
             ),
           ),
         );
       },
+    ),
+  );
+
+  void _deleteLayer() {
+    widget.controller.selectLayer(widget.layer.id);
+    if (widget.controller.deleteSelectedLayer()) widget.onChanged();
+  }
+}
+
+/// 자식의 중심을 정규화 좌표에 정확히 놓는다.
+class _LayerCenterLayout extends SingleChildLayoutDelegate {
+  const _LayerCenterLayout(this.position);
+
+  final NormalizedPoint position;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      constraints.loosen();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) => Offset(
+    size.width * position.x - childSize.width / 2,
+    size.height * position.y - childSize.height / 2,
+  );
+
+  @override
+  bool shouldRelayout(_LayerCenterLayout oldDelegate) =>
+      oldDelegate.position != position;
+}
+
+class _LayerHandle extends StatelessWidget {
+  const _LayerHandle({
+    super.key,
+    required this.dimension,
+    required this.icon,
+    required this.background,
+    this.onTap,
+    this.onPanStart,
+    this.onPanUpdate,
+    this.onPanEnd,
+  });
+
+  final double dimension;
+  final IconData icon;
+  final Color background;
+  final VoidCallback? onTap;
+  final VoidCallback? onPanStart;
+  final ValueChanged<Offset>? onPanUpdate;
+  final VoidCallback? onPanEnd;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: onTap,
+    onPanStart: onPanStart == null ? null : (_) => onPanStart!(),
+    onPanUpdate: onPanUpdate == null
+        ? null
+        : (details) => onPanUpdate!(details.delta),
+    onPanEnd: onPanEnd == null ? null : (_) => onPanEnd!(),
+    child: Container(
+      width: dimension,
+      height: dimension,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: background,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.6),
+      ),
+      child: Icon(icon, color: Colors.white, size: dimension * 0.5),
     ),
   );
 }
@@ -1870,6 +2153,8 @@ class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) => GestureDetector(
       behavior: HitTestBehavior.opaque,
+      // 영상 빈 곳을 누르면 글자·스티커 조절 손잡이를 감춘다.
+      onTap: widget.controller.deselectLayer,
       onDoubleTap: widget.controller.resetCanvasTransform,
       onScaleStart: (_) {
         final canvas = widget.controller.project.canvas;

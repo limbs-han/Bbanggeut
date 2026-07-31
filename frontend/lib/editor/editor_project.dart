@@ -1,9 +1,17 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
-enum EditorTool { cut, ratio, text, audio, sticker, ar }
+/// 하단 네비게이션의 편집 도구. 나열 순서가 화면에 그려지는 순서다 —
+/// `aiCaption`은 요청대로 `ar` 바로 왼쪽에 온다.
+enum EditorTool { cut, ratio, text, audio, sticker, aiCaption, ar }
 
 enum EditorCanvasRatio { original, vertical, landscape, square, portrait }
+
+/// 영상 전체에 입히는 색감. 앱 안 AR 효과와 필터가 같이 쓴다.
+///
+/// 미리보기는 [ColorFilter], 내보내기는 media3의 RgbFilter/HslAdjustment로
+/// 같은 값을 재현한다(EditorProjectExporter.kt의 `look` 처리 참조).
+enum EditorLook { none, mono, warm, vivid, soft }
 
 enum EditorExportPhase {
   idle,
@@ -187,7 +195,9 @@ class EditorTextLayer extends EditorTimedLayer {
     super.scale,
     super.rotationDegrees,
     this.color = const Color(0xFFFFFFFF),
-    this.backgroundColor = const Color(0x99000000),
+    // 배경 없는 글자가 기본이다. 영상 위에 투명한 글자 상자로 얹히고, 어두운
+    // 화면에서도 읽히도록 미리보기·내보내기 모두 글자에 테두리를 그린다.
+    this.backgroundColor = const Color(0x00000000),
     this.fontSize = 42,
     this.bold = true,
   });
@@ -368,6 +378,8 @@ class EditorProject {
     this.stickerLayers = const [],
     this.blurLayers = const [],
     this.audio = const EditorAudio(),
+    this.look = EditorLook.none,
+    this.arEffectId,
     this.selectedTool = EditorTool.cut,
     this.selectedClipId,
     this.selectedLayerId,
@@ -406,6 +418,11 @@ class EditorProject {
   final List<EditorStickerLayer> stickerLayers;
   final List<EditorBlurLayer> blurLayers;
   final EditorAudio audio;
+  final EditorLook look;
+
+  /// 지금 적용된 앱 안 AR 효과. 패널에서 어느 카드가 켜져 있는지 표시할 때 쓴다.
+  final String? arEffectId;
+
   final EditorTool selectedTool;
   final String? selectedClipId;
   final String? selectedLayerId;
@@ -434,6 +451,7 @@ class EditorProject {
     return !directSource ||
         !originalCanvas ||
         !originalAudio ||
+        look != EditorLook.none ||
         textLayers.isNotEmpty ||
         stickerLayers.isNotEmpty ||
         blurLayers.isNotEmpty ||
@@ -483,6 +501,9 @@ class EditorProject {
     List<EditorStickerLayer>? stickerLayers,
     List<EditorBlurLayer>? blurLayers,
     EditorAudio? audio,
+    EditorLook? look,
+    String? arEffectId,
+    bool clearArEffect = false,
     EditorTool? selectedTool,
     String? selectedClipId,
     bool clearSelectedClip = false,
@@ -502,6 +523,8 @@ class EditorProject {
     stickerLayers: List.unmodifiable(stickerLayers ?? this.stickerLayers),
     blurLayers: List.unmodifiable(blurLayers ?? this.blurLayers),
     audio: audio ?? this.audio,
+    look: look ?? this.look,
+    arEffectId: clearArEffect ? null : arEffectId ?? this.arEffectId,
     selectedTool: selectedTool ?? this.selectedTool,
     selectedClipId: clearSelectedClip
         ? null
@@ -542,6 +565,7 @@ class EditorProject {
       'stickerLayers': stickerLayers.map((layer) => layer.toMap()).toList(),
       'blurLayers': blurLayers.map((layer) => layer.toMap()).toList(),
       'audio': audio.toMap(),
+      'look': look.name,
       'captions': captions,
     };
   }
