@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0",
+  "benchmarkId": "yolo-pt-comparison-20260731T052344Z",
+  "recordedAt": "2026-07-31T05:44:05Z",
+  "device": "NVIDIA Jetson Orin Nano",
+  "dataset": {
+    "name": "office-vision-v1",
+    "manifestSha256": "98098f04b473b5b7e0d176574d48e5f4f35313afd2f89827fa8df5809e0954a1",
+    "sampleCount": 9
+  },
+  "configuration": {
+    "runtime": "pytorch",
+    "device": "0",
+    "imageSize": 640,
+    "confidence": 0.25,
+    "iou": 0.7,
+    "classIds": [
+      0
+    ],
+    "classNames": [
+      "person"
+    ],
+    "warmupFrames": 30,
+    "maximumFramesPerSample": 300,
+    "repeats": 3,
+    "measuredFramesPerModel": 8100
+  },
+  "results": [
+    {
+      "model": "YOLOv8n",
+      "fps": 28.216,
+      "inferenceMeanMs": 23.172,
+      "inferenceP95Ms": 24.839,
+      "wallMeanMs": 35.441,
+      "wallP95Ms": 37.917,
+      "totalDetections": 11994,
+      "resourceSnapshotCount": 297,
+      "maximumGpuPercent": 96,
+      "maximumRamUsedMb": 3331,
+      "maximumTemperatureC": 51.968,
+      "maximumPowerMw": 7091
+    },
+    {
+      "model": "YOLO11n",
+      "fps": 23.653,
+      "inferenceMeanMs": 30.011,
+      "inferenceP95Ms": 32.539,
+      "wallMeanMs": 42.277,
+      "wallP95Ms": 45.804,
+      "totalDetections": 12144,
+      "resourceSnapshotCount": 351,
+      "maximumGpuPercent": 81,
+      "maximumRamUsedMb": 3053,
+      "maximumTemperatureC": 51.875,
+      "maximumPowerMw": 6972
+    },
+    {
+      "model": "YOLO26n",
+      "fps": 18.474,
+      "inferenceMeanMs": 41.809,
+      "inferenceP95Ms": 45.636,
+      "wallMeanMs": 54.13,
+      "wallP95Ms": 58.946,
+      "totalDetections": 11667,
+      "resourceSnapshotCount": 435,
+      "maximumGpuPercent": 85,
+      "maximumRamUsedMb": 3071,
+      "maximumTemperatureC": 51.031,
+      "maximumPowerMw": 5912
+    }
+  ],
+  "accuracy": {
+    "status": "not-computed",
+    "reason": "The dataset contains scene labels but no frame-level ground-truth boxes."
+  },
+  "provisionalDecision": {
+    "model": "YOLOv8n",
+    "reason": "Best measured PyTorch throughput and latency. Final selection requires ground-truth accuracy evaluation."
+  }
+}
