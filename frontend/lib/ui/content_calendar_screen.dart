@@ -123,10 +123,7 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
         bottom: false,
         child: Column(
           children: [
-            _CalendarHeroHeader(
-              onBack: widget.onBack ?? () => Navigator.maybePop(context),
-              onAdd: _openEditor,
-            ),
+            _CalendarHeroHeader(onAdd: _openEditor),
             Expanded(
               child: ListView(
                 key: const PageStorageKey('calendar-scroll'),
@@ -167,9 +164,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
 }
 
 class _CalendarHeroHeader extends StatelessWidget {
-  const _CalendarHeroHeader({required this.onBack, required this.onAdd});
+  const _CalendarHeroHeader({required this.onAdd});
 
-  final VoidCallback onBack;
   final VoidCallback onAdd;
 
   @override
@@ -194,15 +190,6 @@ class _CalendarHeroHeader extends StatelessWidget {
           top: 22,
           child: Row(
             children: [
-              _HeaderButton(
-                onPressed: onBack,
-                child: const Icon(
-                  Icons.chevron_left_rounded,
-                  color: Color(0xFF533722),
-                  size: 30,
-                ),
-              ),
-              const SizedBox(width: 12),
               const Text(
                 '캘린더',
                 style: TextStyle(
@@ -242,26 +229,6 @@ class _CalendarHeroHeader extends StatelessWidget {
           ),
         ),
       ],
-    ),
-  );
-}
-
-class _HeaderButton extends StatelessWidget {
-  const _HeaderButton({required this.onPressed, required this.child});
-
-  final VoidCallback onPressed;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: const Color(0xFFFFFCF7),
-    elevation: 4,
-    shadowColor: const Color(0x22A8734E),
-    borderRadius: BorderRadius.circular(18),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onPressed,
-      child: SizedBox(width: 48, height: 48, child: Center(child: child)),
     ),
   );
 }
@@ -340,7 +307,7 @@ class _CalendarMonthCard extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisExtent: 64,
+              mainAxisExtent: 72,
             ),
             itemCount: cellCount,
             itemBuilder: (_, index) {
@@ -579,10 +546,25 @@ class _SelectedMemoryCard extends StatelessWidget {
     borderColor: const Color(0xFFE3E1C2),
     iconAsset: 'assets/images/calendar_memory_card.png',
     title: '${DateFormat('M월 d일').format(date)}의 추억',
-    trailing: const Icon(
-      Icons.favorite_border_rounded,
-      color: Color(0xFFD4D9A6),
-    ),
+    trailing: videos.isEmpty
+        ? const Icon(Icons.favorite_border_rounded, color: Color(0xFFD4D9A6))
+        : TextButton(
+            key: const Key('calendar-memory-more'),
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => _DayMemoriesScreen(
+                  date: date,
+                  videos: videos,
+                  controller: controller,
+                ),
+              ),
+            ),
+            child: const Text(
+              '더보기',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
     child: loading
         ? const SizedBox(
             width: 18,
@@ -618,29 +600,6 @@ class _SelectedMemoryCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (videos.length > 1)
-                TextButton.icon(
-                  key: const Key('calendar-memory-more'),
-                  onPressed: () => Navigator.push<void>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => _DayMemoriesScreen(
-                        date: date,
-                        videos: videos,
-                        controller: controller,
-                      ),
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 42),
-                    foregroundColor: const Color(0xFF6E7F3E),
-                  ),
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                  label: Text(
-                    '더보기 (${videos.length - 1})',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ),
             ],
           ),
   );

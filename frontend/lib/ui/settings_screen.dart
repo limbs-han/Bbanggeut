@@ -6,7 +6,6 @@ import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
 import 'family_management_cards.dart';
 import 'invitation_inbox_screen.dart';
-import 'laugh_report_content_screen.dart';
 import 'notification_settings_screen.dart';
 import 'password_change_screen.dart';
 import 'profile_edit_screen.dart';
@@ -153,7 +152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const _GroupLabel('가족 관리'),
+                    const _GroupLabel('가족 초대'),
                     FamilyManagementCards(
                       controller: controller,
                       onOpenInbox: () => Navigator.push(
@@ -172,12 +171,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: Icons.notifications_active_outlined,
                         title: '알림 설정',
                         subtitle: '기념일 · 주간 리포트 · 새로운 추억',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationSettingsScreen(),
-                          ),
-                        ),
+                        onTap: () => _notificationSettings(context),
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -186,19 +180,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       padding: EdgeInsets.zero,
                       child: Column(
                         children: [
-                          _SettingRow(
-                            icon: Icons.bar_chart_rounded,
-                            title: '웃음 리포트',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => LaughReportContentScreen(
-                                  controller: controller,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 1, indent: 58),
                           if (isOwner) ...[
                             _SettingRow(
                               icon: Icons.receipt_long_outlined,
@@ -341,41 +322,106 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('보관 구독'),
-            content: Text(
-              subscription.active
-                  ? '현재 ${subscription.premiumRetentionDays}일 장기 보관이 활성화되어 있어요.'
-                  : '활성화하면 ${subscription.premiumRetentionDays}일까지 보관할 수 있어요.',
+          builder: (context, setDialogState) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('닫기'),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      color: AppColors.sageSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.workspace_premium_rounded,
+                      size: 38,
+                      color: AppColors.sageDark,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '웃음 보관 구독',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    subscription.active
+                        ? '소중한 웃음 영상을 ${subscription.premiumRetentionDays}일 동안 안전하게 보관하고 있어요.'
+                        : '구독하면 소중한 웃음 영상을 ${subscription.premiumRetentionDays}일까지 오래 보관할 수 있어요.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.inkSoft,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceWarm,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.favorite_rounded,
+                          color: AppColors.coral,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            subscription.active
+                                ? '현재 구독이 활성화되어 있어요'
+                                : '웃음 영상을 더 오래 간직해요',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: () async {
+                      subscription = subscription.active
+                          ? (vaultId != null
+                                ? await controller.api.cancelVaultSubscription(
+                                    vaultId,
+                                  )
+                                : await controller.api.cancelSubscription(
+                                    deviceId!,
+                                  ))
+                          : (vaultId != null
+                                ? await controller.api
+                                      .activateVaultSubscription(vaultId)
+                                : await controller.api.activateSubscription(
+                                    deviceId!,
+                                  ));
+                      setDialogState(() {});
+                      await controller.refreshAll();
+                    },
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(50),
+                      backgroundColor: AppColors.coral,
+                    ),
+                    child: Text(subscription.active ? '구독 해지' : '구독 시작하기'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('닫기'),
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: () async {
-                  subscription = subscription.active
-                      ? (vaultId != null
-                            ? await controller.api.cancelVaultSubscription(
-                                vaultId,
-                              )
-                            : await controller.api.cancelSubscription(
-                                deviceId!,
-                              ))
-                      : (vaultId != null
-                            ? await controller.api.activateVaultSubscription(
-                                vaultId,
-                              )
-                            : await controller.api.activateSubscription(
-                                deviceId!,
-                              ));
-                  setDialogState(() {});
-                  await controller.refreshAll();
-                },
-                child: Text(subscription.active ? '구독 해지' : 'MVP 구독 활성화'),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -383,6 +429,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (context.mounted) showAppSnack(context, '$failure', error: true);
     }
   }
+
+  Future<void> _notificationSettings(BuildContext context) => showDialog<void>(
+    context: context,
+    barrierColor: Colors.black54,
+    builder: (dialogContext) => Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(dialogContext).height * .68,
+        child: const NotificationSettingsScreen(),
+      ),
+    ),
+  );
 
   Future<void> _logs(BuildContext context) async {
     final controller = widget.controller;

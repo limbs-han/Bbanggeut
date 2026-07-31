@@ -20,7 +20,7 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
-    if (name == "video_thumbnail") {
+    if (name == "video_thumbnail" || name == "banuba_sdk") {
         afterEvaluate {
             extensions.configure<LibraryExtension> {
                 compileSdk = 36
