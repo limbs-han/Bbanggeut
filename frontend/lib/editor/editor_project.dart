@@ -13,6 +13,52 @@ enum EditorCanvasRatio { original, vertical, landscape, square, portrait }
 /// 같은 값을 재현한다(EditorProjectExporter.kt의 `look` 처리 참조).
 enum EditorLook { none, mono, warm, vivid, soft }
 
+/// 글자 정렬. 미리보기와 내보내기가 같은 값을 쓴다
+/// (EditorLayerOverlay.kt의 `AlignmentSpan` 처리 참조).
+enum EditorTextAlign { left, center, right }
+
+extension EditorLookFilter on EditorLook {
+  String get label => switch (this) {
+    EditorLook.none => '원본',
+    EditorLook.soft => '보정',
+    EditorLook.warm => '따뜻',
+    EditorLook.vivid => '선명',
+    EditorLook.mono => '흑백',
+  };
+
+  /// 미리보기용 색 변환. AR 탭의 필터 카드와 영상 미리보기가 같은 것을 쓴다 —
+  /// 카드에서 본 색이 곧 영상에 입혀지는 색이어야 한다. 내보내기 쪽
+  /// (EditorProjectExporter.kt의 `lookEffect`)이 media3로 같은 값을 재현한다.
+  ColorFilter get colorFilter => switch (this) {
+    EditorLook.mono => const ColorFilter.matrix([
+      0.2126, 0.7152, 0.0722, 0, 0, //
+      0.2126, 0.7152, 0.0722, 0, 0, //
+      0.2126, 0.7152, 0.0722, 0, 0, //
+      0, 0, 0, 1, 0,
+    ]),
+    EditorLook.warm => const ColorFilter.matrix([
+      1.08, 0.04, 0, 0, 8, //
+      0, 1.02, 0, 0, 3, //
+      0, 0, 0.9, 0, -4, //
+      0, 0, 0, 1, 0,
+    ]),
+    EditorLook.vivid => const ColorFilter.matrix([
+      1.2, -0.1, -0.1, 0, 0, //
+      -0.1, 1.2, -0.1, 0, 0, //
+      -0.1, -0.1, 1.2, 0, 0, //
+      0, 0, 0, 1, 0,
+    ]),
+    // 살짝 밝고 채도를 낮춘 보정. 얼굴에 쓰는 부드러운 톤이다.
+    EditorLook.soft => const ColorFilter.matrix([
+      0.9056, 0.0858, 0.0086, 0, 12, //
+      0.0256, 0.9658, 0.0086, 0, 12, //
+      0.0256, 0.0858, 0.8886, 0, 14, //
+      0, 0, 0, 1, 0,
+    ]),
+    EditorLook.none => const ColorFilter.mode(Color(0x00000000), BlendMode.dst),
+  };
+}
+
 enum EditorExportPhase {
   idle,
   preparing,
@@ -97,6 +143,22 @@ class EditorClip {
     'timelineEndMs': timelineStartMs + durationMs,
     'arEffectId': arEffectId,
   };
+
+  /// 값으로 비교한다. 되돌리기 이력이 "손가락이 지나갔다"가 아니라 "실제로
+  /// 달라졌다"만 기록하려면 필요하다 — 구간 손잡이를 잡았다가 제자리에 놓으면
+  /// 이력이 쌓이지 않아야 한다.
+  @override
+  bool operator ==(Object other) =>
+      other is EditorClip &&
+      other.id == id &&
+      other.sourcePath == sourcePath &&
+      other.sourceStartMs == sourceStartMs &&
+      other.sourceEndMs == sourceEndMs &&
+      other.arEffectId == arEffectId;
+
+  @override
+  int get hashCode =>
+      Object.hash(id, sourcePath, sourceStartMs, sourceEndMs, arEffectId);
 }
 
 class EditorCanvas {
@@ -181,8 +243,13 @@ abstract class EditorTimedLayer {
   final double scale;
   final double rotationDegrees;
 
+  /// 이 시각에 화면에 보이는가.
+  ///
+  /// 끝을 **포함**한다. 영상 끝까지 재생한 뒤 스티커를 놓으면 재생 위치가
+  /// 정확히 `durationMs`인데, 끝을 빼고 따지면 방금 놓은 스티커가 보이지
+  /// 않는다 — "눌러도 안 올라간다"의 정체였다.
   bool isVisibleAt(int positionMs) =>
-      positionMs >= startMs && positionMs < endMs;
+      positionMs >= startMs && positionMs <= endMs;
 }
 
 class EditorTextLayer extends EditorTimedLayer {
@@ -200,6 +267,8 @@ class EditorTextLayer extends EditorTimedLayer {
     this.backgroundColor = const Color(0x00000000),
     this.fontSize = 42,
     this.bold = true,
+    this.italic = false,
+    this.align = EditorTextAlign.center,
   });
 
   final String text;
@@ -207,6 +276,8 @@ class EditorTextLayer extends EditorTimedLayer {
   final Color backgroundColor;
   final double fontSize;
   final bool bold;
+  final bool italic;
+  final EditorTextAlign align;
 
   EditorTextLayer copyWith({
     String? text,
@@ -219,6 +290,8 @@ class EditorTextLayer extends EditorTimedLayer {
     Color? backgroundColor,
     double? fontSize,
     bool? bold,
+    bool? italic,
+    EditorTextAlign? align,
   }) => EditorTextLayer(
     id: id,
     text: text ?? this.text,
@@ -231,6 +304,8 @@ class EditorTextLayer extends EditorTimedLayer {
     backgroundColor: backgroundColor ?? this.backgroundColor,
     fontSize: (fontSize ?? this.fontSize).clamp(16.0, 160.0),
     bold: bold ?? this.bold,
+    italic: italic ?? this.italic,
+    align: align ?? this.align,
   );
 
   Map<String, Object> toMap() => {
@@ -245,7 +320,43 @@ class EditorTextLayer extends EditorTimedLayer {
     'backgroundColor': backgroundColor.toARGB32(),
     'fontSize': fontSize,
     'bold': bold,
+    'italic': italic,
+    'align': align.name,
   };
+
+  @override
+  bool operator ==(Object other) =>
+      other is EditorTextLayer &&
+      other.id == id &&
+      other.text == text &&
+      other.position == position &&
+      other.startMs == startMs &&
+      other.endMs == endMs &&
+      other.scale == scale &&
+      other.rotationDegrees == rotationDegrees &&
+      other.color == color &&
+      other.backgroundColor == backgroundColor &&
+      other.fontSize == fontSize &&
+      other.bold == bold &&
+      other.italic == italic &&
+      other.align == align;
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    text,
+    position,
+    startMs,
+    endMs,
+    scale,
+    rotationDegrees,
+    color,
+    backgroundColor,
+    fontSize,
+    bold,
+    italic,
+    align,
+  );
 }
 
 class EditorStickerLayer extends EditorTimedLayer {
@@ -287,6 +398,21 @@ class EditorStickerLayer extends EditorTimedLayer {
     'scale': scale,
     'rotationDegrees': rotationDegrees,
   };
+
+  @override
+  bool operator ==(Object other) =>
+      other is EditorStickerLayer &&
+      other.id == id &&
+      other.value == value &&
+      other.position == position &&
+      other.startMs == startMs &&
+      other.endMs == endMs &&
+      other.scale == scale &&
+      other.rotationDegrees == rotationDegrees;
+
+  @override
+  int get hashCode =>
+      Object.hash(id, value, position, startMs, endMs, scale, rotationDegrees);
 }
 
 class EditorBlurLayer extends EditorTimedLayer {
@@ -434,13 +560,25 @@ class EditorProject {
   int get durationMs =>
       clips.fold(0, (duration, clip) => duration + clip.durationMs);
 
+  /// 조각들이 원본을 처음부터 끝까지 빈틈없이 덮는가.
+  ///
+  /// **왜 조각 수를 세지 않는가**: 나눠 놓고 아무것도 지우지 않으면 조각은
+  /// 여럿이어도 이어 붙인 결과는 원본과 한 프레임도 다르지 않다. 그런데
+  /// "조각이 하나일 때만 원본 그대로"로 보면 그 경우에 영상 전체를 다시
+  /// 만들었다 — 똑같은 결과를 몇십 초 걸려 새로 인코딩한 셈이다.
+  bool get _clipsCoverWholeSource {
+    if (clips.isEmpty) return false;
+    var cursor = 0;
+    for (final clip in clips) {
+      if (clip.sourcePath != sourceVideoPath) return false;
+      if (clip.sourceStartMs != cursor) return false;
+      cursor = clip.sourceEndMs;
+    }
+    return cursor == sourceDurationMs;
+  }
+
   bool requiresRendering({bool hasCaptions = false}) {
-    final clip = clips.length == 1 ? clips.single : null;
-    final directSource =
-        clip != null &&
-        clip.sourcePath == sourceVideoPath &&
-        clip.sourceStartMs == 0 &&
-        clip.sourceEndMs == sourceDurationMs;
+    final directSource = _clipsCoverWholeSource;
     final originalCanvas =
         canvas.ratio == EditorCanvasRatio.original &&
         canvas.scale == 1 &&

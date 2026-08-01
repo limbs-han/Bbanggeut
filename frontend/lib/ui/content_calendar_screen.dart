@@ -132,8 +132,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
                   _CalendarMonthCard(
                     month: _month,
                     selected: _selected,
-                    videosOn: _videosOn,
-                    schedulesOn: _schedulesOn,
+                    videos: _videos,
+                    schedules: _state.schedules,
                     onPrevious: () => _changeMonth(-1),
                     onNext: () => _changeMonth(1),
                     onSelected: (date) => setState(() => _selected = date),
@@ -237,8 +237,8 @@ class _CalendarMonthCard extends StatelessWidget {
   const _CalendarMonthCard({
     required this.month,
     required this.selected,
-    required this.videosOn,
-    required this.schedulesOn,
+    required this.videos,
+    required this.schedules,
     required this.onPrevious,
     required this.onNext,
     required this.onSelected,
@@ -246,14 +246,51 @@ class _CalendarMonthCard extends StatelessWidget {
 
   final DateTime month;
   final DateTime selected;
-  final List<VideoMemory> Function(DateTime) videosOn;
-  final List<CalendarSchedule> Function(DateTime) schedulesOn;
+  final List<VideoMemory> videos;
+  final List<CalendarSchedule> schedules;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final ValueChanged<DateTime> onSelected;
 
+  /// 이 달에 영상이 있는 날(일).
+  ///
+  /// **왜 미리 갈라 두는가**: 예전에는 칸을 그릴 때마다 "이 날짜의 영상"을 물었고,
+  /// 그 함수는 매번 목록 전체를 훑어 새 리스트를 만들었다. 한 달 칸이 35~42개니
+  /// 한 프레임에 목록을 마흔 번 훑는 셈이다 — 한 달치 영상이 200개면 8천 번을 돌고
+  /// 리스트를 마흔 개 만들어 곧바로 버린다. 달을 넘길 때마다, 위 화면이 다시 그려질
+  /// 때마다 되풀이된다. 한 번 훑어 날짜로 갈라 두면 칸마다 조회 한 번으로 끝난다.
+  Set<int> get _videoDays {
+    final days = <int>{};
+    for (final video in videos) {
+      final startedAt = video.capturedStartAt ?? video.createdAt;
+      if (startedAt == null) continue;
+      if (startedAt.year != month.year || startedAt.month != month.month) {
+        continue;
+      }
+      days.add(startedAt.day);
+    }
+    return days;
+  }
+
+  /// 이 달의 날(일)별 일정. 매년 반복하는 일정은 연도를 따지지 않는다.
+  Map<int, List<CalendarSchedule>> get _schedulesByDay {
+    final byDay = <int, List<CalendarSchedule>>{};
+    for (final schedule in schedules) {
+      final date = schedule.date;
+      if (schedule.yearly) {
+        if (date.month != month.month) continue;
+      } else if (date.year != month.year || date.month != month.month) {
+        continue;
+      }
+      (byDay[date.day] ??= <CalendarSchedule>[]).add(schedule);
+    }
+    return byDay;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final videoDays = _videoDays;
+    final schedulesByDay = _schedulesByDay;
     final blankCount = month.weekday % 7;
     final dayCount = DateUtils.getDaysInMonth(month.year, month.month);
     final cellCount = ((blankCount + dayCount + 6) ~/ 7) * 7;
@@ -314,16 +351,13 @@ class _CalendarMonthCard extends StatelessWidget {
               if (index < blankCount || index >= blankCount + dayCount) {
                 return const SizedBox.shrink();
               }
-              final date = DateTime(
-                month.year,
-                month.month,
-                index - blankCount + 1,
-              );
+              final day = index - blankCount + 1;
+              final date = DateTime(month.year, month.month, day);
               return _CalendarDayCell(
                 date: date,
                 selected: DateUtils.isSameDay(date, selected),
-                hasVideos: videosOn(date).isNotEmpty,
-                schedules: schedulesOn(date),
+                hasVideos: videoDays.contains(day),
+                schedules: schedulesByDay[day] ?? const <CalendarSchedule>[],
                 onTap: () => onSelected(date),
               );
             },

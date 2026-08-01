@@ -1,9 +1,11 @@
 package com.williamjames.william_james_app
 
 import android.graphics.Typeface
+import android.text.Layout
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.style.AbsoluteSizeSpan
+import android.text.style.AlignmentSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
@@ -45,6 +47,7 @@ object EditorLayerOverlay {
             ?: 0x99000000.toInt()
         val fontSize = number(raw, "fontSize")?.toInt()?.coerceIn(16, 160) ?: 42
         val bold = raw["bold"] as? Boolean ?: true
+        val italic = raw["italic"] as? Boolean ?: false
         return TimedLayerText(
             startUs = startMs * 1000,
             endUs = endMs * 1000,
@@ -53,6 +56,8 @@ object EditorLayerOverlay {
             backgroundColor = backgroundColor,
             fontSize = scaled(fontSize, fontScale),
             bold = bold,
+            italic = italic,
+            alignment = alignment(raw["align"] as? String),
             settings = settings(raw),
         )
     }
@@ -71,12 +76,22 @@ object EditorLayerOverlay {
             backgroundColor = 0x00000000,
             fontSize = scaled(STICKER_FONT_SIZE, fontScale),
             bold = false,
+            italic = false,
+            alignment = Layout.Alignment.ALIGN_CENTER,
             settings = settings(raw),
         )
     }
 
     private fun scaled(fontSize: Int, fontScale: Float): Int =
         (fontSize * fontScale).roundToInt().coerceIn(8, 640)
+
+    /// 미리보기의 `EditorTextAlign`과 짝이다. 여러 줄일 때 줄들이 어느 쪽으로
+    /// 붙는지를 정한다.
+    private fun alignment(raw: String?): Layout.Alignment = when (raw) {
+        "left" -> Layout.Alignment.ALIGN_NORMAL
+        "right" -> Layout.Alignment.ALIGN_OPPOSITE
+        else -> Layout.Alignment.ALIGN_CENTER
+    }
 
     private fun settings(raw: Map<String, Any?>): OverlaySettings {
         @Suppress("UNCHECKED_CAST")
@@ -103,6 +118,8 @@ object EditorLayerOverlay {
         backgroundColor: Int,
         fontSize: Int,
         bold: Boolean,
+        italic: Boolean,
+        alignment: Layout.Alignment,
         private val settings: OverlaySettings,
     ) : TextOverlay() {
         /// 보일 때와 안 보일 때, 글은 이 둘뿐이다. 미리 만들어 두고 돌려준다.
@@ -137,14 +154,26 @@ object EditorLayerOverlay {
                 length,
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
             )
-            if (bold) {
+            val typefaceStyle = when {
+                bold && italic -> Typeface.BOLD_ITALIC
+                bold -> Typeface.BOLD
+                italic -> Typeface.ITALIC
+                else -> Typeface.NORMAL
+            }
+            if (typefaceStyle != Typeface.NORMAL) {
                 setSpan(
-                    StyleSpan(Typeface.BOLD),
+                    StyleSpan(typefaceStyle),
                     0,
                     length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
             }
+            setSpan(
+                AlignmentSpan.Standard(alignment),
+                0,
+                length,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
         }
 
         private val hidden = SpannableString("")

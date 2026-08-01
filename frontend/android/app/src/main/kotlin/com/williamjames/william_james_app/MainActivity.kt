@@ -51,13 +51,25 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val VIDEO_CANVAS_CHANNEL = "com.williamjames/video_canvas"
 
-        /// 타임라인 썸네일의 세로 픽셀 수. 편집 화면의 띠는 60dp 남짓이라
-        /// 3배 밀도 화면에서도 이 정도면 또렷하다.
-        private const val THUMBNAIL_HEIGHT = 192
+        /// 타임라인 썸네일의 세로 픽셀 수.
+        ///
+        /// 띠는 화면에서 50~80dp다. 3배 밀도라도 144px이면 또렷하고, 192px보다
+        /// 디코딩·축소·JPEG 압축이 모두 가벼워 편집 진입이 그만큼 빨라진다.
+        private const val THUMBNAIL_HEIGHT = 144
 
-        /// 프레임을 나눠 뽑을 스레드 수. 더 늘리면 하드웨어 디코더를 두고
-        /// 서로 기다린다.
-        private const val THUMBNAIL_WORKERS = 3
+        /// 썸네일 JPEG 품질. 손톱만 한 그림이라 60과 75는 눈으로 구분되지
+        /// 않는데 파일 크기와 압축 시간은 눈에 띄게 차이 난다.
+        private const val THUMBNAIL_QUALITY = 60
+
+        /// 프레임을 나눠 뽑을 스레드 수의 상한. 더 늘리면 하드웨어 디코더를
+        /// 두고 서로 기다린다.
+        private const val THUMBNAIL_WORKERS = 4
+
+        /// 뽑아 둔 프레임을 모아 두는 캐시 폴더.
+        private const val THUMBNAIL_CACHE_DIRECTORY = "video_thumbnails"
+
+        /// 캐시에 남겨 둘 영상 수. 최근에 쓴 것부터 센다.
+        private const val THUMBNAIL_CACHE_KEEP = 6
 
         /// 갤러리로 옮길 때 한 번에 밀어 넣는 크기.
         private const val COPY_CHUNK_BYTES = 8L * 1024 * 1024
@@ -198,7 +210,28 @@ class MainActivity : FlutterActivity() {
     ///   큰 비트맵이 없어져 디코딩과 압축 비용이 같이 줄어든다.
     /// - 일꾼 몇을 두고 나눠 맡는다. MediaMetadataRetriever는 스레드마다
     ///   따로 있어야 하므로 각자 자기 것을 연다.
+    /// - **한 번 뽑은 지점은 다시 뽑지 않는다.** 예전에는 부를 때마다 시각
+    ///   (`currentTimeMillis`)으로 새 폴더를 만들었다. 그래서 (1) 편집기를 닫고
+    ///   다시 열면 이미 뽑아 둔 그림이 있는데도 처음부터 다시 디코딩했고,
+    ///   (2) 띠를 성긴 것 → 촘촘한 것으로 두 번 채우는 동안 겹치는 지점을 두 번
+    ///   뽑았고(4+12=16장을 뽑아 12장을 썼다), (3) 쓰고 버린 폴더가 지워지지
+    ///   않아 캐시만 쌓였다.
     private fun extractThumbnails(inputFile: File, count: Int): List<String> {
+        // 폴더는 영상마다, 파일은 **영상에서 몇 분의 몇 지점인가**로 정한다.
+        // 파일이 바뀌면(수정 시각) 폴더 이름도 바뀌므로 낡은 그림이 되살아날
+        // 일은 없다.
+        val root = File(cacheDir, THUMBNAIL_CACHE_DIRECTORY)
+        val outputDirectory = File(root, thumbnailCacheKey(inputFile))
+        val wanted = (0 until count).map {
+            File(outputDirectory, thumbnailName(it, count))
+        }
+        if (wanted.all { it.isFile && it.length() > 0L }) {
+            // 최근에 쓴 것으로 표시해 둔다. 오래된 것부터 걷어내기 때문이다.
+            // 여기서는 영상 길이를 읽을 일조차 없다.
+            outputDirectory.setLastModified(System.currentTimeMillis())
+            return wanted.map { it.absolutePath }
+        }
+
         val probe = MediaMetadataRetriever()
         val durationMs: Long
         val sourceWidth: Int
@@ -229,13 +262,16 @@ class MainActivity : FlutterActivity() {
             THUMBNAIL_HEIGHT * 16 / 9
         }
 
-        val outputDirectory = File(
-            cacheDir,
-            "video_thumbnails/${System.currentTimeMillis()}",
-        ).apply { mkdirs() }
+        outputDirectory.mkdirs()
         val paths = arrayOfNulls<String>(count)
         val nextIndex = AtomicInteger(0)
-        val workers = (0 until minOf(THUMBNAIL_WORKERS, count)).map {
+        // 코어가 적은 기기에서 일꾼을 다 띄우면 UI 스레드까지 굶는다.
+        val workerCount = minOf(
+            THUMBNAIL_WORKERS,
+            count,
+            maxOf(2, Runtime.getRuntime().availableProcessors() / 2),
+        )
+        val workers = (0 until workerCount).map {
             Thread {
                 val retriever = MediaMetadataRetriever()
                 try {
@@ -243,6 +279,12 @@ class MainActivity : FlutterActivity() {
                     while (true) {
                         val index = nextIndex.getAndIncrement()
                         if (index >= count) break
+                        val output = wanted[index]
+                        // 성긴 묶음이 이미 뽑아 둔 지점이면 그걸 그대로 쓴다.
+                        if (output.isFile && output.length() > 0L) {
+                            paths[index] = output.absolutePath
+                            continue
+                        }
                         val timeUs = if (durationMs <= 0L) {
                             0L
                         } else {
@@ -253,9 +295,12 @@ class MainActivity : FlutterActivity() {
                             targetWidth,
                             THUMBNAIL_HEIGHT,
                         ) ?: continue
-                        val output = File(outputDirectory, "thumb_$index.jpg")
                         FileOutputStream(output).use { stream ->
-                            bitmap.compress(Bitmap.CompressFormat.JPEG, 75, stream)
+                            bitmap.compress(
+                                Bitmap.CompressFormat.JPEG,
+                                THUMBNAIL_QUALITY,
+                                stream,
+                            )
                         }
                         bitmap.recycle()
                         paths[index] = output.absolutePath
@@ -270,7 +315,53 @@ class MainActivity : FlutterActivity() {
         }
         workers.forEach(Thread::start)
         workers.forEach(Thread::join)
+        pruneThumbnailCache(root)
         return paths.filterNotNull()
+    }
+
+    /// 영상 하나의 자리. 파일이 바뀌면 자리도 바뀐다.
+    ///
+    /// 길이를 이름에 함께 넣는다. 해시는 32비트뿐이라 서로 다른 영상이 같은
+    /// 자리를 잡을 수 있는데, 그러면 엉뚱한 영상의 프레임이 띠에 깔린다.
+    private fun thumbnailCacheKey(inputFile: File): String {
+        val hash = "${inputFile.absolutePath}:${inputFile.lastModified()}"
+            .hashCode()
+            .toUInt()
+            .toString(16)
+        return "${hash}_${inputFile.length()}"
+    }
+
+    /// 프레임 하나의 이름. `index / count`를 **기약분수로 줄여** 붙인다.
+    ///
+    /// **왜 분수인가**: 띠는 4장으로 먼저 채우고 12장으로 갈아 끼운다. 4장의
+    /// 1/4과 12장의 3/12은 영상에서 같은 지점이다. 이름을 `thumb_1`,
+    /// `thumb_3`처럼 순번으로 붙이면 그게 같은 지점인 줄 모르고 다시 디코딩한다.
+    /// 줄인 분수로 붙이면 둘 다 `frame_1_4`가 되어, 촘촘한 묶음은 겹치는 네 장을
+    /// 건너뛰고 여덟 장만 뽑는다.
+    private fun thumbnailName(index: Int, count: Int): String {
+        val divisor = greatestCommonDivisor(index, count)
+        return "frame_${index / divisor}_${count / divisor}.jpg"
+    }
+
+    private fun greatestCommonDivisor(a: Int, b: Int): Int {
+        var left = a
+        var right = b
+        while (right != 0) {
+            val remainder = left % right
+            left = right
+            right = remainder
+        }
+        return if (left == 0) 1 else left
+    }
+
+    /// 오래 쓰지 않은 묶음을 걷어낸다. 캐시가 한없이 늘지 않게 한다.
+    private fun pruneThumbnailCache(root: File) {
+        val directories = root.listFiles()?.filter { it.isDirectory } ?: return
+        if (directories.size <= THUMBNAIL_CACHE_KEEP) return
+        directories
+            .sortedByDescending { it.lastModified() }
+            .drop(THUMBNAIL_CACHE_KEEP)
+            .forEach { it.deleteRecursively() }
     }
 
     private fun MediaMetadataRetriever.scaledFrameAt(
