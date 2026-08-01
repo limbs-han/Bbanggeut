@@ -680,6 +680,51 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/stream-sessions/{sessionId}/talkback:
+    parameters:
+      - $ref: '#/components/parameters/StreamSessionId'
+    post:
+      tags: [Streaming]
+      operationId: openTalkback
+      summary: 양방향 오디오 발화 시작
+      description: |
+        앱 마이크 오디오를 기기 스피커로 보내기 위한 WHIP 송출 URL을 발급한다.
+        세션이 `READY`이고 시청자 TTL이 남아 있어야 한다. 기기당 동시에 한 명만 말할 수 있으며,
+        다른 구성원이 유효한 발화 권한을 쥐고 있으면 409 `TALKBACK_BUSY`로 거절한다.
+        발화 권한은 시청자 heartbeat로 함께 연장되고, 갱신이 끊기면 30초 뒤 서버가 회수하며
+        기기에 MQTT `STOP_TALKBACK`을 보낸다.
+
+        발급 토큰의 scope는 `TALK`이며 WHEP 재생 토큰으로는 이 경로를 통과할 수 없다.
+        기기에는 에코 제거가 없다. 앱은 발화하는 동안 자신의 WHEP 재생을 뮤트해
+        기기 스피커에서 마이크로 돌아오는 순환을 끊어야 한다.
+      responses:
+        '200':
+          description: 발화 권한 획득. `whipUrl`로 오디오 전용 WebRTC 송출을 시작한다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TalkbackSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Streaming]
+      operationId: closeTalkback
+      summary: 양방향 오디오 발화 종료
+      description: |
+        발화 권한을 즉시 반납하고 기기에 MQTT `STOP_TALKBACK`을 보낸다. 권한을 쥐고 있지 않아도
+        204를 반환한다. 라이브 세션을 `DELETE`하면 발화 권한도 함께 반납된다.
+      responses:
+        '204':
+          description: 발화 종료 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
   /api/devices/{deviceId}/members:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
@@ -2046,6 +2091,40 @@ components:
             - $ref: '#/components/schemas/Video'
           nullable: true
           description: 즐겨찾기·최신 순서로 고른 대표 하이라이트. READY 영상이 없으면 null.
+
+    TalkbackSession:
+      type: object
+      required:
+        - sessionId
+        - streamId
+        - deviceId
+        - whipUrl
+        - heartbeatIntervalSeconds
+        - expiresAt
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: 발화 권한을 쥔 시청자 세션 ID
+        streamId:
+          type: string
+          format: uuid
+          description: 발화 경로가 붙는 edge 송출 ID. WHIP path는 이 값으로 결정된다.
+        deviceId:
+          type: string
+          format: uuid
+        whipUrl:
+          type: string
+          format: uri
+          description: 오디오 전용 WebRTC WHIP 송출 URL. scope=TALK 단기 토큰이 붙으며 미디어 계층이 요청 시점에 발화 권한을 다시 확인한다. 앱 로그·분석 이벤트·DB에 저장하지 않는다.
+        heartbeatIntervalSeconds:
+          type: integer
+          enum: [15]
+          description: 발화 권한도 이 주기의 시청자 heartbeat로 함께 연장된다.
+        expiresAt:
+          type: string
+          format: date-time
+          description: 발화 권한 만료 시각. heartbeat가 끊기면 서버가 회수하고 기기에 STOP_TALKBACK을 보낸다.
 
     StreamSession:
       type: object

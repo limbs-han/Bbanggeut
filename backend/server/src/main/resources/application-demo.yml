@@ -21,3 +21,4 @@ app:
     tls-ca-path: ${MQTT_TLS_CA_PATH}
   stream:
     webrtc-base-url: ${WEBRTC_BASE_URL:http://localhost:8889/live}
+    talkback-whip-base-url: ${TALKBACK_WHIP_BASE_URL:http://localhost:8889/talkback}

@@ -105,6 +105,9 @@ app:
     heartbeat-interval: ${STREAM_HEARTBEAT_INTERVAL:15s}
     webrtc-base-url: ${WEBRTC_BASE_URL:http://localhost:8889/live}
     live-token-ttl: ${LIVE_TOKEN_TTL:30s}
+    talkback-whip-base-url: ${TALKBACK_WHIP_BASE_URL:http://localhost:8889/talkback}
+    # heartbeat-interval(15s)보다 길어야 말하는 도중 권한이 끊기지 않는다.
+    talkback-ttl: ${TALKBACK_TTL:30s}
   storage:
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
     public-endpoint: ${S3_PUBLIC_ENDPOINT:${S3_ENDPOINT:http://localhost:9000}}

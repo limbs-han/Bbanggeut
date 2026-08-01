@@ -21,7 +21,7 @@ docs/openapi-video-edit
 ```
 
 전체 브랜치 규칙은 저장소 루트의 `AGENTS.md`와
-`ai/GIT_BRANCH_RULES.txt`에 있다. 요약하면 다음과 같다.
+`llm/GIT_BRANCH_RULES.md`에 있다. 요약하면 다음과 같다.
 
 - 모든 작업 브랜치는 `develop`에서 만들고 `develop`으로 Merge Request를 만든다.
 - `master`는 `develop`에서만 병합받는다. `master`로 직접 MR을 만들지 않는다.

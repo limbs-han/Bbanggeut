@@ -170,12 +170,14 @@ def clip_interval(group: list[Trigger]) -> tuple[datetime, datetime]:
     return start, end
 
 
-def parse_segment(path: Path) -> Segment:
-    started_at = datetime.strptime(path.name, SEGMENT_NAME_FORMAT).replace(
-        tzinfo=timezone.utc
-    )
-    return Segment(path=path, started_at=started_at)
+# 수정안
+from zoneinfo import ZoneInfo
+RECORDING_LOCAL_TZ = ZoneInfo("Asia/Seoul")  # local-recording.sh의 TZ와 일치시켜야 함
 
+def parse_segment(path: Path) -> Segment:
+    naive = datetime.strptime(path.name, SEGMENT_NAME_FORMAT)
+    started_at = naive.replace(tzinfo=RECORDING_LOCAL_TZ).astimezone(timezone.utc)
+    return Segment(path=path, started_at=started_at)
 
 def select_completed_segments(
     paths: Iterable[Path],

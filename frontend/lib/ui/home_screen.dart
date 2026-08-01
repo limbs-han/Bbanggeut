@@ -27,8 +27,12 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final device = controller.selectedDevice;
-    final status = controller.deviceStatus;
+    final placeDevices = controller.devicesForSelectedPlace;
+    final selectedDevice = controller.selectedDevice;
+    final device = placeDevices
+        .where((item) => item.id == selectedDevice?.id)
+        .firstOrNull;
+    final status = device == null ? null : controller.deviceStatus;
     final summary = controller.homeSummary;
     final latest = summary?.latestHighlight ?? controller.videos.firstOrNull;
     return AppBackdrop(
@@ -62,6 +66,7 @@ class HomeScreen extends StatelessWidget {
                       )
                     else
                       _LiveDevicePager(
+                        key: ValueKey(controller.selectedPlaceName),
                         controller: controller,
                         isActive: isActive,
                       ),
@@ -259,10 +264,10 @@ class HomeScreen extends StatelessWidget {
                 },
               ),
             ),
-            if (controller.devices.isNotEmpty) ...[
+            if (controller.devicesForSelectedPlace.isNotEmpty) ...[
               const Divider(height: 24),
               const Text('기기', style: TextStyle(fontWeight: FontWeight.w900)),
-              ...controller.devices.map(
+              ...controller.devicesForSelectedPlace.map(
                 (device) => ListTile(
                   leading: Icon(
                     device.id == controller.selectedDevice?.id
@@ -504,7 +509,11 @@ class _NoDeviceLiveCard extends StatelessWidget {
 }
 
 class _LiveDevicePager extends StatefulWidget {
-  const _LiveDevicePager({required this.controller, required this.isActive});
+  const _LiveDevicePager({
+    super.key,
+    required this.controller,
+    required this.isActive,
+  });
 
   final AppController controller;
   final bool isActive;
@@ -522,7 +531,7 @@ class _LiveDevicePagerState extends State<_LiveDevicePager> {
   void initState() {
     super.initState();
     final selectedId = controller.selectedDevice?.id;
-    final initial = controller.devices.indexWhere(
+    final initial = controller.devicesForSelectedPlace.indexWhere(
       (device) => device.id == selectedId,
     );
     _pageController = PageController(initialPage: initial < 0 ? 0 : initial);
@@ -536,7 +545,7 @@ class _LiveDevicePagerState extends State<_LiveDevicePager> {
 
   @override
   Widget build(BuildContext context) {
-    final devices = controller.devices;
+    final devices = controller.devicesForSelectedPlace;
     if (devices.isEmpty) return const SizedBox.shrink();
     final selectedIndex = devices.indexWhere(
       (device) => device.id == controller.selectedDevice?.id,
@@ -758,10 +767,7 @@ class _StatCard extends StatelessWidget {
 }
 
 class _HomeSectionTitle extends StatelessWidget {
-  const _HomeSectionTitle({
-    required this.title,
-    required this.icon,
-  });
+  const _HomeSectionTitle({required this.title, required this.icon});
   final String title;
   final IconData icon;
 

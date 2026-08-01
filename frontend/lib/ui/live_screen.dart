@@ -8,6 +8,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../core/whep_player_controller.dart';
+import '../core/whip_publisher_controller.dart';
 import 'widgets.dart';
 
 class EmbeddedLivePlayer extends StatefulWidget {
@@ -67,6 +68,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     with WidgetsBindingObserver {
   StreamSession? session;
   late final WhepPlayerController whepPlayer;
+  late final WhipPublisherController talkbackPublisher;
   Timer? pollTimer;
   Timer? heartbeatTimer;
   Timer? controlsTimer;
@@ -78,6 +80,8 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   bool starting = false;
   bool controlsVisible = false;
   bool webRtcWasConnected = false;
+  bool talking = false;
+  bool talkbackBusy = false;
   Future<void>? preferredPlayerFuture;
 
   bool get hasPlayback => whepPlayer.connected;
@@ -86,8 +90,13 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   void initState() {
     super.initState();
     whepPlayer = WhepPlayerController()..addListener(_handleWebRtcState);
+    talkbackPublisher = WhipPublisherController();
     WidgetsBinding.instance.addObserver(this);
   }
+
+  /// 발화 중에는 내 재생을 강제로 뮤트한다. 기기에는 에코 제거가 없어서
+  /// 기기 스피커 → 기기 마이크 → 앱 → 기기로 도는 순환을 앱이 끊어야 한다.
+  Future<void> _applyPlaybackMute() => whepPlayer.setMuted(muted || talking);
 
   void _handleWebRtcState() {
     if (!mounted) return;
@@ -191,9 +200,58 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     if (whepUrl == null || whepUrl.isEmpty) {
       throw const WhepPlaybackException();
     }
-    await whepPlayer.setMuted(muted);
+    await _applyPlaybackMute();
     await whepPlayer.connect(whepUrl);
     if (mounted && !closing) setState(() => error = null);
+  }
+
+  Future<void> _startTalking() async {
+    final current = session;
+    if (current == null || !hasPlayback || talking || talkbackBusy) return;
+    setState(() => talkbackBusy = true);
+    try {
+      final talkback = await widget.controller.api.openTalkback(current.id);
+      talking = true;
+      await _applyPlaybackMute();
+      await talkbackPublisher.connect(talkback.whipUrl);
+      if (!mounted) return;
+      setState(() {});
+    } catch (failure) {
+      talking = false;
+      await talkbackPublisher.close();
+      await _applyPlaybackMute();
+      try {
+        await widget.controller.api.closeTalkback(current.id);
+      } catch (_) {}
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(_talkbackMessage(failure))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => talkbackBusy = false);
+    }
+  }
+
+  Future<void> _stopTalking() async {
+    if (!talking && !talkbackPublisher.transmitting) return;
+    final current = session;
+    talking = false;
+    if (mounted) setState(() {});
+    await talkbackPublisher.close();
+    await _applyPlaybackMute();
+    if (current != null) {
+      try {
+        await widget.controller.api.closeTalkback(current.id);
+      } catch (_) {}
+    }
+  }
+
+  String _talkbackMessage(Object failure) {
+    final text = '$failure';
+    if (text.contains('TALKBACK_BUSY')) return '다른 구성원이 말하는 중이에요.';
+    if (text.contains('SPEAKER_UNAVAILABLE')) return '이 카메라에는 스피커가 없어요.';
+    return text;
   }
 
   Future<void> _heartbeat() async {
@@ -244,6 +302,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     if (closing) return;
     closing = true;
     _cancelTimers();
+    // 발화 권한을 먼저 놓는다. 라이브 세션이 사라진 뒤에는 반납할 대상이 없어
+    // 기기가 만료까지 스피커를 열어 둔다.
+    await _stopTalking();
     final current = session;
     session = null;
     if (disposePlayer) {
@@ -315,6 +376,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     unawaited(_close());
     whepPlayer.removeListener(_handleWebRtcState);
     whepPlayer.dispose();
+    talkbackPublisher.dispose();
     super.dispose();
   }
 
@@ -482,13 +544,20 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                                 color: Colors.white,
                                 onPressed: () {
                                   setState(() => muted = !muted);
-                                  unawaited(whepPlayer.setMuted(muted));
+                                  unawaited(_applyPlaybackMute());
                                 },
                                 icon: Icon(
                                   muted
                                       ? Icons.volume_off_rounded
                                       : Icons.volume_up_rounded,
                                 ),
+                              ),
+                              const SizedBox(width: 12),
+                              _PushToTalkButton(
+                                talking: talking,
+                                busy: talkbackBusy,
+                                onStart: _startTalking,
+                                onStop: _stopTalking,
                               ),
                               const SizedBox(width: 12),
                               IconButton(
@@ -658,6 +727,57 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                   ),
                 ),
               ),
+      ),
+    );
+  }
+}
+
+/// 누르는 동안만 말하는 무전기식 버튼.
+///
+/// 토글이 아니라 푸시투토크인 이유는 기기당 발화자가 한 명이기 때문이다.
+/// 켜 둔 것을 잊으면 다른 구성원이 그동안 말할 수 없다.
+class _PushToTalkButton extends StatelessWidget {
+  const _PushToTalkButton({
+    required this.talking,
+    required this.busy,
+    required this.onStart,
+    required this.onStop,
+  });
+
+  final bool talking;
+  final bool busy;
+  final Future<void> Function() onStart;
+  final Future<void> Function() onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const Key('live-push-to-talk-button'),
+      onTapDown: (_) => unawaited(onStart()),
+      onTapUp: (_) => unawaited(onStop()),
+      onTapCancel: () => unawaited(onStop()),
+      child: Tooltip(
+        message: talking ? '말하는 중' : '길게 눌러 말하기',
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: talking ? const Color(0xFFE0533D) : Colors.transparent,
+          ),
+          child: busy && !talking
+              ? const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Icon(
+                  talking ? Icons.mic_rounded : Icons.mic_none_rounded,
+                  color: Colors.white,
+                ),
+        ),
       ),
     );
   }

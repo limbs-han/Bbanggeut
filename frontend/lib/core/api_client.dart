@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'fast_downloader.dart';
 import 'models.dart';
 
 const defaultApiBaseUrl = String.fromEnvironment(
@@ -300,21 +301,14 @@ class ApiClient {
   }) async {
     for (var attempt = 0; attempt < 2; attempt++) {
       final signed = await createDownloadUrl(id);
-      final downloadClient = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(minutes: 5),
-          headers: const {'Accept': 'video/*,application/octet-stream'},
-        ),
-      );
       try {
         // MinIO/S3 presigned URLs already contain their own authentication.
-        // The API client's Bearer interceptor must not run for this request.
-        await downloadClient.download(
+        // The API client's Bearer interceptor must not run for this request,
+        // so the download goes through its own long-lived client.
+        await FastDownloader.download(
           signed.url,
           destinationPath,
           onReceiveProgress: onReceiveProgress,
-          options: Options(responseType: ResponseType.bytes),
         );
         return;
       } on DioException catch (error) {
@@ -456,6 +450,12 @@ class ApiClient {
       _post('/api/stream-sessions/$id/heartbeat');
   Future<void> closeStream(String id) async =>
       _delete('/api/stream-sessions/$id');
+  Future<TalkbackSession> openTalkback(String id) async =>
+      TalkbackSession.fromJson(
+        await _post('/api/stream-sessions/$id/talkback'),
+      );
+  Future<void> closeTalkback(String id) async =>
+      _delete('/api/stream-sessions/$id/talkback');
   Future<SubscriptionInfo> getSubscription(String deviceId) async =>
       SubscriptionInfo.fromJson(
         await _get('/api/devices/$deviceId/subscription'),

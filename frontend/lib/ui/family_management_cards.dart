@@ -264,7 +264,6 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
           ),
         ),
         const Positioned(left: 14, top: 25, child: _InviteEnvelopeDecoration()),
-        const Positioned(right: 13, top: -14, child: _InviteRibbonDecoration()),
       ],
     );
   }
@@ -461,9 +460,21 @@ class _MemberTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            StatusPill(
-              label: isOwner ? 'OWNER' : 'MEMBER',
-              color: AppColors.sageSoft,
+            Row(
+              children: [
+                StatusPill(
+                  label: isOwner ? 'OWNER' : 'MEMBER',
+                  color: AppColors.sageSoft,
+                ),
+                if (isOwner) ...[
+                  const SizedBox(width: 5),
+                  const Text(
+                    '👑',
+                    key: Key('settings-owner-crown'),
+                    style: TextStyle(fontSize: 18, height: 1),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 8),
             Text(
@@ -612,18 +623,6 @@ class _InviteEnvelopeDecoration extends StatelessWidget {
   Widget build(BuildContext context) => Image.asset(
     'assets/images/family_invite_envelope.png',
     width: 102,
-    fit: BoxFit.contain,
-    filterQuality: FilterQuality.high,
-  );
-}
-
-class _InviteRibbonDecoration extends StatelessWidget {
-  const _InviteRibbonDecoration();
-
-  @override
-  Widget build(BuildContext context) => Image.asset(
-    'assets/images/family_invite_ribbon.png',
-    width: 105,
     fit: BoxFit.contain,
     filterQuality: FilterQuality.high,
   );
