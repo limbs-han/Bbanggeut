@@ -67,12 +67,18 @@ MQTT_USERNAME=$MQTT_USERNAME
 MQTT_PASSWORD=$MQTT_PASSWORD
 MQTT_ENV=prod
 WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live
+TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback
 FFMPEG_PATH=/usr/bin/ffmpeg
 EOF
 fi
 
 if ! grep -q '^WEBRTC_BASE_URL=' "$APP_ENV"; then
   printf '%s\n' 'WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live' >>"$APP_ENV"
+fi
+
+if ! grep -q '^TALKBACK_WHIP_BASE_URL=' "$APP_ENV"; then
+  printf '%s\n' \
+    'TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback' >>"$APP_ENV"
 fi
 
 chmod 600 "$INFRA_ENV" "$APP_ENV"
