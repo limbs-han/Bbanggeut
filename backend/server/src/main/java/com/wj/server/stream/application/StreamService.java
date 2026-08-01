@@ -139,7 +139,16 @@ public class StreamService {
         // 발화 중인 세션의 heartbeat는 발화 권한도 함께 연장한다. 별도 API를
         // 두면 앱이 두 주기를 따로 관리해야 하고, 한쪽만 실패했을 때 권한이
         // 남아 다른 구성원이 영영 말하지 못하게 된다.
-        mapper.extendTalkback(session.deviceId(), sessionId, now.plus(properties.talkbackTtl()));
+        //
+        // DB 연장만으로는 부족하다. 기기 플레이어는 START_TALKBACK으로 받은
+        // hardExpiresAt에 스스로 스피커를 닫으므로, 재발행하지 않으면 권한은
+        // 살아 있는데 소리만 30초에 끊긴다. START_TALKBACK은 계약상 멱등이라
+        // 같은 streamId면 기기는 재생을 끊지 않고 만료만 민다.
+        Instant talkbackExpiresAt = now.plus(properties.talkbackTtl());
+        if (mapper.extendTalkback(session.deviceId(), sessionId, talkbackExpiresAt) == 1
+            && !demoProperties.enabled()) {
+            publisher.startTalkback(session.deviceId(), session.streamId(), talkbackExpiresAt);
+        }
         if ("PENDING".equals(session.status())) {
             // START_STREAM is an at-least-once command. If its first MQTT
             // delivery was missed, keep the session recoverable instead of

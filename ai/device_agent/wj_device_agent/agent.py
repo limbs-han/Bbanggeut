@@ -50,6 +50,7 @@ class DeviceAgent:
         self.config = config
         self.streams = StreamManager(config)
         self.talkback = TalkbackManager(config)
+        self.talkback_retries = 0
         self.commands: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=100)
         self.stop_event = threading.Event()
         self.last_commands: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -181,15 +182,13 @@ class DeviceAgent:
     def _start_talkback(self, command: dict[str, Any], payload: dict[str, Any]) -> None:
         stream_id = payload["streamId"]
         hard_expires_at = parse_time(payload["hardExpiresAt"])
-        started = self.talkback.start(stream_id, hard_expires_at)
-        if not started:
-            # 이미 같은 발화를 재생 중이다. 재생을 끊지 않고 만료만 연장했다.
-            self._ack(command, "SUCCEEDED", stream_id=stream_id)
-            return
-        self.stop_event.wait(self.config.ready_delay_seconds)
-        if not self.talkback.snapshot().running:
-            self._ack(command, "FAILED", "TALKBACK_START_FAILED", stream_id)
-            return
+        self.talkback_retries = 0
+        self.talkback.start(stream_id, hard_expires_at)
+        # 재생 준비를 여기서 기다리지 않는다. 이 명령은 앱이 WHIP 송출을
+        # 시작하기 전에 도착하므로, 이 시점에 플레이어가 살아 있는지는 스피커
+        # 상태가 아니라 앱이 얼마나 빨리 붙었는지를 잴 뿐이다. 실제 재생 유지는
+        # _monitor_talkback이 권한 만료까지 책임진다. 스피커가 아예 없으면
+        # start()가 SPEAKER_UNAVAILABLE로 던져 위에서 FAILED로 처리된다.
         self._ack(command, "SUCCEEDED", stream_id=stream_id)
 
     def _validate(self, command: dict[str, Any]) -> str:
@@ -232,9 +231,10 @@ class DeviceAgent:
                 self.current_context = None
 
     def _monitor_talkback(self) -> None:
-        """STOP_TALKBACK이 유실되어도 기기가 스스로 스피커를 닫게 한다.
+        """발화 재생을 붙잡아 두고, 권한이 끝나면 스피커를 닫는다.
 
-        제어 경로가 끊긴 채 재생이 남으면 집 안에서 소리가 계속 나온다.
+        STOP_TALKBACK이 유실돼도 hardExpiresAt에는 반드시 닫는다. 제어 경로가
+        끊긴 채 재생이 남으면 집 안에서 소리가 계속 나온다.
         """
         snapshot = self.talkback.snapshot()
         if (
@@ -244,14 +244,33 @@ class DeviceAgent:
         ):
             LOG.warning("발화 재생 강제 종료: stream=%s", snapshot.stream_id)
             self.talkback.stop(snapshot.stream_id)
+            self.talkback_retries = 0
             return
         finished = self.talkback.clear_if_finished()
-        if finished and finished.stream_id:
-            LOG.warning(
-                "발화 재생 종료: stream=%s, return_code=%s",
-                finished.stream_id,
-                finished.return_code,
-            )
+        if not finished or not finished.stream_id:
+            return
+
+        # 서버는 whipUrl을 앱에 돌려주기 전에 START_TALKBACK을 보낸다. 그래서
+        # 기기가 앱보다 먼저 읽으러 가고, 아직 송출이 없는 경로라 플레이어가
+        # 즉시 끝난다. 한 번 만에 포기하면 1~2초 뒤 시작된 발화를 아무도 듣지
+        # 못한다. 권한이 살아있는 동안에는 다시 붙는다.
+        if finished.hard_expires_at and utc_now() < finished.hard_expires_at:
+            self.talkback_retries += 1
+            if self.talkback_retries == 1:
+                LOG.info("발화 송출 대기 중: stream=%s", finished.stream_id)
+            try:
+                self.talkback.start(finished.stream_id, finished.hard_expires_at)
+                return
+            except RuntimeError as error:
+                LOG.warning("발화 재생 재시도 실패: %s", error)
+
+        LOG.warning(
+            "발화 재생 종료: stream=%s, return_code=%s, 재시도=%s",
+            finished.stream_id,
+            finished.return_code,
+            self.talkback_retries,
+        )
+        self.talkback_retries = 0
 
     def _heartbeat_loop(self) -> None:
         while not self.stop_event.wait(30):

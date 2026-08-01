@@ -327,6 +327,42 @@ class StreamServiceTest {
         verify(publisher, never()).start(any(), any(), any(), any());
     }
 
+    @Test
+    void heartbeatAlsoExtendsTheDeviceSideTalkbackLease() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.heartbeatSession(
+            sessionId, userId, NOW, NOW.plusSeconds(45))).thenReturn(1);
+        when(mapper.extendTalkback(deviceId, sessionId, NOW.plusSeconds(30))).thenReturn(1);
+
+        service.heartbeat(userId, sessionId);
+
+        // 기기 플레이어는 START_TALKBACK의 hardExpiresAt에 스스로 닫힌다.
+        // 재발행이 없으면 DB 권한만 살아 있고 소리는 30초에 끊긴다.
+        verify(publisher).startTalkback(deviceId, streamId, NOW.plusSeconds(30));
+    }
+
+    @Test
+    void heartbeatWithoutASpeakingLeaseSendsNoTalkbackCommand() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.heartbeatSession(
+            sessionId, userId, NOW, NOW.plusSeconds(45))).thenReturn(1);
+        when(mapper.extendTalkback(deviceId, sessionId, NOW.plusSeconds(30))).thenReturn(0);
+
+        service.heartbeat(userId, sessionId);
+
+        verify(publisher, never()).startTalkback(any(), any(), any());
+    }
+
     private StreamSessionRow row(
         UUID sessionId, UUID streamId, UUID deviceId, UUID userId, String status
     ) {
