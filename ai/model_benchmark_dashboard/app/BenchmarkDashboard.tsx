@@ -16,6 +16,7 @@ type Snapshot = {
   schemaVersion: string;
   collectedAt: string;
   source: string;
+  systemSource?: "benchmark" | "operational";
   runId: string;
   runDirectory: string;
   freshness?: {
@@ -65,8 +66,18 @@ type Snapshot = {
     runId: string | null;
     createdAt: string | null;
     component: string;
+    comparison?: {
+      id?: string | null;
+      trialIndex?: number | null;
+      trialCount?: number | null;
+      executionOrder?: number | null;
+    } | null;
     model: string | null;
     runtime: string | null;
+    modelDetails?: {
+      sizeBytes?: number | null;
+      sha256?: string | null;
+    };
     dataset: string | null;
     metrics: {
       fps?: number | null;
@@ -80,6 +91,70 @@ type Snapshot = {
     accuracy?: {
       status?: string;
       reason?: string;
+      standard?: {
+        confidenceFloor?: number | null;
+        precision?: number | null;
+        recall?: number | null;
+        mAP50?: number | null;
+        mAP50_95?: number | null;
+      };
+      operatingPoint?: {
+        confidence?: number | null;
+        matchIou?: number | null;
+        truePositive?: number | null;
+        falsePositive?: number | null;
+        falseNegative?: number | null;
+        precision?: number | null;
+        recall?: number | null;
+        f1?: number | null;
+      };
+      byScenario?: Array<{
+        scenario: string;
+        imageCount: number;
+        truePositive: number;
+        falsePositive: number;
+        falseNegative: number;
+        precision: number;
+        recall: number;
+        f1: number;
+      }>;
+      failureCases?: Array<{
+        image: string;
+        scenario: string;
+        falsePositive: number;
+        falseNegative: number;
+      }>;
+    } | null;
+    configuration?: {
+      imgsz?: number | null;
+      batch?: number | null;
+      mapConfidence?: number | null;
+      operatingConfidence?: number | null;
+      nmsIou?: number | null;
+      matchIou?: number | null;
+    } | null;
+    resources?: {
+      status?: string;
+      sampleCount?: number | null;
+      gpuPercentMax?: number | null;
+      ramUsedMbMax?: number | null;
+      temperatureCMax?: number | null;
+      powerMwMax?: number | null;
+    } | null;
+    datasetDetails?: {
+      imageCount?: number | null;
+      emptyImageCount?: number | null;
+      boxCount?: number | null;
+      duplicateImageCount?: number | null;
+      sha256?: string | null;
+    } | null;
+    selectionPolicy?: {
+      status?: string;
+      minimumFps?: number | null;
+      maximumWallP95Ms?: number | null;
+      minimumRecall?: number | null;
+      maximumMap50_95Gap?: number | null;
+      rule?: string;
     } | null;
   }>;
   benchmarkProgress?: {
@@ -97,6 +172,7 @@ type Snapshot = {
       completedTasks?: number | null;
       totalTasks?: number | null;
       percent?: number | null;
+      stage?: string | null;
     };
     current?: {
       repeat?: number | null;
@@ -132,6 +208,20 @@ function formatNumber(
 ): string {
   return value == null || !Number.isFinite(value) ? "N/A" : value.toFixed(digits);
 }
+
+function formatPercent(
+  value: number | null | undefined,
+  digits = 1,
+): string {
+  return value == null ? "N/A" : `${(value * 100).toFixed(digits)}%`;
+}
+
+const defaultSelectionPolicy = {
+  minimumFps: 20,
+  maximumWallP95Ms: 50,
+  minimumRecall: 0.9,
+  maximumMap50_95Gap: 0.02,
+};
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return "N/A";
@@ -279,8 +369,73 @@ export function BenchmarkDashboard() {
     partial: "부분 데이터 PARTIAL",
     offline: "수집기 OFFLINE",
   }[collectorState];
-  const comparisons =
-    snapshot?.comparisons.filter((row) => row.component === "vision") ?? [];
+  const comparisons = useMemo(
+    () =>
+      snapshot?.comparisons.filter((row) => row.component === "vision") ?? [],
+    [snapshot?.comparisons],
+  );
+  const comparisonDecisions = useMemo(() => {
+    const computed = comparisons.filter(
+      (row) =>
+        row.accuracy?.status === "computed" &&
+        row.accuracy.standard?.mAP50_95 != null &&
+        row.accuracy.operatingPoint?.recall != null,
+    );
+    const mapValues = computed
+      .map((row) => row.accuracy?.standard?.mAP50_95)
+      .filter((value): value is number => value != null);
+    const bestMap = mapValues.length ? Math.max(...mapValues) : null;
+
+    return computed.map((row) => {
+      const policy = {
+        minimumFps:
+          row.selectionPolicy?.minimumFps ??
+          defaultSelectionPolicy.minimumFps,
+        maximumWallP95Ms:
+          row.selectionPolicy?.maximumWallP95Ms ??
+          defaultSelectionPolicy.maximumWallP95Ms,
+        minimumRecall:
+          row.selectionPolicy?.minimumRecall ??
+          defaultSelectionPolicy.minimumRecall,
+        maximumMap50_95Gap:
+          row.selectionPolicy?.maximumMap50_95Gap ??
+          defaultSelectionPolicy.maximumMap50_95Gap,
+      };
+      const fps = row.metrics.fps;
+      const wallP95 = row.metrics.wallP95Ms;
+      const recall = row.accuracy?.operatingPoint?.recall;
+      const map = row.accuracy?.standard?.mAP50_95;
+      const mapGap = bestMap != null && map != null ? bestMap - map : null;
+      const failures: string[] = [];
+      if (fps == null || fps < policy.minimumFps) failures.push("FPS");
+      if (wallP95 == null || wallP95 > policy.maximumWallP95Ms)
+        failures.push("P95 지연");
+      if (recall == null || recall < policy.minimumRecall)
+        failures.push("Recall");
+      if (mapGap == null || mapGap > policy.maximumMap50_95Gap)
+        failures.push("mAP 격차");
+      return {
+        row,
+        policy,
+        mapGap,
+        passes: failures.length === 0,
+        failures,
+      };
+    });
+  }, [comparisons]);
+  const recommendedDecision = [...comparisonDecisions]
+    .filter((decision) => decision.passes)
+    .sort(
+      (first, second) =>
+        (second.row.metrics.fps ?? -1) - (first.row.metrics.fps ?? -1),
+    )[0];
+  const focusDecision =
+    recommendedDecision ??
+    [...comparisonDecisions].sort(
+      (first, second) =>
+        (second.row.accuracy?.standard?.mAP50_95 ?? -1) -
+        (first.row.accuracy?.standard?.mAP50_95 ?? -1),
+    )[0];
   const events = snapshot?.events ?? [];
   const benchmarkProgress = snapshot?.benchmarkProgress ?? null;
   const progressPercent = benchmarkProgress?.progress.percent ?? null;
@@ -484,7 +639,7 @@ export function BenchmarkDashboard() {
               unit="%"
               detail={
                 snapshot?.system.powerMw != null
-                  ? `보드 전력 ${(snapshot.system.powerMw / 1000).toFixed(2)} W`
+                  ? `${snapshot.systemSource === "benchmark" ? "정확도 평가" : "운영"} · 보드 전력 ${(snapshot.system.powerMw / 1000).toFixed(2)} W`
                   : "tegrastats 대기"
               }
             />
@@ -567,6 +722,72 @@ export function BenchmarkDashboard() {
                     </div>
                   </section>
 
+                  <section className="panel evidence-panel">
+                    <div className="panel-header">
+                      <div className="panel-title">
+                        <h2>발표 질문을 커버하는 모델 선정 근거</h2>
+                        <span>
+                          정확도와 실시간성을 동일한 Jetson 조건에서 함께 판단
+                        </span>
+                      </div>
+                      <span className="mono result-count">
+                        {comparisonDecisions.length} ACCURACY RUNS
+                      </span>
+                    </div>
+                    <div className="evidence-grid">
+                      <article className="evidence-card">
+                        <span className="evidence-kicker">QUESTION 01</span>
+                        <h3>왜 이 YOLO 모델인가?</h3>
+                        <strong>
+                          {recommendedDecision?.row.model ??
+                            (comparisonDecisions.length
+                              ? "기준 통과 모델 없음"
+                              : "정확도 평가 대기")}
+                        </strong>
+                        <p>
+                          합격 모델 중 mAP 손실을 제한하고 FPS가 가장 높은
+                          모델을 선택합니다. 최신 모델명이나 COCO 수치만으로
+                          결정하지 않습니다.
+                        </p>
+                      </article>
+                      <article className="evidence-card">
+                        <span className="evidence-kicker">QUESTION 02</span>
+                        <h3>실제 환경에서도 유효한가?</h3>
+                        <strong>
+                          {focusDecision?.row.datasetDetails?.imageCount ?? "N/A"}
+                          장 · {focusDecision?.row.datasetDetails?.boxCount ?? "N/A"}
+                          박스
+                        </strong>
+                        <p>
+                          Jetson 피크: GPU {focusDecision?.row.resources?.gpuPercentMax != null ? `${formatNumber(focusDecision.row.resources.gpuPercentMax, 0)}%` : "N/A"},
+                          {" "}RAM {focusDecision?.row.resources?.ramUsedMbMax != null ? `${formatNumber(focusDecision.row.resources.ramUsedMbMax, 0)} MB` : "N/A"},
+                          {" "}온도 {focusDecision?.row.resources?.temperatureCMax != null ? `${formatNumber(focusDecision.row.resources.temperatureCMax)}°C` : "N/A"},
+                          {" "}전력 {focusDecision?.row.resources?.powerMwMax != null ? `${formatNumber(focusDecision.row.resources.powerMwMax / 1000, 2)} W` : "N/A"}.
+                          같은 사무실 프레임과 사람 클래스만 평가합니다.
+                        </p>
+                      </article>
+                      <article className="evidence-card">
+                        <span className="evidence-kicker">SERVICE GATE</span>
+                        <h3>선정 기준</h3>
+                        <strong>20 FPS · 50 ms · Recall 90%</strong>
+                        <p>
+                          최고 mAP50-95와의 차이가 2%p 이내인 모델만 후보로
+                          유지합니다. 기준값은 첫 실측 후 서비스 요구에 맞게
+                          확정합니다.
+                        </p>
+                      </article>
+                    </div>
+                    {focusDecision && (
+                      <div className="evidence-footnote mono">
+                        DATASET SHA {focusDecision.row.datasetDetails?.sha256?.slice(0, 12) ?? "N/A"}
+                        {" · "}MODEL SHA {focusDecision.row.modelDetails?.sha256?.slice(0, 12) ?? "N/A"}
+                        {" · "}CONF {focusDecision.row.configuration?.operatingConfidence ?? "N/A"}
+                        {" · "}MATCH IOU {focusDecision.row.configuration?.matchIou ?? "N/A"}
+                        {" · "}DUPLICATES {focusDecision.row.datasetDetails?.duplicateImageCount ?? "N/A"}
+                      </div>
+                    )}
+                  </section>
+
                   <section className="panel">
                     <div className="panel-header">
                       <div className="panel-title">
@@ -586,14 +807,28 @@ export function BenchmarkDashboard() {
                             <th>FPS ↑</th>
                             <th>Inference mean ↓</th>
                             <th>Wall p95 ↓</th>
-                            <th>Frames</th>
-                            <th>정확도</th>
+                            <th>P@0.25 ↑</th>
+                            <th>R@0.25 ↑</th>
+                            <th>F1@0.25 ↑</th>
+                            <th>mAP50 ↑</th>
+                            <th>mAP50-95 ↑</th>
+                            <th>GPU max</th>
+                            <th>판정</th>
                           </tr>
                         </thead>
                         <tbody>
                           {comparisons.length ? (
-                            comparisons.map((row, index) => (
-                              <tr key={row.runId ?? `${row.model}-${index}`}>
+                            comparisons.map((row, index) => {
+                              const decision = comparisonDecisions.find(
+                                (candidate) => candidate.row.runId === row.runId,
+                              );
+                              const selected =
+                                recommendedDecision?.row.runId === row.runId;
+                              return (
+                              <tr
+                                key={row.runId ?? `${row.model}-${index}`}
+                                className={selected ? "selected" : undefined}
+                              >
                                 <td>
                                   <div className="model-cell">
                                     <i className="model-dot" />
@@ -601,6 +836,13 @@ export function BenchmarkDashboard() {
                                       <strong>{row.model ?? "N/A"}</strong>
                                       <br />
                                       <small>{row.runtime ?? "N/A"}</small>
+                                      {row.comparison?.trialIndex != null && (
+                                        <small>
+                                          R{row.comparison.trialIndex}/
+                                          {row.comparison.trialCount ?? "?"} · ORDER{" "}
+                                          {row.comparison.executionOrder ?? "?"}
+                                        </small>
+                                      )}
                                     </span>
                                   </div>
                                 </td>
@@ -618,19 +860,46 @@ export function BenchmarkDashboard() {
                                   {formatNumber(row.metrics.wallP95Ms)} ms
                                 </td>
                                 <td className="mono">
-                                  {row.metrics.measuredFrames?.toLocaleString() ??
-                                    "N/A"}
+                                  {formatPercent(
+                                    row.accuracy?.operatingPoint?.precision,
+                                  )}
+                                </td>
+                                <td className="mono">
+                                  {formatPercent(
+                                    row.accuracy?.operatingPoint?.recall,
+                                  )}
+                                </td>
+                                <td className="mono">
+                                  {formatPercent(row.accuracy?.operatingPoint?.f1)}
+                                </td>
+                                <td className="mono">
+                                  {formatPercent(row.accuracy?.standard?.mAP50)}
+                                </td>
+                                <td className="mono">
+                                  {formatPercent(row.accuracy?.standard?.mAP50_95)}
+                                </td>
+                                <td className="mono">
+                                  {row.resources?.gpuPercentMax != null
+                                    ? `${formatNumber(row.resources.gpuPercentMax, 0)}%`
+                                    : "N/A"}
                                 </td>
                                 <td>
-                                  {row.accuracy?.status === "not-computed"
-                                    ? "미계산"
-                                    : row.accuracy?.status ?? "N/A"}
+                                  {selected
+                                    ? "추천"
+                                    : decision?.passes
+                                      ? "통과"
+                                      : decision
+                                        ? `탈락: ${decision.failures.join(", ")}`
+                                        : row.accuracy?.status === "not-computed"
+                                          ? "정확도 미계산"
+                                          : "평가 대기"}
                                 </td>
                               </tr>
-                            ))
+                              );
+                            })
                           ) : (
                             <tr>
-                              <td colSpan={7}>
+                              <td colSpan={13}>
                                 <EmptyState>
                                   완료된 모델 벤치마크가 없습니다.
                                 </EmptyState>
@@ -641,6 +910,64 @@ export function BenchmarkDashboard() {
                       </table>
                     </div>
                   </section>
+
+                  {focusDecision?.row.accuracy?.byScenario?.length ? (
+                    <section className="panel">
+                      <div className="panel-header">
+                        <div className="panel-title">
+                          <h2>조건별 정확도와 실패 사례</h2>
+                          <span>
+                            {focusDecision.row.model} · 운영 confidence {focusDecision.row.configuration?.operatingConfidence ?? "N/A"}
+                          </span>
+                        </div>
+                        <span className="mono result-count">
+                          {focusDecision.row.accuracy.byScenario.length} SCENARIOS
+                        </span>
+                      </div>
+                      <div className="scenario-layout">
+                        <div className="comparison-wrap">
+                          <table className="comparison-table compact-table">
+                            <thead>
+                              <tr>
+                                <th>장면</th>
+                                <th>Images</th>
+                                <th>Precision</th>
+                                <th>Recall</th>
+                                <th>F1</th>
+                                <th>FP</th>
+                                <th>FN</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {focusDecision.row.accuracy.byScenario.map((row) => (
+                                <tr key={row.scenario}>
+                                  <td>{row.scenario}</td>
+                                  <td className="mono">{row.imageCount}</td>
+                                  <td className="mono">{formatPercent(row.precision)}</td>
+                                  <td className="mono">{formatPercent(row.recall)}</td>
+                                  <td className="mono">{formatPercent(row.f1)}</td>
+                                  <td className="mono">{row.falsePositive}</td>
+                                  <td className="mono">{row.falseNegative}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="failure-list">
+                          <h3>오류가 많은 프레임</h3>
+                          {(focusDecision.row.accuracy.failureCases ?? []).slice(0, 6).map((row) => (
+                            <div className="failure-row" key={row.image}>
+                              <span>{row.image}</span>
+                              <strong className="mono">FP {row.falsePositive} · FN {row.falseNegative}</strong>
+                            </div>
+                          ))}
+                          {!(focusDecision.row.accuracy.failureCases ?? []).length && (
+                            <p>운영 임계값에서 기록된 FP/FN이 없습니다.</p>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
                 </>
               )}
 
@@ -755,6 +1082,10 @@ export function BenchmarkDashboard() {
                       </span>
                     </div>
                     <div className="experiment-config">
+                      <ConfigItem
+                        label="Stage"
+                        value={benchmarkProgress.progress.stage ?? "N/A"}
+                      />
                       <ConfigItem
                         label="Dataset"
                         value={benchmarkProgress.dataset ?? "N/A"}
