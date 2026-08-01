@@ -506,6 +506,45 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                       ),
                     ),
                   ),
+                  // 발화 중 라이브 소리가 꺼지는 것은 에코 차단을 위한 의도된
+                  // 동작이다. 표시하지 않으면 사용자는 무음 버그로 오해한다.
+                  if (hasPlayback && widget.houseMode && talking)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 14,
+                      child: Center(
+                        child: Container(
+                          key: const Key('live-talking-indicator'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xCC33241B),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.mic_rounded,
+                                size: 16,
+                                color: Color(0xFFE0533D),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                '말하는 중 · 라이브 소리 잠시 꺼짐',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   if (hasPlayback && widget.houseMode)
                     Positioned(
                       right: 14,
@@ -540,14 +579,19 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                tooltip: muted ? '소리 켜기' : '음소거',
+                                tooltip: talking
+                                    ? '말하는 동안에는 소리가 꺼져요'
+                                    : (muted ? '소리 켜기' : '음소거'),
                                 color: Colors.white,
                                 onPressed: () {
                                   setState(() => muted = !muted);
                                   unawaited(_applyPlaybackMute());
                                 },
+                                // 발화 중에는 실제로 재생이 꺼져 있으므로 아이콘도
+                                // 꺼짐으로 보여야 한다. muted만 반영하면 소리가
+                                // 안 나는데 🔊로 표시되는 거짓 상태가 된다.
                                 icon: Icon(
-                                  muted
+                                  (muted || talking)
                                       ? Icons.volume_off_rounded
                                       : Icons.volume_up_rounded,
                                 ),
