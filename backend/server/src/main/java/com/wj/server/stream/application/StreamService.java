@@ -10,8 +10,10 @@ import com.wj.server.config.StreamProperties;
 import com.wj.server.config.DemoProperties;
 import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.stream.api.StreamSessionResponse;
+import com.wj.server.stream.api.TalkbackResponse;
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
+import com.wj.server.stream.domain.TalkbackRow;
 import com.wj.server.stream.persistence.StreamMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -134,6 +136,10 @@ public class StreamService {
         }
         Instant hardExpiresAt = now.plus(properties.edgeLease());
         mapper.extendStream(session.streamId(), hardExpiresAt);
+        // 발화 중인 세션의 heartbeat는 발화 권한도 함께 연장한다. 별도 API를
+        // 두면 앱이 두 주기를 따로 관리해야 하고, 한쪽만 실패했을 때 권한이
+        // 남아 다른 구성원이 영영 말하지 못하게 된다.
+        mapper.extendTalkback(session.deviceId(), sessionId, now.plus(properties.talkbackTtl()));
         if ("PENDING".equals(session.status())) {
             // START_STREAM is an at-least-once command. If its first MQTT
             // delivery was missed, keep the session recoverable instead of
@@ -149,6 +155,9 @@ public class StreamService {
     @Transactional
     public void close(UUID userId, UUID sessionId) {
         StreamSessionRow session = mapper.findAccessibleSession(userId, sessionId).orElseThrow(this::notFound);
+        // 라이브를 닫으면 발화 권한도 함께 놓는다. 그러지 않으면 만료될 때까지
+        // 기기가 마이크를 닫지 못하고 다른 구성원도 말할 수 없다.
+        releaseTalkback(session, "VIEWER_CLOSED");
         if ("PENDING".equals(session.status()) || "READY".equals(session.status())) {
             mapper.closeSession(sessionId, userId, clock.instant());
             mapper.scheduleStopsWithoutViewers(properties.idleTimeout().toMillis());
@@ -156,11 +165,68 @@ public class StreamService {
         auditService.success(session.deviceId(), userId, "STREAM_CLOSE", "STREAM_SESSION", sessionId);
     }
 
+    /**
+     * 앱이 기기 스피커로 말할 수 있도록 발화 권한을 얻고 WHIP 송출 URL을 발급한다.
+     * 기기에는 에코 제거가 없으므로 앱이 발화하는 동안 자신의 재생을 뮤트해
+     * 스피커에서 마이크로 돌아오는 순환을 끊는다. 기기당 발화자는 한 명이다.
+     */
+    @Transactional
+    public TalkbackResponse openTalkback(UUID userId, UUID sessionId) {
+        StreamSessionRow session = mapper.findAccessibleSession(userId, sessionId).orElseThrow(this::notFound);
+        Instant now = clock.instant();
+        if (!"READY".equals(session.status()) || !session.viewerExpiresAt().isAfter(now)) {
+            throw new ApiException(
+                HttpStatus.CONFLICT, "STREAM_NOT_READY", "실시간 영상이 준비된 뒤에 말할 수 있습니다.");
+        }
+
+        mapper.lockDevice(session.deviceId());
+        Instant expiresAt = now.plus(properties.talkbackTtl());
+        TalkbackRow talkback = mapper
+            .acquireTalkback(session.deviceId(), sessionId, session.streamId(), userId, expiresAt)
+            .orElseThrow(() -> new ApiException(
+                HttpStatus.CONFLICT, "TALKBACK_BUSY", "다른 구성원이 말하는 중입니다."));
+
+        if (!demoProperties.enabled()
+            && !publisher.startTalkback(session.deviceId(), session.streamId(), expiresAt)) {
+            mapper.releaseTalkback(session.deviceId(), sessionId);
+            throw new ApiException(
+                HttpStatus.SERVICE_UNAVAILABLE, "MQTT_PUBLISH_FAILED", "기기에 명령을 전달하지 못했습니다.");
+        }
+
+        auditService.success(session.deviceId(), userId, "TALKBACK_OPEN", "STREAM_SESSION", sessionId);
+        String token = liveTokenService.issue(
+            sessionId, userId, session.deviceId(), session.streamId(), LiveTokenService.Scope.TALK);
+        String whipUrl = properties.talkbackWhipBaseUrl().replaceAll("/$", "")
+            + "/" + session.streamId() + "/whip?token=" + token;
+        return new TalkbackResponse(
+            sessionId, session.streamId(), session.deviceId(), whipUrl,
+            Math.toIntExact(properties.heartbeatInterval().toSeconds()), talkback.expiresAt());
+    }
+
+    @Transactional
+    public void closeTalkback(UUID userId, UUID sessionId) {
+        StreamSessionRow session = mapper.findAccessibleSession(userId, sessionId).orElseThrow(this::notFound);
+        releaseTalkback(session, "VIEWER_RELEASED");
+        auditService.success(session.deviceId(), userId, "TALKBACK_CLOSE", "STREAM_SESSION", sessionId);
+    }
+
+    private void releaseTalkback(StreamSessionRow session, String reason) {
+        mapper.releaseTalkback(session.deviceId(), session.id()).ifPresent(released -> {
+            if (!demoProperties.enabled()) {
+                publisher.stopTalkback(session.deviceId(), released.streamId(), reason);
+            }
+        });
+    }
+
     @Transactional(readOnly = true)
-    public boolean introspect(String token, UUID streamId) {
+    public boolean introspect(String token, UUID streamId, LiveTokenService.Scope scope) {
         LiveTokenService.Claims claims = liveTokenService.verify(token);
-        return claims != null && streamId.equals(claims.streamId())
-            && mapper.isPlayable(claims.sessionId(), claims.userId());
+        if (claims == null || !streamId.equals(claims.streamId()) || claims.scope() != scope) {
+            return false;
+        }
+        return scope == LiveTokenService.Scope.TALK
+            ? mapper.isTalkable(claims.sessionId(), claims.userId())
+            : mapper.isPlayable(claims.sessionId(), claims.userId());
     }
 
     private void expireAndScheduleStops() {

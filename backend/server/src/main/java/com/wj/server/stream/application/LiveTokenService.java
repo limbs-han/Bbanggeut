@@ -34,6 +34,10 @@ public class LiveTokenService {
     }
 
     public String issue(UUID sessionId, UUID userId, UUID deviceId, UUID streamId) {
+        return issue(sessionId, userId, deviceId, streamId, Scope.PLAY);
+    }
+
+    public String issue(UUID sessionId, UUID userId, UUID deviceId, UUID streamId, Scope scope) {
         Instant now = clock.instant();
         JwtClaimsSet claims = JwtClaimsSet.builder()
             .issuer("wj-live")
@@ -44,6 +48,7 @@ public class LiveTokenService {
             .claim("sessionId", sessionId.toString())
             .claim("deviceId", deviceId.toString())
             .claim("streamId", streamId.toString())
+            .claim("scope", scope.name())
             .build();
         return encoder.encode(JwtEncoderParameters.from(
             JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
@@ -56,15 +61,45 @@ public class LiveTokenService {
                 || !"live".equals(jwt.getClaimAsString("typ"))) {
                 return null;
             }
+            Scope scope = Scope.parse(jwt.getClaimAsString("scope"));
+            if (scope == null) {
+                return null;
+            }
             return new Claims(
                 UUID.fromString(jwt.getClaimAsString("sessionId")),
                 UUID.fromString(jwt.getSubject()),
-                UUID.fromString(jwt.getClaimAsString("streamId")));
+                UUID.fromString(jwt.getClaimAsString("streamId")),
+                scope);
         } catch (RuntimeException exception) {
             return null;
         }
     }
 
-    public record Claims(UUID sessionId, UUID userId, UUID streamId) {
+    /**
+     * WHEP 재생과 WHIP 발화는 권한 판정이 다르다. 재생 토큰으로 기기 스피커에
+     * 송출할 수 없도록 토큰 자체에 용도를 새긴다.
+     */
+    public enum Scope {
+        PLAY,
+        TALK;
+
+        /**
+         * {@code scope}가 없는 토큰은 이 클레임 도입 이전에 발급된 재생 토큰이다.
+         * 만료 시간이 짧아 곧 사라지므로 PLAY로 해석한다.
+         */
+        public static Scope parse(String value) {
+            if (value == null || value.isBlank()) {
+                return PLAY;
+            }
+            for (Scope scope : values()) {
+                if (scope.name().equals(value)) {
+                    return scope;
+                }
+            }
+            return null;
+        }
+    }
+
+    public record Claims(UUID sessionId, UUID userId, UUID streamId, Scope scope) {
     }
 }

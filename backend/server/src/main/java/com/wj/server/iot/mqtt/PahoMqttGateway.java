@@ -178,6 +178,20 @@ public class PahoMqttGateway implements StreamCommandPublisher, DeviceMqttIdenti
     }
 
     @Override
+    public boolean startTalkback(UUID deviceId, UUID streamId, Instant hardExpiresAt) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("streamId", streamId);
+        payload.put("profile", "TALKBACK_OPUS");
+        payload.put("hardExpiresAt", hardExpiresAt);
+        return publish(deviceId, "START_TALKBACK", payload);
+    }
+
+    @Override
+    public boolean stopTalkback(UUID deviceId, UUID streamId, String reason) {
+        return publish(deviceId, "STOP_TALKBACK", Map.of("streamId", streamId, "reason", reason));
+    }
+
+    @Override
     public void create(UUID deviceId, String password) {
         String username = deviceId.toString();
         String role = "device-" + deviceId;

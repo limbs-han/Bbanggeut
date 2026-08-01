@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
+import com.wj.server.stream.domain.TalkbackRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -231,4 +232,75 @@ public interface StreamMapper {
         )
         """)
     boolean isPlayable(@Param("sessionId") UUID sessionId, @Param("userId") UUID userId);
+
+    /**
+     * 기기당 발화자 한 명을 원자적으로 확정한다. 이미 다른 세션이 유효한 권한을
+     * 쥐고 있으면 WHERE 절이 갱신을 막아 아무 행도 돌려주지 않는다. 같은 세션이
+     * 다시 호출하면 만료 시각만 밀려 heartbeat 연장으로 동작한다.
+     */
+    @Select("""
+        INSERT INTO device_talkbacks (device_id, session_id, stream_id, user_id, expires_at)
+        VALUES (#{deviceId}, #{sessionId}, #{streamId}, #{userId}, #{expiresAt})
+        ON CONFLICT (device_id) DO UPDATE
+           SET session_id = EXCLUDED.session_id,
+               stream_id = EXCLUDED.stream_id,
+               user_id = EXCLUDED.user_id,
+               expires_at = EXCLUDED.expires_at,
+               updated_at = now()
+         WHERE device_talkbacks.expires_at <= now()
+            OR device_talkbacks.session_id = EXCLUDED.session_id
+     RETURNING device_id, session_id, stream_id, user_id, expires_at
+        """)
+    Optional<TalkbackRow> acquireTalkback(
+        @Param("deviceId") UUID deviceId,
+        @Param("sessionId") UUID sessionId,
+        @Param("streamId") UUID streamId,
+        @Param("userId") UUID userId,
+        @Param("expiresAt") Instant expiresAt
+    );
+
+    @Update("""
+        UPDATE device_talkbacks SET expires_at = #{expiresAt}, updated_at = now()
+         WHERE device_id = #{deviceId} AND session_id = #{sessionId} AND expires_at > now()
+        """)
+    int extendTalkback(
+        @Param("deviceId") UUID deviceId,
+        @Param("sessionId") UUID sessionId,
+        @Param("expiresAt") Instant expiresAt
+    );
+
+    @Select("""
+        DELETE FROM device_talkbacks
+         WHERE device_id = #{deviceId} AND session_id = #{sessionId}
+     RETURNING device_id, session_id, stream_id, user_id, expires_at
+        """)
+    Optional<TalkbackRow> releaseTalkback(
+        @Param("deviceId") UUID deviceId,
+        @Param("sessionId") UUID sessionId
+    );
+
+    @Select("""
+        DELETE FROM device_talkbacks
+         WHERE device_id IN (
+             SELECT device_id FROM device_talkbacks
+              WHERE expires_at <= now()
+              ORDER BY expires_at FOR UPDATE SKIP LOCKED LIMIT 20
+         )
+     RETURNING device_id, session_id, stream_id, user_id, expires_at
+        """)
+    List<TalkbackRow> claimExpiredTalkbacks();
+
+    @Select("""
+        SELECT EXISTS (
+            SELECT 1 FROM device_talkbacks t
+            JOIN stream_sessions s ON s.id = t.session_id
+            JOIN device_memberships m ON m.device_id = s.device_id AND m.user_id = s.user_id
+            JOIN devices d ON d.id = s.device_id
+             WHERE t.session_id = #{sessionId} AND t.user_id = #{userId}
+               AND t.expires_at > now()
+               AND s.status = 'READY' AND s.viewer_expires_at > now()
+               AND m.status = 'ACTIVE' AND d.status != 'REVOKED'
+        )
+        """)
+    boolean isTalkable(@Param("sessionId") UUID sessionId, @Param("userId") UUID userId);
 }
