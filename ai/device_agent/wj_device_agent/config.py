@@ -64,6 +64,10 @@ class AgentConfig:
     ffmpeg_audio_args: tuple[str, ...]
     ffmpeg_audio_from_primary_input: bool
     ready_delay_seconds: int
+    # 스피커가 없는 기기에서는 비워 둔다. 그 경우 START_TALKBACK은
+    # SPEAKER_UNAVAILABLE로 거절된다.
+    talkback_url_template: str = ""
+    talkback_command_template: tuple[str, ...] = ()
 
     @property
     def topic_base(self) -> str:
@@ -142,6 +146,51 @@ class AgentConfig:
         ca_cert = Path(_required("MQTT_CA_CERT"))
         if not ca_cert.is_file():
             raise ValueError(f"MQTT_CA_CERT does not exist: {ca_cert}")
+
+        ffmpeg_path = os.environ.get("FFMPEG_PATH", "/usr/bin/ffmpeg")
+        talkback_url_template = os.environ.get("MEDIA_TALKBACK_URL_TEMPLATE", "").strip()
+        if not talkback_url_template and _boolean("TALKBACK_ENABLED"):
+            # 발화 경로는 같은 MediaMTX의 형제 경로다. 기기 계정에는 이 경로의
+            # read 권한만 있으므로 송출 자격 증명을 그대로 재사용한다.
+            talkback_url_template = template.replace(
+                "/live/{stream_id}", "/talkback/{stream_id}"
+            )
+            if "/talkback/{stream_id}" not in talkback_url_template:
+                raise ValueError(
+                    "MEDIA_TALKBACK_URL_TEMPLATE is required when "
+                    "MEDIA_PUBLISH_URL_TEMPLATE does not use /live/{stream_id}"
+                )
+        if talkback_url_template:
+            if talkback_url_template.count("{stream_id}") != 1:
+                raise ValueError(
+                    "MEDIA_TALKBACK_URL_TEMPLATE must contain {stream_id} exactly once"
+                )
+            if not talkback_url_template.startswith(("rtsp://", "rtsps://")):
+                raise ValueError("MEDIA_TALKBACK_URL_TEMPLATE must use RTSP or RTSPS")
+
+        talkback_command = _json_args("TALKBACK_COMMAND")
+        if talkback_command is None and talkback_url_template:
+            tls_args: tuple[str, ...] = ()
+            if talkback_url_template.startswith("rtsps://"):
+                if media_tls_ca_cert is None:
+                    media_tls_ca_cert = Path(_required("MEDIA_TLS_CA_CERT"))
+                    if not media_tls_ca_cert.is_file():
+                        raise ValueError(
+                            f"MEDIA_TLS_CA_CERT does not exist: {media_tls_ca_cert}"
+                        )
+                tls_args = ("-tls_verify", "1", "-ca_file", str(media_tls_ca_cert))
+            talkback_command = (
+                ffmpeg_path,
+                "-hide_banner", "-nostdin", "-loglevel", "warning",
+                *tls_args,
+                "-rtsp_transport", "tcp",
+                "-i", "{url}",
+                "-f", os.environ.get("TALKBACK_OUTPUT_FORMAT", "alsa"),
+                os.environ.get("TALKBACK_OUTPUT_DEVICE", "default"),
+            )
+        if talkback_command is not None and talkback_command.count("{url}") != 1:
+            raise ValueError("TALKBACK_COMMAND must contain {url} exactly once")
+
         return cls(
             device_id=device_id,
             bearer_token=token,
@@ -154,11 +203,13 @@ class AgentConfig:
             publish_url_template=template,
             media_tls_ca_cert=media_tls_ca_cert,
             ffmpeg_output_args=ffmpeg_output_args,
-            ffmpeg_path=os.environ.get("FFMPEG_PATH", "/usr/bin/ffmpeg"),
+            ffmpeg_path=ffmpeg_path,
             ffmpeg_input_args=input_args,
             ffmpeg_video_args=video_args,
             ffmpeg_audio_input_args=audio_input_args,
             ffmpeg_audio_args=audio_args,
             ffmpeg_audio_from_primary_input=audio_from_primary,
             ready_delay_seconds=_positive_int("READY_DELAY_SECONDS", 3),
+            talkback_url_template=talkback_url_template,
+            talkback_command_template=talkback_command or (),
         )

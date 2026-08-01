@@ -16,6 +16,37 @@ Flutter POST stream session
   -> STOP_STREAM or hardExpiresAt terminates FFmpeg
 ```
 
+Two-way audio reverses that path for audio only:
+
+```text
+Flutter POST talkback
+  -> Spring publishes START_TALKBACK over MQTT
+  -> agent reads .../talkback/{streamId} and plays it to the speaker
+  -> STOP_TALKBACK or hardExpiresAt terminates the player
+```
+
+The player is a separate process from the live publisher on purpose. Muting the
+device uplink instead would mean restarting the publishing FFmpeg, which breaks
+the video every time somebody speaks. The echo loop is cut on the app side: the
+app mutes its own WHEP playback while transmitting.
+
+`TALKBACK_ENABLED` is off by default. Without it `START_TALKBACK` is rejected
+with `SPEAKER_UNAVAILABLE` rather than accepted by a device with no speaker.
+
+### Standing in for the device with a laptop
+
+The talkback player is the only speaker-dependent part, so a laptop can take the
+device role before the hardware arrives. Point `TALKBACK_COMMAND` at `ffplay`,
+which writes to the default system audio output on any OS:
+
+```text
+TALKBACK_ENABLED=true
+TALKBACK_COMMAND='["ffplay","-hide_banner","-loglevel","warning","-nodisp","-autoexit","-rtsp_transport","tcp","{url}"]'
+```
+
+This exercises the MQTT commands, the read URL, and the player lifecycle. It does
+not exercise ALSA device selection or on-device echo behaviour.
+
 The agent itself remains focused on MQTT control and on-demand live relay.
 `wj-edge-ai-mvp.service` runs YOLO, YAMNet, and the clip uploader beside it,
 using loopback media and local event files instead of opening a second MQTT

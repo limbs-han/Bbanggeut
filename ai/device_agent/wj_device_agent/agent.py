@@ -17,6 +17,7 @@ import paho.mqtt.client as mqtt
 
 from .config import AgentConfig
 from .stream import StreamManager
+from .talkback import TalkbackManager
 
 
 LOG = logging.getLogger("wj-device-agent")
@@ -48,6 +49,7 @@ class DeviceAgent:
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
         self.streams = StreamManager(config)
+        self.talkback = TalkbackManager(config)
         self.commands: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=100)
         self.stop_event = threading.Event()
         self.last_commands: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -87,6 +89,7 @@ class DeviceAgent:
         LOG.info("기기 에이전트 시작: %s", self.config.device_id)
         self.stop_event.wait()
         self.commands.put(None)
+        self.talkback.stop()
         self.streams.stop()
         if self.client.is_connected():
             self._publish("status", self._status("OFFLINE", "SERVICE_STOPPED"), 1, True)
@@ -145,6 +148,11 @@ class DeviceAgent:
                 self._stream_event(command, "STREAM_STOPPED", payload["streamId"])
                 self.current_context = None
                 self._ack(command, "SUCCEEDED", stream_id=payload["streamId"])
+            elif command_type == "START_TALKBACK":
+                self._start_talkback(command, payload)
+            elif command_type == "STOP_TALKBACK":
+                self.talkback.stop(payload["streamId"])
+                self._ack(command, "SUCCEEDED", stream_id=payload["streamId"])
             elif command_type == "PING":
                 self._ack(command, "SUCCEEDED")
             else:
@@ -170,6 +178,20 @@ class DeviceAgent:
         self._stream_event(command, "STREAM_READY", stream_id)
         self._ack(command, "SUCCEEDED", stream_id=stream_id, session_id=payload.get("sessionId"))
 
+    def _start_talkback(self, command: dict[str, Any], payload: dict[str, Any]) -> None:
+        stream_id = payload["streamId"]
+        hard_expires_at = parse_time(payload["hardExpiresAt"])
+        started = self.talkback.start(stream_id, hard_expires_at)
+        if not started:
+            # 이미 같은 발화를 재생 중이다. 재생을 끊지 않고 만료만 연장했다.
+            self._ack(command, "SUCCEEDED", stream_id=stream_id)
+            return
+        self.stop_event.wait(self.config.ready_delay_seconds)
+        if not self.talkback.snapshot().running:
+            self._ack(command, "FAILED", "TALKBACK_START_FAILED", stream_id)
+            return
+        self._ack(command, "SUCCEEDED", stream_id=stream_id)
+
     def _validate(self, command: dict[str, Any]) -> str:
         if command.get("schemaVersion") != "2.0":
             raise ValueError("unsupported schema")
@@ -185,6 +207,7 @@ class DeviceAgent:
 
     def _monitor(self) -> None:
         while not self.stop_event.wait(1):
+            self._monitor_talkback()
             snapshot = self.streams.snapshot()
             if snapshot.running and snapshot.hard_expires_at and utc_now() >= snapshot.hard_expires_at:
                 context = self.current_context
@@ -207,6 +230,28 @@ class DeviceAgent:
                     "STREAM_RELAY_EXITED",
                 )
                 self.current_context = None
+
+    def _monitor_talkback(self) -> None:
+        """STOP_TALKBACK이 유실되어도 기기가 스스로 스피커를 닫게 한다.
+
+        제어 경로가 끊긴 채 재생이 남으면 집 안에서 소리가 계속 나온다.
+        """
+        snapshot = self.talkback.snapshot()
+        if (
+            snapshot.running
+            and snapshot.hard_expires_at
+            and utc_now() >= snapshot.hard_expires_at
+        ):
+            LOG.warning("발화 재생 강제 종료: stream=%s", snapshot.stream_id)
+            self.talkback.stop(snapshot.stream_id)
+            return
+        finished = self.talkback.clear_if_finished()
+        if finished and finished.stream_id:
+            LOG.warning(
+                "발화 재생 종료: stream=%s, return_code=%s",
+                finished.stream_id,
+                finished.return_code,
+            )
 
     def _heartbeat_loop(self) -> None:
         while not self.stop_event.wait(30):
