@@ -14,7 +14,11 @@ webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 srt: false
 playback: false
-api: false
+# 데모는 DEMO_MODE_ENABLED로 돌아가 MQTT를 건너뛴다. 그래서 기기 역할을 맡은
+# 노트북에 START_TALKBACK이 오지 않는다. 대신 start-talkback-speaker.ps1이 이
+# API로 talkback 경로가 열리는지 감시한다. loopback에만 노출한다.
+api: yes
+apiAddress: 127.0.0.1:9997
 metrics: false
 pprof: false
 
