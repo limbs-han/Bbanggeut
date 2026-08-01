@@ -31,6 +31,10 @@ test("server-renders the edge observatory dashboard", async () => {
   assert.match(html, /<title>WJ Edge Observatory<\/title>/i);
   assert.match(html, /Edge Observatory/);
   assert.match(html, /YOLO 실측 결과 비교/);
+  assert.match(html, /발표 질문을 커버하는 모델 선정 근거/);
+  assert.match(html, /왜 이 YOLO 모델인가/);
+  assert.match(html, /실제 환경에서도 유효한가/);
+  assert.match(html, /mAP50-95/);
   assert.match(html, /데이터 소스 상태/);
   assert.match(html, /LAN 전용/);
   assert.doesNotMatch(html, /Your site is taking shape/);
