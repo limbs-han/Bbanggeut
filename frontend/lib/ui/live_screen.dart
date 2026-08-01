@@ -80,11 +80,18 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   bool starting = false;
   bool controlsVisible = false;
   bool webRtcWasConnected = false;
+  DateTime? warmupDeadline;
   bool talking = false;
   bool talkbackBusy = false;
   Future<void>? preferredPlayerFuture;
 
   bool get hasPlayback => whepPlayer.connected;
+
+  /// 세션을 만든 순간부터 첫 프레임까지가 전부 "준비 중"이다. 이 동안 재생
+  /// 버튼이 살아 있으면 조급한 탭이 _restart()로 이어져 진행 중이던 워밍업을
+  /// 매번 처음으로 되돌린다.
+  bool get connecting =>
+      !hasPlayback && error == null && !closing && (starting || session != null);
 
   @override
   void initState() {
@@ -146,6 +153,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   Future<void> _start() async {
     if (starting || !widget.isActive) return;
+    warmupDeadline = null;
     setState(() {
       started = true;
       paused = false;
@@ -270,8 +278,31 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       if (!mounted || closing) return;
       session = updated;
       if (updated.isReady) {
-        pollTimer?.cancel();
-        await _openPreferredPlayer(updated);
+        try {
+          await _openPreferredPlayer(updated);
+          if (!mounted || closing) return;
+          pollTimer?.cancel();
+          pollTimer = null;
+          warmupDeadline = null;
+        } on WhepPlaybackException {
+          if (!mounted || closing) return;
+          // 기기의 READY는 "송출 프로세스가 살아 있다"는 신호일 뿐이라
+          // MediaMTX에 스트림이 실제로 붙기 전일 수 있다. 첫 실패를 곧장
+          // 에러로 보여주면 사용자가 다시 눌러 세션을 재시작하는 수밖에
+          // 없으므로, 준비 표시를 유지한 채 조용히 다시 붙는다.
+          warmupDeadline ??= DateTime.now().add(const Duration(seconds: 25));
+          if (DateTime.now().isAfter(warmupDeadline!)) {
+            _cancelTimers();
+            setState(() => error = '카메라 연결에 실패했어요. 다시 시도해 주세요.');
+          } else {
+            // 첫 조회부터 READY였다면 폴링이 아직 없다.
+            pollTimer ??= Timer.periodic(
+              const Duration(seconds: 2),
+              (_) => _checkStatus(),
+            );
+            setState(() {});
+          }
+        }
       } else if (const {
         'FAILED',
         'CLOSED',
@@ -415,7 +446,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   void _handleVideoTap() {
     if (!hasPlayback) {
-      if (!starting) {
+      // 준비 중 탭을 무시하지 않으면 _restart()가 진행 중인 세션을 닫고
+      // 워밍업을 처음부터 다시 시작한다.
+      if (!connecting) {
         if (started) {
           unawaited(_restart());
         } else {
@@ -450,28 +483,53 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                   _videoBody(),
                   if (!hasPlayback)
                     Center(
-                      child: IconButton.filled(
-                        key: const Key('live-play-button'),
-                        onPressed: starting ? null : _handleVideoTap,
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xB33A2C22),
-                          foregroundColor: Colors.white,
-                          fixedSize: const Size.square(58),
-                        ),
-                        icon: starting
-                            ? const SizedBox.square(
-                                dimension: 23,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.4,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Icon(
-                                error == null
-                                    ? Icons.play_arrow_rounded
-                                    : Icons.refresh_rounded,
-                                size: 34,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton.filled(
+                            key: const Key('live-play-button'),
+                            onPressed: connecting ? null : _handleVideoTap,
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xB33A2C22),
+                              foregroundColor: Colors.white,
+                              fixedSize: const Size.square(58),
+                            ),
+                            icon: connecting
+                                ? const SizedBox.square(
+                                    dimension: 23,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.4,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Icon(
+                                    error == null
+                                        ? Icons.play_arrow_rounded
+                                        : Icons.refresh_rounded,
+                                    size: 34,
+                                  ),
+                          ),
+                          if (connecting)
+                            Container(
+                              key: const Key('live-warmup-caption'),
+                              margin: const EdgeInsets.only(top: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
                               ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xB33A2C22),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: const Text(
+                                '카메라를 깨우는 중이에요…',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   Positioned(
