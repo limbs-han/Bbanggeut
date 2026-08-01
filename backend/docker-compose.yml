@@ -118,6 +118,8 @@ services:
       - "127.0.0.1:8554:8554"
       - "127.0.0.1:8889:8889"
       - "8189:8189/udp"
+      # adb reverse가 전달할 수 있도록 ICE TCP를 loopback에 노출한다.
+      - "127.0.0.1:8189:8189/tcp"
     volumes:
       - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
 
