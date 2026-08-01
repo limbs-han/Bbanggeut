@@ -34,6 +34,61 @@ void main() {
     expect(subject.project.requiresRendering(), isTrue);
   });
 
+  test('구간을 정한 직후에도 분할할 수 있다', () {
+    final subject = controller();
+
+    // 편집기를 열면 재생 위치는 맨 앞이다. 그 자리에서는 앞쪽에 남는 길이가 0이라
+    // 나눌 수 없다 — 분할 단추가 흐려져 있는 게 맞다.
+    expect(subject.project.playheadMs, 0);
+    expect(subject.canSplitAtPlayhead, isFalse);
+
+    // 구간을 정하면 화면이 재생 위치를 구간 가운데로 들인다. 그러면 어느 쪽으로도
+    // 자를 수 있다. 예전에는 구간 맨 앞에 그대로 붙어 있어서, 구간을 정한 뒤에도
+    // 분할이 영영 흐린 채였다.
+    subject.trimSelectedClip(sourceStartMs: 3000, sourceEndMs: 9000);
+    final center = subject.timelineCenterOfSelectedClip();
+    expect(center, isNotNull);
+    subject.setPlayhead(center!);
+
+    expect(subject.canSplitAtPlayhead, isTrue);
+    expect(subject.splitAt(center), isTrue);
+    expect(subject.project.clips, hasLength(2));
+    // 나뉜 두 조각을 이으면 정해 둔 구간 그대로다.
+    expect(subject.project.clips.first.sourceStartMs, 3000);
+    expect(subject.project.clips.last.sourceEndMs, 9000);
+    expect(
+      subject.project.clips.first.sourceEndMs,
+      subject.project.clips.last.sourceStartMs,
+    );
+  });
+
+  test('재생 위치는 고른 구간 안에 머문다', () {
+    final subject = controller();
+
+    subject.trimSelectedClip(sourceStartMs: 4000, sourceEndMs: 6000);
+    final center = subject.timelineCenterOfSelectedClip()!;
+    final clip = subject.project.clips.single;
+
+    // 타임라인 기준 가운데는 구간 길이의 절반이다(앞 클립이 없으므로 0에서 시작).
+    expect(center, clip.durationMs ~/ 2);
+    expect(center, greaterThan(0));
+    expect(center, lessThan(subject.project.durationMs));
+  });
+
+  test('나누기만 하고 아무것도 지우지 않으면 다시 만들 것이 없다', () {
+    final subject = controller();
+
+    expect(subject.splitAt(4000), isTrue);
+    expect(subject.project.clips, hasLength(2));
+    // 이어 붙이면 원본 그대로다 — 몇십 초짜리 재인코딩을 할 이유가 없다.
+    expect(subject.project.requiresRendering(), isFalse);
+
+    // 가운데가 비면 이야기가 다르다. 그건 실제로 다른 영상이다.
+    subject.selectClip(subject.project.clips.first.id);
+    subject.deleteSelectedClip();
+    expect(subject.project.requiresRendering(), isTrue);
+  });
+
   test('재생 헤드에서 분할하고 타임라인 길이를 보존한다', () {
     final subject = controller();
 
@@ -245,6 +300,15 @@ void main() {
 
     subject.selectClipAtTimeline(1000);
     expect(subject.project.selectedClip?.sourceStartMs, 0);
+
+    // 이음매를 짚으면 뒤 클립이다. 앞 클립의 맨 끝으로 잡히면 그 자리에서
+    // 남는 길이가 0이라 분할도 막히고, 고른 클립도 사용자가 짚은 것과 달라진다.
+    subject.selectClipAtTimeline(4000);
+    expect(subject.project.selectedClip?.sourceStartMs, 4000);
+
+    // 마지막 클립만 끝 시각을 품는다 — 그래야 맨 끝을 짚을 수 있다.
+    subject.selectClipAtTimeline(subject.project.durationMs);
+    expect(subject.project.selectedClip?.sourceStartMs, 4000);
   });
 
   test('앱 안 AR 효과는 색감과 얼굴 스티커를 함께 켜고 끈다', () {

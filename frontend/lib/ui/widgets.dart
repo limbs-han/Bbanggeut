@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -331,10 +332,26 @@ class MemoryThumbnail extends StatelessWidget {
   final double width;
   final double height;
 
-  Widget _fallback() => video.thumbnailUrl != null
+  /// 몇 픽셀로 풀어 둘지.
+  ///
+  /// **왜 정해 주는가**: [VideoThumbnailCache]가 만드는 그림은 폭 720px인데
+  /// 여기서 그리는 자리는 92×68dp다. 정해 주지 않으면 720px 그대로 풀려 한 장에
+  /// 1MB 넘게 이미지 캐시를 차지한다 — 추억 목록처럼 수십 장이 스크롤되는 화면에서는
+  /// 그게 수십 MB가 되고, 푸는 시간도 그만큼 들어 스크롤이 걸린다.
+  ///
+  /// [BoxFit.cover]는 원본 비율에 따라 가로·세로 중 한쪽이 기준이 된다. 원본이
+  /// 세로 영상이면 가로가 기준이고, 가로 영상(16:9)이면 세로가 기준이라 그때 필요한
+  /// 가로 픽셀이 더 크다. 둘 중 큰 쪽으로 잡아 어느 비율이 와도 흐려지지 않게 한다.
+  int _decodeWidth(BuildContext context) {
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    return (math.max(width, height * 16 / 9) * ratio).round();
+  }
+
+  Widget _fallback(BuildContext context) => video.thumbnailUrl != null
       ? Image.network(
           video.thumbnailUrl!,
           fit: BoxFit.cover,
+          cacheWidth: _decodeWidth(context),
           errorBuilder: (_, _, _) =>
               const FamilyReferenceImage(borderRadius: 0),
         )
@@ -354,10 +371,11 @@ class MemoryThumbnail extends StatelessWidget {
             return Image.file(
               File(path),
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _fallback(),
+              cacheWidth: _decodeWidth(context),
+              errorBuilder: (_, _, _) => _fallback(context),
             );
           }
-          return _fallback();
+          return _fallback(context);
         },
       ),
     ),

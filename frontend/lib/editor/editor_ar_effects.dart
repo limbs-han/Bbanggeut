@@ -145,4 +145,58 @@ class EditorArEffect {
     }
     return null;
   }
+
+  /// 스티커 탭에 함께 올릴 이모지들. 예전 AR 탭에 있던 것들이 여기로 왔다 —
+  /// 진짜 AR은 Banuba가 맡고, 손으로 얹는 그림은 스티커 탭 한 곳에 모은다.
+  static List<String> get stickerValues {
+    final values = <String>[];
+    for (final effect in all) {
+      for (final sticker in effect.stickers) {
+        if (!values.contains(sticker.value)) values.add(sticker.value);
+      }
+    }
+    return values;
+  }
+}
+
+/// 앱에 함께 넣어 둔 Banuba Face AR 마스크.
+///
+/// 파일은 `frontend/effects/<디렉터리>`에 있고, 안드로이드 빌드가
+/// `assets/bnb-resources/effects`로 복사한다(app/build.gradle.kts의
+/// `copyBanubaEffects`). Banuba 편집기를 열면 이 목록이 마스크 서랍에 뜬다.
+///
+/// 플러그인(`ve_sdk_flutter`)의 공개 API에는 "이 마스크를 미리 골라 둬라"가
+/// 없다. 그래서 카드를 누르면 편집기를 열고, 어떤 마스크를 고르면 되는지
+/// 안내만 한다.
+class BanubaArEffect {
+  const BanubaArEffect({
+    required this.directory,
+    required this.label,
+    required this.badge,
+  });
+
+  /// `frontend/effects` 아래 디렉터리 이름. 미리보기 그림 경로의 기준이다.
+  final String directory;
+
+  final String label;
+  final String badge;
+
+  String get previewAsset => 'effects/$directory/preview.png';
+
+  static const bundled = <BanubaArEffect>[
+    BanubaArEffect(directory: 'BulldogHarlamov', label: '불독', badge: '🐶'),
+    BanubaArEffect(directory: 'CartoonOctopus', label: '문어', badge: '🐙'),
+    BanubaArEffect(directory: 'Afro', label: '아프로', badge: '💇'),
+    BanubaArEffect(directory: 'PoliceMan', label: '경찰관', badge: '👮'),
+    BanubaArEffect(
+      directory: '0003_cu_Spider1_v3_b1',
+      label: '거미',
+      badge: '🕷️',
+    ),
+    BanubaArEffect(
+      directory: 'test_image_process_cartoon',
+      label: '만화풍',
+      badge: '🎨',
+    ),
+  ];
 }

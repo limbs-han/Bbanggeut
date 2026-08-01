@@ -48,17 +48,29 @@ enum EditorLayoutClass { compact, normal, tall }
 /// **왜 비율인가**: 예전에는 높이 구간마다 고정 픽셀 값을 골랐다(148 / 184 /
 /// 198…). 갤럭시 S24+처럼 세로가 긴 기기에서는 타임라인이 실제 화면에 비해
 /// 작고, 작은 기기에서는 미리보기가 눌렸다. 이제 SafeArea 안쪽 실측 높이에
-/// 비율을 곱한 뒤 안전 범위로 잘라낸다 — 기준은 S24+(약 411×890dp)에서
-/// 미리보기 55%대, 타임라인 24%대가 나오도록 잡았고, 다른 기기는 같은 비율로
-/// 자동으로 따라간다.
+/// 비율을 곱한 뒤 안전 범위로 잘라낸다.
+///
+/// **기준 기기는 갤럭시 S24+**다. 논리 크기 411×891dp, 상태바·제스처바를 뺀
+/// SafeArea 안쪽이 대략 411×840dp. 거기서 나오는 값은 이렇다.
+///
+/// | 조각        | 값      | 설명                          |
+/// |-------------|---------|-------------------------------|
+/// | 위 막대     | 48.7dp  | 뒤로·되돌리기·저장            |
+/// | 구간 띠     | 73.9dp  | 프레임이 꽉 찬 노란 창        |
+/// | 버튼 줄     | 41.2dp  | 분할·복제·삭제(컷 편집일 때)  |
+/// | 도구 칸     | 119.3dp | 탭마다 다름(AR은 ×1.6)        |
+/// | 하단 네비   | 63.8dp  | 도구 7개                      |
+/// | **미리보기**| **493~612dp** | 나머지 전부 = 화면의 59~73% |
+///
+/// 다른 기기는 같은 비율로 따라간다. 세로가 짧아 미리보기가
+/// [minimumPreviewHeight] 밑으로 내려갈 상황이면 도구 칸이 먼저 양보한다.
 class EditorLayoutTokens {
   const EditorLayoutTokens._({
     required this.layoutClass,
     required this.availableHeight,
     required this.availableWidth,
     required this.topBarHeight,
-    required this.timelineHeight,
-    required this.collapsedTimelineHeight,
+    required this.trimBarHeight,
     required this.toolPanelHeight,
     required this.bottomNavigationHeight,
     required this.minimumPreviewHeight,
@@ -84,8 +96,10 @@ class EditorLayoutTokens {
 
     final topBarHeight = _clamp(height * 0.058, 44, 58);
     final bottomNavigationHeight = _clamp(height * 0.076, 54, 74);
-    final timelineHeight = _clamp(height * 0.245, 146, 232);
-    final collapsedTimelineHeight = _clamp(height * 0.092, 64, 92);
+    // 구간 띠 하나의 높이. 프레임이 알아볼 만큼은 크고, 미리보기를 밀어낼
+    // 만큼 크지는 않게. 타임라인 칸 전체 높이는 이 띠와 버튼 줄을 더해
+    // 저절로 정해진다 — 남는 자리를 빈칸으로 채우지 않는다.
+    final trimBarHeight = _clamp(height * 0.088, 58, 92);
     final toolPanelHeight = _clamp(height * 0.142, 100, 148);
     final thumbnailHeight = _clamp(height * 0.076, 50, 80);
 
@@ -94,8 +108,7 @@ class EditorLayoutTokens {
       availableHeight: height,
       availableWidth: width,
       topBarHeight: topBarHeight,
-      timelineHeight: timelineHeight,
-      collapsedTimelineHeight: collapsedTimelineHeight,
+      trimBarHeight: trimBarHeight,
       toolPanelHeight: toolPanelHeight,
       bottomNavigationHeight: bottomNavigationHeight,
       // 키보드가 올라오면 미리보기가 먼저 양보한다.
@@ -127,8 +140,7 @@ class EditorLayoutTokens {
   final double availableHeight;
   final double availableWidth;
   final double topBarHeight;
-  final double timelineHeight;
-  final double collapsedTimelineHeight;
+  final double trimBarHeight;
   final double toolPanelHeight;
   final double bottomNavigationHeight;
   final double minimumPreviewHeight;
@@ -136,6 +148,10 @@ class EditorLayoutTokens {
   final double navigationFontSize;
   final double navigationIconSize;
   final double actionButtonHeight;
+
+  /// 도구 칸이 아무리 양보해도 이 아래로는 줄지 않는다. 제목 한 줄과 버튼
+  /// 한 줄은 남아야 도구를 쓸 수 있다.
+  static const minimumToolPanelHeight = 72.0;
 
   static double _clamp(double value, double min, double max) =>
       math.min(math.max(value, min), max);
