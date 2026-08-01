@@ -25,7 +25,6 @@ void main() {
     VoidCallback? onTrimCommitted,
     ValueChanged<String>? onStickerSelected,
     ValueChanged<EditorLook>? onLookSelected,
-    ValueChanged<BanubaArEffect?>? onBanubaAr,
     VoidCallback? onAiCaption,
     VoidCallback? onPlayRange,
     ValueChanged<String>? onBlocked,
@@ -62,7 +61,6 @@ void main() {
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
         onLookSelected: onLookSelected ?? (_) {},
-        onBanubaAr: onBanubaAr ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
         onToolSelected: controller.selectTool,
       ),
@@ -116,7 +114,7 @@ void main() {
         '오디오',
         '스티커',
         'AI자막',
-        'AR',
+        '효과',
       ]) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
@@ -143,7 +141,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 400));
           expect(tester.takeException(), isNull, reason: '$tool 패널이 넘쳤다');
         }
-        // 색감을 켜도 AR 패널이 넘치지 않아야 한다.
+        // 색감을 켜도 효과 패널이 넘치지 않아야 한다.
         controller
           ..selectTool(EditorTool.ar)
           ..setLook(EditorLook.mono);
@@ -183,7 +181,7 @@ void main() {
   });
 
   testWidgets('세로가 짧으면 도구 칸이 먼저 양보하고 미리보기는 지켜진다', (tester) async {
-    // AR 탭은 한 뼘 더 쓴다. 이 크기에서는 다 주면 미리보기가 눌린다.
+    // 효과 탭은 한 뼘 더 쓴다. 이 크기에서는 다 주면 미리보기가 눌린다.
     const short = Size(360, 480);
     tester.view
       ..physicalSize = short
@@ -269,7 +267,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('AI자막 버튼은 하단 네비게이션에서 AR 왼쪽에 있다', (tester) async {
+  testWidgets('AI자막 버튼은 하단 네비게이션에서 효과 왼쪽에 있다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -609,7 +607,7 @@ void main() {
     expect(controller.project.clips, hasLength(2));
   });
 
-  testWidgets('AR 탭에서 필터는 그 자리에서 바로 적용된다', (tester) async {
+  testWidgets('효과 탭에서 필터는 그 자리에서 바로 적용된다', (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
@@ -631,33 +629,7 @@ void main() {
     expect(controller.project.look, EditorLook.none);
   });
 
-  testWidgets('AR 탭의 얼굴 마스크는 Banuba 편집기를 연다', (tester) async {
-    tester.view
-      ..physicalSize = const Size(390, 844)
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final controller = newController()..selectTool(EditorTool.ar);
-    addTearDown(controller.dispose);
-    final opened = <BanubaArEffect?>[];
-
-    await tester.pumpWidget(workspace(controller, onBanubaAr: opened.add));
-
-    // 큰 버튼은 마스크를 정하지 않고 편집기만 연다.
-    await tester.tap(find.byKey(const Key('editor-open-banuba-ar')));
-    await tester.pump();
-    expect(opened, hasLength(1));
-    expect(opened.single, isNull);
-
-    // 마스크 카드를 누르면 그 마스크와 함께 연다.
-    final card = find.byKey(const Key('editor-banuba-effect-BulldogHarlamov'));
-    await tester.ensureVisible(card);
-    await tester.pumpAndSettle();
-    await tester.tap(card);
-    await tester.pump();
-    expect(opened.last?.directory, 'BulldogHarlamov');
-  });
-
-  testWidgets('예전 AR 스티커가 스티커 탭 항목으로 들어와 있다', (tester) async {
+  testWidgets('꾸미기 스티커가 스티커 탭 항목으로 들어와 있다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -671,12 +643,12 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 400));
 
-    // 목록 자체에 AR 그림들이 다 들어와 있는지부터 본다. 가로 목록은 보이는
+    // 목록 자체에 꾸미기 그림들이 다 들어와 있는지부터 본다. 가로 목록은 보이는
     // 것만 만들기 때문에 화면에서 다 찾을 수는 없다.
     expect(EditorArEffect.stickerValues, contains('👑'));
     expect(EditorArEffect.stickerValues, contains('🕶️'));
 
-    // 예전 AR 탭에만 있던 왕관을 스티커 탭에서 눌러 놓을 수 있어야 한다.
+    // 왕관을 스티커 탭에서 눌러 놓을 수 있어야 한다.
     final crown = find.byKey(const Key('editor-sticker-👑'));
     await tester.scrollUntilVisible(
       crown,

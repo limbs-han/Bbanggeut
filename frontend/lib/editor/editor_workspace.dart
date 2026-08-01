@@ -36,7 +36,6 @@ class EditorWorkspace extends StatelessWidget {
     required this.onMutedChanged,
     required this.onStickerSelected,
     required this.onLookSelected,
-    required this.onBanubaAr,
     required this.onAiCaption,
     required this.onToolSelected,
     this.onUndo,
@@ -44,8 +43,6 @@ class EditorWorkspace extends StatelessWidget {
     this.onVolumeCommitted,
     this.textEditing = false,
     this.rangePreviewing = false,
-    this.banubaBusy = false,
-    this.banubaStatus,
     this.aiCaptionSummary,
     this.exportProgress,
     this.exportStatus,
@@ -97,18 +94,12 @@ class EditorWorkspace extends StatelessWidget {
   /// 영상 전체 색감. 앱 안에서 바로 입히고 저장할 때 함께 구워진다.
   final ValueChanged<EditorLook> onLookSelected;
 
-  /// Banuba AR 편집기를 연다. 카드를 눌러 왔으면 그 마스크를 함께 넘긴다.
-  final ValueChanged<BanubaArEffect?> onBanubaAr;
-
   /// 영상 위에서 글을 쓰는 중인가.
   ///
   /// 이때는 타임라인·도구 칸·하단 네비를 전부 접는다. 키보드와 꾸밈 줄이
   /// 이미 화면 절반을 가져가는데 아래 도구까지 남겨 두면 미리보기가 손톱만
   /// 해져서, 정작 "지금 쓰는 글이 영상 위에서 어떻게 보이는지"를 볼 수 없다.
   final bool textEditing;
-
-  final bool banubaBusy;
-  final String? banubaStatus;
 
   /// 되돌리기·다시 실행. null이면 컨트롤러를 바로 부른다 — 화면 쪽에서
   /// 재생 위치까지 맞추고 싶을 때만 넘기면 된다.
@@ -218,12 +209,9 @@ class EditorWorkspace extends StatelessWidget {
                             onVolumeCommitted: onVolumeCommitted,
                             onStickerSelected: onStickerSelected,
                             onLookSelected: onLookSelected,
-                            onBanubaAr: onBanubaAr,
                             previewFrame: thumbnails.isEmpty
                                 ? null
                                 : thumbnails[thumbnails.length ~/ 2],
-                            banubaBusy: banubaBusy,
-                            banubaStatus: banubaStatus,
                             onAiCaption: onAiCaption,
                             aiCaptionSummary: aiCaptionSummary,
                           ),
@@ -886,12 +874,9 @@ class SelectedToolPanel extends StatelessWidget {
     required this.onMutedChanged,
     required this.onStickerSelected,
     required this.onLookSelected,
-    required this.onBanubaAr,
     required this.onAiCaption,
     this.previewFrame,
     this.onVolumeCommitted,
-    this.banubaBusy = false,
-    this.banubaStatus,
     this.aiCaptionSummary,
   });
 
@@ -904,10 +889,7 @@ class SelectedToolPanel extends StatelessWidget {
   final ValueChanged<bool> onMutedChanged;
   final ValueChanged<String> onStickerSelected;
   final ValueChanged<EditorLook> onLookSelected;
-  final ValueChanged<BanubaArEffect?> onBanubaAr;
   final String? previewFrame;
-  final bool banubaBusy;
-  final String? banubaStatus;
   final VoidCallback onAiCaption;
   final String? aiCaptionSummary;
 
@@ -948,10 +930,7 @@ class SelectedToolPanel extends StatelessWidget {
         ),
         EditorTool.ar => _ArPanel(
           look: project.look,
-          busy: banubaBusy,
-          status: banubaStatus,
           previewFrame: previewFrame,
-          onOpen: onBanubaAr,
           onLookSelected: onLookSelected,
         ),
         EditorTool.cut => const SizedBox.shrink(),
@@ -1103,8 +1082,7 @@ class _StickerPanel extends StatelessWidget {
 
   static const _base = ['😊', '😂', '❤️', '⭐', '👏', '🌸', '🍰', '🐱', '👍'];
 
-  /// 기본 스티커 + 예전 AR 탭에 있던 그림들. 손으로 얹는 스티커는 전부
-  /// 여기 한 곳에 모은다 — AR 탭은 진짜 Banuba 마스크만 맡는다.
+  /// 기본 스티커와 꾸미기 이모지를 한 곳에 모은다.
   static List<String> get _stickers => [
     ..._base,
     for (final value in EditorArEffect.stickerValues)
@@ -1206,36 +1184,25 @@ class _AiCaptionPanel extends StatelessWidget {
   );
 }
 
-/// AR 탭.
+/// 인앱 색감 효과 탭.
 ///
 /// **왜 필터가 먼저인가**: 여기서 누른 것은 화면을 벗어나지 않고 그 자리에서
 /// 바로 영상에 입혀져야 한다. 색감 필터는 우리 미리보기가 직접 그리고
 /// 내보내기(media3)가 같은 값으로 구워 주므로 즉시 적용이 된다. 카드에 깔리는
 /// 그림은 남의 스크린샷이 아니라 **지금 편집 중인 영상의 실제 프레임**이다 —
 /// 누르기 전에 결과를 그대로 본다.
-///
-/// **얼굴 마스크는 왜 따로인가**: 얼굴을 따라다니는 마스크는 Banuba 엔진이
-/// 프레임마다 얼굴을 찾아 렌더링해야 한다. `ve_sdk_flutter`가 내주는 API는
-/// "영상 경로를 넘겨 편집기 화면을 연다"까지고, 우리 미리보기나 저장된 영상에
-/// 마스크를 얹어 주는 함수는 없다. 그래서 이 줄만 편집기를 거친다.
 class _ArPanel extends StatelessWidget {
   const _ArPanel({
     required this.look,
-    required this.busy,
-    required this.status,
     required this.previewFrame,
-    required this.onOpen,
     required this.onLookSelected,
   });
 
   final EditorLook look;
-  final bool busy;
-  final String? status;
 
   /// 필터 카드에 깔 프레임. 아직 없으면 색만 있는 칸으로 그린다.
   final String? previewFrame;
 
-  final ValueChanged<BanubaArEffect?> onOpen;
   final ValueChanged<EditorLook> onLookSelected;
 
   @override
@@ -1277,62 +1244,6 @@ class _ArPanel extends StatelessWidget {
                 onTap: () => onLookSelected(option),
               ),
           ],
-        ),
-      ),
-      const SizedBox(height: 10),
-      SizedBox(
-        height: 22,
-        child: Row(
-          children: [
-            const Expanded(child: _PanelTitle('얼굴 마스크 · Banuba')),
-            TextButton.icon(
-              key: const Key('editor-open-banuba-ar'),
-              onPressed: busy ? null : () => onOpen(null),
-              icon: busy
-                  ? const SizedBox.square(
-                      dimension: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.open_in_new_rounded, size: 14),
-              label: Text(
-                busy ? '여는 중' : '편집기 열기',
-                style: const TextStyle(fontSize: 11),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: EditorColorTokens.coral,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                minimumSize: const Size(0, 22),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 4),
-      SizedBox(
-        height: 50,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            for (final effect in BanubaArEffect.bundled)
-              _BanubaEffectCard(
-                effect: effect,
-                enabled: !busy,
-                onTap: () => onOpen(effect),
-              ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 6),
-      Text(
-        status ?? '마스크는 얼굴을 프레임마다 따라가야 해서 Banuba 편집기에서 씌워요.',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: EditorColorTokens.muted,
-          fontSize: 11,
-          height: 1.3,
         ),
       ),
       const SizedBox(height: 4),
@@ -1423,66 +1334,6 @@ class _LookCard extends StatelessWidget {
   }
 }
 
-class _BanubaEffectCard extends StatelessWidget {
-  const _BanubaEffectCard({
-    required this.effect,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final BanubaArEffect effect;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 8),
-    child: InkWell(
-      key: Key('editor-banuba-effect-${effect.directory}'),
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
-      child: SizedBox(
-        width: 50,
-        child: Column(
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
-                child: Image.asset(
-                  effect.previewAsset,
-                  fit: BoxFit.cover,
-                  // 미리보기 그림이 빠져도 카드는 눌러야 한다.
-                  errorBuilder: (_, _, _) => ColoredBox(
-                    color: EditorColorTokens.background,
-                    child: Center(
-                      child: Text(
-                        effect.badge,
-                        style: const TextStyle(fontSize: 18),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              effect.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: EditorColorTokens.ink,
-                fontSize: 10,
-                height: 1.1,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 class EditorBottomNavigation extends StatelessWidget {
   const EditorBottomNavigation({
     super.key,
@@ -1506,7 +1357,7 @@ class EditorBottomNavigation extends StatelessWidget {
     (EditorTool.audio, '오디오', Icons.music_note_rounded),
     (EditorTool.sticker, '스티커', Icons.emoji_emotions_outlined),
     (EditorTool.aiCaption, 'AI자막', Icons.closed_caption_rounded),
-    (EditorTool.ar, 'AR', Icons.face_retouching_natural),
+    (EditorTool.ar, '효과', Icons.auto_awesome_rounded),
   ];
 
   @override

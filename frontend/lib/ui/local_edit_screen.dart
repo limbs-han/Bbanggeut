@@ -9,13 +9,11 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
-import '../core/banuba_video_editor.dart';
 import '../core/models.dart';
 import '../core/saved_video_edit.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
 import '../core/video_source_cache.dart';
-import '../editor/editor_ar_effects.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
 import '../editor/editor_text_style_bar.dart';
@@ -46,12 +44,6 @@ class LocalEditScreen extends StatefulWidget {
 class _LocalEditScreenState extends State<LocalEditScreen> {
   final _exporter = VideoEditorExporter();
   final _editorPlatform = const EditorPlatform();
-
-  /// Banuba Video Editor SDK. AR 탭이 이걸 열어 얼굴 마스크를 씌우고,
-  /// 돌아온 영상을 이 편집기의 새 원본으로 갈아 끼운다.
-  final _banubaEditor = BanubaVideoEditor();
-  bool _banubaBusy = false;
-  String? _banubaStatus;
 
   /// AI 자막 시트가 떠 있는가. 탭과 패널 버튼이 겹쳐 두 장 쌓이는 걸 막는다.
   bool _captionSheetOpen = false;
@@ -101,11 +93,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   int? _pendingPreviewSeekMs;
   bool _seekingPreview = false;
 
-  /// 원본 영상에 자막이 이미 구워져 있는지.
-  ///
-  /// 외부 편집기(Banuba)를 다녀오면 결과 영상에 자막이 박혀 돌아왔기 때문에
-  /// 이 값이 true가 됐다. AR을 앱 안에서 처리하도록 바꾼 뒤로는 원본이 바뀌지
-  /// 않으므로 항상 false다 — 자막은 저장할 때 한 번만 얹힌다.
+  /// 원본 영상에는 자막이 구워져 있지 않으므로 저장할 때 한 번만 얹는다.
   final bool _captionsBakedIntoSource = false;
 
   /// 들린 대사로 만드는 자동 자막. 상태와 편집 로직은 전부 이쪽에 있다.
@@ -564,108 +552,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       }
       _editState.markExternalEditApplied();
     });
-  }
-
-  /// Banuba AR 편집기를 열고, 마스크가 씌워진 결과를 새 원본으로 받는다.
-  ///
-  /// **왜 화면을 한 번 나갔다 오는가**: `ve_sdk_flutter`가 내주는 API는 영상
-  /// 경로를 넘겨 편집기 화면을 여는 것뿐이다. "이 마스크를 골라 두고 파일만
-  /// 렌더링해라"는 없다. 얼굴 추적과 마스크 합성은 Banuba 화면 안에서 일어나고,
-  /// 우리는 그 결과 mp4를 받아 이어서 편집한다.
-  ///
-  /// 돌아온 영상은 **다른 파일**이다. 그래서 이미 얹어 둔 글자·스티커·구간은
-  /// 새 영상 기준으로 다시 잡아야 한다 — 먼저 물어보고 진행한다.
-  Future<void> _openBanubaAr(BanubaArEffect? effect) async {
-    final projectController = _projectController;
-    final sourcePath = _sourcePath;
-    if (_saving ||
-        _banubaBusy ||
-        projectController == null ||
-        sourcePath == null) {
-      return;
-    }
-
-    if (_hasLayeredEdits(projectController.project) &&
-        !await _confirmArReplacesEdits()) {
-      return;
-    }
-    if (!mounted) return;
-
-    final preview = _preview;
-    if (preview != null && preview.value.isPlaying) {
-      await preview.pause();
-      projectController.setPlaying(false);
-    }
-
-    setState(() {
-      _banubaBusy = true;
-      _banubaStatus = effect == null
-          ? 'Banuba AR 편집기를 여는 중이에요.'
-          : "편집기가 열리면 '${effect.label}' 마스크를 골라 주세요.";
-    });
-
-    try {
-      final saved = await _banubaEditor.edit(
-        sourcePaths: [sourcePath],
-        outputName: _safeTitle(widget.video.title),
-      );
-      if (!mounted) return;
-      if (saved == null) {
-        setState(() {
-          _banubaBusy = false;
-          _banubaStatus = 'AR 편집을 그만뒀어요. 편집 내용은 그대로 있어요.';
-        });
-        return;
-      }
-      setState(() => _banubaStatus = 'AR 결과를 편집기로 가져오는 중이에요.');
-      await _replaceEditorSource(saved.videoPath, restartCaptions: false);
-      if (!mounted) return;
-      setState(() {
-        _banubaBusy = false;
-        _banubaStatus = 'AR가 입혀진 영상이에요. 이어서 편집할 수 있어요.';
-        _appliedTools.add('ar');
-        _editState.markExternalEditApplied();
-      });
-      showAppSnack(context, 'AR 효과를 입혔어요. 이어서 편집할 수 있어요.');
-    } catch (failure) {
-      if (!mounted) return;
-      setState(() {
-        _banubaBusy = false;
-        _banubaStatus = '$failure';
-      });
-      showAppSnack(context, 'AR 편집기를 열지 못했어요. $failure', error: true);
-    }
-  }
-
-  bool _hasLayeredEdits(EditorProject project) =>
-      project.textLayers.isNotEmpty ||
-      project.stickerLayers.isNotEmpty ||
-      project.clips.length > 1 ||
-      project.clips.first.sourceStartMs > 0 ||
-      project.clips.first.sourceEndMs < project.sourceDurationMs;
-
-  Future<bool> _confirmArReplacesEdits() async {
-    final proceed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('AR 편집기로 갈까요?'),
-        content: const Text(
-          'AR 편집기를 다녀오면 새 영상으로 바뀌어서, 지금 얹은 글자·스티커와 '
-          '정해 둔 구간은 처음부터 다시 잡아야 해요.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('여기서 계속'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('AR 편집기 열기'),
-          ),
-        ],
-      ),
-    );
-    return proceed ?? false;
   }
 
   /// AI 자막 시트. 자막을 만들고 고치는 일은 전부 [CaptionAutoSection]이
@@ -1344,8 +1230,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             ? (_editState.durationMs / 1000 * 0.9).round()
             : null,
       ),
-      banubaBusy: _banubaBusy,
-      banubaStatus: _banubaStatus,
       onBack: () => Navigator.maybePop(context),
       onSave: _saveEdit,
       onPlay: _togglePlayback,
@@ -1366,7 +1250,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
       onLookSelected: _setLook,
-      onBanubaAr: _openBanubaAr,
       onAiCaption: _showAiCaptionSheet,
       onToolSelected: _selectEditorTool,
     );

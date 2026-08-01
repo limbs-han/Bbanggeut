@@ -1,8 +1,8 @@
 # 직접 구현 영상 편집기
 
 이벤트 영상 상세 화면의 기존 라우팅과 결과 경로 반환 계약은 유지하면서,
-편집 UI와 프로젝트 상태는 Flutter에서 직접 관리한다. Banuba Video Editor는
-AR 마스크에만 쓴다(아래 Face AR 참조).
+편집 UI와 프로젝트 상태는 Flutter에서 직접 관리한다. 상용 영상 편집 SDK에
+의존하지 않고 앱 자체 편집기와 Android Media3로 미리보기와 내보내기를 처리한다.
 
 ## 구성
 
@@ -241,31 +241,16 @@ if (조각이 둘 이상) return !composition.transmuxVideo;   // 오디오도 �
 (굵게/기울임)·`AlignmentSpan`으로 같은 모습을 그린다. 폰트 자체를 바꾸는
 꾸밈은 넣지 않았다 — 미리보기와 저장 결과가 달라지기 때문이다.
 
-## Face AR
+## 인앱 효과
 
-AR 탭은 두 줄이다.
+효과 탭의 색감은 누르면 그 자리에서 바로 영상에 입혀진다. 카드에 깔리는
+그림은 지금 편집 중인 영상의 실제 프레임이고, 카드와 미리보기가 같은
+`EditorLook.colorFilter`를 쓴다. 내보내기는 Media3의
+RgbFilter/HslAdjustment로 같은 값을 재현한다.
 
-- **필터**: 누르면 그 자리에서 바로 영상에 입혀진다. 카드에 깔리는 그림은
-  지금 편집 중인 영상의 실제 프레임이고, 카드와 미리보기가 같은
-  `EditorLook.colorFilter`를 쓴다. 내보내기는 media3의
-  RgbFilter/HslAdjustment로 같은 값을 재현한다.
-- **얼굴 마스크**: `ve_sdk_flutter`(Banuba Video Editor SDK)로 간다. 토큰은
-  `assets/config/banuba.local.json`의 `BANUBA_LICENSE_TOKEN`이거나
-  `--dart-define=BANUBA_LICENSE_TOKEN=...`이고, 마스크는 `frontend/effects`에
-  있다. `android/app/build.gradle.kts`의 `copyBanubaEffects`가 이 폴더를
-  `assets/bnb-resources/effects`로 복사한다.
-
-**왜 마스크만 화면을 벗어나는가**: 플러그인의 공개 API는 "영상 경로를 넘겨
-편집기 화면을 연다"까지다. 우리 미리보기나 저장된 파일에 마스크를 얹어 주는
-함수도, 마스크를 미리 지정해 렌더링만 시키는 함수도 없다. 얼굴 추적과 합성은
-Banuba 화면 안에서 일어난다. 그래서 지금 영상을 그대로 넘겨 열고, 돌아온
-결과 mp4를 이 편집기의 새 원본으로 갈아 끼운다(`_replaceEditorSource`).
-새 파일이므로 이미 얹어 둔 글자·스티커와 구간은 다시 잡아야 하고, 열기 전에
-그 사실을 물어본다.
-
-우리 화면 안에서 마스크를 바로 얹으려면 Face AR SDK의 `EffectPlayer`에
-디코딩한 프레임을 직접 밀어 넣는 네이티브 경로를 새로 만들어야 하고, 영상
-처리가 포함된 라이선스가 필요하다.
+꾸미기 이모지는 스티커 탭에서 사용자가 위치와 크기를 조절한다. 얼굴을
+프레임마다 추적하는 마스크는 현재 제공하지 않는다. 이후 필요하면 서버가 만든
+얼굴 좌표·표정 구간을 편집 레시피로 받아 자체 오버레이로 구현한다.
 
 ## iOS
 
