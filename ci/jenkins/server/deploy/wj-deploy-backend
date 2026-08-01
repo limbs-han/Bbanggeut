@@ -362,6 +362,18 @@ else
   printf '%s\n' \
     'WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live' >>"${app_env}"
 fi
+
+# 양방향 오디오 발화 URL. 기본값은 로컬 개발용 localhost 라서, 여기서 넣지
+# 않으면 배포는 성공하고 앱만 닿을 수 없는 주소를 받는다. 재생 URL과 같은
+# 이유로 공개 주소이며 비밀값이 아니다.
+if grep -q '^TALKBACK_WHIP_BASE_URL=' "${app_env}"; then
+  sed -i \
+    's|^TALKBACK_WHIP_BASE_URL=.*$|TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback|' \
+    "${app_env}"
+else
+  printf '%s\n' \
+    'TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback' >>"${app_env}"
+fi
 chmod 600 "${app_env}"
 
 incoming_sha="$(sha256sum "${incoming_jar}" | awk '{print $1}')"

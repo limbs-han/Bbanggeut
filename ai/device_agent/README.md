@@ -47,6 +47,18 @@ TALKBACK_COMMAND='["ffplay","-hide_banner","-loglevel","warning","-nodisp","-aut
 This exercises the MQTT commands, the read URL, and the player lifecycle. It does
 not exercise ALSA device selection or on-device echo behaviour.
 
+On Windows start the agent through `run-agent.ps1` rather than calling the module
+directly:
+
+```powershell
+./run-agent.ps1
+```
+
+`device-agent.env` is a systemd `EnvironmentFile`, so on Jetson and Pi systemd
+loads it into the process environment. Windows has no such step and
+`python -m wj_device_agent` would fail on the first missing variable. The wrapper
+reads the same file with the same quoting rules and then starts the agent.
+
 The agent itself remains focused on MQTT control and on-demand live relay.
 `wj-edge-ai-mvp.service` runs YOLO, YAMNet, and the clip uploader beside it,
 using loopback media and local event files instead of opening a second MQTT
