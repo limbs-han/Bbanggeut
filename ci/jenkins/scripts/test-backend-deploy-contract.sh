@@ -42,6 +42,18 @@ grep -Fq \
   'location ~ "^/webrtc/live/' \
   "${repository_root}/backend/deploy/nginx-william-james.conf"
 
+# 발화 URL 기본값은 로컬 개발용 localhost 다. 배포가 이 값을 덮어쓰지 않으면
+# 배포는 성공하고 앱만 닿을 수 없는 주소를 받는다. 실제로 한 번 놓쳤다.
+grep -Fq \
+  'TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback' \
+  "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
+grep -Fq \
+  'TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback' \
+  "${repository_root}/backend/deploy/provision-secrets.sh"
+grep -Fq \
+  'location ~ "^/webrtc/talkback/' \
+  "${repository_root}/backend/deploy/nginx-william-james.conf"
+
 # HLS 를 끈 상태에서 MediaMTX 는 8888 을 열지 않는다. 준비 검사가 그 포트를
 # 요구하면 컨테이너가 정상이어도 배포가 매번 실패한다. 실제로 그렇게 막힌 적이
 # 있어 설정과 검사 포트가 어긋나는 것을 여기서 잡는다.
