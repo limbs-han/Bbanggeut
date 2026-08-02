@@ -5,6 +5,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/core/api_client.dart';
 import 'package:william_james_app/features/stt/transcript_api.dart';
+import 'package:william_james_app/features/stt/transcript_store.dart';
 
 /// 보내는 것을 붙잡아 두는 ApiClient — 기존 comic_gateway_test와 같은 방식.
 class _RecordingApi extends ApiClient {
@@ -83,5 +84,41 @@ void main() {
     expect(transcriptServerReady, isFalse);
     final lines = await defaultTranscriber(ApiClient())('v1');
     expect(lines, isNotEmpty);
+  });
+
+  test('줄 하나가 계약과 다르면 FormatException으로 던진다 — TypeError는 진단이 안 된다', () async {
+    final api = _RecordingApi()
+      ..response = {
+        'lines': [
+          {'startMs': '1000', 'endMs': 2500, 'text': '그거 만지지 마'},
+        ],
+      };
+    await expectLater(serverTranscriber(api)('v1'), throwsFormatException);
+  });
+
+  group('wireTranscriptStore', () {
+    late TranscriptStore original;
+
+    setUp(() => original = transcriptStore);
+    tearDown(() => transcriptStore = original);
+
+    test('전역 저장소가 넘겨받은 ApiClient 하나로 전사한다 — 자기 것을 새로 만들지 않는다', () async {
+      // 앱의 클라이언트를 그대로 써야 한다. 안에서 ApiClient()를 새로 만들면
+      // 이 api에는 아무것도 닿지 않아 videoId가 null로 남는다.
+      final api = _RecordingApi()
+        ..response = {
+          'lines': [
+            {'startMs': 0, 'endMs': 1000, 'text': '들린 말'},
+          ],
+        };
+
+      // 기본 빌드는 COMIC_SERVER가 꺼져 있어 defaultTranscriber가 가짜를 고른다.
+      // 서버 통로를 직접 지정해야 "어느 클라이언트로 갔는가"가 보인다.
+      wireTranscriptStore(api, transcriberFor: serverTranscriber);
+      final lines = await transcriptStore.transcriber('v-wired');
+
+      expect(api.videoId, 'v-wired');
+      expect(lines.single.text, '들린 말');
+    });
   });
 }

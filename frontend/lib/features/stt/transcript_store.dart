@@ -39,14 +39,27 @@ class TranscriptReady extends TranscriptJobState {
 }
 
 class TranscriptFailed extends TranscriptJobState {
-  const TranscriptFailed(this.reason);
+  const TranscriptFailed(this.reason, {this.retryable = false});
   final String reason;
+
+  /// 다시 불러 보면 달라질 수 있는 실패인가. 연결·인증·서버 오류·시간 초과가
+  /// 그렇고, "발화가 없다"(빈 결과)는 아니다 — 같은 영상은 몇 번을 불러도 조용하다.
+  /// 화면은 이 값으로 안내 문구와 [CaptionController.retry] 버튼을 가른다.
+  final bool retryable;
 }
 
 class TranscriptStore {
-  TranscriptStore({required this.transcriber, required this.root});
+  TranscriptStore({
+    required this.transcriber,
+    required this.root,
+    this.serverBuild = transcriptServerReady,
+  });
 
   final VideoTranscriber transcriber;
+
+  /// 서버 전사 빌드인가. 견본(가짜) 전사로 만든 캐시를 무시하고 다시 받기 위해
+  /// 필요하다 — 기본값은 빌드 스위치고, 테스트만 직접 넣는다.
+  final bool serverBuild;
 
   /// 자막을 둘 폴더. 임시 폴더가 아니라 **영구 저장소**여야 한다 — 시스템이
   /// 정리해 가면 캐시가 매번 날아간다.
@@ -73,8 +86,15 @@ class TranscriptStore {
     try {
       final file = await _file(videoId);
       if (!file.existsSync()) return null;
-      final decoded = jsonDecode(await file.readAsString());
-      final raw = (decoded as Map)['lines'] as List;
+      final decoded = jsonDecode(await file.readAsString()) as Map;
+      // 견본 전사로 만든 캐시를 서버 빌드가 물려받으면 안 된다. 그대로 두면
+      // 스위치를 켜도 영영 다시 받지 않고, 만화(API-52)까지 지어낸 대사로 만든다.
+      // source가 없는 옛 캐시도 여기서 걸린다 — 버리고 다시 받으면 그만이다.
+      if (serverBuild && decoded['source'] != 'server') {
+        debugPrint('[stt] 견본으로 만든 자막 캐시를 버립니다($videoId). 다시 받습니다.');
+        return null;
+      }
+      final raw = decoded['lines'] as List;
       return [
         for (final entry in raw)
           CaptionLine(
@@ -95,6 +115,9 @@ class TranscriptStore {
     await file.writeAsString(
       jsonEncode({
         'version': 1,
+        // 어디서 온 자막인지 남긴다. 견본과 진짜를 파일만 보고 구별할 수 있어야
+        // 스위치를 켠 빌드가 견본 캐시를 걸러낼 수 있다([read]).
+        'source': serverBuild ? 'server' : 'sample',
         'lines': [
           for (final line in lines)
             {'startMs': line.startMs, 'endMs': line.endMs, 'text': line.text},
@@ -148,22 +171,59 @@ class TranscriptStore {
       );
       // 실패는 캐시하지 않는다 — 다음에 다시 부르면 재시도해야 한다.
       _jobs.remove(videoId);
-      job.value = TranscriptFailed('$error');
+      // 던져진 실패는 전부 "다시 해 볼 수 있는" 쪽이다. 무발화만이 다시 불러도
+      // 같은 결과인데, 그쪽은 위에서 이미 처리했다(빈 결과).
+      job.value = TranscriptFailed('$error', retryable: true);
     }
   }
 }
 
+/// 자막 캐시를 둘 폴더. 한 곳에서만 만든다 — 배선할 때마다 같은 폴더여야
+/// 이전에 받아 둔 자막을 계속 쓴다.
+Future<Directory> captionsDirectory() async {
+  final documents = await getApplicationDocumentsDirectory();
+  return Directory('${documents.path}${Platform.pathSeparator}captions');
+}
+
 /// 앱 전체가 쓰는 하나의 저장소.
 ///
-/// 앱은 Riverpod을 쓰지 않으므로 전역 하나로 둔다. 테스트는 이 값을 직접
+/// 앱은 Riverpod을 쓰지 않으므로 전역 하나로 둔다. 시작할 때
+/// [wireTranscriptStore]가 진짜 통로로 교체하고, 테스트는 이 값을 직접
 /// 갈아끼운다.
 TranscriptStore transcriptStore = TranscriptStore(
-  transcriber: defaultTranscriber(ApiClient()),
-  root: () async {
-    final documents = await getApplicationDocumentsDirectory();
-    return Directory('${documents.path}${Platform.pathSeparator}captions');
-  },
+  transcriber: _unwiredTranscriber,
+  root: captionsDirectory,
 );
+
+/// 배선 전에 전사를 부르면 크게 실패한다. 여기서 조용히 가짜를 돌려주면 서버
+/// 빌드에서 지어낸 대사가 진짜처럼 영상에 구워진다 — 그게 훨씬 나쁘다.
+Future<List<CaptionLine>> _unwiredTranscriber(String videoId) async =>
+    throw StateError('자막 통로가 배선되지 않았습니다. wireTranscriptStore(api)를 먼저 부르세요.');
+
+/// 앱이 쓰는 [ApiClient] **하나**를 자막 통로에 연결한다. 시작할 때 한 번 부른다.
+///
+/// **여기서 `ApiClient()`를 새로 만들면 안 된다.** 토큰은 클라이언트 인스턴스에
+/// 붙어 있다:
+/// - "로그인 유지"를 끄면 `_saveSession(persistSession: false)`가 저장소 키를
+///   **지우고** 토큰을 메모리에만 둔다. 두 번째 클라이언트는 헤더를 못 붙여
+///   401이 되고, 갱신 토큰도 없어 그 사용자는 자막을 아예 쓰지 못한다.
+/// - 켜 두더라도 먼저 갱신한 쪽이 토큰을 회전시키면, 다른 쪽은 자기 메모리의
+///   낡은 토큰을 우선 쓰다가 갱신에 실패해 `clearSession()`으로 간다 — 사용자가
+///   편집 도중 로그아웃된다. 단일 실행 가드(`_refreshFuture`)도 인스턴스마다
+///   따로라 서로를 막지 못한다.
+///
+/// [transcriberFor]는 테스트 자리다. 기본 빌드는 `COMIC_SERVER`가 꺼져 있어
+/// [defaultTranscriber]가 가짜를 고르고, 그러면 "넘겨준 클라이언트로 갔는가"를
+/// 확인할 수 없다.
+void wireTranscriptStore(
+  ApiClient api, {
+  VideoTranscriber Function(ApiClient api) transcriberFor = defaultTranscriber,
+}) {
+  transcriptStore = TranscriptStore(
+    transcriber: transcriberFor(api),
+    root: captionsDirectory,
+  );
+}
 
 /// 영상에서 16kHz 모노 WAV를 뽑아 whisper에 넘긴다. WAV는 쓰고 지운다.
 Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
