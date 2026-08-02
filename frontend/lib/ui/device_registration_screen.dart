@@ -326,6 +326,7 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                   ),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
                       child: _ModeChoice(
