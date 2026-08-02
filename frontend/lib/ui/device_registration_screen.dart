@@ -198,100 +198,159 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        leading: IconButton(
-          key: const Key('device-registration-back'),
-          tooltip: widget.canGoBack ? '뒤로 가기' : '로그아웃',
-          onPressed: _exit,
-          icon: const Icon(Icons.chevron_left_rounded),
+        toolbarHeight: 72,
+        leadingWidth: 76,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 18, top: 8, bottom: 8),
+          child: IconButton.filledTonal(
+            key: const Key('device-registration-back'),
+            tooltip: widget.canGoBack ? '뒤로 가기' : '로그아웃',
+            onPressed: _exit,
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.surface,
+              foregroundColor: AppColors.ink,
+              side: const BorderSide(color: AppColors.line),
+              elevation: 2,
+              shadowColor: const Color(0x180D0905),
+            ),
+            icon: const Icon(Icons.chevron_left_rounded, size: 30),
+          ),
         ),
-        title: const Text('기기 등록'),
+        title: const Text(
+          '기기 등록',
+          style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const SerialNumberHelpScreen()),
             ),
-            child: const Text('도움말'),
+            child: const Text(
+              '도움말',
+              style: TextStyle(fontSize: 16, color: AppColors.coralDark),
+            ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
         ],
       ),
-      body: AppBackdrop(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFFCF7), Color(0xFFFFF5E7), Color(0xFFFFFBF4)],
+          ),
+        ),
         child: SafeArea(
           top: false,
           child: ListView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
             children: [
-              const Icon(
-                Icons.camera_indoor_rounded,
-                size: 54,
-                color: AppColors.sageDark,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '어떤 방식으로 연결할까요?',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '기기를 처음 연결하는 Owner와 초대를 요청하는 Member 흐름을 구분했어요.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.muted, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              const SoftCard(
-                color: AppColors.surfaceWarm,
-                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              SizedBox(
+                height: 138,
+                child: Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    Text(
-                      '연결 카테고리 안내',
-                      style: TextStyle(
-                        color: AppColors.ink,
-                        fontWeight: FontWeight.w900,
+                    const Positioned(
+                      left: 12,
+                      top: 12,
+                      child: Text(
+                        '♥',
+                        style: TextStyle(
+                          fontSize: 30,
+                          color: Color(0xFFFFC7B9),
+                        ),
                       ),
                     ),
-                    SizedBox(height: 6),
-                    Text(
-                      'Owner · 새 기기를 처음 등록하고 가족을 초대해요.\n'
-                      'Member · 이미 등록된 기기의 Owner에게 초대를 요청해요.',
-                      style: TextStyle(
-                        color: AppColors.inkSoft,
-                        fontSize: 12,
-                        height: 1.45,
+                    Positioned(
+                      left: -6,
+                      bottom: -4,
+                      child: Image.asset(
+                        'assets/images/device_registration_mascot.png',
+                        width: 148,
+                        height: 148,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    Positioned(
+                      left: 148,
+                      right: 0,
+                      top: 8,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '어떤 방식으로\n연결할까요?',
+                            style: Theme.of(context).textTheme.headlineMedium
+                                ?.copyWith(
+                                  fontSize: 24,
+                                  height: 1.2,
+                                  letterSpacing: -1.2,
+                                ),
+                          ),
+                          const SizedBox(height: 7),
+                          const Text(
+                            '기기를 처음 연결하는 Owner와\n초대를 요청하는 Member 흐름을\n구분했어요.',
+                            style: TextStyle(
+                              color: AppColors.inkSoft,
+                              fontSize: 11,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              SegmentedButton<int>(
+              const _ConnectionGuideCard(),
+              const SizedBox(height: 18),
+              Container(
                 key: const Key('device-registration-mode'),
-                segments: const [
-                  ButtonSegment(
-                    value: 0,
-                    icon: Icon(Icons.home_work_outlined),
-                    label: Text('Owner'),
+                height: 62,
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFAF3),
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(
+                    color: const Color(0xFFDDD0C0),
+                    width: 1.3,
                   ),
-                  ButtonSegment(
-                    value: 1,
-                    icon: Icon(Icons.person_add_alt_1_outlined),
-                    label: Text('Member'),
-                  ),
-                ],
-                selected: {mode},
-                showSelectedIcon: false,
-                onSelectionChanged: widget.controller.busy
-                    ? null
-                    : (values) {
-                        FocusScope.of(context).unfocus();
-                        setState(() => mode = values.first);
-                      },
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _ModeChoice(
+                        selected: mode == 0,
+                        icon: Icons.home_work_rounded,
+                        label: 'Owner',
+                        onTap: widget.controller.busy
+                            ? null
+                            : () {
+                                FocusScope.of(context).unfocus();
+                                setState(() => mode = 0);
+                              },
+                      ),
+                    ),
+                    Expanded(
+                      child: _ModeChoice(
+                        selected: mode == 1,
+                        icon: Icons.person_add_alt_1_rounded,
+                        label: 'Member',
+                        onTap: widget.controller.busy
+                            ? null
+                            : () {
+                                FocusScope.of(context).unfocus();
+                                setState(() => mode = 1);
+                              },
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 220),
                 child: mode == 0 ? _ownerPanel() : _memberPanel(),
@@ -314,136 +373,199 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     );
   }
 
-  Widget _ownerPanel() => SoftCard(
+  Widget _ownerPanel() => Column(
     key: const ValueKey('owner-registration-panel'),
-    color: AppColors.surface,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          '제품 아래쪽 시리얼 번호',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          '카메라 바닥의 스티커에서 8자리 번호를 확인해 주세요.',
-          style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                key: const Key('registration-code-prefix'),
-                controller: codePrefix,
-                focusNode: codePrefixFocus,
-                textCapitalization: TextCapitalization.characters,
-                keyboardType: TextInputType.visiblePassword,
-                textInputAction: TextInputAction.next,
-                autocorrect: false,
-                enableSuggestions: false,
-                inputFormatters: const [RegistrationCodePartFormatter()],
-                maxLength: 4,
-                textAlign: TextAlign.center,
-                onChanged: (value) {
-                  if (registrationError != null) {
-                    setState(() => registrationError = null);
-                  }
-                  if (value.length == 4) codeSuffixFocus.requestFocus();
-                },
-                decoration: const InputDecoration(
-                  hintText: 'ABCD',
-                  counterText: '',
-                ),
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 9),
-              child: Text(
-                '-',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-              ),
-            ),
-            Expanded(
-              child: TextField(
-                key: const Key('registration-code-suffix'),
-                controller: codeSuffix,
-                focusNode: codeSuffixFocus,
-                textCapitalization: TextCapitalization.characters,
-                keyboardType: TextInputType.visiblePassword,
-                textInputAction: TextInputAction.done,
-                autocorrect: false,
-                enableSuggestions: false,
-                inputFormatters: const [RegistrationCodePartFormatter()],
-                maxLength: 4,
-                textAlign: TextAlign.center,
-                onChanged: (_) {
-                  if (registrationError != null) {
-                    setState(() => registrationError = null);
-                  }
-                },
-                onSubmitted: (_) => _register(),
-                decoration: const InputDecoration(
-                  hintText: '1234',
-                  counterText: '',
-                ),
-              ),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xF8FFFDF9),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white, width: 1.5),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x160D0905),
+              blurRadius: 20,
+              offset: Offset(0, 7),
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        KeyedSubtree(
-          key: const Key('place-category-selector'),
-          child: DropdownButtonFormField<String>(
-            key: ValueKey(
-              'place-$selectedPlaceName-${widget.controller.placeNames.length}',
-            ),
-            initialValue: selectedPlaceName,
-            isExpanded: true,
-            icon: const Icon(Icons.keyboard_arrow_down_rounded),
-            decoration: const InputDecoration(labelText: '장소 카테고리'),
-            items: [
-              ...widget.controller.placeNames.map(
-                (place) => DropdownMenuItem(value: place, child: Text(place)),
-              ),
-              const DropdownMenuItem(
-                value: _addPlaceValue,
-                child: Text(
-                  '+ 새로운 장소 추가하기',
-                  style: TextStyle(
-                    color: AppColors.coralDark,
-                    fontWeight: FontWeight.w800,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '제품 아래쪽 시리얼 번호',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                   ),
+                ),
+                _SmallIconBadge(icon: Icons.qr_code_2_rounded),
+              ],
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              '카메라 바닥의 스티커에서 8자리 번호를 확인해 주세요.',
+              style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('registration-code-prefix'),
+                    controller: codePrefix,
+                    focusNode: codePrefixFocus,
+                    textCapitalization: TextCapitalization.characters,
+                    keyboardType: TextInputType.visiblePassword,
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    inputFormatters: const [RegistrationCodePartFormatter()],
+                    maxLength: 4,
+                    textAlign: TextAlign.center,
+                    onChanged: (value) {
+                      if (registrationError != null) {
+                        setState(() => registrationError = null);
+                      }
+                      if (value.length == 4) codeSuffixFocus.requestFocus();
+                    },
+                    decoration: const InputDecoration(
+                      hintText: 'ABCD',
+                      counterText: '',
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    '-',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    key: const Key('registration-code-suffix'),
+                    controller: codeSuffix,
+                    focusNode: codeSuffixFocus,
+                    textCapitalization: TextCapitalization.characters,
+                    keyboardType: TextInputType.visiblePassword,
+                    textInputAction: TextInputAction.done,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    inputFormatters: const [RegistrationCodePartFormatter()],
+                    maxLength: 4,
+                    textAlign: TextAlign.center,
+                    onChanged: (_) {
+                      if (registrationError != null) {
+                        setState(() => registrationError = null);
+                      }
+                    },
+                    onSubmitted: (_) => _register(),
+                    decoration: const InputDecoration(
+                      hintText: '1234',
+                      counterText: '',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const Row(
+              children: [
+                Icon(Icons.location_on_rounded, color: AppColors.sageDark),
+                SizedBox(width: 7),
+                Text(
+                  '장소 카테고리',
+                  style: TextStyle(
+                    color: AppColors.sageDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            KeyedSubtree(
+              key: const Key('place-category-selector'),
+              child: DropdownButtonFormField<String>(
+                key: ValueKey(
+                  'place-$selectedPlaceName-${widget.controller.placeNames.length}',
+                ),
+                initialValue: selectedPlaceName,
+                isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                decoration: const InputDecoration(hintText: '장소를 선택해 주세요'),
+                items: [
+                  ...widget.controller.placeNames.map(
+                    (place) =>
+                        DropdownMenuItem(value: place, child: Text(place)),
+                  ),
+                  const DropdownMenuItem(
+                    value: _addPlaceValue,
+                    child: Text(
+                      '+ 새로운 장소 추가하기',
+                      style: TextStyle(
+                        color: AppColors.coralDark,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: widget.controller.busy ? null : _selectPlace,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('add-place-button'),
+              onPressed: widget.controller.busy ? null : _showAddPlaceDialog,
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(
+                  color: AppColors.coral,
+                  style: BorderStyle.solid,
+                ),
+                foregroundColor: AppColors.coralDark,
+              ),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('새로운 장소 추가하기'),
+            ),
+            if (registrationError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                registrationError!,
+                key: const Key('registration-error'),
+                style: const TextStyle(
+                  color: AppColors.danger,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
-            onChanged: widget.controller.busy ? null : _selectPlace,
-          ),
+          ],
         ),
-        if (registrationError != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            registrationError!,
-            key: const Key('registration-error'),
-            style: const TextStyle(
-              color: AppColors.danger,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+      ),
+      const SizedBox(height: 18),
+      FilledButton(
+        onPressed: widget.controller.busy ? null : _register,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(64),
+          backgroundColor: AppColors.coral,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
-        ],
-        const SizedBox(height: 16),
-        FilledButton(
-          onPressed: widget.controller.busy ? null : _register,
-          child: widget.controller.busy
-              ? const SizedBox.square(
-                  dimension: 21,
-                  child: CircularProgressIndicator(strokeWidth: 2.2),
-                )
-              : const Text('기기 연결하기'),
+          elevation: 5,
+          shadowColor: AppColors.coralSoft,
         ),
-      ],
-    ),
+        child: widget.controller.busy
+            ? const SizedBox.square(
+                dimension: 21,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              )
+            : const Text('기기 연결하기  ✦', style: TextStyle(fontSize: 19)),
+      ),
+    ],
   );
 
   Widget _memberPanel() => SoftCard(
@@ -462,7 +584,26 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
           '${widget.controller.user?.email ?? '현재 로그인 계정'} 정보가 포함된 안전한 요청 링크를 만들어요.',
           style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          key: const Key('member-request-inbox'),
+          onPressed: widget.controller.busy
+              ? null
+              : () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        InvitationInboxScreen(controller: widget.controller),
+                  ),
+                ),
+          icon: const Icon(Icons.mark_email_unread_outlined),
+          label: Text(
+            widget.controller.receivedInvitations.isEmpty
+                ? '받은 요청함'
+                : '받은 요청함 ${widget.controller.receivedInvitations.length}개',
+          ),
+        ),
+        const SizedBox(height: 12),
         if (membershipRequestLink != null) ...[
           Container(
             padding: const EdgeInsets.all(12),
@@ -500,29 +641,175 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
           'Owner가 링크를 열면 앱의 가족 초대 화면으로 이동하고 내 이메일이 자동 입력됩니다.',
           style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
         ),
-        const SizedBox(height: 16),
-        const Divider(height: 1),
-        const SizedBox(height: 16),
-        OutlinedButton.icon(
-          key: const Key('member-request-inbox'),
-          onPressed: widget.controller.busy
-              ? null
-              : () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        InvitationInboxScreen(controller: widget.controller),
-                  ),
-                ),
-          icon: const Icon(Icons.mark_email_unread_outlined),
-          label: Text(
-            widget.controller.receivedInvitations.isEmpty
-                ? '받은 요청함'
-                : '받은 요청함 ${widget.controller.receivedInvitations.length}개',
-          ),
+      ],
+    ),
+  );
+}
+
+class _ConnectionGuideCard extends StatelessWidget {
+  const _ConnectionGuideCard();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(20, 17, 18, 17),
+    decoration: BoxDecoration(
+      color: const Color(0xF8FFFDF9),
+      borderRadius: BorderRadius.circular(26),
+      border: Border.all(color: Colors.white, width: 1.5),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x150D0905),
+          blurRadius: 18,
+          offset: Offset(0, 6),
         ),
       ],
     ),
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.sageSoft,
+              child: Icon(
+                Icons.info_rounded,
+                color: AppColors.sageDark,
+                size: 20,
+              ),
+            ),
+            SizedBox(width: 10),
+            Text(
+              '연결 카테고리 안내',
+              style: TextStyle(
+                color: AppColors.sageDark,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12),
+        _GuideRow(
+          icon: Icons.home_work_rounded,
+          role: 'Owner 안내',
+          description: '새 기기를 처음 등록하고 가족을 초대해요.',
+          color: AppColors.coral,
+        ),
+        SizedBox(height: 8),
+        _GuideRow(
+          icon: Icons.person_add_alt_1_rounded,
+          role: 'Member 안내',
+          description: '이미 등록된 기기의 Owner에게 초대를 요청해요.',
+          color: AppColors.sageDark,
+        ),
+      ],
+    ),
+  );
+}
+
+class _GuideRow extends StatelessWidget {
+  const _GuideRow({
+    required this.icon,
+    required this.role,
+    required this.description,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String role;
+  final String description;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, color: color, size: 22),
+      const SizedBox(width: 9),
+      Text(
+        role,
+        style: TextStyle(color: color, fontWeight: FontWeight.w900),
+      ),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 7),
+        child: Text('·', style: TextStyle(color: AppColors.muted)),
+      ),
+      Expanded(
+        child: Text(
+          description,
+          style: const TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: AppColors.inkSoft,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _ModeChoice extends StatelessWidget {
+  const _ModeChoice({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? AppColors.coralSoft : Colors.transparent,
+    shape: StadiumBorder(
+      side: selected
+          ? const BorderSide(color: AppColors.coral, width: 1.4)
+          : BorderSide.none,
+    ),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(30),
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            color: selected ? AppColors.coralDark : AppColors.ink,
+            size: 24,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: selected ? AppColors.coralDark : AppColors.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SmallIconBadge extends StatelessWidget {
+  const _SmallIconBadge({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 42,
+    height: 42,
+    decoration: BoxDecoration(
+      color: AppColors.sageSoft,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Icon(icon, color: AppColors.sageDark),
   );
 }
 
