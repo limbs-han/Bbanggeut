@@ -13,7 +13,7 @@ class LaughReportContentScreen extends StatelessWidget {
   Map<DateTime, int> get _countsByDay {
     final result = <DateTime, int>{};
     for (final video in controller.videos.where(
-      (item) => item.triggerType == 'LAUGHTER',
+      (item) => item.hasEventType('LAUGHTER'),
     )) {
       final at = video.capturedStartAt ?? video.createdAt;
       if (at == null) continue;

@@ -313,6 +313,8 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                     memoryDate(_video.capturedStartAt ?? _video.createdAt),
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
+                  const SizedBox(height: 10),
+                  VideoEventTypePills(video: _video),
                   const Divider(height: 28),
                   Text(
                     _video.description?.trim().isNotEmpty == true

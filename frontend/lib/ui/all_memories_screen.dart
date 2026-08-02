@@ -48,7 +48,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     final keyword = _searchController.text.trim().toLowerCase();
     final result = widget.controller.videos.where((video) {
       final matchesCategory = switch (category) {
-        MemoryCategory.laughter => video.triggerType == 'LAUGHTER',
+        MemoryCategory.laughter => video.hasEventType('LAUGHTER'),
         MemoryCategory.edited =>
           video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
       };
