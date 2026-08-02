@@ -216,7 +216,10 @@ class SegmentClipUploaderTests(unittest.TestCase):
                 request_payload["title"],
                 "웃음과 박수가 함께 포착됐어요",
             )
-            self.assertNotIn("eventTypes", request_payload)
+            self.assertEqual(
+                request_payload["eventTypes"],
+                ["LAUGHTER", "CLAP"],
+            )
 
             status = json.loads(
                 (event_dir / "laugh-second.upload-status.json").read_text(

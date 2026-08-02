@@ -580,6 +580,7 @@ def upload_group(
     upload_request = {
         "sourceEventId": canonical.event_id,
         "triggerType": canonical.event_type,
+        "eventTypes": list(event_types(group)),
         "title": event_title(group),
         "capturedStartAt": instant(clip_start),
         "capturedEndAt": instant(clip_end),
