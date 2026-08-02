@@ -194,7 +194,7 @@ void main() {
 
     final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
     final clips = dto['clips']! as List<Map<String, Object?>>;
-    final texts = dto['textLayers']! as List<Map<String, Object>>;
+    final texts = dto['textLayers']! as List<Map<String, Object?>>;
 
     expect(clips[0]['timelineStartMs'], 0);
     expect(clips[1]['timelineStartMs'], 2500);
@@ -386,42 +386,36 @@ void main() {
     expect((maps.first as Map)['sourceStartMs'], after.first);
   });
 
-  test('세로 화면은 영상이 캔버스를 벗어나 빈 영역이 생기지 않게 제한한다', () {
+  test('9:16은 가로 영상을 확대하지 않고 가운데 그대로 둔다', () {
+    // 예전에는 cover라 최소 배율 3.16×가 걸려 "엄청 줌 된" 화면이 됐다.
+    // 지금은 contain — 영상은 제 크기로 가운데, 위아래는 자막용 검은 띠다.
     final subject = controller();
     subject.setCanvasRatio(EditorCanvasRatio.vertical);
     final canvas = subject.project.canvas;
-    expect(canvas.scale, greaterThan(1));
-
-    subject.setCanvasTransform(
-      scale: 1,
-      offsetX: 99,
-      offsetY: 99,
-      rotationDegrees: 0,
-    );
-    expect(
-      subject.project.canvas.scale,
-      greaterThanOrEqualTo(canvas.minimumScale),
-    );
-    expect(subject.project.canvas.offsetY, 0);
-    expect(subject.project.canvas.offsetX.abs(), lessThanOrEqualTo(1));
+    expect(canvas.fit, EditorCanvasFit.contain);
+    expect(canvas.scale, 1);
+    expect(canvas.minimumScale, 1);
+    expect(canvas.toMap()['fit'], 'contain');
   });
 
-  test('세로 전체 보기는 가로 영상을 모두 보이고 위아래 배치 공간을 허용한다', () {
-    final subject = controller();
-    subject
-      ..setCanvasRatio(EditorCanvasRatio.vertical)
-      ..setCanvasFit(EditorCanvasFit.contain);
-
-    expect(subject.project.canvas.scale, 1);
-    expect(subject.project.canvas.minimumScale, 1);
-    subject.setCanvasTransform(
-      scale: 1,
-      offsetX: 1,
-      offsetY: 1,
-      rotationDegrees: 0,
+  test('원본·16:9 비율은 여백 없는 채우기로 돌아간다', () {
+    final subject = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/video.mp4',
+        sourceDurationMs: 10000,
+        sourceSize: const EditorSourceSize(width: 1920, height: 1080),
+      ).copyWith(
+        canvas: const EditorCanvas(
+          sourceAspectRatio: 16 / 9,
+          ratio: EditorCanvasRatio.vertical,
+          fit: EditorCanvasFit.contain,
+        ),
+      ),
     );
-    expect(subject.project.canvas.offsetX, 0);
-    expect(subject.project.canvas.offsetY, closeTo(0.68359375, 0.01));
-    expect(subject.project.canvas.toMap()['fit'], 'contain');
+
+    subject.setCanvasRatio(EditorCanvasRatio.landscape);
+
+    expect(subject.project.canvas.fit, EditorCanvasFit.cover);
+    expect(subject.project.canvas.toMap()['fit'], 'cover');
   });
 }

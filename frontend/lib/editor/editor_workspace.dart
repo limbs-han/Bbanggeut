@@ -17,37 +17,33 @@ class EditorWorkspace extends StatelessWidget {
     required this.preview,
     required this.thumbnails,
     required this.playing,
-    required this.currentTime,
-    required this.totalTime,
     required this.saving,
     required this.onBack,
+    required this.onSaveDraft,
     required this.onSave,
     required this.onPlay,
     required this.onSeek,
-    required this.onSplit,
+    required this.onClipAdd,
     required this.onDelete,
-    required this.onDuplicate,
     required this.onClipReorder,
     required this.onTrimChanged,
     required this.onTrimCommitted,
     required this.onPlayRange,
     required this.onBlocked,
     required this.onRatioSelected,
-    required this.onCanvasChanged,
-    required this.onCanvasReset,
-    required this.onCanvasFitSelected,
+    required this.onEditCommitted,
     required this.presetRecommendations,
     required this.recommendationLoading,
     required this.onRecommendationSelected,
     required this.onText,
     required this.onTextEdit,
+    required this.onTextRemove,
     required this.onVolumeChanged,
     required this.onMutedChanged,
     required this.onStickerSelected,
     required this.onLookSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
-    required this.onZoomChanged,
     required this.onZoomRemove,
     required this.onZoomSelected,
     required this.onToolSelected,
@@ -66,16 +62,19 @@ class EditorWorkspace extends StatelessWidget {
   final Widget preview;
   final List<String> thumbnails;
   final bool playing;
-  final String currentTime;
-  final String totalTime;
   final bool saving;
   final VoidCallback onBack;
+
+  /// 편집본(초안)만 서버에 저장한다.
+  final VoidCallback onSaveDraft;
+
+  /// 내보내기 — 렌더링해서 서버·갤러리에 올린다.
   final VoidCallback onSave;
   final VoidCallback onPlay;
   final ValueChanged<int> onSeek;
-  final VoidCallback onSplit;
+  /// 재생 위치에 3초짜리 클립을 하나 더 얹는다.
+  final VoidCallback onClipAdd;
   final VoidCallback onDelete;
-  final VoidCallback onDuplicate;
   final void Function(int oldIndex, int newIndex) onClipReorder;
 
   /// 구간 손잡이를 끄는 동안 계속 불린다(되돌리기 이력에 쌓지 않는다).
@@ -96,14 +95,18 @@ class EditorWorkspace extends StatelessWidget {
   final ValueChanged<String> onBlocked;
 
   final ValueChanged<EditorCanvasRatio> onRatioSelected;
-  final ValueChanged<EditorCanvas> onCanvasChanged;
-  final VoidCallback onCanvasReset;
-  final ValueChanged<EditorCanvasFit> onCanvasFitSelected;
+
+  /// 슬라이더·구간 손잡이 같은 연속 조작에서 손을 뗐다. 화면 쪽이 이력을
+  /// 확정하고(endGesture) "저장 안 된 변경"을 표시할 때 쓴다.
+  final VoidCallback onEditCommitted;
   final Map<String, EditRecommendation> presetRecommendations;
   final bool recommendationLoading;
   final ValueChanged<String> onRecommendationSelected;
   final VoidCallback onText;
   final ValueChanged<String> onTextEdit;
+
+  /// 고른 자막의 시작(true)·끝(false)을 지금 재생 위치로 맞춘다.
+  final ValueChanged<String> onTextRemove;
   final ValueChanged<double> onVolumeChanged;
 
   /// 볼륨 손잡이에서 손을 뗐다. null이면 이력을 따로 확정하지 않는다.
@@ -131,7 +134,6 @@ class EditorWorkspace extends StatelessWidget {
   /// 편집기는 버튼만 들고 있다.
   final VoidCallback onAiCaption;
   final VoidCallback onZoomAdd;
-  final ValueChanged<EditorZoomSegment> onZoomChanged;
   final ValueChanged<EditorZoomSegment> onZoomRemove;
   final ValueChanged<EditorZoomSegment> onZoomSelected;
 
@@ -157,6 +159,8 @@ class EditorWorkspace extends StatelessWidget {
       // 글을 쓰는 동안에는 아래쪽을 전부 접는다. 키보드가 올라와 있으면 화면
       // 스스로도 접는다 — 둘 중 하나만 봐서는 놓치는 경우가 있어 함께 본다.
       final compact = keyboardVisible || textEditing;
+      // 줌·자막 탭은 컷과 같은 프레임 타임라인으로 "어느 구간인지"를 정한다.
+      final rangeTarget = _rangeTimelineTarget(project);
       return ColoredBox(
         color: EditorColorTokens.background,
         child: SafeArea(
@@ -166,23 +170,20 @@ class EditorWorkspace extends StatelessWidget {
                 Size(constraints.maxWidth, constraints.maxHeight),
                 keyboardVisible: keyboardVisible,
               );
-              // 검은 여백을 잘라 보여 줄 수 있으면 그만큼 컷 타임라인이
-              // 프레임 띠를 키운다 — 비율에 따라 배분이 달라진다.
-              final trimBarBonus = compact || !cutMode
-                  ? 0.0
-                  : _cutTrimBarBonus(
-                      layout,
-                      project,
-                      availableHeight: constraints.maxHeight,
-                      baseTimelineHeight: _timelineHeightFor(
-                        layout,
-                        project,
-                        cutMode,
-                      ),
-                    );
+              final rangeToolOpen =
+                  project.selectedTool == EditorTool.zoom ||
+                  project.selectedTool == EditorTool.text;
+              final multipleClips = project.clips.length > 1;
               final timelineHeight = compact
                   ? 0.0
-                  : _timelineHeightFor(layout, project, cutMode) + trimBarBonus;
+                  : cutMode
+                  ? _timelineHeightFor(layout, project, cutMode)
+                  : !rangeToolOpen
+                  ? 0.0
+                  : (rangeTarget == null ? 0.0 : layout.trimBarHeight) +
+                        (multipleClips
+                            ? EditorTimelineSection.chooserHeight
+                            : 0.0);
               final panelHeight = compact
                   ? 0.0
                   : _toolPanelHeightFor(
@@ -203,34 +204,69 @@ class EditorWorkspace extends StatelessWidget {
                         onBack: onBack,
                         onUndo: onUndo ?? controller.undo,
                         onRedo: onRedo ?? controller.redo,
+                        onSaveDraft: onSaveDraft,
                         onSave: onSave,
                       ),
                       Expanded(
-                        child: VideoPreviewWorkspace(
-                          preview: preview,
-                          playing: playing,
-                          currentTime: currentTime,
-                          totalTime: totalTime,
-                          onPlay: onPlay,
-                        ),
+                        child: VideoPreviewWorkspace(preview: preview),
                       ),
+                      if (!compact)
+                        EditorTransportBar(
+                          playing: playing,
+                          playheadMs: project.playheadMs,
+                          onPlay: onPlay,
+                          onSeek: onSeek,
+                        ),
+                      // 줌·자막 탭도 컷과 같은 구조를 쓴다 — 클립 고르개와
+                      // 프레임 타임라인. "어느 클립의 어느 구간인지"가 컷과
+                      // 같은 눈으로 보인다.
+                      if (!compact && rangeToolOpen && multipleClips)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                          child: SizedBox(
+                            height: EditorTimelineSection.chooserHeight - 6,
+                            child: ClipChooser(
+                              project: project,
+                              thumbnails: thumbnails,
+                              onClipSelected: (clipId) {
+                                controller.selectClip(clipId);
+                                onSeek(project.timelineStartFor(clipId));
+                              },
+                              onReorder: onClipReorder,
+                            ),
+                          ),
+                        ),
+                      if (!compact && rangeToolOpen && rangeTarget != null)
+                        Padding(
+                          // 시스템 뒤로가기 제스처와 손잡이 터치를 분리한다.
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          child: SizedBox(
+                            height: layout.trimBarHeight,
+                            child: _RangeTimeline(
+                              project: project,
+                              controller: controller,
+                              target: rangeTarget,
+                              thumbnails: thumbnails,
+                              onSeek: onSeek,
+                              onEditCommitted: onEditCommitted,
+                            ),
+                          ),
+                        ),
                       if (!compact && cutMode)
                         EditorTimelineSection(
-                          trimBarHeight: layout.trimBarHeight + trimBarBonus,
+                          trimBarHeight: layout.trimBarHeight,
                           actionButtonHeight: layout.actionButtonHeight,
                           project: project,
                           thumbnails: thumbnails,
                           expanded: cutMode,
                           canDelete: controller.canDeleteSelectedClip,
-                          canSplit: controller.canSplitAtPlayhead,
                           onSeek: onSeek,
                           onClipSelected: (clipId) {
                             controller.selectClip(clipId);
                             onSeek(project.timelineStartFor(clipId));
                           },
-                          onSplit: onSplit,
+                          onClipAdd: onClipAdd,
                           onDelete: onDelete,
-                          onDuplicate: onDuplicate,
                           onClipReorder: onClipReorder,
                           onTrimChanged: onTrimChanged,
                           onTrimCommitted: onTrimCommitted,
@@ -247,25 +283,25 @@ class EditorWorkspace extends StatelessWidget {
                             'editor-selected-tool-${project.selectedTool.name}',
                           ),
                           project: project,
+                          controller: controller,
                           height: panelHeight,
                           onRatioSelected: onRatioSelected,
-                          onCanvasChanged: onCanvasChanged,
-                          onCanvasReset: onCanvasReset,
-                          onCanvasFitSelected: onCanvasFitSelected,
+                          onEditCommitted: onEditCommitted,
                           onText: onText,
                           onTextEdit: onTextEdit,
+                          onTextRemove: onTextRemove,
                           onVolumeChanged: onVolumeChanged,
                           onMutedChanged: onMutedChanged,
                           onVolumeCommitted: onVolumeCommitted,
                           onStickerSelected: onStickerSelected,
                           onLookSelected: onLookSelected,
+                          thumbnails: thumbnails,
                           previewFrame: thumbnails.isEmpty
                               ? null
                               : thumbnails[thumbnails.length ~/ 2],
                           onAiCaption: onAiCaption,
                           aiCaptionSummary: aiCaptionSummary,
                           onZoomAdd: onZoomAdd,
-                          onZoomChanged: onZoomChanged,
                           onZoomRemove: onZoomRemove,
                           onZoomSelected: onZoomSelected,
                         ),
@@ -361,41 +397,324 @@ double _timelineHeightFor(
   return height;
 }
 
-/// 컷 탭 프레임 띠에 더 줄 수 있는 높이.
-///
-/// 캔버스의 검은 여백을 잘라 보여 줄 수 있으면([EditorPreviewGeometry])
-/// 미리보기는 영상 창과 문맥 띠만큼만 있으면 된다. 남는 세로는 빈 여백으로
-/// 두지 않고 프레임 띠를 키워 컷 정밀도를 높인다. 띠가 원래 높이의 갑절을
-/// 넘지 않게 막는다 — 그 위로는 프레임이 커져도 얻는 것이 없다.
-double _cutTrimBarBonus(
-  EditorLayoutTokens layout,
-  EditorProject project, {
-  required double availableHeight,
-  required double baseTimelineHeight,
-}) {
-  final geometry = EditorPreviewGeometry.of(project);
-  if (!geometry.letterboxClippable) return 0;
-  final innerWidth =
-      layout.availableWidth -
-      2 * (EditorSpacingTokens.previewHorizontal + EditorSpacingTokens.sm);
-  if (innerWidth <= 0) return 0;
-  // 미리보기 칸의 바깥·안쪽 세로 여백.
-  const chrome = 4 * EditorSpacingTokens.sm;
-  final minimumPreview = math.max(
-    innerWidth /
-            geometry.canvasAspectRatio *
-            geometry.minimumVisibleHeightFraction +
-        chrome,
-    layout.minimumPreviewHeight,
+/// 줌·자막 탭이 다루는 클립. 클립을 고르면 그 클립에 귀속된 것만 보인다.
+EditorClip? _scopeClip(EditorProject project) =>
+    project.selectedClip ?? (project.clips.isEmpty ? null : project.clips.first);
+
+/// 고른 클립에 귀속된 줌들. 옛 데이터(묶이지 않은 줌)는 어디서나 보인다.
+List<EditorZoomSegment> _zoomsOfClip(EditorProject project, EditorClip clip) =>
+    [
+      for (final zoom in project.zoomSegments)
+        if (zoom.worksIn(clip)) zoom,
+    ];
+
+/// 고른 클립에 귀속된 자막들.
+List<EditorTextLayer> _textLayersOfClip(
+  EditorProject project,
+  EditorClip clip,
+) => [
+  for (final layer in project.textLayers)
+    if (layer.clipId == null || layer.clipId == clip.id) layer,
+];
+
+/// 줌·자막 탭에서 프레임 타임라인이 다룰 대상. 없으면 타임라인을 접는다.
+_RangeTimelineTarget? _rangeTimelineTarget(EditorProject project) {
+  final clip = _scopeClip(project);
+  if (clip == null) return null;
+  switch (project.selectedTool) {
+    case EditorTool.zoom:
+      final zoom = _activeZoom(project, clip);
+      if (zoom == null) return null;
+      return _RangeTimelineTarget.zoom(zoom);
+    case EditorTool.text:
+      final layers = _textLayersOfClip(project, clip);
+      if (layers.isEmpty) return null;
+      // 고른 자막이 이 클립 것이면 그것, 아니면 클립의 첫 자막.
+      final layer = layers
+          .where((item) => item.id == project.selectedLayerId)
+          .firstOrNull;
+      return _RangeTimelineTarget.text(layer ?? layers.first);
+    default:
+      return null;
+  }
+}
+
+/// 지금 만지고 있는 줌 — **고른 클립에 귀속된 것 중에서만** 고른다.
+/// 다른 클립의 줌은 그 클립을 골라야 보인다.
+EditorZoomSegment? _activeZoom(EditorProject project, EditorClip clip) {
+  final zooms = _zoomsOfClip(project, clip);
+  for (final zoom in zooms) {
+    if (zoom.id == project.selectedZoomId) return zoom;
+  }
+  return zooms.isEmpty ? null : zooms.first;
+}
+
+class _RangeTimelineTarget {
+  const _RangeTimelineTarget.zoom(EditorZoomSegment this.zoomSegment)
+    : textLayer = null;
+  const _RangeTimelineTarget.text(EditorTextLayer this.textLayer)
+    : zoomSegment = null;
+
+  final EditorZoomSegment? zoomSegment;
+  final EditorTextLayer? textLayer;
+}
+
+/// 미리보기 바로 아래 재생 줄. 재생 단추와 프레임 타임코드는 여기 한 곳에만
+/// 있다 — 영상 위에 띄우면 영상을 가리고, 탭마다 흩어 두면 두 번 그린다.
+class EditorTransportBar extends StatelessWidget {
+  const EditorTransportBar({
+    super.key,
+    required this.playing,
+    required this.playheadMs,
+    required this.onPlay,
+    required this.onSeek,
+  });
+
+  static const height = 38.0;
+  static const frameRate = 30;
+
+  final bool playing;
+  final int playheadMs;
+  final VoidCallback onPlay;
+  final ValueChanged<int> onSeek;
+
+  int get _frame => (playheadMs * frameRate / 1000).round();
+
+  /// 분:초:프레임. 한 시간 넘는 영상은 나오지 않으므로 시는 표기하지 않는다.
+  String get _timecode {
+    final frames = _frame % frameRate;
+    final totalSeconds = _frame ~/ frameRate;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(totalSeconds ~/ 60)}:${two(totalSeconds % 60)}'
+        ':${two(frames)}';
+  }
+
+  void _stepFrames(int delta) {
+    final nextFrame = math.max(0, _frame + delta);
+    onSeek((nextFrame * 1000 / frameRate).round());
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: height,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: EditorSpacingTokens.previewHorizontal,
+      ),
+      child: Row(
+        children: [
+          SizedBox.square(
+            dimension: 32,
+            child: IconButton.filled(
+              key: const Key('editor-transport-play'),
+              tooltip: playing ? '일시정지' : '재생',
+              onPressed: onPlay,
+              style: IconButton.styleFrom(
+                padding: EdgeInsets.zero,
+                backgroundColor: EditorColorTokens.coral,
+                foregroundColor: Colors.white,
+                iconSize: 20,
+              ),
+              icon: Icon(
+                playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            _timecode,
+            key: const Key('editor-frame-timecode'),
+            style: const TextStyle(
+              color: EditorColorTokens.ink,
+              fontSize: 13,
+              fontFeatures: [FontFeature.tabularFigures()],
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$frameRate fps',
+            style: const TextStyle(
+              color: EditorColorTokens.muted,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Spacer(),
+          _FrameStepButton(
+            key: const Key('editor-frame-back'),
+            icon: Icons.chevron_left_rounded,
+            tooltip: '1프레임 뒤로',
+            onTap: () => _stepFrames(-1),
+          ),
+          const SizedBox(width: 4),
+          _FrameStepButton(
+            key: const Key('editor-frame-forward'),
+            icon: Icons.chevron_right_rounded,
+            tooltip: '1프레임 앞으로',
+            onTap: () => _stepFrames(1),
+          ),
+        ],
+      ),
+    ),
   );
-  final previewSlot =
-      availableHeight -
-      layout.topBarHeight -
-      baseTimelineHeight -
-      layout.bottomNavigationHeight;
-  final spare = previewSlot - minimumPreview;
-  if (spare <= 0) return 0;
-  return math.min(spare, layout.trimBarHeight);
+}
+
+/// 줌·자막 탭의 프레임 타임라인. **고른 클립 하나의 범위만** 띠에 펼친다 —
+/// 구간 선택이 클립별로 분리되고, 짧은 클립도 띠 전체를 써서 정밀하게
+/// 잡을 수 있다. 같은 클립 안의 다른 구간들은 파란 마커로 함께 보여
+/// "여러 구간"이 어디 있는지 한눈에 들어온다. 활성 구간만 노란 창이다.
+class _RangeTimeline extends StatelessWidget {
+  const _RangeTimeline({
+    required this.project,
+    required this.controller,
+    required this.target,
+    required this.thumbnails,
+    required this.onSeek,
+    required this.onEditCommitted,
+  });
+
+  final EditorProject project;
+  final EditorProjectController controller;
+  final _RangeTimelineTarget target;
+  final List<String> thumbnails;
+  final ValueChanged<int> onSeek;
+  final VoidCallback onEditCommitted;
+
+  /// 원본 [fromMs, toMs) 구간을 대표하는 프레임들. 클립이 짧아도 띠가
+  /// 프레임으로 차도록 최소 6장은 뽑는다.
+  List<String> _sliceThumbnails(int fromMs, int toMs) {
+    if (thumbnails.isEmpty) return const [];
+    final sourceTotal = math.max(1, project.sourceDurationMs);
+    final count = math.max(
+      6,
+      (thumbnails.length * (toMs - fromMs) / sourceTotal).ceil(),
+    );
+    return [
+      for (var i = 0; i < count; i++)
+        thumbnails[((fromMs + (toMs - fromMs) * i / math.max(1, count - 1)) /
+                sourceTotal *
+                thumbnails.length)
+            .floor()
+            .clamp(0, thumbnails.length - 1)],
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final zoom = target.zoomSegment;
+    if (zoom != null) return _zoomBar(zoom);
+    return _textBar(target.textLayer!);
+  }
+
+  Widget _zoomBar(EditorZoomSegment zoom) {
+    // 띠의 범위 = 이 줌이 **묶인** 클립. 줌은 클립에 귀속된다 — 같은 원본
+    // 구간을 쓰는 다른 클립과는 무관하다. 좌표는 클립 시작만큼 밀어서
+    // 상대 눈금으로 다룬다.
+    var scope = project.selectedClip ?? project.clips.first;
+    if (zoom.clipId != null) {
+      for (final clip in project.clips) {
+        if (clip.id == zoom.clipId) {
+          scope = clip;
+          break;
+        }
+      }
+    }
+    final clipStart = scope.sourceStartMs;
+    final span = math.max(1, scope.durationMs);
+    // 같은 클립의 이웃 줌과 클립 경계가 이 창의 한계다. 줌은 서로 겹칠 수 없다.
+    var lowerBound = clipStart;
+    var upperBound = scope.sourceEndMs;
+    for (final other in project.zoomSegments) {
+      if (other.id == zoom.id || !other.worksIn(scope)) continue;
+      if (other.sourceEndMs <= zoom.sourceStartMs) {
+        lowerBound = math.max(lowerBound, other.sourceEndMs);
+      }
+      if (other.sourceStartMs >= zoom.sourceEndMs) {
+        upperBound = math.min(upperBound, other.sourceStartMs);
+      }
+    }
+    return TrimRangeBar(
+      key: const Key('editor-zoom-range-bar'),
+      sourceDurationMs: span,
+      startMs: (zoom.sourceStartMs - clipStart).clamp(0, span),
+      endMs: (zoom.sourceEndMs - clipStart).clamp(0, span),
+      playheadSourceMs:
+          ((project.sourcePositionForTimeline(project.playheadMs) ?? 0) -
+                  clipStart)
+              .clamp(0, span),
+      thumbnails: _sliceThumbnails(clipStart, scope.sourceEndMs),
+      // 이 클립에 묶인 줌 전부를 마커로 보여 준다. 순서가 장면 카드와
+      // 같아서 마커 색과 카드 순번 색이 일치한다.
+      zoomSegments: [
+        for (final other in _zoomsOfClip(project, scope))
+          other.copyWith(
+            sourceStartMs: (other.sourceStartMs - clipStart).clamp(0, span),
+            sourceEndMs: (other.sourceEndMs - clipStart).clamp(0, span),
+          ),
+      ],
+      minimumDurationMs: 200,
+      lowerBoundMs: (lowerBound - clipStart).clamp(0, span),
+      upperBoundMs: (upperBound - clipStart).clamp(0, span),
+      windowSlidable: true,
+      onTrimChanged: (startMs, endMs, _) => controller.updateZoomGesture(
+        zoom.copyWith(
+          sourceStartMs: startMs + clipStart,
+          sourceEndMs: endMs + clipStart,
+        ),
+        notify: false,
+      ),
+      onTrimCommitted: onEditCommitted,
+      onScrub: (relativeMs) =>
+          onSeek(project.timelinePositionForSource(relativeMs + clipStart)),
+    );
+  }
+
+  Widget _textBar(EditorTextLayer layer) {
+    // 자막은 타임라인 눈금이되 **묶인 클립**의 구간만 펼친다.
+    var scope = project.selectedClip ?? project.clips.first;
+    if (layer.clipId != null) {
+      for (final clip in project.clips) {
+        if (clip.id == layer.clipId) {
+          scope = clip;
+          break;
+        }
+      }
+    }
+    final clipTimelineStart = project.timelineStartFor(scope.id);
+    final span = math.max(1, scope.durationMs);
+    return TrimRangeBar(
+      key: const Key('editor-text-range-bar'),
+      sourceDurationMs: span,
+      startMs: (layer.startMs - clipTimelineStart).clamp(0, span),
+      endMs: (layer.endMs - clipTimelineStart).clamp(0, span),
+      playheadSourceMs: (project.playheadMs - clipTimelineStart).clamp(0, span),
+      thumbnails: _sliceThumbnails(scope.sourceStartMs, scope.sourceEndMs),
+      // 이 클립의 자막 전부를 마커로 — 동시 자막·여러 구간이 보이고,
+      // 순서가 칩 목록과 같아 마커 색과 칩 순번 색이 일치한다.
+      zoomSegments: [
+        for (final other in _textLayersOfClip(project, scope))
+          EditorZoomSegment(
+            id: 'subtitle-${other.id}',
+            sourceStartMs: (other.startMs - clipTimelineStart).clamp(0, span),
+            sourceEndMs: (other.endMs - clipTimelineStart).clamp(0, span),
+            scale: 1,
+            focus: NormalizedPoint.center,
+          ),
+      ],
+      minimumDurationMs: 200,
+      windowSlidable: true,
+      onTrimChanged: (startMs, endMs, _) =>
+          controller.updateTextLayerRangeGesture(
+            layer.id,
+            startMs + clipTimelineStart,
+            endMs + clipTimelineStart,
+            notify: false,
+          ),
+      onTrimCommitted: onEditCommitted,
+      onScrub: (relativeMs) => onSeek(relativeMs + clipTimelineStart),
+    );
+  }
 }
 
 /// 도구 칸 높이. 미리보기가 [EditorLayoutTokens.minimumPreviewHeight] 밑으로
@@ -414,14 +733,19 @@ double _toolPanelHeightFor(
   if (project.selectedTool == EditorTool.cut) return 0;
   // AR 탭은 필터 줄과 마스크 줄을 함께 담아야 해서 한 뼘 더 쓴다.
   final wanted = switch (project.selectedTool) {
-    EditorTool.zoom => layout.toolPanelHeight * 1.95,
-    EditorTool.ratio => layout.toolPanelHeight * 1.15,
+    // 장면 카드 한 줄과 배율 슬라이더 한 줄.
+    EditorTool.zoom => layout.toolPanelHeight * 1.45,
+    // 비율 선택 한 줄과 확대 슬라이더 한 줄.
+    EditorTool.ratio => layout.toolPanelHeight * 1.5,
+    // 자막 목록 아래에 구간 조절 줄이 한 줄 더 붙는다.
+    EditorTool.text => layout.toolPanelHeight * 1.3,
     EditorTool.ar => layout.toolPanelHeight * 1.6,
     _ => layout.toolPanelHeight,
   };
   final leftover =
       availableHeight -
       layout.topBarHeight -
+      EditorTransportBar.height -
       timelineHeight -
       wanted -
       layout.bottomNavigationHeight;
@@ -522,6 +846,7 @@ class EditorTopBar extends StatelessWidget {
     required this.onBack,
     required this.onUndo,
     required this.onRedo,
+    required this.onSaveDraft,
     required this.onSave,
   });
 
@@ -532,6 +857,11 @@ class EditorTopBar extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
+
+  /// 편집본(초안)만 서버에 저장한다. 렌더링하지 않는다.
+  final VoidCallback onSaveDraft;
+
+  /// 내보내기 — 렌더링해서 서버·갤러리에 올린다.
   final VoidCallback onSave;
 
   @override
@@ -570,41 +900,68 @@ class EditorTopBar extends StatelessWidget {
                   icon: Icons.redo_rounded,
                   onPressed: canRedo && !saving ? onRedo : null,
                 ),
+                // 편집본 저장(렌더링 없음)과 내보내기(렌더링)를 나눈다.
+                // 하나의 "저장"에 뭉치면 초안만 남기고 싶을 때도 몇 분짜리
+                // 렌더링을 기다려야 한다.
+                //
+                // **고정 높이 SizedBox로 감싸지 않는다** — 이 앱에서 버튼을
+                // 고정 높이 SizedBox에 넣으면 실기기(S24+)에서 프레임
+                // 레이아웃이 예외 없이 멈춰 이후 위젯이 그려지지 않는다
+                // (_TextPanel 주석과 같은 병). 크기는 스타일로 정한다.
+                OutlinedButton(
+                  key: const Key('editor-save-draft'),
+                  onPressed: saving ? null : onSaveDraft,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(48, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: EditorColorTokens.ink,
+                    side: const BorderSide(color: EditorColorTokens.border),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        EditorRadiusTokens.control,
+                      ),
+                    ),
+                  ),
+                  child: const Text(
+                    '저장',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(width: 6),
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: SizedBox(
-                    width: 64,
-                    height: 34,
-                    child: FilledButton(
-                      key: const Key('editor-save'),
-                      onPressed: saving ? null : onSave,
-                      style: FilledButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        backgroundColor: EditorColorTokens.coral,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: EditorColorTokens.border,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            EditorRadiusTokens.control,
-                          ),
+                  child: FilledButton(
+                    key: const Key('editor-save'),
+                    onPressed: saving ? null : onSave,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(60, 34),
+                      padding: const EdgeInsets.symmetric(horizontal: 9),
+                      backgroundColor: EditorColorTokens.coral,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: EditorColorTokens.border,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          EditorRadiusTokens.control,
                         ),
                       ),
-                      child: saving
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text(
-                              '저장',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
                     ),
+                    child: saving
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            '내보내기',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -616,21 +973,12 @@ class EditorTopBar extends StatelessWidget {
   );
 }
 
+/// 미리보기 칸. 영상만 그린다 — 재생 단추와 타임코드는 아래
+/// [EditorTransportBar]가 맡아 영상을 가리지 않는다.
 class VideoPreviewWorkspace extends StatelessWidget {
-  const VideoPreviewWorkspace({
-    super.key,
-    required this.preview,
-    required this.playing,
-    required this.currentTime,
-    required this.totalTime,
-    required this.onPlay,
-  });
+  const VideoPreviewWorkspace({super.key, required this.preview});
 
   final Widget preview;
-  final bool playing;
-  final String currentTime;
-  final String totalTime;
-  final VoidCallback onPlay;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -643,79 +991,11 @@ class VideoPreviewWorkspace extends StatelessWidget {
         color: EditorColorTokens.previewWorkspace,
         borderRadius: BorderRadius.circular(EditorRadiusTokens.panel),
       ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(EditorSpacingTokens.sm),
-            child: Center(child: preview),
-          ),
-          Positioned(
-            left: 10,
-            bottom: 8,
-            child: PlaybackOverlay(
-              playing: playing,
-              currentTime: currentTime,
-              totalTime: totalTime,
-              onPlay: onPlay,
-            ),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(EditorSpacingTokens.sm),
+        child: Center(child: preview),
       ),
     ),
-  );
-}
-
-class PlaybackOverlay extends StatelessWidget {
-  const PlaybackOverlay({
-    super.key,
-    required this.playing,
-    required this.currentTime,
-    required this.totalTime,
-    required this.onPlay,
-  });
-
-  final bool playing;
-  final String currentTime;
-  final String totalTime;
-  final VoidCallback onPlay;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      SizedBox.square(
-        dimension: 44,
-        child: IconButton.filled(
-          tooltip: playing ? '일시정지' : '재생',
-          onPressed: onPlay,
-          style: IconButton.styleFrom(
-            backgroundColor: EditorColorTokens.coral,
-            foregroundColor: Colors.white,
-            iconSize: 22,
-          ),
-          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-        ),
-      ),
-      const SizedBox(width: 6),
-      DecoratedBox(
-        decoration: BoxDecoration(
-          color: const Color(0xB31E1510),
-          borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-          child: Text(
-            '$currentTime / $totalTime',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-    ],
   );
 }
 
@@ -846,12 +1126,10 @@ class EditorTimelineSection extends StatelessWidget {
     required this.thumbnails,
     required this.expanded,
     required this.canDelete,
-    required this.canSplit,
     required this.onSeek,
     required this.onClipSelected,
-    required this.onSplit,
+    required this.onClipAdd,
     required this.onDelete,
-    required this.onDuplicate,
     required this.onClipReorder,
     required this.onTrimChanged,
     required this.onTrimCommitted,
@@ -864,15 +1142,13 @@ class EditorTimelineSection extends StatelessWidget {
   });
 
   /// 클립 고르는 줄(여백 포함)의 높이. 클립이 둘 이상일 때만 붙는다.
-  static const chooserHeight = 44.0;
+  /// 칩 안에 실제 프레임을 깔기 때문에 글자 한 줄보다 한 뼘 높다.
+  static const chooserHeight = 58.0;
   static const cutHeaderHeight = 46.0;
   static const overviewHeight = 46.0;
 
-  /// 지금 나눌 수 없는 이유. null이면 나눌 수 있다.
-  static const splitBlockedReason = '나눌 자리를 먼저 정해요. 띠를 눌러 흰 선을 구간 안쪽으로 옮겨 보세요.';
-
   /// 지금 지울 수 없는 이유.
-  static const deleteBlockedReason = '지울 것이 없어요. 구간을 좁히거나 클립을 나눈 뒤에 지울 수 있어요.';
+  static const deleteBlockedReason = '지울 것이 없어요. 구간을 좁히거나 클립을 추가한 뒤에 지울 수 있어요.';
 
   final double trimBarHeight;
   final double actionButtonHeight;
@@ -880,12 +1156,10 @@ class EditorTimelineSection extends StatelessWidget {
   final List<String> thumbnails;
   final bool expanded;
   final bool canDelete;
-  final bool canSplit;
   final ValueChanged<int> onSeek;
   final ValueChanged<String> onClipSelected;
-  final VoidCallback onSplit;
+  final VoidCallback onClipAdd;
   final VoidCallback onDelete;
-  final VoidCallback onDuplicate;
   final void Function(int oldIndex, int newIndex) onClipReorder;
   final void Function(int startMs, int endMs, bool startHandle) onTrimChanged;
   final VoidCallback onTrimCommitted;
@@ -930,6 +1204,7 @@ class EditorTimelineSection extends StatelessWidget {
                 height: chooserHeight - 6,
                 child: ClipChooser(
                   project: project,
+                  thumbnails: thumbnails,
                   onClipSelected: onClipSelected,
                   onReorder: onClipReorder,
                 ),
@@ -949,10 +1224,13 @@ class EditorTimelineSection extends StatelessWidget {
                         endMs: selected.sourceEndMs,
                         playheadSourceMs: _playheadSourceMs(selected),
                         thumbnails: thumbnails,
-                        recommendationMarker: project.recommendationMarker,
                         zoomSegments: project.zoomSegments,
                         minimumDurationMs:
                             EditorProjectController.minimumClipDurationMs,
+                        // 창 안쪽을 끌면 클립 구간이 길이를 유지한 채
+                        // 원본 위를 통째로 움직인다 — 추가한 클립을 원하는
+                        // 장면으로 옮기는 가장 빠른 손이다.
+                        windowSlidable: true,
                         onTrimChanged: onTrimChanged,
                         onTrimCommitted: onTrimCommitted,
                         // 끝을 1ms 남긴다. 딱 끝까지 밀면 그 시각은 다음 클립의
@@ -983,26 +1261,18 @@ class EditorTimelineSection extends StatelessWidget {
                     onPressed: selected == null ? null : onPlayRange,
                   ),
                   _TimelineAction(
-                    key: const Key('editor-split-clip'),
-                    label: '분할',
-                    icon: Icons.content_cut_rounded,
-                    onPressed: canSplit ? onSplit : null,
-                    // 흐린 단추도 눌리게 둔다. 아무 반응이 없으면 "고장"으로
-                    // 읽히지만, 왜 안 되는지 알려 주면 다음에 뭘 할지 알 수 있다.
-                    blockedReason: splitBlockedReason,
-                    onBlocked: onBlocked,
-                  ),
-                  _TimelineAction(
-                    key: const Key('editor-duplicate-clip'),
-                    label: '복제',
-                    icon: Icons.copy_rounded,
-                    onPressed: selected == null ? null : onDuplicate,
+                    key: const Key('editor-add-clip'),
+                    label: '클립 추가',
+                    icon: Icons.add_box_outlined,
+                    onPressed: onClipAdd,
                   ),
                   _TimelineAction(
                     key: const Key('editor-delete-clip'),
-                    label: '삭제',
+                    label: '클립 삭제',
                     icon: Icons.delete_outline_rounded,
                     onPressed: canDelete ? onDelete : null,
+                    // 흐린 단추도 눌리게 둔다. 아무 반응이 없으면 "고장"으로
+                    // 읽히지만, 왜 안 되는지 알려 주면 다음에 뭘 할지 알 수 있다.
                     blockedReason: deleteBlockedReason,
                     onBlocked: onBlocked,
                   ),
@@ -1021,6 +1291,9 @@ class EditorTimelineSection extends StatelessWidget {
   }
 }
 
+/// 컷 탭 머리 줄. 왼쪽은 AI 길이 프리셋, 오른쪽은 지금 고른 구간의
+/// 시작~끝을 **프레임 단위**로 보여 준다 — 어디부터 어디까지 자르는지가
+/// 드래그 중이 아니어도 늘 보인다.
 class _CutPrecisionToolbar extends StatelessWidget {
   const _CutPrecisionToolbar({
     required this.project,
@@ -1030,8 +1303,6 @@ class _CutPrecisionToolbar extends StatelessWidget {
     required this.onSeek,
   });
 
-  static const frameRate = 30;
-
   final EditorProject project;
   final Map<String, EditRecommendation> recommendations;
   final bool loading;
@@ -1039,88 +1310,84 @@ class _CutPrecisionToolbar extends StatelessWidget {
   final ValueChanged<int> onSeek;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      color: Color(0xFF2A2420),
-      borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-      child: Row(
-        children: [
-          for (final entry in const [
-            ('short', '짧게'),
-            ('medium', '중간'),
-            ('long', '길게'),
-          ]) ...[
-            _TimelinePresetChip(
-              key: Key('editor-preset-${entry.$1}'),
-              label: entry.$2,
-              selected: project.recommendationMarker?.preset == entry.$1,
-              enabled: !loading && recommendations.containsKey(entry.$1),
-              onTap: () => onPresetSelected(entry.$1),
-            ),
-            const SizedBox(width: 3),
-          ],
-          const Spacer(),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _frameTimecode(project.playheadMs),
-                key: const Key('editor-frame-timecode'),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              Text(
-                '30 fps · F${_frameOf(project.playheadMs)}',
-                style: const TextStyle(
-                  color: Color(0xFFBFB5AE),
-                  fontSize: 8,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 5),
-          _FrameStepButton(
-            key: const Key('editor-frame-back'),
-            icon: Icons.chevron_left_rounded,
-            tooltip: '1프레임 뒤로',
-            onTap: () => _stepFrames(-1),
-          ),
-          _FrameStepButton(
-            key: const Key('editor-frame-forward'),
-            icon: Icons.chevron_right_rounded,
-            tooltip: '1프레임 앞으로',
-            onTap: () => _stepFrames(1),
-          ),
-        ],
+  Widget build(BuildContext context) {
+    final selected = project.selectedClip;
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: Color(0xFF2A2420),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
       ),
-    ),
-  );
-
-  int _frameOf(int milliseconds) => (milliseconds * frameRate / 1000).round();
-
-  String _frameTimecode(int milliseconds) {
-    final totalFrames = _frameOf(milliseconds);
-    final frames = totalFrames % frameRate;
-    final totalSeconds = totalFrames ~/ frameRate;
-    final seconds = totalSeconds % 60;
-    final minutes = (totalSeconds ~/ 60) % 60;
-    final hours = totalSeconds ~/ 3600;
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${two(hours)}:${two(minutes)}:${two(seconds)}:${two(frames)}';
-  }
-
-  void _stepFrames(int delta) {
-    final nextFrame = math.max(0, _frameOf(project.playheadMs) + delta);
-    onSeek((nextFrame * 1000 / frameRate).round().clamp(0, project.durationMs));
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+        child: Row(
+          children: [
+            const Text(
+              'AI 컷',
+              style: TextStyle(
+                color: Color(0xFFBFB5AE),
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 5),
+            for (final entry in const [
+              ('short', '짧게'),
+              ('medium', '중간'),
+              ('long', '길게'),
+            ]) ...[
+              _TimelinePresetChip(
+                key: Key('editor-preset-${entry.$1}'),
+                label: entry.$2,
+                selected: project.recommendationMarker?.preset == entry.$1,
+                // 서버 응답이 아직 없어도 눌리게 둔다 — 누르면 그때 받아
+                // 오거나 화면 쪽이 기본 규칙으로 잘라 준다.
+                enabled: !loading,
+                onTap: () => onPresetSelected(entry.$1),
+              ),
+              const SizedBox(width: 3),
+            ],
+            if (selected != null)
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // 좁은 화면에서는 글자를 줄여서라도 잘리지 않게 한다.
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${frameClock(selected.sourceStartMs)}'
+                        ' ~ ${frameClock(selected.sourceEndMs)}',
+                        key: const Key('editor-selected-range'),
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      '고른 구간 · 분:초:프레임',
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: Color(0xFFBFB5AE),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const Spacer(),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1202,13 +1469,33 @@ class ClipChooser extends StatelessWidget {
   const ClipChooser({
     super.key,
     required this.project,
+    required this.thumbnails,
     required this.onClipSelected,
     required this.onReorder,
   });
 
   final EditorProject project;
+
+  /// 원본 전체에 고르게 뽑은 프레임들. 각 클립 칩이 제 구간의 프레임을
+  /// 골라 배경에 깐다 — 숫자만 있는 칩으로는 어느 장면인지 알 수 없다.
+  final List<String> thumbnails;
   final ValueChanged<String> onClipSelected;
   final void Function(int oldIndex, int newIndex) onReorder;
+
+  /// 클립 구간을 대표하는 프레임 경로들(시작·가운데·끝).
+  List<String> _framesFor(EditorClip clip) {
+    if (thumbnails.isEmpty) return const [];
+    final total = math.max(1, project.sourceDurationMs);
+    String frameAt(int sourceMs) => thumbnails[(sourceMs / total *
+            thumbnails.length)
+        .floor()
+        .clamp(0, thumbnails.length - 1)];
+    return [
+      frameAt(clip.sourceStartMs),
+      frameAt((clip.sourceStartMs + clip.sourceEndMs) ~/ 2),
+      frameAt(math.max(clip.sourceStartMs, clip.sourceEndMs - 1)),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1249,8 +1536,10 @@ class ClipChooser extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 6),
                 child: _ClipChip(
                   number: index + 1,
+                  // 분:초:프레임 — 어느 프레임에서 시작하고 끝나는지까지 보인다.
                   sourceRange:
-                      '${_formatMs(clip.sourceStartMs)}–${_formatMs(clip.sourceEndMs)}',
+                      '${frameClock(clip.sourceStartMs)}–${frameClock(clip.sourceEndMs)}',
+                  frames: _framesFor(clip),
                   selected: clip.id == project.selectedClipId,
                   canMoveLeft: index > 0,
                   canMoveRight: index < project.clips.length - 1,
@@ -1264,7 +1553,7 @@ class ClipChooser extends StatelessWidget {
                       child: Icon(
                         Icons.drag_indicator_rounded,
                         size: 18,
-                        color: EditorColorTokens.muted,
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -1279,10 +1568,12 @@ class ClipChooser extends StatelessWidget {
   }
 }
 
+/// 클립 하나. 배경에 그 구간의 실제 프레임을 깔고 번호·구간을 얹는다.
 class _ClipChip extends StatelessWidget {
   const _ClipChip({
     required this.number,
     required this.sourceRange,
+    required this.frames,
     required this.selected,
     required this.onTap,
     required this.canMoveLeft,
@@ -1294,6 +1585,7 @@ class _ClipChip extends StatelessWidget {
 
   final int number;
   final String sourceRange;
+  final List<String> frames;
   final bool selected;
   final VoidCallback onTap;
   final bool canMoveLeft;
@@ -1307,58 +1599,122 @@ class _ClipChip extends StatelessWidget {
     onTap: onTap,
     borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
     child: Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
+      width: selected ? 130 : 104,
       decoration: BoxDecoration(
-        color: selected ? EditorColorTokens.coral : const Color(0xFF26211E),
         borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
         border: Border.all(
-          color: selected ? Colors.white : EditorColorTokens.border,
+          color: selected ? EditorColorTokens.coral : EditorColorTokens.border,
           width: selected ? 2 : 1,
         ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (selected)
-            _TinyMoveButton(
-              icon: Icons.chevron_left_rounded,
-              enabled: canMoveLeft,
-              onTap: onMoveLeft,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(EditorRadiusTokens.control - 1),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (frames.isEmpty)
+              const ColoredBox(color: Color(0xFF26211E))
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final path in frames)
+                    Expanded(
+                      child: Image.file(
+                        File(path),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.low,
+                        errorBuilder: (_, _, _) =>
+                            const ColoredBox(color: Color(0xFF26211E)),
+                      ),
+                    ),
+                ],
+              ),
+            // 프레임 위 글자가 읽히도록 아래쪽만 살짝 어둡게 깐다.
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x26000000), Color(0xB3000000)],
+                ),
+              ),
             ),
-          SizedBox(
-            width: 72,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '클립 $number',
-                  style: TextStyle(
-                    color: selected ? Colors.white : EditorColorTokens.muted,
-                    fontSize: 9,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
+            Positioned(
+              left: 5,
+              right: 5,
+              bottom: 3,
+              child: Row(
+                children: [
+                  Text(
+                    '$number',
+                    style: TextStyle(
+                      color: selected ? EditorColorTokens.coral : Colors.white,
+                      fontSize: 11,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      sourceRange,
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      softWrap: false,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              right: 0,
+              top: 0,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: Color(0x8C000000),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(8),
                   ),
                 ),
-                Text(
-                  sourceRange,
-                  style: TextStyle(
-                    color: selected ? Colors.white70 : EditorColorTokens.muted,
-                    fontSize: 7,
-                    height: 1,
+                child: dragHandle,
+              ),
+            ),
+            if (selected) ...[
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 14,
+                child: Center(
+                  child: _TinyMoveButton(
+                    icon: Icons.chevron_left_rounded,
+                    enabled: canMoveLeft,
+                    onTap: onMoveLeft,
                   ),
                 ),
-              ],
-            ),
-          ),
-          dragHandle,
-          if (selected)
-            _TinyMoveButton(
-              icon: Icons.chevron_right_rounded,
-              enabled: canMoveRight,
-              onTap: onMoveRight,
-            ),
-        ],
+              ),
+              Positioned(
+                right: 0,
+                top: 22,
+                bottom: 14,
+                child: Center(
+                  child: _TinyMoveButton(
+                    icon: Icons.chevron_right_rounded,
+                    enabled: canMoveRight,
+                    onTap: onMoveRight,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     ),
   );
@@ -1390,35 +1746,38 @@ class SelectedToolPanel extends StatelessWidget {
   const SelectedToolPanel({
     super.key,
     required this.project,
+    required this.controller,
     required this.height,
     required this.onRatioSelected,
-    required this.onCanvasChanged,
-    required this.onCanvasReset,
-    required this.onCanvasFitSelected,
+    required this.onEditCommitted,
     required this.onText,
     required this.onTextEdit,
+    required this.onTextRemove,
     required this.onVolumeChanged,
     required this.onMutedChanged,
     required this.onStickerSelected,
     required this.onLookSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
-    required this.onZoomChanged,
     required this.onZoomRemove,
     required this.onZoomSelected,
+    this.thumbnails = const [],
     this.previewFrame,
     this.onVolumeCommitted,
     this.aiCaptionSummary,
   });
 
   final EditorProject project;
+  final EditorProjectController controller;
   final double height;
+
+  /// 원본 전체에 고르게 뽑은 프레임들. 줌 탭이 장면 카드를 그릴 때 쓴다.
+  final List<String> thumbnails;
   final ValueChanged<EditorCanvasRatio> onRatioSelected;
-  final ValueChanged<EditorCanvas> onCanvasChanged;
-  final VoidCallback onCanvasReset;
-  final ValueChanged<EditorCanvasFit> onCanvasFitSelected;
+  final VoidCallback onEditCommitted;
   final VoidCallback onText;
   final ValueChanged<String> onTextEdit;
+  final ValueChanged<String> onTextRemove;
   final ValueChanged<double> onVolumeChanged;
   final VoidCallback? onVolumeCommitted;
   final ValueChanged<bool> onMutedChanged;
@@ -1427,7 +1786,6 @@ class SelectedToolPanel extends StatelessWidget {
   final String? previewFrame;
   final VoidCallback onAiCaption;
   final VoidCallback onZoomAdd;
-  final ValueChanged<EditorZoomSegment> onZoomChanged;
   final ValueChanged<EditorZoomSegment> onZoomRemove;
   final ValueChanged<EditorZoomSegment> onZoomSelected;
   final String? aiCaptionSummary;
@@ -1457,23 +1815,24 @@ class SelectedToolPanel extends StatelessWidget {
         child: switch (project.selectedTool) {
           EditorTool.ratio => _RatioPanel(
             canvas: project.canvas,
+            controller: controller,
             onSelected: onRatioSelected,
-            onFitSelected: onCanvasFitSelected,
+            onEditCommitted: onEditCommitted,
           ),
           EditorTool.text => _TextPanel(
             project: project,
             onText: onText,
             onTextEdit: onTextEdit,
+            onTextRemove: onTextRemove,
           ),
           EditorTool.zoom => _SimpleZoomPanel(
             project: project,
-            canvas: project.canvas,
-            onCanvasChanged: onCanvasChanged,
-            onCanvasReset: onCanvasReset,
+            controller: controller,
+            thumbnails: thumbnails,
             onAdd: onZoomAdd,
-            onChanged: onZoomChanged,
             onRemove: onZoomRemove,
             onSelected: onZoomSelected,
+            onEditCommitted: onEditCommitted,
           ),
           EditorTool.audio => _AudioPanel(
             audio: project.audio,
@@ -1498,29 +1857,38 @@ class SelectedToolPanel extends StatelessWidget {
   }
 }
 
+/// 출력 비율을 고르고, 영상 창의 크기·위치를 조절한다.
+///
+/// 9:16은 가로 영상을 중앙에 두고 위아래를 검은 띠로 남기는 숏폼 구도다.
+/// 검은 띠의 크기는 아래 확대 슬라이더(또는 영상 핀치)로, 위치는 영상을
+/// 위아래로 끌어서 바꾼다. 여기서 정한 값은 다른 탭과 저장 결과에 그대로
+/// 적용된다.
 class _RatioPanel extends StatelessWidget {
   const _RatioPanel({
     required this.canvas,
+    required this.controller,
     required this.onSelected,
-    required this.onFitSelected,
+    required this.onEditCommitted,
   });
 
   final EditorCanvas canvas;
+  final EditorProjectController controller;
   final ValueChanged<EditorCanvasRatio> onSelected;
-  final ValueChanged<EditorCanvasFit> onFitSelected;
+  final VoidCallback onEditCommitted;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
+  // 세로가 짧은 기기에서 도구 칸이 양보하면 줄이 잘릴 수 있다 — 스크롤로 본다.
+  Widget build(BuildContext context) => ListView(
+    padding: EdgeInsets.zero,
     children: [
       Row(
         children: [
-          const Expanded(child: _PanelTitle('캔버스 · 비율과 영상 영역')),
+          const Expanded(child: _PanelTitle('비율 · 영상 창')),
           const _LiveAppliedBadge(),
         ],
       ),
       const Text(
-        '출력 비율과 가로 영상의 표시 영역만 정합니다. 이동·확대·회전은 구간 줌에서 조절합니다.',
+        '9:16의 검은 띠는 자막 자리예요. 영상을 위아래로 끌어 위치를, 확대로 띠 크기를 바꿔요.',
         style: TextStyle(color: EditorColorTokens.muted, fontSize: 9),
       ),
       const SizedBox(height: 5),
@@ -1547,116 +1915,112 @@ class _RatioPanel extends StatelessWidget {
           ],
         ),
       ),
-      if (canvas.ratio == EditorCanvasRatio.vertical) ...[
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: _PanelChoice(
-                label: '채우기',
-                icon: Icons.fullscreen_rounded,
-                selected: canvas.fit == EditorCanvasFit.cover,
-                onTap: () => onFitSelected(EditorCanvasFit.cover),
-              ),
+      Row(
+        children: [
+          const Text(
+            '확대',
+            style: TextStyle(
+              color: EditorColorTokens.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: _PanelChoice(
-                label: '가로 영상 전체 보기',
-                icon: Icons.fit_screen_rounded,
-                selected: canvas.fit == EditorCanvasFit.contain,
-                onTap: () => onFitSelected(EditorCanvasFit.contain),
+          ),
+          Expanded(
+            child: Slider(
+              key: const Key('editor-canvas-scale-slider'),
+              value: canvas.scale.clamp(1.0, 3.5),
+              min: 1,
+              max: 3.5,
+              onChangeStart: (_) => controller.beginGesture(),
+              onChanged: (value) => controller.updateCanvasGesture(
+                scale: value,
+                offsetX: canvas.offsetX,
+                offsetY: canvas.offsetY,
+                rotationDegrees: canvas.rotationDegrees,
               ),
+              onChangeEnd: (_) => onEditCommitted(),
             ),
-          ],
-        ),
-      ],
+          ),
+          Text(
+            '${canvas.scale.toStringAsFixed(2)}×',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+          ),
+          IconButton(
+            key: const Key('editor-canvas-reset'),
+            tooltip: '크기·위치 초기화',
+            onPressed: () {
+              controller.resetCanvasTransform();
+              onEditCommitted();
+            },
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+          ),
+        ],
+      ),
     ],
   );
 }
 
-class _StepButton extends StatelessWidget {
-  const _StepButton({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => InkResponse(
-    onTap: onTap,
-    radius: 18,
-    child: SizedBox(
-      width: 25,
-      height: 40,
-      child: Icon(icon, size: 15, color: EditorColorTokens.coral),
-    ),
-  );
-}
-
+/// 줌 도구.
+///
+/// 배율 하나만 다룬다 — 예전의 캔버스 확대·좌우·상하·회전 스테퍼는 구간
+/// 줌과 헷갈리기만 해서 걷어냈다. 배율은 슬라이더로 끌고, 초점은 영상을
+/// 직접 끌거나 벌려서 잡는다. 구간(시작~끝)은 위 프레임 타임라인의
+/// 손잡이가 맡는다.
 class _SimpleZoomPanel extends StatelessWidget {
   const _SimpleZoomPanel({
     required this.project,
-    required this.canvas,
-    required this.onCanvasChanged,
-    required this.onCanvasReset,
+    required this.controller,
+    required this.thumbnails,
     required this.onAdd,
-    required this.onChanged,
     required this.onRemove,
     required this.onSelected,
+    required this.onEditCommitted,
   });
 
   final EditorProject project;
-  final EditorCanvas canvas;
-  final ValueChanged<EditorCanvas> onCanvasChanged;
-  final VoidCallback onCanvasReset;
+  final EditorProjectController controller;
+  final List<String> thumbnails;
   final VoidCallback onAdd;
-  final ValueChanged<EditorZoomSegment> onChanged;
   final ValueChanged<EditorZoomSegment> onRemove;
   final ValueChanged<EditorZoomSegment> onSelected;
+  final VoidCallback onEditCommitted;
+
+  /// 이 시각을 대표하는 프레임 경로. 아직 못 뽑았으면 null.
+  String? _frameAt(int sourceMs) {
+    if (thumbnails.isEmpty) return null;
+    final total = math.max(1, project.sourceDurationMs);
+    return thumbnails[(sourceMs / total * thumbnails.length).floor().clamp(
+      0,
+      thumbnails.length - 1,
+    )];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final zooms = project.zoomSegments.take(20).toList(growable: false);
-    var index = zooms.indexWhere((zoom) => zoom.id == project.selectedZoomId);
-    if (index < 0 && zooms.isNotEmpty) index = 0;
-    final active = index < 0 ? null : zooms[index];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final scope = _scopeClip(project);
+    // 고른 클립에 귀속된 줌만 보인다 — 다른 클립의 줌은 그 클립을 골라야
+    // 나온다.
+    final zooms = scope == null
+        ? const <EditorZoomSegment>[]
+        : _zoomsOfClip(project, scope).take(20).toList(growable: false);
+    final active = scope == null ? null : _activeZoom(project, scope);
+    // 세로가 짧은 기기에서 도구 칸이 양보하면 이 패널이 다 안 들어갈 수
+    // 있다. 줄이 잘리는 대신 스크롤로 내려 볼 수 있게 한다.
+    return ListView(
+      padding: EdgeInsets.zero,
       children: [
         Row(
           children: [
-            const Expanded(child: _PanelTitle('이동 · 회전 · 구간 줌')),
-            if (active != null) ...[
+            const Expanded(child: _PanelTitle('줌 · 이 클립의 장면')),
+            if (active != null)
               IconButton(
-                tooltip: '이전 줌',
-                onPressed: index > 0
-                    ? () => onSelected(zooms[index - 1])
-                    : null,
+                key: const Key('editor-remove-zoom'),
+                tooltip: '이 줌 삭제',
+                onPressed: () => onRemove(active),
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.chevron_left_rounded, size: 18),
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
               ),
-              Text(
-                '${index + 1}/${zooms.length}',
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              IconButton(
-                tooltip: '다음 줌',
-                onPressed: index + 1 < zooms.length
-                    ? () => onSelected(zooms[index + 1])
-                    : null,
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.chevron_right_rounded, size: 18),
-              ),
-            ],
-            IconButton(
-              tooltip: '이동·확대·회전 초기화',
-              onPressed: onCanvasReset,
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-            ),
             FilledButton(
               key: const Key('editor-add-zoom'),
               onPressed: onAdd,
@@ -1670,225 +2034,196 @@ class _SimpleZoomPanel extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Expanded(
-              child: _CompactStepper(
-                label: '확대',
-                value: '${canvas.scale.toStringAsFixed(2)}×',
-                onDecrease: () => onCanvasChanged(
-                  canvas.copyWith(
-                    scale: math.max(canvas.minimumScale, canvas.scale - 0.05),
-                  ),
-                ),
-                onIncrease: () => onCanvasChanged(
-                  canvas.copyWith(scale: math.min(4, canvas.scale + 0.05)),
-                ),
-              ),
+        if (zooms.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Text(
+              '이 클립에는 줌이 없어요. 재생 위치에서 "줌 추가"를 누르면 이 클립에 묶인 줌이 생겨요.',
+              style: TextStyle(color: EditorColorTokens.muted, fontSize: 10),
             ),
-            Expanded(
-              child: _CompactStepper(
-                label: '좌우',
-                value: canvas.offsetX.toStringAsFixed(2),
-                onDecrease: () => onCanvasChanged(
-                  canvas.copyWith(offsetX: math.max(-1, canvas.offsetX - 0.05)),
-                ),
-                onIncrease: () => onCanvasChanged(
-                  canvas.copyWith(offsetX: math.min(1, canvas.offsetX + 0.05)),
-                ),
-              ),
-            ),
-            Expanded(
-              child: _CompactStepper(
-                label: '상하',
-                value: canvas.offsetY.toStringAsFixed(2),
-                onDecrease: () => onCanvasChanged(
-                  canvas.copyWith(offsetY: math.max(-1, canvas.offsetY - 0.05)),
-                ),
-                onIncrease: () => onCanvasChanged(
-                  canvas.copyWith(offsetY: math.min(1, canvas.offsetY + 0.05)),
-                ),
-              ),
-            ),
-            Expanded(
-              child: _CompactStepper(
-                label: '회전',
-                value: '${canvas.rotationDegrees.round()}°',
-                onDecrease: () => onCanvasChanged(
-                  canvas.copyWith(
-                    rotationDegrees: math.max(-180, canvas.rotationDegrees - 1),
-                  ),
-                ),
-                onIncrease: () => onCanvasChanged(
-                  canvas.copyWith(
-                    rotationDegrees: math.min(180, canvas.rotationDegrees + 1),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        if (active == null)
-          const Expanded(child: Center(child: Text('재생 위치에서 줌을 추가하세요.')))
+          )
         else
+          SizedBox(
+            height: 62,
+            child: ListView(
+              key: const Key('editor-zoom-scenes'),
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final (sceneIndex, zoom) in zooms.indexed)
+                  _ZoomSceneCard(
+                    key: Key('editor-zoom-scene-${zoom.id}'),
+                    zoom: zoom,
+                    number: sceneIndex + 1,
+                    color: EditorMarkerTokens.colorAt(sceneIndex),
+                    frame: _frameAt(
+                      (zoom.sourceStartMs + zoom.sourceEndMs) ~/ 2,
+                    ),
+                    selected: active?.id == zoom.id,
+                    onTap: () => onSelected(zoom),
+                  ),
+              ],
+            ),
+          ),
+        if (active != null)
           Row(
-            key: const Key('editor-zoom-frame-controls'),
             children: [
-              Expanded(
-                child: _CompactStepper(
-                  label: '시작 1f',
-                  value: _frameTime(active.sourceStartMs),
-                  onDecrease: () => onChanged(
-                    active.copyWith(
-                      sourceStartMs: _stepFrame(
-                        active.sourceStartMs,
-                        -1,
-                        project.sourceDurationMs,
-                      ),
-                    ),
-                  ),
-                  onIncrease: () => onChanged(
-                    active.copyWith(
-                      sourceStartMs: math.min(
-                        _stepFrame(
-                          active.sourceStartMs,
-                          1,
-                          project.sourceDurationMs,
-                        ),
-                        _stepFrame(
-                          active.sourceEndMs,
-                          -1,
-                          project.sourceDurationMs,
-                        ),
-                      ),
-                    ),
-                  ),
+              const Text(
+                '배율',
+                style: TextStyle(
+                  color: EditorColorTokens.muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               Expanded(
-                child: _CompactStepper(
-                  label: '끝 1f',
-                  value: _frameTime(active.sourceEndMs),
-                  onDecrease: () => onChanged(
-                    active.copyWith(
-                      sourceEndMs: math.max(
-                        _stepFrame(
-                          active.sourceEndMs,
-                          -1,
-                          project.sourceDurationMs,
-                        ),
-                        _stepFrame(
-                          active.sourceStartMs,
-                          1,
-                          project.sourceDurationMs,
-                        ),
-                      ),
-                    ),
+                child: Slider(
+                  key: const Key('editor-zoom-scale-slider'),
+                  value: active.scale.clamp(1.05, 2.8),
+                  min: 1.05,
+                  max: 2.8,
+                  onChanged: (value) => controller.updateZoomGesture(
+                    active.copyWith(scale: value),
                   ),
-                  onIncrease: () => onChanged(
-                    active.copyWith(
-                      sourceEndMs: _stepFrame(
-                        active.sourceEndMs,
-                        1,
-                        project.sourceDurationMs,
-                      ),
-                    ),
-                  ),
+                  onChangeEnd: (_) => onEditCommitted(),
                 ),
               ),
-              Expanded(
-                child: _CompactStepper(
-                  label: '구간 확대',
-                  value: '${active.scale.toStringAsFixed(2)}×',
-                  onDecrease: () => onChanged(
-                    active.copyWith(scale: math.max(1.05, active.scale - 0.05)),
-                  ),
-                  onIncrease: () => onChanged(
-                    active.copyWith(scale: math.min(2.8, active.scale + 0.05)),
-                  ),
+              Text(
+                '${active.scale.toStringAsFixed(2)}×',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
                 ),
-              ),
-              IconButton(
-                tooltip: '줌 삭제',
-                onPressed: () => onRemove(active),
-                icon: const Icon(Icons.delete_outline_rounded, size: 18),
               ),
             ],
           ),
+        const Text(
+          '영상을 끌면 확대 초점이, 두 손가락으로 벌리면 배율이 바뀌어요. 구간은 위 타임라인 손잡이로 옮겨요.',
+          style: TextStyle(color: EditorColorTokens.muted, fontSize: 9),
+        ),
       ],
     );
   }
-
-  static int _stepFrame(int milliseconds, int delta, int maximum) {
-    final frame =
-        (milliseconds * _CutPrecisionToolbar.frameRate / 1000).round() + delta;
-    return (frame * 1000 / _CutPrecisionToolbar.frameRate).round().clamp(
-      0,
-      maximum,
-    );
-  }
-
-  static String _frameTime(int milliseconds) {
-    final frame = (milliseconds * _CutPrecisionToolbar.frameRate / 1000)
-        .round();
-    final seconds = frame ~/ _CutPrecisionToolbar.frameRate;
-    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}:${(frame % _CutPrecisionToolbar.frameRate).toString().padLeft(2, '0')}';
-  }
 }
 
-class _CompactStepper extends StatelessWidget {
-  const _CompactStepper({
-    required this.label,
-    required this.value,
-    required this.onDecrease,
-    required this.onIncrease,
+/// 줌 장면 하나를 미리 보여 주는 카드.
+///
+/// 카드에 깔린 프레임에 그 장면의 배율·초점을 **그대로 적용**해 그린다 —
+/// 누르기 전에 "이 장면이 어떻게 확대되는지"를 카드에서 먼저 본다. 누르면
+/// 재생 위치가 그 장면으로 가서 미리보기 화면에도 같은 효과가 걸린다.
+class _ZoomSceneCard extends StatelessWidget {
+  const _ZoomSceneCard({
+    super.key,
+    required this.zoom,
+    required this.number,
+    required this.color,
+    required this.frame,
+    required this.selected,
+    required this.onTap,
   });
 
-  final String label;
-  final String value;
-  final VoidCallback onDecrease;
-  final VoidCallback onIncrease;
+  final EditorZoomSegment zoom;
+  final int number;
+
+  /// 타임라인 마커와 같은 순번 색 — 카드와 마커가 눈으로 이어진다.
+  final Color color;
+  final String? frame;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 44,
-    child: Row(
-      children: [
-        _StepButton(icon: Icons.remove_rounded, onTap: onDecrease),
-        Expanded(
+  Widget build(BuildContext context) {
+    final path = frame;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
+        child: SizedBox(
+          width: 84,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(label, maxLines: 1, style: const TextStyle(fontSize: 8)),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(
+                      EditorRadiusTokens.control,
+                    ),
+                    border: Border.all(
+                      color: selected ? color : EditorColorTokens.border,
+                      width: selected ? 2.5 : 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(
+                      EditorRadiusTokens.control - 1,
+                    ),
+                    child: path == null
+                        ? const ColoredBox(color: EditorColorTokens.border)
+                        : Transform.scale(
+                            scale: zoom.scale,
+                            alignment: Alignment(
+                              zoom.focus.x * 2 - 1,
+                              zoom.focus.y * 2 - 1,
+                            ),
+                            child: Image.file(
+                              File(path),
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              filterQuality: FilterQuality.low,
+                              errorBuilder: (_, _, _) => const ColoredBox(
+                                color: EditorColorTokens.border,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
               Text(
-                value,
+                '${zoom.automatic ? 'AI ' : ''}$number · '
+                '${zoom.scale.toStringAsFixed(1)}× · '
+                '${_formatMs(zoom.sourceStartMs)}',
                 maxLines: 1,
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
+                overflow: TextOverflow.clip,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: selected ? color : EditorColorTokens.muted,
+                  fontSize: 8,
+                  height: 1.1,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
             ],
           ),
         ),
-        _StepButton(icon: Icons.add_rounded, onTap: onIncrease),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
+/// 자막 도구.
+///
+/// 자막마다 제 표시 구간(시작~끝)이 있고, 구간이 겹치면 같은 시각에 여러
+/// 자막이 함께 뜬다. 칩을 누르면 그 자막의 시작으로 이동해 영상 위에서
+/// 바로 확인하고, 연필로 내용을 고친다.
 class _TextPanel extends StatelessWidget {
   const _TextPanel({
     required this.project,
     required this.onText,
     required this.onTextEdit,
+    required this.onTextRemove,
   });
 
   final EditorProject project;
   final VoidCallback onText;
   final ValueChanged<String> onTextEdit;
+
+  /// 칩을 눌러 그 자막을 고르고 시작 시각으로 이동한다.
+
+  /// 고른 자막의 시작(true)·끝(false)을 지금 재생 위치로 맞춘다.
+  final ValueChanged<String> onTextRemove;
 
   /// 추가 버튼은 고정 높이 SizedBox로 감싸지 않는다.
   ///
@@ -1898,107 +2233,163 @@ class _TextPanel extends StatelessWidget {
   /// 예전 _ZoomPanel의 "빈 패널·입력 정지"도 같은 조합이 원인이었다. 버튼
   /// 크기는 스타일의 minimumSize로 정한다.
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        children: [
-          const Expanded(child: _PanelTitle('텍스트 레이어')),
-          Text(
-            '${project.textLayers.length}개',
-            style: const TextStyle(
-              color: EditorColorTokens.muted,
-              fontSize: 10,
-            ),
-          ),
-          const SizedBox(width: 6),
-          FilledButton(
-            key: const Key('editor-open-text-sheet'),
-            onPressed: onText,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(64, 32),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              textStyle: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) {
+    final scope = _scopeClip(project);
+    // 고른 클립에 귀속된 자막만 보인다.
+    final layers = scope == null
+        ? const <EditorTextLayer>[]
+        : _textLayersOfClip(project, scope);
+    final selected = layers
+        .where((layer) => layer.id == project.selectedLayerId)
+        .firstOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _PanelTitle('자막 · 이 클립의 자막')),
+            Text(
+              '${layers.length}개',
+              style: const TextStyle(
+                color: EditorColorTokens.muted,
+                fontSize: 10,
               ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text('+ 추가'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 6),
-      Expanded(
-        child: project.textLayers.isEmpty
-            ? DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7F1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: EditorColorTokens.border),
+            const SizedBox(width: 6),
+            FilledButton(
+              key: const Key('editor-open-text-sheet'),
+              onPressed: onText,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(64, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                textStyle: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
                 ),
-                child: const Center(
-                  child: Text(
-                    '+ 추가를 눌러 영상 위에서 바로 입력하세요',
-                    style: TextStyle(
-                      color: EditorColorTokens.muted,
-                      fontSize: 10,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('+ 추가'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: layers.isEmpty
+              ? DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7F1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: EditorColorTokens.border),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      '+ 추가를 누르면 지금 재생 위치부터 3초짜리 자막이 생겨요',
+                      style: TextStyle(
+                        color: EditorColorTokens.muted,
+                        fontSize: 10,
+                      ),
                     ),
                   ),
-                ),
-              )
-            : ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: project.textLayers.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 6),
-                itemBuilder: (context, index) {
-                  final layer = project.textLayers[index];
-                  return InkWell(
-                    key: Key('editor-edit-text-${layer.id}'),
-                    onTap: () => onTextEdit(layer.id),
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      width: 150,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: project.selectedLayerId == layer.id
-                            ? EditorColorTokens.selected
-                            : const Color(0xFFFFF7F1),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: project.selectedLayerId == layer.id
-                              ? EditorColorTokens.coral
-                              : EditorColorTokens.border,
+                )
+              : ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: layers.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (context, index) {
+                    final layer = layers[index];
+                    final isSelected = selected?.id == layer.id;
+                    // 타임라인 마커와 같은 순번 색으로 구분한다.
+                    final markerColor = EditorMarkerTokens.colorAt(index);
+                    return InkWell(
+                      key: Key('editor-edit-text-${layer.id}'),
+                      // 칩을 누르면 바로 내용 편집으로 들어간다 — 따로 연필을
+                      // 찾게 하지 않는다. 구간은 아래 타임라인이 맡는다.
+                      onTap: () => onTextEdit(layer.id),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 150,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? EditorColorTokens.selected
+                              : const Color(0xFFFFF7F1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected
+                                ? markerColor
+                                : EditorColorTokens.border,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                color: markerColor,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    layer.text,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  Text(
+                                    '${_formatMs(layer.startMs)}–${_formatMs(layer.endMs)}',
+                                    style: const TextStyle(
+                                      color: EditorColorTokens.muted,
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Text(
-                            '${index + 1}',
-                            style: const TextStyle(
-                              color: EditorColorTokens.coral,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              layer.text,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                          ),
-                          const Icon(Icons.edit_rounded, size: 14),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
+        ),
+        if (selected != null) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '자막 ${layers.indexOf(selected) + 1} · '
+                  '${_formatMs(selected.startMs)}–${_formatMs(selected.endMs)}'
+                  ' · 구간은 위 타임라인의 노란 창을 끌어 옮겨요',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: EditorColorTokens.muted,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-      ),
-    ],
-  );
+              IconButton(
+                key: const Key('editor-text-remove'),
+                tooltip: '자막 삭제',
+                onPressed: () => onTextRemove(selected.id),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.delete_outline_rounded, size: 17),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _AudioPanel extends StatelessWidget {
@@ -2338,10 +2729,10 @@ class EditorBottomNavigation extends StatelessWidget {
   final double iconSize;
 
   static const _items = <(EditorTool, String, IconData)>[
-    (EditorTool.cut, '컷', Icons.content_cut_rounded),
-    (EditorTool.ratio, '캔버스', Icons.aspect_ratio_rounded),
-    (EditorTool.text, '텍스트', Icons.title_rounded),
-    (EditorTool.zoom, '구간 줌', Icons.zoom_in_rounded),
+    (EditorTool.ratio, '비율', Icons.aspect_ratio_rounded),
+    (EditorTool.cut, '컷 편집', Icons.content_cut_rounded),
+    (EditorTool.zoom, '줌', Icons.zoom_in_rounded),
+    (EditorTool.text, '자막', Icons.subtitles_rounded),
   ];
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 
 class EditRecommendation {
@@ -6,6 +8,7 @@ class EditRecommendation {
     required this.cutEndMs,
     required this.durationPreset,
     required this.zoomSegments,
+    this.scoreTimeline = const [],
   });
 
   factory EditRecommendation.fromJson(Map<String, dynamic> json) {
@@ -14,11 +17,15 @@ class EditRecommendation {
     final zooms = (recipe['zoomSegments'] as List? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList(growable: false);
+    final timeline = (recipe['scoreTimeline'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
     return EditRecommendation(
       cutStartMs: (cut['startMs'] as num).round(),
       cutEndMs: (cut['endMs'] as num).round(),
       durationPreset: recipe['durationPreset'] as String? ?? 'auto',
       zoomSegments: zooms,
+      scoreTimeline: timeline,
     );
   }
 
@@ -26,9 +33,20 @@ class EditRecommendation {
   final int cutEndMs;
   final String durationPreset;
   final List<Map<String, dynamic>> zoomSegments;
+
+  /// 1초 단위 멀티모달 사건 점수(adaptive_selector.build_timeline 결과).
+  /// 웃음·말소리·음량 상승·모션·얼굴 특징을 융합한 `eventScore`가 들어 있다.
+  /// 컷 선택이 이 점수를 그대로 쓴다 — 앱에서 점수를 다시 지어내지 않는다.
+  final List<Map<String, dynamic>> scoreTimeline;
 }
 
 class EditRecommendationClient {
+  /// 위젯 테스트에서 화면이 initState에서 이 클라이언트를 부르면 Dio 타이머가
+  /// 남아 테스트가 깨진다. flutter test는 FLUTTER_TEST 환경 변수를 세운다 —
+  /// 그때는 부르는 쪽이 네트워크를 건너뛴다.
+  static bool get networkAllowed =>
+      !Platform.environment.containsKey('FLUTTER_TEST');
+
   EditRecommendationClient({Dio? dio})
     : _dio =
           dio ??
@@ -73,6 +91,92 @@ class EditRecommendationClient {
     await _dio.put<void>(
       '/v1/edit-projects/$videoId',
       data: <String, Object?>{'revision': revision, 'recipe': recipe},
+    );
+  }
+
+  /// 저장해 둔 편집 초안. 없으면 null — 그때는 자동 추천으로 연다.
+  Future<Map<String, dynamic>?> loadDraft(String videoId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/v1/edit-projects/$videoId',
+      );
+      return response.data;
+    } on DioException catch (failure) {
+      if (failure.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// 편집 중인(초안이 저장된) 영상 목록.
+  Future<List<Map<String, dynamic>>> listDrafts() async {
+    final response = await _dio.get<Map<String, dynamic>>('/v1/edit-projects');
+    return [
+      for (final item in response.data?['items'] as List? ?? const [])
+        Map<String, dynamic>.from(item as Map),
+    ];
+  }
+
+  /// 렌더링된 편집 영상을 서버(MinIO)에 올린다.
+  Future<void> uploadEditedVideo({
+    required String videoId,
+    required String filePath,
+    String title = '',
+    int durationMs = 0,
+    DateTime? capturedAt,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final file = File(filePath);
+    final length = await file.length();
+    await _dio.put<void>(
+      '/v1/edited-videos/$videoId',
+      queryParameters: {
+        'title': title,
+        'durationMs': '$durationMs',
+        // 원본이 감지된(촬영된) 시각 — 캘린더가 이 날짜에 표시한다.
+        if (capturedAt != null)
+          'capturedAt': capturedAt.toLocal().toIso8601String(),
+      },
+      data: file.openRead(),
+      options: Options(
+        headers: {Headers.contentLengthHeader: length},
+        contentType: 'video/mp4',
+        sendTimeout: const Duration(minutes: 5),
+      ),
+      onSendProgress: onProgress,
+    );
+  }
+
+  /// 편집 완료 영상 목록(메타).
+  Future<List<Map<String, dynamic>>> listEditedVideos() async {
+    final response = await _dio.get<Map<String, dynamic>>('/v1/edited-videos');
+    return [
+      for (final item in response.data?['items'] as List? ?? const [])
+        Map<String, dynamic>.from(item as Map),
+    ];
+  }
+
+  /// 편집 영상 재생 주소. video_player에 그대로 넘긴다.
+  String editedVideoUrl(String videoId) =>
+      '${_dio.options.baseUrl}/v1/edited-videos/$videoId/file';
+
+  Future<List<Map<String, dynamic>>> listComments(String videoId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/v1/edited-videos/$videoId/comments',
+    );
+    return [
+      for (final item in response.data?['items'] as List? ?? const [])
+        Map<String, dynamic>.from(item as Map),
+    ];
+  }
+
+  Future<void> addComment(
+    String videoId,
+    String text, {
+    String author = '가족',
+  }) async {
+    await _dio.post<void>(
+      '/v1/edited-videos/$videoId/comments',
+      data: {'author': author, 'text': text},
     );
   }
 }

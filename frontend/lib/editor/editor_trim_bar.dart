@@ -61,7 +61,9 @@ class TrimRangeBar extends StatefulWidget {
     required this.onTrimCommitted,
     required this.onScrub,
     this.interactive = true,
-    this.recommendationMarker,
+    this.lowerBoundMs,
+    this.upperBoundMs,
+    this.windowSlidable = false,
     this.zoomSegments = const [],
   });
 
@@ -94,9 +96,14 @@ class TrimRangeBar extends StatefulWidget {
   /// false면 보기 전용이다. 다른 탭에서 "지금 구간"을 보여줄 때 쓴다.
   final bool interactive;
 
-  /// 서버가 처음 제안한 고정 지점. 사용자가 손잡이를 움직여도 따라 움직이지
-  /// 않는다. 현재 컷과 추천 컷을 비교할 수 있어야 추천이라는 말이 성립한다.
-  final EditorRecommendationMarker? recommendationMarker;
+  /// 창이 넘어갈 수 없는 경계. 줌처럼 서로 겹치면 안 되는 구간이 이웃
+  /// 구간의 끝·시작을 넘겨 준다. null이면 영상의 처음·끝이 경계다.
+  final int? lowerBoundMs;
+  final int? upperBoundMs;
+
+  /// 노란 창 안쪽을 끌면 구간 전체가 길이를 유지한 채 옮겨지는가.
+  /// 줌·자막처럼 "구간을 통째로 옮기는" 편집에서 켠다.
+  final bool windowSlidable;
   final List<EditorZoomSegment> zoomSegments;
 
   @override
@@ -124,10 +131,19 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
   /// 지금 손잡이가 달라붙어 있는 자리. 없으면 null.
   int? _snappedMs;
 
-  bool get _dragging => _draggingStart || _draggingEnd;
+  /// 창 통째 끌기 중인가.
+  bool _slidingWindow = false;
+  double _slideTravelPx = 0;
+  int _slideAnchorStartMs = 0;
+  int _slideDurationMs = 0;
+
+  bool get _dragging => _draggingStart || _draggingEnd || _slidingWindow;
 
   int get _startMs => _liveStartMs ?? widget.startMs;
   int get _endMs => _liveEndMs ?? widget.endMs;
+
+  int get _lowerBoundMs => widget.lowerBoundMs ?? 0;
+  int get _upperBoundMs => widget.upperBoundMs ?? widget.sourceDurationMs;
 
   @override
   void didUpdateWidget(TrimRangeBar oldWidget) {
@@ -267,7 +283,7 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                 ),
               ),
             ),
-            for (final zoom in widget.zoomSegments)
+            for (final (index, zoom) in widget.zoomSegments.indexed)
               if (zoom.sourceEndMs > visibleStartMs &&
                   zoom.sourceStartMs < visibleEndMs)
                 Positioned(
@@ -285,11 +301,14 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                           ),
                         ),
                   ),
-                  bottom: 2,
+                  // 순번마다 줄(레인)을 바꿔 얹는다 — 시간이 겹치는 구간도
+                  // 서로 가리지 않고 계단처럼 보인다.
+                  bottom: 2 + (index % 3) * 8.0,
                   height: 7,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF5A7CFF),
+                      // 구간마다 다른 색 — 카드·칩의 순번 색과 같다.
+                      color: EditorMarkerTokens.colorAt(index),
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(color: Colors.white, width: 1),
                     ),
@@ -325,6 +344,29 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                 child: _TrimFrame(snapped: _snappedMs != null),
               ),
             ),
+            // 노란 창 안쪽을 끌면 구간이 통째로 옮겨진다. 탭은 아래
+            // 스크럽 층으로 그대로 내려간다. 창이 원본 전체를 덮고 있으면
+            // 옮길 자리가 없으므로 이 층을 깔지 않는다 — 그때는 끌기가
+            // 스크럽(재생 위치 이동)으로 내려간다.
+            if (widget.interactive &&
+                widget.windowSlidable &&
+                _endMs - _startMs + 34 < _upperBoundMs - _lowerBoundMs)
+              Positioned(
+                key: const Key('editor-trim-window-slide'),
+                left: startX,
+                width: math.max(0, endX - startX),
+                top: 0,
+                bottom: 0,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragStart: (_) => _startWindowSlide(msPerPx),
+                  onHorizontalDragUpdate: (details) =>
+                      _updateWindowSlide(details.delta.dx),
+                  onHorizontalDragEnd: (_) => _endWindowSlide(),
+                  onHorizontalDragCancel: _endWindowSlide,
+                  child: const SizedBox.expand(),
+                ),
+              ),
             Positioned(
               left: (playheadX - _Playhead.width / 2).clamp(
                 0.0,
@@ -362,34 +404,15 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                 top: 4,
                 child: IgnorePointer(
                   child: Center(
+                    // 어느 프레임에서 자르는지까지 보여 준다(분:초:프레임).
                     child: _RangeBadge(
                       label:
-                          '${_clock(_startMs)} ~ ${_clock(_endMs)}'
+                          '${frameClock(_startMs)} ~ ${frameClock(_endMs)}'
                           ' · ${_clock(_endMs - _startMs)}',
                     ),
                   ),
                 ),
               ),
-            if (widget.recommendationMarker case final marker?) ...[
-              if (visible(marker.sourceStartMs))
-                Positioned(
-                  left: xOf(marker.sourceStartMs).clamp(0, width - 56),
-                  top: 2,
-                  child: const _AiBoundaryBadge(
-                    key: Key('editor-recommendation-start'),
-                    label: '추천 시작',
-                  ),
-                ),
-              if (visible(marker.sourceEndMs))
-                Positioned(
-                  left: (xOf(marker.sourceEndMs) - 52).clamp(0, width - 52),
-                  top: 2,
-                  child: const _AiBoundaryBadge(
-                    key: Key('editor-recommendation-end'),
-                    label: '추천 끝',
-                  ),
-                ),
-            ],
           ],
         );
       },
@@ -461,12 +484,47 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
     final value = _snapped(raw);
     setState(() {
       if (isStart) {
-        _liveStartMs = value.clamp(0, _endMs - minimumMs);
+        _liveStartMs = value.clamp(_lowerBoundMs, _endMs - minimumMs);
       } else {
-        _liveEndMs = value.clamp(_startMs + minimumMs, widget.sourceDurationMs);
+        _liveEndMs = value.clamp(_startMs + minimumMs, _upperBoundMs);
       }
     });
     widget.onTrimChanged(_startMs, _endMs, isStart);
+  }
+
+  void _startWindowSlide(double msPerPx) {
+    setState(() {
+      _slidingWindow = true;
+      _slideTravelPx = 0;
+      _slideAnchorStartMs = _startMs;
+      _slideDurationMs = _endMs - _startMs;
+      _msPerPx = msPerPx;
+      _snappedMs = null;
+      _liveStartMs = _startMs;
+      _liveEndMs = _endMs;
+    });
+  }
+
+  void _updateWindowSlide(double deltaPx) {
+    if (!_slidingWindow) return;
+    _slideTravelPx += deltaPx;
+    final int start = _frameAligned(
+      (_slideAnchorStartMs + _slideTravelPx * _msPerPx).round(),
+    ).clamp(
+      _lowerBoundMs,
+      math.max(_lowerBoundMs, _upperBoundMs - _slideDurationMs),
+    );
+    setState(() {
+      _liveStartMs = start;
+      _liveEndMs = start + _slideDurationMs;
+    });
+    widget.onTrimChanged(_startMs, _endMs, true);
+  }
+
+  void _endWindowSlide() {
+    if (!_slidingWindow) return;
+    setState(() => _slidingWindow = false);
+    widget.onTrimCommitted();
   }
 
   /// 가까운 자리에 손잡이를 달라붙게 한다.
@@ -482,13 +540,9 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
     var best = rawMs;
     var bestDistance = tolerance + 1;
     for (final target in <int>[
-      0,
-      widget.sourceDurationMs,
+      _lowerBoundMs,
+      _upperBoundMs,
       widget.playheadSourceMs,
-      if (widget.recommendationMarker case final marker?) ...[
-        marker.sourceStartMs,
-        marker.sourceEndMs,
-      ],
       for (final zoom in widget.zoomSegments) ...[
         zoom.sourceStartMs,
         zoom.sourceEndMs,
@@ -547,8 +601,11 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
       return;
     }
     _scrubTravelPx += details.focalPointDelta.dx;
+    // 손가락이 간 방향으로 재생 위치도 간다. 예전에는 "필름을 끌어온다"는
+    // 셈으로 부호를 뒤집었는데, 띠가 화면에 고정돼 있으니 눌러 옮기는 것과
+    // 끌어 옮기는 것이 반대로 움직여 어느 쪽도 믿을 수 없었다.
     final sourceMs = _frameAligned(
-      (_scrubAnchorMs - _scrubTravelPx * msPerPx).round(),
+      (_scrubAnchorMs + _scrubTravelPx * msPerPx).round(),
     ).clamp(_startMs, _endMs);
     widget.onScrub(sourceMs);
   }
@@ -610,31 +667,6 @@ class _TimelineZoomControls extends StatelessWidget {
       icon,
       size: 16,
       color: onTap == null ? Colors.white30 : Colors.white,
-    ),
-  );
-}
-
-class _AiBoundaryBadge extends StatelessWidget {
-  const _AiBoundaryBadge({super.key, required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: const Color(0xE63B2F88),
-      borderRadius: BorderRadius.circular(4),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
     ),
   );
 }
@@ -805,4 +837,14 @@ String _clock(int milliseconds) {
   final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
   final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
   return '$minutes:$seconds';
+}
+
+/// 분:초:프레임(30fps). 한 시간을 넘는 영상은 다루지 않으므로 시는 없다.
+String frameClock(int milliseconds, {int frameRate = 30}) {
+  final totalFrames = (math.max(0, milliseconds) * frameRate / 1000).round();
+  final frames = totalFrames % frameRate;
+  final totalSeconds = totalFrames ~/ frameRate;
+  final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+  final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+  return '$minutes:$seconds:${frames.toString().padLeft(2, '0')}';
 }

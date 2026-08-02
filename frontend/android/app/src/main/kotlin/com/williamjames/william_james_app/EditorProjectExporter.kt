@@ -332,6 +332,14 @@ class EditorProjectExporter(
                         exportResult: ExportResult,
                         exportException: ExportException,
                     ) {
+                        // 원인 체인을 통째로 남긴다 — "frame processing error"
+                        // 한 줄로는 어느 효과가 죽였는지 알 수 없다.
+                        android.util.Log.e("WJExport", "export failed", exportException)
+                        var cause: Throwable? = exportException.cause
+                        while (cause != null) {
+                            android.util.Log.e("WJExport", "caused by: $cause")
+                            cause = cause.cause
+                        }
                         finishError(
                             "EXPORT_FAILED",
                             exportException.message ?: "The video could not be exported.",

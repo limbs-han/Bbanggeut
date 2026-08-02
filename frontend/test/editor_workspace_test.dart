@@ -20,9 +20,8 @@ void main() {
   Widget workspace(
     EditorProjectController controller, {
     ValueChanged<int>? onSeek,
-    VoidCallback? onSplit,
+    VoidCallback? onClipAdd,
     VoidCallback? onDelete,
-    VoidCallback? onDuplicate,
     void Function(int startMs, int endMs, bool startHandle)? onTrimChanged,
     VoidCallback? onTrimCommitted,
     ValueChanged<String>? onStickerSelected,
@@ -45,39 +44,35 @@ void main() {
         preview: const ColoredBox(color: Colors.black),
         thumbnails: thumbnails,
         playing: false,
-        currentTime: '00:00',
-        totalTime: '00:12',
         saving: saving,
         textEditing: textEditing,
         rangePreviewing: rangePreviewing,
         onPlayRange: onPlayRange ?? () {},
         onBlocked: onBlocked ?? (_) {},
         onBack: () {},
+        onSaveDraft: () {},
         onSave: () {},
         onPlay: () {},
         onSeek: onSeek ?? (_) {},
-        onSplit: onSplit ?? () {},
+        onClipAdd: onClipAdd ?? () {},
         onDelete: onDelete ?? () {},
-        onDuplicate: onDuplicate ?? () {},
         onClipReorder: controller.reorderClip,
         onTrimChanged: onTrimChanged ?? (_, _, _) {},
         onTrimCommitted: onTrimCommitted ?? () {},
         onRatioSelected: (_) {},
-        onCanvasChanged: (_) {},
-        onCanvasReset: () {},
-        onCanvasFitSelected: (_) {},
+        onEditCommitted: controller.endGesture,
         presetRecommendations: presetRecommendations,
         recommendationLoading: false,
         onRecommendationSelected: onRecommendationSelected ?? (_) {},
         onText: () {},
         onTextEdit: onTextEdit ?? (_) {},
+        onTextRemove: (_) {},
         onVolumeChanged: (_) {},
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
         onLookSelected: onLookSelected ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
-        onZoomChanged: onZoomChanged ?? (_) {},
         onZoomRemove: (_) {},
         onZoomSelected: (_) {},
         onToolSelected: controller.selectTool,
@@ -125,7 +120,7 @@ void main() {
       await tester.pumpWidget(workspace(controller));
 
       expect(find.text('영상 편집'), findsOneWidget);
-      for (final label in const ['컷', '캔버스', '텍스트', '구간 줌']) {
+      for (final label in const ['컷 편집', '비율', '줌', '자막']) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
       expect(tester.takeException(), isNull);
@@ -192,7 +187,7 @@ void main() {
     }
   });
 
-  testWidgets('세로 캔버스의 검은 여백만큼 컷 탭 프레임 띠가 커진다', (tester) async {
+  testWidgets('세로 비율을 골라도 채우기로 그려져 프레임 띠 높이가 유지된다', (tester) async {
     tester.view
       ..physicalSize = galaxyS24Plus
       ..devicePixelRatio = 1;
@@ -201,18 +196,14 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(workspace(controller));
-    // 원본 비율 캔버스는 여백이 없으므로 기본 높이 그대로다.
     final base = tester.getSize(find.byType(TrimRangeBar)).height;
 
-    controller
-      ..setCanvasRatio(EditorCanvasRatio.vertical)
-      ..setCanvasFit(EditorCanvasFit.contain);
+    // 표시 방식 선택은 없앴다. 세로 비율도 채우기(cover)라 검은 여백이
+    // 없고, 여백을 프레임 띠로 돌려주던 보정도 일어나지 않는다.
+    controller.setCanvasRatio(EditorCanvasRatio.vertical);
     await tester.pump();
 
-    final grown = tester.getSize(find.byType(TrimRangeBar)).height;
-    expect(grown, greaterThan(base + 20), reason: '여백이 프레임 띠로 오지 않았다');
-    // 띠는 원래 높이의 갑절을 넘지 않는다.
-    expect(grown, lessThanOrEqualTo(base * 2 + 0.1));
+    expect(tester.getSize(find.byType(TrimRangeBar)).height, base);
     expect(tester.takeException(), isNull);
   });
 
@@ -344,22 +335,27 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      workspace(
-        controller,
-        onSeek: controller.setPlayhead,
-        onSplit: () => controller.splitAt(controller.project.playheadMs),
-        onDelete: controller.deleteSelectedClip,
-        onDuplicate: controller.duplicateSelectedClip,
-      ),
+      workspace(controller, onSeek: controller.setPlayhead),
     );
 
+    // 오른쪽으로 끌면 재생 위치도 오른쪽(앞으로)이다. 예전에는 부호가
+    // 뒤집혀 있어 왼쪽으로 끌어야 앞으로 갔다 — 반대로 가던 버그다.
     await tester.drag(
       find.byKey(const Key('editor-timeline-scrub')),
-      const Offset(-60, 0),
+      const Offset(60, 0),
     );
     await tester.pump();
 
     expect(controller.project.playheadMs, greaterThan(0));
+
+    final advanced = controller.project.playheadMs;
+    await tester.drag(
+      find.byKey(const Key('editor-timeline-scrub')),
+      const Offset(-30, 0),
+    );
+    await tester.pump();
+
+    expect(controller.project.playheadMs, lessThan(advanced));
     expect(find.byKey(const Key('editor-playhead')), findsOneWidget);
   });
 
@@ -565,7 +561,7 @@ void main() {
     expect(controller.canUndo, isFalse);
   });
 
-  testWidgets('분할·복제·삭제 버튼이 클립 목록을 실제로 바꾼다', (tester) async {
+  testWidgets('클립 추가·클립 삭제 버튼이 클립 목록을 실제로 바꾼다', (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
@@ -573,39 +569,28 @@ void main() {
     final controller = newController();
     addTearDown(controller.dispose);
 
-    final blocked = <String>[];
     await tester.pumpWidget(
       workspace(
         controller,
-        onSplit: () => controller.splitAt(controller.project.playheadMs),
+        onSeek: controller.setPlayhead,
+        onClipAdd: controller.addClipAtPlayhead,
         onDelete: controller.deleteSelectedClip,
-        onDuplicate: controller.duplicateSelectedClip,
-        onBlocked: blocked.add,
       ),
     );
 
-    // 재생 위치가 0이면 한쪽이 0초라 분할할 수 없다. 그래도 단추는 눌린다 —
-    // 아무 반응이 없으면 "지금은 안 되는 단추"와 "고장 난 단추"가 구분되지
-    // 않는다. 눌러 보면 왜 안 되는지 알려 준다.
-    await tester.tap(find.text('분할'));
-    await tester.pump();
-    expect(controller.project.clips, hasLength(1), reason: '나뉘어서는 안 된다');
-    expect(blocked, hasLength(1));
-    expect(blocked.single, contains('흰 선'));
-
     controller.setPlayhead(4000);
     await tester.pump();
-    await tester.tap(find.text('분할'));
+    await tester.tap(find.text('클립 추가'));
     await tester.pump();
     expect(controller.project.clips, hasLength(2));
+    // 새 클립은 재생 위치부터 3초, 바로 골라져 손잡이로 다듬을 수 있다.
+    final added = controller.project.selectedClip!;
+    expect(added.sourceStartMs, 4000);
+    expect(added.sourceEndMs, 7000);
 
-    await tester.tap(find.text('복제'));
+    await tester.tap(find.text('클립 삭제'));
     await tester.pump();
-    expect(controller.project.clips, hasLength(3));
-
-    await tester.tap(find.text('삭제'));
-    await tester.pump();
-    expect(controller.project.clips, hasLength(2));
+    expect(controller.project.clips, hasLength(1));
   });
 
   testWidgets('클립이 여러 개면 고르개로 편집할 클립을 바꾼다', (tester) async {
@@ -627,8 +612,9 @@ void main() {
     expect(controller.project.selectedClipId, first.id);
     expect(controller.project.playheadMs, 0);
     expect(find.text('클립 1/2'), findsOneWidget);
-    expect(find.text('00:00–00:05'), findsOneWidget);
-    expect(find.text('00:05–00:12'), findsOneWidget);
+    // 클립 구간은 분:초:프레임까지 보여 준다.
+    expect(find.text('00:00:00–00:05:00'), findsOneWidget);
+    expect(find.text('00:05:00–00:12:00'), findsOneWidget);
   });
 
   testWidgets('캔버스·텍스트·줌은 화면 안에서 바로 누르는 편집 트레이를 쓴다', (tester) async {
@@ -641,12 +627,16 @@ void main() {
 
     controller.selectTool(EditorTool.ratio);
     await tester.pumpWidget(workspace(controller));
-    expect(find.textContaining('출력 비율').hitTestable(), findsOneWidget);
-    expect(find.text('확대'), findsNothing);
+    expect(find.textContaining('검은 띠').hitTestable(), findsOneWidget);
+    // 영상 창(검은 띠) 크기를 조절하는 확대 슬라이더가 비율 탭에 있다.
+    expect(
+      find.byKey(const Key('editor-canvas-scale-slider')).hitTestable(),
+      findsOneWidget,
+    );
 
     controller.selectTool(EditorTool.text);
     await tester.pumpAndSettle();
-    expect(find.text('텍스트 레이어').hitTestable(), findsOneWidget);
+    expect(find.textContaining('자막 ·').hitTestable(), findsOneWidget);
     expect(
       find.byKey(const Key('editor-open-text-sheet')).hitTestable(),
       findsOneWidget,
@@ -654,8 +644,7 @@ void main() {
 
     controller.selectTool(EditorTool.zoom);
     await tester.pumpAndSettle();
-    expect(find.text('이동 · 회전 · 구간 줌').hitTestable(), findsOneWidget);
-    expect(find.text('확대').hitTestable(), findsOneWidget);
+    expect(find.textContaining('줌 ·').hitTestable(), findsOneWidget);
     expect(
       find.byKey(const Key('editor-add-zoom')).hitTestable(),
       findsOneWidget,
@@ -674,15 +663,11 @@ void main() {
     controller.setPlayhead(5000);
 
     await tester.pumpWidget(
-      workspace(
-        controller,
-        onDuplicate: controller.duplicateSelectedClip,
-        onSplit: () => controller.splitAt(controller.project.playheadMs),
-      ),
+      workspace(controller, onClipAdd: controller.addClipAtPlayhead),
     );
 
     expect(controller.project.selectedClip, isNotNull);
-    await tester.tap(find.text('복제'));
+    await tester.tap(find.text('클립 추가'));
     await tester.pump();
     expect(controller.project.clips, hasLength(2));
   });
@@ -796,7 +781,7 @@ void main() {
 
     await tester.pumpWidget(workspace(controller));
 
-    for (final label in const ['구간 재생', '분할', '복제', '삭제']) {
+    for (final label in const ['구간 재생', '클립 추가', '클립 삭제']) {
       expect(find.text(label), findsOneWidget, reason: '$label 단추가 없다');
     }
     expect(tester.takeException(), isNull);
@@ -829,8 +814,6 @@ void main() {
     await tester.pumpWidget(
       workspace(controller, onZoomChanged: controller.updateZoom),
     );
-    expect(find.text('추천 시작'), findsOneWidget);
-    expect(find.text('추천 끝'), findsOneWidget);
     expect(
       find.byKey(const Key('editor-zoom-marker-auto-zoom-0')),
       findsOneWidget,
@@ -838,13 +821,17 @@ void main() {
 
     controller.selectTool(EditorTool.zoom);
     await tester.pumpAndSettle();
-    expect(find.text('1/1'), findsOneWidget);
-    expect(find.byKey(const Key('editor-zoom-frame-controls')), findsOneWidget);
-    expect(find.text('시작 1f'), findsOneWidget);
-    expect(find.text('끝 1f'), findsOneWidget);
+    // AI 추천 장면이 카드로 나온다. 카드 썸네일에 배율·초점이 그대로 걸린다.
+    expect(
+      find.byKey(const Key('editor-zoom-scene-auto-zoom-0')),
+      findsOneWidget,
+    );
+    // 배율은 슬라이더로, 구간은 컷과 같은 프레임 타임라인 손잡이로 정한다.
+    expect(find.byKey(const Key('editor-zoom-scale-slider')), findsOneWidget);
+    expect(find.byKey(const Key('editor-zoom-range-bar')), findsOneWidget);
   });
 
-  testWidgets('추천 시작·끝은 사용자가 컷 손잡이를 움직여도 고정된다', (tester) async {
+  testWidgets('추천 적용 뒤에도 컷 손잡이로 구간을 더 좁힐 수 있다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -860,9 +847,7 @@ void main() {
       ),
     );
     await tester.pumpWidget(trimmableWorkspace(controller));
-    final before = tester.getTopLeft(
-      find.byKey(const Key('editor-recommendation-start')),
-    );
+    final before = controller.project.selectedClip!.sourceStartMs;
 
     await tester.drag(
       find.byKey(const Key('editor-trim-start-handle')),
@@ -870,11 +855,7 @@ void main() {
     );
     await tester.pump();
 
-    final after = tester.getTopLeft(
-      find.byKey(const Key('editor-recommendation-start')),
-    );
-    expect(after.dx, before.dx);
-    expect(controller.project.selectedClip!.sourceStartMs, greaterThan(2000));
+    expect(controller.project.selectedClip!.sourceStartMs, greaterThan(before));
   });
 
   testWidgets('길이 프리셋은 숫자 줄 없이 타임라인 안에서 선택한다', (tester) async {
@@ -964,7 +945,7 @@ void main() {
     expect(find.byType(EditorTimelineSection), findsNothing);
   });
 
-  testWidgets('컷만 상세 프레임 타임라인을 표시하고 다른 도구는 바를 모두 숨긴다', (tester) async {
+  testWidgets('컷 타임라인은 컷 탭에만 있고, 타임코드는 어느 탭에서나 보인다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -977,11 +958,53 @@ void main() {
     expect(find.byKey(const Key('editor-frame-timecode')), findsOneWidget);
     expect(find.byKey(const Key('editor-timeline-zoom-in')), findsOneWidget);
 
+    // 줌이 하나도 없으면 줌 탭에는 아무 타임라인도 없다.
     controller.selectTool(EditorTool.zoom);
     await tester.pump();
     expect(find.byType(EditorTimelineSection), findsNothing);
     expect(find.byKey(const Key('editor-timeline-strip')), findsNothing);
-    expect(find.byKey(const Key('editor-frame-timecode')), findsNothing);
+    // 재생 줄(타임코드·1프레임 이동)은 미리보기 아래 한 곳에 늘 있다.
+    expect(find.byKey(const Key('editor-frame-timecode')), findsOneWidget);
+    expect(find.byKey(const Key('editor-transport-play')), findsOneWidget);
+
+    // 줌을 하나 만들면 컷과 같은 프레임 타임라인이 붙는다.
+    controller.addZoomAtPlayhead();
+    await tester.pump();
+    expect(find.byKey(const Key('editor-zoom-range-bar')), findsOneWidget);
+    expect(find.byKey(const Key('editor-timeline-strip')), findsOneWidget);
+  });
+
+  testWidgets('클립을 고르면 그 클립에 귀속된 줌만 보인다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..splitAt(6000);
+    addTearDown(controller.dispose);
+    final clipA = controller.project.clips.first;
+    final clipB = controller.project.clips.last;
+    // A 클립(0~6초)의 1초 지점에 줌을 하나 만든다.
+    controller
+      ..setPlayhead(1000)
+      ..addZoomAtPlayhead()
+      ..selectTool(EditorTool.zoom);
+    final zoomId = controller.project.zoomSegments.single.id;
+
+    await tester.pumpWidget(workspace(controller));
+    expect(find.byKey(Key('editor-zoom-scene-$zoomId')), findsOneWidget);
+
+    // B 클립을 고르면 A의 줌 카드는 사라지고 빈 안내가 나온다.
+    controller.selectClip(clipB.id);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(Key('editor-zoom-scene-$zoomId')), findsNothing);
+    expect(find.textContaining('이 클립에는 줌이 없어요'), findsOneWidget);
+
+    // 다시 A를 고르면 돌아온다.
+    controller.selectClip(clipA.id);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(Key('editor-zoom-scene-$zoomId')), findsOneWidget);
   });
 
   testWidgets('기존 텍스트를 목록에서 다시 수정할 수 있다', (tester) async {
@@ -998,8 +1021,10 @@ void main() {
     await tester.pumpWidget(
       workspace(controller, onTextEdit: (id) => editedId = id),
     );
-    await tester.tap(find.text('다시 고칠 문구'));
-    expect(editedId, controller.project.textLayers.single.id);
+    // 칩 본문은 "그 자막으로 이동"이고, 내용 수정은 연필 아이콘이다.
+    final layerId = controller.project.textLayers.single.id;
+    await tester.tap(find.byKey(Key('editor-edit-text-$layerId')));
+    expect(editedId, layerId);
   });
 }
 

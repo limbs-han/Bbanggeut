@@ -127,6 +127,7 @@ class EditorClip {
     required this.sourceEndMs,
     this.arEffectId,
     this.automatic = false,
+    this.score,
   });
 
   final String id;
@@ -135,6 +136,10 @@ class EditorClip {
   final int sourceEndMs;
   final String? arEffectId;
   final bool automatic;
+
+  /// 이 구간의 멀티모달 사건 점수(0~1). AI 컷이 서버 scoreTimeline에서
+  /// 계산해 채운다. 점수 없이 만든 클립(직접 추가 등)은 null이다.
+  final double? score;
 
   int get durationMs => math.max(0, sourceEndMs - sourceStartMs);
 
@@ -151,6 +156,7 @@ class EditorClip {
     String? arEffectId,
     bool clearArEffect = false,
     bool? automatic,
+    double? score,
   }) => EditorClip(
     id: id ?? this.id,
     sourcePath: sourcePath,
@@ -158,6 +164,7 @@ class EditorClip {
     sourceEndMs: sourceEndMs ?? this.sourceEndMs,
     arEffectId: clearArEffect ? null : arEffectId ?? this.arEffectId,
     automatic: automatic ?? this.automatic,
+    score: score ?? this.score,
   );
 
   Map<String, Object?> toMap({required int timelineStartMs}) => {
@@ -182,7 +189,8 @@ class EditorClip {
       other.sourceStartMs == sourceStartMs &&
       other.sourceEndMs == sourceEndMs &&
       other.arEffectId == arEffectId &&
-      other.automatic == automatic;
+      other.automatic == automatic &&
+      other.score == score;
 
   @override
   int get hashCode => Object.hash(
@@ -192,6 +200,7 @@ class EditorClip {
     sourceEndMs,
     arEffectId,
     automatic,
+    score,
   );
 }
 
@@ -203,6 +212,7 @@ class EditorZoomSegment {
     required this.scale,
     required this.focus,
     this.automatic = false,
+    this.clipId,
   });
 
   final String id;
@@ -212,13 +222,22 @@ class EditorZoomSegment {
   final NormalizedPoint focus;
   final bool automatic;
 
+  /// 이 줌이 속한 클립. 줌은 원본 좌표를 쓰지만 **클립 하나에 묶인다** —
+  /// 같은 원본 구간을 쓰는 클립이 여럿이어도 묶인 클립에서만 작동하고,
+  /// 클립을 지우면 함께 사라진다. null이면 옛 데이터(원본 전체에 적용).
+  final String? clipId;
+
   int get durationMs => math.max(0, sourceEndMs - sourceStartMs);
+
+  /// 이 줌이 [clip]에서 작동하는가.
+  bool worksIn(EditorClip clip) => clipId == null || clipId == clip.id;
 
   EditorZoomSegment copyWith({
     int? sourceStartMs,
     int? sourceEndMs,
     double? scale,
     NormalizedPoint? focus,
+    String? clipId,
   }) => EditorZoomSegment(
     id: id,
     sourceStartMs: sourceStartMs ?? this.sourceStartMs,
@@ -226,6 +245,7 @@ class EditorZoomSegment {
     scale: (scale ?? this.scale).clamp(1.0, 2.8),
     focus: focus ?? this.focus,
     automatic: automatic,
+    clipId: clipId ?? this.clipId,
   );
 
   @override
@@ -236,11 +256,19 @@ class EditorZoomSegment {
       other.sourceEndMs == sourceEndMs &&
       other.scale == scale &&
       other.focus == focus &&
-      other.automatic == automatic;
+      other.automatic == automatic &&
+      other.clipId == clipId;
 
   @override
-  int get hashCode =>
-      Object.hash(id, sourceStartMs, sourceEndMs, scale, focus, automatic);
+  int get hashCode => Object.hash(
+    id,
+    sourceStartMs,
+    sourceEndMs,
+    scale,
+    focus,
+    automatic,
+    clipId,
+  );
 }
 
 class EditorCanvas {
@@ -409,6 +437,7 @@ class EditorTextLayer extends EditorTimedLayer {
     this.bold = true,
     this.italic = false,
     this.align = EditorTextAlign.center,
+    this.clipId,
   });
 
   final String text;
@@ -418,6 +447,12 @@ class EditorTextLayer extends EditorTimedLayer {
   final bool bold;
   final bool italic;
   final EditorTextAlign align;
+
+  /// 이 자막이 묶인 클립. [startMs]·[endMs]는 타임라인 절대 시각이지만,
+  /// 클립이 옮겨지거나 잘리면 컨트롤러가 이 묶음을 따라 다시 계산한다.
+  /// 클립을 지우면 자막도 함께 사라진다. null이면 어느 클립에도 묶이지
+  /// 않은 옛 데이터다.
+  final String? clipId;
 
   EditorTextLayer copyWith({
     String? text,
@@ -432,6 +467,7 @@ class EditorTextLayer extends EditorTimedLayer {
     bool? bold,
     bool? italic,
     EditorTextAlign? align,
+    String? clipId,
   }) => EditorTextLayer(
     id: id,
     text: text ?? this.text,
@@ -446,9 +482,10 @@ class EditorTextLayer extends EditorTimedLayer {
     bold: bold ?? this.bold,
     italic: italic ?? this.italic,
     align: align ?? this.align,
+    clipId: clipId ?? this.clipId,
   );
 
-  Map<String, Object> toMap() => {
+  Map<String, Object?> toMap() => {
     'id': id,
     'text': text,
     'position': position.toMap(),
@@ -462,6 +499,7 @@ class EditorTextLayer extends EditorTimedLayer {
     'bold': bold,
     'italic': italic,
     'align': align.name,
+    'clipId': clipId,
   };
 
   @override
@@ -479,7 +517,8 @@ class EditorTextLayer extends EditorTimedLayer {
       other.fontSize == fontSize &&
       other.bold == bold &&
       other.italic == italic &&
-      other.align == align;
+      other.align == align &&
+      other.clipId == clipId;
 
   @override
   int get hashCode => Object.hash(
@@ -496,6 +535,7 @@ class EditorTextLayer extends EditorTimedLayer {
     bold,
     italic,
     align,
+    clipId,
   );
 }
 
@@ -792,13 +832,40 @@ class EditorProject {
     return clips.isEmpty ? null : clips.last.sourceEndMs;
   }
 
-  EditorZoomSegment? zoomAtTimeline(int timelineMs) {
-    final sourceMs = sourcePositionForTimeline(timelineMs);
-    if (sourceMs == null) return null;
-    for (final zoom in zoomSegments.reversed) {
-      if (sourceMs >= zoom.sourceStartMs && sourceMs < zoom.sourceEndMs) {
-        return zoom;
+  /// 원본 시각이 타임라인의 어디에 놓이는지. 어느 클립에도 없으면 가장
+  /// 가까운 클립 경계로 붙인다.
+  int timelinePositionForSource(int sourceMs) {
+    var cursor = 0;
+    for (final clip in clips) {
+      if (sourceMs < clip.sourceStartMs) return cursor;
+      if (sourceMs <= clip.sourceEndMs) {
+        return cursor + (sourceMs - clip.sourceStartMs);
       }
+      cursor += clip.durationMs;
+    }
+    return durationMs;
+  }
+
+  EditorZoomSegment? zoomAtTimeline(int timelineMs) {
+    var cursor = 0;
+    for (var index = 0; index < clips.length; index++) {
+      final clip = clips[index];
+      final end = cursor + clip.durationMs;
+      if (timelineMs < end || index == clips.length - 1) {
+        final sourceMs =
+            clip.sourceStartMs + (timelineMs - cursor).clamp(0, clip.durationMs);
+        for (final zoom in zoomSegments.reversed) {
+          // 줌은 묶인 클립 안에서만 작동한다 — 같은 원본 구간을 쓰는
+          // 다른 클립에는 걸리지 않는다.
+          if (zoom.worksIn(clip) &&
+              sourceMs >= zoom.sourceStartMs &&
+              sourceMs < zoom.sourceEndMs) {
+            return zoom;
+          }
+        }
+        return null;
+      }
+      cursor = end;
     }
     return null;
   }
@@ -865,6 +932,47 @@ class EditorProject {
     revision: revision ?? this.revision,
   );
 
+  /// 편집 상태를 그대로 저장하는 초안 지도. [toPlatformMap]과 달리 줌의
+  /// 원본 좌표·클립 귀속까지 담아서, 읽으면 편집을 **그대로 이어서** 할 수
+  /// 있다. 서버(editor-api)의 edit-projects에 이 모양으로 저장한다.
+  Map<String, Object?> toDraftMap() => {
+    'type': 'draft-v1',
+    'sourceDurationMs': sourceDurationMs,
+    'canvas': canvas.toMap(),
+    'clips': [
+      for (final clip in clips)
+        {
+          'id': clip.id,
+          'sourceStartMs': clip.sourceStartMs,
+          'sourceEndMs': clip.sourceEndMs,
+          'automatic': clip.automatic,
+          'score': clip.score,
+        },
+    ],
+    'zoomSegments': [
+      for (final zoom in zoomSegments)
+        {
+          'id': zoom.id,
+          'sourceStartMs': zoom.sourceStartMs,
+          'sourceEndMs': zoom.sourceEndMs,
+          'scale': zoom.scale,
+          'focusX': zoom.focus.x,
+          'focusY': zoom.focus.y,
+          'automatic': zoom.automatic,
+          'clipId': zoom.clipId,
+        },
+    ],
+    'textLayers': [for (final layer in textLayers) layer.toMap()],
+    'audio': {'sourceVolume': audio.sourceVolume, 'muted': audio.muted},
+    'look': look.name,
+    if (recommendationMarker case final marker?)
+      'recommendationMarker': {
+        'preset': marker.preset,
+        'sourceStartMs': marker.sourceStartMs,
+        'sourceEndMs': marker.sourceEndMs,
+      },
+  };
+
   Map<String, Object?> toPlatformMap({
     required String outputPath,
     List<Map<String, Object>> captions = const [],
@@ -875,6 +983,7 @@ class EditorProject {
     for (final clip in clips) {
       clipMaps.add(clip.toMap(timelineStartMs: timelineStartMs));
       for (final zoom in zoomSegments) {
+        if (!zoom.worksIn(clip)) continue;
         final overlapStart = math.max(clip.sourceStartMs, zoom.sourceStartMs);
         final overlapEnd = math.min(clip.sourceEndMs, zoom.sourceEndMs);
         if (overlapEnd > overlapStart) {
@@ -931,28 +1040,18 @@ class EditorPreviewGeometry {
     final canvas = project.canvas;
     final aspect = canvas.aspectRatio;
     final source = canvas.sourceAspectRatio;
-    // 원본이 캔버스보다 넓어야 위아래 여백이 생긴다. 좌우 여백(세로 원본)은
-    // 세로 공간을 낭비하지 않으므로 자르지 않는다.
     final letterboxed =
         canvas.fit == EditorCanvasFit.contain && source > aspect + 0.001;
     final videoHeightFraction = letterboxed
         ? (aspect / source).clamp(0.05, 1.0).toDouble()
         : 1.0;
-    var clippable = letterboxed && project.selectedTool != EditorTool.ratio;
-    if (clippable) {
-      final safeHalf = math.min(1.0, videoHeightFraction * _contextFactor) / 2;
-      bool outside(EditorTimedLayer layer) =>
-          layer.isVisibleAt(project.playheadMs) &&
-          (layer.position.y - 0.5).abs() > safeHalf;
-      if (project.textLayers.any(outside) ||
-          project.stickerLayers.any(outside)) {
-        clippable = false;
-      }
-    }
     return EditorPreviewGeometry._(
       canvasAspectRatio: aspect,
       videoHeightFraction: videoHeightFraction,
-      letterboxClippable: clippable,
+      // 검은 여백은 더 이상 잘라 숨기지 않는다. 9:16은 사용자가 일부러
+      // 고른 숏폼 구도이고, 위아래 검은 띠는 자막을 놓는 자리다 — 잘라
+      // 버리면 그 자리를 보면서 편집할 수 없다.
+      letterboxClippable: false,
     );
   }
 
