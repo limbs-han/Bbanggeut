@@ -336,8 +336,7 @@ double _timelineHeightFor(
   EditorProject project,
   bool cutMode,
 ) {
-  var height =
-      EditorTimelineSection.presetHeight + EditorTimelineSection.overviewHeight;
+  var height = EditorTimelineSection.overviewHeight;
   if (cutMode) {
     height += layout.trimBarHeight + layout.actionButtonHeight;
     if (project.clips.length > 1) height += EditorTimelineSection.chooserHeight;
@@ -709,8 +708,7 @@ class EditorTimelineSection extends StatelessWidget {
 
   /// 클립 고르는 줄(여백 포함)의 높이. 클립이 둘 이상일 때만 붙는다.
   static const chooserHeight = 44.0;
-  static const presetHeight = 42.0;
-  static const overviewHeight = 46.0;
+  static const overviewHeight = 84.0;
 
   /// 지금 나눌 수 없는 이유. null이면 나눌 수 있다.
   static const splitBlockedReason = '나눌 자리를 먼저 정해요. 띠를 눌러 흰 선을 구간 안쪽으로 옮겨 보세요.';
@@ -753,15 +751,6 @@ class EditorTimelineSection extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: presetHeight,
-            child: _RecommendationPresetBar(
-              selectedPreset: project.recommendationMarker?.preset,
-              recommendations: presetRecommendations,
-              loading: recommendationLoading,
-              onSelected: onRecommendationSelected,
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: SizedBox(
@@ -770,6 +759,9 @@ class EditorTimelineSection extends StatelessWidget {
                 project: project,
                 onSeek: onSeek,
                 onClipSelected: onClipSelected,
+                presetRecommendations: presetRecommendations,
+                recommendationLoading: recommendationLoading,
+                onRecommendationSelected: onRecommendationSelected,
               ),
             ),
           ),
@@ -871,117 +863,6 @@ class EditorTimelineSection extends StatelessWidget {
   }
 }
 
-class _RecommendationPresetBar extends StatelessWidget {
-  const _RecommendationPresetBar({
-    required this.selectedPreset,
-    required this.recommendations,
-    required this.loading,
-    required this.onSelected,
-  });
-
-  final String? selectedPreset;
-  final Map<String, EditRecommendation> recommendations;
-  final bool loading;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 4, 18, 4),
-    child: Row(
-      children: [
-        for (final entry in const [
-          ('short', '짧게'),
-          ('medium', '중간'),
-          ('long', '길게'),
-        ]) ...[
-          Expanded(
-            child: _PresetButton(
-              key: Key('editor-preset-${entry.$1}'),
-              label: entry.$2,
-              recommendation: recommendations[entry.$1],
-              selected: selectedPreset == entry.$1,
-              enabled: !loading,
-              onTap: () => onSelected(entry.$1),
-            ),
-          ),
-          if (entry.$1 != 'long') const SizedBox(width: 6),
-        ],
-      ],
-    ),
-  );
-}
-
-class _PresetButton extends StatelessWidget {
-  const _PresetButton({
-    super.key,
-    required this.label,
-    required this.recommendation,
-    required this.selected,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final String label;
-  final EditRecommendation? recommendation;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = recommendation;
-    final range = value == null
-        ? '불러오는 중'
-        : '${_formatMs(value.cutStartMs)}–${_formatMs(value.cutEndMs)}';
-    return Material(
-      color: selected ? EditorColorTokens.selected : Colors.white,
-      borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
-            border: Border.all(
-              color: selected
-                  ? EditorColorTokens.coral
-                  : EditorColorTokens.border,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected
-                      ? EditorColorTokens.coral
-                      : EditorColorTokens.ink,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                range,
-                maxLines: 1,
-                overflow: TextOverflow.fade,
-                softWrap: false,
-                style: const TextStyle(
-                  color: EditorColorTokens.muted,
-                  fontSize: 8,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 편집 결과 전체를 한눈에 보여 주는 고정 타임라인.
 ///
 /// 위 트랙은 실제 인코딩 순서의 클립, 아래 트랙은 줌과 텍스트 구간이다.
@@ -992,11 +873,19 @@ class ProjectTimelineOverview extends StatelessWidget {
     required this.project,
     required this.onSeek,
     required this.onClipSelected,
+    required this.presetRecommendations,
+    required this.recommendationLoading,
+    required this.onRecommendationSelected,
   });
 
   final EditorProject project;
   final ValueChanged<int> onSeek;
   final ValueChanged<String> onClipSelected;
+  final Map<String, EditRecommendation> presetRecommendations;
+  final bool recommendationLoading;
+  final ValueChanged<String> onRecommendationSelected;
+
+  static const frameRate = 30;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -1006,6 +895,7 @@ class ProjectTimelineOverview extends StatelessWidget {
       double xOf(int ms) => (ms / duration * width).clamp(0.0, width);
       final clipBlocks = <Widget>[];
       final effectBlocks = <Widget>[];
+      final cutMarkers = <Widget>[];
       var cursor = 0;
       for (final entry in project.clips.indexed) {
         final index = entry.$1;
@@ -1017,7 +907,7 @@ class ProjectTimelineOverview extends StatelessWidget {
         clipBlocks.add(
           Positioned(
             left: left,
-            top: 0,
+            top: 31,
             width: blockWidth,
             height: 27,
             child: GestureDetector(
@@ -1055,6 +945,35 @@ class ProjectTimelineOverview extends StatelessWidget {
             ),
           ),
         );
+        if (index > 0) {
+          cutMarkers.add(
+            Positioned(
+              key: Key('editor-overview-cut-${clip.id}'),
+              left: (left - 4).clamp(0, math.max(0.0, width - 8)),
+              top: 29,
+              width: 8,
+              height: 55,
+              child: const IgnorePointer(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.content_cut_rounded,
+                      size: 9,
+                      color: Colors.white,
+                    ),
+                    Expanded(
+                      child: VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: Color(0xFFFFB19F),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
         for (final zoom in project.zoomSegments) {
           final overlapStart = math.max(clip.sourceStartMs, zoom.sourceStartMs);
           final overlapEnd = math.min(clip.sourceEndMs, zoom.sourceEndMs);
@@ -1066,7 +985,7 @@ class ProjectTimelineOverview extends StatelessWidget {
               key: Key('editor-overview-zoom-${clip.id}-${zoom.id}'),
               left: xOf(timelineStart),
               width: math.max(3, xOf(timelineEnd) - xOf(timelineStart)),
-              top: 30,
+              top: 62,
               color: const Color(0xFF5A7CFF),
               label: '줌',
             ),
@@ -1080,9 +999,9 @@ class ProjectTimelineOverview extends StatelessWidget {
             key: Key('editor-overview-text-${text.id}'),
             left: xOf(text.startMs),
             width: math.max(3, xOf(text.endMs) - xOf(text.startMs)),
-            top: 38,
+            top: 73,
             color: const Color(0xFF9B59B6),
-            label: 'T',
+            label: '자막',
           ),
         );
       }
@@ -1093,11 +1012,33 @@ class ProjectTimelineOverview extends StatelessWidget {
           color: const Color(0xFF2A2420),
           child: Stack(
             children: [
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                height: 29,
+                child: _timelineToolbar(),
+              ),
+              const Positioned(
+                left: 0,
+                right: 0,
+                top: 61,
+                height: 10,
+                child: ColoredBox(color: Color(0x332F5BCE)),
+              ),
+              const Positioned(
+                left: 0,
+                right: 0,
+                top: 72,
+                height: 10,
+                child: ColoredBox(color: Color(0x334B2459)),
+              ),
               ...clipBlocks,
               ...effectBlocks,
+              ...cutMarkers,
               Positioned(
                 left: (playheadX - 1).clamp(0, width - 2),
-                top: 0,
+                top: 29,
                 bottom: 0,
                 width: 2,
                 child: const ColoredBox(color: Colors.white),
@@ -1108,6 +1049,69 @@ class ProjectTimelineOverview extends StatelessWidget {
       );
     },
   );
+
+  Widget _timelineToolbar() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+    child: Row(
+      children: [
+        const Text(
+          '길이',
+          style: TextStyle(
+            color: Color(0xFFBFB5AE),
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(width: 4),
+        for (final entry in const [
+          ('short', '짧게'),
+          ('medium', '중간'),
+          ('long', '길게'),
+        ]) ...[
+          _TimelinePresetChip(
+            key: Key('editor-preset-${entry.$1}'),
+            label: entry.$2,
+            selected: project.recommendationMarker?.preset == entry.$1,
+            enabled:
+                !recommendationLoading &&
+                presetRecommendations.containsKey(entry.$1),
+            onTap: () => onRecommendationSelected(entry.$1),
+          ),
+          const SizedBox(width: 3),
+        ],
+        const Spacer(),
+        _FrameStepButton(
+          key: const Key('editor-frame-back'),
+          icon: Icons.chevron_left_rounded,
+          tooltip: '1프레임 뒤로',
+          onTap: () => _stepFrames(-1),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            '1f',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 8,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        _FrameStepButton(
+          key: const Key('editor-frame-forward'),
+          icon: Icons.chevron_right_rounded,
+          tooltip: '1프레임 앞으로',
+          onTap: () => _stepFrames(1),
+        ),
+      ],
+    ),
+  );
+
+  void _stepFrames(int delta) {
+    final currentFrame = (project.playheadMs * frameRate / 1000).round();
+    final nextFrame = math.max(0, currentFrame + delta);
+    onSeek((nextFrame * 1000 / frameRate).round().clamp(0, project.durationMs));
+  }
 
   static Widget _timelineEffect({
     required Key key,
@@ -1121,24 +1125,94 @@ class ProjectTimelineOverview extends StatelessWidget {
     left: left,
     top: top,
     width: width,
-    height: 7,
+    height: 9,
     child: DecoratedBox(
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(3),
       ),
-      child: width >= 10
+      child: width >= 18
           ? Center(
               child: Text(
                 label,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 6,
+                  fontSize: 7,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             )
           : null,
+    ),
+  );
+}
+
+class _TimelinePresetChip extends StatelessWidget {
+  const _TimelinePresetChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? EditorColorTokens.coral : const Color(0xFF49403B),
+    borderRadius: BorderRadius.circular(10),
+    child: InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 38,
+        height: 21,
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: enabled ? Colors.white : const Color(0xFF77706B),
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _FrameStepButton extends StatelessWidget {
+  const _FrameStepButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: Material(
+      color: const Color(0xFF49403B),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: Icon(icon, color: Colors.white, size: 17),
+        ),
+      ),
     ),
   );
 }
@@ -1627,7 +1701,12 @@ class _ZoomPanel extends StatelessWidget {
               ),
               min: 0,
               max: project.sourceDurationMs.toDouble(),
-              divisions: math.max(1, project.sourceDurationMs ~/ 250),
+              divisions: math.max(
+                1,
+                (project.sourceDurationMs *
+                        ProjectTimelineOverview.frameRate) ~/
+                    1000,
+              ),
               labels: RangeLabels(
                 _shortTime(active.sourceStartMs),
                 _shortTime(active.sourceEndMs),

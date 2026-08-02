@@ -141,11 +141,22 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         : 16 / 9;
     final sourceWidth = nextPreview.value.size.width.round();
     final sourceHeight = nextPreview.value.size.height.round();
+    final sourceProject = EditorProject.fromSource(
+      sourceVideoPath: sourcePath,
+      sourceDurationMs: durationMs,
+      sourceSize: EditorSourceSize(width: sourceWidth, height: sourceHeight),
+    );
     final nextProjectController = EditorProjectController(
-      EditorProject.fromSource(
-        sourceVideoPath: sourcePath,
-        sourceDurationMs: durationMs,
-        sourceSize: EditorSourceSize(width: sourceWidth, height: sourceHeight),
+      sourceProject.copyWith(
+        // 자동 편집 화면은 세로 숏폼이 기본이다. 가로 원본을 잘라 채우지 않고
+        // 가운데에 전부 보여 주며, 위아래는 검은 배경과 자막 자리로 남긴다.
+        canvas: EditorCanvas(
+          sourceAspectRatio: sourceProject.sourceSize.aspectRatio,
+          ratio: EditorCanvasRatio.vertical,
+          fit: EditorCanvasFit.contain,
+          outputWidth: 1080,
+          outputHeight: 1920,
+        ),
       ),
     );
 
@@ -1859,28 +1870,18 @@ class _PreviewSurface extends StatelessWidget {
                     _CanvasGestureLayer(
                       controller: projectController,
                       canvas: canvas,
+                      enabled: project.selectedTool == EditorTool.ratio,
                       onTap: editingLayerId == null ? null : onEditingDone,
-                      child: ClipRect(
-                        child: Transform.scale(
-                          scale: zoom?.scale ?? 1,
-                          alignment: zoom == null
-                              ? Alignment.center
-                              : Alignment(
-                                  zoom.focus.x * 2 - 1,
-                                  zoom.focus.y * 2 - 1,
-                                ),
-                          child: Center(
-                            child: ColorFiltered(
-                              colorFilter: look.colorFilter,
-                              child: FittedBox(
-                                fit: BoxFit.contain,
-                                child: SizedBox(
-                                  width: width,
-                                  height: height,
-                                  child: VideoPlayer(controller),
-                                ),
-                              ),
-                            ),
+                      child: _BoundedVideoViewport(
+                        sourceAspectRatio: width / height,
+                        canvas: canvas,
+                        zoom: zoom,
+                        child: ColorFiltered(
+                          colorFilter: look.colorFilter,
+                          child: SizedBox(
+                            width: width,
+                            height: height,
+                            child: VideoPlayer(controller),
                           ),
                         ),
                       ),
@@ -1986,6 +1987,74 @@ const _referenceCanvasWidth = 1280.0;
 
 /// 스티커 기본 글자 크기(EditorLayerOverlay.kt와 같은 값).
 const _referenceStickerFontSize = 110.0;
+
+/// 원본 영상이 차지하는 사각형 안에서만 구간 줌을 그린다.
+///
+/// 세로 캔버스에 가로 영상을 `contain`하면 위아래가 검은 여백이다. 예전에는
+/// 캔버스 전체를 확대해서 이 여백까지 같이 움직였고 영상이 세로 영역으로
+/// 튀어나왔다. 이제 고정된 가로 영상 창을 먼저 만든 뒤 그 안쪽만 확대한다.
+class _BoundedVideoViewport extends StatelessWidget {
+  const _BoundedVideoViewport({
+    required this.sourceAspectRatio,
+    required this.canvas,
+    required this.zoom,
+    required this.child,
+  });
+
+  final double sourceAspectRatio;
+  final EditorCanvas canvas;
+  final EditorZoomSegment? zoom;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final canvasWidth = math.max(1.0, constraints.maxWidth);
+      final canvasHeight = math.max(1.0, constraints.maxHeight);
+      final canvasAspect = canvasWidth / canvasHeight;
+      final contain = canvas.fit == EditorCanvasFit.contain;
+      final viewportWidth = !contain || sourceAspectRatio <= canvasAspect
+          ? canvasWidth
+          : canvasHeight * canvasAspect;
+      final viewportHeight = !contain || sourceAspectRatio >= canvasAspect
+          ? canvasHeight
+          : canvasWidth / canvasAspect;
+
+      // contain 계산은 원본과 캔버스 중 어느 쪽이 더 넓은지로 정한다.
+      final fittedWidth = contain
+          ? (sourceAspectRatio >= canvasAspect
+                ? canvasWidth
+                : canvasHeight * sourceAspectRatio)
+          : viewportWidth;
+      final fittedHeight = contain
+          ? (sourceAspectRatio >= canvasAspect
+                ? canvasWidth / sourceAspectRatio
+                : canvasHeight)
+          : viewportHeight;
+      final alignment = zoom == null
+          ? Alignment.center
+          : Alignment(zoom!.focus.x * 2 - 1, zoom!.focus.y * 2 - 1);
+
+      return Center(
+        child: SizedBox(
+          key: const Key('editor-source-video-viewport'),
+          width: fittedWidth,
+          height: fittedHeight,
+          child: ClipRect(
+            child: Transform.scale(
+              scale: zoom?.scale ?? 1,
+              alignment: alignment,
+              child: FittedBox(
+                fit: contain ? BoxFit.contain : BoxFit.cover,
+                child: child,
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
 
 typedef _LayerChildBuilder =
     Widget Function(BuildContext context, double previewWidth, double scale);
@@ -2318,12 +2387,14 @@ class _CanvasGestureLayer extends StatefulWidget {
   const _CanvasGestureLayer({
     required this.controller,
     required this.canvas,
+    required this.enabled,
     required this.child,
     this.onTap,
   });
 
   final EditorProjectController controller;
   final EditorCanvas canvas;
+  final bool enabled;
   final Widget child;
 
   /// 영상 빈 곳을 눌렀을 때. null이면 손잡이만 감춘다.
@@ -2359,43 +2430,56 @@ class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
       // 영상 빈 곳을 누르면 글자·스티커 조절 손잡이를 감춘다. 글을 쓰는
       // 중이었다면 다 쓴 것으로 본다.
       onTap: widget.onTap ?? widget.controller.deselectLayer,
-      onDoubleTap: () {
-        _liveCanvas = null;
-        widget.controller.resetCanvasTransform();
-      },
-      onScaleStart: (details) {
-        final canvas = widget.controller.project.canvas;
-        _startScale = canvas.scale;
-        _startRotation = canvas.rotationDegrees;
-        _startOffsetX = canvas.offsetX;
-        _startOffsetY = canvas.offsetY;
-        _startFocalPoint = details.focalPoint;
-        widget.controller.beginCanvasGesture();
-      },
-      onScaleUpdate: (details) {
-        final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
-        final height = constraints.maxHeight <= 0 ? 1.0 : constraints.maxHeight;
-        final movedX =
-            _startOffsetX +
-            (details.focalPoint.dx - _startFocalPoint.dx) / width * 2;
-        final movedY =
-            _startOffsetY +
-            (details.focalPoint.dy - _startFocalPoint.dy) / height * 2;
-        final rawAngle = _startRotation + details.rotation * 180 / math.pi;
-        final snappedAngle = _snapAngle(rawAngle);
-        widget.controller.updateCanvasGesture(
-          scale: _startScale * details.scale,
-          offsetX: _snapCenter(movedX),
-          offsetY: _snapCenter(movedY),
-          rotationDegrees: snappedAngle,
-          notify: false,
-        );
-        setState(() => _liveCanvas = widget.controller.project.canvas);
-      },
-      onScaleEnd: (_) {
-        _liveCanvas = null;
-        widget.controller.endCanvasGesture();
-      },
+      onDoubleTap: widget.enabled
+          ? () {
+              _liveCanvas = null;
+              widget.controller.resetCanvasTransform();
+            }
+          : null,
+      onScaleStart: widget.enabled
+          ? (details) {
+              final canvas = widget.controller.project.canvas;
+              _startScale = canvas.scale;
+              _startRotation = canvas.rotationDegrees;
+              _startOffsetX = canvas.offsetX;
+              _startOffsetY = canvas.offsetY;
+              _startFocalPoint = details.focalPoint;
+              widget.controller.beginCanvasGesture();
+            }
+          : null,
+      onScaleUpdate: widget.enabled
+          ? (details) {
+              final width = constraints.maxWidth <= 0
+                  ? 1.0
+                  : constraints.maxWidth;
+              final height = constraints.maxHeight <= 0
+                  ? 1.0
+                  : constraints.maxHeight;
+              final movedX =
+                  _startOffsetX +
+                  (details.focalPoint.dx - _startFocalPoint.dx) / width * 2;
+              final movedY =
+                  _startOffsetY +
+                  (details.focalPoint.dy - _startFocalPoint.dy) / height * 2;
+              final rawAngle =
+                  _startRotation + details.rotation * 180 / math.pi;
+              final snappedAngle = _snapAngle(rawAngle);
+              widget.controller.updateCanvasGesture(
+                scale: _startScale * details.scale,
+                offsetX: _snapCenter(movedX),
+                offsetY: _snapCenter(movedY),
+                rotationDegrees: snappedAngle,
+                notify: false,
+              );
+              setState(() => _liveCanvas = widget.controller.project.canvas);
+            }
+          : null,
+      onScaleEnd: widget.enabled
+          ? (_) {
+              _liveCanvas = null;
+              widget.controller.endCanvasGesture();
+            }
+          : null,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -2409,8 +2493,7 @@ class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
               child: Transform.scale(scale: _canvas.scale, child: widget.child),
             ),
           ),
-          if (_liveCanvas != null ||
-              widget.controller.project.selectedTool == EditorTool.ratio)
+          if (widget.enabled)
             const Positioned.fill(child: IgnorePointer(child: _CanvasGuides())),
         ],
       ),

@@ -104,6 +104,8 @@ class TrimRangeBar extends StatefulWidget {
 }
 
 class _TrimRangeBarState extends State<TrimRangeBar> {
+  static const _frameRate = 30;
+
   /// 드래그 중에만 채워진다. 부모에게 알리지 않고도 손잡이가 손가락을 따라
   /// 움직이게 하는 값이다.
   int? _liveStartMs;
@@ -365,7 +367,7 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
   }) {
     if (!_dragging) return;
     _travelPx += deltaPx;
-    final raw = (_anchorMs + _travelPx * _msPerPx).round();
+    final raw = _frameAligned((_anchorMs + _travelPx * _msPerPx).round());
     final value = _snapped(raw);
     setState(() {
       if (isStart) {
@@ -416,6 +418,14 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
     return best;
   }
 
+  int _frameAligned(int milliseconds) {
+    final frame = (milliseconds * _frameRate / 1000).round();
+    return (frame * 1000 / _frameRate).round().clamp(
+      0,
+      widget.sourceDurationMs,
+    );
+  }
+
   void _endHandleDrag() {
     if (!_dragging) return;
     setState(() {
@@ -427,7 +437,9 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
   }
 
   void _scrub(double dx, double msPerPx) {
-    final sourceMs = (dx * msPerPx).round().clamp(_startMs, _endMs);
+    final sourceMs = _frameAligned(
+      (dx * msPerPx).round(),
+    ).clamp(_startMs, _endMs);
     widget.onScrub(sourceMs);
   }
 }

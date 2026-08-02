@@ -257,6 +257,7 @@ class EditorProjectExporter(
                 offsetX,
                 offsetY,
                 volume,
+                zoomSegments,
             )
         }
         if (items.size != clips.size || items.isEmpty()) {
@@ -282,9 +283,6 @@ class EditorProjectExporter(
         // 색감을 먼저 입히고 그 위에 글자를 얹는다. 순서를 바꾸면 흑백 필터가
         // 자막까지 회색으로 만든다.
         lookEffect(look)?.let(compositionVideoEffects::add)
-        if (zoomSegments.isNotEmpty()) {
-            compositionVideoEffects += TimelineZoomTransformation(zoomSegments)
-        }
         if (overlays.isNotEmpty()) {
             compositionVideoEffects += OverlayEffect(overlays)
         }
@@ -399,6 +397,7 @@ class EditorProjectExporter(
         offsetX: Float,
         offsetY: Float,
         volume: Float,
+        zoomSegments: List<Map<String, Any?>>,
     ): EditedMediaItem? {
         val sourcePath = raw["sourcePath"] as? String ?: return null
         val input = File(sourcePath)
@@ -422,6 +421,16 @@ class EditorProjectExporter(
             )
         }
         val videoEffects = mutableListOf<Effect>()
+        // 구간 줌은 세로 Presentation보다 먼저 원본 영상 프레임 안에서 자른다.
+        // Presentation 뒤에 적용하면 16:9 영상 띠가 위아래 검은 영역까지
+        // 커져 미리보기와 저장 결과가 달라진다.
+        if (zoomSegments.isNotEmpty()) {
+            val timelineStartMs = number(raw, "timelineStartMs")?.toLong() ?: 0L
+            videoEffects += TimelineZoomTransformation(
+                rawSegments = zoomSegments,
+                timelineOffsetMs = timelineStartMs,
+            )
+        }
         presentation?.let(videoEffects::add)
         if (scale != 1f || rotation != 0f || offsetX != 0f || offsetY != 0f) {
             videoEffects += CanvasMatrixTransformation(
@@ -545,6 +554,7 @@ class EditorProjectExporter(
 
     private class TimelineZoomTransformation(
         rawSegments: List<Map<String, Any?>>,
+        private val timelineOffsetMs: Long = 0L,
     ) : MatrixTransformation {
         private data class Segment(
             val startMs: Long,
@@ -568,7 +578,7 @@ class EditorProjectExporter(
         }
 
         override fun getMatrix(presentationTimeUs: Long): Matrix {
-            val timeMs = presentationTimeUs / 1000L
+            val timeMs = timelineOffsetMs + presentationTimeUs / 1000L
             val segment = segments.lastOrNull { timeMs >= it.startMs && timeMs < it.endMs }
                 ?: return Matrix()
             val pivotX = segment.focusX * 2f - 1f

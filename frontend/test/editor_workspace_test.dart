@@ -382,6 +382,26 @@ void main() {
     expect(controller.project.selectedClip!.sourceEndMs, lessThan(12000));
   });
 
+  testWidgets('구간 손잡이는 30fps 프레임 경계에 맞춰진다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(trimmableWorkspace(controller));
+    await tester.drag(
+      find.byKey(const Key('editor-trim-start-handle')),
+      const Offset(37, 0),
+    );
+    await tester.pump();
+
+    final value = controller.project.selectedClip!.sourceStartMs;
+    final frameAligned = ((value * 30 / 1000).round() * 1000 / 30).round();
+    expect(value, frameAligned);
+  });
+
   testWidgets('손잡이는 고른 구간 밖에 서고, 손잡이 사이가 곧 남는 구간이다', (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
@@ -788,7 +808,7 @@ void main() {
     expect(controller.project.selectedClip!.sourceStartMs, greaterThan(2000));
   });
 
-  testWidgets('짧게·중간·길게 버튼은 각 추천 구간을 보여주고 선택한다', (tester) async {
+  testWidgets('길이 프리셋은 숫자 줄 없이 타임라인 안에서 선택한다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -824,11 +844,36 @@ void main() {
         onRecommendationSelected: (value) => selected = value,
       ),
     );
-    expect(find.text('00:01–00:05'), findsOneWidget);
-    expect(find.text('00:00–00:09'), findsOneWidget);
-    expect(find.text('00:00–00:12'), findsOneWidget);
+    expect(find.text('00:01–00:05'), findsNothing);
+    expect(find.text('00:00–00:09'), findsNothing);
+    expect(find.text('00:00–00:12'), findsNothing);
+    expect(find.text('짧게'), findsOneWidget);
+    expect(find.text('중간'), findsOneWidget);
+    expect(find.text('길게'), findsOneWidget);
     await tester.tap(find.byKey(const Key('editor-preset-long')));
     expect(selected, 'long');
+  });
+
+  testWidgets('타임라인 버튼으로 30fps 기준 한 프레임씩 이동한다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    await tester.tap(find.byKey(const Key('editor-frame-forward')));
+    await tester.pump();
+    expect(controller.project.playheadMs, 33);
+    await tester.tap(find.byKey(const Key('editor-frame-forward')));
+    await tester.pump();
+    expect(controller.project.playheadMs, 67);
+    await tester.tap(find.byKey(const Key('editor-frame-back')));
+    await tester.pump();
+    expect(controller.project.playheadMs, 33);
   });
 
   testWidgets('전체 타임라인은 클립 번호와 줌·텍스트 구간을 함께 표시한다', (tester) async {
@@ -855,6 +900,12 @@ void main() {
     );
     expect(find.text('1'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget.key.toString().contains('editor-overview-cut-'),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byWidgetPredicate(
         (widget) => widget.key.toString().contains('editor-overview-zoom-'),
