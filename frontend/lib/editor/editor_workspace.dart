@@ -2309,6 +2309,13 @@ class _TextPanel extends StatelessWidget {
   final VoidCallback onText;
   final ValueChanged<String> onTextEdit;
 
+  /// 추가 버튼은 고정 높이 SizedBox로 감싸지 않는다.
+  ///
+  /// **왜**: 도구 패널 제목 줄에서 `SizedBox(height: N)` 안에 FilledButton을
+  /// 넣으면 실기기(S24+)에서 이 탭의 프레임 레이아웃이 예외도 없이 끝나지
+  /// 않은 채 남아, 패널·하단 네비가 그려지지 않고 화면이 멈춘 것처럼 보였다.
+  /// 예전 _ZoomPanel의 "빈 패널·입력 정지"도 같은 조합이 원인이었다. 버튼
+  /// 크기는 스타일의 minimumSize로 정한다.
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2324,18 +2331,19 @@ class _TextPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          SizedBox(
-            height: 34,
-            child: FilledButton.icon(
-              key: const Key('editor-open-text-sheet'),
-              onPressed: onText,
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('추가'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          FilledButton(
+            key: const Key('editor-open-text-sheet'),
+            onPressed: onText,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(64, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              textStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
               ),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+            child: const Text('+ 추가'),
           ),
         ],
       ),
@@ -2566,18 +2574,16 @@ class _AiCaptionPanel extends StatelessWidget {
           ),
         ),
       ),
-      SizedBox(
-        width: double.infinity,
-        height: 40,
-        child: FilledButton.icon(
-          key: const Key('editor-open-ai-caption'),
-          onPressed: onOpen,
-          icon: const Icon(Icons.closed_caption_rounded, size: 20),
-          label: const Text('AI 자막 만들기 · 고치기'),
-          style: FilledButton.styleFrom(
-            backgroundColor: EditorColorTokens.sage,
-            foregroundColor: EditorColorTokens.ink,
-          ),
+      // 고정 높이 SizedBox로 버튼을 감싸지 않는다 — _TextPanel 주석 참고.
+      FilledButton.icon(
+        key: const Key('editor-open-ai-caption'),
+        onPressed: onOpen,
+        icon: const Icon(Icons.closed_caption_rounded, size: 20),
+        label: const Text('AI 자막 만들기 · 고치기'),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(40),
+          backgroundColor: EditorColorTokens.sage,
+          foregroundColor: EditorColorTokens.ink,
         ),
       ),
     ],
