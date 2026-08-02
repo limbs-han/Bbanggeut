@@ -207,7 +207,10 @@ void main() {
     expect(find.byKey(const Key('member-request-inbox')), findsOneWidget);
     expect(find.text('받은 요청함'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('member-request-inbox')));
+    final inboxButton = find.byKey(const Key('member-request-inbox'));
+    await tester.ensureVisible(inboxButton);
+    await tester.pumpAndSettle();
+    await tester.tap(inboxButton);
     await tester.pumpAndSettle();
     expect(find.text('받은 요청함'), findsOneWidget);
     expect(find.text('받은 요청이 없어요'), findsOneWidget);

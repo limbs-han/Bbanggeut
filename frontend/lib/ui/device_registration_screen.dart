@@ -249,54 +249,60 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
             children: [
               SizedBox(
-                height: 138,
+                height: 158,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
                     const Positioned(
-                      left: 12,
-                      top: 12,
+                      left: 18,
+                      top: 10,
                       child: Text(
                         '♥',
                         style: TextStyle(
-                          fontSize: 30,
+                          fontSize: 25,
                           color: Color(0xFFFFC7B9),
                         ),
                       ),
                     ),
-                    Positioned(
-                      left: -6,
-                      bottom: -4,
-                      child: Image.asset(
-                        'assets/images/device_registration_mascot.png',
-                        width: 148,
-                        height: 148,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                    Positioned(
-                      left: 148,
-                      right: 0,
-                      top: 8,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            '어떤 방식으로\n연결할까요?',
-                            style: Theme.of(context).textTheme.headlineMedium
-                                ?.copyWith(
-                                  fontSize: 24,
-                                  height: 1.2,
-                                  letterSpacing: -1.2,
-                                ),
+                          Image.asset(
+                            'assets/images/device_registration_mascot.png',
+                            width: 140,
+                            height: 148,
+                            fit: BoxFit.contain,
                           ),
-                          const SizedBox(height: 7),
-                          const Text(
-                            '기기를 처음 연결하는 Owner와\n초대를 요청하는 Member 흐름을\n구분했어요.',
-                            style: TextStyle(
-                              color: AppColors.inkSoft,
-                              fontSize: 11,
-                              height: 1.45,
+                          const SizedBox(width: 14),
+                          SizedBox(
+                            width: 172,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '어떤 방식으로\n연결할까요?',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium
+                                      ?.copyWith(
+                                        fontSize: 23,
+                                        height: 1.2,
+                                        letterSpacing: -1.1,
+                                      ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  '기기를 처음 연결하는 Owner와\n초대를 요청하는 Member 흐름을\n구분했어요.',
+                                  style: TextStyle(
+                                    color: AppColors.inkSoft,
+                                    fontSize: 11,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -568,23 +574,103 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     ],
   );
 
-  Widget _memberPanel() => SoftCard(
+  Widget _memberPanel() => Container(
     key: const ValueKey('member-registration-panel'),
-    color: AppColors.greenCard,
-    borderColor: AppColors.greenCard,
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: const Color(0xF8FFFDF9),
+      borderRadius: BorderRadius.circular(28),
+      border: Border.all(color: const Color(0xFFFFD9C8), width: 1.3),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x160D0905),
+          blurRadius: 20,
+          offset: Offset(0, 7),
+        ),
+      ],
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SmallIconBadge(icon: Icons.mark_email_read_rounded),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Owner에게 초대 요청하기',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                  SizedBox(height: 7),
+                  Text(
+                    'Member 이메일이 포함된 안전한 요청 링크를 만들어요.',
+                    style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        const Divider(height: 1, color: Color(0xFFFFE2D5)),
+        const SizedBox(height: 18),
+        FilledButton.icon(
+          onPressed: widget.controller.busy
+              ? null
+              : membershipRequestLink == null
+              ? _createMemberLink
+              : _copyMemberLink,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(62),
+            backgroundColor: AppColors.coral,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            elevation: 4,
+            shadowColor: AppColors.coralSoft,
+          ),
+          icon: Icon(
+            membershipRequestLink == null
+                ? Icons.link_rounded
+                : Icons.copy_rounded,
+          ),
+          label: Text(
+            membershipRequestLink == null ? '요청 링크 생성 및 복사' : '링크 다시 복사',
+            style: const TextStyle(fontSize: 17),
+          ),
+        ),
+        if (membershipRequestLink != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8F1),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: SelectableText(
+              '$membershipRequestLink',
+              key: const Key('membership-request-link'),
+              maxLines: 3,
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+        const SizedBox(height: 18),
         const Text(
-          'Owner에게 초대 요청하기',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          'Owner가 링크를 열면 앱의 가족 초대 화면으로 이동하고\n내 이메일이 자동 입력됩니다.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.55,
+            color: AppColors.inkSoft,
+          ),
         ),
-        const SizedBox(height: 7),
-        Text(
-          '${widget.controller.user?.email ?? '현재 로그인 계정'} 정보가 포함된 안전한 요청 링크를 만들어요.',
-          style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 18),
         OutlinedButton.icon(
           key: const Key('member-request-inbox'),
           onPressed: widget.controller.busy
@@ -596,50 +682,21 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                         InvitationInboxScreen(controller: widget.controller),
                   ),
                 ),
-          icon: const Icon(Icons.mark_email_unread_outlined),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(56),
+            foregroundColor: AppColors.sageDark,
+            side: const BorderSide(color: AppColors.sageDark, width: 1.3),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+          icon: const Icon(Icons.inbox_rounded),
           label: Text(
             widget.controller.receivedInvitations.isEmpty
                 ? '받은 요청함'
                 : '받은 요청함 ${widget.controller.receivedInvitations.length}개',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
           ),
-        ),
-        const SizedBox(height: 12),
-        if (membershipRequestLink != null) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.line),
-            ),
-            child: SelectableText(
-              '$membershipRequestLink',
-              key: const Key('membership-request-link'),
-              maxLines: 3,
-              style: const TextStyle(fontSize: 11),
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-        FilledButton.icon(
-          onPressed: widget.controller.busy
-              ? null
-              : membershipRequestLink == null
-              ? _createMemberLink
-              : _copyMemberLink,
-          icon: Icon(
-            membershipRequestLink == null
-                ? Icons.link_rounded
-                : Icons.copy_rounded,
-          ),
-          label: Text(
-            membershipRequestLink == null ? '요청 링크 생성 및 복사' : '링크 다시 복사',
-          ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Owner가 링크를 열면 앱의 가족 초대 화면으로 이동하고 내 이메일이 자동 입력됩니다.',
-          style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
         ),
       ],
     ),
@@ -764,10 +821,12 @@ class _ModeChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: selected ? AppColors.coralSoft : Colors.transparent,
+    color: selected ? AppColors.surface : Colors.transparent,
+    elevation: selected ? 2 : 0,
+    shadowColor: const Color(0x220D0905),
     shape: StadiumBorder(
       side: selected
-          ? const BorderSide(color: AppColors.coral, width: 1.4)
+          ? const BorderSide(color: AppColors.coral, width: 1.2)
           : BorderSide.none,
     ),
     child: InkWell(
@@ -778,7 +837,7 @@ class _ModeChoice extends StatelessWidget {
         children: [
           Icon(
             icon,
-            color: selected ? AppColors.coralDark : AppColors.ink,
+            color: selected ? AppColors.coralDark : AppColors.muted,
             size: 24,
           ),
           const SizedBox(width: 8),
