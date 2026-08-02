@@ -30,7 +30,7 @@ class InvitationInboxScreen extends StatelessWidget {
                     ),
                     Expanded(
                       child: Text(
-                        '받은 초대함',
+                        '받은 요청함',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
@@ -82,8 +82,8 @@ class InvitationInboxScreen extends StatelessWidget {
                       if (controller.receivedInvitations.isEmpty)
                         const EmptyState(
                           icon: Icons.mail_outline_rounded,
-                          title: '받은 초대가 없어요',
-                          message: '가족이 내 이메일로 초대하면 여기에 표시돼요.',
+                          title: '받은 요청이 없어요',
+                          message: 'Owner가 내 이메일로 초대하면 여기에 표시돼요.',
                         )
                       else
                         ...controller.receivedInvitations.map(

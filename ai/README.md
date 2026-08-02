@@ -3,6 +3,10 @@
 심화 오디오 이벤트의 연속 박수·사용자 지정 호출명 설계와 실행 방법은
 [`yamnet/ADVANCED_AUDIO_EVENTS.md`](yamnet/ADVANCED_AUDIO_EVENTS.md)를 참고한다.
 
+앱 온디바이스 STT 모델 선정에 쓴 한국어 STT 비교 벤치마크는
+[`stt_benchmark/`](stt_benchmark/)에 있다 — 배경과 결론은
+[`stt_benchmark/run_benchmark.py`](stt_benchmark/run_benchmark.py) 머리 주석을 참고한다.
+
 Jetson Orin Nano에서 영상과 음성을 동시에 분석하는 AI 모듈이다. YOLO + ByteTrack은 사람·고양이·강아지를 추적하여 카메라 구도 목표를 계산하고, YAMNet은 웃음소리를 감지한다. 두 결과는 로컬 Mosquitto를 통해 결합되어 추억 영상 저장 후보 이벤트로 전달된다.
 
 현재 디스크 기반 운영 구성은 로컬 RTSP 입력을 사용한다. YOLO가 공유 RTSP를
@@ -26,16 +30,16 @@ Jetson에서 웃음 감지부터 전후 60초 로컬 MP4 생성과 노트북 다
 순서대로 따른다.
 
 2026-07-24 YOLO RTSP 사람 탐지·상태 전이·강제 단절 복구 결과는
-[`AI_YOLO_RTSP_VALIDATION_2026-07-24.md`](AI_YOLO_RTSP_VALIDATION_2026-07-24.md)에
+[`AI_YOLO_RTSP_VALIDATION_2026-07-24.md`](../이재준/AI_YOLO_RTSP_VALIDATION_2026-07-24.md)에
 기록했다.
 
 2026-07-26 야간부터 27일 새벽까지의 업로드 안전성, 웃음 false-negative
 분석, 평가 데이터 도구와 다음 작업은
-[`AI_DAILY_PROGRESS_2026-07-27.md`](AI_DAILY_PROGRESS_2026-07-27.md)에
+[`AI_DAILY_PROGRESS_2026-07-27.md`](../이재준/AI_DAILY_PROGRESS_2026-07-27.md)에
 기록했다.
 
 2026-07-27 실제 웃음 이벤트의 서버 업로드와 Flutter 앱 재생 종단 결과는
-[`AI_MVP_EVENT_E2E_2026-07-27.md`](AI_MVP_EVENT_E2E_2026-07-27.md)에
+[`AI_MVP_EVENT_E2E_2026-07-27.md`](../이재준/AI_MVP_EVENT_E2E_2026-07-27.md)에
 기록했다. 같은 절차를 반복할 때는
 [`yolo/validate_laughter_event_e2e.sh`](yolo/validate_laughter_event_e2e.sh)를
 사용한다.
@@ -148,12 +152,12 @@ idle timeout 이후 라이브 relay FFmpeg 하나만 종료되는지 확인한�
 7. 편집 후에도 서버의 원본 영상이 변경되지 않았는지 재확인
 
 편집 기능에서 코드 수정이 필요하면 현재 Device 브랜치에 섞지 않고
-`develop/frontend`에서 `feat/frontend/<기능명>` 브랜치를 새로 만든다.
+`develop`에서 `feat/frontend/<기능명>` 브랜치를 새로 만든다.
 
 #### P0-3. Git 작업 마무리
 
 - 현재 기능 브랜치: `feat/device/event-upload-mvp`
-- Merge Request 대상: `develop/device`
+- Merge Request 대상: `develop`
 - MR의 Device CI 결과를 확인하고 성공한 경우에만 병합한다.
 - 병합 후 기능 브랜치를 삭제한다.
 
@@ -321,7 +325,7 @@ ai/
 실제 PCA9685 출력은 별도 5V 전원과 실물 보정이 완료된 뒤에만 명시적으로
 활성화한다. 기본 실행은 드라이런이다. 연결·보정·정지 절차는
 `SERVO_PCA9685_RUNBOOK.md`를 따르고, 2026-07-29 실물 결과와 인수인계는
-`SERVO_OBJECT_TRACKING_HANDOFF_20260729.txt`를 참고한다.
+`../llm/handoff/SERVO_OBJECT_TRACKING_HANDOFF_20260729.txt`를 참고한다.
 
 ### YAMNet 웃음 감지
 
@@ -735,7 +739,7 @@ RTSP·녹화·기존 UDP AI를 함께 시험할 때는
 2026-07-23 Jetson 10분 예비 시험에서는 RTSP 실패 없이 약 200MiB가
 녹화됐고 온도는 약 50°C, 스왑은 0MB였다. 종료 표본의 CPU 사용률이
 높아 1080p 전환 전 최적화가 필요하다. 상세값은
-`AI_RTSP_10MIN_TEST_2026-07-23.md`에 기록했다.
+[`AI_RTSP_10MIN_TEST_2026-07-23.md`](../이재준/AI_RTSP_10MIN_TEST_2026-07-23.md)에 기록했다.
 
 ## 모델과 생성 파일 관리
 

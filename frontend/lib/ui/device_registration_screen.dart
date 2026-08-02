@@ -3,8 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
-import '../core/models.dart';
-import 'family_screen.dart';
 import 'invitation_inbox_screen.dart';
 import 'widgets.dart';
 
@@ -24,30 +22,31 @@ class DeviceRegistrationScreen extends StatefulWidget {
 }
 
 class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
+  static const _addPlaceValue = '__add_place__';
   final codePrefix = TextEditingController();
   final codeSuffix = TextEditingController();
   final codePrefixFocus = FocusNode();
   final codeSuffixFocus = FocusNode();
-  final vaultName = TextEditingController(text: '나의 추억');
   int mode = 0;
-  bool createNewVault = false;
   String? selectedVaultId;
+  late String selectedPlaceName;
   Uri? membershipRequestLink;
   String? registrationError;
-
-  List<MemoryVault> get _ownedVaults =>
-      widget.controller.vaults.where((vault) => vault.isOwner).toList();
 
   @override
   void initState() {
     super.initState();
+    selectedPlaceName = widget.controller.selectedPlaceName;
     final selected = widget.controller.selectedVault;
     if (selected?.isOwner == true) {
       selectedVaultId = selected!.id;
-    } else if (_ownedVaults.isNotEmpty) {
-      selectedVaultId = _ownedVaults.first.id;
     } else {
-      createNewVault = true;
+      final ownedVaults = widget.controller.vaults
+          .where((vault) => vault.isOwner)
+          .toList();
+      if (ownedVaults.isNotEmpty) {
+        selectedVaultId = ownedVaults.first.id;
+      }
     }
   }
 
@@ -57,7 +56,6 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     codeSuffix.dispose();
     codePrefixFocus.dispose();
     codeSuffixFocus.dispose();
-    vaultName.dispose();
     super.dispose();
   }
 
@@ -80,20 +78,13 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
       setState(() => registrationError = '영문 대문자와 숫자로 된 8자리 번호를 확인해 주세요.');
       return;
     }
-    if (createNewVault && vaultName.text.trim().isEmpty) {
-      setState(() => registrationError = '새 Vault 이름을 입력해 주세요.');
-      return;
-    }
-    if (!createNewVault && selectedVaultId == null) {
-      setState(() => registrationError = '연결할 기존 Vault를 선택해 주세요.');
-      return;
-    }
     setState(() => registrationError = null);
     final formatted = '${code.substring(0, 4)}-${code.substring(4)}';
     final ok = await widget.controller.claimDevice(
       formatted,
-      vaultId: createNewVault ? null : selectedVaultId,
-      newVaultName: createNewVault ? vaultName.text.trim() : null,
+      vaultId: selectedVaultId,
+      newVaultName: selectedVaultId == null ? '나의 추억' : null,
+      placeName: selectedPlaceName,
     );
     if (!mounted) return;
     if (!ok) {
@@ -108,15 +99,25 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
       );
       return;
     }
-    showAppSnack(context, '기기가 연결됐어요. 가족을 초대해 보세요.');
-    if (widget.canGoBack) {
-      widget.controller.consumeOpenFamilyAfterDeviceClaim();
-      await Navigator.pushReplacement<void, void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => FamilyScreen(controller: widget.controller),
-        ),
-      );
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('기기 연결 완료'),
+        content: Text('$selectedPlaceName 카테고리에 새 기기가 성공적으로 연결됐어요.'),
+        actions: [
+          FilledButton(
+            key: const Key('device-registration-success-home'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('홈으로 가기'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    widget.controller.completeDeviceRegistration();
+    if (widget.canGoBack && mounted) {
+      Navigator.pop(context);
     }
   }
 
@@ -142,6 +143,28 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     if (link == null) return;
     await Clipboard.setData(ClipboardData(text: '$link'));
     if (mounted) showAppSnack(context, '링크를 다시 복사했어요.');
+  }
+
+  Future<void> _selectPlace(String? value) async {
+    if (value == null) return;
+    if (value == _addPlaceValue) {
+      await _showAddPlaceDialog();
+      return;
+    }
+    widget.controller.selectPlace(value);
+    setState(() => selectedPlaceName = value);
+  }
+
+  Future<void> _showAddPlaceDialog() async {
+    final addedPlace = await showDialog<String>(
+      context: context,
+      builder: (_) =>
+          _AddPlaceDialog(existingPlaces: widget.controller.placeNames),
+    );
+    if (!mounted || addedPlace == null) return;
+    if (widget.controller.addPlace(addedPlace)) {
+      setState(() => selectedPlaceName = addedPlace);
+    }
   }
 
   Future<void> _exit() async {
@@ -218,6 +241,33 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.muted, fontSize: 12),
               ),
+              const SizedBox(height: 12),
+              const SoftCard(
+                color: AppColors.surfaceWarm,
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '연결 카테고리 안내',
+                      style: TextStyle(
+                        color: AppColors.ink,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Owner · 새 기기를 처음 등록하고 가족을 초대해요.\n'
+                      'Member · 이미 등록된 기기의 Owner에게 초대를 요청해요.',
+                      style: TextStyle(
+                        color: AppColors.inkSoft,
+                        fontSize: 12,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               SegmentedButton<int>(
                 key: const Key('device-registration-mode'),
@@ -247,27 +297,6 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                 duration: const Duration(milliseconds: 220),
                 child: mode == 0 ? _ownerPanel() : _memberPanel(),
               ),
-              if (widget.controller.selectedVault == null) ...[
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: widget.controller.busy
-                      ? null
-                      : () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => InvitationInboxScreen(
-                              controller: widget.controller,
-                            ),
-                          ),
-                        ),
-                  icon: const Icon(Icons.mark_email_unread_outlined),
-                  label: Text(
-                    widget.controller.receivedInvitations.isEmpty
-                        ? '받은 초대함'
-                        : '받은 초대함 ${widget.controller.receivedInvitations.length}개',
-                  ),
-                ),
-              ],
               if (!widget.canGoBack) ...[
                 const SizedBox(height: 6),
                 TextButton(
@@ -292,73 +321,6 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          '연결할 Vault 선택',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 5),
-        const Text(
-          '연결 중에는 Vault를 바꿀 수 없어요. 바꾸려면 기기 연결을 해제한 뒤 다시 등록해야 합니다.',
-          style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
-        ),
-        const SizedBox(height: 10),
-        SegmentedButton<bool>(
-          key: const Key('vault-connection-choice'),
-          segments: [
-            ButtonSegment(
-              value: false,
-              enabled: _ownedVaults.isNotEmpty,
-              icon: const Icon(Icons.inventory_2_outlined),
-              label: const Text('기존 Vault'),
-            ),
-            const ButtonSegment(
-              value: true,
-              icon: Icon(Icons.create_new_folder_outlined),
-              label: Text('새 Vault'),
-            ),
-          ],
-          selected: {createNewVault},
-          showSelectedIcon: false,
-          onSelectionChanged: widget.controller.busy
-              ? null
-              : (values) => setState(() => createNewVault = values.first),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          createNewVault
-              ? '기존 Vault와 완전히 분리된 새 공간을 만들어요.'
-              : '기존 구성원과 과거 영상을 그대로 함께 사용해요.',
-          style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
-        ),
-        const SizedBox(height: 10),
-        if (!createNewVault && _ownedVaults.isNotEmpty)
-          DropdownButtonFormField<String>(
-            key: const Key('existing-vault-selector'),
-            initialValue: selectedVaultId,
-            decoration: const InputDecoration(labelText: '기존 Vault'),
-            items: _ownedVaults
-                .map(
-                  (vault) => DropdownMenuItem(
-                    value: vault.id,
-                    child: Text(vault.name),
-                  ),
-                )
-                .toList(growable: false),
-            onChanged: widget.controller.busy
-                ? null
-                : (value) => setState(() => selectedVaultId = value),
-          ),
-        if (createNewVault)
-          TextField(
-            key: const Key('new-vault-name'),
-            controller: vaultName,
-            maxLength: 80,
-            decoration: const InputDecoration(
-              labelText: '새 Vault 이름',
-              counterText: '',
-            ),
-          ),
-        const SizedBox(height: 18),
         const Text(
           '제품 아래쪽 시리얼 번호',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
@@ -429,6 +391,35 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 14),
+        KeyedSubtree(
+          key: const Key('place-category-selector'),
+          child: DropdownButtonFormField<String>(
+            key: ValueKey(
+              'place-$selectedPlaceName-${widget.controller.placeNames.length}',
+            ),
+            initialValue: selectedPlaceName,
+            isExpanded: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            decoration: const InputDecoration(labelText: '장소 카테고리'),
+            items: [
+              ...widget.controller.placeNames.map(
+                (place) => DropdownMenuItem(value: place, child: Text(place)),
+              ),
+              const DropdownMenuItem(
+                value: _addPlaceValue,
+                child: Text(
+                  '+ 새로운 장소 추가하기',
+                  style: TextStyle(
+                    color: AppColors.coralDark,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+            onChanged: widget.controller.busy ? null : _selectPlace,
+          ),
         ),
         if (registrationError != null) ...[
           const SizedBox(height: 8),
@@ -510,8 +501,105 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
           'Owner가 링크를 열면 앱의 가족 초대 화면으로 이동하고 내 이메일이 자동 입력됩니다.',
           style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
         ),
+        const SizedBox(height: 16),
+        const Divider(height: 1),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          key: const Key('member-request-inbox'),
+          onPressed: widget.controller.busy
+              ? null
+              : () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        InvitationInboxScreen(controller: widget.controller),
+                  ),
+                ),
+          icon: const Icon(Icons.mark_email_unread_outlined),
+          label: Text(
+            widget.controller.receivedInvitations.isEmpty
+                ? '받은 요청함'
+                : '받은 요청함 ${widget.controller.receivedInvitations.length}개',
+          ),
+        ),
       ],
     ),
+  );
+}
+
+String? validatePlaceName(String value, Iterable<String> existingPlaces) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    return '장소 이름을 입력해 주세요.';
+  }
+  if (normalized.length > 15) {
+    return '장소 이름은 15자 이내로 입력해 주세요.';
+  }
+  if (existingPlaces.any(
+    (place) => place.trim().toLowerCase() == normalized.toLowerCase(),
+  )) {
+    return '이미 등록된 장소입니다.';
+  }
+  return null;
+}
+
+class _AddPlaceDialog extends StatefulWidget {
+  const _AddPlaceDialog({required this.existingPlaces});
+
+  final List<String> existingPlaces;
+
+  @override
+  State<_AddPlaceDialog> createState() => _AddPlaceDialogState();
+}
+
+class _AddPlaceDialogState extends State<_AddPlaceDialog> {
+  final input = TextEditingController();
+  String? inputError;
+
+  @override
+  void dispose() {
+    input.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final error = validatePlaceName(input.text, widget.existingPlaces);
+    if (error != null) {
+      setState(() => inputError = error);
+      return;
+    }
+    Navigator.pop(context, input.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('새로운 장소 추가'),
+    content: TextField(
+      key: const Key('new-place-name-input'),
+      controller: input,
+      autofocus: true,
+      maxLength: 15,
+      textInputAction: TextInputAction.done,
+      decoration: InputDecoration(
+        hintText: '장소 이름을 입력해 주세요.',
+        errorText: inputError,
+      ),
+      onChanged: (_) {
+        if (inputError != null) setState(() => inputError = null);
+      },
+      onSubmitted: (_) => _submit(),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        key: const Key('add-place-confirm'),
+        onPressed: _submit,
+        child: const Text('추가하기'),
+      ),
+    ],
   );
 }
 

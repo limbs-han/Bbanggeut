@@ -244,8 +244,18 @@ def load_benchmark_results(
                 "runId": payload.get("runId"),
                 "createdAt": payload.get("createdAt"),
                 "component": payload.get("component", "vision"),
+                "comparison": (
+                    payload.get("comparison")
+                    if isinstance(payload.get("comparison"), dict)
+                    else None
+                ),
                 "model": model.get("name"),
                 "runtime": model.get("runtime"),
+                "modelDetails": {
+                    key: model.get(key)
+                    for key in ("sizeBytes", "sha256")
+                    if key in model
+                },
                 "dataset": (
                     payload.get("dataset", {}).get("name")
                     if isinstance(payload.get("dataset"), dict)
@@ -255,6 +265,36 @@ def load_benchmark_results(
                 "accuracy": (
                     payload.get("accuracy")
                     if isinstance(payload.get("accuracy"), dict)
+                    else None
+                ),
+                "configuration": (
+                    payload.get("configuration")
+                    if isinstance(payload.get("configuration"), dict)
+                    else None
+                ),
+                "resources": (
+                    payload.get("resources")
+                    if isinstance(payload.get("resources"), dict)
+                    else None
+                ),
+                "selectionPolicy": (
+                    payload.get("selectionPolicy")
+                    if isinstance(payload.get("selectionPolicy"), dict)
+                    else None
+                ),
+                "datasetDetails": (
+                    {
+                        key: payload["dataset"].get(key)
+                        for key in (
+                            "imageCount",
+                            "emptyImageCount",
+                            "boxCount",
+                            "duplicateImageCount",
+                            "sha256",
+                        )
+                        if key in payload["dataset"]
+                    }
+                    if isinstance(payload.get("dataset"), dict)
                     else None
                 ),
             }
@@ -301,6 +341,28 @@ def load_benchmark_progress(
                 else None
             ),
         }
+    return None
+
+
+def active_benchmark_resources(results_dir: Path | None) -> Path | None:
+    if results_dir is None or not results_dir.is_dir():
+        return None
+    candidates = sorted(
+        results_dir.glob("**/progress.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for progress_path in candidates:
+        try:
+            payload = json.loads(progress_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("status") != "running":
+            return None
+        resources = progress_path.parent / "resources.log"
+        return resources if resources.is_file() else None
     return None
 
 
@@ -457,7 +519,11 @@ class BenchmarkCollector:
 
     def snapshot(self) -> dict[str, Any]:
         run_dir = self.paths.resolve_run_dir()
-        resources = run_dir / "resources.log"
+        operational_resources = run_dir / "resources.log"
+        benchmark_resources = active_benchmark_resources(
+            self.paths.results_dir
+        )
+        resources = benchmark_resources or operational_resources
         yolo = run_dir / "yolo.log"
         diagnostic_candidates = (
             run_dir / "yamnet_diagnostics.jsonl",
@@ -472,10 +538,14 @@ class BenchmarkCollector:
         yolo_line = last_matching_line(yolo, YOLO_PATTERN)
         audio_rows = load_jsonl_tail(yamnet_diagnostics)
 
+        benchmark_progress = load_benchmark_progress(self.paths.results_dir)
         return {
             "schemaVersion": SCHEMA_VERSION,
             "collectedAt": utc_now(),
             "source": "jetson-local",
+            "systemSource": (
+                "benchmark" if benchmark_resources is not None else "operational"
+            ),
             "runId": run_dir.name,
             "runDirectory": str(run_dir),
             "freshness": self.freshness(
@@ -488,9 +558,7 @@ class BenchmarkCollector:
             "audio": summarize_audio(audio_rows),
             "events": load_recent_events(self.paths.event_dir),
             "comparisons": load_benchmark_results(self.paths.results_dir),
-            "benchmarkProgress": load_benchmark_progress(
-                self.paths.results_dir
-            ),
+            "benchmarkProgress": benchmark_progress,
         }
 
 

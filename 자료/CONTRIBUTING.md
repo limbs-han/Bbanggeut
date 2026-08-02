@@ -6,14 +6,26 @@
 2. `develop` 최신 상태에서 작업 브랜치를 만든다.
 3. API·MQTT·DB 계약 변경은 구현 전에 관련 직무와 합의한다.
 
-권장 브랜치 예시:
+```bash
+git fetch origin --prune && git switch develop && git pull --ff-only origin develop
+```
+
+브랜치 이름은 `<종류>/<파트>/<요구사항ID-설명>` 형태로 쓴다.
+파트 접두사는 Jenkins가 실행할 CI 단계를 고르는 데 쓰이므로 생략하지 않는다.
 
 ```text
-feature/FR-DEVICE-001-claim-device
-feature/FR-VIDEO-004-trim-video
-fix/TC-SEC-003-device-membership-access
+feat/device/FR-DEVICE-001-claim-device
+feat/frontend/FR-VIDEO-004-trim-video
+fix/backend/TC-SEC-003-device-membership-access
 docs/openapi-video-edit
 ```
+
+전체 브랜치 규칙은 저장소 루트의 `AGENTS.md`와
+`llm/GIT_BRANCH_RULES.md`에 있다. 요약하면 다음과 같다.
+
+- 모든 작업 브랜치는 `develop`에서 만들고 `develop`으로 Merge Request를 만든다.
+- `master`는 `develop`에서만 병합받는다. `master`로 직접 MR을 만들지 않는다.
+- 병합 후 작업 브랜치는 삭제한다. `develop`과 `master`는 삭제하지 않는다.
 
 ## 커밋
 
@@ -27,7 +39,7 @@ chore: CI 캐시 설정 변경
 
 한 커밋에는 하나의 논리적 변경만 포함하고, 영상·모델·비밀키·실제 사용자 데이터는 커밋하지 않는다.
 
-## Pull Request 체크리스트
+## Merge Request 체크리스트
 
 - [ ] 연결된 요구사항·이슈 ID를 적었다.
 - [ ] 기본·심화 범위를 벗어나지 않는다.

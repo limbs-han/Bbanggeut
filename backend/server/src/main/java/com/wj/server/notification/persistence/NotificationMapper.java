@@ -60,9 +60,11 @@ public interface NotificationMapper {
         SELECT gen_random_uuid(), m.user_id, 'LAUGHTER_VIDEO_READY',
                '웃음 영상이 도착했어요', #{title},
                #{deviceId}, #{videoId}, 'laughter-video:' || CAST(#{videoId} AS text)
-          FROM device_memberships m
+          FROM device_bindings b
+          JOIN vault_memberships m ON m.vault_id = b.vault_id
           JOIN users u ON u.id = m.user_id
-         WHERE m.device_id = #{deviceId} AND m.status = 'ACTIVE'
+         WHERE b.device_id = #{deviceId} AND b.status = 'ACTIVE'
+           AND m.status = 'ACTIVE'
            AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
         ON CONFLICT (user_id, dedupe_key) DO NOTHING
         """)

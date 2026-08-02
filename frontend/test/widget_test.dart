@@ -253,6 +253,15 @@ void main() {
       );
     }
 
+    // 아직 펼치지 않은 탭은 세우지 않는다. 세우면 그 화면의 목록이 재생 URL을
+    // 받아 원격 프레임을 뽑기 시작해, 아무도 보지 않는 탭 때문에 켜는 순간
+    // 네트워크 요청이 나간다.
+    //
+    // `skipOffstage: false`가 핵심이다. IndexedStack은 고르지 않은 자식을 화면
+    // 밖으로 두므로, 기본 검색으로는 "세워졌지만 안 보이는" 것과 "아예 세우지
+    // 않은" 것이 똑같이 안 잡힌다 — 그러면 이 테스트가 아무것도 지키지 못한다.
+    expect(find.text('전체 추억', skipOffstage: false), findsNothing);
+
     await tester.tap(
       find.descendant(of: navigation, matching: find.text('추억')),
     );
@@ -261,6 +270,16 @@ void main() {
     expect(find.text('웃음 감지'), findsOneWidget);
     expect(find.text('편집 완료'), findsOneWidget);
     expect(find.text('최신순'), findsOneWidget);
+
+    // 한 번 펼친 탭은 다른 탭으로 옮겨도 남아 있다 — 스크롤 위치와 상태를
+    // 지키려고 IndexedStack을 쓰는 것이므로 그 성질은 그대로여야 한다.
+    await tester.tap(find.descendant(of: navigation, matching: find.text('홈')));
+    await tester.pump();
+    expect(
+      find.text('전체 추억', skipOffstage: false),
+      findsOneWidget,
+      reason: '펼친 탭이 사라지면 되돌아올 때 스크롤 위치가 초기화된다',
+    );
     controller.dispose();
   });
 
@@ -348,7 +367,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(LocalEditScreen), findsOneWidget);
-    expect(find.text('편집'), findsOneWidget);
     controller.dispose();
   });
 }

@@ -1,13 +1,15 @@
 # API 명세서 (AI/코딩 에이전트용)
 
-> 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 5979279
+> 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 9616bb6
 > 사람용 원본: [../사람이 읽을 문서/04-API명세서.md](../사람이%20읽을%20문서/04-API명세서.md)
 
-ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 제외) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
+ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 제외) + MQTT-01~15. 배치는 MVP 7단계 순서(사람용 원본과 동일 구조). JSON 예시는 그대로 복사해 사용 가능 — 주석(`//`)은 타입/필수여부 설명이며 실제 요청 시 제거할 것.
 
-**API-51은 `[제안]` — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
+**API-62는 `[제안]` — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
 
-**API-52·API-53(FN-A40 4컷 만화)과 API-54(FN-A39 자동 자막)는 `[제안·미구현]`이지만 성격이 다르다 — 앱은 이미 이 세 엔드포인트를 호출하도록 구현돼 있고 서버만 없다.** 그래서 계약을 앱에 맞춰야 한다(6절). 서버가 없는 동안 앱은 `--dart-define=COMIC_SERVER=true`를 주지 않아 가짜 응답으로 동작한다(자막·만화가 **같은 스위치**를 쓴다).
+**API-71·API-72(FN-A40 4컷 만화)와 API-73(FN-A39 자동 자막)은 `[제안·미구현]`이지만 성격이 다르다 — 앱은 이미 이 세 엔드포인트를 호출하도록 구현돼 있고 서버만 없다.** 그래서 계약을 앱에 맞춰야 한다(6절). 서버가 없는 동안 앱은 `--dart-define=COMIC_SERVER=true`를 주지 않아 가짜 응답으로 동작한다(자막·만화가 **같은 스위치**를 쓴다).
+
+> **번호 이동 주의**: 이 세 엔드포인트는 처음에 API-52·53·54를 받았으나, 그 번호는 이미 금고 구독(API-51~53)·금고 접근 기록(API-54)이 쓰고 있다(4절). 구현·병합된 금고 API가 우선이므로 만화·자막 제안을 현재 max(API-70) 다음인 **API-71·72·73**으로 옮겼다. 리포트 제안이 API-51→API-62로 옮겨 간 것과 같은 처리다(13절 ID 검증 참고). 옛 문서·커밋 메시지의 "API-52·53·54"는 이 세 개를 가리킬 수 있으니 문맥으로 구분할 것.
 
 **FN-A39는 더 이상 폰에서 전사하지 않는다.** 온디바이스 whisper는 배포 형태 실측 CER 11.3%, 2분 영상 168초로 자막 재료가 되지 못해 서버(Gemini)로 옮겼다(측정 기록은 `06-stt-model-guide.md`). **모델 파일과 온디바이스 코드는 아직 앱에 남아 있으나 배선돼 있지 않다** — 06 가이드의 모델 파일명·용량 서술은 여전히 사실이다.
 
@@ -28,7 +30,7 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 | 2 | 기기 credential | `/api/iot/**` | `Authorization: Bearer <keyId>.<secret>`(`/enrollment`만 ROLE_DEVICE_BOOTSTRAP, 나머지 ROLE_DEVICE_OPERATING) | 401 `DEVICE_AUTHENTICATION_FAILED` | `device/api/IotRegistrationController.java`, `iot/auth/DeviceCredentialController.java`, `video/api/IotVideoController.java` |
 | 3 | 사용자 JWT | 나머지 전부 | `Authorization: Bearer <JWT>`(HS256, `sub`=userUUID, `sid`=세션UUID) | 401 `AUTHENTICATION_REQUIRED` / 403 `ACCESS_DENIED`·`FORBIDDEN_ROLE` | 그 외 전 컨트롤러 |
 
-`permitAll`(인증 불필요): `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/refresh`, `GET /api/membership-request-links/*/open`, `GET /actuator/health`, `GET /api/live/introspect`.
+`permitAll`(인증 불필요): `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/password/forgot`, `POST /api/auth/password/reset`, `GET /api/membership-request-links/*/open`, `GET /actuator/health`, `GET /api/live/introspect`.
 
 ### 1.3 공통 에러 형식
 
@@ -103,7 +105,8 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 {
   "registrationCode": "string",   // required, @Size 8~12
   "name": "string",                // optional, @Size 1~80, 공백만 불가
-  "vaultId": "uuid"                // optional, 기존 금고에 연결할 때 지정
+  "vaultId": "uuid",               // optional, 기존 금고에 연결할 때 지정. 생략하면 새 금고 생성
+  "vaultName": "string"            // optional, @Size 1~80, 공백만 불가. 새 금고 생성 시 금고 이름 지정
 }
 ```
 - 응답 201:
@@ -121,9 +124,63 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - 인증: 사용자 JWT
 - `GET /api/vaults`: `vault_memberships` 기준 참여 금고와 활성 연결 기기 목록 조회
 - `GET /api/vaults/{vaultId}`: 접근권한을 검증한 추억 금고 단건 조회
-- `POST /api/vaults`: 물리 기기 없이 독립적인 추억 금고 생성
-- 응답 핵심 필드: `id`, `name`, `status`, `myRole`, `retentionDays`, `subscriptionActive`, `devices[]`
+- `POST /api/vaults`: 물리 기기 없이 독립적인 추억 금고 생성 — 요청 본문 `{ "name": "string" }`(필수, @NotBlank @Size<=80)
+- 응답 `VaultResponse`:
+
+| 필드명 | 타입 | 설명 |
+|---|---|---|
+| id | UUID | 추억 금고 ID |
+| name | String | 사용자에게 표시할 금고 이름 |
+| status | String | ACTIVE/CLOSING/CLOSED |
+| myRole | String | OWNER/MEMBER |
+| retentionDays | int | 금고 공통 영상 보관 기간 |
+| subscriptionActive | boolean | 금고 구독 상태 |
+| subscriptionGraceUntil | Instant(nullable) | 구독 해지 후 유예 만료 시각 |
+| devices | List\<VaultDeviceResponse\> | 활성 Device Binding과 물리 기기 정보(`bindingId`, `generation`, `deviceId`, `name`, `model`, `status`, `lastSeenAt`). 연결 기기가 없으면 빈 배열 |
 - 비고: `devices`가 빈 배열이어도 금고는 유효하다. 영상·구독·가족 권한은 물리 기기가 아니라 금고에 귀속된다. 연결 기기의 온라인 상태는 Redis presence를 합성하고 Redis 장애 시 PostgreSQL 값으로 폴백한다.
+
+### API-51·52·53 `GET|PUT|DELETE /api/vaults/{vaultId}/subscription`
+- 인증: 사용자 JWT / 컨트롤러: `subscription/api/VaultSubscriptionController.java`
+- `GET`(API-51): 금고 구성원이면 조회 가능 / `PUT`(API-52) 활성화·`DELETE`(API-53) 해지는 **OWNER만**
+- 응답 200 (`SubscriptionResponse` — 기기 기준 API-39~41과 같은 레코드):
+```json
+{
+  "deviceId": null,            // 금고 경로로 조회하면 항상 null
+  "vaultId": "uuid",
+  "active": true,
+  "graceUntil": null,          // 해지 시에만 값 존재(유예 만료 시각)
+  "premiumRetentionDays": 365  // app.subscription.premium-retention-days 기본값
+}
+```
+- 에러: 403 `FORBIDDEN_ROLE`(PUT/DELETE에 OWNER 아님), 404 `RESOURCE_NOT_FOUND`, 409 `SUBSCRIPTION_NOT_ACTIVE`(활성 구독이 없는데 해지 시도)
+- 비고: 구독은 금고에 귀속되므로 연결된 기기가 한 대도 없어도 조회·변경할 수 있다. 기기 기준 API-39~41은 호환을 위해 유지하며 같은 금고 행을 갱신한다. 해지는 즉시 삭제가 아니라 유예 기간(`app.subscription.grace` 기본 30일) 뒤 만료되도록 보관 기간을 기본값으로 되돌린다.
+
+### API-54 `GET /api/vaults/{vaultId}/access-logs`
+- 인증: 사용자 JWT, 금고 **OWNER만** / 컨트롤러: `audit/api/VaultAccessLogController.java`
+- 요청: `cursor`(선택), `size`(기본 20, **1~100 벗어나면 422 `VALIDATION_FAILED`**)
+- 응답 200 (`AccessLogPageResponse` — API-50과 같은 커서 페이지):
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "deviceId": "uuid",
+      "actorUserId": "uuid",
+      "actorDeviceId": null,
+      "action": "VAULT_UPDATE",
+      "targetType": "SUBSCRIPTION",
+      "targetId": "uuid",
+      "outcome": "SUCCESS",     // SUCCESS | DENIED
+      "reasonCode": null,       // DENIED일 때 사유(예: FORBIDDEN_ROLE)
+      "createdAt": "2026-07-30T00:00:00Z"
+    }
+  ],
+  "nextCursor": "string",       // hasNext=false면 null
+  "hasNext": false
+}
+```
+- 에러: 403 `FORBIDDEN_ROLE`, 404 `RESOURCE_NOT_FOUND`
+- 비고: V30 이전에 기록되어 `vault_id`가 비어 있는 행은, 그 금고에 Binding된 적이 있는 기기의 `device_id`로도 함께 조회한다.
 
 ### API-43 `POST /api/iot/registration-codes`
 - 인증: 기기 credential(Bearer, ROLE_DEVICE_OPERATING) / 요청 본문 없음(`DevicePrincipal`만 사용)
@@ -165,7 +222,7 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   {
     "id": "uuid", "name": "string", "model": "string",
     "status": "UNCLAIMED|ONLINE|OFFLINE|REVOKED",
-    "myRole": "OWNER|EDITOR|VIEWER", "retentionDays": 30,
+    "myRole": "OWNER|MEMBER", "retentionDays": 30,
     "lastSeenAt": "2026-07-27T00:00:00Z"
   }
 ]
@@ -356,9 +413,9 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 ## 6. MVP ⑤ 영상 편집
 
-**서버 API가 필요 없는 것은 수동 편집(FN-A21)뿐이다** — 폰에서 처리하며(Banuba, Android 전용), 원본 다운로드는 7절과 동일한 **API-32**(다운로드 URL)를 재사용한다. **자동 자막(FN-A39)과 4컷 만화(FN-A40)는 서버 AI를 쓴다** — 아래 API-52·API-53·API-54 세 개이며, 셋 다 앱은 구현됐고 **서버는 미구현**이다.
+**서버 API가 필요 없는 것은 수동 편집(FN-A21)뿐이다** — 앱 자체 편집 화면에서 처리하며(구간 자르기·화면 비율 6종·음량·자막·필터 3종·이모지 스티커, 결과는 MediaStore `Movies/WilliamJames` 갤러리 저장), 원본 다운로드는 7절과 동일한 **API-32**(다운로드 URL)를 재사용한다. **자동 자막(FN-A39)과 4컷 만화(FN-A40)는 서버 AI를 쓴다** — 아래 API-71·API-72·API-73 세 개이며, 셋 다 앱은 구현됐고 **서버는 미구현**이다.
 
-폰이 올리는 것: **API-54는 아무것도 없다** — 경로의 `videoId`가 요청의 전부다(원본은 IoT 기기가 올려 서버에 이미 있다). **API-52·API-53은 전사문(글)뿐**이다. 오디오와 대표 프레임을 뽑아 **Gemini(구글)로 보내는 쪽은 서버**이며(API-54), 이는 개인정보 고지 대상이다.
+폰이 올리는 것: **API-73은 아무것도 없다** — 경로의 `videoId`가 요청의 전부다(원본은 IoT 기기가 올려 서버에 이미 있다). **API-71·API-72는 전사문(글)뿐**이다. 오디오와 대표 프레임을 뽑아 **Gemini(구글)로 보내는 쪽은 서버**이며(API-73), 이는 개인정보 고지 대상이다.
 
 ### FN-A40 만화 API 공통 **[제안·미구현]**
 
@@ -369,13 +426,13 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - **이미지 생성 API 키는 서버에만 둔다.** 응답에 키를 담지 않는다 — APK를 뜯으면 앱에 넣은 키는 가져갈 수 있다.
 - **에러 `message`는 사용자에게 그대로 보인다.** `ApiClient._failure`가 응답 본문의 `message`를 꺼내고 만화 화면이 그 문자열을 그대로 띄운다. 영문·스택·모델 이름·상위 API 문구를 넣지 말고 한국어 사용자 문구로 쓴다.
 - 공통 에러: 401 `AUTHENTICATION_REQUIRED`, 403 `ACCESS_DENIED`, 404 `RESOURCE_NOT_FOUND`(videoId 없음/권한 없음), 429 `COMIC_RATE_LIMIT_EXCEEDED`(**사용자별 호출 제한** — 이미지 생성은 호출마다 돈이 든다), 502 `COMIC_GENERATION_FAILED`(상위 모델 실패·타임아웃·부적절 응답), 500 `INTERNAL_SERVER_ERROR`.
-- **이 절의 적용 범위**: 위 공통 에러 중 **401·403·404·500 네 가지만 API-54(자막)도 그대로 쓴다.** `COMIC_` 접두가 붙은 429·502는 **만화 전용**이고, 자막은 `TRANSCRIPT_` 접두 코드를 따로 쓴다(API-54 절 참조). 이 절의 나머지 규칙(전사문만 올라옴, 이미지 생성 키, `message` 노출)도 **만화에만 해당한다.**
+- **이 절의 적용 범위**: 위 공통 에러 중 **401·403·404·500 네 가지만 API-73(자막)도 그대로 쓴다.** `COMIC_` 접두가 붙은 429·502는 **만화 전용**이고, 자막은 `TRANSCRIPT_` 접두 코드를 따로 쓴다(API-73 절 참조). 이 절의 나머지 규칙(전사문만 올라옴, 이미지 생성 키, `message` 노출)도 **만화에만 해당한다.**
 - **호출 제한은 서버만 걸 수 있다.** 앱에는 제한이 없다.
-- **시간 예산: 서버 150초 / 앱 대기 180초.** API-52·API-53·API-54 세 호출에만 `Options(receiveTimeout: 180초)`를 붙였다(`ApiClient.aiReceiveTimeout`). 나머지 호출은 전역 기본값 20초 그대로다 — 이미지 생성도 Gemini 전사도 20초 안에 끝나는 일이 아니라서 예외를 뒀다. 서버가 150초를 넘길 것 같으면 502(`COMIC_GENERATION_FAILED` / `TRANSCRIPT_GENERATION_FAILED`)로 **먼저 끊어 돌려줄 것.** 앱이 먼저 끊으면(`DioExceptionType.receiveTimeout`) 사용자에게는 그냥 실패로 보이고 서버는 다 만든 응답을 버리게 된다. 180초로도 모자란 작업이면 202+폴링으로 계약을 바꿔야 하며 그것은 별도 논의다.
+- **시간 예산: 서버 150초 / 앱 대기 180초.** API-71·API-72·API-73 세 호출에만 `Options(receiveTimeout: 180초)`를 붙였다(`ApiClient.aiReceiveTimeout`). 나머지 호출은 전역 기본값 20초 그대로다 — 이미지 생성도 Gemini 전사도 20초 안에 끝나는 일이 아니라서 예외를 뒀다. 서버가 150초를 넘길 것 같으면 502(`COMIC_GENERATION_FAILED` / `TRANSCRIPT_GENERATION_FAILED`)로 **먼저 끊어 돌려줄 것.** 앱이 먼저 끊으면(`DioExceptionType.receiveTimeout`) 사용자에게는 그냥 실패로 보이고 서버는 다 만든 응답을 버리게 된다. 180초로도 모자란 작업이면 202+폴링으로 계약을 바꿔야 하며 그것은 별도 논의다.
 
-### API-52 `POST /api/videos/{videoId}/comic/script` **[제안·미구현]**
+### API-71 `POST /api/videos/{videoId}/comic/script` **[제안·미구현]**
 
-> 전사문 → 4컷 구성. **API-53보다 먼저** 부른다. 사용자가 대사를 고친 뒤 그림을 만들게 두 단계로 나눴다 — 엉뚱한 구성에 이미지 생성비를 쓰지 않기 위해서다.
+> 전사문 → 4컷 구성. **API-72보다 먼저** 부른다. 사용자가 대사를 고친 뒤 그림을 만들게 두 단계로 나눴다 — 엉뚱한 구성에 이미지 생성비를 쓰지 않기 위해서다.
 
 - 인증: 사용자 JWT **[제안]**
 - 요청:
@@ -388,7 +445,7 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 }
 ```
 - `endMs`는 보내지 않는다(구성에 쓰이지 않음). 빈 `text` 줄은 앱이 걸러낸다(`linesToJson`).
-- **`lines` 개수 상한은 서버가 정해야 한다.** 앱은 API-54로 받아 둔 전사 결과를 자르지 않고 그대로 보내며 줄 수는 영상 길이에 비례한다(자막 실측: 2분 영상에 143자, 10~20줄 수준). 상한과 초과 시 동작(422로 거절 / 앞부분만 사용)을 서버가 정하고 이 문서에 적을 것 — **현재 정해진 값이 없다.**
+- **`lines` 개수 상한은 서버가 정해야 한다.** 앱은 API-73으로 받아 둔 전사 결과를 자르지 않고 그대로 보내며 줄 수는 영상 길이에 비례한다(자막 실측: 2분 영상에 143자, 10~20줄 수준). 상한과 초과 시 동작(422로 거절 / 앞부분만 사용)을 서버가 정하고 이 문서에 적을 것 — **현재 정해진 값이 없다.**
 - 응답 200:
 ```json
 {
@@ -405,7 +462,7 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - `scene`은 이미지 프롬프트에 들어가고 **사용자 화면에도 그대로 보인다.** **소리를 언급하지 않는다** — "큰 소리가 났다"고 쓰면 이미지 모델이 의성어를 그린다(PC 시험에서 확인). 눈에 보이는 것만 쓴다.
 - 에러: 공통 + 422 `VALIDATION_FAILED`(`lines` 누락/빈 배열/상한 초과). 전사문이 없는 영상은 앱이 먼저 막지만(`TranscriptStore`를 읽고 없으면 안내 화면을 띄우며 요청하지 않는다) 방어적으로 422로 거절할 것.
 
-### API-53 `POST /api/videos/{videoId}/comic/image` **[제안·미구현]**
+### API-72 `POST /api/videos/{videoId}/comic/image` **[제안·미구현]**
 
 > 4컷 구성(사용자가 고친 것) → 만화 그림 한 장. **그림에는 글자도 말풍선도 없어야 한다** — 대사는 앱이 그림 위에 영화 자막처럼 직접 얹는다.
 
@@ -413,7 +470,7 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - 요청:
 ```json
 {
-  "cuts": [ /* API-52 응답과 같은 4개. dialogue만 사용자가 고쳐서 온다 */ ],
+  "cuts": [ /* API-71 응답과 같은 4개. dialogue만 사용자가 고쳐서 온다 */ ],
   "style": "webtoon"
 }
 ```
@@ -441,7 +498,7 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 7. **정사각형 한 장에 2x2 격자**, 컷 사이에 흰 여백과 검은 테두리.
 8. **사용자별 호출 횟수를 제한하라**(429 `COMIC_RATE_LIMIT_EXCEEDED`). 이미지 생성은 호출마다 돈이 들고 앱은 막을 수 없다.
 
-### API-54 `POST /api/videos/{videoId}/transcript` **[제안·미구현]**
+### API-73 `POST /api/videos/{videoId}/transcript` **[제안·미구현]**
 
 자동 자막(FN-A39)의 전사. **요청 본문 없음** — 원본이 이미 서버에 있으므로 경로의
 videoId가 전부다. 서버가 저장된 원본에서 오디오와 대표 프레임(4~8장)을 뽑아
@@ -470,11 +527,11 @@ Gemini에 보내고, 시각 붙은 전사문을 돌려준다. 결과는 서버�
 | 항목 형식 | `startMs`·`endMs`는 int, `text`는 string. 하나라도 다르면 앱이 `FormatException`으로 전사 전체를 실패 처리한다 — 한 줄만 버리지 않는다 |
 | 정렬·겹침 | `startMs` 오름차순, 구간이 겹치지 않아야 한다. 겹치면 앱이 먼저 걸린 줄만 보여준다 |
 | 발화 없음 | `{"lines": []}` — 앱이 "대사를 알아듣지 못했어요"로 안내하고 자막 없이 저장하게 둔다. **앱은 빈 결과를 캐시하지 않는다**(`transcript_store.dart:134-139`, 빈 캐시를 남기면 재시도가 영영 막히기 때문). 같은 영상의 편집 화면을 열 때마다 **이 요청이 다시 온다** — 아래 호출 제한 설계에 반드시 반영할 것 |
-| 오류(공통) | 401 `AUTHENTICATION_REQUIRED` · 403 `ACCESS_DENIED` · 404 `RESOURCE_NOT_FOUND`(videoId 없음/권한 없음) · 500 `INTERNAL_SERVER_ERROR` — API-52·53과 **완전히 같다** |
+| 오류(공통) | 401 `AUTHENTICATION_REQUIRED` · 403 `ACCESS_DENIED` · 404 `RESOURCE_NOT_FOUND`(videoId 없음/권한 없음) · 500 `INTERNAL_SERVER_ERROR` — API-71·72과 **완전히 같다** |
 | 오류(자막 전용) | 429 **`TRANSCRIPT_RATE_LIMIT_EXCEEDED`**(사용자별 호출 제한 — Gemini 전사도 호출마다 돈이 든다), 502 **`TRANSCRIPT_GENERATION_FAILED`**(Gemini 실패·타임아웃·부적절 응답). **만화의 `COMIC_` 접두 코드를 자막에 쓰지 말 것** — 호출 제한 카운터도 만화와 따로 센다 |
 | 실패도 캐시하지 않는다 | 오류 응답을 받아도 앱은 캐시를 남기지 않는다(`transcript_store.dart:149-151`). **다음에 그 영상을 열면 또 요청한다.** 사용자별 제한만으로 설계하면 조용한 클립 하나를 몇 번 열어 본 사용자가 자기 계정을 잠근다 — **videoId 단위 서버 캐시(성공·무발화 모두)로 흡수하고**, 제한은 그 캐시를 지나쳐 실제 Gemini를 부르는 호출에만 걸 것 |
-| 시간 예산 | **서버는 150초 안에 응답할 것. 앱은 180초까지 기다린다**(`ApiClient.aiReceiveTimeout`, API-52·53과 같은 값). 전역 기본 `receiveTimeout`은 20초지만 이 세 호출만 예외를 뒀다. 150초를 넘길 것 같으면 502 `TRANSCRIPT_GENERATION_FAILED`로 **서버가 먼저 끊어서** 돌려줄 것 — 앱이 먼저 끊으면 사용자는 원인을 알 수 없고 서버는 다 만든 응답을 버리는 셈이 된다. 180초로도 모자란 길이라면 202+폴링으로 계약을 바꿔야 하며 그것은 별도 논의다 |
-| `message` | **문자열 자체는 화면에 뜨지 않지만 실패 갈래는 나뉜다.** 앱은 두 가지로만 안내한다 — 던져진 실패(네트워크 없음·401·429·502·시간 초과 전부)는 `연결이나 서버에 문제가 있어요. 다시 시도해 보세요.`와 [다시 시도] 버튼, 무발화(`{"lines": []}`)는 `대사를 알아듣지 못했어요. 자막 없이 저장할 수 있어요.`다(`caption_controller.dart`의 `message()`·`retry()`, `caption_auto_section.dart`가 그린다). 서버 문자열은 `debugPrint`로만 나가므로 **진단용**이다 — 로그에서 원인을 가릴 수 있게 구체적으로 쓰되 사용자 문구로 다듬을 필요는 없다. **API-52·53과 다른 점이다**(만화 화면은 `message`를 그대로 띄운다) |
+| 시간 예산 | **서버는 150초 안에 응답할 것. 앱은 180초까지 기다린다**(`ApiClient.aiReceiveTimeout`, API-71·72과 같은 값). 전역 기본 `receiveTimeout`은 20초지만 이 세 호출만 예외를 뒀다. 150초를 넘길 것 같으면 502 `TRANSCRIPT_GENERATION_FAILED`로 **서버가 먼저 끊어서** 돌려줄 것 — 앱이 먼저 끊으면 사용자는 원인을 알 수 없고 서버는 다 만든 응답을 버리는 셈이 된다. 180초로도 모자란 길이라면 202+폴링으로 계약을 바꿔야 하며 그것은 별도 논의다 |
+| `message` | **문자열 자체는 화면에 뜨지 않지만 실패 갈래는 나뉜다.** 앱은 두 가지로만 안내한다 — 던져진 실패(네트워크 없음·401·429·502·시간 초과 전부)는 `연결이나 서버에 문제가 있어요. 다시 시도해 보세요.`와 [다시 시도] 버튼, 무발화(`{"lines": []}`)는 `대사를 알아듣지 못했어요. 자막 없이 저장할 수 있어요.`다(`caption_controller.dart`의 `message()`·`retry()`, `caption_auto_section.dart`가 그린다). 서버 문자열은 `debugPrint`로만 나가므로 **진단용**이다 — 로그에서 원인을 가릴 수 있게 구체적으로 쓰되 사용자 문구로 다듬을 필요는 없다. **API-71·72과 다른 점이다**(만화 화면은 `message`를 그대로 띄운다) |
 | 외부 전달 | **오디오와 대표 프레임이 Gemini(구글)로 나간다.** 개인정보 고지 대상 |
 
 ---
@@ -485,7 +542,7 @@ Gemini에 보내고, 시각 붙은 전사문을 돌려준다. 결과는 서버�
 - 인증: 사용자 JWT
 - 응답 200: API-31과 동일 스키마(`response-content-disposition=attachment` 쿼리가 추가된 URL)
 - 에러: 404, 409 `VIDEO_NOT_READY`, 503 `OBJECT_STORAGE_UNAVAILABLE`
-- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/공유 시트로 실행하며, 편집 결과물(Banuba 산출물)은 앱 로컬(`edited_videos/`)에 저장 후 공유 시트로 SNS/메신저에 전달(서버 API 불요).
+- 비고: 재생 URL과 동일 TTL(5분). 앱은 이 URL을 외부 브라우저/앱으로 실행하며, 편집 결과물은 네이티브 저장 경로(MediaStore)로 기기 갤러리에 저장한다(서버 API 불요). 앱 내 공유 버튼은 링크 복사 스텁이며, 실제 공유는 갤러리에서 다른 앱으로 한다.
 
 ---
 
@@ -510,9 +567,9 @@ Gemini에 보내고, 시각 붙은 전사문을 돌려준다. 결과는 서버�
 ```
 - 에러: 404, 422 `VALIDATION_FAILED`
 
-### API-51 `GET /api/devices/{deviceId}/laugh-report` **[제안·미구현]**
+### API-62 `GET /api/devices/{deviceId}/laugh-report` **[제안·미구현]**
 
-> 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이다. **API-51 서버 코드 없음.** 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**(이 API 응답 자체는 재생 URL을 담지 않음).
+> 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이다. **API-62 서버 코드 없음.** 기존 API-33(`VideoStatsService`)·API-46(`EventStatsService`)의 집계 로직과 `device_events` 데이터를 확장 기반으로 검토할 수 있다. 베스트 클립의 실제 재생 URL 발급은 기존 **API-31을 재사용**(이 API 응답 자체는 재생 URL을 담지 않음).
 
 - 인증: 사용자 JWT **[제안]**
 - Query **[제안]**:
@@ -556,20 +613,23 @@ Gemini에 보내고, 시각 붙은 전사문을 돌려준다. 결과는 서버�
 
 컨트롤러: `invitation/api/InvitationController.java` · Base `/api`
 
+멤버십·초대·권한 판정은 기기 단위가 아니라 **추억 금고 단위**(OWNER/MEMBER)에 귀속된다. 아래 기기 경로 API는 해당 기기가 속한 금고의 멤버십을 다룬다. 앱은 금고 경로(API-63~68, 이 절 마지막 표)를 기본으로 호출하고, 기기 경로는 금고 정보가 없을 때의 폴백으로 쓴다.
+
 ### API-14 `POST /api/devices/{deviceId}/invitations`
 - 인증: 사용자 JWT(OWNER)
 ```json
 {
   "email": "user@example.com",           // required, @Email @Size<=320
-  "role": "EDITOR",                       // required, "EDITOR"|"VIEWER"
   "membershipRequestToken": "string"      // optional, @Size<=200
+  // role 필드 없음 — 초대는 항상 MEMBER (DB CHECK ck_invitations_member_only)
 }
 ```
 - 응답 201:
 ```json
 {
   "id": "uuid", "deviceId": "uuid", "deviceName": "string",
-  "inviteeEmail": "string", "role": "EDITOR|VIEWER",
+  "vaultId": "uuid", "vaultName": "string",
+  "inviteeEmail": "string", "role": "MEMBER",
   "inviter": { "id": "uuid", "email": "string", "displayName": "string" },
   "status": "PENDING|ACCEPTED|DECLINED|EXPIRED|REVOKED",
   "expiresAt": "2026-08-03T00:00:00Z", "createdAt": "2026-07-27T00:00:00Z"
@@ -614,9 +674,11 @@ Gemini에 보내고, 시각 붙은 전사문을 돌려준다. 결과는 서버�
 - 응답 200:
 ```json
 {
-  "id": "uuid", "deviceId": "uuid",
+  "id": "uuid",
+  "deviceId": "uuid",   // nullable — 금고 경로(API-66) 조회 시 null 가능
+  "vaultId": "uuid",    // nullable
   "user": { "id": "uuid", "email": "string", "displayName": "string" },
-  "role": "EDITOR|VIEWER", "status": "ACTIVE|REVOKED", "joinedAt": "2026-07-27T00:00:00Z"
+  "role": "OWNER|MEMBER", "status": "ACTIVE|REVOKED", "joinedAt": "2026-07-27T00:00:00Z"
 }
 ```
 - 에러: 404, 409 `INVITATION_EXPIRED`, 409 `INVITATION_NOT_PENDING`
@@ -630,6 +692,22 @@ Gemini에 보내고, 시각 붙은 전사문을 돌려준다. 결과는 서버�
 ### API-24 `DELETE /api/devices/{deviceId}/members/{membershipId}`
 - 인증: 사용자 JWT(OWNER) / 응답 204 / 에러: 403 `FORBIDDEN_ROLE`, 404, 409 `OWNER_CANNOT_BE_REVOKED`, 409 `MEMBERSHIP_NOT_ACTIVE`
 - 비고: OWNER는 추방 불가, 이미 비활성인 멤버십은 재추방 불가.
+
+### 금고 경로 가족 공유 API (API-63~68)
+
+앱이 기본으로 호출하는 금고 스코프 경로다. 요청·응답 스키마는 위 기기 경로의 대응 API와 동일하다(`InvitationResponse`, `DeviceMemberResponse` 공유).
+
+| ID | 메서드/경로 | 응답 | 대응 기기 경로 |
+|---|---|---|---|
+| API-63 | `POST /api/vaults/{vaultId}/invitations` | `201 InvitationResponse` | API-14 |
+| API-64 | `GET /api/vaults/{vaultId}/invitations` | `200 List<InvitationResponse>` | API-18 |
+| API-65 | `DELETE /api/vaults/{vaultId}/invitations/{invitationId}` | `204` | API-19 |
+| API-66 | `GET /api/vaults/{vaultId}/members` | `200 List<DeviceMemberResponse>` | API-23 |
+| API-67 | `DELETE /api/vaults/{vaultId}/members/{membershipId}` | `204` | API-24 |
+| API-68 | `POST /api/vaults/{vaultId}/transfer-ownership` | `204` | API-12 |
+
+- API-68 요청 본문: `{ "newOwnerMembershipId": "uuid" }` (필수)
+- 금고 경로 고유 에러: 409 `ALREADY_VAULT_MEMBER`, 409 `TRANSFER_TARGET_NOT_ACTIVE_MEMBER`, 409 `ALREADY_OWNER`
 
 ---
 
@@ -737,6 +815,17 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-48 | `POST /internal/admin/devices/{deviceId}/credentials/rotate` | (내부 관리자 키) 자격증명 강제 회전 |
 | API-49 | `DELETE /internal/admin/devices/{deviceId}/credentials` | (내부 관리자 키) 자격증명 폐기 |
 | API-50 | `GET /api/devices/{deviceId}/access-logs` | 접근 기록 커서 조회 |
+| API-55 | `POST /api/auth/password/change` | 비밀번호 변경(JWT + `currentPassword` 확인). 204. 현재 세션만 유지하고 나머지 폐기. 401 `INVALID_CREDENTIALS`, 422 `PASSWORD_UNCHANGED` |
+| API-56 | `POST /api/auth/password/forgot` | 재설정 링크 요청(공개). `{email}` → **항상 202**(미가입 이메일도 동일 — 계정 존재 노출 방지). 토큰 30분·1회용, DB엔 SHA-256 해시만 저장 |
+| API-57 | `POST /api/auth/password/reset` | 토큰으로 재설정(공개). `{token(32~200), newPassword(10~72)}` → 204. **전 세션 폐기**. 401 `INVALID_PASSWORD_RESET_TOKEN` |
+| API-58 | `GET /api/notifications?limit=` | 알림 목록(최신순, 기본 30·최대 100, `ContentNotificationsScreen` 연동) |
+| API-59 | `GET /api/notifications/unread-count` | 안 읽은 개수(클라이언트 `api_client.dart` 정의만 존재, UI 호출처 없음) |
+| API-60 | `PATCH /api/notifications/{notificationId}/read` | 1건 읽음(`ContentNotificationsScreen` 연동). 남의 알림 id는 404 `RESOURCE_NOT_FOUND` |
+| API-61 | `PATCH /api/notifications/read-all` | 전체 읽음(`ContentNotificationsScreen` 연동) |
+| API-69 | `PUT /api/notifications/push-tokens` | FCM 푸시 토큰 등록(`{installationId, token, platform}`, 204, `push_notification_service.dart` 연동) |
+| API-70 | `DELETE /api/notifications/push-tokens/{installationId}` | 푸시 토큰 해제(204, `push_notification_service.dart` 연동) |
+
+**알림 생성 및 FCM 연동**: 알림 생성 API는 없다. 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 READY 확정 + triggerType=LAUGHTER → LAUGHTER_VIDEO_READY를 그 기기 활성 구성원 전원에게, ② 초대 발송(API-14) → INVITATION_RECEIVED를 초대받은 1명에게. UNIQUE (user_id, dedupe_key) + ON CONFLICT DO NOTHING으로 재시도해도 사용자당 1건만 남는다. 클라이언트는 알림함 화면(`ui/content_notifications_screen.dart`)에서 목록(API-58), 개별 읽음(API-60), 전체 읽음(API-61)을 사용하며, FCM(`core/push_notification_service.dart`)으로 푸시 토큰을 등록(API-69)/해제(API-70)하고 푸시 수신 시 해당 화면으로 이동한다.
 
 ---
 
@@ -763,12 +852,12 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | 2 | 기기 등록 | 구현됨 | API-08, 43~45, 07, 11 포함 전체 동작 |
 | 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | API-34~38, MQTT-01/04, RTSPS→WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | API-25~27, 31 포함 전체 동작 |
-| 5 | 영상 편집 | 부분 구현 | 수동 편집(FN-A21)만 서버 API 불요(로컬 처리). FN-A39 자동 자막과 FN-A40 4컷 만화는 **API-54·API-52·API-53이 필요하나 서버 미구현**(앱만 구현) |
+| 5 | 영상 편집 | 부분 구현 | 수동 편집(FN-A21)만 서버 API 불요(로컬 처리). FN-A39 자동 자막과 FN-A40 4컷 만화는 **API-73·API-71·API-72가 필요하나 서버 미구현**(앱만 구현) |
 | 6 | 편집 영상 다운로드 | 구현됨 | API-32 |
-| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 FN-A38 Flutter 단말 집계 구현. **API-51 서버 집계는 미구현** |
-| 가족 공유 | API-14~24 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작 |
+| 7 | 통계 / 리포트 | 부분 구현 | 기존 API-27·33과 FN-A38 Flutter 단말 집계 구현. **API-62 서버 집계는 미구현** |
+| 가족 공유 | API-14~24, 63~68 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작(앱은 금고 경로 API-63~68을 기본 사용) |
 
-MVP 7단계의 신규 API 중 **API-51 서버 집계, API-52·API-53 만화 엔드포인트, API-54 전사 엔드포인트가 미구현**이다. FN-A38 Flutter 리포트 화면 자체는 기존 영상 목록으로 동작하고, FN-A40 만화 화면과 FN-A39 자동 자막은 서버가 없는 동안 가짜 응답으로 동작한다.
+MVP 7단계의 신규 API 중 **API-62 서버 집계, API-71·API-72 만화 엔드포인트, API-73 전사 엔드포인트가 미구현**이다. FN-A38 Flutter 리포트 화면 자체는 기존 영상 목록으로 동작하고, FN-A40 만화 화면과 FN-A39 자동 자막은 서버가 없는 동안 가짜 응답으로 동작한다.
 
 ### API-06 제외 사유
 
@@ -776,8 +865,9 @@ MVP 7단계의 신규 API 중 **API-51 서버 집계, API-52·API-53 만화 엔�
 
 ### ID 검증
 
-- 본문(2~9절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, (신규)51, (신규)52, 53, 54 — 31개 + 신규 4개.
-- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50 — 18개.
-- 합계 31 + 18 = 49개 + API-06(의도적 제외) = as-built 기준 50개 전수 반영 + 신규 API-51·52·53·54(4개) = **총 54개 ID(API-01~54) 중 API-06만 결번**(문서에 스키마가 있는 것은 53개). 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
+- 본문(2~9절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, 51~54, 63~68, (신규)62, (신규)71, 72, 73 — 41개 + 신규 4개.
+- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50, 55~61, 69, 70 — 27개.
+- 합계 41 + 27 = 68개 + 신규 4개(62, 71, 72, 73) = **API-01~73 중 API-06만 결번 = 72개, max API-73.** 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 4절(01, 04) + 10절(02, 03, 05~09) + 12절(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
-- 신규 API-51은 기존 max(API-50) 다음 번호로, 신규 API-52·API-53(FN-A40 만화)은 그 다음 번호로, 신규 API-54(FN-A39 서버 전사)는 다시 그 다음 번호로 부여했다.
+- 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 금고 가족 공유(API-63~68)·푸시 토큰(API-69, 70)을 문서화해 max는 **API-70**이 되었다.
+- **만화·자막 제안도 같은 이유로 옮겼다.** FN-A40 만화(comic/script, comic/image)와 FN-A39 서버 전사(transcript)는 처음에 옛 max(API-51) 다음 번호인 **API-52·53·54**를 받았으나, 그 번호 역시 금고 구독(API-51~53)·금고 접근 기록(API-54)과 겹쳤다. 리포트 제안과 같은 원칙(구현·병합된 API 우선)으로 세 개를 max(API-70) 다음인 **API-71(만화 구성)·API-72(만화 그림)·API-73(자막 전사)**로 옮겼다. 이로써 현재 max는 **API-73**이다.

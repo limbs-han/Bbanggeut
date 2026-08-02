@@ -1,16 +1,29 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/api_client.dart';
 import '../core/models.dart';
+import '../core/push_notification_service.dart';
 
 const devHomeCam = bool.fromEnvironment('DEV_HOME_CAM');
 
 class AppController extends ChangeNotifier {
-  AppController({ApiClient? api}) : api = api ?? ApiClient();
+  AppController({
+    ApiClient? api,
+    this.pushNotifications,
+    FlutterSecureStorage? placeStorage,
+  }) : api = api ?? ApiClient(),
+       _placeStorage = placeStorage ?? const FlutterSecureStorage();
   final ApiClient api;
+  final PushNotificationService? pushNotifications;
+  final FlutterSecureStorage _placeStorage;
 
   bool initialized = false;
   bool authenticated = false;
+  bool requiresInitialDeviceRegistration = false;
   bool busy = false;
   bool videosLoading = false;
   String? errorMessage;
@@ -27,14 +40,129 @@ class AppController extends ChangeNotifier {
   List<DeviceMember> members = const [];
   List<Invitation> sentInvitations = const [];
   List<Invitation> receivedInvitations = const [];
+  final List<String> _placeNames = ['집'];
+  String _selectedPlaceName = '집';
+  final Map<String, String> _devicePlaces = {};
+  Future<void> _placePreferenceSave = Future.value();
   String? pendingMembershipRequestToken;
   MembershipRequestPreview? pendingMembershipRequestPreview;
-  bool openFamilyAfterDeviceClaim = false;
+  bool openHomeAfterDeviceClaim = false;
 
   bool get isOwner =>
       selectedVault?.isOwner ?? selectedDevice?.isOwner ?? false;
   bool get isMember => selectedVault != null && !selectedVault!.isOwner;
   bool get canRegisterDevice => selectedVault == null || isOwner;
+  List<String> get placeNames => List.unmodifiable(_placeNames);
+  String get selectedPlaceName => _selectedPlaceName;
+  List<DeviceSummary> get devicesForSelectedPlace => devices
+      .where(
+        (device) =>
+            (_devicePlaces[device.id] ?? _placeNames.first) ==
+            _selectedPlaceName,
+      )
+      .toList(growable: false);
+
+  String? get _placeStorageKey {
+    final userId = user?.id;
+    return userId == null ? null : 'bbanggeut_device_places_v1_$userId';
+  }
+
+  Future<void> _loadPlacePreferences() async {
+    final key = _placeStorageKey;
+    if (key == null) return;
+    try {
+      final raw = await _placeStorage.read(key: key);
+      if (raw == null) return;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final places = (decoded['places'] as List? ?? const [])
+          .whereType<String>()
+          .map((place) => place.trim())
+          .where((place) => place.isNotEmpty)
+          .toSet()
+          .toList();
+      _placeNames
+        ..clear()
+        ..addAll(places.isEmpty ? const ['집'] : places);
+      _devicePlaces
+        ..clear()
+        ..addAll(
+          (decoded['devicePlaces'] as Map<String, dynamic>? ?? const {}).map(
+            (deviceId, place) => MapEntry(deviceId, place.toString()),
+          ),
+        );
+      final selected = decoded['selectedPlace'] as String?;
+      _selectedPlaceName = _placeNames.contains(selected)
+          ? selected!
+          : _placeNames.first;
+    } catch (_) {
+      // 저장값이 없거나 손상돼도 기본 장소로 앱을 계속 사용할 수 있다.
+    }
+  }
+
+  Future<void> _savePlacePreferences() {
+    final key = _placeStorageKey;
+    if (key == null) return Future.value();
+    final value = jsonEncode({
+      'places': List<String>.of(_placeNames),
+      'selectedPlace': _selectedPlaceName,
+      'devicePlaces': Map<String, String>.of(_devicePlaces),
+    });
+    _placePreferenceSave = _placePreferenceSave.then((_) async {
+      try {
+        await _placeStorage.write(key: key, value: value);
+      } catch (_) {
+        // 장소 저장 실패가 기기 연결 자체를 실패시키지는 않는다.
+      }
+    });
+    return _placePreferenceSave;
+  }
+
+  @visibleForTesting
+  Future<void> waitForPlacePreferencesSaved() => _placePreferenceSave;
+
+  void selectPlace(String placeName) {
+    final normalized = placeName.trim();
+    if (!_placeNames.contains(normalized)) return;
+    _selectedPlaceName = normalized;
+    final placeDevices = devicesForSelectedPlace;
+    if (placeDevices.isNotEmpty &&
+        !placeDevices.any((device) => device.id == selectedDevice?.id)) {
+      selectedDevice = placeDevices.first;
+      deviceStatus = null;
+      videoStats = null;
+      homeSummary = null;
+      unawaited(refreshDeviceData().catchError((_) {}));
+    }
+    unawaited(_savePlacePreferences());
+    notifyListeners();
+  }
+
+  void assignDeviceToPlace(String deviceId, String placeName) {
+    final normalized = placeName.trim();
+    if (!_placeNames.contains(normalized) ||
+        !devices.any((device) => device.id == deviceId)) {
+      return;
+    }
+    _devicePlaces[deviceId] = normalized;
+    unawaited(_savePlacePreferences());
+    notifyListeners();
+  }
+
+  bool addPlace(String placeName) {
+    final normalized = placeName.trim();
+    if (normalized.isEmpty ||
+        normalized.length > 15 ||
+        _placeNames.any(
+          (place) => place.toLowerCase() == normalized.toLowerCase(),
+        )) {
+      return false;
+    }
+    _placeNames.add(normalized);
+    _selectedPlaceName = normalized;
+    unawaited(_savePlacePreferences());
+    notifyListeners();
+    return true;
+  }
 
   Future<void> initialize() async {
     if (devHomeCam) {
@@ -92,7 +220,9 @@ class AppController extends ChangeNotifier {
     if (authenticated) {
       user = await api.cachedUser;
       try {
-        await refreshAll();
+        // 장소 설정은 기기에 저장된 값이라 서버 응답과 아무 관계가 없다.
+        // 나란히 읽으면 보안 저장소를 거치는 시간이 네트워크 시간에 숨는다.
+        await Future.wait([_loadPlacePreferences(), refreshAll()]);
         await resolvePendingMembershipRequest();
       } on ApiFailure catch (error) {
         if (error.statusCode == 401) {
@@ -102,9 +232,23 @@ class AppController extends ChangeNotifier {
           errorMessage = error.message;
         }
       }
+      if (authenticated) _activatePushInBackground();
     }
     initialized = true;
     notifyListeners();
+  }
+
+  /// 푸시 등록을 시작하고 **기다리지 않는다.**
+  ///
+  /// **왜**: `activate`는 FCM 토큰을 받아 서버에 올리는 일이다. 토큰 발급은 네트워크
+  /// 상태에 따라 몇 초가 걸리는데, 화면에 바꾸는 것은 하나도 없고 실패도 스스로
+  /// 삼킨다. 그런데 이걸 기다리는 동안 [initialized]가 false여서 스플래시가 그대로
+  /// 떠 있었고, 로그인 버튼도 계속 돌고 있었다 — 앱이 안 켜지는 것처럼 보이던
+  /// 시간의 정체다. 등록은 그대로 일어나고, 다음 앱 시작이나 토큰 갱신 때 다시
+  /// 시도하므로 놓칠 일도 없다.
+  void _activatePushInBackground() {
+    final activation = pushNotifications?.activate(api);
+    if (activation != null) unawaited(activation);
   }
 
   Future<bool> login(
@@ -119,9 +263,11 @@ class AppController extends ChangeNotifier {
         persistSession: persistSession,
       );
       user = session.user;
-      authenticated = true;
-      await refreshAll();
+      await Future.wait([_loadPlacePreferences(), refreshAll()]);
       await resolvePendingMembershipRequest();
+      requiresInitialDeviceRegistration = false;
+      authenticated = true;
+      _activatePushInBackground();
     },
     failureMessage: (error) =>
         error.code == 'INVALID_CREDENTIALS' || error.statusCode == 401
@@ -142,15 +288,18 @@ class AppController extends ChangeNotifier {
       persistSession: persistSession,
     );
     user = session.user;
-    authenticated = true;
-    await refreshAll();
+    await Future.wait([_loadPlacePreferences(), refreshAll()]);
     await resolvePendingMembershipRequest();
+    requiresInitialDeviceRegistration = selectedDevice == null;
+    authenticated = true;
+    _activatePushInBackground();
   });
 
   Future<void> logout() async {
     busy = true;
     notifyListeners();
     try {
+      await pushNotifications?.deactivate(api);
       await api.logout();
     } finally {
       // 서버가 응답하지 않더라도 로컬 세션은 ApiClient에서 삭제된다.
@@ -162,6 +311,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> withdraw() async {
+    await pushNotifications?.deactivate(api);
     await api.withdraw();
     _reset();
     notifyListeners();
@@ -183,9 +333,19 @@ class AppController extends ChangeNotifier {
     await api.changePassword(currentPassword, newPassword);
   });
 
+  /// 받은 초대와 Vault 목록을 **나란히** 불러온다.
+  ///
+  /// **왜**: 두 요청은 서로의 결과를 쓰지 않는다. 차례로 부르면 왕복이 한 번 더
+  /// 늘고, 그 시간은 그대로 스플래시·로그인 대기 시간이 된다. Vault 쪽은 이어서
+  /// 기기·영상·멤버를 또 불러오므로 초대를 먼저 기다릴 이유가 없다.
   Future<void> refreshAll() async {
-    receivedInvitations = await api.listMyInvitations();
-    await refreshVaults();
+    final results = await Future.wait<Object?>([
+      api.listMyInvitations(),
+      refreshVaults(),
+    ]);
+    receivedInvitations = results[0] as List<Invitation>;
+    // Vault 쪽이 중간에 알린 뒤에 초대가 들어오므로 한 번 더 알린다.
+    notifyListeners();
   }
 
   Future<void> refreshVaults() async {
@@ -244,6 +404,45 @@ class AppController extends ChangeNotifier {
   @Deprecated('Use refreshVaults')
   Future<void> refreshDevices() async {
     await refreshVaults();
+  }
+
+  /// Device presence is a Redis key with a heartbeat TTL, so the ONLINE flag
+  /// received at startup goes stale within minutes and the app would keep
+  /// offering live view for a camera that is gone. Re-read the vault list only,
+  /// leaving videos, members and invitations untouched.
+  Future<void> refreshPresence() async {
+    if (!authenticated) return;
+    final List<MemoryVault> latest;
+    try {
+      latest = await api.listVaults();
+    } catch (_) {
+      // Presence is best effort; keep showing the last known state.
+      return;
+    }
+    if (latest.isEmpty) return;
+    vaults = latest;
+    final vaultId = selectedVault?.id;
+    if (vaultId == null) return;
+    MemoryVault? current;
+    for (final vault in latest) {
+      if (vault.id == vaultId) {
+        current = vault;
+        break;
+      }
+    }
+    if (current == null) return;
+    selectedVault = current;
+    devices = current.devices
+        .map((binding) => binding.device)
+        .toList(growable: false);
+    final deviceId = selectedDevice?.id;
+    selectedDevice = devices.isEmpty
+        ? null
+        : devices.firstWhere(
+            (item) => item.id == deviceId,
+            orElse: () => devices.first,
+          );
+    notifyListeners();
   }
 
   Future<void> refreshVaultData() async {
@@ -404,29 +603,56 @@ class AppController extends ChangeNotifier {
     String code, {
     String? vaultId,
     String? newVaultName,
+    String? placeName,
   }) async => _guard(() async {
     if (!canRegisterDevice) {
       throw const ApiFailure('OWNER만 새 기기를 등록할 수 있어요.', statusCode: 403);
     }
-    await api.claimDevice(
+    final claimedDevice = await api.claimDevice(
       code,
       vaultId: vaultId,
       vaultName: vaultId == null ? newVaultName : null,
     );
     await refreshVaults();
-    openFamilyAfterDeviceClaim = true;
+    MemoryVault? claimedVault;
+    for (final vault in vaults) {
+      if (vault.devices.any(
+        (binding) => binding.device.id == claimedDevice.id,
+      )) {
+        claimedVault = vault;
+        break;
+      }
+    }
+    if (claimedVault == null) {
+      throw const ApiFailure('기기 연결 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    }
+    selectedVault = claimedVault;
+    devices = claimedVault.devices
+        .map((binding) => binding.device)
+        .toList(growable: false);
+    selectedDevice = devices.firstWhere(
+      (device) => device.id == claimedDevice.id,
+    );
+    assignDeviceToPlace(claimedDevice.id, placeName ?? _selectedPlaceName);
+    await waitForPlacePreferencesSaved();
+    await refreshDeviceData();
   });
 
-  bool consumeOpenFamilyAfterDeviceClaim() {
-    if (!openFamilyAfterDeviceClaim) return false;
-    openFamilyAfterDeviceClaim = false;
+  void completeDeviceRegistration() {
+    requiresInitialDeviceRegistration = false;
+    openHomeAfterDeviceClaim = true;
+    notifyListeners();
+  }
+
+  bool consumeOpenHomeAfterDeviceClaim() {
+    if (!openHomeAfterDeviceClaim) return false;
+    openHomeAfterDeviceClaim = false;
     return true;
   }
 
   Future<bool> updateSelectedDevice({String? name, int? retentionDays}) async =>
       _guard(() async {
-        final device = selectedDevice;
-        if (device == null) return;
+        final device = requireSelectedDevice('기기 설정을 바꿀 수 없어요.');
         final updated = await api.updateDevice(
           device.id,
           name: name,
@@ -440,8 +666,7 @@ class AppController extends ChangeNotifier {
       });
 
   Future<bool> releaseSelectedDevice() async => _guard(() async {
-    final device = selectedDevice;
-    if (device == null) return;
+    final device = requireSelectedDevice('기기 연결을 해제할 수 없어요.');
     await api.releaseDevice(device.id);
     await refreshVaults();
   });
@@ -478,8 +703,7 @@ class AppController extends ChangeNotifier {
 
   Future<bool> createInvitation(String email, String role) async =>
       _guard(() async {
-        final vault = selectedVault;
-        if (vault == null || !vault.isOwner) return;
+        final vault = requireOwnedVault('가족을 초대할 수 없어요.');
         final requestToken =
             pendingMembershipRequestPreview?.email.toLowerCase() ==
                 email.trim().toLowerCase()
@@ -584,8 +808,16 @@ class AppController extends ChangeNotifier {
         receivedInvitations = receivedInvitations
             .where((item) => item.id != invitation.id)
             .toList(growable: false);
-        await refreshVaults();
-        receivedInvitations = await api.listMyInvitations();
+        await refreshAll();
+        final acceptedVaults = vaults.where(
+          (vault) => vault.devices.any(
+            (binding) => binding.device.id == invitation.deviceId,
+          ),
+        );
+        if (acceptedVaults.isNotEmpty &&
+            selectedVault?.id != acceptedVaults.first.id) {
+          await selectVault(acceptedVaults.first);
+        }
         notifyListeners();
       });
 
@@ -600,8 +832,7 @@ class AppController extends ChangeNotifier {
 
   Future<bool> revokeMemberAccess(DeviceMember member) async => _guard(
     () async {
-      final vault = selectedVault;
-      if (vault == null || !vault.isOwner) return;
+      final vault = requireOwnedVault('구성원을 내보낼 수 없어요.');
       await api.revokeVaultMember(vault.id, member.id);
       await (selectedDevice == null ? refreshVaultData() : refreshDeviceData());
     },
@@ -613,11 +844,31 @@ class AppController extends ChangeNotifier {
   }
 
   Future<bool> transferOwnership(DeviceMember member) async => _guard(() async {
-    final vault = selectedVault;
-    if (vault == null || !vault.isOwner) return;
+    final vault = requireOwnedVault('소유권을 이전할 수 없어요.');
     await api.transferVaultOwnership(vault.id, member.id);
     await refreshAll();
   });
+
+  /// Throws instead of returning, so [_guard] reports the failure rather than
+  /// leaving the caller to render a success message for work never done.
+  MemoryVault requireOwnedVault(String whatFailed) {
+    final vault = selectedVault;
+    if (vault == null) {
+      throw ApiFailure('금고를 먼저 선택해 주세요. $whatFailed');
+    }
+    if (!vault.isOwner) {
+      throw ApiFailure('OWNER 권한이 필요해요. $whatFailed', statusCode: 403);
+    }
+    return vault;
+  }
+
+  DeviceSummary requireSelectedDevice(String whatFailed) {
+    final device = selectedDevice;
+    if (device == null) {
+      throw ApiFailure('연결된 기기가 없어요. $whatFailed');
+    }
+    return device;
+  }
 
   void clearError() {
     errorMessage = null;
@@ -649,6 +900,11 @@ class AppController extends ChangeNotifier {
 
   void _reset() {
     authenticated = false;
+    requiresInitialDeviceRegistration = false;
+    _placeNames
+      ..clear()
+      ..add('집');
+    _selectedPlaceName = '집';
     user = null;
     vaults = const [];
     selectedVault = null;
@@ -660,7 +916,8 @@ class AppController extends ChangeNotifier {
     receivedInvitations = const [];
     pendingMembershipRequestToken = null;
     pendingMembershipRequestPreview = null;
-    openFamilyAfterDeviceClaim = false;
+    _devicePlaces.clear();
+    openHomeAfterDeviceClaim = false;
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;

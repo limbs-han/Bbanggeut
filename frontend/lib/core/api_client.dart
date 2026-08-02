@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'fast_downloader.dart';
 import 'models.dart';
 
 const defaultApiBaseUrl = String.fromEnvironment(
@@ -102,9 +103,18 @@ class ApiClient {
       path.contains('/api/auth/password/forgot') ||
       path.contains('/api/auth/password/reset');
 
+  /// 저장된 세션을 읽어 메모리에 올린다.
+  ///
+  /// 두 열쇠를 나란히 읽는다. 안드로이드 보안 저장소는 읽을 때마다 키스토어를
+  /// 거치므로 차례로 읽으면 그 비용이 두 배가 되는데, 이건 앱이 켜질 때 가장
+  /// 먼저 하는 일이라 그 시간이 통째로 스플래시에 더해진다.
   Future<bool> get hasSession async {
-    _memoryAccessToken = await _storage.read(key: _accessKey);
-    _memoryRefreshToken = await _storage.read(key: _refreshKey);
+    final tokens = await Future.wait([
+      _storage.read(key: _accessKey),
+      _storage.read(key: _refreshKey),
+    ]);
+    _memoryAccessToken = tokens[0];
+    _memoryRefreshToken = tokens[1];
     _persistSession = true;
     return _memoryAccessToken != null;
   }
@@ -178,6 +188,46 @@ class ApiClient {
     }
   }
 
+  Future<List<AppNotification>> listNotifications({int limit = 100}) async =>
+      (await _getList(
+        '/api/notifications',
+        query: {'limit': limit.clamp(1, 100)},
+      )).map(AppNotification.fromJson).toList(growable: false);
+
+  Future<int> countUnreadNotifications() async =>
+      ((await _get('/api/notifications/unread-count'))['count'] as num?)
+          ?.toInt() ??
+      0;
+
+  Future<void> markNotificationRead(String notificationId) async =>
+      _patch('/api/notifications/$notificationId/read');
+
+  Future<void> markAllNotificationsRead() async =>
+      _patch('/api/notifications/read-all');
+
+  Future<void> registerPushToken({
+    required String installationId,
+    required String token,
+    required String platform,
+  }) async {
+    try {
+      await _dio.put<void>(
+        '/api/notifications/push-tokens',
+        data: {
+          'installationId': installationId,
+          'token': token,
+          'platform': platform,
+        },
+      );
+    } on DioException catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  Future<void> unregisterPushToken(String installationId) async => _delete(
+    '/api/notifications/push-tokens/${Uri.encodeComponent(installationId)}',
+  );
+
   Future<UserProfile> updateProfile(String displayName) async {
     final updated = UserProfile.fromJson(
       await _patchMap(
@@ -224,17 +274,16 @@ class ApiClient {
     String registrationCode, {
     String? vaultId,
     String? vaultName,
-  }) async =>
-      DeviceSummary.fromJson(
-        await _post(
-          '/api/devices/claim',
-          data: {
-            'registrationCode': registrationCode.trim(),
-            'vaultId': ?vaultId,
-            'vaultName': ?vaultName,
-          },
-        ),
-      );
+  }) async => DeviceSummary.fromJson(
+    await _post(
+      '/api/devices/claim',
+      data: {
+        'registrationCode': registrationCode.trim(),
+        'vaultId': ?vaultId,
+        'vaultName': ?vaultName,
+      },
+    ),
+  );
   Future<DeviceStatus> getDeviceStatus(String id) async =>
       DeviceStatus.fromJson(await _get('/api/devices/$id/status'));
   Future<VideoStats> getVideoStats(String id) async =>
@@ -265,6 +314,40 @@ class ApiClient {
       SignedUrl.fromJson(await _post('/api/videos/$id/play-url'));
   Future<SignedUrl> createDownloadUrl(String id) async =>
       SignedUrl.fromJson(await _post('/api/videos/$id/download-url'));
+  Future<void> downloadVideoToFile(
+    String id,
+    String destinationPath, {
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final signed = await createDownloadUrl(id);
+      try {
+        // MinIO/S3 presigned URLs already contain their own authentication.
+        // The API client's Bearer interceptor must not run for this request,
+        // so the download goes through its own long-lived client.
+        await FastDownloader.download(
+          signed.url,
+          destinationPath,
+          onReceiveProgress: onReceiveProgress,
+        );
+        return;
+      } on DioException catch (error) {
+        final statusCode = error.response?.statusCode;
+        final signedUrlMayHaveExpired = statusCode == 401 || statusCode == 403;
+        if (attempt == 0 && signedUrlMayHaveExpired) {
+          continue;
+        }
+        throw ApiFailure(
+          statusCode == null
+              ? '영상 다운로드 서버에 연결하지 못했어요.'
+              : '영상을 다운로드하지 못했어요. (HTTP $statusCode)',
+          code: 'VIDEO_DOWNLOAD_FAILED',
+          statusCode: statusCode,
+        );
+      }
+    }
+  }
+
   Future<void> updateVideo(
     String id, {
     String? title,
@@ -387,6 +470,12 @@ class ApiClient {
       _post('/api/stream-sessions/$id/heartbeat');
   Future<void> closeStream(String id) async =>
       _delete('/api/stream-sessions/$id');
+  Future<TalkbackSession> openTalkback(String id) async =>
+      TalkbackSession.fromJson(
+        await _post('/api/stream-sessions/$id/talkback'),
+      );
+  Future<void> closeTalkback(String id) async =>
+      _delete('/api/stream-sessions/$id/talkback');
   Future<SubscriptionInfo> getSubscription(String deviceId) async =>
       SubscriptionInfo.fromJson(
         await _get('/api/devices/$deviceId/subscription'),
@@ -415,6 +504,46 @@ class ApiClient {
     String? cursor;
     do {
       final page = await listAccessLogPage(deviceId, cursor: cursor, size: 100);
+      result.addAll(page.items);
+      cursor = page.hasNext ? page.nextCursor : null;
+    } while (cursor != null);
+    return result;
+  }
+
+  // Subscription and audit logs belong to the vault, so these keep working
+  // while the vault has no connected device.
+  Future<SubscriptionInfo> getVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _get('/api/vaults/$vaultId/subscription'),
+      );
+  Future<SubscriptionInfo> activateVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _put('/api/vaults/$vaultId/subscription'),
+      );
+  Future<SubscriptionInfo> cancelVaultSubscription(String vaultId) async =>
+      SubscriptionInfo.fromJson(
+        await _deleteMap('/api/vaults/$vaultId/subscription'),
+      );
+  Future<AccessLogPage> listVaultAccessLogPage(
+    String vaultId, {
+    String? cursor,
+    int size = 30,
+  }) async => AccessLogPage.fromJson(
+    await _get(
+      '/api/vaults/$vaultId/access-logs',
+      query: {'size': size.clamp(1, 100), 'cursor': ?cursor},
+    ),
+  );
+
+  Future<List<AccessLogEntry>> listVaultAccessLogs(String vaultId) async {
+    final result = <AccessLogEntry>[];
+    String? cursor;
+    do {
+      final page = await listVaultAccessLogPage(
+        vaultId,
+        cursor: cursor,
+        size: 100,
+      );
       result.addAll(page.items);
       cursor = page.hasNext ? page.nextCursor : null;
     } while (cursor != null);
@@ -575,9 +704,16 @@ class ApiClient {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _getList(String path) async {
+  Future<List<Map<String, dynamic>>> _getList(
+    String path, {
+    Map<String, dynamic>? query,
+  }) async {
     try {
-      return ((await _dio.get<List<dynamic>>(path)).data ?? const [])
+      return ((await _dio.get<List<dynamic>>(
+                path,
+                queryParameters: query,
+              )).data ??
+              const [])
           .cast<Map<String, dynamic>>();
     } on DioException catch (e) {
       throw _failure(e);

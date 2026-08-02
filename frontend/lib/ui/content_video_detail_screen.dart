@@ -1,10 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import '../core/video_gallery_saver.dart';
+import '../core/video_source_cache.dart';
 import '../features/comic/comic_screen.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
@@ -29,6 +32,9 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   late VideoMemory _video;
   VideoPlayerController? _player;
   bool _loading = true;
+  bool _saving = false;
+  double? _saveProgress;
+  bool _deleting = false;
   String? _error;
 
   @override
@@ -47,8 +53,24 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
       return;
     }
     try {
-      final playUrl = await widget.controller.api.createPlayUrl(_video.id);
-      final player = VideoPlayerController.networkUrl(Uri.parse(playUrl.url));
+      // 이미 받아 둔 원본이 있으면 그걸로 튼다. 재생 URL 왕복도, 스트리밍
+      // 트래픽도 없어진다 — 같은 파일을 저장·편집도 그대로 쓴다.
+      final cached = await VideoSourceCache.cachedPath(_video.id);
+      if (cached == null) {
+        // 이 화면에서 다음에 누를 버튼은 대개 '갤러리에 저장'이나 '영상
+        // 편집하기'고, 둘 다 같은 원본을 필요로 한다. 보는 동안 받아 둔다.
+        VideoSourceCache.prefetch(
+          api: widget.controller.api,
+          videoId: _video.id,
+        );
+      }
+      final player = cached != null
+          ? VideoPlayerController.file(File(cached))
+          : VideoPlayerController.networkUrl(
+              Uri.parse(
+                (await widget.controller.api.createPlayUrl(_video.id)).url,
+              ),
+            );
       await player.initialize();
       if (!mounted) {
         await player.dispose();
@@ -134,17 +156,31 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _saveVideo() async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _saveProgress = null;
+    });
     try {
-      final download = await widget.controller.api.createDownloadUrl(_video.id);
-      final launched = await launchUrl(
-        Uri.parse(download.url),
-        mode: LaunchMode.externalApplication,
+      await VideoGallerySaver.save(
+        api: widget.controller.api,
+        videoId: _video.id,
+        title: _video.title,
+        onProgress: (received, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _saveProgress = received / total);
+        },
       );
-      if (mounted && !launched) {
-        showAppSnack(context, '영상을 저장할 앱을 열지 못했어요.', error: true);
-      }
+      if (mounted) showAppSnack(context, '휴대폰 갤러리에 영상을 저장했어요.');
     } catch (failure) {
       if (mounted) showAppSnack(context, '$failure', error: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _saveProgress = null;
+        });
+      }
     }
   }
 
@@ -155,6 +191,26 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
         builder: (_) =>
             LocalEditScreen(controller: widget.controller, video: _video),
       ),
+    );
+  }
+
+  Future<void> _deleteVideo() async {
+    if (_deleting || widget.controller.busy) return;
+    final confirmed = await confirmVideoDeletion(context);
+    if (!mounted || !confirmed) return;
+    setState(() => _deleting = true);
+    final ok = await widget.controller.removeVideo(_video);
+    if (!mounted) return;
+    if (ok) {
+      showAppSnack(context, '영상을 삭제했어요.');
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _deleting = false);
+    showAppSnack(
+      context,
+      widget.controller.errorMessage ?? '영상을 삭제하지 못했어요.',
+      error: true,
     );
   }
 
@@ -201,6 +257,19 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                           ? AppColors.coral
                           : AppColors.muted,
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '영상 삭제',
+                    onPressed: _deleting ? null : _deleteVideo,
+                    icon: _deleting
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.delete_outline_rounded,
+                            color: AppColors.danger,
+                          ),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -263,14 +332,28 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                   ),
                   const SizedBox(height: 28),
                   OutlinedButton.icon(
-                    onPressed: _saveVideo,
-                    icon: const Icon(Icons.download_rounded),
-                    label: const Text('저장'),
+                    onPressed: _saving ? null : _saveVideo,
+                    icon: _saving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_rounded),
+                    label: Text(
+                      _saving
+                          ? _saveProgress == null
+                                ? '다운로드 중…'
+                                : '저장 중 ${(_saveProgress! * 100).round()}%'
+                          : '갤러리에 저장',
+                    ),
                   ),
+                  if (_saving) ...[
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(value: _saveProgress),
+                  ],
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _openEditor,
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
                     icon: const Icon(Icons.content_cut_rounded),
                     label: const Text('영상 편집하기'),
                   ),

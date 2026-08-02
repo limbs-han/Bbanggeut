@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import time
 from typing import Any, Iterable
@@ -27,6 +28,7 @@ SEGMENT_NAME_FORMAT = "homecam-%Y%m%dT%H%M%S.ts"
 RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429})
 TERMINAL_HTTP_STATUSES = frozenset({400, 401, 403, 404, 409, 410, 422})
 MAX_ERROR_BODY_CHARACTERS = 2_048
+KEYFRAME_PROBE_TIMEOUT_SECONDS = 30
 EVENT_TITLES = {
     "LAUGHTER": "웃음이 담긴 순간",
     "CLAP": "박수가 시작된 순간",
@@ -168,12 +170,14 @@ def clip_interval(group: list[Trigger]) -> tuple[datetime, datetime]:
     return start, end
 
 
-def parse_segment(path: Path) -> Segment:
-    started_at = datetime.strptime(path.name, SEGMENT_NAME_FORMAT).replace(
-        tzinfo=timezone.utc
-    )
-    return Segment(path=path, started_at=started_at)
+# 수정안
+from zoneinfo import ZoneInfo
+RECORDING_LOCAL_TZ = ZoneInfo("Asia/Seoul")  # local-recording.sh의 TZ와 일치시켜야 함
 
+def parse_segment(path: Path) -> Segment:
+    naive = datetime.strptime(path.name, SEGMENT_NAME_FORMAT)
+    started_at = naive.replace(tzinfo=RECORDING_LOCAL_TZ).astimezone(timezone.utc)
+    return Segment(path=path, started_at=started_at)
 
 def select_completed_segments(
     paths: Iterable[Path],
@@ -226,6 +230,75 @@ def concat_line(path: Path) -> str:
     return f"file '{escaped}'\n"
 
 
+def ffprobe_path(ffmpeg: str) -> str:
+    sibling = Path(ffmpeg).with_name("ffprobe")
+    if sibling.exists():
+        return str(sibling)
+    return shutil.which("ffprobe") or "ffprobe"
+
+
+def keyframe_offset(ffmpeg: str, concat_path: Path, offset_seconds: float) -> float:
+    """Snap a cut point back to the video keyframe at or before it.
+
+    `-ss` after `-i` is an output seek, and with `-c copy` ffmpeg cannot start
+    the video stream mid-GOP: it drops packets until the next keyframe while
+    audio starts at the requested instant. The clip then opens with the video
+    trailing the audio by however far that keyframe was, which is anywhere in
+    0..GOP seconds and therefore differs per clip.
+
+    Cutting exactly on a keyframe removes that gap, so probe for one instead of
+    trusting the raw offset. Snapping backwards (never forwards) keeps the
+    event inside the clip. Returns the original offset when probing fails, which
+    only restores the previous behaviour rather than dropping the clip.
+    """
+    if offset_seconds <= 0:
+        return 0.0
+    command = [
+        ffprobe_path(ffmpeg),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(concat_path),
+        "-select_streams",
+        "v:0",
+        # Packet flags are enough to find keyframes and avoid decoding frames.
+        "-show_entries",
+        "packet=pts_time,flags",
+        "-of",
+        "csv=p=0",
+        # Reading past the cut point is wasted work on a 60s pre-roll.
+        "-read_intervals",
+        f"%+{offset_seconds + 1:.3f}",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=KEYFRAME_PROBE_TIMEOUT_SECONDS,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return offset_seconds
+    best = None
+    for line in completed.stdout.splitlines():
+        fields = line.split(",")
+        if len(fields) < 2 or "K" not in fields[1]:
+            continue
+        try:
+            pts = float(fields[0])
+        except ValueError:
+            continue
+        if pts <= offset_seconds and (best is None or pts > best):
+            best = pts
+    return offset_seconds if best is None else best
+
+
 def mux_segments(
     ffmpeg: str,
     segments: list[Segment],
@@ -239,9 +312,10 @@ def mux_segments(
         "".join(concat_line(segment.path) for segment in segments),
         encoding="utf-8",
     )
-    offset_seconds = max(
-        0.0,
-        (clip_start - segments[0].started_at).total_seconds(),
+    offset_seconds = keyframe_offset(
+        ffmpeg,
+        concat_path,
+        max(0.0, (clip_start - segments[0].started_at).total_seconds()),
     )
     duration_seconds = max(0.001, (clip_end - clip_start).total_seconds())
     command = [

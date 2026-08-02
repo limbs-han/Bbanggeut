@@ -1,8 +1,13 @@
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_theme.dart';
+import '../core/api_client.dart';
 import '../core/models.dart';
+import '../core/video_thumbnail_cache.dart';
 
 class AppBackdrop extends StatelessWidget {
   const AppBackdrop({super.key, required this.child});
@@ -317,27 +322,62 @@ String memoryDate(DateTime? date) {
 class MemoryThumbnail extends StatelessWidget {
   const MemoryThumbnail({
     super.key,
+    required this.api,
     required this.video,
     this.width = 92,
     this.height = 68,
   });
+  final ApiClient api;
   final VideoMemory video;
   final double width;
   final double height;
+
+  /// 몇 픽셀로 풀어 둘지.
+  ///
+  /// **왜 정해 주는가**: [VideoThumbnailCache]가 만드는 그림은 폭 720px인데
+  /// 여기서 그리는 자리는 92×68dp다. 정해 주지 않으면 720px 그대로 풀려 한 장에
+  /// 1MB 넘게 이미지 캐시를 차지한다 — 추억 목록처럼 수십 장이 스크롤되는 화면에서는
+  /// 그게 수십 MB가 되고, 푸는 시간도 그만큼 들어 스크롤이 걸린다.
+  ///
+  /// [BoxFit.cover]는 원본 비율에 따라 가로·세로 중 한쪽이 기준이 된다. 원본이
+  /// 세로 영상이면 가로가 기준이고, 가로 영상(16:9)이면 세로가 기준이라 그때 필요한
+  /// 가로 픽셀이 더 크다. 둘 중 큰 쪽으로 잡아 어느 비율이 와도 흐려지지 않게 한다.
+  int _decodeWidth(BuildContext context) {
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    return (math.max(width, height * 16 / 9) * ratio).round();
+  }
+
+  Widget _fallback(BuildContext context) => video.thumbnailUrl != null
+      ? Image.network(
+          video.thumbnailUrl!,
+          fit: BoxFit.cover,
+          cacheWidth: _decodeWidth(context),
+          errorBuilder: (_, _, _) =>
+              const FamilyReferenceImage(borderRadius: 0),
+        )
+      : const FamilyReferenceImage(borderRadius: 0);
+
   @override
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.circular(13),
     child: SizedBox(
       width: width,
       height: height,
-      child: video.thumbnailUrl != null
-          ? Image.network(
-              video.thumbnailUrl!,
+      child: FutureBuilder<String?>(
+        future: VideoThumbnailCache.frameAtOneMinute(api, video),
+        builder: (context, snapshot) {
+          final path = snapshot.data;
+          if (path != null) {
+            return Image.file(
+              File(path),
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  const FamilyReferenceImage(borderRadius: 0),
-            )
-          : const FamilyReferenceImage(borderRadius: 0),
+              cacheWidth: _decodeWidth(context),
+              errorBuilder: (_, _, _) => _fallback(context),
+            );
+          }
+          return _fallback(context);
+        },
+      ),
     ),
   );
 }
@@ -345,12 +385,14 @@ class MemoryThumbnail extends StatelessWidget {
 class MemoryTile extends StatelessWidget {
   const MemoryTile({
     super.key,
+    required this.api,
     required this.video,
     required this.onTap,
     this.onFavorite,
     this.onDelete,
     this.compact = false,
   });
+  final ApiClient api;
   final VideoMemory video;
   final VoidCallback onTap;
   final VoidCallback? onFavorite;
@@ -366,6 +408,7 @@ class MemoryTile extends StatelessWidget {
       child: Row(
         children: [
           MemoryThumbnail(
+            api: api,
             video: video,
             width: compact ? 72 : 88,
             height: compact ? 52 : 64,
@@ -424,3 +467,77 @@ void showAppSnack(BuildContext context, String message, {bool error = false}) {
     ),
   );
 }
+
+enum MemoryConnectionChoice { keep, restart }
+
+Future<MemoryConnectionChoice?> showMemoryConnectionChoice(
+  BuildContext context,
+) async {
+  final choice = await showDialog<MemoryConnectionChoice>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('이전 기기의 추억을 유지하시겠습니까?'),
+      content: const Text('새로 시작할 경우 이전에 저장된 추억이 삭제됩니다.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('취소'),
+        ),
+        OutlinedButton(
+          onPressed: () =>
+              Navigator.pop(dialogContext, MemoryConnectionChoice.keep),
+          child: const Text('유지하기'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () =>
+              Navigator.pop(dialogContext, MemoryConnectionChoice.restart),
+          child: const Text('새로 시작하기'),
+        ),
+      ],
+    ),
+  );
+  if (!context.mounted || choice != MemoryConnectionChoice.restart) {
+    return choice;
+  }
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('정말 새로 시작할까요?'),
+      content: const Text('이전 추억 삭제는 되돌릴 수 없습니다. 기기 연결 후 서버에서 삭제 처리가 필요합니다.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('취소'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('새로 시작'),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true ? choice : null;
+}
+
+Future<bool> confirmVideoDeletion(BuildContext context) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('영상을 삭제할까요?'),
+        content: const Text('삭제한 영상은 다시 복구할 수 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    ) ??
+    false;

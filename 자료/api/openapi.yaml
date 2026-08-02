@@ -30,6 +30,8 @@ tags:
     description: 기기별 영상 조회·재생·원본 다운로드·삭제. 일반 편집은 앱 로컬 처리
   - name: IoT
     description: 기기 자격 증명을 사용하는 영상 직접 업로드 계약
+  - name: Vaults
+    description: 영상·구독·구성원의 소유 단위인 추억 금고. 연결된 기기가 없어도 유지된다
   - name: Audit
     description: OWNER가 확인하는 기기별 접근 감사 기록
 
@@ -209,6 +211,7 @@ paths:
     get:
       tags: [Notifications]
       operationId: listNotifications
+      summary: 인앱 알림 목록 조회
       parameters:
         - in: query
           name: limit
@@ -231,6 +234,7 @@ paths:
     get:
       tags: [Notifications]
       operationId: countUnreadNotifications
+      summary: 읽지 않은 알림 수 조회
       responses:
         '200':
           description: Unread notification count
@@ -243,6 +247,7 @@ paths:
     patch:
       tags: [Notifications]
       operationId: markNotificationRead
+      summary: 알림 하나를 읽음 처리
       parameters:
         - in: path
           name: notificationId
@@ -260,6 +265,7 @@ paths:
     patch:
       tags: [Notifications]
       operationId: markAllNotificationsRead
+      summary: 모든 알림을 읽음 처리
       responses:
         '204':
           description: All notifications marked as read
@@ -669,6 +675,51 @@ paths:
       responses:
         '204':
           description: heartbeat 반영 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/stream-sessions/{sessionId}/talkback:
+    parameters:
+      - $ref: '#/components/parameters/StreamSessionId'
+    post:
+      tags: [Streaming]
+      operationId: openTalkback
+      summary: 양방향 오디오 발화 시작
+      description: |
+        앱 마이크 오디오를 기기 스피커로 보내기 위한 WHIP 송출 URL을 발급한다.
+        세션이 `READY`이고 시청자 TTL이 남아 있어야 한다. 기기당 동시에 한 명만 말할 수 있으며,
+        다른 구성원이 유효한 발화 권한을 쥐고 있으면 409 `TALKBACK_BUSY`로 거절한다.
+        발화 권한은 시청자 heartbeat로 함께 연장되고, 갱신이 끊기면 30초 뒤 서버가 회수하며
+        기기에 MQTT `STOP_TALKBACK`을 보낸다.
+
+        발급 토큰의 scope는 `TALK`이며 WHEP 재생 토큰으로는 이 경로를 통과할 수 없다.
+        기기에는 에코 제거가 없다. 앱은 발화하는 동안 자신의 WHEP 재생을 뮤트해
+        기기 스피커에서 마이크로 돌아오는 순환을 끊어야 한다.
+      responses:
+        '200':
+          description: 발화 권한 획득. `whipUrl`로 오디오 전용 WebRTC 송출을 시작한다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TalkbackSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Streaming]
+      operationId: closeTalkback
+      summary: 양방향 오디오 발화 종료
+      description: |
+        발화 권한을 즉시 반납하고 기기에 MQTT `STOP_TALKBACK`을 보낸다. 권한을 쥐고 있지 않아도
+        204를 반환한다. 라이브 세션을 `DELETE`하면 발화 권한도 함께 반납된다.
+      responses:
+        '204':
+          description: 발화 종료 완료
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1256,6 +1307,331 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/vaults:
+    get:
+      tags: [Vaults]
+      operationId: listVaults
+      summary: 참여 중인 추억 금고 목록
+      description: |
+        활성 VaultMembership이 있는 금고를 모두 반환한다. 연결된 기기가 하나도 없는
+        금고도 `devices: []`로 포함되며, 앱은 이 경우에도 과거 영상을 조회한다.
+      responses:
+        '200':
+          description: 금고 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Vault'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Vaults]
+      operationId: createVault
+      summary: 기기 없이 추억 금고 생성
+      description: 요청 계정이 새 금고의 유일한 OWNER가 된다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVaultRequest'
+      responses:
+        '201':
+          description: 생성된 금고
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vault'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/vaults/{vaultId}:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVault
+      summary: 추억 금고 단건 조회
+      responses:
+        '200':
+          description: 금고 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vault'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/vaults/{vaultId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: listVaultInvitations
+      summary: 금고의 대기 중인 초대 목록
+      description: 금고 OWNER만 조회한다.
+      responses:
+        '200':
+          description: PENDING 초대 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    post:
+      tags: [Vaults]
+      operationId: createVaultInvitation
+      summary: 금고에 계정 초대
+      description: |
+        금고 OWNER만 수행한다. 연결된 기기가 없는 금고에도 초대할 수 있다.
+        초대 대상은 이미 가입한 활성 계정이어야 하며, 초대는 그 계정의 앱 내
+        받은 초대함으로만 전달된다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationRequest'
+      responses:
+        '201':
+          description: 생성된 초대
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          description: 금고를 찾을 수 없거나 초대 대상 계정이 없음(`INVITEE_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 이미 구성원(`ALREADY_VAULT_MEMBER`)이거나 대기 중인 초대가 있음(`INVITATION_PENDING`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/vaults/{vaultId}/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      tags: [Vaults]
+      operationId: revokeVaultInvitation
+      summary: 대기 중인 금고 초대 취소
+      responses:
+        '204':
+          description: 초대 취소 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 대기 중인 초대가 아님(`INVITATION_NOT_PENDING`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/vaults/{vaultId}/members:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: listVaultMembers
+      summary: 금고 구성원 목록
+      description: 금고의 활성 구성원이면 누구나 조회한다. OWNER가 먼저 온다.
+      responses:
+        '200':
+          description: 활성 구성원 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/vaults/{vaultId}/members/{membershipId}:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+      - $ref: '#/components/parameters/MembershipId'
+    delete:
+      tags: [Vaults]
+      operationId: revokeVaultMember
+      summary: 금고 구성원 내보내기
+      description: |
+        금고 OWNER만 활성 MEMBER를 내보낼 수 있다. 내보내진 구성원은 그 금고의
+        과거 영상 접근 권한도 즉시 잃으며, 영상 자체는 삭제되지 않는다.
+        OWNER는 이 API로 내보낼 수 없고 먼저 소유권을 양도해야 한다.
+      responses:
+        '204':
+          description: 구성원 내보내기 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: OWNER 대상(`OWNER_CANNOT_BE_REVOKED`) 또는 활성 MEMBER 아님(`MEMBERSHIP_NOT_ACTIVE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/vaults/{vaultId}/transfer-ownership:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    post:
+      tags: [Vaults]
+      operationId: transferVaultOwnership
+      summary: 금고 소유권 이전
+      description: |
+        현재 OWNER가 같은 금고의 활성 MEMBER에게 소유권을 넘긴다. 한 트랜잭션에서
+        기존 OWNER는 MEMBER로 강등되고 대상이 OWNER로 승격되며, 금고에 연결된 모든
+        활성 기기의 호환 멤버십에도 같은 변경이 동기화된다. 기기 연결이 없어도
+        수행할 수 있다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequest'
+      responses:
+        '204':
+          description: 소유권 이전 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 이미 본인이 OWNER(`ALREADY_OWNER`) 또는 대상이 같은 금고의 활성 MEMBER가 아님(`TRANSFER_TARGET_NOT_ACTIVE_MEMBER`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/vaults/{vaultId}/subscription:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultSubscription
+      summary: 금고 구독 상태 조회
+      description: 구독은 금고에 귀속되므로 연결된 기기가 없어도 조회할 수 있다.
+      responses:
+        '200':
+          description: 구독 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    put:
+      tags: [Vaults]
+      operationId: activateVaultSubscription
+      summary: 금고 구독 시작
+      description: |
+        금고의 활성 OWNER만 수행한다. 기기 기준 API와 같은 금고 행을 갱신하며
+        금고 영상의 보관 만료를 프리미엄 보관 기간으로 연장한다.
+      responses:
+        '200':
+          description: 구독 활성화
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    delete:
+      tags: [Vaults]
+      operationId: cancelVaultSubscription
+      summary: 금고 구독 해지
+      description: 해지해도 영상을 즉시 삭제하지 않고 유예 기간을 보장한다.
+      responses:
+        '200':
+          description: 구독 해지(유예 시작)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 활성 구독이 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/vaults/{vaultId}/access-logs:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: listVaultAccessLogs
+      summary: 금고 접근 감사 로그
+      description: |
+        금고의 활성 OWNER만 조회할 수 있다. V30 이전에 기록되어 vaultId가 비어 있는
+        행은 그 금고에 Binding된 적이 있는 기기의 deviceId로도 함께 조회한다.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 감사 로그
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessLogPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
 components:
   securitySchemes:
     UserBearerAuth:
@@ -1272,6 +1648,13 @@ components:
   parameters:
     DeviceId:
       name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VaultId:
+      name: vaultId
       in: path
       required: true
       schema:
@@ -1703,10 +2086,45 @@ components:
           minimum: 0
           description: 오늘 저장된 영상 중 메모(설명)가 작성된 수
         latestHighlight:
+          type: object
           allOf:
             - $ref: '#/components/schemas/Video'
           nullable: true
           description: 즐겨찾기·최신 순서로 고른 대표 하이라이트. READY 영상이 없으면 null.
+
+    TalkbackSession:
+      type: object
+      required:
+        - sessionId
+        - streamId
+        - deviceId
+        - whipUrl
+        - heartbeatIntervalSeconds
+        - expiresAt
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          description: 발화 권한을 쥔 시청자 세션 ID
+        streamId:
+          type: string
+          format: uuid
+          description: 발화 경로가 붙는 edge 송출 ID. WHIP path는 이 값으로 결정된다.
+        deviceId:
+          type: string
+          format: uuid
+        whipUrl:
+          type: string
+          format: uri
+          description: 오디오 전용 WebRTC WHIP 송출 URL. scope=TALK 단기 토큰이 붙으며 미디어 계층이 요청 시점에 발화 권한을 다시 확인한다. 앱 로그·분석 이벤트·DB에 저장하지 않는다.
+        heartbeatIntervalSeconds:
+          type: integer
+          enum: [15]
+          description: 발화 권한도 이 주기의 시청자 heartbeat로 함께 연장된다.
+        expiresAt:
+          type: string
+          format: date-time
+          description: 발화 권한 만료 시각. heartbeat가 끊기면 서버가 회수하고 기기에 STOP_TALKBACK을 보낸다.
 
     StreamSession:
       type: object
@@ -1759,9 +2177,76 @@ components:
           type: string
           format: date-time
 
+    Vault:
+      type: object
+      required: [id, name, status, myRole, retentionDays, subscriptionActive, devices]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 80
+        status:
+          type: string
+          enum: [ACTIVE, CLOSING, CLOSED]
+        myRole:
+          $ref: '#/components/schemas/DeviceRole'
+        retentionDays:
+          type: integer
+          minimum: 1
+          maximum: 3650
+        subscriptionActive:
+          type: boolean
+        subscriptionGraceUntil:
+          type: string
+          format: date-time
+          nullable: true
+        devices:
+          type: array
+          description: 활성 Binding만 담는다. 연결된 기기가 없으면 빈 배열이다.
+          items:
+            $ref: '#/components/schemas/VaultDevice'
+
+    VaultDevice:
+      type: object
+      required: [bindingId, generation, deviceId, name, model, status]
+      properties:
+        bindingId:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          description: 같은 물리 기기를 다시 연결할 때 증가한다.
+        deviceId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        model:
+          type: string
+        status:
+          type: string
+          enum: [ONLINE, OFFLINE]
+          description: Redis presence 키의 존재 여부로 결정되며 heartbeat TTL로 만료된다.
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateVaultRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+
     DeviceMember:
       type: object
-      required: [id, deviceId, user, role, status, joinedAt]
+      required: [id, user, role, status, joinedAt]
       properties:
         id:
           type: string
@@ -1769,6 +2254,13 @@ components:
         deviceId:
           type: string
           format: uuid
+          nullable: true
+          description: 금고 구성원 조회로 받은 항목은 null이다.
+        vaultId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 기기 구성원 조회로 받은 항목은 null이다.
         user:
           $ref: '#/components/schemas/UserSummary'
         role:
@@ -1830,7 +2322,7 @@ components:
 
     Invitation:
       type: object
-      required: [id, deviceId, deviceName, inviteeEmail, role, status, expiresAt, createdAt]
+      required: [id, inviteeEmail, role, status, expiresAt, createdAt]
       properties:
         id:
           type: string
@@ -1838,8 +2330,18 @@ components:
         deviceId:
           type: string
           format: uuid
+          nullable: true
+          description: 초대 당시 금고에 연결된 기기가 없었으면 null이다.
         deviceName:
           type: string
+          nullable: true
+        vaultId:
+          type: string
+          format: uuid
+          description: 초대가 귀속된 추억 금고. V30 이후 모든 초대가 값을 가진다.
+        vaultName:
+          type: string
+          nullable: true
         inviteeEmail:
           type: string
           format: email
@@ -1861,11 +2363,18 @@ components:
 
     Subscription:
       type: object
-      required: [deviceId, active, premiumRetentionDays]
+      required: [active, premiumRetentionDays]
       properties:
         deviceId:
           type: string
           format: uuid
+          nullable: true
+          description: 금고 경로로 조회하면 null이다.
+        vaultId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 기기 경로로 조회하면 null이다.
         active:
           type: boolean
         graceUntil:

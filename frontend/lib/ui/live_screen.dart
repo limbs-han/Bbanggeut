@@ -8,6 +8,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../core/whep_player_controller.dart';
+import '../core/whip_publisher_controller.dart';
 import 'widgets.dart';
 
 class EmbeddedLivePlayer extends StatefulWidget {
@@ -15,12 +16,14 @@ class EmbeddedLivePlayer extends StatefulWidget {
     super.key,
     required this.controller,
     required this.device,
+    this.isActive = true,
     required this.status,
     this.houseMode = false,
   });
 
   final AppController controller;
   final DeviceSummary device;
+  final bool isActive;
   final DeviceStatus? status;
   final bool houseMode;
 
@@ -28,30 +31,79 @@ class EmbeddedLivePlayer extends StatefulWidget {
   State<EmbeddedLivePlayer> createState() => _EmbeddedLivePlayerState();
 }
 
+class LiveViewingScreen extends StatelessWidget {
+  const LiveViewingScreen({
+    super.key,
+    required this.controller,
+    required this.device,
+    required this.status,
+  });
+
+  final AppController controller;
+  final DeviceSummary device;
+  final DeviceStatus? status;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(device.name)),
+    body: AppBackdrop(
+      child: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+          children: [
+            EmbeddedLivePlayer(
+              controller: controller,
+              device: device,
+              status: status,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     with WidgetsBindingObserver {
   StreamSession? session;
   late final WhepPlayerController whepPlayer;
+  late final WhipPublisherController talkbackPublisher;
   Timer? pollTimer;
   Timer? heartbeatTimer;
   Timer? controlsTimer;
   String? error;
   bool closing = false;
   bool muted = false;
+  bool paused = false;
   bool started = false;
   bool starting = false;
   bool controlsVisible = false;
   bool webRtcWasConnected = false;
+  DateTime? warmupDeadline;
+  bool talking = false;
+  bool talkbackBusy = false;
   Future<void>? preferredPlayerFuture;
 
   bool get hasPlayback => whepPlayer.connected;
+
+  /// 세션을 만든 순간부터 첫 프레임까지가 전부 "준비 중"이다. 이 동안 재생
+  /// 버튼이 살아 있으면 조급한 탭이 _restart()로 이어져 진행 중이던 워밍업을
+  /// 매번 처음으로 되돌린다.
+  bool get connecting =>
+      !hasPlayback && error == null && !closing && (starting || session != null);
 
   @override
   void initState() {
     super.initState();
     whepPlayer = WhepPlayerController()..addListener(_handleWebRtcState);
+    talkbackPublisher = WhipPublisherController();
     WidgetsBinding.instance.addObserver(this);
   }
+
+  /// 발화 중에는 내 재생을 강제로 뮤트한다. 기기에는 에코 제거가 없어서
+  /// 기기 스피커 → 기기 마이크 → 앱 → 기기로 도는 순환을 앱이 끊어야 한다.
+  Future<void> _applyPlaybackMute() => whepPlayer.setMuted(muted || talking);
 
   void _handleWebRtcState() {
     if (!mounted) return;
@@ -77,13 +129,34 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       started = false;
       controlsVisible = false;
       unawaited(_closeForDeviceChange());
+      return;
+    }
+    if (oldWidget.isActive && !widget.isActive) {
+      unawaited(_suspend());
+    } else if (!oldWidget.isActive &&
+        widget.isActive &&
+        started &&
+        !paused &&
+        !hasPlayback) {
+      unawaited(_restart());
     }
   }
 
+  Future<void> _suspend() async {
+    await _close(disposePlayer: true);
+    if (!mounted) return;
+    setState(() {
+      controlsVisible = false;
+      starting = false;
+    });
+  }
+
   Future<void> _start() async {
-    if (starting) return;
+    if (starting || !widget.isActive) return;
+    warmupDeadline = null;
     setState(() {
       started = true;
+      paused = false;
       starting = true;
       closing = false;
       error = null;
@@ -135,9 +208,58 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     if (whepUrl == null || whepUrl.isEmpty) {
       throw const WhepPlaybackException();
     }
-    await whepPlayer.setMuted(muted);
+    await _applyPlaybackMute();
     await whepPlayer.connect(whepUrl);
     if (mounted && !closing) setState(() => error = null);
+  }
+
+  Future<void> _startTalking() async {
+    final current = session;
+    if (current == null || !hasPlayback || talking || talkbackBusy) return;
+    setState(() => talkbackBusy = true);
+    try {
+      final talkback = await widget.controller.api.openTalkback(current.id);
+      talking = true;
+      await _applyPlaybackMute();
+      await talkbackPublisher.connect(talkback.whipUrl);
+      if (!mounted) return;
+      setState(() {});
+    } catch (failure) {
+      talking = false;
+      await talkbackPublisher.close();
+      await _applyPlaybackMute();
+      try {
+        await widget.controller.api.closeTalkback(current.id);
+      } catch (_) {}
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(_talkbackMessage(failure))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => talkbackBusy = false);
+    }
+  }
+
+  Future<void> _stopTalking() async {
+    if (!talking && !talkbackPublisher.transmitting) return;
+    final current = session;
+    talking = false;
+    if (mounted) setState(() {});
+    await talkbackPublisher.close();
+    await _applyPlaybackMute();
+    if (current != null) {
+      try {
+        await widget.controller.api.closeTalkback(current.id);
+      } catch (_) {}
+    }
+  }
+
+  String _talkbackMessage(Object failure) {
+    final text = '$failure';
+    if (text.contains('TALKBACK_BUSY')) return '다른 구성원이 말하는 중이에요.';
+    if (text.contains('SPEAKER_UNAVAILABLE')) return '이 카메라에는 스피커가 없어요.';
+    return text;
   }
 
   Future<void> _heartbeat() async {
@@ -156,8 +278,31 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       if (!mounted || closing) return;
       session = updated;
       if (updated.isReady) {
-        pollTimer?.cancel();
-        await _openPreferredPlayer(updated);
+        try {
+          await _openPreferredPlayer(updated);
+          if (!mounted || closing) return;
+          pollTimer?.cancel();
+          pollTimer = null;
+          warmupDeadline = null;
+        } on WhepPlaybackException {
+          if (!mounted || closing) return;
+          // 기기의 READY는 "송출 프로세스가 살아 있다"는 신호일 뿐이라
+          // MediaMTX에 스트림이 실제로 붙기 전일 수 있다. 첫 실패를 곧장
+          // 에러로 보여주면 사용자가 다시 눌러 세션을 재시작하는 수밖에
+          // 없으므로, 준비 표시를 유지한 채 조용히 다시 붙는다.
+          warmupDeadline ??= DateTime.now().add(const Duration(seconds: 25));
+          if (DateTime.now().isAfter(warmupDeadline!)) {
+            _cancelTimers();
+            setState(() => error = '카메라 연결에 실패했어요. 다시 시도해 주세요.');
+          } else {
+            // 첫 조회부터 READY였다면 폴링이 아직 없다.
+            pollTimer ??= Timer.periodic(
+              const Duration(seconds: 2),
+              (_) => _checkStatus(),
+            );
+            setState(() {});
+          }
+        }
       } else if (const {
         'FAILED',
         'CLOSED',
@@ -188,6 +333,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     if (closing) return;
     closing = true;
     _cancelTimers();
+    // 발화 권한을 먼저 놓는다. 라이브 세션이 사라진 뒤에는 반납할 대상이 없어
+    // 기기가 만료까지 스피커를 열어 둔다.
+    await _stopTalking();
     final current = session;
     session = null;
     if (disposePlayer) {
@@ -206,9 +354,27 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     if (!mounted) return;
     setState(() {
       closing = false;
+      paused = false;
       error = null;
     });
     await _start();
+  }
+
+  Future<void> _pause() async {
+    if (!hasPlayback || closing) return;
+    await _close(disposePlayer: true);
+    if (!mounted) return;
+    setState(() {
+      paused = true;
+      closing = false;
+      controlsVisible = true;
+    });
+  }
+
+  Future<void> _goLive() async {
+    if (starting || !widget.isActive) return;
+    if (hasPlayback && !paused) return;
+    await _restart();
   }
 
   Future<void> _closeForDeviceChange() async {
@@ -226,7 +392,10 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       unawaited(_close(disposePlayer: true));
-    } else if (state == AppLifecycleState.resumed && closing && started) {
+    } else if (state == AppLifecycleState.resumed &&
+        closing &&
+        started &&
+        !paused) {
       unawaited(_restart());
     }
   }
@@ -238,20 +407,34 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     unawaited(_close());
     whepPlayer.removeListener(_handleWebRtcState);
     whepPlayer.dispose();
+    talkbackPublisher.dispose();
     super.dispose();
   }
 
   Future<void> _openFullscreen() async {
     if (!whepPlayer.connected) return;
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FullscreenWhepView(
-          renderer: whepPlayer.renderer,
-          title: widget.device.name,
+    try {
+      if (!mounted) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FullscreenWhepView(
+            player: whepPlayer,
+            title: widget.device.name,
+            initialMuted: muted,
+            onReturnToLive: _restart,
+            onMutedChanged: (value) {
+              if (mounted) setState(() => muted = value);
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
   }
 
   void _scheduleControlsHide() {
@@ -263,7 +446,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   void _handleVideoTap() {
     if (!hasPlayback) {
-      if (!starting) {
+      // 준비 중 탭을 무시하지 않으면 _restart()가 진행 중인 세션을 닫고
+      // 워밍업을 처음부터 다시 시작한다.
+      if (!connecting) {
         if (started) {
           unawaited(_restart());
         } else {
@@ -286,7 +471,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       child: Column(
         children: [
           AspectRatio(
-            aspectRatio: 16 / 9,
+            // 바깥 홈 카드의 3px 테두리가 차지하는 실제 높이를 제외한다.
+            // 4:3을 그대로 쓰면 S24+ 폭에서 내부가 1.5px 넘친다.
+            aspectRatio: widget.houseMode ? 1.34 : 16 / 9,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _handleVideoTap,
@@ -296,55 +483,225 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                   _videoBody(),
                   if (!hasPlayback)
                     Center(
-                      child: IconButton.filled(
-                        key: const Key('live-play-button'),
-                        onPressed: starting ? null : _handleVideoTap,
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xB33A2C22),
-                          foregroundColor: Colors.white,
-                          fixedSize: const Size.square(58),
-                        ),
-                        icon: starting
-                            ? const SizedBox.square(
-                                dimension: 23,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.4,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Icon(
-                                error == null
-                                    ? Icons.play_arrow_rounded
-                                    : Icons.refresh_rounded,
-                                size: 34,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton.filled(
+                            key: const Key('live-play-button'),
+                            onPressed: connecting ? null : _handleVideoTap,
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xB33A2C22),
+                              foregroundColor: Colors.white,
+                              fixedSize: const Size.square(58),
+                            ),
+                            icon: connecting
+                                ? const SizedBox.square(
+                                    dimension: 23,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.4,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Icon(
+                                    error == null
+                                        ? Icons.play_arrow_rounded
+                                        : Icons.refresh_rounded,
+                                    size: 34,
+                                  ),
+                          ),
+                          if (connecting)
+                            Container(
+                              key: const Key('live-warmup-caption'),
+                              margin: const EdgeInsets.only(top: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
                               ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xB33A2C22),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: const Text(
+                                '카메라를 깨우는 중이에요…',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   Positioned(
                     left: 12,
                     top: widget.houseMode ? 30 : 12,
-                    child: Container(
+                    child: InkWell(
                       key: const Key('live-edge-button'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: hasPlayback
-                            ? const Color(0xDDD32F2F)
-                            : const Color(0xB32D312B),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        started ? '●  LIVE' : 'LIVE 준비',
-                        style: TextStyle(
-                          color: hasPlayback ? Colors.white : Colors.white70,
-                          fontWeight: FontWeight.w900,
+                      borderRadius: BorderRadius.circular(99),
+                      onTap: paused ? _goLive : null,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: hasPlayback
+                              ? const Color(0xDDD32F2F)
+                              : const Color(0xB32D312B),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          paused
+                              ? 'LIVE로 돌아가기'
+                              : started
+                              ? '●  LIVE'
+                              : 'LIVE 준비',
+                          style: TextStyle(
+                            color: hasPlayback ? Colors.white : Colors.white70,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  if (hasPlayback) ...[
+                  // 발화 중 라이브 소리가 꺼지는 것은 에코 차단을 위한 의도된
+                  // 동작이다. 표시하지 않으면 사용자는 무음 버그로 오해한다.
+                  if (hasPlayback && widget.houseMode && talking)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 14,
+                      child: Center(
+                        child: Container(
+                          key: const Key('live-talking-indicator'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xCC33241B),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.mic_rounded,
+                                size: 16,
+                                color: Color(0xFFE0533D),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                '말하는 중 · 라이브 소리 잠시 꺼짐',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (hasPlayback && widget.houseMode)
+                    Positioned(
+                      right: 14,
+                      top: 14,
+                      child: IconButton.filled(
+                        tooltip: '전체 화면',
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xEFFFFFFF),
+                          foregroundColor: AppColors.ink,
+                          fixedSize: const Size.square(48),
+                        ),
+                        onPressed: _openFullscreen,
+                        icon: const Icon(Icons.open_in_full_rounded),
+                      ),
+                    ),
+                  if (hasPlayback && widget.houseMode)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 18,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xA6654A34),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: talking
+                                    ? '말하는 동안에는 소리가 꺼져요'
+                                    : (muted ? '소리 켜기' : '음소거'),
+                                color: Colors.white,
+                                onPressed: () {
+                                  setState(() => muted = !muted);
+                                  unawaited(_applyPlaybackMute());
+                                },
+                                // 발화 중에는 실제로 재생이 꺼져 있으므로 아이콘도
+                                // 꺼짐으로 보여야 한다. muted만 반영하면 소리가
+                                // 안 나는데 🔊로 표시되는 거짓 상태가 된다.
+                                icon: Icon(
+                                  (muted || talking)
+                                      ? Icons.volume_off_rounded
+                                      : Icons.volume_up_rounded,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              _PushToTalkButton(
+                                talking: talking,
+                                busy: talkbackBusy,
+                                onStart: _startTalking,
+                                onStop: _stopTalking,
+                              ),
+                              const SizedBox(width: 12),
+                              IconButton(
+                                key: const Key('live-pause-button'),
+                                tooltip: '일시정지',
+                                color: Colors.white,
+                                onPressed: _pause,
+                                icon: const Icon(Icons.pause_rounded),
+                              ),
+                              const SizedBox(width: 12),
+                              IconButton(
+                                tooltip: '전체 화면',
+                                color: Colors.white,
+                                onPressed: _openFullscreen,
+                                icon: const Icon(Icons.fullscreen_rounded),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (hasPlayback && !widget.houseMode) ...[
+                    Positioned(
+                      right: 106,
+                      bottom: 10,
+                      child: AnimatedOpacity(
+                        opacity: controlsVisible ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: IgnorePointer(
+                          ignoring: !controlsVisible,
+                          child: IconButton.filled(
+                            key: const Key('live-pause-button'),
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0x99000000),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _pause,
+                            icon: const Icon(Icons.pause_rounded),
+                          ),
+                        ),
+                      ),
+                    ),
                     Positioned(
                       right: 58,
                       bottom: 10,
@@ -396,32 +753,33 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.device.name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        widget.status?.personCount == null
-                            ? '${widget.status?.isOnline == true ? '온라인' : '연결 준비 중'} · 실시간 영상'
-                            : '온라인 · 가족 ${widget.status!.personCount}명 감지',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
+          if (!widget.houseMode)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.device.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          widget.status?.personCount == null
+                              ? '${widget.status?.isOnline == true ? '온라인' : '연결 준비 중'} · 실시간 영상'
+                              : '온라인 · 가족 ${widget.status!.personCount}명 감지',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const StatusPill(label: 'LIVE', color: AppColors.greenCard),
-              ],
+                  const StatusPill(label: 'LIVE', color: AppColors.greenCard),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     ),
@@ -433,7 +791,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         color: Colors.black,
         child: RTCVideoView(
           whepPlayer.renderer,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
         ),
       );
     }
@@ -476,15 +834,72 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   }
 }
 
+/// 누르는 동안만 말하는 무전기식 버튼.
+///
+/// 토글이 아니라 푸시투토크인 이유는 기기당 발화자가 한 명이기 때문이다.
+/// 켜 둔 것을 잊으면 다른 구성원이 그동안 말할 수 없다.
+class _PushToTalkButton extends StatelessWidget {
+  const _PushToTalkButton({
+    required this.talking,
+    required this.busy,
+    required this.onStart,
+    required this.onStop,
+  });
+
+  final bool talking;
+  final bool busy;
+  final Future<void> Function() onStart;
+  final Future<void> Function() onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const Key('live-push-to-talk-button'),
+      onTapDown: (_) => unawaited(onStart()),
+      onTapUp: (_) => unawaited(onStop()),
+      onTapCancel: () => unawaited(onStop()),
+      child: Tooltip(
+        message: talking ? '말하는 중' : '길게 눌러 말하기',
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: talking ? const Color(0xFFE0533D) : Colors.transparent,
+          ),
+          child: busy && !talking
+              ? const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Icon(
+                  talking ? Icons.mic_rounded : Icons.mic_none_rounded,
+                  color: Colors.white,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class FullscreenWhepView extends StatefulWidget {
   const FullscreenWhepView({
     super.key,
-    required this.renderer,
+    required this.player,
     required this.title,
+    required this.initialMuted,
+    required this.onReturnToLive,
+    required this.onMutedChanged,
   });
 
-  final RTCVideoRenderer renderer;
+  final WhepPlayerController player;
   final String title;
+  final bool initialMuted;
+  final Future<void> Function() onReturnToLive;
+  final ValueChanged<bool> onMutedChanged;
 
   @override
   State<FullscreenWhepView> createState() => _FullscreenWhepViewState();
@@ -492,11 +907,13 @@ class FullscreenWhepView extends StatefulWidget {
 
 class _FullscreenWhepViewState extends State<FullscreenWhepView> {
   bool controlsVisible = true;
+  late bool muted;
   Timer? controlsTimer;
 
   @override
   void initState() {
     super.initState();
+    muted = widget.initialMuted;
     unawaited(
       SystemChrome.setPreferredOrientations(const [
         DeviceOrientation.landscapeLeft,
@@ -541,8 +958,8 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
         fit: StackFit.expand,
         children: [
           RTCVideoView(
-            widget.renderer,
-            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            widget.player.renderer,
+            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
           ),
           AnimatedOpacity(
             opacity: controlsVisible ? 1 : 0,
@@ -576,6 +993,64 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
+                        ),
+                        IconButton.filled(
+                          key: const Key('fullscreen-mute-button'),
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0x99000000),
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () {
+                            setState(() => muted = !muted);
+                            widget.onMutedChanged(muted);
+                            unawaited(widget.player.setMuted(muted));
+                            _scheduleControlsHide();
+                          },
+                          icon: Icon(
+                            muted
+                                ? Icons.volume_off_rounded
+                                : Icons.volume_up_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          AnimatedOpacity(
+            opacity: controlsVisible ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: IgnorePointer(
+              ignoring: !controlsVisible,
+              child: SafeArea(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        TextButton.icon(
+                          key: const Key('fullscreen-live-edge-button'),
+                          onPressed: () async {
+                            await widget.onReturnToLive();
+                            if (mounted) _scheduleControlsHide();
+                          },
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xCCFFF9F5),
+                            foregroundColor: const Color(0xFFE53935),
+                          ),
+                          icon: const Icon(Icons.circle, size: 9),
+                          label: const Text(
+                            'LIVE',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'WebRTC 실시간 · DVR 미지원',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
                         ),
                       ],
                     ),

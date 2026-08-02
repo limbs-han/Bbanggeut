@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'device_registration_screen.dart';
-import 'laugh_report_content_screen.dart';
+import 'family_management_cards.dart';
+import 'invitation_inbox_screen.dart';
+import 'notification_settings_screen.dart';
 import 'password_change_screen.dart';
+import 'profile_avatar.dart';
 import 'profile_edit_screen.dart';
 import 'widgets.dart';
 
@@ -18,50 +20,14 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  static const _storage = FlutterSecureStorage();
-  static const _anniversaryKey = 'wj_pref_anniversary_alerts';
-  static const _weeklyKey = 'wj_pref_weekly_report';
-  static const _memoryKey = 'wj_pref_new_memory_alerts';
-  bool anniversaryAlerts = true;
-  bool weeklyReport = true;
-  bool newMemoryAlerts = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNotificationPreferences();
-  }
-
-  Future<void> _loadNotificationPreferences() async {
-    try {
-      final values = await Future.wait([
-        _storage.read(key: _anniversaryKey),
-        _storage.read(key: _weeklyKey),
-        _storage.read(key: _memoryKey),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        anniversaryAlerts = values[0] != 'false';
-        weeklyReport = values[1] != 'false';
-        newMemoryAlerts = values[2] == 'true';
-      });
-    } catch (_) {
-      // 플랫폼 저장소를 사용할 수 없으면 현재 세션의 기본값을 유지한다.
-    }
-  }
-
-  Future<void> _savePreference(String key, bool value) async {
-    try {
-      await _storage.write(key: key, value: '$value');
-    } catch (_) {
-      // 화면 상태는 유지하고 다음 실행 시 기본값으로 복구한다.
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    final device = controller.selectedDevice!;
+    // A vault keeps its members, videos and subscription with no device bound,
+    // so this screen must render without one.
+    final device = controller.selectedDevice;
+    final isOwner =
+        controller.selectedVault?.isOwner ?? device?.isOwner ?? false;
     return AppBackdrop(
       child: CustomScrollView(
         key: const PageStorageKey('settings-scroll'),
@@ -75,12 +41,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(
-                      height: 100,
+                      height: 132,
                       child: Stack(
                         children: [
+                          Positioned(
+                            left: 4,
+                            top: 0,
+                            width: 112,
+                            height: 48,
+                            child: Image.asset(
+                              'assets/images/bbanggeut_logo.png',
+                              fit: BoxFit.contain,
+                              alignment: Alignment.centerLeft,
+                            ),
+                          ),
                           const Positioned(
                             left: 4,
-                            top: 22,
+                            bottom: 8,
                             child: Text(
                               '설정',
                               style: TextStyle(
@@ -91,18 +68,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           Positioned(
-                            right: 40,
-                            bottom: -6,
-                            width: 116,
-                            height: 104,
+                            right: 18,
+                            bottom: -2,
+                            width: 126,
+                            height: 118,
                             child: Image.asset(
                               'assets/images/bbanggeut_mascot.png',
                               fit: BoxFit.contain,
                             ),
                           ),
                           const Positioned(
-                            right: 142,
-                            top: 23,
+                            right: 146,
+                            top: 38,
                             child: Icon(
                               Icons.favorite_rounded,
                               color: AppColors.sageSoft,
@@ -118,22 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       padding: const EdgeInsets.all(14),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 24,
-                            backgroundColor: AppColors.surfaceWarm,
-                            child: Text(
-                              controller
-                                      .user
-                                      ?.displayName
-                                      .characters
-                                      .firstOrNull ??
-                                  '나',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: AppColors.sageDark,
-                              ),
-                            ),
-                          ),
+                          const ProfileAvatarView(radius: 24),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -157,13 +119,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    ProfileEditScreen(controller: controller),
-                              ),
-                            ),
+                            onPressed: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ProfileEditScreen(controller: controller),
+                                ),
+                              );
+                              if (mounted) setState(() {});
+                            },
                             child: const Text('수정하기'),
                           ),
                         ],
@@ -178,8 +143,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           _SettingRow(
                             icon: Icons.videocam_outlined,
                             title: '카메라 설정',
-                            subtitle: device.name,
-                            onTap: device.isOwner
+                            subtitle: device?.name ?? '연결된 기기가 없어요',
+                            onTap: device != null && device.isOwner
                                 ? () => _editDevice(context)
                                 : null,
                           ),
@@ -187,44 +152,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 18),
+                    const _GroupLabel('가족 초대'),
+                    FamilyManagementCards(
+                      controller: controller,
+                      onOpenInbox: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              InvitationInboxScreen(controller: controller),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
                     const _GroupLabel('알림 설정'),
                     SoftCard(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Column(
-                        children: [
-                          _SwitchRow(
-                            icon: Icons.notifications_active_outlined,
-                            title: '기념일 알림',
-                            subtitle: '등록한 기념일을 알려드려요',
-                            value: anniversaryAlerts,
-                            onChanged: (value) {
-                              setState(() => anniversaryAlerts = value);
-                              _savePreference(_anniversaryKey, value);
-                            },
-                          ),
-                          const Divider(height: 1, indent: 18, endIndent: 18),
-                          _SwitchRow(
-                            icon: Icons.event_available_outlined,
-                            title: '주간 리포트 알림',
-                            subtitle: '이번 주 웃음 기록을 요약해요',
-                            value: weeklyReport,
-                            onChanged: (value) {
-                              setState(() => weeklyReport = value);
-                              _savePreference(_weeklyKey, value);
-                            },
-                          ),
-                          const Divider(height: 1, indent: 18, endIndent: 18),
-                          _SwitchRow(
-                            icon: Icons.video_camera_back_outlined,
-                            title: '새로운 추억 알림',
-                            subtitle: '새 영상 저장 시 알려드려요',
-                            value: newMemoryAlerts,
-                            onChanged: (value) {
-                              setState(() => newMemoryAlerts = value);
-                              _savePreference(_memoryKey, value);
-                            },
-                          ),
-                        ],
+                      padding: EdgeInsets.zero,
+                      child: _SettingRow(
+                        icon: Icons.notifications_active_outlined,
+                        title: '알림 설정',
+                        subtitle: '기념일 · 주간 리포트 · 새로운 추억',
+                        trailingText: '설정하기',
+                        onTap: () => _notificationSettings(context),
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -233,20 +181,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       padding: EdgeInsets.zero,
                       child: Column(
                         children: [
-                          _SettingRow(
-                            icon: Icons.bar_chart_rounded,
-                            title: '웃음 리포트',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => LaughReportContentScreen(
-                                  controller: controller,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 1, indent: 58),
-                          if (device.isOwner) ...[
+                          if (isOwner) ...[
                             _SettingRow(
                               icon: Icons.receipt_long_outlined,
                               title: '접근 기록',
@@ -297,7 +232,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                     ),
-                    if (device.isOwner) ...[
+                    if (device != null && isOwner) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         onPressed: () => _releaseDevice(context),
@@ -343,10 +278,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _editDevice(BuildContext context) async {
     final controller = widget.controller;
+    final selected = controller.selectedDevice;
+    if (selected == null) {
+      showAppSnack(context, '연결된 기기가 없어요.', error: true);
+      return;
+    }
     final result = await showDialog<_DeviceManageResult>(
       context: context,
-      builder: (context) =>
-          _RenameDeviceDialog(initialName: controller.selectedDevice!.name),
+      builder: (context) => _RenameDeviceDialog(initialName: selected.name),
     );
     if (!context.mounted || result == null) return;
     if (result.release) {
@@ -368,41 +307,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _subscription(BuildContext context) async {
     final controller = widget.controller;
+    // The subscription belongs to the vault; the device route is only a
+    // fallback for a session that never resolved one.
+    final vaultId = controller.selectedVault?.id;
+    final deviceId = controller.selectedDevice?.id;
+    if (vaultId == null && deviceId == null) {
+      showAppSnack(context, '구독 정보를 불러오지 못했어요.', error: true);
+      return;
+    }
     try {
-      var subscription = await controller.api.getSubscription(
-        controller.selectedDevice!.id,
-      );
+      var subscription = vaultId != null
+          ? await controller.api.getVaultSubscription(vaultId)
+          : await controller.api.getSubscription(deviceId!);
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('보관 구독'),
-            content: Text(
-              subscription.active
-                  ? '현재 ${subscription.premiumRetentionDays}일 장기 보관이 활성화되어 있어요.'
-                  : '활성화하면 ${subscription.premiumRetentionDays}일까지 보관할 수 있어요.',
+          builder: (context, setDialogState) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('닫기'),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      color: AppColors.sageSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.workspace_premium_rounded,
+                      size: 38,
+                      color: AppColors.sageDark,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '웃음 보관 구독',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    subscription.active
+                        ? '소중한 웃음 영상을 ${subscription.premiumRetentionDays}일 동안 안전하게 보관하고 있어요.'
+                        : '구독하면 소중한 웃음 영상을 ${subscription.premiumRetentionDays}일까지 오래 보관할 수 있어요.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.inkSoft,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceWarm,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.favorite_rounded,
+                          color: AppColors.coral,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            subscription.active
+                                ? '현재 구독이 활성화되어 있어요'
+                                : '웃음 영상을 더 오래 간직해요',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: () async {
+                      subscription = subscription.active
+                          ? (vaultId != null
+                                ? await controller.api.cancelVaultSubscription(
+                                    vaultId,
+                                  )
+                                : await controller.api.cancelSubscription(
+                                    deviceId!,
+                                  ))
+                          : (vaultId != null
+                                ? await controller.api
+                                      .activateVaultSubscription(vaultId)
+                                : await controller.api.activateSubscription(
+                                    deviceId!,
+                                  ));
+                      setDialogState(() {});
+                      await controller.refreshAll();
+                    },
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(50),
+                      backgroundColor: AppColors.coral,
+                    ),
+                    child: Text(subscription.active ? '구독 해지' : '구독 시작하기'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('닫기'),
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: () async {
-                  subscription = subscription.active
-                      ? await controller.api.cancelSubscription(
-                          controller.selectedDevice!.id,
-                        )
-                      : await controller.api.activateSubscription(
-                          controller.selectedDevice!.id,
-                        );
-                  setDialogState(() {});
-                  await controller.refreshAll();
-                },
-                child: Text(subscription.active ? '구독 해지' : 'MVP 구독 활성화'),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -411,11 +431,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _notificationSettings(BuildContext context) async {
+    final initialValues = await NotificationSettingsScreen.loadPreferences();
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        child: NotificationSettingsScreen(
+          compact: true,
+          initialValues: initialValues,
+        ),
+      ),
+    );
+  }
+
   Future<void> _logs(BuildContext context) async {
+    final controller = widget.controller;
+    final vaultId = controller.selectedVault?.id;
+    final deviceId = controller.selectedDevice?.id;
+    if (vaultId == null && deviceId == null) {
+      showAppSnack(context, '접근 기록을 불러오지 못했어요.', error: true);
+      return;
+    }
     try {
-      final logs = await widget.controller.api.listAccessLogs(
-        widget.controller.selectedDevice!.id,
-      );
+      final logs = vaultId != null
+          ? await controller.api.listVaultAccessLogs(vaultId)
+          : await controller.api.listAccessLogs(deviceId!);
       if (!context.mounted) return;
       await showModalBottomSheet<void>(
         context: context,
@@ -494,7 +539,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _releaseDevice(BuildContext context) async {
-    final device = widget.controller.selectedDevice!;
+    final device = widget.controller.selectedDevice;
+    if (device == null) {
+      showAppSnack(context, '연결된 기기가 없어요.', error: true);
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -616,12 +665,14 @@ class _SettingRow extends StatelessWidget {
     required this.icon,
     required this.title,
     this.subtitle,
+    this.trailingText,
     this.onTap,
     this.danger = false,
   });
   final IconData icon;
   final String title;
   final String? subtitle;
+  final String? trailingText;
   final VoidCallback? onTap;
   final bool danger;
   @override
@@ -653,46 +704,21 @@ class _SettingRow extends StatelessWidget {
           ),
     trailing: onTap == null
         ? null
-        : const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (trailingText != null)
+                Text(
+                  trailingText!,
+                  style: const TextStyle(
+                    color: AppColors.sageDark,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              if (trailingText != null) const SizedBox(width: 4),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+            ],
+          ),
     onTap: onTap,
-  );
-}
-
-class _SwitchRow extends StatelessWidget {
-  const _SwitchRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  @override
-  Widget build(BuildContext context) => ListTile(
-    minVerticalPadding: 9,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-    leading: CircleAvatar(
-      radius: 20,
-      backgroundColor: AppColors.sageSoft,
-      child: Icon(icon, size: 21, color: AppColors.sageDark),
-    ),
-    title: Text(
-      title,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-    ),
-    subtitle: Text(
-      subtitle,
-      style: const TextStyle(fontSize: 10, color: AppColors.inkSoft),
-    ),
-    trailing: Switch(
-      value: value,
-      activeTrackColor: AppColors.sage,
-      onChanged: onChanged,
-    ),
-    onTap: () => onChanged(!value),
   );
 }

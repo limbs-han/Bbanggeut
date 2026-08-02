@@ -263,10 +263,7 @@ class DeviceServiceTest {
 
         deviceService.revoke(ownerId, deviceId);
 
-        verify(deviceMapper, never()).cancelPendingInvitations(deviceId);
         verify(deviceMapper).revokeAllMemberships(deviceId, ownerId);
-        verify(deviceMapper, never()).markAllVideosDeleting(deviceId, ownerId);
-        verify(deviceMapper, never()).enqueueDeletionJobsForDevice(deviceId);
         verify(mqttIdentityManager, never()).revoke(deviceId);
     }
 
@@ -291,8 +288,6 @@ class DeviceServiceTest {
 
         verify(deviceMapper).demoteOwnerToMember(deviceId, ownerId);
         verify(deviceMapper).promoteNonOwnerToOwner(deviceId, membershipId);
-        verify(deviceMapper, never()).markAllVideosDeleting(
-            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test

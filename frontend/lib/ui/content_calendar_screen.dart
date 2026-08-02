@@ -123,10 +123,7 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
         bottom: false,
         child: Column(
           children: [
-            _CalendarHeroHeader(
-              onBack: widget.onBack ?? () => Navigator.maybePop(context),
-              onAdd: _openEditor,
-            ),
+            _CalendarHeroHeader(onAdd: _openEditor),
             Expanded(
               child: ListView(
                 key: const PageStorageKey('calendar-scroll'),
@@ -135,8 +132,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
                   _CalendarMonthCard(
                     month: _month,
                     selected: _selected,
-                    videosOn: _videosOn,
-                    schedulesOn: _schedulesOn,
+                    videos: _videos,
+                    schedules: _state.schedules,
                     onPrevious: () => _changeMonth(-1),
                     onNext: () => _changeMonth(1),
                     onSelected: (date) => setState(() => _selected = date),
@@ -167,9 +164,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
 }
 
 class _CalendarHeroHeader extends StatelessWidget {
-  const _CalendarHeroHeader({required this.onBack, required this.onAdd});
+  const _CalendarHeroHeader({required this.onAdd});
 
-  final VoidCallback onBack;
   final VoidCallback onAdd;
 
   @override
@@ -194,15 +190,6 @@ class _CalendarHeroHeader extends StatelessWidget {
           top: 22,
           child: Row(
             children: [
-              _HeaderButton(
-                onPressed: onBack,
-                child: const Icon(
-                  Icons.chevron_left_rounded,
-                  color: Color(0xFF533722),
-                  size: 30,
-                ),
-              ),
-              const SizedBox(width: 12),
               const Text(
                 '캘린더',
                 style: TextStyle(
@@ -246,32 +233,12 @@ class _CalendarHeroHeader extends StatelessWidget {
   );
 }
 
-class _HeaderButton extends StatelessWidget {
-  const _HeaderButton({required this.onPressed, required this.child});
-
-  final VoidCallback onPressed;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: const Color(0xFFFFFCF7),
-    elevation: 4,
-    shadowColor: const Color(0x22A8734E),
-    borderRadius: BorderRadius.circular(18),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onPressed,
-      child: SizedBox(width: 48, height: 48, child: Center(child: child)),
-    ),
-  );
-}
-
 class _CalendarMonthCard extends StatelessWidget {
   const _CalendarMonthCard({
     required this.month,
     required this.selected,
-    required this.videosOn,
-    required this.schedulesOn,
+    required this.videos,
+    required this.schedules,
     required this.onPrevious,
     required this.onNext,
     required this.onSelected,
@@ -279,14 +246,51 @@ class _CalendarMonthCard extends StatelessWidget {
 
   final DateTime month;
   final DateTime selected;
-  final List<VideoMemory> Function(DateTime) videosOn;
-  final List<CalendarSchedule> Function(DateTime) schedulesOn;
+  final List<VideoMemory> videos;
+  final List<CalendarSchedule> schedules;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final ValueChanged<DateTime> onSelected;
 
+  /// 이 달에 영상이 있는 날(일).
+  ///
+  /// **왜 미리 갈라 두는가**: 예전에는 칸을 그릴 때마다 "이 날짜의 영상"을 물었고,
+  /// 그 함수는 매번 목록 전체를 훑어 새 리스트를 만들었다. 한 달 칸이 35~42개니
+  /// 한 프레임에 목록을 마흔 번 훑는 셈이다 — 한 달치 영상이 200개면 8천 번을 돌고
+  /// 리스트를 마흔 개 만들어 곧바로 버린다. 달을 넘길 때마다, 위 화면이 다시 그려질
+  /// 때마다 되풀이된다. 한 번 훑어 날짜로 갈라 두면 칸마다 조회 한 번으로 끝난다.
+  Set<int> get _videoDays {
+    final days = <int>{};
+    for (final video in videos) {
+      final startedAt = video.capturedStartAt ?? video.createdAt;
+      if (startedAt == null) continue;
+      if (startedAt.year != month.year || startedAt.month != month.month) {
+        continue;
+      }
+      days.add(startedAt.day);
+    }
+    return days;
+  }
+
+  /// 이 달의 날(일)별 일정. 매년 반복하는 일정은 연도를 따지지 않는다.
+  Map<int, List<CalendarSchedule>> get _schedulesByDay {
+    final byDay = <int, List<CalendarSchedule>>{};
+    for (final schedule in schedules) {
+      final date = schedule.date;
+      if (schedule.yearly) {
+        if (date.month != month.month) continue;
+      } else if (date.year != month.year || date.month != month.month) {
+        continue;
+      }
+      (byDay[date.day] ??= <CalendarSchedule>[]).add(schedule);
+    }
+    return byDay;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final videoDays = _videoDays;
+    final schedulesByDay = _schedulesByDay;
     final blankCount = month.weekday % 7;
     final dayCount = DateUtils.getDaysInMonth(month.year, month.month);
     final cellCount = ((blankCount + dayCount + 6) ~/ 7) * 7;
@@ -319,7 +323,7 @@ class _CalendarMonthCard extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Color(0xFF513521),
-                    fontSize: 22,
+                    fontSize: 24,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -.5,
                   ),
@@ -334,29 +338,26 @@ class _CalendarMonthCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const _WeekdayHeader(),
-          const SizedBox(height: 7),
+          const SizedBox(height: 10),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              mainAxisExtent: 49,
+              mainAxisExtent: 72,
             ),
             itemCount: cellCount,
             itemBuilder: (_, index) {
               if (index < blankCount || index >= blankCount + dayCount) {
                 return const SizedBox.shrink();
               }
-              final date = DateTime(
-                month.year,
-                month.month,
-                index - blankCount + 1,
-              );
+              final day = index - blankCount + 1;
+              final date = DateTime(month.year, month.month, day);
               return _CalendarDayCell(
                 date: date,
                 selected: DateUtils.isSameDay(date, selected),
-                hasVideos: videosOn(date).isNotEmpty,
-                schedules: schedulesOn(date),
+                hasVideos: videoDays.contains(day),
+                schedules: schedulesByDay[day] ?? const <CalendarSchedule>[],
                 onTap: () => onSelected(date),
               );
             },
@@ -385,6 +386,7 @@ class _WeekdayHeader extends StatelessWidget {
                   ? const Color(0xFF6E9339)
                   : const Color(0xFF755E4B),
               fontSize: 14,
+              height: 1.2,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -417,85 +419,88 @@ class _CalendarDayCell extends StatelessWidget {
         : saturday
         ? const Color(0xFF6E9339)
         : const Color(0xFF715A48);
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Center(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: 42,
-          height: 46,
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFFFF3E5) : Colors.transparent,
-            borderRadius: BorderRadius.circular(15),
-            border: selected
-                ? Border.all(color: const Color(0xFFF49A7C), width: 1.7)
-                : null,
-            boxShadow: selected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x25DC8A68),
-                      blurRadius: 7,
-                      offset: Offset(0, 3),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 50,
+            height: 58,
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFFFFF3E5) : Colors.transparent,
+              borderRadius: BorderRadius.circular(15),
+              border: selected
+                  ? Border.all(color: const Color(0xFFF49A7C), width: 1.7)
+                  : null,
+              boxShadow: selected
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x25DC8A68),
+                        blurRadius: 7,
+                        offset: Offset(0, 3),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                if (selected)
+                  const Positioned(
+                    right: 5,
+                    top: -8,
+                    child: Icon(
+                      Icons.eco_rounded,
+                      color: Color(0xFF8FAA4F),
+                      size: 14,
                     ),
-                  ]
-                : null,
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              if (selected)
-                const Positioned(
-                  right: 5,
-                  top: -8,
-                  child: Icon(
-                    Icons.eco_rounded,
-                    color: Color(0xFF8FAA4F),
-                    size: 14,
                   ),
-                ),
-              Positioned(
-                top: selected ? 7 : 5,
-                child: Text(
-                  '${date.day}',
-                  style: TextStyle(
-                    color: selected ? const Color(0xFFFF725E) : numberColor,
-                    fontSize: selected ? 18 : 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              if (hasVideos)
-                const Positioned(
-                  bottom: 3,
-                  child: Icon(
-                    Icons.videocam_outlined,
-                    size: 12,
-                    color: Color(0xFF71943D),
-                  ),
-                )
-              else if (schedules.isNotEmpty)
                 Positioned(
-                  bottom: 0,
+                  top: selected ? 7 : 5,
                   child: Text(
-                    schedules.first.emoji,
-                    style: const TextStyle(fontSize: 13, height: 1),
-                  ),
-                )
-              else if (selected)
-                const Positioned(
-                  bottom: 4,
-                  child: Text(
-                    '•ᴗ•',
+                    '${date.day}',
                     style: TextStyle(
-                      color: Color(0xFF8A5E49),
-                      fontSize: 7,
+                      color: selected ? const Color(0xFFFF725E) : numberColor,
+                      fontSize: selected ? 21 : 18,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
-            ],
+                if (hasVideos)
+                  const Positioned(
+                    bottom: 3,
+                    child: Icon(
+                      Icons.videocam_outlined,
+                      size: 12,
+                      color: Color(0xFF71943D),
+                    ),
+                  )
+                else if (schedules.isNotEmpty)
+                  Positioned(
+                    bottom: 0,
+                    child: Text(
+                      schedules.first.emoji,
+                      style: const TextStyle(fontSize: 13, height: 1),
+                    ),
+                  )
+                else if (selected)
+                  const Positioned(
+                    bottom: 4,
+                    child: Text(
+                      '•ᴗ•',
+                      style: TextStyle(
+                        color: Color(0xFF8A5E49),
+                        fontSize: 7,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -575,10 +580,25 @@ class _SelectedMemoryCard extends StatelessWidget {
     borderColor: const Color(0xFFE3E1C2),
     iconAsset: 'assets/images/calendar_memory_card.png',
     title: '${DateFormat('M월 d일').format(date)}의 추억',
-    trailing: const Icon(
-      Icons.favorite_border_rounded,
-      color: Color(0xFFD4D9A6),
-    ),
+    trailing: videos.isEmpty
+        ? const Icon(Icons.favorite_border_rounded, color: Color(0xFFD4D9A6))
+        : TextButton(
+            key: const Key('calendar-memory-more'),
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => _DayMemoriesScreen(
+                  date: date,
+                  videos: videos,
+                  controller: controller,
+                ),
+              ),
+            ),
+            child: const Text(
+              '더보기',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
     child: loading
         ? const SizedBox(
             width: 18,
@@ -590,13 +610,15 @@ class _SelectedMemoryCard extends StatelessWidget {
         : videos.isEmpty
         ? const Text('등록된 영상이 없습니다', style: TextStyle(color: Color(0xFF806B5A)))
         : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final video in videos.take(3))
-                ListTile(
+              Material(
+                color: Colors.transparent,
+                child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    video.title,
+                    videos.first.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -606,13 +628,59 @@ class _SelectedMemoryCard extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => VideoDetailScreen(
                         controller: controller,
-                        video: video,
+                        video: videos.first,
                       ),
                     ),
                   ),
                 ),
+              ),
             ],
           ),
+  );
+}
+
+class _DayMemoriesScreen extends StatelessWidget {
+  const _DayMemoriesScreen({
+    required this.date,
+    required this.videos,
+    required this.controller,
+  });
+
+  final DateTime date;
+  final List<VideoMemory> videos;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text('${DateFormat('M월 d일').format(date)}의 추억')),
+    body: AppBackdrop(
+      child: SafeArea(
+        top: false,
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+          itemCount: videos.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final video = videos[index];
+            return SoftCard(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: MemoryTile(
+                api: controller.api,
+                video: video,
+                onTap: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        VideoDetailScreen(controller: controller, video: video),
+                  ),
+                ),
+                onFavorite: () => controller.toggleFavorite(video),
+              ),
+            );
+          },
+        ),
+      ),
+    ),
   );
 }
 

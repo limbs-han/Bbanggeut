@@ -36,6 +36,53 @@ class UserProfile {
   );
 }
 
+class AppNotification {
+  const AppNotification({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.body,
+    required this.createdAt,
+    this.deviceId,
+    this.resourceId,
+    this.readAt,
+  });
+
+  final String id;
+  final String type;
+  final String title;
+  final String body;
+  final String? deviceId;
+  final String? resourceId;
+  final DateTime? readAt;
+  final DateTime createdAt;
+
+  bool get isRead => readAt != null;
+
+  AppNotification copyWith({DateTime? readAt}) => AppNotification(
+    id: id,
+    type: type,
+    title: title,
+    body: body,
+    deviceId: deviceId,
+    resourceId: resourceId,
+    readAt: readAt ?? this.readAt,
+    createdAt: createdAt,
+  );
+
+  factory AppNotification.fromJson(Map<String, dynamic> json) =>
+      AppNotification(
+        id: json['id'] as String,
+        type: json['type'] as String? ?? '',
+        title: json['title'] as String? ?? '빵긋',
+        body: json['body'] as String? ?? '',
+        deviceId: json['deviceId'] as String?,
+        resourceId: json['resourceId'] as String?,
+        readAt: parseDate(json['readAt']),
+        createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
+      );
+}
+
 class MembershipRequestLink {
   const MembershipRequestLink({required this.token, required this.expiresAt});
   final String token;
@@ -463,6 +510,23 @@ class StreamSession {
     viewerExpiresAt: parseDate(json['viewerExpiresAt']),
     failureCode: json['failureCode'] as String?,
   );
+}
+
+class TalkbackSession {
+  const TalkbackSession({
+    required this.sessionId,
+    required this.whipUrl,
+    this.expiresAt,
+  });
+  final String sessionId;
+  final String whipUrl;
+  final DateTime? expiresAt;
+  factory TalkbackSession.fromJson(Map<String, dynamic> json) =>
+      TalkbackSession(
+        sessionId: json['sessionId'] as String,
+        whipUrl: json['whipUrl'] as String,
+        expiresAt: parseDate(json['expiresAt']),
+      );
 }
 
 class SignedUrl {

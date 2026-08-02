@@ -138,11 +138,17 @@ services:
       MTX_AUTHINTERNALUSERS_0_PASS: ${MEDIAMTX_PUBLISH_PASSWORD:?Set existing Pi MEDIAMTX_PUBLISH_PASSWORD}
       MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_ACTION: publish
       MTX_AUTHINTERNALUSERS_0_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      # 기기는 자기 talkback 경로를 읽어 스피커로 재생한다. 읽기만 허용하므로
+      # 이 계정으로 다른 기기의 라이브를 볼 수는 없다.
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_1_ACTION: read
+      MTX_AUTHINTERNALUSERS_0_PERMISSIONS_1_PATH: "~^talkback/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
       MTX_AUTHINTERNALUSERS_1_USER: ${MEDIAMTX_JETSON_PUBLISH_USER:?Set MEDIAMTX_JETSON_PUBLISH_USER}
       MTX_AUTHINTERNALUSERS_1_PASS: ${MEDIAMTX_JETSON_PUBLISH_PASSWORD:?Set MEDIAMTX_JETSON_PUBLISH_PASSWORD}
       MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_ACTION: publish
       MTX_AUTHINTERNALUSERS_1_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_1_ACTION: read
+      MTX_AUTHINTERNALUSERS_1_PERMISSIONS_1_PATH: "~^talkback/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
       # WHEP read access is limited to Nginx through the host loopback mapping.
       MTX_AUTHINTERNALUSERS_2_USER: any
@@ -150,6 +156,13 @@ services:
       MTX_AUTHINTERNALUSERS_2_IPS: "127.0.0.1/32,::1/128,172.16.0.0/12"
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+
+      # WHIP 발화 송출도 Nginx loopback으로만 들어온다. 발화 권한 검사는
+      # Nginx auth_request(scope=TALK)가 이미 끝낸 뒤다.
+      MTX_AUTHINTERNALUSERS_3_USER: any
+      MTX_AUTHINTERNALUSERS_3_IPS: "127.0.0.1/32,::1/128,172.16.0.0/12"
+      MTX_AUTHINTERNALUSERS_3_PERMISSIONS_0_ACTION: publish
+      MTX_AUTHINTERNALUSERS_3_PERMISSIONS_0_PATH: "~^talkback/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 
       # optional preserves the existing plaintext loopback tunnel as rollback.
       # Change only this secret-file value to strict after migration validation.

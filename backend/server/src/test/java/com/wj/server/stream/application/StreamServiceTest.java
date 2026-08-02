@@ -23,6 +23,7 @@ import com.wj.server.config.DemoProperties;
 import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
+import com.wj.server.stream.domain.TalkbackRow;
 import com.wj.server.stream.persistence.StreamMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,8 @@ class StreamServiceTest {
     void setUp() {
         StreamProperties properties = new StreamProperties(
             Duration.ofSeconds(45), Duration.ofSeconds(60), Duration.ofSeconds(120),
-            Duration.ofSeconds(15), "https://media.example/webrtc/live/", Duration.ofSeconds(30));
+            Duration.ofSeconds(15), "https://media.example/webrtc/live/", Duration.ofSeconds(30),
+            "https://media.example/webrtc/talkback", Duration.ofSeconds(30));
         lenient().when(presenceStore.find(any()))
             .thenReturn(new DevicePresenceStore.Lookup(false, null));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
@@ -119,7 +121,8 @@ class StreamServiceTest {
     void readySessionReturnsOnlyTokenProtectedWhepUrl() {
         StreamProperties properties = new StreamProperties(
             Duration.ofSeconds(45), Duration.ofSeconds(60), Duration.ofSeconds(120),
-            Duration.ofSeconds(15), "https://media.example/webrtc/live/", Duration.ofSeconds(30));
+            Duration.ofSeconds(15), "https://media.example/webrtc/live/", Duration.ofSeconds(30),
+            "https://media.example/webrtc/talkback", Duration.ofSeconds(30));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
             new DemoProperties(true, ""), presenceStore, Clock.fixed(NOW, ZoneOffset.UTC));
         UUID userId = UUID.randomUUID();
@@ -158,11 +161,135 @@ class StreamServiceTest {
         UUID userId = UUID.randomUUID();
         UUID signedStreamId = UUID.randomUUID();
         when(liveTokenService.verify("token"))
-            .thenReturn(new LiveTokenService.Claims(sessionId, userId, signedStreamId));
+            .thenReturn(new LiveTokenService.Claims(
+                sessionId, userId, signedStreamId, LiveTokenService.Scope.PLAY));
         when(mapper.isPlayable(sessionId, userId)).thenReturn(true);
 
-        assertThat(service.introspect("token", signedStreamId)).isTrue();
-        assertThat(service.introspect("token", UUID.randomUUID())).isFalse();
+        assertThat(service.introspect("token", signedStreamId, LiveTokenService.Scope.PLAY)).isTrue();
+        assertThat(service.introspect("token", UUID.randomUUID(), LiveTokenService.Scope.PLAY)).isFalse();
+    }
+
+    @Test
+    void playbackTokenCannotPublishToTheTalkbackPath() {
+        UUID sessionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        when(liveTokenService.verify("play-token"))
+            .thenReturn(new LiveTokenService.Claims(
+                sessionId, userId, streamId, LiveTokenService.Scope.PLAY));
+
+        assertThat(service.introspect("play-token", streamId, LiveTokenService.Scope.TALK)).isFalse();
+        verify(mapper, never()).isTalkable(any(), any());
+    }
+
+    @Test
+    void talkbackTokenIsCheckedAgainstTheHeldSpeakingLease() {
+        UUID sessionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        when(liveTokenService.verify("talk-token"))
+            .thenReturn(new LiveTokenService.Claims(
+                sessionId, userId, streamId, LiveTokenService.Scope.TALK));
+        when(mapper.isTalkable(sessionId, userId)).thenReturn(true);
+
+        assertThat(service.introspect("talk-token", streamId, LiveTokenService.Scope.TALK)).isTrue();
+        verify(mapper, never()).isPlayable(any(), any());
+    }
+
+    @Test
+    void openTalkbackIssuesWhipUrlAndCommandsTheDevice() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Instant leaseExpiresAt = NOW.plusSeconds(30);
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.acquireTalkback(deviceId, sessionId, streamId, userId, leaseExpiresAt))
+            .thenReturn(Optional.of(
+                new TalkbackRow(deviceId, sessionId, streamId, userId, leaseExpiresAt)));
+        when(publisher.startTalkback(deviceId, streamId, leaseExpiresAt)).thenReturn(true);
+        when(liveTokenService.issue(
+            sessionId, userId, deviceId, streamId, LiveTokenService.Scope.TALK))
+            .thenReturn("talk-token");
+
+        var response = service.openTalkback(userId, sessionId);
+
+        assertThat(response.whipUrl())
+            .isEqualTo("https://media.example/webrtc/talkback/" + streamId + "/whip?token=talk-token");
+        assertThat(response.expiresAt()).isEqualTo(leaseExpiresAt);
+        verify(publisher).startTalkback(deviceId, streamId, leaseExpiresAt);
+    }
+
+    @Test
+    void openTalkbackRejectsASecondSpeakerOnTheSameDevice() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.acquireTalkback(deviceId, sessionId, streamId, userId, NOW.plusSeconds(30)))
+            .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.openTalkback(userId, sessionId))
+            .isInstanceOf(ApiException.class)
+            .extracting(error -> ((ApiException) error).code())
+            .isEqualTo("TALKBACK_BUSY");
+        verify(publisher, never()).startTalkback(any(), any(), any());
+    }
+
+    @Test
+    void openTalkbackReleasesTheLeaseWhenTheDeviceCommandFails() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Instant leaseExpiresAt = NOW.plusSeconds(30);
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.acquireTalkback(deviceId, sessionId, streamId, userId, leaseExpiresAt))
+            .thenReturn(Optional.of(
+                new TalkbackRow(deviceId, sessionId, streamId, userId, leaseExpiresAt)));
+        when(publisher.startTalkback(deviceId, streamId, leaseExpiresAt)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.openTalkback(userId, sessionId))
+            .isInstanceOf(ApiException.class)
+            .extracting(error -> ((ApiException) error).code())
+            .isEqualTo("MQTT_PUBLISH_FAILED");
+        verify(mapper).releaseTalkback(deviceId, sessionId);
+    }
+
+    @Test
+    void openTalkbackRequiresAReadyStream() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "PENDING")));
+
+        assertThatThrownBy(() -> service.openTalkback(userId, sessionId))
+            .isInstanceOf(ApiException.class)
+            .extracting(error -> ((ApiException) error).code())
+            .isEqualTo("STREAM_NOT_READY");
+        verify(mapper, never()).acquireTalkback(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void closingTheLiveSessionAlsoStopsTalkback() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.releaseTalkback(deviceId, sessionId)).thenReturn(Optional.of(
+            new TalkbackRow(deviceId, sessionId, streamId, userId, NOW.plusSeconds(30))));
+
+        service.close(userId, sessionId);
+
+        verify(publisher).stopTalkback(deviceId, streamId, "VIEWER_CLOSED");
     }
 
     @Test
@@ -198,6 +325,42 @@ class StreamServiceTest {
 
         verify(publisher).extend(deviceId, streamId, NOW.plusSeconds(120));
         verify(publisher, never()).start(any(), any(), any(), any());
+    }
+
+    @Test
+    void heartbeatAlsoExtendsTheDeviceSideTalkbackLease() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.heartbeatSession(
+            sessionId, userId, NOW, NOW.plusSeconds(45))).thenReturn(1);
+        when(mapper.extendTalkback(deviceId, sessionId, NOW.plusSeconds(30))).thenReturn(1);
+
+        service.heartbeat(userId, sessionId);
+
+        // 기기 플레이어는 START_TALKBACK의 hardExpiresAt에 스스로 닫힌다.
+        // 재발행이 없으면 DB 권한만 살아 있고 소리는 30초에 끊긴다.
+        verify(publisher).startTalkback(deviceId, streamId, NOW.plusSeconds(30));
+    }
+
+    @Test
+    void heartbeatWithoutASpeakingLeaseSendsNoTalkbackCommand() {
+        UUID sessionId = UUID.randomUUID();
+        UUID streamId = UUID.randomUUID();
+        UUID deviceId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(mapper.findAccessibleSession(userId, sessionId))
+            .thenReturn(Optional.of(row(sessionId, streamId, deviceId, userId, "READY")));
+        when(mapper.heartbeatSession(
+            sessionId, userId, NOW, NOW.plusSeconds(45))).thenReturn(1);
+        when(mapper.extendTalkback(deviceId, sessionId, NOW.plusSeconds(30))).thenReturn(0);
+
+        service.heartbeat(userId, sessionId);
+
+        verify(publisher, never()).startTalkback(any(), any(), any());
     }
 
     private StreamSessionRow row(

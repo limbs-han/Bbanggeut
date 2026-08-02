@@ -93,15 +93,26 @@ class FlywayMigrationIntegrationTest {
         assertThat(v30Result.success).isTrue();
         assertThat(v30Result.targetSchemaVersion).isEqualTo("30");
 
-        try (var connection = DriverManager.getConnection(jdbcUrl, username, password);
-             var statement = connection.createStatement()) {
-            statement.executeUpdate(
-                "insert into devices "
-                    + "(id, serial_number, product_code_hash, name, status, claimed_at, claimed_by) "
-                    + "values ('20000000-0000-0000-0000-000000000031', "
-                    + "'MISSING-BINDING-DEVICE', '" + "3".repeat(64) + "', "
-                    + "'Missing Binding Camera', 'ONLINE', now(), "
-                    + "'10000000-0000-0000-0000-000000000001')");
+        // A claimed device needs its OWNER membership in the same transaction:
+        // trg_devices_exactly_one_owner is a deferred constraint trigger that
+        // fires at commit for ONLINE/OFFLINE rows.
+        try (var connection = DriverManager.getConnection(jdbcUrl, username, password)) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.createStatement()) {
+                statement.executeUpdate(
+                    "insert into devices "
+                        + "(id, serial_number, name, status, claimed_at, claimed_by) "
+                        + "values ('20000000-0000-0000-0000-000000000031', "
+                        + "'MISSING-BINDING-DEVICE', "
+                        + "'Missing Binding Camera', 'ONLINE', now(), "
+                        + "'10000000-0000-0000-0000-000000000001')");
+                statement.executeUpdate(
+                    "insert into device_memberships (id, device_id, user_id, role) values "
+                        + "('30000000-0000-0000-0000-000000000031', "
+                        + "'20000000-0000-0000-0000-000000000031', "
+                        + "'10000000-0000-0000-0000-000000000001', 'OWNER')");
+            }
+            connection.commit();
         }
 
         Flyway latestFlyway = Flyway.configure()
@@ -110,7 +121,10 @@ class FlywayMigrationIntegrationTest {
         var result = latestFlyway.migrate();
 
         assertThat(result.success).isTrue();
-        assertThat(result.targetSchemaVersion).isEqualTo("31");
+        // 마이그레이션을 추가할 때마다 함께 올린다. 일부러 하드코딩해서 스키마
+        // 변경이 리뷰 없이 지나가지 않게 한다. 실패하면 마이그레이션이 깨진 것이
+        // 아니라 이 숫자가 뒤처진 것이다 — result.success는 그대로 통과한다.
+        assertThat(result.targetSchemaVersion).isEqualTo("32");
         try (var connection = DriverManager.getConnection(
             jdbcUrl, username, password);
              var statement = connection.prepareStatement(

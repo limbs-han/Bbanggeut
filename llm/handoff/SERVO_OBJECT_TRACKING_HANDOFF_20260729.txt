@@ -1,0 +1,198 @@
+S15P11E201 Jetson PAN/TILT 객체 추적 인수인계
+작성일: 2026-07-29 (KST)
+
+1. 현재 결론
+
+- BRIO 100 -> 로컬 RTSP -> YOLOv8n/ByteTrack -> 로컬 MQTT ->
+  servo_controller.py -> PCA9685 -> SG90 PAN/TILT 종단 추적을 실물로 검증했다.
+- 여러 객체가 있으면 한 객체를 고르지 않고, 선택된 객체 그룹 전체를 감싼
+  박스의 중앙을 화면 중앙으로 이동시키는 정책으로 확정했다.
+- 두 사람이 함께 좌우·아래로 이동하는 시험에서 PAN, TILT가 실제로
+  따라갔고, 두 사람 모두 프레임에서 사라진 뒤 HOME 복귀를 확인했다.
+- 현재 구현은 시험 코드와 기능 브랜치 단계다. Jetson 재부팅 후 자동 시작되는
+  운영 릴리스로 배포한 상태는 아니다.
+- 시험 종료 후 서보 제어기는 중지됐고 외부 배터리 실드는 OFF로 전환했다.
+  wj-edge-ai-recording은 시험 정리 절차에서 다시 시작했다. 작업 재개 전에
+  실제 서비스 상태를 다시 확인한다.
+
+2. Git 기준
+
+- 기능 브랜치: feat/device/servo-autoframing
+- MR 대상: develop
+- master 또는 develop에 직접 push하지 않는다.
+- 주요 파일:
+  - ai/yolo/yolov8_autoframe_jetson.py
+  - ai/yolo/servo_controller.py
+  - ai/yolo/test_autoframe_logic.py
+  - ai/yolo/test_servo_controller.py
+  - ai/yolo/wj-servo-controller.service
+  - ai/yolo/requirements-servo-controller.txt
+  - ai/yolo/run_edge_ai_recording.sh
+  - ai/yolo/run_edge_ai_mvp.sh
+  - ai/device_agent/install-local-media.sh
+  - ai/device_agent/device-agent.jetson.env.example
+  - ai/device_agent/servo_test.py
+  - ai/device_agent/tests/test_servo.py
+  - ai/SERVO_PCA9685_RUNBOOK.md
+
+3. 검증 하드웨어와 배선
+
+- Jetson: Orin Nano Developer Kit
+- 카메라: Logitech BRIO 100
+- PWM 드라이버: PCA9685
+- Jetson I2C bus: 7
+- 실제 PCA9685 주소: 0x60
+- 0x70은 PCA9685 ALLCALL 응답으로 함께 보였다.
+- PWM 주파수: 50Hz
+- PAN: PCA9685 channel 0
+- TILT: PCA9685 channel 1
+- SG90 배선: 갈색 GND, 빨강 V+, 노랑 PWM
+- 외부 전원: 4x18650 Battery Shield V9의 5V 출력
+- 서보 동시 구동 중 V+와 GND: 5.17V
+- Jetson GND, PCA9685 GND, 외부 전원 GND는 공통이다.
+- PCA9685 VCC는 Jetson 3.3V 로직 전원이고 V+는 외부 5V다.
+- 기존 TILT 서보는 정상 전원과 PWM에서도 소리·움직임이 없어 불량으로
+  판단했다. 최종 종단 시험은 빌린 정상 SG90으로 수행했다. 새 서보로
+  교체할 때 동일 보정을 다시 수행한다.
+
+4. 실물에서 확정한 초기 보정값
+
+SERVO_ENABLE_HARDWARE=true
+SERVO_I2C_BUS=7
+SERVO_I2C_ADDRESS=0x60
+SERVO_PAN_CHANNEL=0
+SERVO_TILT_CHANNEL=1
+SERVO_PAN_MIN_DEG=-10
+SERVO_PAN_MAX_DEG=10
+SERVO_TILT_MAX_DEG=10
+SERVO_PAN_HOME_PULSE_US=1500
+SERVO_TILT_HOME_PULSE_US=1500
+SERVO_PAN_PULSE_US_PER_DEGREE=5.555556
+SERVO_TILT_PULSE_US_PER_DEGREE=5.555556
+SERVO_PAN_PULSE_DIRECTION=-1
+SERVO_TILT_PULSE_DIRECTION=-1
+SERVO_MINIMUM_PULSE_US=1000
+SERVO_MAXIMUM_PULSE_US=2000
+
+- PAN RIGHT와 TILT DOWN의 실제 방향이 논리 명령과 일치하려면 두 축 모두
+  pulse direction이 -1이어야 했다.
+- 안전한 최초 범위로 PAN -10~+10도, TILT 0~+10도만 검증했다.
+- 전체 기구 범위로 확대하지 않았다. 각도를 넓힐 때는 5~10도 단위로
+  늘리고 충돌·걸림·소음·전압 강하를 매 단계 확인한다.
+- 최종 객체 추적 시험의 서보 최대 속도는 PAN 20deg/s, TILT 15deg/s였다.
+
+5. 객체 추적 정책과 최종 시험값
+
+- 추적 대상 클래스: person, cat, dog
+- 추적기: ByteTrack
+- 복수 객체 정책: 전체 그룹 중앙 추적
+- 최종 시험 deadzone width/height: 0.08
+- EMA alpha: 0.20
+- 대상 소실 후 HOME: 5초
+- MQTT 명령 발행 간격: 0.15초
+- 목표 토픽:
+  homecam/v2/{device_id}/control/framing/target
+- 상태 토픽:
+  homecam/v2/{device_id}/control/framing/status
+
+최종 실물 그룹 추적 로그:
+
+- Jetson 시험 폴더:
+  /home/ssafy/servo_trials/20260729_102505/
+- 동시 PAN/TILT 사전 시험:
+  combined-preflight-20260729_141147
+- 최종 그룹 추적 시험:
+  group-follow-20260729_142515
+- YOLO 명령 수: 272
+- TRACKING: 232
+- NO_TARGET_HOLD: 39
+- RETURN_HOME: 1
+- command_x RIGHT: 159, LEFT: 34, HOLD: 78, HOME: 1
+- command_y DOWN: 156, HOLD: 115, HOME: 1
+- target_count 1: 120, 2: 112, 0: 40
+- 서보 제어기 수신: 271
+- 거부: 0
+- 실물 확인: PAN 좌우, TILT 아래, 대상 소실 뒤 HOME 모두 성공
+- 동작 중 떨림, 걸림, 큰 소음 없음
+
+6. 조사 중 발견하고 해결한 문제
+
+6.1 PCA9685가 SLEEP 상태로 남는 문제
+
+- 최초 MODE1이 0x11이었다.
+- 기존 주파수 설정은 초기 MODE1의 SLEEP 비트를 다시 복원해 MODE1이
+  0x31이 되고 PWM 출력이 활성화되지 않을 수 있었다.
+- 수정 후 MODE1 전환은 0x11 -> 0x21 -> 0xA1이다.
+- wake_mode에서 RESTART와 SLEEP을 모두 지우고 AUTO_INCREMENT를 설정한
+  다음 마지막에 RESTART를 켠다.
+- ai/yolo/servo_controller.py와 ai/device_agent/servo_test.py 양쪽에 같은
+  원칙을 적용하고 회귀 테스트를 추가했다.
+
+6.2 I2C 주소를 0x40으로 추측한 문제
+
+- bus 7의 0x40은 응답하지 않았다.
+- 실제 보드는 0x60이었고 MODE1, MODE2, PRESCALE 레지스터를 직접 읽어
+  PCA9685임을 확인했다.
+- 항상 i2cdetect와 레지스터 읽기로 실물 주소를 확인한다.
+
+6.3 TILT가 움직이지 않던 문제
+
+- 채널 교차 시험, 양 방향 PWM, 5.15~5.17V 전원, 공통 GND를 확인했지만
+  기존 TILT SG90은 무반응이었다.
+- 같은 배선에 빌린 정상 SG90을 연결하자 즉시 움직였다.
+- 소프트웨어나 PCA9685가 아니라 기존 서보 불량으로 판단한다.
+
+6.4 첫 객체 추적 시험에서 움직임이 잘 보이지 않던 문제
+
+- 실제 사람이 두 명인데 한 명만 움직였고 deadzone을 0.18로 설정했다.
+- 그룹 중심 오차 error_x=0.164가 deadzone 안으로 판정되어 최근 명령이
+  HOLD였다.
+- 정책은 그룹 중앙 추적이므로 두 사람이 함께 움직이고 deadzone을 0.08로
+  줄여 재시험했다.
+- 재시험에서 양 방향 명령, 실제 PAN/TILT 이동과 HOME 복귀가 확인됐다.
+- 한 명이 고정된 상태에서 다른 한 명만 조금 움직이면 그룹 중앙 변화가
+  작아 카메라가 움직이지 않을 수 있으며 이는 현재 정책상 정상이다.
+
+6.5 외부 전원 확인
+
+- Battery Shield V9는 전원 버튼을 켜야 5.15~5.17V가 출력된다.
+- 버튼을 켜기 전의 낮은 측정값을 정상 5V 출력으로 오해하지 않는다.
+- 서보 전원을 Jetson 5V 핀에서 공급하지 않는다.
+
+7. 다음 작업
+
+1. 이 기능 브랜치의 CI와 MR을 완료한다.
+2. MR 병합 후 최신 develop 기준으로 Jetson용 릴리스를 준비한다.
+3. 장치 자동 배포는 하지 않는다. 작업자 승인 후 Jetson에서 수동 설치한다.
+4. Jetson YOLO venv에 requirements-servo-controller.txt를 설치한다.
+5. /etc/william-james/device-agent.env에 4절의 실제 보정값을 적용한다.
+6. wj-servo-controller.service를 설치하되 먼저
+   SERVO_ENABLE_HARDWARE=false로 드라이런한다.
+7. 드라이런에서 YOLO -> MQTT -> 상태 토픽을 확인한 뒤 외부 전원을 연결하고
+   실물 출력을 활성화한다.
+8. wj-edge-ai-recording과 wj-servo-controller의 부팅 자동 시작 및 재부팅
+   복구를 검증한다.
+9. 새 SG90으로 교체한 뒤 HOME, 방향, 10도 범위를 다시 보정한다.
+10. 30분 이상 장시간 추적에서 전압, 발열, 떨림, MQTT 거부 수와 프로세스
+    재시작 횟수를 기록한다.
+11. 안전이 확인되기 전에는 PAN/TILT 범위를 10도보다 넓히지 않는다.
+12. 추후 필요하면 최대 속도, deadzone, 그룹 전환 프레임 수를 현장 데이터로
+    조정한다.
+
+8. 안전 정지
+
+- 이상 진동, 기구물 충돌, 큰 소음이 생기면 소프트웨어보다 먼저 Battery
+  Shield V9의 5V 출력을 OFF로 끈다.
+- 그 다음 아래 서비스를 중지한다.
+
+  sudo systemctl stop wj-servo-controller
+
+- 정상 종료 시 servo_controller.py는 PAN/TILT 채널을 FULL OFF로 만든다.
+- 배선 변경은 Jetson과 외부 5V 전원을 모두 끈 상태에서 수행한다.
+
+9. 보안과 저장소 주의
+
+- /etc/william-james/device-agent.env의 토큰, MQTT 비밀번호, MediaMTX
+  비밀번호를 문서나 로그에 복사하지 않는다.
+- 영상, 사람 얼굴, 실험 MP4, JSONL 원본은 Git에 추가하지 않는다.
+- 장치·EC2 자동 배포와 운영 Backend 배포는 이 MR 범위가 아니다.
