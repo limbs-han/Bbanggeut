@@ -518,6 +518,11 @@ class ApiClient {
     }
   }
 
+  /// 서버가 원본(이미 서버에 있다)을 Gemini로 전사한 자막을 돌려준다.
+  /// 폰은 아무것도 올리지 않는다 — 경로의 videoId가 전부다.
+  Future<Map<String, dynamic>> createTranscript(String videoId) =>
+      _post('/api/videos/$videoId/transcript');
+
   /// 전사문으로 4컷 구성을 받는다. 서버가 키를 들고 LLM을 대신 부른다.
   ///
   /// **글만 보낸다** — 영상·오디오·프레임은 보내지 않는다.
