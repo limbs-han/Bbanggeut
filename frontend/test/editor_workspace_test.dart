@@ -62,6 +62,9 @@ void main() {
         onStickerSelected: onStickerSelected ?? (_) {},
         onLookSelected: onLookSelected ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
+        onZoomAdd: () {},
+        onZoomChanged: (_) {},
+        onZoomRemove: (_) {},
         onToolSelected: controller.selectTool,
       ),
     ),
@@ -107,15 +110,7 @@ void main() {
       await tester.pumpWidget(workspace(controller));
 
       expect(find.text('영상 편집'), findsOneWidget);
-      for (final label in const [
-        '컷 편집',
-        '비율',
-        '텍스트',
-        '오디오',
-        '스티커',
-        'AI자막',
-        '효과',
-      ]) {
+      for (final label in const ['컷', '비율', '텍스트', '줌']) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
       expect(tester.takeException(), isNull);
@@ -267,7 +262,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('AI자막 버튼은 하단 네비게이션에서 효과 왼쪽에 있다', (tester) async {
+  testWidgets('하단 네비게이션은 컷·비율·텍스트·줌만 제공한다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -277,36 +272,26 @@ void main() {
 
     await tester.pumpWidget(workspace(controller));
 
-    final aiCaption = tester.getCenter(
-      find.byKey(const Key('editor-nav-aiCaption')),
-    );
-    final ar = tester.getCenter(find.byKey(const Key('editor-nav-ar')));
-    final sticker = tester.getCenter(
-      find.byKey(const Key('editor-nav-sticker')),
-    );
-    expect(aiCaption.dx, lessThan(ar.dx));
-    expect(aiCaption.dx, greaterThan(sticker.dx));
+    expect(find.byKey(const Key('editor-nav-cut')), findsOneWidget);
+    expect(find.byKey(const Key('editor-nav-ratio')), findsOneWidget);
+    expect(find.byKey(const Key('editor-nav-text')), findsOneWidget);
+    expect(find.byKey(const Key('editor-nav-zoom')), findsOneWidget);
+    expect(find.byKey(const Key('editor-nav-aiCaption')), findsNothing);
+    expect(find.byKey(const Key('editor-nav-ar')), findsNothing);
   });
 
-  testWidgets('AI자막 탭에서 자동 자막 화면을 연다', (tester) async {
+  testWidgets('줌 탭에서 현재 위치에 줌을 추가한다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final controller = newController();
     addTearDown(controller.dispose);
-    var opened = false;
-
-    await tester.pumpWidget(
-      workspace(controller, onAiCaption: () => opened = true),
-    );
-    await tester.tap(find.byKey(const Key('editor-nav-aiCaption')));
-    // 도구 패널은 AnimatedSize로 열리므로 시작 프레임 한 번 + 진행 프레임 한 번.
+    await tester.pumpWidget(workspace(controller));
+    await tester.tap(find.byKey(const Key('editor-nav-zoom')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.byKey(const Key('editor-open-ai-caption')));
-
-    expect(opened, isTrue);
+    expect(find.text('현재 위치에 줌 추가'), findsOneWidget);
   });
 
   testWidgets('타임라인을 끌면 재생 위치와 표시선이 함께 움직인다', (tester) async {

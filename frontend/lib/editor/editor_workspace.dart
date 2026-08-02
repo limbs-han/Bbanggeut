@@ -37,6 +37,9 @@ class EditorWorkspace extends StatelessWidget {
     required this.onStickerSelected,
     required this.onLookSelected,
     required this.onAiCaption,
+    required this.onZoomAdd,
+    required this.onZoomChanged,
+    required this.onZoomRemove,
     required this.onToolSelected,
     this.onUndo,
     this.onRedo,
@@ -109,6 +112,9 @@ class EditorWorkspace extends StatelessWidget {
   /// 자동 자막 화면을 여는 버튼. 자막 로직은 전부 features/stt 쪽에 있고
   /// 편집기는 버튼만 들고 있다.
   final VoidCallback onAiCaption;
+  final VoidCallback onZoomAdd;
+  final ValueChanged<EditorZoomSegment> onZoomChanged;
+  final ValueChanged<EditorZoomSegment> onZoomRemove;
 
   /// AI 자막 패널에 보여줄 한 줄 상태. 자막 컨트롤러가 만든 문구를 그대로 받는다.
   final String? aiCaptionSummary;
@@ -214,6 +220,9 @@ class EditorWorkspace extends StatelessWidget {
                                 : thumbnails[thumbnails.length ~/ 2],
                             onAiCaption: onAiCaption,
                             aiCaptionSummary: aiCaptionSummary,
+                            onZoomAdd: onZoomAdd,
+                            onZoomChanged: onZoomChanged,
+                            onZoomRemove: onZoomRemove,
                           ),
                         ),
                       if (!compact)
@@ -875,6 +884,9 @@ class SelectedToolPanel extends StatelessWidget {
     required this.onStickerSelected,
     required this.onLookSelected,
     required this.onAiCaption,
+    required this.onZoomAdd,
+    required this.onZoomChanged,
+    required this.onZoomRemove,
     this.previewFrame,
     this.onVolumeCommitted,
     this.aiCaptionSummary,
@@ -891,6 +903,9 @@ class SelectedToolPanel extends StatelessWidget {
   final ValueChanged<EditorLook> onLookSelected;
   final String? previewFrame;
   final VoidCallback onAiCaption;
+  final VoidCallback onZoomAdd;
+  final ValueChanged<EditorZoomSegment> onZoomChanged;
+  final ValueChanged<EditorZoomSegment> onZoomRemove;
   final String? aiCaptionSummary;
 
   @override
@@ -917,6 +932,12 @@ class SelectedToolPanel extends StatelessWidget {
           onSelected: onRatioSelected,
         ),
         EditorTool.text => _TextPanel(onText: onText),
+        EditorTool.zoom => _ZoomPanel(
+          project: project,
+          onAdd: onZoomAdd,
+          onChanged: onZoomChanged,
+          onRemove: onZoomRemove,
+        ),
         EditorTool.audio => _AudioPanel(
           audio: project.audio,
           onVolumeChanged: onVolumeChanged,
@@ -972,6 +993,92 @@ class _RatioPanel extends StatelessWidget {
       ),
     ],
   );
+}
+
+class _ZoomPanel extends StatelessWidget {
+  const _ZoomPanel({
+    required this.project,
+    required this.onAdd,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final EditorProject project;
+  final VoidCallback onAdd;
+  final ValueChanged<EditorZoomSegment> onChanged;
+  final ValueChanged<EditorZoomSegment> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final active =
+        project.zoomAtTimeline(project.playheadMs) ??
+        (project.zoomSegments.isEmpty ? null : project.zoomSegments.first);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _PanelTitle('줌 구간')),
+            Text(
+              '${project.zoomSegments.length}개',
+              style: const TextStyle(color: EditorColorTokens.muted),
+            ),
+          ],
+        ),
+        if (active == null)
+          const Expanded(
+            child: Center(child: Text('추천 줌이 없습니다. 재생 위치에서 직접 추가할 수 있어요.')),
+          )
+        else ...[
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: active.scale,
+                  min: 1.05,
+                  max: 2.8,
+                  divisions: 35,
+                  label: '${active.scale.toStringAsFixed(2)}배',
+                  onChanged: (value) =>
+                      onChanged(active.copyWith(scale: value)),
+                ),
+              ),
+              Text('${active.scale.toStringAsFixed(2)}×'),
+              IconButton(
+                tooltip: '줌 삭제',
+                onPressed: () => onRemove(active),
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+            ],
+          ),
+          Text(
+            '${_shortTime(active.sourceStartMs)} – ${_shortTime(active.sourceEndMs)}'
+            '${active.automatic ? ' · 자동 추천' : ' · 직접 추가'}',
+            style: const TextStyle(
+              color: EditorColorTokens.muted,
+              fontSize: 12,
+            ),
+          ),
+        ],
+        const SizedBox(height: 6),
+        SizedBox(
+          width: double.infinity,
+          height: 38,
+          child: FilledButton.icon(
+            key: const Key('editor-add-zoom'),
+            onPressed: onAdd,
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('현재 위치에 줌 추가'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _shortTime(int ms) {
+    final seconds = ms ~/ 1000;
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
 }
 
 class _TextPanel extends StatelessWidget {
@@ -1351,13 +1458,10 @@ class EditorBottomNavigation extends StatelessWidget {
   final double iconSize;
 
   static const _items = <(EditorTool, String, IconData)>[
-    (EditorTool.cut, '컷 편집', Icons.content_cut_rounded),
+    (EditorTool.cut, '컷', Icons.content_cut_rounded),
     (EditorTool.ratio, '비율', Icons.aspect_ratio_rounded),
     (EditorTool.text, '텍스트', Icons.title_rounded),
-    (EditorTool.audio, '오디오', Icons.music_note_rounded),
-    (EditorTool.sticker, '스티커', Icons.emoji_emotions_outlined),
-    (EditorTool.aiCaption, 'AI자막', Icons.closed_caption_rounded),
-    (EditorTool.ar, '효과', Icons.auto_awesome_rounded),
+    (EditorTool.zoom, '줌', Icons.zoom_in_rounded),
   ];
 
   @override

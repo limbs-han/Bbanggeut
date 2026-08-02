@@ -16,11 +16,10 @@ import '../core/video_exporter.dart';
 import '../core/video_source_cache.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
+import '../editor/edit_recommendation_client.dart';
 import '../editor/editor_text_style_bar.dart';
 import '../editor/editor_platform.dart';
 import '../editor/editor_workspace.dart';
-import '../features/stt/caption_auto_section.dart';
-import '../features/stt/caption_controller.dart';
 import 'widgets.dart';
 
 class LocalEditScreen extends StatefulWidget {
@@ -44,12 +43,7 @@ class LocalEditScreen extends StatefulWidget {
 class _LocalEditScreenState extends State<LocalEditScreen> {
   final _exporter = VideoEditorExporter();
   final _editorPlatform = const EditorPlatform();
-
-  /// AI 자막 시트가 떠 있는가. 탭과 패널 버튼이 겹쳐 두 장 쌓이는 걸 막는다.
-  bool _captionSheetOpen = false;
-
-  /// 전사를 시작할 예약. 편집 진입과 CPU를 다투지 않게 조금 미뤄 둔다.
-  Timer? _autoCaptionTimer;
+  final _recommendations = EditRecommendationClient();
 
   /// 정해 둔 구간만 돌려 보는 중인가. 이때는 구간 끝에서 다음 클립으로
   /// 넘어가지 않고 선다.
@@ -93,22 +87,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   int? _pendingPreviewSeekMs;
   bool _seekingPreview = false;
 
-  /// 원본 영상에는 자막이 구워져 있지 않으므로 저장할 때 한 번만 얹는다.
-  final bool _captionsBakedIntoSource = false;
-
-  /// 들린 대사로 만드는 자동 자막. 상태와 편집 로직은 전부 이쪽에 있다.
-  final _autoCaptions = CaptionController();
-
-  /// 자막 입력칸 컨트롤러는 화면이 소유한다.
-  ///
-  /// 시트가 열릴 때 만들어 닫힌 직후 dispose하면 안 된다 — showModalBottomSheet의
-  /// Future는 Navigator.pop 시점에 끝나지만 **닫히는 애니메이션은 그 뒤에도
-  /// 재생된다.** 그 사이 키보드가 내려가며(autofocus로 올라와 있다)
-  /// MediaQuery.viewInsetsOf가 바뀌어 시트가 다시 그려지고, 죽은 컨트롤러를
-  /// 만져 빨간 화면이 뜬다. 실기기에서 확인한 예외:
-  /// "A TextEditingController was used after being disposed."
-  final _captionField = TextEditingController();
-
   bool get _editorReady =>
       _sourcePath != null && _preview?.value.isInitialized == true;
 
@@ -116,14 +94,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   void initState() {
     super.initState();
     _editState = VideoEditState(durationMs: 0, originalAspectRatio: 16 / 9);
-    // 전사가 끝나면 미리보기 겹쳐보기가 바로 나타나야 한다. 이걸 안 걸면
-    // 다음 재생 위치 갱신 때까지 자막이 안 보인다.
-    _autoCaptions.addListener(_onCaptionsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
-  }
-
-  void _onCaptionsChanged() {
-    if (mounted) setState(() {});
   }
 
   Future<void> _prepare() async {
@@ -144,7 +115,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           _status = '편집 화면과 미리보기를 준비하고 있어요';
         });
       }
-      await _replaceEditorSource(sourcePath, restartCaptions: true);
+      await _replaceEditorSource(sourcePath);
     } catch (failure) {
       if (!mounted) return;
       setState(() {
@@ -154,10 +125,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     }
   }
 
-  Future<void> _replaceEditorSource(
-    String sourcePath, {
-    required bool restartCaptions,
-  }) async {
+  Future<void> _replaceEditorSource(String sourcePath) async {
     final nextPreview = VideoPlayerController.file(File(sourcePath));
     await nextPreview.initialize();
     if (!mounted) {
@@ -179,6 +147,20 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       ),
     );
 
+    String? recommendationStatus;
+    try {
+      final recommendation = await _recommendations.recommend(
+        videoId: widget.video.id,
+        capturedAt: widget.video.capturedStartAt,
+      );
+      nextProjectController.applyRecommendation(recommendation);
+      final seconds = nextProjectController.project.durationMs / 1000;
+      recommendationStatus =
+          '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · 줌 ${nextProjectController.project.zoomSegments.length}개';
+    } catch (_) {
+      recommendationStatus = '자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요';
+    }
+
     final previousPreview = _preview;
     final previousProjectController = _projectController;
     previousPreview?.removeListener(_onPreviewChanged);
@@ -197,41 +179,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         durationMs: durationMs,
         originalAspectRatio: aspectRatio,
       );
-      _status = null;
+      _status = recommendationStatus;
     });
 
     previousProjectController?.dispose();
     await previousPreview?.dispose();
-    if (restartCaptions) _scheduleAutoCaptions(sourcePath);
+    // 자동 자막은 제품 범위에서 제거했다. 텍스트는 사용자가 직접 추가한다.
     // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
     // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
     unawaited(_loadThumbnails());
-  }
-
-  /// 전사를 조금 미뤄 시작한다.
-  ///
-  /// **왜 미루는가**: whisper는 영상 길이의 0.9배쯤 CPU를 통째로 붙잡는다.
-  /// 편집 화면이 뜨는 바로 그 순간에 같이 돌면, 하드웨어 디코더로 첫 프레임을
-  /// 그리고 썸네일을 뽑는 일과 코어를 두고 다툰다 — 진입이 눈에 띄게 굼떠지고
-  /// 첫 스크럽이 뚝뚝 끊긴다. 몇 백 밀리초 뒤에 시작해도 자막이 필요해지는
-  /// 시점(AI 자막 탭)까지는 넉넉하고, 탭을 먼저 열면 그 자리에서 시작한다.
-  ///
-  /// 전사 로직 자체는 features/stt 쪽 그대로다. 여기서 정하는 것은 "언제
-  /// 시작하나"뿐이다.
-  void _scheduleAutoCaptions(String sourcePath) {
-    _autoCaptionTimer?.cancel();
-    _autoCaptionTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (mounted && _sourcePath == sourcePath) _startAutoCaptions();
-    });
-  }
-
-  void _startAutoCaptions() {
-    final sourcePath = _sourcePath;
-    if (sourcePath == null) return;
-    _autoCaptionTimer?.cancel();
-    _autoCaptionTimer = null;
-    // 두 번 불러도 CaptionController가 한 번만 돌린다.
-    _autoCaptions.start(widget.video.id, sourcePath);
   }
 
   /// 타임라인 프레임을 두 번에 나눠 뽑는다.
@@ -532,13 +488,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     if (mounted) setState(() {});
   }
 
-  List<Map<String, Object>> _sourceCaptionsForExport() {
-    if (_captionsBakedIntoSource || !_autoCaptions.hasUserEdits) {
-      return const [];
-    }
-    return _autoCaptions.forExport(startMs: 0, endMs: _editState.durationMs);
-  }
-
   /// 영상 전체 색감. 앱 안에서 바로 입히고 저장할 때 함께 구워진다.
   void _setLook(EditorLook look) {
     final projectController = _projectController;
@@ -552,87 +501,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       }
       _editState.markExternalEditApplied();
     });
-  }
-
-  /// AI 자막 시트. 자막을 만들고 고치는 일은 전부 [CaptionAutoSection]이
-  /// 그대로 한다 — 여기서는 열어 주기만 한다.
-  Future<void> _showAiCaptionSheet() async {
-    // 이제 'AI자막' 탭을 누르는 것만으로도 열린다. 탭과 패널 버튼이 겹쳐
-    // 시트가 두 장 쌓이지 않게 막는다.
-    if (_saving || _captionSheetOpen) return;
-    // 자막을 보러 왔다면 더 미룰 이유가 없다. 예약이 남아 있으면 지금 시작한다.
-    _startAutoCaptions();
-    _captionSheetOpen = true;
-    try {
-      await _presentAiCaptionSheet();
-    } finally {
-      _captionSheetOpen = false;
-    }
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _presentAiCaptionSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFFFFFDFC),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          16,
-          20,
-          MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'AI 자막',
-                  style: TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '닫기',
-                  onPressed: () => Navigator.pop(sheetContext),
-                  color: AppColors.muted,
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            CaptionAutoSection(
-              controller: _autoCaptions,
-              // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
-              // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
-              estimateSeconds: _editState.durationMs > 0
-                  ? (_editState.durationMs / 1000 * 0.9).round()
-                  : null,
-              // 자막 수정도 저장 안 된 변경이다.
-              onChanged: () =>
-                  setState(() => _editState.markExternalEditApplied()),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              '만들어진 자막은 저장할 때 영상에 함께 구워져요. 줄을 눌러 고칠 수 있어요.',
-              style: TextStyle(
-                color: AppColors.muted,
-                fontSize: 12,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Future<void> _saveEdit() async {
@@ -672,10 +540,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
     try {
       final exportProject = projectController.project;
-      final exportCaptions = _captionsForProject(
-        exportProject,
-        _sourceCaptionsForExport(),
-      );
+      const exportCaptions = <Map<String, Object>>[];
       final requiresRendering = exportProject.requiresRendering(
         hasCaptions: exportCaptions.isNotEmpty,
       );
@@ -703,6 +568,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       final file = File(outputPath);
       if (!await file.exists() || (await file.length()) == 0) {
         throw const VideoExportException('만들어진 영상 파일이 비어 있어요.');
+      }
+      try {
+        await _recommendations.saveProject(
+          videoId: widget.video.id,
+          revision: exportProject.revision + 1,
+          recipe: exportProject.toPlatformMap(outputPath: outputPath),
+        );
+      } catch (_) {
+        // 로컬 recipe 저장 실패가 휴대폰 영상 저장까지 막아서는 안 된다.
       }
       if (mounted) {
         setState(() {
@@ -864,43 +738,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _exportProgressTimer = null;
   }
 
-  List<Map<String, Object>> _captionsForProject(
-    EditorProject project,
-    List<Map<String, Object>> sourceCaptions,
-  ) {
-    if (project.textLayers.isNotEmpty || sourceCaptions.isEmpty) {
-      return const [];
-    }
-    final mapped = <Map<String, Object>>[];
-    var timelineStartMs = 0;
-    for (final clip in project.clips) {
-      for (final caption in sourceCaptions) {
-        final startMs = (caption['startMs'] as num?)?.toInt();
-        final endMs = (caption['endMs'] as num?)?.toInt();
-        final text = caption['text'] as String?;
-        if (startMs == null ||
-            endMs == null ||
-            text == null ||
-            text.trim().isEmpty) {
-          continue;
-        }
-        final overlapStart = startMs.clamp(
-          clip.sourceStartMs,
-          clip.sourceEndMs,
-        );
-        final overlapEnd = endMs.clamp(clip.sourceStartMs, clip.sourceEndMs);
-        if (overlapEnd <= overlapStart) continue;
-        mapped.add({
-          'startMs': timelineStartMs + overlapStart - clip.sourceStartMs,
-          'endMs': timelineStartMs + overlapEnd - clip.sourceStartMs,
-          'text': text,
-        });
-      }
-      timelineStartMs += clip.durationMs;
-    }
-    return mapped;
-  }
-
   String _buildOutputPath({String? prefix}) {
     final sourcePath = _sourcePath;
     final directory = sourcePath == null
@@ -920,7 +757,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   @override
   void dispose() {
-    _autoCaptionTimer?.cancel();
     _textInput.dispose();
     _textFocus.dispose();
     _stopExportProgressPolling();
@@ -930,10 +766,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       preview.dispose();
     }
     _projectController?.dispose();
-    _captionField.dispose();
-    _autoCaptions
-      ..removeListener(_onCaptionsChanged)
-      ..dispose();
     super.dispose();
   }
 
@@ -1208,12 +1040,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         onEditLayer: (id) => _startTextEditing(layerId: id),
         captionColor: _captionColor,
         onLayerChanged: () => setState(_editState.markExternalEditApplied),
-        autoCaptionText: _captionsBakedIntoSource
-            ? null
-            : autoCaptionAt(
-                _autoCaptions,
-                preview.value.position.inMilliseconds,
-              ),
+        autoCaptionText: null,
       ),
       thumbnails: _thumbnails,
       playing: preview.value.isPlaying,
@@ -1225,11 +1052,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       exportProgress: _exportProgress,
       exportStatus: _status,
       onExportCancel: _cancelExport,
-      aiCaptionSummary: _autoCaptions.message(
-        estimateSeconds: _editState.durationMs > 0
-            ? (_editState.durationMs / 1000 * 0.9).round()
-            : null,
-      ),
+      aiCaptionSummary: null,
       onBack: () => Navigator.maybePop(context),
       onSave: _saveEdit,
       onPlay: _togglePlayback,
@@ -1250,7 +1073,22 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
       onLookSelected: _setLook,
-      onAiCaption: _showAiCaptionSheet,
+      onAiCaption: () {},
+      onZoomAdd: () {
+        projectController.addZoomAtPlayhead();
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
+      onZoomChanged: (zoom) {
+        projectController.updateZoom(zoom);
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
+      onZoomRemove: (zoom) {
+        projectController.removeZoom(zoom);
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
       onToolSelected: _selectEditorTool,
     );
   }
@@ -1259,9 +1097,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     if (_saving) return;
     _projectController?.selectTool(tool);
     if (mounted) setState(() {});
-    // AI 자막은 탭을 고르는 것만으로 바로 열어 준다. 탭 → 패널 → 버튼으로
-    // 두 번 누르게 하면 "연결이 안 된 것"처럼 보인다.
-    if (tool == EditorTool.aiCaption) unawaited(_showAiCaptionSheet());
   }
 
   void _selectCanvasRatio(EditorCanvasRatio ratio) {
@@ -1902,6 +1737,7 @@ class _PreviewSurface extends StatelessWidget {
     final project = projectController.project;
     final canvas = project.canvas;
     final look = project.look;
+    final zoom = project.zoomAtTimeline(project.playheadMs);
     final size = controller.value.size;
     final width = size.width <= 0 ? 1280.0 : size.width.toDouble();
     final height = size.height <= 0 ? 720.0 : size.height.toDouble();
@@ -1930,15 +1766,26 @@ class _PreviewSurface extends StatelessWidget {
                       controller: projectController,
                       canvas: canvas,
                       onTap: editingLayerId == null ? null : onEditingDone,
-                      child: Center(
-                        child: ColorFiltered(
-                          colorFilter: look.colorFilter,
-                          child: FittedBox(
-                            fit: BoxFit.contain,
-                            child: SizedBox(
-                              width: width,
-                              height: height,
-                              child: VideoPlayer(controller),
+                      child: ClipRect(
+                        child: Transform.scale(
+                          scale: zoom?.scale ?? 1,
+                          alignment: zoom == null
+                              ? Alignment.center
+                              : Alignment(
+                                  zoom.focus.x * 2 - 1,
+                                  zoom.focus.y * 2 - 1,
+                                ),
+                          child: Center(
+                            child: ColorFiltered(
+                              colorFilter: look.colorFilter,
+                              child: FittedBox(
+                                fit: BoxFit.contain,
+                                child: SizedBox(
+                                  width: width,
+                                  height: height,
+                                  child: VideoPlayer(controller),
+                                ),
+                              ),
                             ),
                           ),
                         ),

@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 import 'editor_ar_effects.dart';
+import 'edit_recommendation_client.dart';
 import 'editor_project.dart';
 
 class EditorProjectController extends ChangeNotifier {
@@ -73,6 +74,82 @@ class EditorProjectController extends ChangeNotifier {
     if (_project.selectedTool == tool) return;
     _project = _project.copyWith(selectedTool: tool);
     notifyListeners();
+  }
+
+  void applyRecommendation(EditRecommendation recommendation) {
+    final start = recommendation.cutStartMs.clamp(0, _project.sourceDurationMs);
+    final end = recommendation.cutEndMs.clamp(
+      start + minimumClipDurationMs,
+      _project.sourceDurationMs,
+    );
+    final clip = EditorClip(
+      id: _nextId('clip'),
+      sourcePath: _project.sourceVideoPath,
+      sourceStartMs: start,
+      sourceEndMs: end,
+    );
+    final zooms = recommendation.zoomSegments.indexed
+        .map((entry) {
+          final value = entry.$2;
+          return EditorZoomSegment(
+            id: 'auto-zoom-${entry.$1}',
+            sourceStartMs: (value['startMs'] as num).round(),
+            sourceEndMs: (value['endMs'] as num).round(),
+            scale: (value['scale'] as num).toDouble(),
+            focus: NormalizedPoint(
+              (value['focusX'] as num).toDouble(),
+              (value['focusY'] as num).toDouble(),
+            ),
+            automatic: true,
+          );
+        })
+        .toList(growable: false);
+    _commit(
+      _project.copyWith(
+        clips: [clip],
+        zoomSegments: zooms,
+        selectedClipId: clip.id,
+        playheadMs: 0,
+      ),
+    );
+  }
+
+  void addZoomAtPlayhead() {
+    final sourceMs = _project.sourcePositionForTimeline(_project.playheadMs);
+    if (sourceMs == null) return;
+    final start = math.max(0, sourceMs - 1000);
+    final end = math.min(_project.sourceDurationMs, sourceMs + 2000);
+    _commit(
+      _project.copyWith(
+        zoomSegments: [
+          ..._project.zoomSegments,
+          EditorZoomSegment(
+            id: _nextId('zoom'),
+            sourceStartMs: start,
+            sourceEndMs: end,
+            scale: 1.35,
+            focus: NormalizedPoint.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void updateZoom(EditorZoomSegment segment) {
+    final next = _project.zoomSegments
+        .map((item) => item.id == segment.id ? segment : item)
+        .toList(growable: false);
+    _commit(_project.copyWith(zoomSegments: next));
+  }
+
+  void removeZoom(EditorZoomSegment segment) {
+    _commit(
+      _project.copyWith(
+        zoomSegments: _project.zoomSegments
+            .where((item) => item.id != segment.id)
+            .toList(),
+      ),
+    );
   }
 
   void selectClip(String clipId) {

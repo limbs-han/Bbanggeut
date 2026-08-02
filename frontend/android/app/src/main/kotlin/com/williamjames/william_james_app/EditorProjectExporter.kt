@@ -131,6 +131,7 @@ class EditorProjectExporter(
         val stickerLayers =
             call.argument<List<Map<String, Any?>>>("stickerLayers") ?: emptyList()
         val blurLayers = call.argument<List<Map<String, Any?>>>("blurLayers") ?: emptyList()
+        val zoomSegments = call.argument<List<Map<String, Any?>>>("zoomSegments") ?: emptyList()
         val captions = call.argument<List<Map<String, Any?>>>("captions") ?: emptyList()
         @Suppress("UNCHECKED_CAST")
         val sourceSize = call.argument<Map<String, Any?>>("sourceSize") ?: emptyMap()
@@ -217,7 +218,8 @@ class EditorProjectExporter(
             rotation != 0f ||
             offsetX != 0f ||
             offsetY != 0f
-        val hasVideoWork = hasOverlayWork || hasCanvasWork || lookEffect(look) != null
+        val hasVideoWork = hasOverlayWork || hasCanvasWork || zoomSegments.isNotEmpty() ||
+            lookEffect(look) != null
 
         // 영상 트랙을 통째로 다시 인코딩하지 않아도 되는가.
         //
@@ -280,6 +282,9 @@ class EditorProjectExporter(
         // 색감을 먼저 입히고 그 위에 글자를 얹는다. 순서를 바꾸면 흑백 필터가
         // 자막까지 회색으로 만든다.
         lookEffect(look)?.let(compositionVideoEffects::add)
+        if (zoomSegments.isNotEmpty()) {
+            compositionVideoEffects += TimelineZoomTransformation(zoomSegments)
+        }
         if (overlays.isNotEmpty()) {
             compositionVideoEffects += OverlayEffect(overlays)
         }
@@ -536,5 +541,41 @@ class EditorProjectExporter(
                 postRotate(rotationDegrees)
                 postTranslate(offsetX, -offsetY)
             }
+    }
+
+    private class TimelineZoomTransformation(
+        rawSegments: List<Map<String, Any?>>,
+    ) : MatrixTransformation {
+        private data class Segment(
+            val startMs: Long,
+            val endMs: Long,
+            val scale: Float,
+            val focusX: Float,
+            val focusY: Float,
+        )
+
+        private val segments = rawSegments.mapNotNull { raw ->
+            val start = (raw["startMs"] as? Number)?.toLong() ?: return@mapNotNull null
+            val end = (raw["endMs"] as? Number)?.toLong() ?: return@mapNotNull null
+            if (end <= start) return@mapNotNull null
+            Segment(
+                startMs = start,
+                endMs = end,
+                scale = ((raw["scale"] as? Number)?.toFloat() ?: 1f).coerceIn(1f, 2.8f),
+                focusX = ((raw["focusX"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
+                focusY = ((raw["focusY"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
+            )
+        }
+
+        override fun getMatrix(presentationTimeUs: Long): Matrix {
+            val timeMs = presentationTimeUs / 1000L
+            val segment = segments.lastOrNull { timeMs >= it.startMs && timeMs < it.endMs }
+                ?: return Matrix()
+            val pivotX = segment.focusX * 2f - 1f
+            val pivotY = 1f - segment.focusY * 2f
+            return Matrix().apply {
+                postScale(segment.scale, segment.scale, pivotX, pivotY)
+            }
+        }
     }
 }

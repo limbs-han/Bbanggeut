@@ -1,9 +1,9 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
-/// 하단 네비게이션의 편집 도구. 나열 순서가 화면에 그려지는 순서다 —
-/// `aiCaption`은 요청대로 `ar` 바로 왼쪽에 온다.
-enum EditorTool { cut, ratio, text, audio, sticker, aiCaption, ar }
+/// 하단 네비게이션은 컷·비율·텍스트·줌만 노출한다. 나머지 값은 과거 편집
+/// 프로젝트를 읽기 위한 호환 값이다.
+enum EditorTool { cut, ratio, text, zoom, audio, sticker, aiCaption, ar }
 
 enum EditorCanvasRatio { original, vertical, landscape, square, portrait }
 
@@ -159,6 +159,40 @@ class EditorClip {
   @override
   int get hashCode =>
       Object.hash(id, sourcePath, sourceStartMs, sourceEndMs, arEffectId);
+}
+
+class EditorZoomSegment {
+  const EditorZoomSegment({
+    required this.id,
+    required this.sourceStartMs,
+    required this.sourceEndMs,
+    required this.scale,
+    required this.focus,
+    this.automatic = false,
+  });
+
+  final String id;
+  final int sourceStartMs;
+  final int sourceEndMs;
+  final double scale;
+  final NormalizedPoint focus;
+  final bool automatic;
+
+  int get durationMs => math.max(0, sourceEndMs - sourceStartMs);
+
+  EditorZoomSegment copyWith({
+    int? sourceStartMs,
+    int? sourceEndMs,
+    double? scale,
+    NormalizedPoint? focus,
+  }) => EditorZoomSegment(
+    id: id,
+    sourceStartMs: sourceStartMs ?? this.sourceStartMs,
+    sourceEndMs: sourceEndMs ?? this.sourceEndMs,
+    scale: (scale ?? this.scale).clamp(1.0, 2.8),
+    focus: focus ?? this.focus,
+    automatic: automatic,
+  );
 }
 
 class EditorCanvas {
@@ -501,6 +535,7 @@ class EditorProject {
     required this.clips,
     required this.canvas,
     this.textLayers = const [],
+    this.zoomSegments = const [],
     this.stickerLayers = const [],
     this.blurLayers = const [],
     this.audio = const EditorAudio(),
@@ -541,6 +576,7 @@ class EditorProject {
   final List<EditorClip> clips;
   final EditorCanvas canvas;
   final List<EditorTextLayer> textLayers;
+  final List<EditorZoomSegment> zoomSegments;
   final List<EditorStickerLayer> stickerLayers;
   final List<EditorBlurLayer> blurLayers;
   final EditorAudio audio;
@@ -593,6 +629,7 @@ class EditorProject {
         textLayers.isNotEmpty ||
         stickerLayers.isNotEmpty ||
         blurLayers.isNotEmpty ||
+        zoomSegments.isNotEmpty ||
         hasCaptions;
   }
 
@@ -632,10 +669,35 @@ class EditorProject {
     return startMs;
   }
 
+  int? sourcePositionForTimeline(int timelineMs) {
+    var cursor = 0;
+    for (final clip in clips) {
+      final end = cursor + clip.durationMs;
+      if (timelineMs <= end) {
+        return clip.sourceStartMs +
+            (timelineMs - cursor).clamp(0, clip.durationMs);
+      }
+      cursor = end;
+    }
+    return clips.isEmpty ? null : clips.last.sourceEndMs;
+  }
+
+  EditorZoomSegment? zoomAtTimeline(int timelineMs) {
+    final sourceMs = sourcePositionForTimeline(timelineMs);
+    if (sourceMs == null) return null;
+    for (final zoom in zoomSegments.reversed) {
+      if (sourceMs >= zoom.sourceStartMs && sourceMs < zoom.sourceEndMs) {
+        return zoom;
+      }
+    }
+    return null;
+  }
+
   EditorProject copyWith({
     List<EditorClip>? clips,
     EditorCanvas? canvas,
     List<EditorTextLayer>? textLayers,
+    List<EditorZoomSegment>? zoomSegments,
     List<EditorStickerLayer>? stickerLayers,
     List<EditorBlurLayer>? blurLayers,
     EditorAudio? audio,
@@ -658,6 +720,7 @@ class EditorProject {
     clips: List.unmodifiable(clips ?? this.clips),
     canvas: canvas ?? this.canvas,
     textLayers: List.unmodifiable(textLayers ?? this.textLayers),
+    zoomSegments: List.unmodifiable(zoomSegments ?? this.zoomSegments),
     stickerLayers: List.unmodifiable(stickerLayers ?? this.stickerLayers),
     blurLayers: List.unmodifiable(blurLayers ?? this.blurLayers),
     audio: audio ?? this.audio,
@@ -688,8 +751,22 @@ class EditorProject {
   }) {
     var timelineStartMs = 0;
     final clipMaps = <Map<String, Object?>>[];
+    final zoomMaps = <Map<String, Object?>>[];
     for (final clip in clips) {
       clipMaps.add(clip.toMap(timelineStartMs: timelineStartMs));
+      for (final zoom in zoomSegments) {
+        final overlapStart = math.max(clip.sourceStartMs, zoom.sourceStartMs);
+        final overlapEnd = math.min(clip.sourceEndMs, zoom.sourceEndMs);
+        if (overlapEnd > overlapStart) {
+          zoomMaps.add({
+            'startMs': timelineStartMs + overlapStart - clip.sourceStartMs,
+            'endMs': timelineStartMs + overlapEnd - clip.sourceStartMs,
+            'scale': zoom.scale,
+            'focusX': zoom.focus.x,
+            'focusY': zoom.focus.y,
+          });
+        }
+      }
       timelineStartMs += clip.durationMs;
     }
     return {
@@ -700,6 +777,7 @@ class EditorProject {
       'clips': clipMaps,
       'canvas': canvas.toMap(),
       'textLayers': textLayers.map((layer) => layer.toMap()).toList(),
+      'zoomSegments': zoomMaps,
       'stickerLayers': stickerLayers.map((layer) => layer.toMap()).toList(),
       'blurLayers': blurLayers.map((layer) => layer.toMap()).toList(),
       'audio': audio.toMap(),
