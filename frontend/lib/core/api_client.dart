@@ -10,6 +10,17 @@ const defaultApiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://i15e201.p.ssafy.io',
 );
 
+/// 서버가 Gemini(전사·구성)나 이미지 생성을 부르는 동안 앱이 기다리는 시간.
+///
+/// 기본 `receiveTimeout` 20초로는 어림도 없다 — 서버는 한 번의 응답 안에서
+/// 원본을 객체 저장소에서 꺼내고, 오디오와 대표 프레임을 뽑고, 영상 전체를
+/// 멀티모달 모델에 넘긴다. 20초로 두면 서버가 정상으로 일하는 동안 앱이 먼저
+/// 끊고 "대사를 알아듣지 못했어요"를 띄운다.
+///
+/// 서버 예산 150초 + 여유 30초. 이 값을 늘리기 전에 202+폴링으로 계약을 바꾸는
+/// 편이 낫다(지금은 범위 밖).
+const aiReceiveTimeout = Duration(seconds: 180);
+
 class ApiFailure implements Exception {
   const ApiFailure(
     this.message, {
@@ -521,7 +532,7 @@ class ApiClient {
   /// 서버가 원본(이미 서버에 있다)을 Gemini로 전사한 자막을 돌려준다.
   /// 폰은 아무것도 올리지 않는다 — 경로의 videoId가 전부다.
   Future<Map<String, dynamic>> createTranscript(String videoId) =>
-      _post('/api/videos/$videoId/transcript');
+      _post('/api/videos/$videoId/transcript', options: _aiOptions);
 
   /// 전사문으로 4컷 구성을 받는다. 서버가 키를 들고 LLM을 대신 부른다.
   ///
@@ -529,7 +540,11 @@ class ApiClient {
   Future<Map<String, dynamic>> createComicScript(
     String videoId,
     List<Map<String, Object>> lines,
-  ) => _post('/api/videos/$videoId/comic/script', data: {'lines': lines});
+  ) => _post(
+    '/api/videos/$videoId/comic/script',
+    data: {'lines': lines},
+    options: _aiOptions,
+  );
 
   /// 4컷 구성으로 만화 그림 한 장(2x2 격자)을 받는다. 응답은 base64 PNG다.
   Future<Map<String, dynamic>> createComicImage(
@@ -539,7 +554,12 @@ class ApiClient {
   }) => _post(
     '/api/videos/$videoId/comic/image',
     data: {'cuts': cuts, 'style': style},
+    options: _aiOptions,
   );
+
+  /// 서버 AI 세 엔드포인트(API-52·53·54)에만 붙이는 긴 수신 대기. 나머지 호출은
+  /// 전역 기본값 20초 그대로다 — 평범한 요청까지 3분을 기다리면 안 된다.
+  static final _aiOptions = Options(receiveTimeout: aiReceiveTimeout);
 
   Future<Map<String, dynamic>> _get(
     String path, {
@@ -564,9 +584,17 @@ class ApiClient {
     }
   }
 
-  Future<Map<String, dynamic>> _post(String path, {Object? data}) async {
+  Future<Map<String, dynamic>> _post(
+    String path, {
+    Object? data,
+    Options? options,
+  }) async {
     try {
-      final response = await _dio.post<dynamic>(path, data: data);
+      final response = await _dio.post<dynamic>(
+        path,
+        data: data,
+        options: options,
+      );
       return response.data is Map<String, dynamic>
           ? response.data as Map<String, dynamic>
           : <String, dynamic>{};
