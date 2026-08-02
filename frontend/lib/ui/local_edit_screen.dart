@@ -276,11 +276,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
               ),
               CaptionAutoSection(
                 controller: _autoCaptions,
-                // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
-                // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
-                estimateSeconds: _editState.durationMs > 0
-                    ? (_editState.durationMs / 1000 * 0.9).round()
-                    : null,
                 // 자막 수정도 저장 안 된 변경이다.
                 onChanged: () =>
                     setState(() => _editState.markExternalEditApplied()),

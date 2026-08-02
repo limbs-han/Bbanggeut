@@ -1,7 +1,7 @@
 /// videoId로 찾는 자막 캐시.
 ///
-/// **왜 필요한가**: whisper 전사는 2분 영상에 100초가 넘는다. 같은 영상을 다시
-/// 열 때마다 또 기다리면 못 쓴다. 한 번 전사한 결과를 파일로 남긴다.
+/// **왜 필요한가**: 전사는 서버의 Gemini 호출이다 — 돈이고 네트워크다. 같은
+/// 영상을 열 때마다 또 부르면 안 되니 한 번 받은 결과를 파일로 남긴다.
 ///
 /// 실제 전사는 주입받은 [VideoTranscriber] 하나에 맡긴다. 이 클래스는 파일
 /// 입출력과 작업 중복 방지만 한다 — 그래야 whisper 없이 테스트할 수 있다.
@@ -13,8 +13,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/api_client.dart';
 import 'android_audio.dart';
 import 'caption_line.dart';
+import 'transcript_api.dart';
 import 'whisper_model.dart';
 import 'whisper_transcriber.dart';
 
@@ -124,7 +126,11 @@ class TranscriptStore {
         job.value = TranscriptReady(cached);
         return;
       }
-      final fresh = await transcriber(videoPath);
+      // 서버 전사는 videoId로 부른다 — 원본이 서버에 이미 있어 경로가 필요 없다.
+      // videoPath 매개변수는 남겨 둔다: 호출부(caption_controller → ensure)를
+      // 건드리지 않기 위해서고, 온디바이스 경로(transcribeVideo)가 코드에 남아
+      // 있어 되돌릴 때 다시 쓴다.
+      final fresh = await transcriber(videoId);
       if (fresh.isEmpty) {
         // 빈 결과를 저장하면 캐시 적중으로 보여 영구히 재시도가 막힌다.
         _jobs.remove(videoId);
@@ -135,7 +141,7 @@ class TranscriptStore {
       job.value = TranscriptReady(fresh);
     } catch (error, stack) {
       // 사유를 반드시 남긴다. 상태만 바꾸면 화면에는 "못 알아들었어요" 한 줄만
-      // 뜨고, 진짜 무발화인지 오디오 추출이 깨진 것인지 구분할 수 없다.
+      // 뜨고, 진짜 무발화인지 서버가 죽은 것인지 구분할 수 없다.
       debugPrint('[stt] 전사 실패 ${error.runtimeType}: $error');
       debugPrint(
         '[stt] 스택: ${stack.toString().split('\n').take(3).join(' | ')}',
@@ -152,7 +158,7 @@ class TranscriptStore {
 /// 앱은 Riverpod을 쓰지 않으므로 전역 하나로 둔다. 테스트는 이 값을 직접
 /// 갈아끼운다.
 TranscriptStore transcriptStore = TranscriptStore(
-  transcriber: transcribeVideo,
+  transcriber: defaultTranscriber(ApiClient()),
   root: () async {
     final documents = await getApplicationDocumentsDirectory();
     return Directory('${documents.path}${Platform.pathSeparator}captions');
