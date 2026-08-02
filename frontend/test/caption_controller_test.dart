@@ -80,7 +80,64 @@ void main() {
 
     expect(subject.lines, isEmpty);
     expect(subject.status, isA<TranscriptFailed>());
-    expect(subject.message(), contains('알아듣지 못했'));
+  });
+
+  test('연결·서버 실패와 무발화를 다른 문구로 안내한다', () async {
+    // 비행기 모드인 사람에게 "대사를 못 알아들었어요"라고 하면 영상 탓으로 안다.
+    final broken = storeWith((_) async => throw StateError('연결 안 됨'));
+    final failed = CaptionController(store: broken);
+    failed.start('v1', '/video/v1.mp4');
+    await broken.pending;
+
+    expect(failed.message(), contains('다시 시도'));
+    expect(failed.message(), isNot(contains('알아듣지 못했')));
+    expect(failed.canRetry, isTrue);
+
+    final quiet = storeWith((_) async => const []);
+    final silent = CaptionController(store: quiet);
+    silent.start('v2', '/video/v2.mp4');
+    await quiet.pending;
+
+    expect(silent.message(), contains('알아듣지 못했'));
+    expect(silent.canRetry, isFalse, reason: '조용한 영상은 다시 불러도 조용하다');
+  });
+
+  test('retry가 _job을 비워 다시 걸린다 — 화면을 나갔다 오지 않아도 된다', () async {
+    var calls = 0;
+    final store = storeWith((_) async {
+      calls++;
+      if (calls == 1) throw StateError('서버 없음');
+      return _lines();
+    });
+    final subject = CaptionController(store: store);
+
+    subject.start('v1', '/video/v1.mp4');
+    await store.pending;
+    expect(subject.lines, isEmpty);
+
+    subject.retry();
+    await store.pending;
+
+    expect(calls, 2);
+    expect(subject.lines, hasLength(2));
+    expect(subject.status, isA<TranscriptReady>());
+    expect(subject.canRetry, isFalse);
+  });
+
+  test('무발화는 retry가 아무 일도 하지 않는다 — 같은 요청을 계속 쏘지 않는다', () async {
+    var calls = 0;
+    final store = storeWith((_) async {
+      calls++;
+      return const <CaptionLine>[];
+    });
+    final subject = CaptionController(store: store);
+
+    subject.start('v1', '/video/v1.mp4');
+    await store.pending;
+    subject.retry();
+    await store.pending;
+
+    expect(calls, 1);
   });
 
   test('도는 중이면 예상 시간을 알려준다', () async {

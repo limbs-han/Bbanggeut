@@ -19,6 +19,8 @@ class CaptionController extends ChangeNotifier {
   ValueListenable<TranscriptJobState>? _job;
   List<CaptionLine> _lines = <CaptionLine>[];
   bool _hasUserEdits = false;
+  String? _videoId;
+  String? _videoPath;
 
   List<CaptionLine> get lines => _lines;
 
@@ -32,8 +34,27 @@ class CaptionController extends ChangeNotifier {
   /// 전사를 시작한다. 캐시가 있으면 즉시 끝난다. 두 번 불러도 한 번만 돈다.
   void start(String videoId, String videoPath) {
     if (_job != null) return;
+    _videoId = videoId;
+    _videoPath = videoPath;
     _job = _store.ensure(videoId, videoPath)..addListener(_onJobChanged);
     _onJobChanged();
+  }
+
+  /// 다시 시도할 수 있는 실패인가. 무발화는 몇 번을 불러도 같으니 제외한다.
+  bool get canRetry => switch (status) {
+    TranscriptFailed(:final retryable) => retryable && _videoId != null,
+    _ => false,
+  };
+
+  /// 연결·서버 문제로 실패한 전사를 다시 건다.
+  ///
+  /// [start]가 `_job != null`이면 돌아가므로, 여기서 **직접 비워 줘야** 다시
+  /// 걸린다. 없으면 화면을 나갔다 들어오는 것 말고는 재시도할 길이 없다.
+  void retry() {
+    if (!canRetry) return;
+    _job?.removeListener(_onJobChanged);
+    _job = null;
+    start(_videoId!, _videoPath!);
   }
 
   void _onJobChanged() {
@@ -60,7 +81,11 @@ class CaptionController extends ChangeNotifier {
   String message({int? estimateSeconds}) {
     final state = status;
     if (state is TranscriptFailed) {
-      return '대사를 알아듣지 못했어요. 자막 없이 저장할 수 있어요.';
+      // 못 알아들은 것과 연결이 끊긴 것은 사용자가 할 일이 다르다. 비행기 모드인
+      // 사람에게 "대사를 못 알아들었어요"라고 하면 영상 탓으로 오해한다.
+      return state.retryable
+          ? '연결이나 서버에 문제가 있어요. 다시 시도해 보세요.'
+          : '대사를 알아듣지 못했어요. 자막 없이 저장할 수 있어요.';
     }
     if (state is TranscriptRunning) {
       return estimateSeconds == null

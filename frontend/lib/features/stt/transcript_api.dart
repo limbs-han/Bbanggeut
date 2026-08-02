@@ -38,15 +38,21 @@ VideoTranscriber serverTranscriber(ApiClient api) => (String videoId) async {
   if (raw is! List) {
     throw FormatException('응답에 lines가 없습니다: ${body.keys.toList()}');
   }
-  final lines = <CaptionLine>[
-    for (final entry in raw)
-      if (((entry as Map)['text'] as String).trim().isNotEmpty)
-        CaptionLine(
-          startMs: entry['startMs'] as int,
-          endMs: entry['endMs'] as int,
-          text: (entry['text'] as String).trim(),
-        ),
-  ];
+  // 항목 검증도 FormatException으로 낸다. `as` 캐스트에 맡기면 줄 하나가 이상할
+  // 때 TypeError가 나서, 로그만 보고는 "계약 위반"인지 앱 버그인지 못 가린다.
+  final lines = <CaptionLine>[];
+  for (final entry in raw) {
+    if (entry is! Map) throw FormatException('lines 항목이 객체가 아닙니다: $entry');
+    final startMs = entry['startMs'];
+    final endMs = entry['endMs'];
+    final text = entry['text'];
+    if (startMs is! int || endMs is! int || text is! String) {
+      throw FormatException('lines 항목의 형식이 다릅니다: $entry');
+    }
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) continue;
+    lines.add(CaptionLine(startMs: startMs, endMs: endMs, text: trimmed));
+  }
   return splitIntoLines(lines);
 };
 
