@@ -34,6 +34,8 @@ void main() {
     bool saving = false,
     bool textEditing = false,
     bool rangePreviewing = false,
+    Map<String, EditRecommendation> presetRecommendations = const {},
+    ValueChanged<String>? onRecommendationSelected,
   }) => MaterialApp(
     home: Scaffold(
       body: EditorWorkspace(
@@ -61,6 +63,10 @@ void main() {
         onRatioSelected: (_) {},
         onCanvasChanged: (_) {},
         onCanvasReset: () {},
+        onCanvasFitSelected: (_) {},
+        presetRecommendations: presetRecommendations,
+        recommendationLoading: false,
+        onRecommendationSelected: onRecommendationSelected ?? (_) {},
         onText: () {},
         onTextEdit: onTextEdit ?? (_) {},
         onVolumeChanged: (_) {},
@@ -117,7 +123,7 @@ void main() {
       await tester.pumpWidget(workspace(controller));
 
       expect(find.text('영상 편집'), findsOneWidget);
-      for (final label in const ['컷', '화면', '텍스트', '줌']) {
+      for (final label in const ['컷', '캔버스', '텍스트', '구간 줌']) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
       expect(tester.takeException(), isNull);
@@ -342,14 +348,11 @@ void main() {
     );
     await tester.pump();
 
-    // 띠 칸이 미리보기를 잡아먹으면 안 된다 — 띠 한 줄과 버튼 줄이 전부다.
-    final section = tester.getSize(find.byType(EditorTimelineSection));
-    expect(section.height, lessThan(140));
-
     // 프레임은 띠 높이를 남김없이 쓴다. 세로로 헐렁하게 두면 위아래가 빈다.
     final strip = tester.getSize(
       find.byKey(const Key('editor-timeline-strip')),
     );
+    expect(strip.height, lessThan(140));
     final frame = tester.getSize(find.byType(Image).first);
     expect(frame.height, strip.height);
   });
@@ -488,8 +491,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(controller.project.selectedClip!.sourceStartMs, trimmedStart);
-    // 접힌 띠에도 같은 창이 그려져 지금 구간이 계속 보인다.
-    expect(find.byKey(const Key('editor-timeline-strip')), findsOneWidget);
+    // 다른 도구에서도 전체 클립·효과 타임라인은 계속 보인다.
+    expect(find.byType(ProjectTimelineOverview), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -739,8 +742,8 @@ void main() {
     );
 
     await tester.pumpWidget(workspace(controller));
-    expect(find.text('AI 시작'), findsOneWidget);
-    expect(find.text('AI 끝'), findsOneWidget);
+    expect(find.text('추천 시작'), findsOneWidget);
+    expect(find.text('추천 끝'), findsOneWidget);
     expect(
       find.byKey(const Key('editor-zoom-marker-auto-zoom-0')),
       findsOneWidget,
@@ -750,6 +753,120 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('AI 줌 1'), findsOneWidget);
     expect(find.byKey(const Key('editor-zoom-range')), findsOneWidget);
+  });
+
+  testWidgets('추천 시작·끝은 사용자가 컷 손잡이를 움직여도 고정된다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+    controller.applyRecommendation(
+      const EditRecommendation(
+        cutStartMs: 2000,
+        cutEndMs: 10000,
+        durationPreset: 'medium',
+        zoomSegments: [],
+      ),
+    );
+    await tester.pumpWidget(trimmableWorkspace(controller));
+    final before = tester.getTopLeft(
+      find.byKey(const Key('editor-recommendation-start')),
+    );
+
+    await tester.drag(
+      find.byKey(const Key('editor-trim-start-handle')),
+      const Offset(45, 0),
+    );
+    await tester.pump();
+
+    final after = tester.getTopLeft(
+      find.byKey(const Key('editor-recommendation-start')),
+    );
+    expect(after.dx, before.dx);
+    expect(controller.project.selectedClip!.sourceStartMs, greaterThan(2000));
+  });
+
+  testWidgets('짧게·중간·길게 버튼은 각 추천 구간을 보여주고 선택한다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+    String? selected;
+    const recommendations = {
+      'short': EditRecommendation(
+        cutStartMs: 1000,
+        cutEndMs: 5000,
+        durationPreset: 'short',
+        zoomSegments: [],
+      ),
+      'medium': EditRecommendation(
+        cutStartMs: 0,
+        cutEndMs: 9000,
+        durationPreset: 'medium',
+        zoomSegments: [],
+      ),
+      'long': EditRecommendation(
+        cutStartMs: 0,
+        cutEndMs: 12000,
+        durationPreset: 'long',
+        zoomSegments: [],
+      ),
+    };
+
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        presetRecommendations: recommendations,
+        onRecommendationSelected: (value) => selected = value,
+      ),
+    );
+    expect(find.text('00:01–00:05'), findsOneWidget);
+    expect(find.text('00:00–00:09'), findsOneWidget);
+    expect(find.text('00:00–00:12'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('editor-preset-long')));
+    expect(selected, 'long');
+  });
+
+  testWidgets('전체 타임라인은 클립 번호와 줌·텍스트 구간을 함께 표시한다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+    controller
+      ..setPlayhead(6000)
+      ..splitAt(6000)
+      ..setPlayhead(1000)
+      ..addZoomAtPlayhead()
+      ..addTextLayer(text: '표시');
+
+    await tester.pumpWidget(workspace(controller));
+    expect(find.byType(ProjectTimelineOverview), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget.key.toString().contains('editor-overview-clip-'),
+      ),
+      findsNWidgets(2),
+    );
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget.key.toString().contains('editor-overview-zoom-'),
+      ),
+      findsWidgets,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget.key.toString().contains('editor-overview-text-'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('기존 텍스트를 목록에서 다시 수정할 수 있다', (tester) async {

@@ -49,6 +49,7 @@ class EditRecommendationClient {
     required String videoId,
     required DateTime? capturedAt,
     bool zoomEnabled = true,
+    String? durationPreset,
   }) async {
     final response = await _dio.post<Map<String, dynamic>>(
       '/v1/edit-recommendations',
@@ -58,6 +59,7 @@ class EditRecommendationClient {
         // UTC로 파싱했더라도 휴대폰 로컬 시각으로 되돌려 보낸다.
         'capturedAt': capturedAt?.toLocal().toIso8601String(),
         'zoomEnabled': zoomEnabled,
+        'durationPreset': ?durationPreset,
       },
     );
     return EditRecommendation.fromJson(response.data!);

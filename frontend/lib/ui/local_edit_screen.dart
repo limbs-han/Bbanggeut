@@ -66,6 +66,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   double _audioVolume = 1;
   String? _status;
   String? _error;
+  final Map<String, EditRecommendation> _presetRecommendations = {};
+  bool _recommendationLoading = false;
 
   /// 렌더링 진행률(0~1). 네이티브에서 주기적으로 읽어 온다. null이면 아직 모른다.
   double? _exportProgress;
@@ -154,6 +156,13 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         capturedAt: widget.video.capturedStartAt,
       );
       nextProjectController.applyRecommendation(recommendation);
+      if (const {
+        'short',
+        'medium',
+        'long',
+      }.contains(recommendation.durationPreset)) {
+        _presetRecommendations[recommendation.durationPreset] = recommendation;
+      }
       final seconds = nextProjectController.project.durationMs / 1000;
       recommendationStatus =
           '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · 줌 ${nextProjectController.project.zoomSegments.length}개';
@@ -188,6 +197,60 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
     // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
     unawaited(_loadThumbnails());
+    unawaited(_loadPresetRecommendations());
+  }
+
+  Future<void> _loadPresetRecommendations() async {
+    if (_recommendationLoading) return;
+    if (mounted) setState(() => _recommendationLoading = true);
+    try {
+      final values = await Future.wait(
+        const ['short', 'medium', 'long'].map(
+          (preset) => _recommendations.recommend(
+            videoId: widget.video.id,
+            capturedAt: widget.video.capturedStartAt,
+            durationPreset: preset,
+          ),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        for (final value in values) {
+          _presetRecommendations[value.durationPreset] = value;
+        }
+      });
+    } catch (_) {
+      // 기본 자동 추천은 이미 적용됐다. 프리셋 일부를 못 가져와도 편집은 계속한다.
+    } finally {
+      if (mounted) setState(() => _recommendationLoading = false);
+    }
+  }
+
+  Future<void> _selectRecommendationPreset(String preset) async {
+    if (_recommendationLoading) return;
+    var recommendation = _presetRecommendations[preset];
+    if (recommendation == null) {
+      setState(() => _recommendationLoading = true);
+      try {
+        recommendation = await _recommendations.recommend(
+          videoId: widget.video.id,
+          capturedAt: widget.video.capturedStartAt,
+          durationPreset: preset,
+        );
+        _presetRecommendations[preset] = recommendation;
+      } catch (_) {
+        if (mounted) showAppSnack(context, '추천 구간을 불러오지 못했어요.');
+        return;
+      } finally {
+        if (mounted) setState(() => _recommendationLoading = false);
+      }
+    }
+    final controller = _projectController;
+    if (!mounted || controller == null) return;
+    controller.applyRecommendation(recommendation);
+    _editState.markExternalEditApplied();
+    await _seekToPosition(0);
+    if (mounted) setState(() {});
   }
 
   /// 타임라인 프레임을 두 번에 나눠 뽑는다.
@@ -1051,6 +1114,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       rangePreviewing: _rangePreview,
       exportProgress: _exportProgress,
       exportStatus: _status,
+      presetRecommendations: Map.unmodifiable(_presetRecommendations),
+      recommendationLoading: _recommendationLoading,
+      onRecommendationSelected: _selectRecommendationPreset,
       onExportCancel: _cancelExport,
       aiCaptionSummary: null,
       onBack: () => Navigator.maybePop(context),
@@ -1084,6 +1150,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       },
       onCanvasReset: () {
         projectController.resetCanvasTransform();
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
+      onCanvasFitSelected: (fit) {
+        projectController.setCanvasFit(fit);
         _editState.markExternalEditApplied();
         setState(() {});
       },
@@ -1130,8 +1201,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       EditorCanvasRatio.original => VideoEditRatio.original,
       EditorCanvasRatio.vertical => VideoEditRatio.shortForm,
       EditorCanvasRatio.landscape => VideoEditRatio.landscape,
-      EditorCanvasRatio.square => VideoEditRatio.square,
-      EditorCanvasRatio.portrait => VideoEditRatio.portrait,
     });
     if (mounted) setState(() {});
   }

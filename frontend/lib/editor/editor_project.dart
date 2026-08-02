@@ -5,7 +5,23 @@ import 'dart:ui';
 /// 프로젝트를 읽기 위한 호환 값이다.
 enum EditorTool { cut, ratio, text, zoom, audio, sticker, aiCaption, ar }
 
-enum EditorCanvasRatio { original, vertical, landscape, square, portrait }
+enum EditorCanvasRatio { original, vertical, landscape }
+
+enum EditorCanvasFit { cover, contain }
+
+class EditorRecommendationMarker {
+  const EditorRecommendationMarker({
+    required this.preset,
+    required this.sourceStartMs,
+    required this.sourceEndMs,
+  });
+
+  final String preset;
+  final int sourceStartMs;
+  final int sourceEndMs;
+
+  int get durationMs => math.max(0, sourceEndMs - sourceStartMs);
+}
 
 /// 영상 전체에 입히는 색감. 앱 안 AR 효과와 필터가 같이 쓴다.
 ///
@@ -225,6 +241,7 @@ class EditorCanvas {
   const EditorCanvas({
     required this.sourceAspectRatio,
     this.ratio = EditorCanvasRatio.original,
+    this.fit = EditorCanvasFit.cover,
     this.outputWidth = 1280,
     this.outputHeight = 720,
     this.scale = 1,
@@ -236,6 +253,7 @@ class EditorCanvas {
 
   final double sourceAspectRatio;
   final EditorCanvasRatio ratio;
+  final EditorCanvasFit fit;
   final int outputWidth;
   final int outputHeight;
   final double scale;
@@ -248,12 +266,12 @@ class EditorCanvas {
     EditorCanvasRatio.original => sourceAspectRatio,
     EditorCanvasRatio.vertical => 9 / 16,
     EditorCanvasRatio.landscape => 16 / 9,
-    EditorCanvasRatio.square => 1,
-    EditorCanvasRatio.portrait => 4 / 5,
   };
 
   double get minimumScale {
-    if (ratio == EditorCanvasRatio.original) return 1;
+    if (ratio == EditorCanvasRatio.original || fit == EditorCanvasFit.contain) {
+      return 1;
+    }
     final source = sourceAspectRatio;
     final target = aspectRatio;
     return source >= target ? source / target : target / source;
@@ -261,6 +279,7 @@ class EditorCanvas {
 
   EditorCanvas copyWith({
     EditorCanvasRatio? ratio,
+    EditorCanvasFit? fit,
     int? outputWidth,
     int? outputHeight,
     double? scale,
@@ -270,9 +289,11 @@ class EditorCanvas {
     Color? backgroundColor,
   }) {
     final nextRatio = ratio ?? this.ratio;
+    final nextFit = fit ?? this.fit;
     final provisional = EditorCanvas(
       sourceAspectRatio: sourceAspectRatio,
       ratio: nextRatio,
+      fit: nextFit,
       outputWidth: outputWidth ?? this.outputWidth,
       outputHeight: outputHeight ?? this.outputHeight,
       scale: 1,
@@ -297,11 +318,24 @@ class EditorCanvas {
         nextScale *
         (math.sin(radians).abs() * halfWidth +
             math.cos(radians).abs() * halfHeight);
-    final maxX = math.min(1.0, math.max(0.0, extentX - 1));
-    final maxY = math.min(1.0, math.max(0.0, extentY - 1));
+    final maxX = math.min(
+      1.0,
+      math.max(
+        0.0,
+        nextFit == EditorCanvasFit.cover ? extentX - 1 : 1 - extentX,
+      ),
+    );
+    final maxY = math.min(
+      1.0,
+      math.max(
+        0.0,
+        nextFit == EditorCanvasFit.cover ? extentY - 1 : 1 - extentY,
+      ),
+    );
     return EditorCanvas(
       sourceAspectRatio: sourceAspectRatio,
       ratio: nextRatio,
+      fit: nextFit,
       outputWidth: outputWidth ?? this.outputWidth,
       outputHeight: outputHeight ?? this.outputHeight,
       scale: nextScale,
@@ -314,6 +348,7 @@ class EditorCanvas {
 
   Map<String, Object> toMap() => {
     'ratio': ratio.name,
+    'fit': fit.name,
     'aspectRatio': aspectRatio,
     'outputWidth': outputWidth,
     'outputHeight': outputHeight,
@@ -610,6 +645,7 @@ class EditorProject {
     this.selectedClipId,
     this.selectedLayerId,
     this.selectedZoomId,
+    this.recommendationMarker,
     this.playheadMs = 0,
     this.isPlaying = false,
     this.exportState = const EditorExportState(),
@@ -655,6 +691,7 @@ class EditorProject {
   final String? selectedClipId;
   final String? selectedLayerId;
   final String? selectedZoomId;
+  final EditorRecommendationMarker? recommendationMarker;
   final int playheadMs;
   final bool isPlaying;
   final EditorExportState exportState;
@@ -778,6 +815,8 @@ class EditorProject {
     bool clearSelectedLayer = false,
     String? selectedZoomId,
     bool clearSelectedZoom = false,
+    EditorRecommendationMarker? recommendationMarker,
+    bool clearRecommendationMarker = false,
     int? playheadMs,
     bool? isPlaying,
     EditorExportState? exportState,
@@ -805,6 +844,9 @@ class EditorProject {
     selectedZoomId: clearSelectedZoom
         ? null
         : selectedZoomId ?? this.selectedZoomId,
+    recommendationMarker: clearRecommendationMarker
+        ? null
+        : recommendationMarker ?? this.recommendationMarker,
     playheadMs: (playheadMs ?? this.playheadMs).clamp(
       0,
       (clips ?? this.clips).fold(
@@ -848,6 +890,7 @@ class EditorProject {
       'outputPath': outputPath,
       'clips': clipMaps,
       'canvas': canvas.toMap(),
+      'durationPreset': recommendationMarker?.preset,
       'textLayers': textLayers.map((layer) => layer.toMap()).toList(),
       'zoomSegments': zoomMaps,
       'stickerLayers': stickerLayers.map((layer) => layer.toMap()).toList(),

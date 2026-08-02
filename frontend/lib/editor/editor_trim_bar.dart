@@ -61,7 +61,7 @@ class TrimRangeBar extends StatefulWidget {
     required this.onTrimCommitted,
     required this.onScrub,
     this.interactive = true,
-    this.automaticRange = false,
+    this.recommendationMarker,
     this.zoomSegments = const [],
   });
 
@@ -93,7 +93,10 @@ class TrimRangeBar extends StatefulWidget {
 
   /// false면 보기 전용이다. 다른 탭에서 "지금 구간"을 보여줄 때 쓴다.
   final bool interactive;
-  final bool automaticRange;
+
+  /// 서버가 처음 제안한 고정 지점. 사용자가 손잡이를 움직여도 따라 움직이지
+  /// 않는다. 현재 컷과 추천 컷을 비교할 수 있어야 추천이라는 말이 성립한다.
+  final EditorRecommendationMarker? recommendationMarker;
   final List<EditorZoomSegment> zoomSegments;
 
   @override
@@ -277,16 +280,22 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                   ),
                 ),
               ),
-            if (widget.automaticRange && !_dragging) ...[
+            if (widget.recommendationMarker case final marker?) ...[
               Positioned(
-                left: startX.clamp(0, width - 48),
+                left: xOf(marker.sourceStartMs).clamp(0, width - 56),
                 top: 2,
-                child: const _AiBoundaryBadge(label: 'AI 시작'),
+                child: const _AiBoundaryBadge(
+                  key: Key('editor-recommendation-start'),
+                  label: '추천 시작',
+                ),
               ),
               Positioned(
-                left: (endX - 45).clamp(0, width - 45),
+                left: (xOf(marker.sourceEndMs) - 52).clamp(0, width - 52),
                 top: 2,
-                child: const _AiBoundaryBadge(label: 'AI 끝'),
+                child: const _AiBoundaryBadge(
+                  key: Key('editor-recommendation-end'),
+                  label: '추천 끝',
+                ),
               ),
             ],
           ],
@@ -384,6 +393,14 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
       0,
       widget.sourceDurationMs,
       widget.playheadSourceMs,
+      if (widget.recommendationMarker case final marker?) ...[
+        marker.sourceStartMs,
+        marker.sourceEndMs,
+      ],
+      for (final zoom in widget.zoomSegments) ...[
+        zoom.sourceStartMs,
+        zoom.sourceEndMs,
+      ],
     ]) {
       final distance = (target - rawMs).abs();
       if (distance <= tolerance && distance < bestDistance) {
@@ -416,7 +433,7 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
 }
 
 class _AiBoundaryBadge extends StatelessWidget {
-  const _AiBoundaryBadge({required this.label});
+  const _AiBoundaryBadge({super.key, required this.label});
 
   final String label;
 

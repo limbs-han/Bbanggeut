@@ -109,6 +109,11 @@ class EditorProjectController extends ChangeNotifier {
       _project.copyWith(
         clips: [clip],
         zoomSegments: zooms,
+        recommendationMarker: EditorRecommendationMarker(
+          preset: recommendation.durationPreset,
+          sourceStartMs: start,
+          sourceEndMs: end,
+        ),
         selectedZoomId: zooms.isEmpty ? null : zooms.first.id,
         selectedClipId: clip.id,
         playheadMs: 0,
@@ -359,6 +364,20 @@ class EditorProjectController extends ChangeNotifier {
           offsetX: 0,
           offsetY: 0,
           rotationDegrees: 0,
+        ),
+      ),
+    );
+  }
+
+  void setCanvasFit(EditorCanvasFit fit) {
+    if (_project.canvas.fit == fit) return;
+    _commit(
+      _project.copyWith(
+        canvas: _project.canvas.copyWith(
+          fit: fit,
+          scale: 1,
+          offsetX: 0,
+          offsetY: 0,
         ),
       ),
     );
@@ -854,6 +873,7 @@ class EditorProjectController extends ChangeNotifier {
       listEquals(a.stickerLayers, b.stickerLayers) &&
       listEquals(a.blurLayers, b.blurLayers) &&
       a.canvas.ratio == b.canvas.ratio &&
+      a.canvas.fit == b.canvas.fit &&
       a.canvas.scale == b.canvas.scale &&
       a.canvas.offsetX == b.canvas.offsetX &&
       a.canvas.offsetY == b.canvas.offsetY &&

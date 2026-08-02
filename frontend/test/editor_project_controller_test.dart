@@ -405,4 +405,23 @@ void main() {
     expect(subject.project.canvas.offsetY, 0);
     expect(subject.project.canvas.offsetX.abs(), lessThanOrEqualTo(1));
   });
+
+  test('세로 전체 보기는 가로 영상을 모두 보이고 위아래 배치 공간을 허용한다', () {
+    final subject = controller();
+    subject
+      ..setCanvasRatio(EditorCanvasRatio.vertical)
+      ..setCanvasFit(EditorCanvasFit.contain);
+
+    expect(subject.project.canvas.scale, 1);
+    expect(subject.project.canvas.minimumScale, 1);
+    subject.setCanvasTransform(
+      scale: 1,
+      offsetX: 1,
+      offsetY: 1,
+      rotationDegrees: 0,
+    );
+    expect(subject.project.canvas.offsetX, 0);
+    expect(subject.project.canvas.offsetY, closeTo(0.68359375, 0.01));
+    expect(subject.project.canvas.toMap()['fit'], 'contain');
+  });
 }
