@@ -15,7 +15,7 @@ import '../core/saved_video_edit.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
 import '../core/video_source_cache.dart';
-import '../editor/editor_ar_effects.dart';
+import '../editor/banuba_mask_channel.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
 import '../editor/editor_text_style_bar.dart';
@@ -49,15 +49,44 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   /// Banuba Video Editor SDK. AR 탭이 이걸 열어 얼굴 마스크를 씌우고,
   /// 돌아온 영상을 이 편집기의 새 원본으로 갈아 끼운다.
+  /// 토큰 공급 경로만 쓴다. Banuba 편집기 화면으로는 더 이상 가지 않는다 —
+  /// AR 탭이 엔진을 우리 화면 안에서 직접 부른다.
   final _banubaEditor = BanubaVideoEditor();
-  bool _banubaBusy = false;
-  String? _banubaStatus;
 
   /// AI 자막 시트가 떠 있는가. 탭과 패널 버튼이 겹쳐 두 장 쌓이는 걸 막는다.
   bool _captionSheetOpen = false;
 
   /// 전사를 시작할 예약. 편집 진입과 CPU를 다투지 않게 조금 미뤄 둔다.
   Timer? _autoCaptionTimer;
+
+  /// AR 탭에 있는 동안만 켜진다. 이때는 미리보기가 Banuba 네이티브 뷰로
+  /// 바뀌고 재생 주체도 그쪽으로 넘어간다 — 탭을 벗어나면 되돌린다.
+  bool _arActive = false;
+  List<BanubaMask> _availableMasks = const [];
+  String? _selectedMask;
+  bool _maskBusy = false;
+  String? _maskStatus;
+
+  /// AR 탭에서 네이티브 플레이어가 도는 중인가. Flutter 재생기와는 별개다.
+  bool _arPlaying = false;
+
+  /// 네이티브에서 오는 소식 **하나뿐인** 통로.
+  ///
+  /// **왜 하나인가**: `EventChannel`은 새로 구독하면 안드로이드 쪽에서 먼저 있던
+  /// 것을 끊는다(`EventChannel.java`가 새 sink를 넣기 전에 옛 sink에 `onCancel`을
+  /// 부른다). 재생 위치용과 굽기 진행률용으로 따로 구독하면 나중 것이 앞의 것을
+  /// 죽이고, 그 하나를 끊는 순간 네이티브 sink가 통째로 사라져 둘 다 조용해진다.
+  /// 그래서 화면이 사는 동안 하나만 열어 두고 종류로 갈라 쓴다.
+  StreamSubscription<BanubaMaskEvent>? _banubaEvents;
+
+  /// 네이티브 플레이어가 알려 준 재생 위치. **고른 조각 안에서 0부터** 센다 —
+  /// AR 탭에는 그 조각 하나만 물려 있기 때문이다. 타임라인 시각으로 바꾸려면
+  /// 조각이 타임라인에서 시작하는 지점을 더한다.
+  int _arPositionMs = 0;
+
+  /// 저장하면서 마스크를 굽는 중인가. 이때는 취소 버튼이 media3가 아니라
+  /// Banuba를 세워야 한다 — 아직 media3는 시작도 하지 않았다.
+  bool _maskBaking = false;
 
   /// 정해 둔 구간만 돌려 보는 중인가. 이때는 구간 끝에서 다음 클립으로
   /// 넘어가지 않고 선다.
@@ -366,6 +395,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   Future<void> _togglePlayback() async {
+    if (_arActive) {
+      await _toggleArPlayback();
+      return;
+    }
     final preview = _preview;
     final projectController = _projectController;
     if (preview == null || projectController == null) return;
@@ -387,6 +420,20 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   Future<void> _seekToPosition(int milliseconds) async {
+    if (_arActive) {
+      // 네이티브 플레이어에는 고른 조각 하나만 물려 있어서 0부터 센다.
+      // 타임라인 시각을 그대로 보내면 앞 조각 길이만큼 어긋난다.
+      final project = _projectController?.project;
+      final clip = project?.selectedClip;
+      final offsetMs = project == null || clip == null
+          ? milliseconds
+          : (milliseconds - project.timelineStartFor(clip.id)).clamp(
+              0,
+              clip.durationMs,
+            );
+      await const BanubaMaskChannel().seekTo(offsetMs);
+      return;
+    }
     final preview = _preview;
     final projectController = _projectController;
     if (preview == null || projectController == null) return;
@@ -566,108 +613,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     });
   }
 
-  /// Banuba AR 편집기를 열고, 마스크가 씌워진 결과를 새 원본으로 받는다.
-  ///
-  /// **왜 화면을 한 번 나갔다 오는가**: `ve_sdk_flutter`가 내주는 API는 영상
-  /// 경로를 넘겨 편집기 화면을 여는 것뿐이다. "이 마스크를 골라 두고 파일만
-  /// 렌더링해라"는 없다. 얼굴 추적과 마스크 합성은 Banuba 화면 안에서 일어나고,
-  /// 우리는 그 결과 mp4를 받아 이어서 편집한다.
-  ///
-  /// 돌아온 영상은 **다른 파일**이다. 그래서 이미 얹어 둔 글자·스티커·구간은
-  /// 새 영상 기준으로 다시 잡아야 한다 — 먼저 물어보고 진행한다.
-  Future<void> _openBanubaAr(BanubaArEffect? effect) async {
-    final projectController = _projectController;
-    final sourcePath = _sourcePath;
-    if (_saving ||
-        _banubaBusy ||
-        projectController == null ||
-        sourcePath == null) {
-      return;
-    }
-
-    if (_hasLayeredEdits(projectController.project) &&
-        !await _confirmArReplacesEdits()) {
-      return;
-    }
-    if (!mounted) return;
-
-    final preview = _preview;
-    if (preview != null && preview.value.isPlaying) {
-      await preview.pause();
-      projectController.setPlaying(false);
-    }
-
-    setState(() {
-      _banubaBusy = true;
-      _banubaStatus = effect == null
-          ? 'Banuba AR 편집기를 여는 중이에요.'
-          : "편집기가 열리면 '${effect.label}' 마스크를 골라 주세요.";
-    });
-
-    try {
-      final saved = await _banubaEditor.edit(
-        sourcePaths: [sourcePath],
-        outputName: _safeTitle(widget.video.title),
-      );
-      if (!mounted) return;
-      if (saved == null) {
-        setState(() {
-          _banubaBusy = false;
-          _banubaStatus = 'AR 편집을 그만뒀어요. 편집 내용은 그대로 있어요.';
-        });
-        return;
-      }
-      setState(() => _banubaStatus = 'AR 결과를 편집기로 가져오는 중이에요.');
-      await _replaceEditorSource(saved.videoPath, restartCaptions: false);
-      if (!mounted) return;
-      setState(() {
-        _banubaBusy = false;
-        _banubaStatus = 'AR가 입혀진 영상이에요. 이어서 편집할 수 있어요.';
-        _appliedTools.add('ar');
-        _editState.markExternalEditApplied();
-      });
-      showAppSnack(context, 'AR 효과를 입혔어요. 이어서 편집할 수 있어요.');
-    } catch (failure) {
-      if (!mounted) return;
-      setState(() {
-        _banubaBusy = false;
-        _banubaStatus = '$failure';
-      });
-      showAppSnack(context, 'AR 편집기를 열지 못했어요. $failure', error: true);
-    }
-  }
-
-  bool _hasLayeredEdits(EditorProject project) =>
-      project.textLayers.isNotEmpty ||
-      project.stickerLayers.isNotEmpty ||
-      project.clips.length > 1 ||
-      project.clips.first.sourceStartMs > 0 ||
-      project.clips.first.sourceEndMs < project.sourceDurationMs;
-
-  Future<bool> _confirmArReplacesEdits() async {
-    final proceed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('AR 편집기로 갈까요?'),
-        content: const Text(
-          'AR 편집기를 다녀오면 새 영상으로 바뀌어서, 지금 얹은 글자·스티커와 '
-          '정해 둔 구간은 처음부터 다시 잡아야 해요.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('여기서 계속'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('AR 편집기 열기'),
-          ),
-        ],
-      ),
-    );
-    return proceed ?? false;
-  }
-
   /// AI 자막 시트. 자막을 만들고 고치는 일은 전부 [CaptionAutoSection]이
   /// 그대로 한다 — 여기서는 열어 주기만 한다.
   Future<void> _showAiCaptionSheet() async {
@@ -766,6 +711,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       projectController.setPlaying(false);
     }
 
+    // AR 탭에 선 채로 저장을 눌렀다면 그 탭에서 먼저 나온다.
+    //
+    // 저장하는 동안에는 편집 화면이 통째로 진행 표시로 바뀌어 네이티브 뷰가
+    // 트리에서 빠진다. 나오지 않고 두면 저장이 실패해 화면이 돌아왔을 때 새
+    // 네이티브 뷰가 영상 없이 만들어져 검은 화면만 남는다. 마스크는 탭과
+    // 무관하게 붙어 있으므로 굽기에는 영향이 없다.
+    final wasArActive = _arActive;
+    if (wasArActive) await _leaveArTab();
+
     setState(() {
       _saving = true;
       _error = null;
@@ -775,6 +729,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     });
     // 미리보기가 쥔 디코더와 화면 갱신을 렌더링에 넘긴다.
     await _releasePreviewForExport();
+    // 네이티브 뷰가 트리에서 실제로 빠지는 건 **다음 프레임**이다. 그전에
+    // 굽기를 시작하면 미리보기와 굽기가 같은 효과 플레이어·디코더를 두고
+    // 다툰다. 한 프레임만 기다린다.
+    if (wasArActive) await WidgetsBinding.instance.endOfFrame;
     projectController.setExportState(
       const EditorExportState(phase: EditorExportPhase.preparing, progress: 0),
     );
@@ -784,12 +742,27 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 이미 답이 와 있다.
     final galleryAccess = _requestGalleryAccess();
 
+    // 마스크를 구웠다면 그 중간 파일. 최종 결과가 되지 못했으면 지운다.
+    String? bakedPath;
     try {
-      final exportProject = projectController.project;
+      var exportProject = projectController.project;
+      // 자막은 **굽기 전에** 옮긴다. 원본 시각으로 들고 있는 것을 지금 조각
+      // 배치에 맞춰 타임라인 시각으로 바꾸는 일인데, 구운 뒤에는 조각이
+      // 하나로 합쳐져 그 계산의 근거가 사라진다.
       final exportCaptions = _captionsForProject(
         exportProject,
         _sourceCaptionsForExport(),
       );
+
+      // 마스크만 Banuba가 굽고, 나머지는 지금까지 하던 그대로 media3가 얹는다.
+      // 마스크를 고르지 않았으면 이 갈래로 오지 않는다 — 경로가 하나도 바뀌지
+      // 않는다.
+      final maskName = _selectedMask;
+      if (maskName != null && const BanubaMaskChannel().isSupported) {
+        bakedPath = await _bakeMask(exportProject, maskName);
+        exportProject = await _projectOnBakedSource(exportProject, bakedPath);
+      }
+
       final requiresRendering = exportProject.requiresRendering(
         hasCaptions: exportCaptions.isNotEmpty,
       );
@@ -801,6 +774,17 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             progress: 0,
           ),
         );
+        if (mounted) {
+          setState(() {
+            _exportProgress = null;
+            // 마스크를 구웠으면 이게 두 걸음 중 두 번째다. 그 말을 안 해 주면
+            // 진행률이 100%까지 갔다가 0으로 돌아가는 것으로만 보여 "처음부터
+            // 다시 하네"가 된다.
+            _status = bakedPath == null
+                ? '편집 내용을 영상으로 만들고 있어요'
+                : '편집 내용을 영상으로 만들고 있어요 (2/2)';
+          });
+        }
         _startExportProgressPolling();
         try {
           outputPath = await _editorPlatform.exportProject(
@@ -827,6 +811,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         });
       }
       await _saveToPhoneGallery(outputPath, galleryAccess);
+      // media3가 새 파일을 만들었다면 중간 파일은 할 일을 마쳤다. 마스크만
+      // 있고 다른 편집이 없어서 이게 곧 결과였다면 그대로 둔다.
+      if (bakedPath != null && bakedPath != outputPath) {
+        unawaited(_deleteQuietly(bakedPath));
+      }
       if (!mounted) return;
       _editState.markSaved();
       projectController.setExportState(
@@ -844,6 +833,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
     } catch (failure) {
       _stopExportProgressPolling();
+      // 실패했으면 중간 파일을 남기지 않는다. 다음 저장이 이걸 원본으로
+      // 착각할 일은 없지만, 몇십 MB짜리가 캐시에 조용히 쌓인다.
+      if (bakedPath != null) unawaited(_deleteQuietly(bakedPath));
       if (!mounted) return;
       final cancelled = _exportCancelled;
       projectController.setExportState(
@@ -867,8 +859,100 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         cancelled ? '저장을 그만뒀어요. 편집 내용은 그대로 있어요.' : '저장하지 못했어요. $failure',
         error: !cancelled,
       );
-      // 편집을 이어가야 하므로 재생기를 되살린다.
+      // 편집을 이어가야 하므로 재생기를 되살린다. AR 탭에 있었다면 그 자리로
+      // 돌려놓는다 — 탭은 그대로인데 미리보기만 Flutter 것으로 바뀌어 있으면
+      // 마스크 카드를 눌러도 "미리보기가 없어요"만 나온다.
       await _restorePreviewAfterExport();
+      if (wasArActive && mounted) await _enterArTab();
+    }
+  }
+
+  /// 고른 얼굴 마스크를 영상에 굽는다. 실패하면 던진다 — 저장 전체가 선다.
+  ///
+  /// **왜 저장할 때 한 번인가**: 마스크는 프레임마다 얼굴을 찾아 그려야 하고
+  /// 그건 Banuba 엔진만 한다. 미리보기는 화면에 바로 그려 주지만 파일로
+  /// 남기려면 따로 구워야 하는데, 카드를 누를 때마다 구우면 몇 번 눌러 보는
+  /// 것만으로 몇 분이 날아간다.
+  ///
+  /// 컷 편집이 정한 조각을 **그대로 넘긴다**. Banuba가 순서대로 이어 붙여
+  /// 한 편으로 구워 주므로, 돌아온 파일은 이미 잘려 있다.
+  Future<String> _bakeMask(EditorProject project, String maskName) async {
+    const channel = BanubaMaskChannel();
+    // 중간 파일 이름은 **영문·숫자만** 쓴다.
+    //
+    // 갤러리에 남는 이름은 최종 파일이 가져가므로 여기 이름은 아무도 보지
+    // 않는다. 반면 이 경로는 Banuba SDK 안을 돌아다니는데, 그 안에는 경로를
+    // `Uri.getEncodedPath()`로 다시 File로 되돌리는 자리가 있다(`FileUtils`).
+    // 한글이 섞이면 그 왕복에서 퍼센트 인코딩된 채로 남아 없는 파일을 가리킨다.
+    final outputPath = _buildOutputPath(baseName: 'banuba_mask');
+    if (mounted) {
+      setState(() {
+        _maskBaking = true;
+        _exportProgress = 0;
+        _status = '얼굴 마스크를 영상에 입히고 있어요 (1/2)';
+      });
+    }
+    // 진행률은 네이티브가 이벤트로 올려 준다. media3 쪽 폴링과 달리 물어볼
+    // 창구가 없다 — 내보내기 진행은 LiveData 한 줄기로만 온다.
+    _listenToBanuba();
+    try {
+      final result = await channel.export(
+        licenseToken: await _banubaEditor.licenseToken,
+        videoPath: project.sourceVideoPath,
+        ranges: [
+          for (final clip in project.clips)
+            (startMs: clip.sourceStartMs, endMs: clip.sourceEndMs),
+        ],
+        durationMs: project.sourceDurationMs,
+        width: project.sourceSize.width,
+        height: project.sourceSize.height,
+        maskName: maskName,
+        outputPath: outputPath,
+      );
+      final path = result.path;
+      if (path == null) {
+        // 사용자가 그만둔 것도 여기로 온다. 바깥의 catch가 취소인지 보고
+        // 안내를 가른다.
+        if (result.cancelled) _exportCancelled = true;
+        throw VideoExportException(result.message ?? '마스크를 영상에 입히지 못했어요.');
+      }
+      return path;
+    } finally {
+      if (mounted) setState(() => _maskBaking = false);
+    }
+  }
+
+  /// 구운 파일을 새 원본으로 삼은 프로젝트.
+  ///
+  /// 길이와 크기는 **파일에서 읽는다.** 프레임 경계 때문에 요청한 구간 길이와
+  /// 몇 ms 다를 수 있고, 해상도도 엔진이 기기에 맞춰 낮췄을 수 있다.
+  Future<EditorProject> _projectOnBakedSource(
+    EditorProject project,
+    String bakedPath,
+  ) async {
+    final metadata = await _editorPlatform.loadMediaMetadata(bakedPath);
+    // 세로로 찍힌 영상은 컨테이너에 가로 크기로 담기고 회전 각도가 따로 붙는다.
+    // 프로젝트가 쓰는 크기는 화면에 보이는 쪽이다.
+    final turned =
+        metadata.rotationDegrees == 90 || metadata.rotationDegrees == 270;
+    return project.withBakedSource(
+      path: bakedPath,
+      durationMs: metadata.durationMs > 0
+          ? metadata.durationMs
+          : project.durationMs,
+      size: EditorSourceSize(
+        width: turned ? metadata.height : metadata.width,
+        height: turned ? metadata.width : metadata.height,
+      ),
+    );
+  }
+
+  Future<void> _deleteQuietly(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // 못 지워도 저장은 이미 끝났다. 다음 청소에 맡긴다.
     }
   }
 
@@ -945,14 +1029,22 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   /// 렌더링을 중간에 그만둔다. 긴 영상에서 화면에 갇히지 않게 한다.
+  ///
+  /// 지금 도는 것이 무엇이냐에 따라 세울 곳이 다르다. 마스크를 굽는 동안에는
+  /// media3가 아직 시작도 하지 않았으므로 Banuba를 세워야 한다.
   Future<void> _cancelExport() async {
     if (!_saving || _exportCancelled) return;
+    final baking = _maskBaking;
     setState(() {
       _exportCancelled = true;
       _status = '만들던 영상을 정리하고 있어요';
     });
     try {
-      await _editorPlatform.cancelExport();
+      if (baking) {
+        await const BanubaMaskChannel().cancelExport();
+      } else {
+        await _editorPlatform.cancelExport();
+      }
     } catch (_) {
       // 이미 끝났거나 취소를 못 받아도 아래 catch에서 상태를 되돌린다.
     }
@@ -1015,16 +1107,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     return mapped;
   }
 
-  String _buildOutputPath({String? prefix}) {
+  /// [baseName]을 주면 제목 대신 그것을 쓴다. 사람이 볼 일 없는 중간 파일에서
+  /// 이름에 든 글자가 문제를 일으키지 않게 할 때만 쓴다.
+  String _buildOutputPath({String? prefix, String? baseName}) {
     final sourcePath = _sourcePath;
     final directory = sourcePath == null
         ? Directory.systemTemp
         : File(sourcePath).parent;
-    final baseName = _safeTitle(widget.video.title);
+    final name = baseName ?? _safeTitle(widget.video.title);
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final suffix = prefix == null ? '' : '_$prefix';
     return '${directory.path}${Platform.pathSeparator}'
-        '$baseName${suffix}_$timestamp.mp4';
+        '$name${suffix}_$timestamp.mp4';
   }
 
   void _retry() {
@@ -1035,6 +1129,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   @override
   void dispose() {
     _autoCaptionTimer?.cancel();
+    unawaited(_banubaEvents?.cancel());
     _textInput.dispose();
     _textFocus.dispose();
     _stopExportProgressPolling();
@@ -1309,11 +1404,19 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     final preview = _preview!;
     final projectController = _projectController!;
     final project = projectController.project;
+    // 자동 자막은 **원본 시각**으로 붙어 있다. AR 탭에서는 Flutter 재생기가
+    // 서 있으므로 네이티브가 알려 준 위치를 조각 시작에 더해 쓴다.
+    final captionSourceMs = _arActive
+        ? (project.selectedClip?.sourceStartMs ?? 0) + _arPositionMs
+        : preview.value.position.inMilliseconds;
     return EditorWorkspace(
       controller: projectController,
       preview: _PreviewSurface(
         controller: preview,
         projectController: projectController,
+        // AR 탭에서는 영상 자리를 Banuba 네이티브 뷰가 맡는다. 글자·스티커는
+        // 그 위에 그대로 얹힌다 — 편집 내용은 탭을 옮겼다고 사라지지 않는다.
+        arView: _arActive ? const BanubaMaskPreviewView() : null,
         editingLayerId: _editingTextLayerId,
         textInput: _textInput,
         textFocus: _textFocus,
@@ -1324,13 +1427,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         onLayerChanged: () => setState(_editState.markExternalEditApplied),
         autoCaptionText: _captionsBakedIntoSource
             ? null
-            : autoCaptionAt(
-                _autoCaptions,
-                preview.value.position.inMilliseconds,
-              ),
+            : autoCaptionAt(_autoCaptions, captionSourceMs),
       ),
       thumbnails: _thumbnails,
-      playing: preview.value.isPlaying,
+      playing: _arActive ? _arPlaying : preview.value.isPlaying,
       currentTime: _time(Duration(milliseconds: project.playheadMs)),
       totalTime: _time(Duration(milliseconds: project.durationMs)),
       saving: _saving,
@@ -1344,8 +1444,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             ? (_editState.durationMs / 1000 * 0.9).round()
             : null,
       ),
-      banubaBusy: _banubaBusy,
-      banubaStatus: _banubaStatus,
+      banubaBusy: _maskBusy,
+      banubaStatus: _maskStatus,
       onBack: () => Navigator.maybePop(context),
       onSave: _saveEdit,
       onPlay: _togglePlayback,
@@ -1366,7 +1466,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
       onLookSelected: _setLook,
-      onBanubaAr: _openBanubaAr,
+      onMaskSelected: _selectMask,
+      selectedMask: _selectedMask,
+      availableMasks: _availableMasks,
       onAiCaption: _showAiCaptionSheet,
       onToolSelected: _selectEditorTool,
     );
@@ -1379,6 +1481,238 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // AI 자막은 탭을 고르는 것만으로 바로 열어 준다. 탭 → 패널 → 버튼으로
     // 두 번 누르게 하면 "연결이 안 된 것"처럼 보인다.
     if (tool == EditorTool.aiCaption) unawaited(_showAiCaptionSheet());
+    if (tool == EditorTool.ar) {
+      unawaited(_enterArTab());
+    } else if (_arActive) {
+      unawaited(_leaveArTab());
+    }
+  }
+
+  /// AR 탭에 들어왔다.
+  ///
+  /// 미리보기 주체를 Banuba 네이티브 뷰로 넘긴다. **다른 탭은 그대로다** —
+  /// 편집기는 우리 것이고, AR 탭만 얼굴 추적 엔진을 빌려 쓴다.
+  ///
+  /// Flutter 재생기를 먼저 세운다. 둘이 같이 돌면 소리가 겹친다.
+  Future<void> _enterArTab() async {
+    const channel = BanubaMaskChannel();
+    if (!channel.isSupported) return;
+    final preview = _preview;
+    final projectController = _projectController;
+    final sourcePath = _sourcePath;
+    if (preview == null || projectController == null || sourcePath == null) {
+      return;
+    }
+    if (preview.value.isPlaying) {
+      await preview.pause();
+      projectController.setPlaying(false);
+    }
+    _stopRangePreview();
+
+    final token = await _banubaEditor.licenseToken;
+    final masks = await channel.initialize(token);
+    if (!mounted) return;
+    if (masks.isEmpty) {
+      setState(() => _maskStatus = 'AR 엔진을 준비하지 못했어요.');
+      return;
+    }
+    setState(() {
+      _arActive = true;
+      _availableMasks = masks;
+      _maskStatus = null;
+    });
+    // 재생 상태도 위치도 네이티브가 알려 준다. 재생 버튼 모양과 재생 머리를
+    // 그것에 맞춘다 — 이 탭에서는 Flutter 재생기가 서 있어서 아무것도
+    // 움직이지 않는다.
+    _arPositionMs = 0;
+    _listenToBanuba();
+
+    // 네이티브 뷰가 붙은 다음에야 영상을 물릴 수 있다.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_arActive) return;
+    final size = preview.value.size;
+    final error = await channel.setVideoSource(
+      videoPath: sourcePath,
+      width: size.width.round(),
+      height: size.height.round(),
+      durationMs: preview.value.duration.inMilliseconds,
+      // 컷 편집에서 정한 구간만 보여 준다. AR 탭이 이걸 무시하면 잘라낸 앞뒤가
+      // 그대로 재생돼서, 고른 구간에만 마스크를 씌우는 일이 불가능해진다.
+      startMs: projectController.project.selectedClip?.sourceStartMs ?? 0,
+      endMs:
+          projectController.project.selectedClip?.sourceEndMs ??
+          preview.value.duration.inMilliseconds,
+      // 편집기에서 정한 소리 크기를 그대로 쓴다. 음소거면 0.
+      volume: projectController.project.audio.muted
+          ? 0
+          : projectController.project.audio.sourceVolume,
+    );
+    if (!mounted) return;
+    // 저절로 틀지 않는다. 재생은 사용자가 재생 버튼으로 정한다 — 탭을 옮겼을
+    // 뿐인데 소리가 나기 시작하면 놀란다.
+    if (error != null) {
+      setState(() => _maskStatus = error);
+      return;
+    }
+
+    // 고른 마스크를 다시 씌운다.
+    //
+    // 탭을 벗어나면 네이티브 뷰가 사라지면서 플레이어와 효과 스택이 함께
+    // 풀린다. 다시 들어오면 아예 새 플레이어다 — 이걸 하지 않으면 카드에는
+    // 마스크가 골라져 있는데 화면에는 맨 얼굴만 나온다(저장에는 들어간다).
+    final selected = _selectedMask;
+    if (selected != null) unawaited(_selectMask(selected, restoring: true));
+  }
+
+  /// 네이티브 소식을 듣기 시작한다. 이미 듣고 있으면 아무것도 하지 않는다.
+  ///
+  /// 한 번 열면 화면이 닫힐 때까지 닫지 않는다 — AR 탭을 드나들 때마다 다시
+  /// 열면 저장 중에 오는 굽기 진행률까지 함께 끊긴다. 이유는 [_banubaEvents]에.
+  void _listenToBanuba() {
+    if (_banubaEvents != null) return;
+    _banubaEvents = const BanubaMaskChannel().events.listen(_onBanubaEvent);
+  }
+
+  void _onBanubaEvent(BanubaMaskEvent event) {
+    if (!mounted) return;
+    switch (event.type) {
+      case 'state':
+        if (!_arActive) return;
+        // 재생 버튼은 **사용자가 정한 것**을 보여 준다.
+        //
+        // 네이티브 플레이어는 프레임을 기다리는 동안 준비 중(preparing)과
+        // 멈춤(idle)을 번갈아 올린다. 그걸 그대로 받으면 버벅일 때마다 버튼이
+        // ▶로 돌아가고, 사용자는 안 눌린 줄 알고 다시 누른다 — 그 탭이 재생을
+        // 다시 걸어 버벅임을 키운다. 실제로 그렇게 눌린 기록이 있다.
+        //
+        // 그래서 상태 이벤트로는 **켜기만** 한다. 끄는 것은 끝까지 재생됐을
+        // 때뿐이고, 그 밖에는 사용자가 일시정지를 눌러 정한다. 재생이 정말
+        // 실패하면 `error` 이벤트가 따로 온다.
+        switch (event.state) {
+          case 'playing':
+            if (!_arPlaying) setState(() => _arPlaying = true);
+          case 'completed':
+            if (_arPlaying) setState(() => _arPlaying = false);
+        }
+      case 'position':
+        if (!_arActive) return;
+        final positionMs = event.positionMs;
+        if (positionMs != null) _onArPosition(positionMs);
+      case 'exportProgress':
+        final progress = event.progress;
+        if (_maskBaking && progress != null) {
+          setState(() => _exportProgress = progress);
+        }
+    }
+  }
+
+  /// 화면을 다시 그리는 최소 간격.
+  ///
+  /// 네이티브 플레이어는 **프레임마다** 위치를 알려 준다. 그때마다 편집 화면을
+  /// 통째로 다시 그리면 UI 스레드가 초당 서른 번 타임라인·썸네일·패널을 다시
+  /// 만드느라 정작 마스크를 합성하는 쪽이 밀려 재생이 끊긴다. Flutter 재생기
+  /// 쪽은 애초에 0.5초에 한 번만 알려 오므로 이 문제가 없었다.
+  static const _arPlayheadInterval = Duration(milliseconds: 200);
+
+  /// 재생이 아니라 **건너뛴** 것으로 보는 폭. 이때는 기다리지 않고 바로 그린다.
+  static const _arSeekJumpMs = 400;
+
+  int _arPlayheadDrawnAtMs = 0;
+  int _arPlayheadDrawnOffsetMs = 0;
+
+  /// 네이티브 플레이어가 움직였다. 타임라인과 영상 위 레이어를 함께 옮긴다.
+  ///
+  /// **왜 필요한가**: AR 탭에서는 Flutter 재생기가 서 있어서 [_onPreviewChanged]가
+  /// 불리지 않는다. 이걸 하지 않으면 마스크만 움직이고 타임라인·글자·스티커는
+  /// 처음 자리에 얼어붙는다 — 시간이 있는 스티커는 나올 때가 와도 안 나온다.
+  void _onArPosition(int positionMs) {
+    final projectController = _projectController;
+    if (projectController == null) return;
+    final project = projectController.project;
+    final clip = project.selectedClip;
+    final offsetMs = clip == null
+        ? positionMs
+        : positionMs.clamp(0, clip.durationMs);
+    final timelineStartMs = clip == null ? 0 : project.timelineStartFor(clip.id);
+    // 재생 머리는 매번 옮긴다. 값 하나 바꾸는 일이라 싸고, 이걸 건너뛰면
+    // 저장·탐색이 옛 위치를 쓰게 된다.
+    projectController.setPlayhead(timelineStartMs + offsetMs, notify: false);
+    _arPositionMs = offsetMs;
+
+    // 화면만 솎아 낸다. 크게 건너뛴 것이면(탐색) 기다리지 않고 바로 그린다 —
+    // 손가락으로 옮긴 자리가 0.2초 늦게 따라오면 끌리는 느낌이 난다.
+    final jumped = (offsetMs - _arPlayheadDrawnOffsetMs).abs() >= _arSeekJumpMs;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = nowMs - _arPlayheadDrawnAtMs;
+    if (!jumped &&
+        elapsed >= 0 &&
+        elapsed < _arPlayheadInterval.inMilliseconds) {
+      return;
+    }
+    _arPlayheadDrawnAtMs = nowMs;
+    _arPlayheadDrawnOffsetMs = offsetMs;
+    setState(() {});
+  }
+
+  /// AR 탭을 벗어났다. 네이티브 재생을 세우고 Flutter 재생기로 돌아간다.
+  ///
+  /// 소식 통로는 닫지 않는다. 마스크는 탭을 벗어나도 그대로 붙어 있고, 저장할
+  /// 때 굽는 진행률이 같은 통로로 오기 때문이다.
+  Future<void> _leaveArTab() async {
+    await const BanubaMaskChannel().leave();
+    if (!mounted) return;
+    setState(() {
+      _arActive = false;
+      _arPlaying = false;
+    });
+  }
+
+  /// AR 탭에서는 재생 버튼이 **네이티브** 플레이어를 문다. 그러지 않으면
+  /// Flutter 재생기만 돌아 소리는 나는데 화면은 멈춰 있다.
+  ///
+  /// 값을 **뒤집지 말고 정한다.**
+  ///
+  /// 네이티브는 play()/pause()를 받은 자리에서 곧바로 상태 이벤트를 올리고,
+  /// 그 이벤트가 메서드 응답보다 **먼저** 도착한다(같은 메신저라 순서가
+  /// 유지된다). 예전처럼 `!_arPlaying`으로 뒤집으면 이미 맞게 바뀐 값을 한 번
+  /// 더 뒤집어 정반대가 된다 — 재생 중인데 ▶가 보이고, 눌러도 멈추는 대신
+  /// 재생을 다시 걸었다. 절대값을 넣으면 두 번 들어와도 같은 결과다.
+  Future<void> _toggleArPlayback() async {
+    const channel = BanubaMaskChannel();
+    final shouldPlay = !_arPlaying;
+    final error = shouldPlay ? await channel.play() : await channel.pause();
+    if (!mounted) return;
+    if (error != null) {
+      showAppSnack(context, error);
+      return;
+    }
+    setState(() => _arPlaying = shouldPlay);
+  }
+
+  /// 마스크를 고르거나 벗긴다. **화면은 옮기지 않는다.**
+  ///
+  /// [restoring]은 AR 탭에 다시 들어와 이미 고른 마스크를 새 플레이어에 도로
+  /// 씌우는 경우다. 사용자가 새로 고른 것이 아니므로 "저장 안 된 변경"으로
+  /// 표시하지 않고, 실패해도 알림을 띄우지 않는다(패널 한 줄로만 알린다).
+  Future<void> _selectMask(String? maskName, {bool restoring = false}) async {
+    const channel = BanubaMaskChannel();
+    if (_maskBusy) return;
+    setState(() {
+      _maskBusy = true;
+      _maskStatus = null;
+    });
+    final error = await channel.applyMask(maskName);
+    if (!mounted) return;
+    setState(() {
+      _maskBusy = false;
+      if (error == null) {
+        _selectedMask = maskName;
+        if (!restoring) _editState.markExternalEditApplied();
+      } else {
+        _maskStatus = error;
+      }
+    });
+    if (error != null && !restoring) showAppSnack(context, error);
   }
 
   void _selectCanvasRatio(EditorCanvasRatio ratio) {
@@ -1860,6 +2194,7 @@ class _PreviewSurface extends StatelessWidget {
     required this.captionColor,
     required this.onLayerChanged,
     required this.onEditingTextChanged,
+    this.arView,
     this.editingLayerId,
     this.textInput,
     this.textFocus,
@@ -1870,6 +2205,15 @@ class _PreviewSurface extends StatelessWidget {
 
   final VideoPlayerController controller;
   final EditorProjectController projectController;
+
+  /// AR 탭에 있는 동안 영상 자리를 대신 맡는 Banuba 네이티브 뷰. null이면
+  /// 평소대로 Flutter 재생기가 그린다.
+  ///
+  /// **왜 자리만 바꾸나**: 예전에는 AR 탭에서 이 위젯을 통째로 네이티브 뷰로
+  /// 갈아 끼웠다. 그러면 그 위에 얹혀 있던 글자·스티커·자막이 화면에서 통째로
+  /// 사라져 "AR 탭에 들어가면 편집한 게 없어진다"로 보였다. 실제로는 프로젝트에
+  /// 그대로 있고 저장에도 들어가는데, 눈으로 확인할 수가 없었다.
+  final Widget? arView;
 
   final Color captionColor;
 
@@ -2043,24 +2387,31 @@ class _PreviewSurface extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    _CanvasGestureLayer(
-                      controller: projectController,
-                      canvas: canvas,
-                      onTap: editingLayerId == null ? null : onEditingDone,
-                      child: Center(
-                        child: ColorFiltered(
-                          colorFilter: look.colorFilter,
-                          child: FittedBox(
-                            fit: BoxFit.contain,
-                            child: SizedBox(
-                              width: width,
-                              height: height,
-                              child: VideoPlayer(controller),
+                    // 네이티브 뷰에는 색 필터도 캔버스 조작도 닿지 않는다.
+                    // `SurfaceView`는 Flutter가 합성하지 않고 안드로이드가 직접
+                    // 얹는 층이라 그렇다 — 그래서 색감은 효과 탭에 있다.
+                    // 억지로 감싸면 "눌렀는데 아무 일도 없다"만 남는다.
+                    if (arView != null)
+                      arView!
+                    else
+                      _CanvasGestureLayer(
+                        controller: projectController,
+                        canvas: canvas,
+                        onTap: editingLayerId == null ? null : onEditingDone,
+                        child: Center(
+                          child: ColorFiltered(
+                            colorFilter: look.colorFilter,
+                            child: FittedBox(
+                              fit: BoxFit.contain,
+                              child: SizedBox(
+                                width: width,
+                                height: height,
+                                child: VideoPlayer(controller),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
                     for (final layer
                         in projectController.project.textLayers.where(
                           (layer) => layer.isVisibleAt(

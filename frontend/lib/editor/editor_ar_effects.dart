@@ -9,6 +9,11 @@
 /// - 얼굴에 얹는 스티커: 얼굴이 있을 만한 자리에 미리 놓아 두고, 사용자가 끌어
 ///   옮기거나 크기를 바꿀 수 있다(스티커 레이어와 같은 조작).
 /// - 화면 색감([EditorLook]): 미리보기와 내보내기가 같은 값을 쓴다.
+///
+/// **여기 있는 것은 손으로 얹는 그림뿐이다.** 얼굴을 따라다니는 진짜 Banuba
+/// 마스크는 목록도 미리보기 그림도 네이티브가 준다(`banuba_mask_channel.dart`의
+/// `BanubaMask`). 효과 폴더를 갈아 끼워도 Dart 쪽 목록을 고칠 일이 없도록
+/// 그렇게 옮겼다.
 library;
 
 import 'editor_project.dart';
@@ -157,46 +162,4 @@ class EditorArEffect {
     }
     return values;
   }
-}
-
-/// 앱에 함께 넣어 둔 Banuba Face AR 마스크.
-///
-/// 파일은 `frontend/effects/<디렉터리>`에 있고, 안드로이드 빌드가
-/// `assets/bnb-resources/effects`로 복사한다(app/build.gradle.kts의
-/// `copyBanubaEffects`). Banuba 편집기를 열면 이 목록이 마스크 서랍에 뜬다.
-///
-/// 플러그인(`ve_sdk_flutter`)의 공개 API에는 "이 마스크를 미리 골라 둬라"가
-/// 없다. 그래서 카드를 누르면 편집기를 열고, 어떤 마스크를 고르면 되는지
-/// 안내만 한다.
-class BanubaArEffect {
-  const BanubaArEffect({
-    required this.directory,
-    required this.label,
-    required this.badge,
-  });
-
-  /// `frontend/effects` 아래 디렉터리 이름. 미리보기 그림 경로의 기준이다.
-  final String directory;
-
-  final String label;
-  final String badge;
-
-  String get previewAsset => 'effects/$directory/preview.png';
-
-  static const bundled = <BanubaArEffect>[
-    BanubaArEffect(directory: 'BulldogHarlamov', label: '불독', badge: '🐶'),
-    BanubaArEffect(directory: 'CartoonOctopus', label: '문어', badge: '🐙'),
-    BanubaArEffect(directory: 'Afro', label: '아프로', badge: '💇'),
-    BanubaArEffect(directory: 'PoliceMan', label: '경찰관', badge: '👮'),
-    BanubaArEffect(
-      directory: '0003_cu_Spider1_v3_b1',
-      label: '거미',
-      badge: '🕷️',
-    ),
-    BanubaArEffect(
-      directory: 'test_image_process_cartoon',
-      label: '만화풍',
-      badge: '🎨',
-    ),
-  ];
 }

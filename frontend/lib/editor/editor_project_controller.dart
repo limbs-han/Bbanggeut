@@ -75,7 +75,19 @@ class EditorProjectController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 이미 고른 클립이면 **아무것도 하지 않는다.**
+  ///
+  /// **왜 막아야 하나**: 타임라인을 문지르면 손가락이 움직일 때마다
+  /// `_seekToPosition`이 이걸 부른다. 그런데 문지르는 내내 클립은 대개 그대로다.
+  /// 막지 않으면 손가락 한 번 움직일 때마다 프로젝트를 통째로 새로 만들고
+  /// (조각·글자·스티커·블러 목록을 전부 복사한다) 편집 화면을 다시 그린다 —
+  /// 바로 뒤의 `setPlayhead`가 어차피 한 번 더 그리므로 두 배로 그리는 셈이다.
+  /// 문지를 때 뚝뚝 끊기던 원인이다.
+  ///
+  /// 덤으로 고쳐지는 것: 예전에는 문지르는 동안 [clearSelectedLayer] 때문에
+  /// 골라 둔 글자·스티커가 계속 풀렸다. 클립이 실제로 바뀔 때만 푼다.
   void selectClip(String clipId) {
+    if (_project.selectedClipId == clipId) return;
     if (!_project.clips.any((clip) => clip.id == clipId)) return;
     _project = _project.copyWith(
       selectedClipId: clipId,
