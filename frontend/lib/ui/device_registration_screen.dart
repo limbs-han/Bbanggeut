@@ -84,6 +84,7 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
       formatted,
       vaultId: selectedVaultId,
       newVaultName: selectedVaultId == null ? '나의 추억' : null,
+      placeName: selectedPlaceName,
     );
     if (!mounted) return;
     if (!ok) {
