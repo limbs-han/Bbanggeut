@@ -20,8 +20,8 @@
 | [`01-service-overview.md`](./01-service-overview.md) | - | 서비스 정의, 타겟, 핵심가치, MVP 7단계 개요, 아키텍처, 가족 공유 역할모델 |
 | [`02-requirements.md`](./02-requirements.md) | REQ-F-01~42, REQ-NF-01~12 | 기능/비기능 요구사항 (MVP 7단계 + 가족공유 본문, 확장 항목 부록) |
 | [`03-features.md`](./03-features.md) | FN-A01~40, FN-S01~26, FN-E01~10, FN-H01~04 (계 80개) | 화면/도메인/엣지/하드웨어별 기능, **경로 매핑 총람**(화면↔dart, 도메인↔패키지, MQTT↔양쪽 코드) |
-| [`04-api-spec.md`](./04-api-spec.md) | API-01~53(06 제외), MQTT-01~15 | 엔드포인트/토픽별 요청·응답 JSON 예시(복사 가능), 에러코드 |
-| [`06-stt-model-guide.md`](./06-stt-model-guide.md) | FN-A39 | STT 모델 선택 근거(도메인별 CER), 양자화 사다리, 만드는 절차, **금지 사항**. 2026-07-29 측정 기준 |
+| [`04-api-spec.md`](./04-api-spec.md) | API-01~54(06 제외), MQTT-01~15 | 엔드포인트/토픽별 요청·응답 JSON 예시(복사 가능), 에러코드 |
+| [`06-stt-model-guide.md`](./06-stt-model-guide.md) | FN-A39 | STT 모델 선택 근거(도메인별 CER), 양자화 사다리, 만드는 절차, **금지 사항**. 2026-07-29 측정 기준. **온디바이스 전사 시절의 측정 기록이다** — 전사는 서버(Gemini, API-54)로 옮겼고 이 문서는 그 결정의 근거이자, 아직 앱에 남아 있는 모델 파일의 설명이다 |
 
 ## "이럴 때 이 파일을 붙여라"
 
