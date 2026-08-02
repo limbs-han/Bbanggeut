@@ -88,7 +88,7 @@ class TranscriptStore {
       if (!file.existsSync()) return null;
       final decoded = jsonDecode(await file.readAsString()) as Map;
       // 견본 전사로 만든 캐시를 서버 빌드가 물려받으면 안 된다. 그대로 두면
-      // 스위치를 켜도 영영 다시 받지 않고, 만화(API-52)까지 지어낸 대사로 만든다.
+      // 스위치를 켜도 영영 다시 받지 않고, 만화(API-71)까지 지어낸 대사로 만든다.
       // source가 없는 옛 캐시도 여기서 걸린다 — 버리고 다시 받으면 그만이다.
       if (serverBuild && decoded['source'] != 'server') {
         debugPrint('[stt] 견본으로 만든 자막 캐시를 버립니다($videoId). 다시 받습니다.');

@@ -686,7 +686,7 @@ class ApiClient {
     options: _aiOptions,
   );
 
-  /// 서버 AI 세 엔드포인트(API-52·53·54)에만 붙이는 긴 수신 대기. 나머지 호출은
+  /// 서버 AI 세 엔드포인트(API-71·72·73)에만 붙이는 긴 수신 대기. 나머지 호출은
   /// 전역 기본값 20초 그대로다 — 평범한 요청까지 3분을 기다리면 안 된다.
   static final _aiOptions = Options(receiveTimeout: aiReceiveTimeout);
 
