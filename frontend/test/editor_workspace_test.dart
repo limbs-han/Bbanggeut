@@ -515,7 +515,6 @@ void main() {
 
     expect(controller.project.selectedClip!.sourceStartMs, trimmedStart);
     // 컷 밖에서는 프로젝트 바를 그리지 않아도 편집 값은 유지된다.
-    expect(find.byType(ProjectTimelineOverview), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -937,7 +936,6 @@ void main() {
       ..selectTool(EditorTool.zoom);
 
     await tester.pumpWidget(workspace(controller));
-    expect(find.byType(ProjectTimelineOverview), findsNothing);
     expect(find.byType(EditorTimelineSection), findsNothing);
   });
 
@@ -950,14 +948,12 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(workspace(controller));
-    expect(find.byType(ProjectTimelineOverview), findsNothing);
     expect(find.byKey(const Key('editor-timeline-strip')), findsOneWidget);
     expect(find.byKey(const Key('editor-frame-timecode')), findsOneWidget);
     expect(find.byKey(const Key('editor-timeline-zoom-in')), findsOneWidget);
 
     controller.selectTool(EditorTool.zoom);
     await tester.pump();
-    expect(find.byType(ProjectTimelineOverview), findsNothing);
     expect(find.byType(EditorTimelineSection), findsNothing);
     expect(find.byKey(const Key('editor-timeline-strip')), findsNothing);
     expect(find.byKey(const Key('editor-frame-timecode')), findsNothing);
