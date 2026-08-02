@@ -29,6 +29,14 @@ RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429})
 TERMINAL_HTTP_STATUSES = frozenset({400, 401, 403, 404, 409, 410, 422})
 MAX_ERROR_BODY_CHARACTERS = 2_048
 KEYFRAME_PROBE_TIMEOUT_SECONDS = 30
+MIXED_EVENT_TITLES = {
+    frozenset({"LAUGHTER", "CLAP"}): "웃음과 박수가 함께 포착됐어요",
+}
+EVENT_TYPE_PRIORITY = {
+    "LAUGHTER": 0,
+    "CLAP": 1,
+    "WAKE_WORD": 2,
+}
 EVENT_TITLES = {
     "LAUGHTER": "웃음이 담긴 순간",
     "CLAP": "박수가 시작된 순간",
@@ -74,6 +82,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ffmpeg", default=os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg"))
     parser.add_argument("--poll-seconds", type=float, default=1.0)
     parser.add_argument("--merge-gap-seconds", type=float, default=30.0)
+    parser.add_argument(
+        "--cross-type-merge-gap-seconds",
+        type=float,
+        default=5.0,
+        help=(
+            "Merge LAUGHTER and CLAP triggers within this many seconds "
+            "into one uploaded event (default: 5)."
+        ),
+    )
     parser.add_argument("--segment-seconds", type=float, default=60.0)
     parser.add_argument(
         "--segment-finalize-seconds",
@@ -128,32 +145,100 @@ def parse_trigger(path: Path) -> Trigger:
 def group_triggers(
     triggers: Iterable[Trigger],
     merge_gap_seconds: float,
+    cross_type_merge_gap_seconds: float = 5.0,
 ) -> list[list[Trigger]]:
-    groups: list[list[Trigger]] = []
-    by_type: dict[str, list[Trigger]] = {}
-    for trigger in triggers:
-        by_type.setdefault(trigger.event_type, []).append(trigger)
+    """Group repeated events and near-simultaneous laughter with clapping.
 
-    for same_type_triggers in by_type.values():
-        ordered = sorted(
-            same_type_triggers,
-            key=lambda trigger: trigger.occurred_at,
-        )
-        typed_groups: list[list[Trigger]] = []
-        for trigger in ordered:
-            if (
-                not typed_groups
-                or (
-                    trigger.occurred_at
-                    - typed_groups[-1][-1].occurred_at
+    Repeated triggers of the same type keep the existing merge window. Only
+    LAUGHTER and CLAP are eligible for the shorter cross-type window; wake-name
+    events remain independent from unrelated sounds.
+    """
+
+    groups: list[list[Trigger]] = []
+    ordered = sorted(triggers, key=lambda trigger: trigger.occurred_at)
+    for trigger in ordered:
+        matching_group: list[Trigger] | None = None
+        for group in reversed(groups):
+            same_type_times = [
+                item.occurred_at
+                for item in group
+                if item.event_type == trigger.event_type
+            ]
+            if same_type_times:
+                same_type_gap = (
+                    trigger.occurred_at - max(same_type_times)
                 ).total_seconds()
-                > merge_gap_seconds
-            ):
-                typed_groups.append([trigger])
-            else:
-                typed_groups[-1].append(trigger)
-        groups.extend(typed_groups)
-    return sorted(groups, key=lambda group: group[0].occurred_at)
+                if same_type_gap <= merge_gap_seconds:
+                    matching_group = group
+                    break
+
+            opposite_times = [
+                item.occurred_at
+                for item in group
+                if {item.event_type, trigger.event_type}
+                == {"LAUGHTER", "CLAP"}
+            ]
+            if opposite_times:
+                cross_type_gap = (
+                    trigger.occurred_at - max(opposite_times)
+                ).total_seconds()
+                if cross_type_gap <= cross_type_merge_gap_seconds:
+                    matching_group = group
+                    break
+
+        if matching_group is None:
+            groups.append([trigger])
+        else:
+            matching_group.append(trigger)
+    return groups
+
+
+def event_types(group: list[Trigger]) -> tuple[str, ...]:
+    """Return unique event types in stable presentation order."""
+
+    return tuple(
+        sorted(
+            {trigger.event_type for trigger in group},
+            key=lambda event_type: (
+                EVENT_TYPE_PRIORITY.get(event_type, len(EVENT_TYPE_PRIORITY)),
+                event_type,
+            ),
+        )
+    )
+
+
+def canonical_trigger(group: list[Trigger]) -> Trigger:
+    """Choose the event ID used for one upload.
+
+    LAUGHTER remains canonical for a mixed laughter-and-clap event so rollout
+    stays compatible with servers that only know the original trigger type.
+    """
+
+    if not group:
+        raise ValueError("trigger group cannot be empty")
+    return min(
+        group,
+        key=lambda trigger: (
+            EVENT_TYPE_PRIORITY.get(
+                trigger.event_type,
+                len(EVENT_TYPE_PRIORITY),
+            ),
+            trigger.occurred_at,
+            trigger.event_id,
+        ),
+    )
+
+
+def merged_triggers(group: list[Trigger]) -> list[Trigger]:
+    canonical = canonical_trigger(group)
+    return [trigger for trigger in group if trigger is not canonical]
+
+
+def event_title(group: list[Trigger]) -> str:
+    types = frozenset(event_types(group))
+    if types in MIXED_EVENT_TITLES:
+        return MIXED_EVENT_TITLES[types]
+    return EVENT_TITLES[canonical_trigger(group).event_type]
 
 
 def clip_interval(group: list[Trigger]) -> tuple[datetime, datetime]:
@@ -170,14 +255,13 @@ def clip_interval(group: list[Trigger]) -> tuple[datetime, datetime]:
     return start, end
 
 
-# 수정안
-from zoneinfo import ZoneInfo
-RECORDING_LOCAL_TZ = ZoneInfo("Asia/Seoul")  # local-recording.sh의 TZ와 일치시켜야 함
-
 def parse_segment(path: Path) -> Segment:
+    """Interpret recording filenames in the UTC configured by the recorder."""
+
     naive = datetime.strptime(path.name, SEGMENT_NAME_FORMAT)
-    started_at = naive.replace(tzinfo=RECORDING_LOCAL_TZ).astimezone(timezone.utc)
+    started_at = naive.replace(tzinfo=timezone.utc)
     return Segment(path=path, started_at=started_at)
+
 
 def select_completed_segments(
     paths: Iterable[Path],
@@ -371,13 +455,15 @@ def write_upload_status(
 ) -> None:
     """Persist the latest safe-to-display upload state for the dashboard."""
 
-    canonical = group[0]
+    canonical = canonical_trigger(group)
+    merged = merged_triggers(group)
     path = args.event_dir / f"{canonical.event_id}.upload-status.json"
     updated_at = instant(datetime.now(timezone.utc))
     payload = {
         "eventId": canonical.event_id,
         "canonicalEventId": canonical.event_id,
-        "mergedEventIds": [trigger.event_id for trigger in group[1:]],
+        "mergedEventIds": [trigger.event_id for trigger in merged],
+        "eventTypes": list(event_types(group)),
         "status": status,
         "detail": detail,
         "updatedAt": updated_at,
@@ -463,7 +549,7 @@ def write_upload_blocked(
     endpoint: str | None = None,
     response_body: str = "",
 ) -> None:
-    canonical = group[0]
+    canonical = canonical_trigger(group)
     blocked_at = instant(datetime.now(timezone.utc))
     for trigger in group:
         write_json_atomic(
@@ -471,6 +557,7 @@ def write_upload_blocked(
             {
                 "eventId": trigger.event_id,
                 "canonicalEventId": canonical.event_id,
+                "eventTypes": list(event_types(group)),
                 "blockedAt": blocked_at,
                 "reason": reason,
                 "httpStatus": http_status,
@@ -488,12 +575,12 @@ def upload_group(
     clip_end: datetime,
     output_path: Path,
 ) -> dict[str, Any]:
-    canonical = group[0]
+    canonical = canonical_trigger(group)
     checksum = sha256(output_path)
     upload_request = {
         "sourceEventId": canonical.event_id,
         "triggerType": canonical.event_type,
-        "title": EVENT_TITLES[canonical.event_type],
+        "title": event_title(group),
         "capturedStartAt": instant(clip_start),
         "capturedEndAt": instant(clip_end),
         "durationMs": max(
@@ -566,7 +653,8 @@ def process_group(
         clip_end,
         args.segment_seconds,
     )
-    canonical = group[0]
+    canonical = canonical_trigger(group)
+    merged = merged_triggers(group)
     output_path = args.event_dir / f"{canonical.event_id}.mp4"
     if not output_path.exists():
         write_upload_status(
@@ -584,7 +672,7 @@ def process_group(
         )
     response = upload_group(args, group, clip_start, clip_end, output_path)
     uploaded_at = instant(datetime.now(timezone.utc))
-    for trigger in group[1:]:
+    for trigger in merged:
         write_json_atomic(
             args.event_dir / f"{trigger.event_id}.merged.json",
             {
@@ -592,6 +680,7 @@ def process_group(
                 "canonicalEventId": canonical.event_id,
                 "videoId": response["videoId"],
                 "mergedAt": uploaded_at,
+                "eventTypes": list(event_types(group)),
             },
         )
     write_json_atomic(
@@ -600,7 +689,8 @@ def process_group(
             "eventId": canonical.event_id,
             "videoId": response["videoId"],
             "uploadedAt": uploaded_at,
-            "mergedEventIds": [trigger.event_id for trigger in group[1:]],
+            "mergedEventIds": [trigger.event_id for trigger in merged],
+            "eventTypes": list(event_types(group)),
         },
     )
     write_upload_status(
@@ -611,7 +701,8 @@ def process_group(
         videoId=response["videoId"],
     )
     print(
-        f"Uploaded rolling laughter clip: event={canonical.event_id} "
+        f"Uploaded rolling event clip: event={canonical.event_id} "
+        f"types={','.join(event_types(group))} "
         f"merged={len(group) - 1} video={response['videoId']}"
     )
     if args.delete_after_upload:
@@ -653,6 +744,10 @@ def validate_args(args: argparse.Namespace) -> None:
         )
     if args.merge_gap_seconds < 0:
         raise SystemExit("--merge-gap-seconds cannot be negative")
+    if args.cross_type_merge_gap_seconds < 0:
+        raise SystemExit(
+            "--cross-type-merge-gap-seconds cannot be negative"
+        )
     if not (args.recording_dir / ".homecam-recordings").is_file():
         raise SystemExit(
             f"Recording safety marker is missing: "
@@ -674,8 +769,12 @@ def run(args: argparse.Namespace) -> None:
             time.sleep(args.poll_seconds)
             continue
 
-        for group in group_triggers(triggers, args.merge_gap_seconds):
-            canonical_id = group[0].event_id
+        for group in group_triggers(
+            triggers,
+            args.merge_gap_seconds,
+            args.cross_type_merge_gap_seconds,
+        ):
+            canonical_id = canonical_trigger(group).event_id
             retry_state = retry_states.get(canonical_id)
             monotonic_now = time.monotonic()
             if retry_state is not None and monotonic_now < retry_state.retry_at:
@@ -690,7 +789,7 @@ def run(args: argparse.Namespace) -> None:
                     "WAITING_RECORDING",
                     str(error),
                 )
-                print(f"Rolling clip pending for {group[0].event_id}: {error}")
+                print(f"Rolling clip pending for {canonical_id}: {error}")
             except HTTPError as error:
                 body = http_error_body(error)
                 endpoint = safe_endpoint(error.url)

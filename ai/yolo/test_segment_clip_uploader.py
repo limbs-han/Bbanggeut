@@ -16,7 +16,10 @@ from urllib.error import HTTPError
 from segment_clip_uploader import (
     SegmentCoverageError,
     Trigger,
+    canonical_trigger,
     clip_interval,
+    event_title,
+    event_types,
     group_triggers,
     http_error_body,
     is_retryable_http_status,
@@ -28,6 +31,7 @@ from segment_clip_uploader import (
     safe_endpoint,
     select_completed_segments,
     unhandled_triggers,
+    upload_group,
 )
 
 
@@ -115,6 +119,113 @@ class SegmentClipUploaderTests(unittest.TestCase):
             [[item.event_id for item in group] for group in groups],
             [["laugh-first", "laugh-second"], ["clap"]],
         )
+
+    def test_laughter_and_clap_within_five_seconds_share_one_event(self) -> None:
+        items = [
+            trigger("clap-first", 0, "CLAP"),
+            trigger("laugh-second", 4, "LAUGHTER"),
+        ]
+
+        groups = group_triggers(items, 30, 5)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(
+            [item.event_id for item in groups[0]],
+            ["clap-first", "laugh-second"],
+        )
+        self.assertEqual(
+            canonical_trigger(groups[0]).event_id,
+            "laugh-second",
+        )
+        self.assertEqual(event_types(groups[0]), ("LAUGHTER", "CLAP"))
+        self.assertEqual(
+            event_title(groups[0]),
+            "웃음과 박수가 함께 포착됐어요",
+        )
+
+    def test_laughter_and_clap_outside_five_seconds_stay_separate(self) -> None:
+        groups = group_triggers(
+            [
+                trigger("laugh", 0, "LAUGHTER"),
+                trigger("clap", 6, "CLAP"),
+            ],
+            30,
+            5,
+        )
+
+        self.assertEqual(
+            [[item.event_id for item in group] for group in groups],
+            [["laugh"], ["clap"]],
+        )
+
+    def test_wake_word_does_not_cross_merge_with_laughter(self) -> None:
+        groups = group_triggers(
+            [
+                trigger("laugh", 0, "LAUGHTER"),
+                trigger("wake", 1, "WAKE_WORD"),
+            ],
+            30,
+            5,
+        )
+
+        self.assertEqual(
+            [[item.event_id for item in group] for group in groups],
+            [["laugh"], ["wake"]],
+        )
+
+    def test_mixed_event_requests_one_laughter_upload_with_mixed_title(self) -> None:
+        group = [
+            trigger("clap-first", 0, "CLAP"),
+            trigger("laugh-second", 4, "LAUGHTER"),
+        ]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            event_dir = Path(temporary_directory)
+            output_path = event_dir / "laugh-second.mp4"
+            output_path.write_bytes(b"mixed-event-video")
+            args = SimpleNamespace(
+                event_dir=event_dir,
+                api_base_url="https://api.example.test",
+                device_token="device-token",
+            )
+
+            with patch(
+                "segment_clip_uploader.request_json",
+                return_value=(
+                    {
+                        "alreadyCompleted": True,
+                        "videoId": "video-1",
+                    },
+                    {},
+                ),
+            ) as request:
+                response = upload_group(
+                    args,
+                    group,
+                    datetime(2026, 7, 23, 11, 59, 0, tzinfo=UTC),
+                    datetime(2026, 7, 23, 12, 1, 4, tzinfo=UTC),
+                    output_path,
+                )
+
+            self.assertEqual(response["videoId"], "video-1")
+            request.assert_called_once()
+            request_payload = request.call_args.args[3]
+            self.assertEqual(request_payload["sourceEventId"], "laugh-second")
+            self.assertEqual(request_payload["triggerType"], "LAUGHTER")
+            self.assertEqual(
+                request_payload["title"],
+                "웃음과 박수가 함께 포착됐어요",
+            )
+            self.assertNotIn("eventTypes", request_payload)
+
+            status = json.loads(
+                (event_dir / "laugh-second.upload-status.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(status["canonicalEventId"], "laugh-second")
+            self.assertEqual(status["mergedEventIds"], ["clap-first"])
+            self.assertEqual(status["eventTypes"], ["LAUGHTER", "CLAP"])
 
     def test_clip_uses_first_pre_and_last_post_boundaries(self) -> None:
         group = [trigger("first", 0), trigger("second", 20)]
@@ -232,6 +343,7 @@ class SegmentClipUploaderTests(unittest.TestCase):
                 retry_initial_seconds=5.0,
                 retry_max_seconds=300.0,
                 merge_gap_seconds=30.0,
+                cross_type_merge_gap_seconds=5.0,
             )
             error = HTTPError(
                 "https://api.example/videos/upload-url?secret=value",
