@@ -116,6 +116,10 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
   int _anchorMs = 0;
   double _travelPx = 0;
   double _msPerPx = 1;
+  double _timelineScale = 1;
+  double _pinchStartScale = 1;
+  int _scrubAnchorMs = 0;
+  double _scrubTravelPx = 0;
 
   /// 지금 손잡이가 달라붙어 있는 자리. 없으면 null.
   int? _snappedMs;
@@ -141,7 +145,50 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
   /// 깔았다. 정작 봐야 할 그림이 가장자리에서 잘려 어디를 자르는지 가늠하기
   /// 어려웠다. 재생은 미리보기 위 버튼이 이미 맡고 있다.
   @override
-  Widget build(BuildContext context) => _strip();
+  Widget build(BuildContext context) => Column(
+    children: [
+      SizedBox(
+        height: 26,
+        child: ColoredBox(
+          color: const Color(0xFF15171C),
+          child: Row(
+            children: [
+              const SizedBox(width: 8),
+              const Text(
+                '프레임 타임라인',
+                style: TextStyle(
+                  color: Color(0xFFAEB4C0),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              const Text(
+                '핀치로 확대',
+                style: TextStyle(color: Color(0xFF747B89), fontSize: 9),
+              ),
+              const SizedBox(width: 6),
+              _TimelineZoomControls(
+                scale: _timelineScale,
+                onZoomOut: _timelineScale <= 1
+                    ? null
+                    : () => setState(
+                        () => _timelineScale = math.max(1, _timelineScale / 2),
+                      ),
+                onZoomIn: _timelineScale >= 8
+                    ? null
+                    : () => setState(
+                        () => _timelineScale = math.min(8, _timelineScale * 2),
+                      ),
+              ),
+              const SizedBox(width: 6),
+            ],
+          ),
+        ),
+      ),
+      Expanded(child: _strip()),
+    ],
+  );
 
   Widget _strip() {
     final totalMs = math.max(1, widget.sourceDurationMs);
@@ -159,7 +206,18 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
         final trackLeft = TrimBarTokens.handleWidth;
         final trackWidth = math.max(1.0, width - TrimBarTokens.handleWidth * 2);
         final trackRight = trackLeft + trackWidth;
-        final msPerPx = totalMs / trackWidth;
+        final visibleDurationMs = math.max(
+          1,
+          (totalMs / _timelineScale).round(),
+        );
+        final maximumVisibleStart = math.max(0, totalMs - visibleDurationMs);
+        final visibleStartMs =
+            (widget.playheadSourceMs - visibleDurationMs ~/ 2).clamp(
+              0,
+              maximumVisibleStart,
+            );
+        final visibleEndMs = visibleStartMs + visibleDurationMs;
+        final msPerPx = visibleDurationMs / trackWidth;
         const minimumWindowPx = TrimBarTokens.minimumWindow;
         final minimumMs = math.max(
           widget.minimumDurationMs,
@@ -167,7 +225,13 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
         );
 
         double xOf(int ms) =>
-            trackLeft + (ms / totalMs * trackWidth).clamp(0.0, trackWidth);
+            trackLeft +
+            ((ms - visibleStartMs) / visibleDurationMs * trackWidth).clamp(
+              0.0,
+              trackWidth,
+            );
+
+        bool visible(int ms) => ms >= visibleStartMs && ms <= visibleEndMs;
 
         var startX = xOf(_startMs);
         var endX = xOf(_endMs);
@@ -186,17 +250,40 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
               width: trackWidth,
               top: 0,
               bottom: 0,
-              child: _FilmStrip(thumbnails: widget.thumbnails),
+              child: ClipRect(
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left:
+                          -(visibleStartMs / totalMs) *
+                          trackWidth *
+                          _timelineScale,
+                      width: trackWidth * _timelineScale,
+                      top: 0,
+                      bottom: 0,
+                      child: _FilmStrip(thumbnails: widget.thumbnails),
+                    ),
+                  ],
+                ),
+              ),
             ),
             for (final zoom in widget.zoomSegments)
-              if (zoom.sourceEndMs > 0 && zoom.sourceStartMs < totalMs)
+              if (zoom.sourceEndMs > visibleStartMs &&
+                  zoom.sourceStartMs < visibleEndMs)
                 Positioned(
                   key: Key('editor-zoom-marker-${zoom.id}'),
-                  left: xOf(zoom.sourceStartMs.clamp(0, totalMs)),
+                  left: xOf(
+                    zoom.sourceStartMs.clamp(visibleStartMs, visibleEndMs),
+                  ),
                   width: math.max(
                     3,
-                    xOf(zoom.sourceEndMs.clamp(0, totalMs)) -
-                        xOf(zoom.sourceStartMs.clamp(0, totalMs)),
+                    xOf(zoom.sourceEndMs.clamp(visibleStartMs, visibleEndMs)) -
+                        xOf(
+                          zoom.sourceStartMs.clamp(
+                            visibleStartMs,
+                            visibleEndMs,
+                          ),
+                        ),
                   ),
                   bottom: 2,
                   height: 7,
@@ -222,11 +309,10 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                 key: const Key('editor-timeline-scrub'),
                 behavior: HitTestBehavior.translucent,
                 onTapDown: (details) =>
-                    _scrub(details.localPosition.dx, msPerPx),
-                onHorizontalDragStart: (details) =>
-                    _scrub(details.localPosition.dx, msPerPx),
-                onHorizontalDragUpdate: (details) =>
-                    _scrub(details.localPosition.dx, msPerPx),
+                    _scrubAt(details.localPosition.dx, visibleStartMs, msPerPx),
+                onScaleStart: (details) => _startTimelineGesture(),
+                onScaleUpdate: (details) =>
+                    _updateTimelineGesture(details, msPerPx),
               ),
             ),
             Positioned(
@@ -250,22 +336,24 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
               child: const IgnorePointer(child: _Playhead()),
             ),
             if (widget.interactive) ...[
-              _handleTouchZone(
-                key: const Key('editor-trim-end-handle'),
-                centerX: endX + TrimBarTokens.handleWidth / 2,
-                width: width,
-                isStart: false,
-                msPerPx: msPerPx,
-                minimumMs: minimumMs,
-              ),
-              _handleTouchZone(
-                key: const Key('editor-trim-start-handle'),
-                centerX: startX - TrimBarTokens.handleWidth / 2,
-                width: width,
-                isStart: true,
-                msPerPx: msPerPx,
-                minimumMs: minimumMs,
-              ),
+              if (visible(_endMs))
+                _handleTouchZone(
+                  key: const Key('editor-trim-end-handle'),
+                  centerX: endX + TrimBarTokens.handleWidth / 2,
+                  width: width,
+                  isStart: false,
+                  msPerPx: msPerPx,
+                  minimumMs: minimumMs,
+                ),
+              if (visible(_startMs))
+                _handleTouchZone(
+                  key: const Key('editor-trim-start-handle'),
+                  centerX: startX - TrimBarTokens.handleWidth / 2,
+                  width: width,
+                  isStart: true,
+                  msPerPx: msPerPx,
+                  minimumMs: minimumMs,
+                ),
             ],
             if (_dragging)
               Positioned(
@@ -283,22 +371,24 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                 ),
               ),
             if (widget.recommendationMarker case final marker?) ...[
-              Positioned(
-                left: xOf(marker.sourceStartMs).clamp(0, width - 56),
-                top: 2,
-                child: const _AiBoundaryBadge(
-                  key: Key('editor-recommendation-start'),
-                  label: '추천 시작',
+              if (visible(marker.sourceStartMs))
+                Positioned(
+                  left: xOf(marker.sourceStartMs).clamp(0, width - 56),
+                  top: 2,
+                  child: const _AiBoundaryBadge(
+                    key: Key('editor-recommendation-start'),
+                    label: '추천 시작',
+                  ),
                 ),
-              ),
-              Positioned(
-                left: (xOf(marker.sourceEndMs) - 52).clamp(0, width - 52),
-                top: 2,
-                child: const _AiBoundaryBadge(
-                  key: Key('editor-recommendation-end'),
-                  label: '추천 끝',
+              if (visible(marker.sourceEndMs))
+                Positioned(
+                  left: (xOf(marker.sourceEndMs) - 52).clamp(0, width - 52),
+                  top: 2,
+                  child: const _AiBoundaryBadge(
+                    key: Key('editor-recommendation-end'),
+                    label: '추천 끝',
+                  ),
                 ),
-              ),
             ],
           ],
         );
@@ -436,12 +526,92 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
     widget.onTrimCommitted();
   }
 
-  void _scrub(double dx, double msPerPx) {
+  void _scrubAt(double dx, int visibleStartMs, double msPerPx) {
     final sourceMs = _frameAligned(
-      (dx * msPerPx).round(),
+      visibleStartMs + (dx * msPerPx).round(),
     ).clamp(_startMs, _endMs);
     widget.onScrub(sourceMs);
   }
+
+  void _startTimelineGesture() {
+    _pinchStartScale = _timelineScale;
+    _scrubAnchorMs = widget.playheadSourceMs;
+    _scrubTravelPx = 0;
+  }
+
+  void _updateTimelineGesture(ScaleUpdateDetails details, double msPerPx) {
+    if (details.pointerCount >= 2) {
+      setState(() {
+        _timelineScale = (_pinchStartScale * details.scale).clamp(1.0, 8.0);
+      });
+      return;
+    }
+    _scrubTravelPx += details.focalPointDelta.dx;
+    final sourceMs = _frameAligned(
+      (_scrubAnchorMs - _scrubTravelPx * msPerPx).round(),
+    ).clamp(_startMs, _endMs);
+    widget.onScrub(sourceMs);
+  }
+}
+
+class _TimelineZoomControls extends StatelessWidget {
+  const _TimelineZoomControls({
+    required this.scale,
+    required this.onZoomOut,
+    required this.onZoomIn,
+  });
+
+  final double scale;
+  final VoidCallback? onZoomOut;
+  final VoidCallback? onZoomIn;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: const Color(0xD91D1916),
+      borderRadius: BorderRadius.circular(13),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _button(
+          key: const Key('editor-timeline-zoom-out'),
+          icon: Icons.remove_rounded,
+          onTap: onZoomOut,
+        ),
+        Text(
+          '${scale.toStringAsFixed(scale == scale.roundToDouble() ? 0 : 1)}×',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        _button(
+          key: const Key('editor-timeline-zoom-in'),
+          icon: Icons.add_rounded,
+          onTap: onZoomIn,
+        ),
+      ],
+    ),
+  );
+
+  Widget _button({
+    required Key key,
+    required IconData icon,
+    required VoidCallback? onTap,
+  }) => IconButton(
+    key: key,
+    visualDensity: VisualDensity.compact,
+    constraints: const BoxConstraints.tightFor(width: 26, height: 26),
+    padding: EdgeInsets.zero,
+    onPressed: onTap,
+    icon: Icon(
+      icon,
+      size: 16,
+      color: onTap == null ? Colors.white30 : Colors.white,
+    ),
+  );
 }
 
 class _AiBoundaryBadge extends StatelessWidget {

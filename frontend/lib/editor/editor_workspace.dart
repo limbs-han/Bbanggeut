@@ -336,9 +336,12 @@ double _timelineHeightFor(
   EditorProject project,
   bool cutMode,
 ) {
-  var height = EditorTimelineSection.overviewHeight;
+  var height = cutMode
+      ? EditorTimelineSection.cutHeaderHeight +
+            layout.trimBarHeight +
+            layout.actionButtonHeight
+      : EditorTimelineSection.overviewHeight;
   if (cutMode) {
-    height += layout.trimBarHeight + layout.actionButtonHeight;
     if (project.clips.length > 1) height += EditorTimelineSection.chooserHeight;
   }
   return height;
@@ -708,7 +711,8 @@ class EditorTimelineSection extends StatelessWidget {
 
   /// 클립 고르는 줄(여백 포함)의 높이. 클립이 둘 이상일 때만 붙는다.
   static const chooserHeight = 44.0;
-  static const overviewHeight = 84.0;
+  static const cutHeaderHeight = 46.0;
+  static const overviewHeight = 46.0;
 
   /// 지금 나눌 수 없는 이유. null이면 나눌 수 있다.
   static const splitBlockedReason = '나눌 자리를 먼저 정해요. 띠를 눌러 흰 선을 구간 안쪽으로 옮겨 보세요.';
@@ -751,20 +755,32 @@ class EditorTimelineSection extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: SizedBox(
-              height: overviewHeight,
-              child: ProjectTimelineOverview(
-                project: project,
-                onSeek: onSeek,
-                onClipSelected: onClipSelected,
-                presetRecommendations: presetRecommendations,
-                recommendationLoading: recommendationLoading,
-                onRecommendationSelected: onRecommendationSelected,
+          if (!expanded)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: SizedBox(
+                height: overviewHeight,
+                child: ProjectTimelineOverview(
+                  project: project,
+                  onSeek: onSeek,
+                  onClipSelected: onClipSelected,
+                ),
               ),
             ),
-          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: SizedBox(
+                height: cutHeaderHeight,
+                child: _CutPrecisionToolbar(
+                  project: project,
+                  recommendations: presetRecommendations,
+                  loading: recommendationLoading,
+                  onPresetSelected: onRecommendationSelected,
+                  onSeek: onSeek,
+                ),
+              ),
+            ),
           if (expanded)
             Padding(
               // 시스템 뒤로가기 제스처 영역과 손잡이 터치 영역을 분리한다.
@@ -873,19 +889,11 @@ class ProjectTimelineOverview extends StatelessWidget {
     required this.project,
     required this.onSeek,
     required this.onClipSelected,
-    required this.presetRecommendations,
-    required this.recommendationLoading,
-    required this.onRecommendationSelected,
   });
 
   final EditorProject project;
   final ValueChanged<int> onSeek;
   final ValueChanged<String> onClipSelected;
-  final Map<String, EditRecommendation> presetRecommendations;
-  final bool recommendationLoading;
-  final ValueChanged<String> onRecommendationSelected;
-
-  static const frameRate = 30;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -907,7 +915,7 @@ class ProjectTimelineOverview extends StatelessWidget {
         clipBlocks.add(
           Positioned(
             left: left,
-            top: 31,
+            top: 0,
             width: blockWidth,
             height: 27,
             child: GestureDetector(
@@ -950,9 +958,9 @@ class ProjectTimelineOverview extends StatelessWidget {
             Positioned(
               key: Key('editor-overview-cut-${clip.id}'),
               left: (left - 4).clamp(0, math.max(0.0, width - 8)),
-              top: 29,
+              top: 0,
               width: 8,
-              height: 55,
+              height: 46,
               child: const IgnorePointer(
                 child: Column(
                   children: [
@@ -985,7 +993,7 @@ class ProjectTimelineOverview extends StatelessWidget {
               key: Key('editor-overview-zoom-${clip.id}-${zoom.id}'),
               left: xOf(timelineStart),
               width: math.max(3, xOf(timelineEnd) - xOf(timelineStart)),
-              top: 62,
+              top: 30,
               color: const Color(0xFF5A7CFF),
               label: '줌',
             ),
@@ -999,7 +1007,7 @@ class ProjectTimelineOverview extends StatelessWidget {
             key: Key('editor-overview-text-${text.id}'),
             left: xOf(text.startMs),
             width: math.max(3, xOf(text.endMs) - xOf(text.startMs)),
-            top: 73,
+            top: 38,
             color: const Color(0xFF9B59B6),
             label: '자막',
           ),
@@ -1012,33 +1020,12 @@ class ProjectTimelineOverview extends StatelessWidget {
           color: const Color(0xFF2A2420),
           child: Stack(
             children: [
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                height: 29,
-                child: _timelineToolbar(),
-              ),
-              const Positioned(
-                left: 0,
-                right: 0,
-                top: 61,
-                height: 10,
-                child: ColoredBox(color: Color(0x332F5BCE)),
-              ),
-              const Positioned(
-                left: 0,
-                right: 0,
-                top: 72,
-                height: 10,
-                child: ColoredBox(color: Color(0x334B2459)),
-              ),
               ...clipBlocks,
               ...effectBlocks,
               ...cutMarkers,
               Positioned(
                 left: (playheadX - 1).clamp(0, width - 2),
-                top: 29,
+                top: 0,
                 bottom: 0,
                 width: 2,
                 child: const ColoredBox(color: Colors.white),
@@ -1049,69 +1036,6 @@ class ProjectTimelineOverview extends StatelessWidget {
       );
     },
   );
-
-  Widget _timelineToolbar() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-    child: Row(
-      children: [
-        const Text(
-          '길이',
-          style: TextStyle(
-            color: Color(0xFFBFB5AE),
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(width: 4),
-        for (final entry in const [
-          ('short', '짧게'),
-          ('medium', '중간'),
-          ('long', '길게'),
-        ]) ...[
-          _TimelinePresetChip(
-            key: Key('editor-preset-${entry.$1}'),
-            label: entry.$2,
-            selected: project.recommendationMarker?.preset == entry.$1,
-            enabled:
-                !recommendationLoading &&
-                presetRecommendations.containsKey(entry.$1),
-            onTap: () => onRecommendationSelected(entry.$1),
-          ),
-          const SizedBox(width: 3),
-        ],
-        const Spacer(),
-        _FrameStepButton(
-          key: const Key('editor-frame-back'),
-          icon: Icons.chevron_left_rounded,
-          tooltip: '1프레임 뒤로',
-          onTap: () => _stepFrames(-1),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 2),
-          child: Text(
-            '1f',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 8,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        _FrameStepButton(
-          key: const Key('editor-frame-forward'),
-          icon: Icons.chevron_right_rounded,
-          tooltip: '1프레임 앞으로',
-          onTap: () => _stepFrames(1),
-        ),
-      ],
-    ),
-  );
-
-  void _stepFrames(int delta) {
-    final currentFrame = (project.playheadMs * frameRate / 1000).round();
-    final nextFrame = math.max(0, currentFrame + delta);
-    onSeek((nextFrame * 1000 / frameRate).round().clamp(0, project.durationMs));
-  }
 
   static Widget _timelineEffect({
     required Key key,
@@ -1125,7 +1049,7 @@ class ProjectTimelineOverview extends StatelessWidget {
     left: left,
     top: top,
     width: width,
-    height: 9,
+    height: 7,
     child: DecoratedBox(
       decoration: BoxDecoration(
         color: color,
@@ -1145,6 +1069,109 @@ class ProjectTimelineOverview extends StatelessWidget {
           : null,
     ),
   );
+}
+
+class _CutPrecisionToolbar extends StatelessWidget {
+  const _CutPrecisionToolbar({
+    required this.project,
+    required this.recommendations,
+    required this.loading,
+    required this.onPresetSelected,
+    required this.onSeek,
+  });
+
+  static const frameRate = 30;
+
+  final EditorProject project;
+  final Map<String, EditRecommendation> recommendations;
+  final bool loading;
+  final ValueChanged<String> onPresetSelected;
+  final ValueChanged<int> onSeek;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(
+      color: Color(0xFF2A2420),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      child: Row(
+        children: [
+          for (final entry in const [
+            ('short', '짧게'),
+            ('medium', '중간'),
+            ('long', '길게'),
+          ]) ...[
+            _TimelinePresetChip(
+              key: Key('editor-preset-${entry.$1}'),
+              label: entry.$2,
+              selected: project.recommendationMarker?.preset == entry.$1,
+              enabled: !loading && recommendations.containsKey(entry.$1),
+              onTap: () => onPresetSelected(entry.$1),
+            ),
+            const SizedBox(width: 3),
+          ],
+          const Spacer(),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _frameTimecode(project.playheadMs),
+                key: const Key('editor-frame-timecode'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                '30 fps · F${_frameOf(project.playheadMs)}',
+                style: const TextStyle(
+                  color: Color(0xFFBFB5AE),
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 5),
+          _FrameStepButton(
+            key: const Key('editor-frame-back'),
+            icon: Icons.chevron_left_rounded,
+            tooltip: '1프레임 뒤로',
+            onTap: () => _stepFrames(-1),
+          ),
+          _FrameStepButton(
+            key: const Key('editor-frame-forward'),
+            icon: Icons.chevron_right_rounded,
+            tooltip: '1프레임 앞으로',
+            onTap: () => _stepFrames(1),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  int _frameOf(int milliseconds) => (milliseconds * frameRate / 1000).round();
+
+  String _frameTimecode(int milliseconds) {
+    final totalFrames = _frameOf(milliseconds);
+    final frames = totalFrames % frameRate;
+    final totalSeconds = totalFrames ~/ frameRate;
+    final seconds = totalSeconds % 60;
+    final minutes = (totalSeconds ~/ 60) % 60;
+    final hours = totalSeconds ~/ 3600;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(hours)}:${two(minutes)}:${two(seconds)}:${two(frames)}';
+  }
+
+  void _stepFrames(int delta) {
+    final nextFrame = math.max(0, _frameOf(project.playheadMs) + delta);
+    onSeek((nextFrame * 1000 / frameRate).round().clamp(0, project.durationMs));
+  }
 }
 
 class _TimelinePresetChip extends StatelessWidget {
@@ -1208,9 +1235,9 @@ class _FrameStepButton extends StatelessWidget {
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 22,
-          height: 22,
-          child: Icon(icon, color: Colors.white, size: 17),
+          width: 27,
+          height: 27,
+          child: Icon(icon, color: Colors.white, size: 19),
         ),
       ),
     ),
@@ -1703,8 +1730,7 @@ class _ZoomPanel extends StatelessWidget {
               max: project.sourceDurationMs.toDouble(),
               divisions: math.max(
                 1,
-                (project.sourceDurationMs *
-                        ProjectTimelineOverview.frameRate) ~/
+                (project.sourceDurationMs * _CutPrecisionToolbar.frameRate) ~/
                     1000,
               ),
               labels: RangeLabels(

@@ -327,7 +327,7 @@ void main() {
 
     await tester.drag(
       find.byKey(const Key('editor-timeline-scrub')),
-      const Offset(60, 0),
+      const Offset(-60, 0),
     );
     await tester.pump();
 
@@ -888,7 +888,8 @@ void main() {
       ..splitAt(6000)
       ..setPlayhead(1000)
       ..addZoomAtPlayhead()
-      ..addTextLayer(text: '표시');
+      ..addTextLayer(text: '표시')
+      ..selectTool(EditorTool.zoom);
 
     await tester.pumpWidget(workspace(controller));
     expect(find.byType(ProjectTimelineOverview), findsOneWidget);
@@ -918,6 +919,27 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('컷은 상세 프레임 타임라인만, 다른 도구는 프로젝트 개요만 표시한다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(workspace(controller));
+    expect(find.byType(ProjectTimelineOverview), findsNothing);
+    expect(find.byKey(const Key('editor-timeline-strip')), findsOneWidget);
+    expect(find.byKey(const Key('editor-frame-timecode')), findsOneWidget);
+    expect(find.byKey(const Key('editor-timeline-zoom-in')), findsOneWidget);
+
+    controller.selectTool(EditorTool.zoom);
+    await tester.pump();
+    expect(find.byType(ProjectTimelineOverview), findsOneWidget);
+    expect(find.byKey(const Key('editor-timeline-strip')), findsNothing);
+    expect(find.byKey(const Key('editor-frame-timecode')), findsNothing);
   });
 
   testWidgets('기존 텍스트를 목록에서 다시 수정할 수 있다', (tester) async {

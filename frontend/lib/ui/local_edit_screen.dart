@@ -266,14 +266,19 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   /// 타임라인 프레임을 두 번에 나눠 뽑는다.
   ///
-  /// 한 번에 열두 장을 뽑으면 그동안 띠가 비어 있다. 먼저 네 장으로 띠를
+  /// 한 번에 촘촘한 프레임을 뽑으면 그동안 띠가 비어 있다. 먼저 네 장으로 띠를
   /// 채워 "지금 어디쯤인지"를 바로 보여 주고, 이어서 촘촘한 것으로 갈아
   /// 끼운다. 총 작업량은 조금 늘지만 눈에 보이기까지의 시간이 크게 줄어든다.
   Future<void> _loadThumbnails() async {
     final sourcePath = _sourcePath;
     if (sourcePath == null) return;
     if (!await _extractThumbnails(sourcePath, 4)) return;
-    await _extractThumbnails(sourcePath, 12);
+    final durationMs = _projectController?.project.sourceDurationMs ?? 0;
+    // 타임라인을 8배 확대해도 같은 사진 한 장만 커지지 않게 약 4초마다
+    // 실제 프레임을 준비한다. 긴 영상에서도 72장을 넘기지 않아 진입과 메모리를
+    // 막지 않는다. 첫 네 장이 이미 화면을 채웠으므로 이 작업은 뒤에서 진행된다.
+    final detailCount = (durationMs / 4000).ceil().clamp(24, 72);
+    await _extractThumbnails(sourcePath, detailCount);
   }
 
   /// 성공 여부. 화면이 사라졌거나 원본이 바뀌면 false를 준다.
