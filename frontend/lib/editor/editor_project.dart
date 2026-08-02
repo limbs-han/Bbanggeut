@@ -907,3 +907,70 @@ class EditorProject {
     };
   }
 }
+
+/// 미리보기가 캔버스를 **얼마나** 보여 줄지 정하는 기하.
+///
+/// 세로 캔버스(9:16)에 가로 영상을 contain으로 담으면 위아래가 검은
+/// 여백으로 남는다. 작은 휴대폰 화면에서 그 여백을 항상 전부 그리면 정작
+/// 영상은 손바닥만 해진다. 그래서 편집 중에는 캔버스를 **폭에 맞춰** 그리고,
+/// 세로로 넘치는 검은 여백은 잘라 보여 준다 — 저장 결과가 달라지는 것이
+/// 아니라 화면에 그리는 범위만 다르다.
+///
+/// 전체 캔버스를 그대로 보여 줘야 하는 경우는 잘라내지 않는다.
+/// * 캔버스 탭 — 출력 비율 자체를 고르는 자리다.
+/// * 검은 여백에 걸친 글자·스티커가 지금 보일 때 — 잘라 버리면 그 레이어를
+///   만질 수 없다.
+class EditorPreviewGeometry {
+  const EditorPreviewGeometry._({
+    required this.canvasAspectRatio,
+    required this.videoHeightFraction,
+    required this.letterboxClippable,
+  });
+
+  factory EditorPreviewGeometry.of(EditorProject project) {
+    final canvas = project.canvas;
+    final aspect = canvas.aspectRatio;
+    final source = canvas.sourceAspectRatio;
+    // 원본이 캔버스보다 넓어야 위아래 여백이 생긴다. 좌우 여백(세로 원본)은
+    // 세로 공간을 낭비하지 않으므로 자르지 않는다.
+    final letterboxed =
+        canvas.fit == EditorCanvasFit.contain && source > aspect + 0.001;
+    final videoHeightFraction = letterboxed
+        ? (aspect / source).clamp(0.05, 1.0).toDouble()
+        : 1.0;
+    var clippable = letterboxed && project.selectedTool != EditorTool.ratio;
+    if (clippable) {
+      final safeHalf = math.min(1.0, videoHeightFraction * _contextFactor) / 2;
+      bool outside(EditorTimedLayer layer) =>
+          layer.isVisibleAt(project.playheadMs) &&
+          (layer.position.y - 0.5).abs() > safeHalf;
+      if (project.textLayers.any(outside) ||
+          project.stickerLayers.any(outside)) {
+        clippable = false;
+      }
+    }
+    return EditorPreviewGeometry._(
+      canvasAspectRatio: aspect,
+      videoHeightFraction: videoHeightFraction,
+      letterboxClippable: clippable,
+    );
+  }
+
+  /// 잘라 보여 줄 때도 영상 창 위아래에 남기는 문맥 띠 배율.
+  /// 1.16이면 영상 높이의 8%씩을 검은 여백으로 남겨 "캔버스가 더 있다"는
+  /// 사실이 보이게 한다.
+  static const _contextFactor = 1.16;
+
+  final double canvasAspectRatio;
+
+  /// 캔버스 높이에서 가로 영상 창이 차지하는 비율. 여백이 없으면 1이다.
+  final double videoHeightFraction;
+
+  /// 위아래 검은 여백을 잘라 보여 줘도 되는가.
+  final bool letterboxClippable;
+
+  /// 잘라 보여 줄 때 반드시 남기는 캔버스 높이 비율(영상 창 + 문맥 띠).
+  double get minimumVisibleHeightFraction => letterboxClippable
+      ? math.min(1.0, videoHeightFraction * _contextFactor)
+      : 1.0;
+}

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/editor/editor_ar_effects.dart';
 import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
+import 'package:william_james_app/editor/editor_trim_bar.dart';
 import 'package:william_james_app/editor/editor_workspace.dart';
 import 'package:william_james_app/editor/edit_recommendation_client.dart';
 
@@ -189,6 +190,30 @@ void main() {
       );
       expect(tester.takeException(), isNull, reason: '$tool 탭이 넘쳤다');
     }
+  });
+
+  testWidgets('세로 캔버스의 검은 여백만큼 컷 탭 프레임 띠가 커진다', (tester) async {
+    tester.view
+      ..physicalSize = galaxyS24Plus
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(workspace(controller));
+    // 원본 비율 캔버스는 여백이 없으므로 기본 높이 그대로다.
+    final base = tester.getSize(find.byType(TrimRangeBar)).height;
+
+    controller
+      ..setCanvasRatio(EditorCanvasRatio.vertical)
+      ..setCanvasFit(EditorCanvasFit.contain);
+    await tester.pump();
+
+    final grown = tester.getSize(find.byType(TrimRangeBar)).height;
+    expect(grown, greaterThan(base + 20), reason: '여백이 프레임 띠로 오지 않았다');
+    // 띠는 원래 높이의 갑절을 넘지 않는다.
+    expect(grown, lessThanOrEqualTo(base * 2 + 0.1));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('세로가 짧으면 도구 칸이 먼저 양보하고 미리보기는 지켜진다', (tester) async {

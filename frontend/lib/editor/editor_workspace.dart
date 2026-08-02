@@ -166,9 +166,23 @@ class EditorWorkspace extends StatelessWidget {
                 Size(constraints.maxWidth, constraints.maxHeight),
                 keyboardVisible: keyboardVisible,
               );
+              // 검은 여백을 잘라 보여 줄 수 있으면 그만큼 컷 타임라인이
+              // 프레임 띠를 키운다 — 비율에 따라 배분이 달라진다.
+              final trimBarBonus = compact || !cutMode
+                  ? 0.0
+                  : _cutTrimBarBonus(
+                      layout,
+                      project,
+                      availableHeight: constraints.maxHeight,
+                      baseTimelineHeight: _timelineHeightFor(
+                        layout,
+                        project,
+                        cutMode,
+                      ),
+                    );
               final timelineHeight = compact
                   ? 0.0
-                  : _timelineHeightFor(layout, project, cutMode);
+                  : _timelineHeightFor(layout, project, cutMode) + trimBarBonus;
               final panelHeight = compact
                   ? 0.0
                   : _toolPanelHeightFor(
@@ -202,7 +216,7 @@ class EditorWorkspace extends StatelessWidget {
                       ),
                       if (!compact && cutMode)
                         EditorTimelineSection(
-                          trimBarHeight: layout.trimBarHeight,
+                          trimBarHeight: layout.trimBarHeight + trimBarBonus,
                           actionButtonHeight: layout.actionButtonHeight,
                           project: project,
                           thumbnails: thumbnails,
@@ -345,6 +359,43 @@ double _timelineHeightFor(
       layout.actionButtonHeight;
   if (project.clips.length > 1) height += EditorTimelineSection.chooserHeight;
   return height;
+}
+
+/// 컷 탭 프레임 띠에 더 줄 수 있는 높이.
+///
+/// 캔버스의 검은 여백을 잘라 보여 줄 수 있으면([EditorPreviewGeometry])
+/// 미리보기는 영상 창과 문맥 띠만큼만 있으면 된다. 남는 세로는 빈 여백으로
+/// 두지 않고 프레임 띠를 키워 컷 정밀도를 높인다. 띠가 원래 높이의 갑절을
+/// 넘지 않게 막는다 — 그 위로는 프레임이 커져도 얻는 것이 없다.
+double _cutTrimBarBonus(
+  EditorLayoutTokens layout,
+  EditorProject project, {
+  required double availableHeight,
+  required double baseTimelineHeight,
+}) {
+  final geometry = EditorPreviewGeometry.of(project);
+  if (!geometry.letterboxClippable) return 0;
+  final innerWidth =
+      layout.availableWidth -
+      2 * (EditorSpacingTokens.previewHorizontal + EditorSpacingTokens.sm);
+  if (innerWidth <= 0) return 0;
+  // 미리보기 칸의 바깥·안쪽 세로 여백.
+  const chrome = 4 * EditorSpacingTokens.sm;
+  final minimumPreview = math.max(
+    innerWidth /
+            geometry.canvasAspectRatio *
+            geometry.minimumVisibleHeightFraction +
+        chrome,
+    layout.minimumPreviewHeight,
+  );
+  final previewSlot =
+      availableHeight -
+      layout.topBarHeight -
+      baseTimelineHeight -
+      layout.bottomNavigationHeight;
+  final spare = previewSlot - minimumPreview;
+  if (spare <= 0) return 0;
+  return math.min(spare, layout.trimBarHeight);
 }
 
 /// 도구 칸 높이. 미리보기가 [EditorLayoutTokens.minimumPreviewHeight] 밑으로
@@ -665,6 +716,109 @@ class PlaybackOverlay extends StatelessWidget {
         ),
       ),
     ],
+  );
+}
+
+/// 캔버스를 폭에 맞춰 그리고, 세로로 넘치는 검은 여백은 잘라 보여 준다.
+///
+/// [child]는 캔버스 비율의 상자를 가정한 내용(영상 창 + 레이어)이다. 잘라도
+/// 되는 조건과 남기는 최소 범위는 [EditorPreviewGeometry]가 정한다. 잘린
+/// 위아래 가장자리에는 옅은 그러데이션을 얹어 "캔버스가 더 있다"를 알린다.
+class EditorCanvasViewport extends StatelessWidget {
+  const EditorCanvasViewport({
+    super.key,
+    required this.geometry,
+    required this.child,
+  });
+
+  final EditorPreviewGeometry geometry;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final availWidth = math.max(1.0, constraints.maxWidth);
+      final availHeight = math.max(1.0, constraints.maxHeight);
+      final aspect = geometry.canvasAspectRatio;
+      var contentWidth = availWidth;
+      var contentHeight = contentWidth / aspect;
+      if (contentHeight > availHeight) {
+        if (!geometry.letterboxClippable) {
+          // 전체 캔버스를 보여 줘야 한다 — 예전처럼 높이에 맞춘다.
+          contentHeight = availHeight;
+          contentWidth = contentHeight * aspect;
+        } else {
+          final minHeight =
+              contentHeight * geometry.minimumVisibleHeightFraction;
+          if (minHeight > availHeight) {
+            // 영상 창과 문맥 띠조차 안 들어가면 그만큼만 폭을 줄인다.
+            final scale = availHeight / minHeight;
+            contentWidth *= scale;
+            contentHeight *= scale;
+          }
+        }
+      }
+      final viewportHeight = math.min(contentHeight, availHeight);
+      final clipped = contentHeight - viewportHeight > 0.5;
+      return Center(
+        child: SizedBox(
+          key: const Key('editor-canvas-viewport'),
+          width: contentWidth,
+          height: viewportHeight,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(EditorRadiusTokens.video),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                OverflowBox(
+                  alignment: Alignment.center,
+                  minWidth: contentWidth,
+                  maxWidth: contentWidth,
+                  minHeight: contentHeight,
+                  maxHeight: contentHeight,
+                  child: SizedBox(
+                    width: contentWidth,
+                    height: contentHeight,
+                    child: child,
+                  ),
+                ),
+                if (clipped) ...const [
+                  _CanvasClipHint(top: true),
+                  _CanvasClipHint(top: false),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// 잘린 캔버스 가장자리 표시. 만질 수 없는 안내이므로 입력은 통과시킨다.
+class _CanvasClipHint extends StatelessWidget {
+  const _CanvasClipHint({required this.top});
+
+  final bool top;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    left: 0,
+    right: 0,
+    top: top ? 0 : null,
+    bottom: top ? null : 0,
+    height: 12,
+    child: IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: top ? Alignment.topCenter : Alignment.bottomCenter,
+            end: top ? Alignment.bottomCenter : Alignment.topCenter,
+            colors: const [Color(0x59FFFFFF), Color(0x00FFFFFF)],
+          ),
+        ),
+      ),
+    ),
   );
 }
 

@@ -1860,137 +1860,117 @@ class _PreviewSurface extends StatelessWidget {
     final size = controller.value.size;
     final width = size.width <= 0 ? 1280.0 : size.width.toDouble();
     final height = size.height <= 0 ? 720.0 : size.height.toDouble();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final availableWidth = constraints.maxWidth;
-        final availableHeight = constraints.maxHeight;
-        return Center(
-          child: AspectRatio(
-            aspectRatio: canvas.aspectRatio,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: availableWidth,
-                maxHeight: availableHeight,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _CanvasGestureLayer(
-                      controller: projectController,
-                      canvas: canvas,
-                      enabled: project.selectedTool == EditorTool.zoom,
-                      onTap: editingLayerId == null ? null : onEditingDone,
-                      child: _BoundedVideoViewport(
-                        sourceAspectRatio: width / height,
-                        canvas: canvas,
-                        zoom: zoom,
-                        child: ColorFiltered(
-                          colorFilter: look.colorFilter,
-                          child: SizedBox(
-                            width: width,
-                            height: height,
-                            child: VideoPlayer(controller),
-                          ),
-                        ),
-                      ),
-                    ),
-                    for (final layer
-                        in projectController.project.textLayers.where(
-                          (layer) => layer.isVisibleAt(
-                            projectController.project.playheadMs,
-                          ),
-                        ))
-                      _EditableLayerOverlay(
-                        key: ValueKey(layer.id),
-                        controller: projectController,
-                        layer: layer,
-                        onChanged: onLayerChanged,
-                        editing: layer.id == editingLayerId,
-                        // 두 번 누르면 그 글자를 다시 고친다.
-                        onDoubleTap: onEditLayer == null
-                            ? null
-                            : () => onEditLayer!(layer.id),
-                        // 배경 없는 글자. 크기는 Transform이 아니라 글자 크기
-                        // 자체에 곱한다 — 그래야 상자(테두리·손잡이)가 글자와
-                        // 같이 커지고 줄어든다.
-                        childBuilder: (context, previewWidth, scale) =>
-                            _textLayerBody(
-                              context,
-                              layer: layer,
-                              previewWidth: previewWidth,
-                              scale: scale,
-                            ),
-                      ),
-                    for (final layer
-                        in projectController.project.stickerLayers.where(
-                          (layer) => layer.isVisibleAt(
-                            projectController.project.playheadMs,
-                          ),
-                        ))
-                      _EditableLayerOverlay(
-                        key: ValueKey(layer.id),
-                        controller: projectController,
-                        layer: layer,
-                        onChanged: onLayerChanged,
-                        childBuilder: (_, previewWidth, scale) => Text(
-                          layer.value,
-                          style: TextStyle(
-                            // 내보내기(EditorLayerOverlay.kt)가 쓰는 기준
-                            // 크기와 같은 비율로 그린다.
-                            fontSize:
-                                (previewWidth *
-                                        _referenceStickerFontSize /
-                                        _referenceCanvasWidth *
-                                        scale)
-                                    .clamp(14.0, 260.0),
-                            shadows: const [
-                              Shadow(color: Colors.black38, blurRadius: 6),
-                            ],
-                          ),
-                        ),
-                      ),
-                    // 손 자막이 있으면 그것을, 없으면 자동 자막을 그린다.
-                    // 자리가 같아서 둘을 겹치면 읽을 수 없다.
-                    if (_captionOnScreen != null)
-                      Align(
-                        alignment: const Alignment(0, 0.74),
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            _captionOnScreen!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: captionColor,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              shadows: const [
-                                Shadow(color: Colors.black, blurRadius: 3),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+    // 캔버스는 폭에 맞춰 그리고, 세로로 넘치는 검은 여백은 잘라 보여 준다.
+    // 자를 수 있는 조건은 EditorPreviewGeometry가 정한다 — 캔버스 탭이나
+    // 여백에 걸친 레이어가 보이는 동안에는 전체 캔버스로 돌아간다.
+    return EditorCanvasViewport(
+      geometry: EditorPreviewGeometry.of(project),
+      child: ColoredBox(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _CanvasGestureLayer(
+              controller: projectController,
+              canvas: canvas,
+              enabled: project.selectedTool == EditorTool.zoom,
+              onTap: editingLayerId == null ? null : onEditingDone,
+              child: _BoundedVideoViewport(
+                sourceAspectRatio: width / height,
+                canvas: canvas,
+                zoom: zoom,
+                child: ColorFiltered(
+                  colorFilter: look.colorFilter,
+                  child: SizedBox(
+                    width: width,
+                    height: height,
+                    child: VideoPlayer(controller),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+            for (final layer in projectController.project.textLayers.where(
+              (layer) =>
+                  layer.isVisibleAt(projectController.project.playheadMs),
+            ))
+              _EditableLayerOverlay(
+                key: ValueKey(layer.id),
+                controller: projectController,
+                layer: layer,
+                onChanged: onLayerChanged,
+                editing: layer.id == editingLayerId,
+                // 두 번 누르면 그 글자를 다시 고친다.
+                onDoubleTap: onEditLayer == null
+                    ? null
+                    : () => onEditLayer!(layer.id),
+                // 배경 없는 글자. 크기는 Transform이 아니라 글자 크기
+                // 자체에 곱한다 — 그래야 상자(테두리·손잡이)가 글자와
+                // 같이 커지고 줄어든다.
+                childBuilder: (context, previewWidth, scale) => _textLayerBody(
+                  context,
+                  layer: layer,
+                  previewWidth: previewWidth,
+                  scale: scale,
+                ),
+              ),
+            for (final layer in projectController.project.stickerLayers.where(
+              (layer) =>
+                  layer.isVisibleAt(projectController.project.playheadMs),
+            ))
+              _EditableLayerOverlay(
+                key: ValueKey(layer.id),
+                controller: projectController,
+                layer: layer,
+                onChanged: onLayerChanged,
+                childBuilder: (_, previewWidth, scale) => Text(
+                  layer.value,
+                  style: TextStyle(
+                    // 내보내기(EditorLayerOverlay.kt)가 쓰는 기준
+                    // 크기와 같은 비율로 그린다.
+                    fontSize:
+                        (previewWidth *
+                                _referenceStickerFontSize /
+                                _referenceCanvasWidth *
+                                scale)
+                            .clamp(14.0, 260.0),
+                    shadows: const [
+                      Shadow(color: Colors.black38, blurRadius: 6),
+                    ],
+                  ),
+                ),
+              ),
+            // 손 자막이 있으면 그것을, 없으면 자동 자막을 그린다.
+            // 자리가 같아서 둘을 겹치면 읽을 수 없다.
+            if (_captionOnScreen != null)
+              Align(
+                alignment: const Alignment(0, 0.74),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _captionOnScreen!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: captionColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      shadows: const [
+                        Shadow(color: Colors.black, blurRadius: 3),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
