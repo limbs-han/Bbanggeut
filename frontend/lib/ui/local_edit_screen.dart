@@ -372,13 +372,22 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       } else if (_playingClipIndex + 1 < project.clips.length) {
         _playingClipIndex++;
         final next = project.clips[_playingClipIndex];
-        unawaited(
-          preview.seekTo(Duration(milliseconds: next.sourceStartMs)).then((_) {
-            if (mounted && !preview.value.isPlaying) {
-              return preview.play();
-            }
-          }),
-        );
+        projectController.selectClip(next.id);
+        // 분할한 두 클립이 원본에서도 바로 붙어 있으면 재생기는 이미 다음
+        // 프레임을 읽고 있다. 여기서 같은 시각으로 다시 seek하면 짧게 멈췄다가
+        // 재생되어 컷 경계가 튄다. 한 프레임 이내로 이어진 클립은 그대로 흘리고,
+        // 순서를 바꿨거나 떨어진 구간으로 넘어갈 때만 실제 위치를 옮긴다.
+        if (!clip.isPlaybackContiguousWith(next)) {
+          unawaited(
+            preview.seekTo(Duration(milliseconds: next.sourceStartMs)).then((
+              _,
+            ) {
+              if (mounted && !preview.value.isPlaying) {
+                return preview.play();
+              }
+            }),
+          );
+        }
       } else {
         unawaited(preview.pause());
         projectController.setPlaying(false);

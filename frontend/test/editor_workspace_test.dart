@@ -171,7 +171,9 @@ void main() {
     final controller = newController();
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(workspace(controller));
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
 
     for (final tool in EditorTool.values) {
       controller.selectTool(tool);
@@ -590,11 +592,46 @@ void main() {
     addTearDown(controller.dispose);
     final first = controller.project.clips.first;
 
-    await tester.pumpWidget(workspace(controller));
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    expect(find.text('클립 2/2'), findsOneWidget);
     await tester.tap(find.byKey(Key('editor-clip-${first.id}')));
     await tester.pump();
 
     expect(controller.project.selectedClipId, first.id);
+    expect(controller.project.playheadMs, 0);
+    expect(find.text('클립 1/2'), findsOneWidget);
+  });
+
+  testWidgets('캔버스·텍스트·줌은 화면 안에서 바로 누르는 편집 트레이를 쓴다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+
+    controller.selectTool(EditorTool.ratio);
+    await tester.pumpWidget(workspace(controller));
+    expect(find.textContaining('미리보기에서 직접').hitTestable(), findsOneWidget);
+    expect(find.text('확대').hitTestable(), findsOneWidget);
+
+    controller.selectTool(EditorTool.text);
+    await tester.pumpAndSettle();
+    expect(find.text('텍스트 레이어').hitTestable(), findsOneWidget);
+    expect(
+      find.byKey(const Key('editor-open-text-sheet')).hitTestable(),
+      findsOneWidget,
+    );
+
+    controller.selectTool(EditorTool.zoom);
+    await tester.pumpAndSettle();
+    expect(find.text('구간 줌').hitTestable(), findsNWidgets(2));
+    expect(
+      find.byKey(const Key('editor-add-zoom')).hitTestable(),
+      findsOneWidget,
+    );
   });
 
   testWidgets('텍스트를 만진 뒤에도 컷 편집 버튼이 살아 있다', (tester) async {

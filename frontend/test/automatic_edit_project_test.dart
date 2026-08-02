@@ -4,6 +4,30 @@ import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
 
 void main() {
+  test('같은 원본에서 한 프레임 이내로 붙은 클립은 끊김 없이 이어진다', () {
+    const first = EditorClip(
+      id: 'first',
+      sourcePath: '/tmp/source.mp4',
+      sourceStartMs: 1000,
+      sourceEndMs: 5000,
+    );
+    const next = EditorClip(
+      id: 'next',
+      sourcePath: '/tmp/source.mp4',
+      sourceStartMs: 5034,
+      sourceEndMs: 8000,
+    );
+    const jumped = EditorClip(
+      id: 'jumped',
+      sourcePath: '/tmp/source.mp4',
+      sourceStartMs: 5100,
+      sourceEndMs: 8000,
+    );
+
+    expect(first.isPlaybackContiguousWith(next), isTrue);
+    expect(first.isPlaybackContiguousWith(jumped), isFalse);
+  });
+
   test('automatic recipe applies cut and maps zoom to edited timeline', () {
     final controller = EditorProjectController(
       EditorProject.fromSource(

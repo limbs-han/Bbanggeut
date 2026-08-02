@@ -138,6 +138,12 @@ class EditorClip {
 
   int get durationMs => math.max(0, sourceEndMs - sourceStartMs);
 
+  /// 같은 원본에서 다음 프레임으로 그대로 이어 재생할 수 있는 클립인가.
+  /// 30fps 한 프레임의 반올림 오차(34ms)까지는 연속으로 본다.
+  bool isPlaybackContiguousWith(EditorClip next) =>
+      sourcePath == next.sourcePath &&
+      (next.sourceStartMs - sourceEndMs).abs() <= 34;
+
   EditorClip copyWith({
     String? id,
     int? sourceStartMs,
