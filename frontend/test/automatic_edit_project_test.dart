@@ -62,4 +62,28 @@ void main() {
     expect(zoom['startMs'], 45125);
     expect(zoom['endMs'], 49125);
   });
+
+  test('프리셋을 다시 골라도 사용자가 만든 다중 클립은 보존한다', () {
+    final controller = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/source.mp4',
+        sourceDurationMs: 12000,
+        sourceSize: const EditorSourceSize(width: 1920, height: 1080),
+      ),
+    )..splitAt(5000);
+    final clipIds = controller.project.clips.map((clip) => clip.id).toList();
+
+    controller.applyRecommendation(
+      const EditRecommendation(
+        cutStartMs: 2000,
+        cutEndMs: 9000,
+        durationPreset: 'short',
+        zoomSegments: [],
+      ),
+    );
+
+    expect(controller.project.clips.map((clip) => clip.id), clipIds);
+    expect(controller.project.clips, hasLength(2));
+    expect(controller.project.recommendationMarker?.preset, 'short');
+  });
 }

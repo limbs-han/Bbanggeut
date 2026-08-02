@@ -89,6 +89,10 @@ class EditorProjectController extends ChangeNotifier {
       sourceEndMs: end,
       automatic: true,
     );
+    // 프리셋은 자동 추천을 다시 고르는 기능이지 사용자가 만든 편집 구조를
+    // 초기화하는 단추가 아니다. 분할·복제 등으로 클립이 여러 개가 된 뒤에는
+    // 그 배열을 보존하고 추천 마커와 줌만 갱신한다.
+    final preserveEditedClips = _project.clips.length > 1;
     final zooms = recommendation.zoomSegments.indexed
         .map((entry) {
           final value = entry.$2;
@@ -107,7 +111,7 @@ class EditorProjectController extends ChangeNotifier {
         .toList(growable: false);
     _commit(
       _project.copyWith(
-        clips: [clip],
+        clips: preserveEditedClips ? _project.clips : [clip],
         zoomSegments: zooms,
         recommendationMarker: EditorRecommendationMarker(
           preset: recommendation.durationPreset,
@@ -115,8 +119,8 @@ class EditorProjectController extends ChangeNotifier {
           sourceEndMs: end,
         ),
         selectedZoomId: zooms.isEmpty ? null : zooms.first.id,
-        selectedClipId: clip.id,
-        playheadMs: 0,
+        selectedClipId: preserveEditedClips ? _project.selectedClipId : clip.id,
+        playheadMs: preserveEditedClips ? _project.playheadMs : 0,
       ),
     );
   }

@@ -200,7 +200,7 @@ class EditorWorkspace extends StatelessWidget {
                           onPlay: onPlay,
                         ),
                       ),
-                      if (!compact)
+                      if (!compact && cutMode)
                         EditorTimelineSection(
                           trimBarHeight: layout.trimBarHeight,
                           actionButtonHeight: layout.actionButtonHeight,
@@ -228,33 +228,32 @@ class EditorWorkspace extends StatelessWidget {
                           onRecommendationSelected: onRecommendationSelected,
                         ),
                       if (!compact)
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
-                          child: SelectedToolPanel(
-                            project: project,
-                            height: panelHeight,
-                            onRatioSelected: onRatioSelected,
-                            onCanvasChanged: onCanvasChanged,
-                            onCanvasReset: onCanvasReset,
-                            onCanvasFitSelected: onCanvasFitSelected,
-                            onText: onText,
-                            onTextEdit: onTextEdit,
-                            onVolumeChanged: onVolumeChanged,
-                            onMutedChanged: onMutedChanged,
-                            onVolumeCommitted: onVolumeCommitted,
-                            onStickerSelected: onStickerSelected,
-                            onLookSelected: onLookSelected,
-                            previewFrame: thumbnails.isEmpty
-                                ? null
-                                : thumbnails[thumbnails.length ~/ 2],
-                            onAiCaption: onAiCaption,
-                            aiCaptionSummary: aiCaptionSummary,
-                            onZoomAdd: onZoomAdd,
-                            onZoomChanged: onZoomChanged,
-                            onZoomRemove: onZoomRemove,
-                            onZoomSelected: onZoomSelected,
+                        SelectedToolPanel(
+                          key: ValueKey(
+                            'editor-selected-tool-${project.selectedTool.name}',
                           ),
+                          project: project,
+                          height: panelHeight,
+                          onRatioSelected: onRatioSelected,
+                          onCanvasChanged: onCanvasChanged,
+                          onCanvasReset: onCanvasReset,
+                          onCanvasFitSelected: onCanvasFitSelected,
+                          onText: onText,
+                          onTextEdit: onTextEdit,
+                          onVolumeChanged: onVolumeChanged,
+                          onMutedChanged: onMutedChanged,
+                          onVolumeCommitted: onVolumeCommitted,
+                          onStickerSelected: onStickerSelected,
+                          onLookSelected: onLookSelected,
+                          previewFrame: thumbnails.isEmpty
+                              ? null
+                              : thumbnails[thumbnails.length ~/ 2],
+                          onAiCaption: onAiCaption,
+                          aiCaptionSummary: aiCaptionSummary,
+                          onZoomAdd: onZoomAdd,
+                          onZoomChanged: onZoomChanged,
+                          onZoomRemove: onZoomRemove,
+                          onZoomSelected: onZoomSelected,
                         ),
                       if (!compact)
                         EditorBottomNavigation(
@@ -339,14 +338,12 @@ double _timelineHeightFor(
   EditorProject project,
   bool cutMode,
 ) {
-  var height = cutMode
-      ? EditorTimelineSection.cutHeaderHeight +
-            layout.trimBarHeight +
-            layout.actionButtonHeight
-      : EditorTimelineSection.overviewHeight;
-  if (cutMode) {
-    if (project.clips.length > 1) height += EditorTimelineSection.chooserHeight;
-  }
+  if (!cutMode) return 0;
+  var height =
+      EditorTimelineSection.cutHeaderHeight +
+      layout.trimBarHeight +
+      layout.actionButtonHeight;
+  if (project.clips.length > 1) height += EditorTimelineSection.chooserHeight;
   return height;
 }
 
@@ -366,8 +363,8 @@ double _toolPanelHeightFor(
   if (project.selectedTool == EditorTool.cut) return 0;
   // AR 탭은 필터 줄과 마스크 줄을 함께 담아야 해서 한 뼘 더 쓴다.
   final wanted = switch (project.selectedTool) {
-    EditorTool.zoom => layout.toolPanelHeight * 1.55,
-    EditorTool.ratio => layout.toolPanelHeight * 1.55,
+    EditorTool.zoom => layout.toolPanelHeight * 1.95,
+    EditorTool.ratio => layout.toolPanelHeight * 1.15,
     EditorTool.ar => layout.toolPanelHeight * 1.6,
     _ => layout.toolPanelHeight,
   };
@@ -758,18 +755,6 @@ class EditorTimelineSection extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!expanded)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: SizedBox(
-                height: overviewHeight,
-                child: ProjectTimelineOverview(
-                  project: project,
-                  onSeek: onSeek,
-                  onClipSelected: onClipSelected,
-                ),
-              ),
-            ),
           if (expanded)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1302,7 +1287,8 @@ class ClipChooser extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 6),
                 child: _ClipChip(
                   number: index + 1,
-                  duration: _formatMs(clip.durationMs),
+                  sourceRange:
+                      '${_formatMs(clip.sourceStartMs)}–${_formatMs(clip.sourceEndMs)}',
                   selected: clip.id == project.selectedClipId,
                   canMoveLeft: index > 0,
                   canMoveRight: index < project.clips.length - 1,
@@ -1334,7 +1320,7 @@ class ClipChooser extends StatelessWidget {
 class _ClipChip extends StatelessWidget {
   const _ClipChip({
     required this.number,
-    required this.duration,
+    required this.sourceRange,
     required this.selected,
     required this.onTap,
     required this.canMoveLeft,
@@ -1345,7 +1331,7 @@ class _ClipChip extends StatelessWidget {
   });
 
   final int number;
-  final String duration;
+  final String sourceRange;
   final bool selected;
   final VoidCallback onTap;
   final bool canMoveLeft;
@@ -1379,7 +1365,7 @@ class _ClipChip extends StatelessWidget {
               onTap: onMoveLeft,
             ),
           SizedBox(
-            width: 45,
+            width: 72,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1387,15 +1373,17 @@ class _ClipChip extends StatelessWidget {
                   '클립 $number',
                   style: TextStyle(
                     color: selected ? Colors.white : EditorColorTokens.muted,
-                    fontSize: 10,
+                    fontSize: 9,
+                    height: 1,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 Text(
-                  duration,
+                  sourceRange,
                   style: TextStyle(
                     color: selected ? Colors.white70 : EditorColorTokens.muted,
-                    fontSize: 8,
+                    fontSize: 7,
+                    height: 1,
                   ),
                 ),
               ],
@@ -1500,44 +1488,50 @@ class SelectedToolPanel extends StatelessWidget {
         ),
         border: Border(top: BorderSide(color: EditorColorTokens.border)),
       ),
-      child: switch (project.selectedTool) {
-        EditorTool.ratio => _RatioPanel(
-          canvas: project.canvas,
-          onSelected: onRatioSelected,
-          onChanged: onCanvasChanged,
-          onReset: onCanvasReset,
-          onFitSelected: onCanvasFitSelected,
-        ),
-        EditorTool.text => _TextPanel(
-          project: project,
-          onText: onText,
-          onTextEdit: onTextEdit,
-        ),
-        EditorTool.zoom => _ZoomPanel(
-          project: project,
-          onAdd: onZoomAdd,
-          onChanged: onZoomChanged,
-          onRemove: onZoomRemove,
-          onSelected: onZoomSelected,
-        ),
-        EditorTool.audio => _AudioPanel(
-          audio: project.audio,
-          onVolumeChanged: onVolumeChanged,
-          onVolumeCommitted: onVolumeCommitted,
-          onMutedChanged: onMutedChanged,
-        ),
-        EditorTool.sticker => _StickerPanel(onSelected: onStickerSelected),
-        EditorTool.aiCaption => _AiCaptionPanel(
-          summary: aiCaptionSummary,
-          onOpen: onAiCaption,
-        ),
-        EditorTool.ar => _ArPanel(
-          look: project.look,
-          previewFrame: previewFrame,
-          onLookSelected: onLookSelected,
-        ),
-        EditorTool.cut => const SizedBox.shrink(),
-      },
+      child: KeyedSubtree(
+        // 캔버스와 줌은 모두 스크롤 가능한 패널이다. 키가 없으면 Flutter가
+        // 이전 탭의 스크롤 위치를 다음 탭에 재사용해 내용이 화면 밖에서 시작한다.
+        key: ValueKey('editor-tool-panel-${project.selectedTool.name}'),
+        child: switch (project.selectedTool) {
+          EditorTool.ratio => _RatioPanel(
+            canvas: project.canvas,
+            onSelected: onRatioSelected,
+            onFitSelected: onCanvasFitSelected,
+          ),
+          EditorTool.text => _TextPanel(
+            project: project,
+            onText: onText,
+            onTextEdit: onTextEdit,
+          ),
+          EditorTool.zoom => _SimpleZoomPanel(
+            project: project,
+            canvas: project.canvas,
+            onCanvasChanged: onCanvasChanged,
+            onCanvasReset: onCanvasReset,
+            onAdd: onZoomAdd,
+            onChanged: onZoomChanged,
+            onRemove: onZoomRemove,
+            onSelected: onZoomSelected,
+          ),
+          EditorTool.audio => _AudioPanel(
+            audio: project.audio,
+            onVolumeChanged: onVolumeChanged,
+            onVolumeCommitted: onVolumeCommitted,
+            onMutedChanged: onMutedChanged,
+          ),
+          EditorTool.sticker => _StickerPanel(onSelected: onStickerSelected),
+          EditorTool.aiCaption => _AiCaptionPanel(
+            summary: aiCaptionSummary,
+            onOpen: onAiCaption,
+          ),
+          EditorTool.ar => _ArPanel(
+            look: project.look,
+            previewFrame: previewFrame,
+            onLookSelected: onLookSelected,
+          ),
+          EditorTool.cut => const SizedBox.shrink(),
+        },
+      ),
     );
   }
 }
@@ -1546,142 +1540,76 @@ class _RatioPanel extends StatelessWidget {
   const _RatioPanel({
     required this.canvas,
     required this.onSelected,
-    required this.onChanged,
-    required this.onReset,
     required this.onFitSelected,
   });
 
   final EditorCanvas canvas;
   final ValueChanged<EditorCanvasRatio> onSelected;
-  final ValueChanged<EditorCanvas> onChanged;
-  final VoidCallback onReset;
   final ValueChanged<EditorCanvasFit> onFitSelected;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          const Expanded(child: _PanelTitle('캔버스 · 비율과 영상 영역')),
+          const _LiveAppliedBadge(),
+        ],
+      ),
+      const Text(
+        '출력 비율과 가로 영상의 표시 영역만 정합니다. 이동·확대·회전은 구간 줌에서 조절합니다.',
+        style: TextStyle(color: EditorColorTokens.muted, fontSize: 9),
+      ),
+      const SizedBox(height: 5),
+      SizedBox(
+        height: 36,
+        child: Row(
+          children: [
+            for (final entry in const [
+              (EditorCanvasRatio.original, '원본', Icons.crop_original),
+              (EditorCanvasRatio.vertical, '9:16', Icons.crop_portrait),
+              (EditorCanvasRatio.landscape, '16:9', Icons.crop_landscape),
+            ]) ...[
+              Expanded(
+                child: _PanelChoice(
+                  label: entry.$2,
+                  icon: entry.$3,
+                  selected: canvas.ratio == entry.$1,
+                  onTap: () => onSelected(entry.$1),
+                ),
+              ),
+              if (entry.$1 != EditorCanvasRatio.landscape)
+                const SizedBox(width: 5),
+            ],
+          ],
+        ),
+      ),
+      if (canvas.ratio == EditorCanvasRatio.vertical) ...[
+        const SizedBox(height: 4),
         Row(
           children: [
-            const Expanded(child: _PanelTitle('캔버스')),
-            const _LiveAppliedBadge(),
-            IconButton(
-              tooltip: '캔버스 초기화',
-              onPressed: onReset,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
+            Expanded(
+              child: _PanelChoice(
+                label: '채우기',
+                icon: Icons.fullscreen_rounded,
+                selected: canvas.fit == EditorCanvasFit.cover,
+                onTap: () => onFitSelected(EditorCanvasFit.cover),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _PanelChoice(
+                label: '가로 영상 전체 보기',
+                icon: Icons.fit_screen_rounded,
+                selected: canvas.fit == EditorCanvasFit.contain,
+                onTap: () => onFitSelected(EditorCanvasFit.contain),
+              ),
             ),
           ],
         ),
-        const Text(
-          '미리보기에서 직접 확대·이동하고 아래 버튼으로 미세 조절하세요.',
-          style: TextStyle(color: EditorColorTokens.muted, fontSize: 9),
-        ),
-        const SizedBox(height: 5),
-        SizedBox(
-          height: 36,
-          child: Row(
-            children: [
-              for (final entry in const [
-                (EditorCanvasRatio.original, '원본', Icons.crop_original),
-                (EditorCanvasRatio.vertical, '9:16', Icons.crop_portrait),
-                (EditorCanvasRatio.landscape, '16:9', Icons.crop_landscape),
-              ]) ...[
-                Expanded(
-                  child: _PanelChoice(
-                    label: entry.$2,
-                    icon: entry.$3,
-                    selected: canvas.ratio == entry.$1,
-                    onTap: () => onSelected(entry.$1),
-                  ),
-                ),
-                if (entry.$1 != EditorCanvasRatio.landscape)
-                  const SizedBox(width: 5),
-              ],
-            ],
-          ),
-        ),
-        if (canvas.ratio == EditorCanvasRatio.vertical) ...[
-          const SizedBox(height: 5),
-          Row(
-            children: [
-              Expanded(
-                child: _PanelChoice(
-                  label: '채우기',
-                  icon: Icons.fullscreen_rounded,
-                  selected: canvas.fit == EditorCanvasFit.cover,
-                  onTap: () => onFitSelected(EditorCanvasFit.cover),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _PanelChoice(
-                  label: '가로 영상 전체 보기',
-                  icon: Icons.fit_screen_rounded,
-                  selected: canvas.fit == EditorCanvasFit.contain,
-                  onTap: () => onFitSelected(EditorCanvasFit.contain),
-                ),
-              ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 6),
-        SizedBox(
-          height: 50,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              _ValueStepper(
-                label: '확대',
-                value: '${canvas.scale.toStringAsFixed(2)}×',
-                onDecrease: () => onChanged(
-                  canvas.copyWith(
-                    scale: math.max(canvas.minimumScale, canvas.scale - 0.05),
-                  ),
-                ),
-                onIncrease: () => onChanged(
-                  canvas.copyWith(scale: math.min(4, canvas.scale + 0.05)),
-                ),
-              ),
-              _ValueStepper(
-                label: '좌우',
-                value: canvas.offsetX.toStringAsFixed(2),
-                onDecrease: () => onChanged(
-                  canvas.copyWith(offsetX: math.max(-1, canvas.offsetX - 0.05)),
-                ),
-                onIncrease: () => onChanged(
-                  canvas.copyWith(offsetX: math.min(1, canvas.offsetX + 0.05)),
-                ),
-              ),
-              _ValueStepper(
-                label: '상하',
-                value: canvas.offsetY.toStringAsFixed(2),
-                onDecrease: () => onChanged(
-                  canvas.copyWith(offsetY: math.max(-1, canvas.offsetY - 0.05)),
-                ),
-                onIncrease: () => onChanged(
-                  canvas.copyWith(offsetY: math.min(1, canvas.offsetY + 0.05)),
-                ),
-              ),
-              _ValueStepper(
-                label: '회전',
-                value: '${canvas.rotationDegrees.round()}°',
-                onDecrease: () => onChanged(
-                  canvas.copyWith(
-                    rotationDegrees: math.max(-180, canvas.rotationDegrees - 1),
-                  ),
-                ),
-                onIncrease: () => onChanged(
-                  canvas.copyWith(
-                    rotationDegrees: math.min(180, canvas.rotationDegrees + 1),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
-    ),
+    ],
   );
 }
 
@@ -1717,15 +1645,23 @@ class _ValueStepper extends StatelessWidget {
             children: [
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
                 style: const TextStyle(
                   color: EditorColorTokens.muted,
                   fontSize: 8,
+                  height: 1,
                 ),
               ),
               Text(
                 value,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
                 style: const TextStyle(
                   fontSize: 10,
+                  height: 1,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -1756,9 +1692,12 @@ class _StepButton extends StatelessWidget {
   );
 }
 
-class _ZoomPanel extends StatelessWidget {
-  const _ZoomPanel({
+class _SimpleZoomPanel extends StatelessWidget {
+  const _SimpleZoomPanel({
     required this.project,
+    required this.canvas,
+    required this.onCanvasChanged,
+    required this.onCanvasReset,
     required this.onAdd,
     required this.onChanged,
     required this.onRemove,
@@ -1766,6 +1705,9 @@ class _ZoomPanel extends StatelessWidget {
   });
 
   final EditorProject project;
+  final EditorCanvas canvas;
+  final ValueChanged<EditorCanvas> onCanvasChanged;
+  final VoidCallback onCanvasReset;
   final VoidCallback onAdd;
   final ValueChanged<EditorZoomSegment> onChanged;
   final ValueChanged<EditorZoomSegment> onRemove;
@@ -1773,167 +1715,586 @@ class _ZoomPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    EditorZoomSegment? active;
-    for (final zoom in project.zoomSegments) {
-      if (zoom.id == project.selectedZoomId) active = zoom;
-    }
-    active ??= project.zoomAtTimeline(project.playheadMs);
-    active ??= project.zoomSegments.isEmpty ? null : project.zoomSegments.first;
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    final zooms = project.zoomSegments.take(20).toList(growable: false);
+    var index = zooms.indexWhere((zoom) => zoom.id == project.selectedZoomId);
+    if (index < 0 && zooms.isNotEmpty) index = 0;
+    final active = index < 0 ? null : zooms[index];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _PanelTitle('이동 · 회전 · 구간 줌')),
+            if (active != null) ...[
+              IconButton(
+                tooltip: '이전 줌',
+                onPressed: index > 0
+                    ? () => onSelected(zooms[index - 1])
+                    : null,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_left_rounded, size: 18),
+              ),
+              Text(
+                '${index + 1}/${zooms.length}',
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              IconButton(
+                tooltip: '다음 줌',
+                onPressed: index + 1 < zooms.length
+                    ? () => onSelected(zooms[index + 1])
+                    : null,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_right_rounded, size: 18),
+              ),
+            ],
+            IconButton(
+              tooltip: '이동·확대·회전 초기화',
+              onPressed: onCanvasReset,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+            ),
+            FilledButton(
+              key: const Key('editor-add-zoom'),
+              onPressed: onAdd,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(64, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                textStyle: const TextStyle(fontSize: 10),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('줌 추가'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: _CompactStepper(
+                label: '확대',
+                value: '${canvas.scale.toStringAsFixed(2)}×',
+                onDecrease: () => onCanvasChanged(
+                  canvas.copyWith(
+                    scale: math.max(canvas.minimumScale, canvas.scale - 0.05),
+                  ),
+                ),
+                onIncrease: () => onCanvasChanged(
+                  canvas.copyWith(scale: math.min(4, canvas.scale + 0.05)),
+                ),
+              ),
+            ),
+            Expanded(
+              child: _CompactStepper(
+                label: '좌우',
+                value: canvas.offsetX.toStringAsFixed(2),
+                onDecrease: () => onCanvasChanged(
+                  canvas.copyWith(offsetX: math.max(-1, canvas.offsetX - 0.05)),
+                ),
+                onIncrease: () => onCanvasChanged(
+                  canvas.copyWith(offsetX: math.min(1, canvas.offsetX + 0.05)),
+                ),
+              ),
+            ),
+            Expanded(
+              child: _CompactStepper(
+                label: '상하',
+                value: canvas.offsetY.toStringAsFixed(2),
+                onDecrease: () => onCanvasChanged(
+                  canvas.copyWith(offsetY: math.max(-1, canvas.offsetY - 0.05)),
+                ),
+                onIncrease: () => onCanvasChanged(
+                  canvas.copyWith(offsetY: math.min(1, canvas.offsetY + 0.05)),
+                ),
+              ),
+            ),
+            Expanded(
+              child: _CompactStepper(
+                label: '회전',
+                value: '${canvas.rotationDegrees.round()}°',
+                onDecrease: () => onCanvasChanged(
+                  canvas.copyWith(
+                    rotationDegrees: math.max(-180, canvas.rotationDegrees - 1),
+                  ),
+                ),
+                onIncrease: () => onCanvasChanged(
+                  canvas.copyWith(
+                    rotationDegrees: math.min(180, canvas.rotationDegrees + 1),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (active == null)
+          const Expanded(child: Center(child: Text('재생 위치에서 줌을 추가하세요.')))
+        else
           Row(
+            key: const Key('editor-zoom-frame-controls'),
             children: [
-              const Expanded(child: _PanelTitle('구간 줌')),
-              const _LiveAppliedBadge(),
-              const SizedBox(width: 6),
-              SizedBox(
-                height: 32,
-                child: FilledButton.icon(
-                  key: const Key('editor-add-zoom'),
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add_rounded, size: 15),
-                  label: const Text('현재 위치에 줌 추가'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    textStyle: const TextStyle(fontSize: 10),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              Expanded(
+                child: _CompactStepper(
+                  label: '시작 1f',
+                  value: _frameTime(active.sourceStartMs),
+                  onDecrease: () => onChanged(
+                    active.copyWith(
+                      sourceStartMs: _stepFrame(
+                        active.sourceStartMs,
+                        -1,
+                        project.sourceDurationMs,
+                      ),
+                    ),
+                  ),
+                  onIncrease: () => onChanged(
+                    active.copyWith(
+                      sourceStartMs: math.min(
+                        _stepFrame(
+                          active.sourceStartMs,
+                          1,
+                          project.sourceDurationMs,
+                        ),
+                        _stepFrame(
+                          active.sourceEndMs,
+                          -1,
+                          project.sourceDurationMs,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _CompactStepper(
+                  label: '끝 1f',
+                  value: _frameTime(active.sourceEndMs),
+                  onDecrease: () => onChanged(
+                    active.copyWith(
+                      sourceEndMs: math.max(
+                        _stepFrame(
+                          active.sourceEndMs,
+                          -1,
+                          project.sourceDurationMs,
+                        ),
+                        _stepFrame(
+                          active.sourceStartMs,
+                          1,
+                          project.sourceDurationMs,
+                        ),
+                      ),
+                    ),
+                  ),
+                  onIncrease: () => onChanged(
+                    active.copyWith(
+                      sourceEndMs: _stepFrame(
+                        active.sourceEndMs,
+                        1,
+                        project.sourceDurationMs,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _CompactStepper(
+                  label: '구간 확대',
+                  value: '${active.scale.toStringAsFixed(2)}×',
+                  onDecrease: () => onChanged(
+                    active.copyWith(scale: math.max(1.05, active.scale - 0.05)),
+                  ),
+                  onIncrease: () => onChanged(
+                    active.copyWith(scale: math.min(2.8, active.scale + 0.05)),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '줌 삭제',
+                onPressed: () => onRemove(active),
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  static int _stepFrame(int milliseconds, int delta, int maximum) {
+    final frame =
+        (milliseconds * _CutPrecisionToolbar.frameRate / 1000).round() + delta;
+    return (frame * 1000 / _CutPrecisionToolbar.frameRate).round().clamp(
+      0,
+      maximum,
+    );
+  }
+
+  static String _frameTime(int milliseconds) {
+    final frame = (milliseconds * _CutPrecisionToolbar.frameRate / 1000)
+        .round();
+    final seconds = frame ~/ _CutPrecisionToolbar.frameRate;
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}:${(frame % _CutPrecisionToolbar.frameRate).toString().padLeft(2, '0')}';
+  }
+}
+
+class _CompactStepper extends StatelessWidget {
+  const _CompactStepper({
+    required this.label,
+    required this.value,
+    required this.onDecrease,
+    required this.onIncrease,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onDecrease;
+  final VoidCallback onIncrease;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 44,
+    child: Row(
+      children: [
+        _StepButton(icon: Icons.remove_rounded, onTap: onDecrease),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(label, maxLines: 1, style: const TextStyle(fontSize: 8)),
+              Text(
+                value,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        _StepButton(icon: Icons.add_rounded, onTap: onIncrease),
+      ],
+    ),
+  );
+}
+
+class _ZoomPanel extends StatefulWidget {
+  const _ZoomPanel({
+    required this.project,
+    required this.canvas,
+    required this.onCanvasChanged,
+    required this.onCanvasReset,
+    required this.onAdd,
+    required this.onChanged,
+    required this.onRemove,
+    required this.onSelected,
+  });
+
+  final EditorProject project;
+  final EditorCanvas canvas;
+  final ValueChanged<EditorCanvas> onCanvasChanged;
+  final VoidCallback onCanvasReset;
+  final VoidCallback onAdd;
+  final ValueChanged<EditorZoomSegment> onChanged;
+  final ValueChanged<EditorZoomSegment> onRemove;
+  final ValueChanged<EditorZoomSegment> onSelected;
+
+  @override
+  State<_ZoomPanel> createState() => _ZoomPanelState();
+}
+
+class _ZoomPanelState extends State<_ZoomPanel> {
+  @override
+  Widget build(BuildContext context) {
+    final visibleZooms = widget.project.zoomSegments
+        .take(20)
+        .toList(growable: false);
+    EditorZoomSegment? active;
+    for (final zoom in visibleZooms) {
+      if (zoom.id == widget.project.selectedZoomId) active = zoom;
+    }
+    active ??= visibleZooms.isEmpty ? null : visibleZooms.first;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _PanelTitle('이동 · 회전 · 구간 줌')),
+            const _LiveAppliedBadge(),
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: '이동·확대·회전 초기화',
+              onPressed: widget.onCanvasReset,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+            ),
+            SizedBox(
+              height: 32,
+              child: FilledButton.icon(
+                key: const Key('editor-add-zoom'),
+                onPressed: widget.onAdd,
+                icon: const Icon(Icons.add_rounded, size: 15),
+                label: const Text('현재 위치에 줌 추가'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  textStyle: const TextStyle(fontSize: 10),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        SizedBox(
+          height: 50,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _ValueStepper(
+                label: '확대',
+                value: '${widget.canvas.scale.toStringAsFixed(2)}×',
+                onDecrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    scale: math.max(
+                      widget.canvas.minimumScale,
+                      widget.canvas.scale - 0.05,
+                    ),
+                  ),
+                ),
+                onIncrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    scale: math.min(4, widget.canvas.scale + 0.05),
+                  ),
+                ),
+              ),
+              _ValueStepper(
+                label: '좌우 이동',
+                value: widget.canvas.offsetX.toStringAsFixed(2),
+                onDecrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    offsetX: math.max(-1, widget.canvas.offsetX - 0.05),
+                  ),
+                ),
+                onIncrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    offsetX: math.min(1, widget.canvas.offsetX + 0.05),
+                  ),
+                ),
+              ),
+              _ValueStepper(
+                label: '상하 이동',
+                value: widget.canvas.offsetY.toStringAsFixed(2),
+                onDecrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    offsetY: math.max(-1, widget.canvas.offsetY - 0.05),
+                  ),
+                ),
+                onIncrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    offsetY: math.min(1, widget.canvas.offsetY + 0.05),
+                  ),
+                ),
+              ),
+              _ValueStepper(
+                label: '회전',
+                value: '${widget.canvas.rotationDegrees.round()}°',
+                onDecrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    rotationDegrees: math.max(
+                      -180,
+                      widget.canvas.rotationDegrees - 1,
+                    ),
+                  ),
+                ),
+                onIncrease: () => widget.onCanvasChanged(
+                  widget.canvas.copyWith(
+                    rotationDegrees: math.min(
+                      180,
+                      widget.canvas.rotationDegrees + 1,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-          if (project.zoomSegments.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            SizedBox(
-              height: 32,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: project.zoomSegments.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 6),
-                itemBuilder: (context, index) {
-                  final zoom = project.zoomSegments[index];
-                  return ChoiceChip(
-                    selected: zoom.id == active?.id,
-                    label: Text(
-                      '${zoom.automatic ? 'AI ' : ''}줌 ${index + 1} · ${_shortTime(zoom.sourceStartMs)}',
-                    ),
-                    onSelected: (_) => onSelected(zoom),
-                  );
-                },
-              ),
-            ),
-          ],
-          if (active == null)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
-              child: Center(child: Text('추천 줌이 없습니다. 재생 위치에서 직접 추가할 수 있어요.')),
-            )
-          else ...[
-            Row(
-              children: [
-                Text(
-                  '${_shortTime(active.sourceStartMs)}  —  ${_shortTime(active.sourceEndMs)}',
-                  style: const TextStyle(
-                    color: EditorColorTokens.ink,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
+        ),
+        if (visibleZooms.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 32,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: visibleZooms.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 6),
+              itemBuilder: (context, index) {
+                final zoom = visibleZooms[index];
+                return ChoiceChip(
+                  selected: zoom.id == active?.id,
+                  label: Text(
+                    '${zoom.automatic ? 'AI ' : ''}줌 ${index + 1} · ${_shortTime(zoom.sourceStartMs)}',
                   ),
-                ),
-                const Spacer(),
-                if (active.automatic)
-                  const Text(
-                    'AI 추천',
-                    style: TextStyle(
-                      color: Color(0xFF5A7CFF),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                IconButton(
-                  tooltip: '줌 삭제',
-                  onPressed: () => onRemove(active!),
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.delete_outline_rounded, size: 17),
-                ),
-              ],
+                  onSelected: (_) => widget.onSelected(zoom),
+                );
+              },
             ),
-            SizedBox(
-              height: 28,
-              child: RangeSlider(
-                key: const Key('editor-zoom-range'),
-                values: RangeValues(
-                  active.sourceStartMs.toDouble(),
-                  active.sourceEndMs.toDouble(),
-                ),
-                min: 0,
-                max: project.sourceDurationMs.toDouble(),
-                divisions: math.max(
-                  1,
-                  (project.sourceDurationMs * _CutPrecisionToolbar.frameRate) ~/
-                      1000,
-                ),
-                labels: RangeLabels(
-                  _shortTime(active.sourceStartMs),
-                  _shortTime(active.sourceEndMs),
-                ),
-                onChanged: (range) => onChanged(
-                  active!.copyWith(
-                    sourceStartMs: range.start.round(),
-                    sourceEndMs: range.end.round(),
-                  ),
-                ),
-              ),
-            ),
-            Row(
+          ),
+        ],
+        if (active == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Center(child: Text('추천 줌이 없습니다. 재생 위치에서 직접 추가할 수 있어요.')),
+          )
+        else ...[
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 50,
+            child: ListView(
+              key: const Key('editor-zoom-frame-controls'),
+              scrollDirection: Axis.horizontal,
               children: [
                 _ValueStepper(
-                  label: '확대',
+                  label: '시작 · 1f',
+                  value: _frameTime(active.sourceStartMs),
+                  onDecrease: () => widget.onChanged(
+                    active!.copyWith(
+                      sourceStartMs: _stepFrame(
+                        active.sourceStartMs,
+                        -1,
+                        widget.project.sourceDurationMs,
+                      ),
+                    ),
+                  ),
+                  onIncrease: () => widget.onChanged(
+                    active!.copyWith(
+                      sourceStartMs: math.min(
+                        _stepFrame(
+                          active.sourceStartMs,
+                          1,
+                          widget.project.sourceDurationMs,
+                        ),
+                        _stepFrame(
+                          active.sourceEndMs,
+                          -1,
+                          widget.project.sourceDurationMs,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                _ValueStepper(
+                  label: '끝 · 1f',
+                  value: _frameTime(active.sourceEndMs),
+                  onDecrease: () => widget.onChanged(
+                    active!.copyWith(
+                      sourceEndMs: math.max(
+                        _stepFrame(
+                          active.sourceEndMs,
+                          -1,
+                          widget.project.sourceDurationMs,
+                        ),
+                        _stepFrame(
+                          active.sourceStartMs,
+                          1,
+                          widget.project.sourceDurationMs,
+                        ),
+                      ),
+                    ),
+                  ),
+                  onIncrease: () => widget.onChanged(
+                    active!.copyWith(
+                      sourceEndMs: _stepFrame(
+                        active.sourceEndMs,
+                        1,
+                        widget.project.sourceDurationMs,
+                      ),
+                    ),
+                  ),
+                ),
+                _ValueStepper(
+                  label: '구간 확대',
                   value: '${active.scale.toStringAsFixed(2)}×',
-                  onDecrease: () => onChanged(
+                  onDecrease: () => widget.onChanged(
                     active!.copyWith(
                       scale: math.max(1.05, active.scale - 0.05),
                     ),
                   ),
-                  onIncrease: () => onChanged(
+                  onIncrease: () => widget.onChanged(
                     active!.copyWith(scale: math.min(2.8, active.scale + 0.05)),
                   ),
                 ),
-                const SizedBox(width: 4),
-                const Text('초점 X', style: TextStyle(fontSize: 9)),
-                Expanded(
-                  child: Slider(
-                    value: active.focus.x,
-                    onChanged: (value) => onChanged(
-                      active!.copyWith(
-                        focus: NormalizedPoint(value, active.focus.y),
+                _ValueStepper(
+                  label: '초점 X',
+                  value: active.focus.x.toStringAsFixed(2),
+                  onDecrease: () => widget.onChanged(
+                    active!.copyWith(
+                      focus: NormalizedPoint(
+                        math.max(0, active.focus.x - 0.05),
+                        active.focus.y,
+                      ),
+                    ),
+                  ),
+                  onIncrease: () => widget.onChanged(
+                    active!.copyWith(
+                      focus: NormalizedPoint(
+                        math.min(1, active.focus.x + 0.05),
+                        active.focus.y,
                       ),
                     ),
                   ),
                 ),
-                const Text('Y', style: TextStyle(fontSize: 9)),
-                Expanded(
-                  child: Slider(
-                    value: active.focus.y,
-                    onChanged: (value) => onChanged(
-                      active!.copyWith(
-                        focus: NormalizedPoint(active.focus.x, value),
+                _ValueStepper(
+                  label: '초점 Y',
+                  value: active.focus.y.toStringAsFixed(2),
+                  onDecrease: () => widget.onChanged(
+                    active!.copyWith(
+                      focus: NormalizedPoint(
+                        active.focus.x,
+                        math.max(0, active.focus.y - 0.05),
                       ),
                     ),
                   ),
+                  onIncrease: () => widget.onChanged(
+                    active!.copyWith(
+                      focus: NormalizedPoint(
+                        active.focus.x,
+                        math.min(1, active.focus.y + 0.05),
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '줌 삭제',
+                  onPressed: () => widget.onRemove(active!),
+                  icon: const Icon(Icons.delete_outline_rounded),
                 ),
               ],
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 
   static String _shortTime(int ms) {
     final seconds = ms ~/ 1000;
     return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  static int _stepFrame(int milliseconds, int delta, int maximum) {
+    final frame =
+        (milliseconds * _CutPrecisionToolbar.frameRate / 1000).round() + delta;
+    return (frame * 1000 / _CutPrecisionToolbar.frameRate).round().clamp(
+      0,
+      maximum,
+    );
+  }
+
+  static String _frameTime(int milliseconds) {
+    final frame = (milliseconds * _CutPrecisionToolbar.frameRate / 1000)
+        .round();
+    final seconds = frame ~/ _CutPrecisionToolbar.frameRate;
+    final frames = frame % _CutPrecisionToolbar.frameRate;
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}:${frames.toString().padLeft(2, '0')}';
   }
 }
 

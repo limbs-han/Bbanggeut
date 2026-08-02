@@ -1884,7 +1884,7 @@ class _PreviewSurface extends StatelessWidget {
                     _CanvasGestureLayer(
                       controller: projectController,
                       canvas: canvas,
-                      enabled: project.selectedTool == EditorTool.ratio,
+                      enabled: project.selectedTool == EditorTool.zoom,
                       onTap: editingLayerId == null ? null : onEditingDone,
                       child: _BoundedVideoViewport(
                         sourceAspectRatio: width / height,

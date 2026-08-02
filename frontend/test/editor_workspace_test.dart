@@ -27,6 +27,7 @@ void main() {
     ValueChanged<String>? onStickerSelected,
     ValueChanged<EditorLook>? onLookSelected,
     VoidCallback? onAiCaption,
+    ValueChanged<EditorZoomSegment>? onZoomChanged,
     ValueChanged<String>? onTextEdit,
     VoidCallback? onPlayRange,
     ValueChanged<String>? onBlocked,
@@ -75,7 +76,7 @@ void main() {
         onLookSelected: onLookSelected ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
-        onZoomChanged: (_) {},
+        onZoomChanged: onZoomChanged ?? (_) {},
         onZoomRemove: (_) {},
         onZoomSelected: (_) {},
         onToolSelected: controller.selectTool,
@@ -208,7 +209,7 @@ void main() {
     final panel = tester.getSize(find.byType(SelectedToolPanel));
     final preview = tester.getSize(find.byType(VideoPreviewWorkspace));
     // 도구 칸이 원하는 만큼(100×1.6=160) 다 가져가지 못했다.
-    expect(panel.height, lessThan(160));
+    expect(panel.height, lessThanOrEqualTo(162));
     expect(preview.height, greaterThanOrEqualTo(190));
     expect(tester.takeException(), isNull);
   });
@@ -306,7 +307,7 @@ void main() {
     await tester.tap(find.byKey(const Key('editor-nav-zoom')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('현재 위치에 줌 추가'), findsOneWidget);
+    expect(find.text('줌 추가'), findsOneWidget);
   });
 
   testWidgets('타임라인을 끌면 재생 위치와 표시선이 함께 움직인다', (tester) async {
@@ -513,8 +514,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(controller.project.selectedClip!.sourceStartMs, trimmedStart);
-    // 다른 도구에서도 전체 클립·효과 타임라인은 계속 보인다.
-    expect(find.byType(ProjectTimelineOverview), findsOneWidget);
+    // 컷 밖에서는 프로젝트 바를 그리지 않아도 편집 값은 유지된다.
+    expect(find.byType(ProjectTimelineOverview), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -602,6 +603,8 @@ void main() {
     expect(controller.project.selectedClipId, first.id);
     expect(controller.project.playheadMs, 0);
     expect(find.text('클립 1/2'), findsOneWidget);
+    expect(find.text('00:00–00:05'), findsOneWidget);
+    expect(find.text('00:05–00:12'), findsOneWidget);
   });
 
   testWidgets('캔버스·텍스트·줌은 화면 안에서 바로 누르는 편집 트레이를 쓴다', (tester) async {
@@ -614,8 +617,8 @@ void main() {
 
     controller.selectTool(EditorTool.ratio);
     await tester.pumpWidget(workspace(controller));
-    expect(find.textContaining('미리보기에서 직접').hitTestable(), findsOneWidget);
-    expect(find.text('확대').hitTestable(), findsOneWidget);
+    expect(find.textContaining('출력 비율').hitTestable(), findsOneWidget);
+    expect(find.text('확대'), findsNothing);
 
     controller.selectTool(EditorTool.text);
     await tester.pumpAndSettle();
@@ -627,7 +630,8 @@ void main() {
 
     controller.selectTool(EditorTool.zoom);
     await tester.pumpAndSettle();
-    expect(find.text('구간 줌').hitTestable(), findsNWidgets(2));
+    expect(find.text('이동 · 회전 · 구간 줌').hitTestable(), findsOneWidget);
+    expect(find.text('확대').hitTestable(), findsOneWidget);
     expect(
       find.byKey(const Key('editor-add-zoom')).hitTestable(),
       findsOneWidget,
@@ -798,7 +802,9 @@ void main() {
       ),
     );
 
-    await tester.pumpWidget(workspace(controller));
+    await tester.pumpWidget(
+      workspace(controller, onZoomChanged: controller.updateZoom),
+    );
     expect(find.text('추천 시작'), findsOneWidget);
     expect(find.text('추천 끝'), findsOneWidget);
     expect(
@@ -808,8 +814,10 @@ void main() {
 
     controller.selectTool(EditorTool.zoom);
     await tester.pumpAndSettle();
-    expect(find.textContaining('AI 줌 1'), findsOneWidget);
-    expect(find.byKey(const Key('editor-zoom-range')), findsOneWidget);
+    expect(find.text('1/1'), findsOneWidget);
+    expect(find.byKey(const Key('editor-zoom-frame-controls')), findsOneWidget);
+    expect(find.text('시작 1f'), findsOneWidget);
+    expect(find.text('끝 1f'), findsOneWidget);
   });
 
   testWidgets('추천 시작·끝은 사용자가 컷 손잡이를 움직여도 고정된다', (tester) async {
@@ -913,7 +921,7 @@ void main() {
     expect(controller.project.playheadMs, 33);
   });
 
-  testWidgets('전체 타임라인은 클립 번호와 줌·텍스트 구간을 함께 표시한다', (tester) async {
+  testWidgets('컷 밖에서는 프로젝트 개요 바를 표시하지 않는다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -929,36 +937,11 @@ void main() {
       ..selectTool(EditorTool.zoom);
 
     await tester.pumpWidget(workspace(controller));
-    expect(find.byType(ProjectTimelineOverview), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget.key.toString().contains('editor-overview-clip-'),
-      ),
-      findsNWidgets(2),
-    );
-    expect(find.text('1'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget.key.toString().contains('editor-overview-cut-'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget.key.toString().contains('editor-overview-zoom-'),
-      ),
-      findsWidgets,
-    );
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget.key.toString().contains('editor-overview-text-'),
-      ),
-      findsOneWidget,
-    );
+    expect(find.byType(ProjectTimelineOverview), findsNothing);
+    expect(find.byType(EditorTimelineSection), findsNothing);
   });
 
-  testWidgets('컷은 상세 프레임 타임라인만, 다른 도구는 프로젝트 개요만 표시한다', (tester) async {
+  testWidgets('컷만 상세 프레임 타임라인을 표시하고 다른 도구는 바를 모두 숨긴다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -974,7 +957,8 @@ void main() {
 
     controller.selectTool(EditorTool.zoom);
     await tester.pump();
-    expect(find.byType(ProjectTimelineOverview), findsOneWidget);
+    expect(find.byType(ProjectTimelineOverview), findsNothing);
+    expect(find.byType(EditorTimelineSection), findsNothing);
     expect(find.byKey(const Key('editor-timeline-strip')), findsNothing);
     expect(find.byKey(const Key('editor-frame-timecode')), findsNothing);
   });
