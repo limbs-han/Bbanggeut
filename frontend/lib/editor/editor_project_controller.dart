@@ -87,6 +87,7 @@ class EditorProjectController extends ChangeNotifier {
       sourcePath: _project.sourceVideoPath,
       sourceStartMs: start,
       sourceEndMs: end,
+      automatic: true,
     );
     final zooms = recommendation.zoomSegments.indexed
         .map((entry) {
@@ -108,6 +109,7 @@ class EditorProjectController extends ChangeNotifier {
       _project.copyWith(
         clips: [clip],
         zoomSegments: zooms,
+        selectedZoomId: zooms.isEmpty ? null : zooms.first.id,
         selectedClipId: clip.id,
         playheadMs: 0,
       ),
@@ -119,20 +121,41 @@ class EditorProjectController extends ChangeNotifier {
     if (sourceMs == null) return;
     final start = math.max(0, sourceMs - 1000);
     final end = math.min(_project.sourceDurationMs, sourceMs + 2000);
+    final zoom = EditorZoomSegment(
+      id: _nextId('zoom'),
+      sourceStartMs: start,
+      sourceEndMs: end,
+      scale: 1.35,
+      focus: NormalizedPoint.center,
+    );
     _commit(
       _project.copyWith(
-        zoomSegments: [
-          ..._project.zoomSegments,
-          EditorZoomSegment(
-            id: _nextId('zoom'),
-            sourceStartMs: start,
-            sourceEndMs: end,
-            scale: 1.35,
-            focus: NormalizedPoint.center,
-          ),
-        ],
+        zoomSegments: [..._project.zoomSegments, zoom],
+        selectedZoomId: zoom.id,
       ),
     );
+  }
+
+  void selectZoom(String zoomId) {
+    EditorZoomSegment? zoom;
+    for (final item in _project.zoomSegments) {
+      if (item.id == zoomId) zoom = item;
+    }
+    if (zoom == null) return;
+    var timelineStart = 0;
+    for (final clip in _project.clips) {
+      if (zoom.sourceStartMs >= clip.sourceStartMs &&
+          zoom.sourceStartMs < clip.sourceEndMs) {
+        _project = _project.copyWith(
+          selectedZoomId: zoomId,
+          selectedClipId: clip.id,
+          playheadMs: timelineStart + zoom.sourceStartMs - clip.sourceStartMs,
+        );
+        notifyListeners();
+        return;
+      }
+      timelineStart += clip.durationMs;
+    }
   }
 
   void updateZoom(EditorZoomSegment segment) {
@@ -148,7 +171,23 @@ class EditorProjectController extends ChangeNotifier {
         zoomSegments: _project.zoomSegments
             .where((item) => item.id != segment.id)
             .toList(),
+        clearSelectedZoom: _project.selectedZoomId == segment.id,
       ),
+    );
+  }
+
+  void reorderClip(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _project.clips.length) return;
+    if (newIndex == oldIndex ||
+        newIndex < 0 ||
+        newIndex >= _project.clips.length) {
+      return;
+    }
+    final next = [..._project.clips];
+    final moved = next.removeAt(oldIndex);
+    next.insert(newIndex, moved);
+    _commit(
+      _project.copyWith(clips: next, selectedClipId: moved.id, playheadMs: 0),
     );
   }
 
@@ -312,7 +351,17 @@ class EditorProjectController extends ChangeNotifier {
 
   void setCanvasRatio(EditorCanvasRatio ratio) {
     if (_project.canvas.ratio == ratio) return;
-    _commit(_project.copyWith(canvas: _project.canvas.copyWith(ratio: ratio)));
+    _commit(
+      _project.copyWith(
+        canvas: _project.canvas.copyWith(
+          ratio: ratio,
+          scale: 1,
+          offsetX: 0,
+          offsetY: 0,
+          rotationDegrees: 0,
+        ),
+      ),
+    );
   }
 
   void setCanvasTransform({
@@ -800,6 +849,7 @@ class EditorProjectController extends ChangeNotifier {
   /// 화면 상태는 이력을 만들 이유가 없으므로 비교에서 뺀다.
   bool _sameEdits(EditorProject a, EditorProject b) =>
       listEquals(a.clips, b.clips) &&
+      listEquals(a.zoomSegments, b.zoomSegments) &&
       listEquals(a.textLayers, b.textLayers) &&
       listEquals(a.stickerLayers, b.stickerLayers) &&
       listEquals(a.blurLayers, b.blurLayers) &&

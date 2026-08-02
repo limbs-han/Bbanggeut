@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'editor_tokens.dart';
+import 'editor_project.dart';
 
 abstract final class TrimBarTokens {
   /// 프레임이 아직 안 왔을 때만 잠깐 보이는 바닥색.
@@ -60,6 +61,8 @@ class TrimRangeBar extends StatefulWidget {
     required this.onTrimCommitted,
     required this.onScrub,
     this.interactive = true,
+    this.automaticRange = false,
+    this.zoomSegments = const [],
   });
 
   /// 띠가 담는 전체 길이. 드래그 중에도 절대 바뀌지 않는다.
@@ -90,6 +93,8 @@ class TrimRangeBar extends StatefulWidget {
 
   /// false면 보기 전용이다. 다른 탭에서 "지금 구간"을 보여줄 때 쓴다.
   final bool interactive;
+  final bool automaticRange;
+  final List<EditorZoomSegment> zoomSegments;
 
   @override
   State<TrimRangeBar> createState() => _TrimRangeBarState();
@@ -178,6 +183,26 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
               bottom: 0,
               child: _FilmStrip(thumbnails: widget.thumbnails),
             ),
+            for (final zoom in widget.zoomSegments)
+              if (zoom.sourceEndMs > 0 && zoom.sourceStartMs < totalMs)
+                Positioned(
+                  key: Key('editor-zoom-marker-${zoom.id}'),
+                  left: xOf(zoom.sourceStartMs.clamp(0, totalMs)),
+                  width: math.max(
+                    3,
+                    xOf(zoom.sourceEndMs.clamp(0, totalMs)) -
+                        xOf(zoom.sourceStartMs.clamp(0, totalMs)),
+                  ),
+                  bottom: 2,
+                  height: 7,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF5A7CFF),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.white, width: 1),
+                    ),
+                  ),
+                ),
             // 구간 밖 — 빠지는 부분.
             _veil(left: trackLeft, width: startX - trackLeft),
             _veil(left: endX, width: trackRight - endX),
@@ -252,6 +277,18 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
                   ),
                 ),
               ),
+            if (widget.automaticRange && !_dragging) ...[
+              Positioned(
+                left: startX.clamp(0, width - 48),
+                top: 2,
+                child: const _AiBoundaryBadge(label: 'AI 시작'),
+              ),
+              Positioned(
+                left: (endX - 45).clamp(0, width - 45),
+                top: 2,
+                child: const _AiBoundaryBadge(label: 'AI 끝'),
+              ),
+            ],
           ],
         );
       },
@@ -376,6 +413,31 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
     final sourceMs = (dx * msPerPx).round().clamp(_startMs, _endMs);
     widget.onScrub(sourceMs);
   }
+}
+
+class _AiBoundaryBadge extends StatelessWidget {
+  const _AiBoundaryBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: const Color(0xE63B2F88),
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    ),
+  );
 }
 
 /// 재생 위치 표시선.

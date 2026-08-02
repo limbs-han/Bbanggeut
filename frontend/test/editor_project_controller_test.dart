@@ -367,4 +367,42 @@ void main() {
     expect(layer.scale, 2.2);
     expect(layer.rotationDegrees, -18);
   });
+
+  test('클립 순서를 바꾸면 내보내기 순서도 함께 바뀐다', () {
+    final subject = controller();
+    subject.splitAt(4000);
+    final before = subject.project.clips
+        .map((clip) => clip.sourceStartMs)
+        .toList();
+    subject.reorderClip(1, 0);
+    final after = subject.project.clips
+        .map((clip) => clip.sourceStartMs)
+        .toList();
+
+    expect(after, before.reversed.toList());
+    final maps =
+        subject.project.toPlatformMap(outputPath: '/tmp/out.mp4')['clips']
+            as List;
+    expect((maps.first as Map)['sourceStartMs'], after.first);
+  });
+
+  test('세로 화면은 영상이 캔버스를 벗어나 빈 영역이 생기지 않게 제한한다', () {
+    final subject = controller();
+    subject.setCanvasRatio(EditorCanvasRatio.vertical);
+    final canvas = subject.project.canvas;
+    expect(canvas.scale, greaterThan(1));
+
+    subject.setCanvasTransform(
+      scale: 1,
+      offsetX: 99,
+      offsetY: 99,
+      rotationDegrees: 0,
+    );
+    expect(
+      subject.project.canvas.scale,
+      greaterThanOrEqualTo(canvas.minimumScale),
+    );
+    expect(subject.project.canvas.offsetY, 0);
+    expect(subject.project.canvas.offsetX.abs(), lessThanOrEqualTo(1));
+  });
 }

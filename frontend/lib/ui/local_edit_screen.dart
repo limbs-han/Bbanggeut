@@ -1062,12 +1062,33 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onSplit: _splitClip,
       onDelete: _deleteClip,
       onDuplicate: _duplicateClip,
+      onClipReorder: (oldIndex, newIndex) {
+        projectController.reorderClip(oldIndex, newIndex);
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
       onTrimChanged: _onTrimChanged,
       onTrimCommitted: _onTrimCommitted,
       onPlayRange: _toggleRangePreview,
       onBlocked: _showBlockedReason,
       onRatioSelected: _selectCanvasRatio,
+      onCanvasChanged: (canvas) {
+        projectController.setCanvasTransform(
+          scale: canvas.scale,
+          offsetX: canvas.offsetX,
+          offsetY: canvas.offsetY,
+          rotationDegrees: canvas.rotationDegrees,
+        );
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
+      onCanvasReset: () {
+        projectController.resetCanvasTransform();
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
       onText: _startTextEditing,
+      onTextEdit: (id) => _startTextEditing(layerId: id),
       onVolumeChanged: _setAudioVolume,
       onVolumeCommitted: _commitAudioVolume,
       onMutedChanged: _setMuted,
@@ -1088,6 +1109,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         projectController.removeZoom(zoom);
         _editState.markExternalEditApplied();
         setState(() {});
+      },
+      onZoomSelected: (zoom) {
+        projectController.selectZoom(zoom.id);
+        unawaited(_seekToPosition(projectController.project.playheadMs));
       },
       onToolSelected: _selectEditorTool,
     );
@@ -1991,62 +2016,70 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
             child: widget.childBuilder(context, width, _scale),
           ),
         );
-        return CustomSingleChildLayout(
-          delegate: _LayerCenterLayout(_position),
-          child: RepaintBoundary(
-            child: Transform.rotate(
-              angle: _rotation * math.pi / 180,
-              child: Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(_handleInset),
-                    child: widget.editing
-                        ? box
-                        : GestureDetector(
-                            key: Key('editor-layer-${widget.layer.id}'),
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () =>
-                                widget.controller.selectLayer(widget.layer.id),
-                            onDoubleTap: widget.onDoubleTap,
-                            onScaleStart: (_) => _beginTransform(),
-                            onScaleUpdate: (details) => _updateTransform(
-                              details,
-                              width: width,
-                              height: height,
-                            ),
-                            onScaleEnd: (_) => _endGesture(),
-                            child: box,
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_livePosition != null)
+              _LayerGuides(position: _position, rotationDegrees: _rotation),
+            CustomSingleChildLayout(
+              delegate: _LayerCenterLayout(_position),
+              child: RepaintBoundary(
+                child: Transform.rotate(
+                  angle: _rotation * math.pi / 180,
+                  child: Stack(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(_handleInset),
+                        child: widget.editing
+                            ? box
+                            : GestureDetector(
+                                key: Key('editor-layer-${widget.layer.id}'),
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => widget.controller.selectLayer(
+                                  widget.layer.id,
+                                ),
+                                onDoubleTap: widget.onDoubleTap,
+                                onScaleStart: (_) => _beginTransform(),
+                                onScaleUpdate: (details) => _updateTransform(
+                                  details,
+                                  width: width,
+                                  height: height,
+                                ),
+                                onScaleEnd: (_) => _endGesture(),
+                                child: box,
+                              ),
+                      ),
+                      if (selected)
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          child: _LayerHandle(
+                            dimension: _handleSize,
+                            icon: Icons.close_rounded,
+                            background: const Color(0xE6231A14),
+                            onTap: _deleteLayer,
                           ),
+                        ),
+                      if (selected)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: _LayerHandle(
+                            key: Key('editor-layer-resize-${widget.layer.id}'),
+                            dimension: _handleSize,
+                            icon: Icons.open_in_full_rounded,
+                            background: AppColors.coral,
+                            onPanStart: _beginResize,
+                            onPanUpdate: _updateResize,
+                            onPanEnd: _endGesture,
+                          ),
+                        ),
+                    ],
                   ),
-                  if (selected)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      child: _LayerHandle(
-                        dimension: _handleSize,
-                        icon: Icons.close_rounded,
-                        background: const Color(0xE6231A14),
-                        onTap: _deleteLayer,
-                      ),
-                    ),
-                  if (selected)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: _LayerHandle(
-                        key: Key('editor-layer-resize-${widget.layer.id}'),
-                        dimension: _handleSize,
-                        icon: Icons.open_in_full_rounded,
-                        background: AppColors.coral,
-                        onPanStart: _beginResize,
-                        onPanUpdate: _updateResize,
-                        onPanEnd: _endGesture,
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         );
       },
     ),
@@ -2066,14 +2099,21 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
   }) {
     // 손가락이 움직인 만큼만 옮긴다. 두 손가락이면 벌린 만큼 커지고 돌린
     // 만큼 돌아간다 — 한 손가락일 때 scale은 1, rotation은 0이라 이동만 된다.
-    final moved = (_livePosition ?? _startPosition).translate(
+    final rawPosition = (_livePosition ?? _startPosition).translate(
       details.focalPointDelta.dx / width,
       details.focalPointDelta.dy / height,
+    );
+    final moved = NormalizedPoint(
+      _snapNormalized(rawPosition.x),
+      _snapNormalized(rawPosition.y),
+    );
+    final rotation = _snapLayerAngle(
+      _startRotation + details.rotation * 180 / math.pi,
     );
     setState(() {
       _livePosition = moved;
       _liveScale = (_startScale * details.scale).clamp(0.2, 4.0);
-      _liveRotation = _startRotation + details.rotation * 180 / math.pi;
+      _liveRotation = rotation;
     });
     widget.controller.updateSelectedLayerTransform(
       position: _livePosition!,
@@ -2081,6 +2121,20 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
       rotationDegrees: _liveRotation!,
       notify: false,
     );
+  }
+
+  double _snapNormalized(double value) {
+    for (final target in const [0.1, 0.5, 0.9]) {
+      if ((value - target).abs() <= 0.018) return target;
+    }
+    return value.clamp(0.04, 0.96);
+  }
+
+  double _snapLayerAngle(double value) {
+    for (final target in const [-180.0, -90.0, -45.0, 0.0, 45.0, 90.0, 180.0]) {
+      if ((value - target).abs() <= 2.5) return target;
+    }
+    return value;
   }
 
   void _beginResize(Offset globalPosition) {
@@ -2215,6 +2269,7 @@ class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
   double _startRotation = 0;
   double _startOffsetX = 0;
   double _startOffsetY = 0;
+  Offset _startFocalPoint = Offset.zero;
 
   /// 조작 중인 값. 레이어 조작과 같은 이유로 여기만 먼저 바꾼다 — 두 손가락이
   /// 움직이는 내내 편집 화면 전체를 다시 그리면 화면이 손가락을 못 따라온다.
@@ -2239,22 +2294,31 @@ class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
         _liveCanvas = null;
         widget.controller.resetCanvasTransform();
       },
-      onScaleStart: (_) {
+      onScaleStart: (details) {
         final canvas = widget.controller.project.canvas;
         _startScale = canvas.scale;
         _startRotation = canvas.rotationDegrees;
         _startOffsetX = canvas.offsetX;
         _startOffsetY = canvas.offsetY;
+        _startFocalPoint = details.focalPoint;
         widget.controller.beginCanvasGesture();
       },
       onScaleUpdate: (details) {
         final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
         final height = constraints.maxHeight <= 0 ? 1.0 : constraints.maxHeight;
+        final movedX =
+            _startOffsetX +
+            (details.focalPoint.dx - _startFocalPoint.dx) / width * 2;
+        final movedY =
+            _startOffsetY +
+            (details.focalPoint.dy - _startFocalPoint.dy) / height * 2;
+        final rawAngle = _startRotation + details.rotation * 180 / math.pi;
+        final snappedAngle = _snapAngle(rawAngle);
         widget.controller.updateCanvasGesture(
           scale: _startScale * details.scale,
-          offsetX: _startOffsetX + details.focalPointDelta.dx / width * 2,
-          offsetY: _startOffsetY + details.focalPointDelta.dy / height * 2,
-          rotationDegrees: _startRotation + details.rotation * 180 / math.pi,
+          offsetX: _snapCenter(movedX),
+          offsetY: _snapCenter(movedY),
+          rotationDegrees: snappedAngle,
           notify: false,
         );
         setState(() => _liveCanvas = widget.controller.project.canvas);
@@ -2263,16 +2327,116 @@ class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
         _liveCanvas = null;
         widget.controller.endCanvasGesture();
       },
-      child: Transform.translate(
-        offset: Offset(
-          _canvas.offsetX * constraints.maxWidth / 2,
-          _canvas.offsetY * constraints.maxHeight / 2,
-        ),
-        child: Transform.rotate(
-          angle: _canvas.rotationDegrees * math.pi / 180,
-          child: Transform.scale(scale: _canvas.scale, child: widget.child),
-        ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Transform.translate(
+            offset: Offset(
+              _canvas.offsetX * constraints.maxWidth / 2,
+              _canvas.offsetY * constraints.maxHeight / 2,
+            ),
+            child: Transform.rotate(
+              angle: _canvas.rotationDegrees * math.pi / 180,
+              child: Transform.scale(scale: _canvas.scale, child: widget.child),
+            ),
+          ),
+          if (_liveCanvas != null ||
+              widget.controller.project.selectedTool == EditorTool.ratio)
+            const Positioned.fill(child: IgnorePointer(child: _CanvasGuides())),
+        ],
       ),
     ),
+  );
+
+  double _snapCenter(double value) => value.abs() < 0.025 ? 0 : value;
+
+  double _snapAngle(double value) {
+    for (final target in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
+      if ((value - target).abs() <= 2.5) return target;
+    }
+    return value;
+  }
+}
+
+class _LayerGuides extends StatelessWidget {
+  const _LayerGuides({required this.position, required this.rotationDegrees});
+
+  final NormalizedPoint position;
+  final double rotationDegrees;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: Stack(
+      children: [
+        if (position.x == 0.5)
+          Align(
+            alignment: Alignment.center,
+            child: Container(width: 1, color: const Color(0xE65A7CFF)),
+          ),
+        if (position.y == 0.5)
+          Align(
+            alignment: Alignment.center,
+            child: Container(height: 1, color: const Color(0xE65A7CFF)),
+          ),
+        Positioned.fill(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: 24,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0x80FFFFFF)),
+            ),
+          ),
+        ),
+        if ((rotationDegrees % 45).abs() < 0.01)
+          Positioned(
+            right: 8,
+            top: 8,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xD91B1B1B),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                child: Text(
+                  '${rotationDegrees.round()}°',
+                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class _CanvasGuides extends StatelessWidget {
+  const _CanvasGuides();
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Align(
+        alignment: Alignment.center,
+        child: Container(width: 1, color: const Color(0xCC5A7CFF)),
+      ),
+      Align(
+        alignment: Alignment.center,
+        child: Container(height: 1, color: const Color(0xCC5A7CFF)),
+      ),
+      Positioned.fill(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: 24,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0x99FFFFFF), width: 1),
+          ),
+        ),
+      ),
+    ],
   );
 }

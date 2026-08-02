@@ -4,6 +4,7 @@ import 'package:william_james_app/editor/editor_ar_effects.dart';
 import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
 import 'package:william_james_app/editor/editor_workspace.dart';
+import 'package:william_james_app/editor/edit_recommendation_client.dart';
 
 void main() {
   EditorProjectController newController() => EditorProjectController(
@@ -26,6 +27,7 @@ void main() {
     ValueChanged<String>? onStickerSelected,
     ValueChanged<EditorLook>? onLookSelected,
     VoidCallback? onAiCaption,
+    ValueChanged<String>? onTextEdit,
     VoidCallback? onPlayRange,
     ValueChanged<String>? onBlocked,
     List<String> thumbnails = const [],
@@ -53,10 +55,14 @@ void main() {
         onSplit: onSplit ?? () {},
         onDelete: onDelete ?? () {},
         onDuplicate: onDuplicate ?? () {},
+        onClipReorder: controller.reorderClip,
         onTrimChanged: onTrimChanged ?? (_, _, _) {},
         onTrimCommitted: onTrimCommitted ?? () {},
         onRatioSelected: (_) {},
+        onCanvasChanged: (_) {},
+        onCanvasReset: () {},
         onText: () {},
+        onTextEdit: onTextEdit ?? (_) {},
         onVolumeChanged: (_) {},
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
@@ -65,6 +71,7 @@ void main() {
         onZoomAdd: () {},
         onZoomChanged: (_) {},
         onZoomRemove: (_) {},
+        onZoomSelected: (_) {},
         onToolSelected: controller.selectTool,
       ),
     ),
@@ -110,7 +117,7 @@ void main() {
       await tester.pumpWidget(workspace(controller));
 
       expect(find.text('영상 편집'), findsOneWidget);
-      for (final label in const ['컷', '비율', '텍스트', '줌']) {
+      for (final label in const ['컷', '화면', '텍스트', '줌']) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
       expect(tester.takeException(), isNull);
@@ -705,6 +712,62 @@ void main() {
       expect(find.text(label), findsOneWidget, reason: '$label 단추가 없다');
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('AI 추천 컷과 줌 구간을 타임라인과 줌 패널에 표시한다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+    controller.applyRecommendation(
+      const EditRecommendation(
+        cutStartMs: 2000,
+        cutEndMs: 10000,
+        durationPreset: 'medium',
+        zoomSegments: [
+          {
+            'startMs': 4000,
+            'endMs': 6500,
+            'scale': 1.5,
+            'focusX': 0.4,
+            'focusY': 0.6,
+          },
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(workspace(controller));
+    expect(find.text('AI 시작'), findsOneWidget);
+    expect(find.text('AI 끝'), findsOneWidget);
+    expect(
+      find.byKey(const Key('editor-zoom-marker-auto-zoom-0')),
+      findsOneWidget,
+    );
+
+    controller.selectTool(EditorTool.zoom);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('AI 줌 1'), findsOneWidget);
+    expect(find.byKey(const Key('editor-zoom-range')), findsOneWidget);
+  });
+
+  testWidgets('기존 텍스트를 목록에서 다시 수정할 수 있다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+    controller.addTextLayer(text: '다시 고칠 문구');
+    controller.selectTool(EditorTool.text);
+    String? editedId;
+
+    await tester.pumpWidget(
+      workspace(controller, onTextEdit: (id) => editedId = id),
+    );
+    await tester.tap(find.text('다시 고칠 문구'));
+    expect(editedId, controller.project.textLayers.single.id);
   });
 }
 

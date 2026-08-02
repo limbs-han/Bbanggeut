@@ -110,6 +110,7 @@ class EditorClip {
     required this.sourceStartMs,
     required this.sourceEndMs,
     this.arEffectId,
+    this.automatic = false,
   });
 
   final String id;
@@ -117,6 +118,7 @@ class EditorClip {
   final int sourceStartMs;
   final int sourceEndMs;
   final String? arEffectId;
+  final bool automatic;
 
   int get durationMs => math.max(0, sourceEndMs - sourceStartMs);
 
@@ -126,12 +128,14 @@ class EditorClip {
     int? sourceEndMs,
     String? arEffectId,
     bool clearArEffect = false,
+    bool? automatic,
   }) => EditorClip(
     id: id ?? this.id,
     sourcePath: sourcePath,
     sourceStartMs: sourceStartMs ?? this.sourceStartMs,
     sourceEndMs: sourceEndMs ?? this.sourceEndMs,
     arEffectId: clearArEffect ? null : arEffectId ?? this.arEffectId,
+    automatic: automatic ?? this.automatic,
   );
 
   Map<String, Object?> toMap({required int timelineStartMs}) => {
@@ -142,6 +146,7 @@ class EditorClip {
     'timelineStartMs': timelineStartMs,
     'timelineEndMs': timelineStartMs + durationMs,
     'arEffectId': arEffectId,
+    'automatic': automatic,
   };
 
   /// 값으로 비교한다. 되돌리기 이력이 "손가락이 지나갔다"가 아니라 "실제로
@@ -154,11 +159,18 @@ class EditorClip {
       other.sourcePath == sourcePath &&
       other.sourceStartMs == sourceStartMs &&
       other.sourceEndMs == sourceEndMs &&
-      other.arEffectId == arEffectId;
+      other.arEffectId == arEffectId &&
+      other.automatic == automatic;
 
   @override
-  int get hashCode =>
-      Object.hash(id, sourcePath, sourceStartMs, sourceEndMs, arEffectId);
+  int get hashCode => Object.hash(
+    id,
+    sourcePath,
+    sourceStartMs,
+    sourceEndMs,
+    arEffectId,
+    automatic,
+  );
 }
 
 class EditorZoomSegment {
@@ -193,6 +205,20 @@ class EditorZoomSegment {
     focus: focus ?? this.focus,
     automatic: automatic,
   );
+
+  @override
+  bool operator ==(Object other) =>
+      other is EditorZoomSegment &&
+      other.id == id &&
+      other.sourceStartMs == sourceStartMs &&
+      other.sourceEndMs == sourceEndMs &&
+      other.scale == scale &&
+      other.focus == focus &&
+      other.automatic == automatic;
+
+  @override
+  int get hashCode =>
+      Object.hash(id, sourceStartMs, sourceEndMs, scale, focus, automatic);
 }
 
 class EditorCanvas {
@@ -226,6 +252,13 @@ class EditorCanvas {
     EditorCanvasRatio.portrait => 4 / 5,
   };
 
+  double get minimumScale {
+    if (ratio == EditorCanvasRatio.original) return 1;
+    final source = sourceAspectRatio;
+    final target = aspectRatio;
+    return source >= target ? source / target : target / source;
+  }
+
   EditorCanvas copyWith({
     EditorCanvasRatio? ratio,
     int? outputWidth,
@@ -235,17 +268,49 @@ class EditorCanvas {
     double? offsetY,
     double? rotationDegrees,
     Color? backgroundColor,
-  }) => EditorCanvas(
-    sourceAspectRatio: sourceAspectRatio,
-    ratio: ratio ?? this.ratio,
-    outputWidth: outputWidth ?? this.outputWidth,
-    outputHeight: outputHeight ?? this.outputHeight,
-    scale: (scale ?? this.scale).clamp(1.0, 4.0),
-    offsetX: (offsetX ?? this.offsetX).clamp(-1.0, 1.0),
-    offsetY: (offsetY ?? this.offsetY).clamp(-1.0, 1.0),
-    rotationDegrees: rotationDegrees ?? this.rotationDegrees,
-    backgroundColor: backgroundColor ?? this.backgroundColor,
-  );
+  }) {
+    final nextRatio = ratio ?? this.ratio;
+    final provisional = EditorCanvas(
+      sourceAspectRatio: sourceAspectRatio,
+      ratio: nextRatio,
+      outputWidth: outputWidth ?? this.outputWidth,
+      outputHeight: outputHeight ?? this.outputHeight,
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+      rotationDegrees: rotationDegrees ?? this.rotationDegrees,
+      backgroundColor: backgroundColor ?? this.backgroundColor,
+    );
+    final nextScale = math
+        .max(scale ?? this.scale, provisional.minimumScale)
+        .clamp(1.0, 4.0);
+    final radians = provisional.rotationDegrees.abs() * math.pi / 180;
+    final source = sourceAspectRatio;
+    final target = provisional.aspectRatio;
+    final halfWidth = source >= target ? 1.0 : source / target;
+    final halfHeight = source >= target ? target / source : 1.0;
+    final extentX =
+        nextScale *
+        (math.cos(radians).abs() * halfWidth +
+            math.sin(radians).abs() * halfHeight);
+    final extentY =
+        nextScale *
+        (math.sin(radians).abs() * halfWidth +
+            math.cos(radians).abs() * halfHeight);
+    final maxX = math.min(1.0, math.max(0.0, extentX - 1));
+    final maxY = math.min(1.0, math.max(0.0, extentY - 1));
+    return EditorCanvas(
+      sourceAspectRatio: sourceAspectRatio,
+      ratio: nextRatio,
+      outputWidth: outputWidth ?? this.outputWidth,
+      outputHeight: outputHeight ?? this.outputHeight,
+      scale: nextScale,
+      offsetX: (offsetX ?? this.offsetX).clamp(-maxX, maxX),
+      offsetY: (offsetY ?? this.offsetY).clamp(-maxY, maxY),
+      rotationDegrees: provisional.rotationDegrees,
+      backgroundColor: backgroundColor ?? this.backgroundColor,
+    );
+  }
 
   Map<String, Object> toMap() => {
     'ratio': ratio.name,
@@ -544,6 +609,7 @@ class EditorProject {
     this.selectedTool = EditorTool.cut,
     this.selectedClipId,
     this.selectedLayerId,
+    this.selectedZoomId,
     this.playheadMs = 0,
     this.isPlaying = false,
     this.exportState = const EditorExportState(),
@@ -588,6 +654,7 @@ class EditorProject {
   final EditorTool selectedTool;
   final String? selectedClipId;
   final String? selectedLayerId;
+  final String? selectedZoomId;
   final int playheadMs;
   final bool isPlaying;
   final EditorExportState exportState;
@@ -709,6 +776,8 @@ class EditorProject {
     bool clearSelectedClip = false,
     String? selectedLayerId,
     bool clearSelectedLayer = false,
+    String? selectedZoomId,
+    bool clearSelectedZoom = false,
     int? playheadMs,
     bool? isPlaying,
     EditorExportState? exportState,
@@ -733,6 +802,9 @@ class EditorProject {
     selectedLayerId: clearSelectedLayer
         ? null
         : selectedLayerId ?? this.selectedLayerId,
+    selectedZoomId: clearSelectedZoom
+        ? null
+        : selectedZoomId ?? this.selectedZoomId,
     playheadMs: (playheadMs ?? this.playheadMs).clamp(
       0,
       (clips ?? this.clips).fold(
