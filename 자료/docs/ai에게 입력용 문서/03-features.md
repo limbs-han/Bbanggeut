@@ -139,7 +139,7 @@ flowchart TD
 | FN-A19 | 즐겨찾기 토글 | API-29 | `ui/video_detail_screen.dart`, `app/app_controller.dart` | - |
 | FN-A20 | 영상 다운로드 | API-32 | `ui/video_detail_screen.dart` | 409, 503 |
 | FN-A21 | 로컬 영상 편집 | API-32 | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt`(exportWithTrim) | ⚠️ 서버 재업로드 API 호출 미발견 |
-| FN-A39 | 자동 자막 | API-54 **[제안·미구현]** | `features/stt/*`, `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `SttChannel.kt`, `SubtitleOverlay.kt` | 전사는 서버가 한다 — 폰은 `videoId`만 보내고 서버가 저장된 원본에서 오디오·대표 프레임을 뽑아 Gemini로 보낸다. **모델 `assets/models/ggml-small-ko-q5_1.bin`(약 181MiB)은 아직 앱에 들어 있고** 앱이 첫 실행 때 파일로 복사한다 — 온디바이스 코드(`whisper_*`)와 함께 남아 있으나 배선돼 있지 않다. 자르기·자막·효과는 인코딩 1회에 함께 처리 |
+| FN-A39 | 자동 자막 | API-54 **[제안·미구현]** | `features/stt/*`, `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `SubtitleOverlay.kt` | 전사는 서버가 한다 — 폰은 `videoId`만 보내고 서버가 저장된 원본에서 오디오·대표 프레임을 뽑아 Gemini로 보낸다. **모델 `assets/models/ggml-small-ko-q5_1.bin`(약 181MiB)은 아직 앱에 들어 있고** 앱이 첫 실행 때 파일로 복사한다 — 온디바이스 코드(`whisper_*`)와 함께 남아 있으나 배선돼 있지 않다. `SttChannel.kt`(채널 `stt/media`)는 그 온디바이스 경로의 오디오 추출기라 **이 기능의 코드 경로가 아니다** — `transcribeVideo`에서만 닿고 그것을 부르는 곳이 없다(231행 표와 같은 판단). `SubtitleOverlay.kt`는 굽기에 계속 쓰인다. 자르기·자막·효과는 인코딩 1회에 함께 처리 |
 | FN-A40 | 4컷 만화 만들기 | API-52, API-53 **[제안·미구현]** | `features/comic/*`, `ui/content_video_detail_screen.dart`, `core/api_client.dart` | 전사문(글)만 서버로 보냄. 키는 서버 보관. **앱만 구현, 서버 없음** — COMIC_SERVER가 없으면 FakeComicGateway |
 | FN-A22 | 가족 목록/초대 | API-23, API-14, API-18 | `ui/family_screen.dart` | 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
 | FN-A23 | 보낸 초대 취소 | API-19 | `ui/family_screen.dart` | 403, 409 INVITATION_NOT_PENDING |

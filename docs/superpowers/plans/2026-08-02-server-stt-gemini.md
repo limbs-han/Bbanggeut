@@ -309,19 +309,25 @@ import '../../core/api_client.dart';
 import 'transcript_api.dart';
 ```
 
-그리고 파일 아래쪽 전역 저장소의 `transcriber:` 한 줄만 바꾼다:
+그리고 전역 저장소를 **앱 시작 시점에 배선**한다. 라이브러리 초기화 시점에는 클라이언트를 만들지 않는다:
 
 ```dart
 TranscriptStore transcriptStore = TranscriptStore(
-  transcriber: defaultTranscriber(ApiClient()),
-  root: () async {
-    final documents = await getApplicationDocumentsDirectory();
-    return Directory('${documents.path}${Platform.pathSeparator}captions');
-  },
+  transcriber: _unwiredTranscriber,   // 배선 전에 부르면 StateError로 크게 실패
+  root: captionsDirectory,            // 폴더 만드는 곳은 한 군데뿐
 );
+
+void wireTranscriptStore(ApiClient api) {
+  transcriptStore = TranscriptStore(
+    transcriber: defaultTranscriber(api),
+    root: captionsDirectory,
+  );
+}
 ```
 
-`ApiClient`를 새로 만들어도 로그인 상태는 그대로 쓴다 — 토큰을 secure storage에서 읽는 인터셉터가 생성자에 있다(`api_client.dart:47-48`, 확인 완료).
+`app.dart`의 `initState`에서 `AppController`를 만든 직후 `wireTranscriptStore(controller.api)`를 부른다.
+
+> **[2026-08-02 정정] 이 계획의 원래 문장 — "`ApiClient`를 새로 만들어도 로그인 상태는 그대로 쓴다. 토큰을 secure storage에서 읽는 인터셉터가 생성자에 있다" — 은 틀렸다.** 인터셉터는 `_memoryAccessToken ?? await _storage.read(...)` 순으로 읽는데, "로그인 유지"를 끄고(`persistSession: false`) 로그인하면 `_saveSession`이 저장소 키를 **지운다**(`api_client.dart:464-475`). 그러면 두 번째 클라이언트에는 메모리 토큰도 저장소 토큰도 없어 `Authorization` 헤더가 붙지 않고, 401 뒤 갱신도 갱신 토큰이 없어 실패한다 — 그 사용자는 자막을 아예 쓰지 못한다. 유지를 켜 두더라도 먼저 갱신한 쪽이 토큰을 회전시키면 다른 쪽은 낡은 `_memoryAccessToken`을 우선 쓰다 갱신에 실패하고 `catch (_) { await clearSession(); }`로 가 **사용자를 편집 도중 로그아웃**시킨다(`api_client.dart:502-519`). 단일 실행 가드 `_refreshFuture`도 인스턴스마다 따로라 서로를 막지 못한다. **앱의 `ApiClient`는 `AppController.api` 하나뿐이어야 한다.**
 
 - [ ] **Step 2: `_run`이 넘기는 인자를 바꾼다**
 
