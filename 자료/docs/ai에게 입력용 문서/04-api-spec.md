@@ -371,6 +371,7 @@ ID 체계: API-01~54(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - 공통 에러: 401 `AUTHENTICATION_REQUIRED`, 403 `ACCESS_DENIED`, 404 `RESOURCE_NOT_FOUND`(videoId 없음/권한 없음), 429 `COMIC_RATE_LIMIT_EXCEEDED`(**사용자별 호출 제한** — 이미지 생성은 호출마다 돈이 든다), 502 `COMIC_GENERATION_FAILED`(상위 모델 실패·타임아웃·부적절 응답), 500 `INTERNAL_SERVER_ERROR`.
 - **이 절의 적용 범위**: 위 공통 에러 중 **401·403·404·500 네 가지만 API-54(자막)도 그대로 쓴다.** `COMIC_` 접두가 붙은 429·502는 **만화 전용**이고, 자막은 `TRANSCRIPT_` 접두 코드를 따로 쓴다(API-54 절 참조). 이 절의 나머지 규칙(전사문만 올라옴, 이미지 생성 키, `message` 노출)도 **만화에만 해당한다.**
 - **호출 제한은 서버만 걸 수 있다.** 앱에는 제한이 없다.
+- **시간 예산: 서버 150초 / 앱 대기 180초.** API-52·API-53·API-54 세 호출에만 `Options(receiveTimeout: 180초)`를 붙였다(`ApiClient.aiReceiveTimeout`). 나머지 호출은 전역 기본값 20초 그대로다 — 이미지 생성도 Gemini 전사도 20초 안에 끝나는 일이 아니라서 예외를 뒀다. 서버가 150초를 넘길 것 같으면 502(`COMIC_GENERATION_FAILED` / `TRANSCRIPT_GENERATION_FAILED`)로 **먼저 끊어 돌려줄 것.** 앱이 먼저 끊으면(`DioExceptionType.receiveTimeout`) 사용자에게는 그냥 실패로 보이고 서버는 다 만든 응답을 버리게 된다. 180초로도 모자란 작업이면 202+폴링으로 계약을 바꿔야 하며 그것은 별도 논의다.
 
 ### API-52 `POST /api/videos/{videoId}/comic/script` **[제안·미구현]**
 
@@ -462,13 +463,18 @@ Gemini에 보내고, 시각 붙은 전사문을 돌려준다. 결과는 서버�
 
 | 항목 | 규칙 |
 |---|---|
-| `startMs`/`endMs` | 정수 밀리초. **`endMs` 필수** — 자막을 영상에 구울 때 줄이 사라질 시각이다 |
+| `startMs`/`endMs` | 정수 밀리초. **`endMs` 필수**이고 **`endMs > startMs`**여야 한다 — 자막을 영상에 구울 때 줄이 사라질 시각이다 |
+| 길이 0·역전 구간 | **앱이 조용히 버린다.** `endMs <= startMs`인 줄은 `splitIntoLines`를 통과하지만 `captionAt`(`caption_line.dart:132`)에 걸리지 않고 `captionsForExport`(:163)에서도 빠져, 패널·미리보기·내보내기 어디에도 없이 오류도 로그도 없이 사라진다. Gemini가 준 시각을 그대로 넘기면 흔히 나온다 — **서버가 검증해 고치거나 그 줄을 빼고 보낼 것** |
 | `text` | 공백이 아닌 문자열. **문장 단위로 주면 된다** — 한 줄 20자 나눔은 앱이 한다 |
+| 빈 `text` | **앱이 버린다**(`transcript_api.dart:43`, trim 후 빈 문자열이면 제외). 빈 자막 띠를 영상에 굽지 않기 위해서다. 서버가 빈 줄을 보내도 오류는 아니지만 그 줄은 없는 것이 된다 |
+| 항목 형식 | `startMs`·`endMs`는 int, `text`는 string. 하나라도 다르면 앱이 `FormatException`으로 전사 전체를 실패 처리한다 — 한 줄만 버리지 않는다 |
 | 정렬·겹침 | `startMs` 오름차순, 구간이 겹치지 않아야 한다. 겹치면 앱이 먼저 걸린 줄만 보여준다 |
-| 발화 없음 | `{"lines": []}` — 앱이 "대사를 알아듣지 못했어요"로 안내하고 자막 없이 저장하게 둔다 |
+| 발화 없음 | `{"lines": []}` — 앱이 "대사를 알아듣지 못했어요"로 안내하고 자막 없이 저장하게 둔다. **앱은 빈 결과를 캐시하지 않는다**(`transcript_store.dart:134-139`, 빈 캐시를 남기면 재시도가 영영 막히기 때문). 같은 영상의 편집 화면을 열 때마다 **이 요청이 다시 온다** — 아래 호출 제한 설계에 반드시 반영할 것 |
 | 오류(공통) | 401 `AUTHENTICATION_REQUIRED` · 403 `ACCESS_DENIED` · 404 `RESOURCE_NOT_FOUND`(videoId 없음/권한 없음) · 500 `INTERNAL_SERVER_ERROR` — API-52·53과 **완전히 같다** |
 | 오류(자막 전용) | 429 **`TRANSCRIPT_RATE_LIMIT_EXCEEDED`**(사용자별 호출 제한 — Gemini 전사도 호출마다 돈이 든다), 502 **`TRANSCRIPT_GENERATION_FAILED`**(Gemini 실패·타임아웃·부적절 응답). **만화의 `COMIC_` 접두 코드를 자막에 쓰지 말 것** — 호출 제한 카운터도 만화와 따로 센다 |
-| `message` | **사용자에게 보이지 않는다.** 앱은 실패 사유와 무관하게 `대사를 알아듣지 못했어요. 자막 없이 저장할 수 있어요.` 한 줄만 띄운다(`caption_controller.dart`의 `message()`가 어떤 `TranscriptFailed`에도 고정 문구를 돌려주고, `caption_auto_section.dart`가 그것만 그린다). 서버 문자열은 `debugPrint`로만 나가므로 **진단용**이다 — 로그에서 원인을 가릴 수 있게 구체적으로 쓰되 사용자 문구로 다듬을 필요는 없다. **API-52·53과 다른 점이다**(만화 화면은 `message`를 그대로 띄운다) |
+| 실패도 캐시하지 않는다 | 오류 응답을 받아도 앱은 캐시를 남기지 않는다(`transcript_store.dart:149-151`). **다음에 그 영상을 열면 또 요청한다.** 사용자별 제한만으로 설계하면 조용한 클립 하나를 몇 번 열어 본 사용자가 자기 계정을 잠근다 — **videoId 단위 서버 캐시(성공·무발화 모두)로 흡수하고**, 제한은 그 캐시를 지나쳐 실제 Gemini를 부르는 호출에만 걸 것 |
+| 시간 예산 | **서버는 150초 안에 응답할 것. 앱은 180초까지 기다린다**(`ApiClient.aiReceiveTimeout`, API-52·53과 같은 값). 전역 기본 `receiveTimeout`은 20초지만 이 세 호출만 예외를 뒀다. 150초를 넘길 것 같으면 502 `TRANSCRIPT_GENERATION_FAILED`로 **서버가 먼저 끊어서** 돌려줄 것 — 앱이 먼저 끊으면 사용자는 원인을 알 수 없고 서버는 다 만든 응답을 버리는 셈이 된다. 180초로도 모자란 길이라면 202+폴링으로 계약을 바꿔야 하며 그것은 별도 논의다 |
+| `message` | **문자열 자체는 화면에 뜨지 않지만 실패 갈래는 나뉜다.** 앱은 두 가지로만 안내한다 — 던져진 실패(네트워크 없음·401·429·502·시간 초과 전부)는 `연결이나 서버에 문제가 있어요. 다시 시도해 보세요.`와 [다시 시도] 버튼, 무발화(`{"lines": []}`)는 `대사를 알아듣지 못했어요. 자막 없이 저장할 수 있어요.`다(`caption_controller.dart`의 `message()`·`retry()`, `caption_auto_section.dart`가 그린다). 서버 문자열은 `debugPrint`로만 나가므로 **진단용**이다 — 로그에서 원인을 가릴 수 있게 구체적으로 쓰되 사용자 문구로 다듬을 필요는 없다. **API-52·53과 다른 점이다**(만화 화면은 `message`를 그대로 띄운다) |
 | 외부 전달 | **오디오와 대표 프레임이 Gemini(구글)로 나간다.** 개인정보 고지 대상 |
 
 ---
