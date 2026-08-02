@@ -1,158 +1,40 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:ve_sdk_flutter/errors.dart';
-import 'package:ve_sdk_flutter/export_data.dart';
-import 'package:ve_sdk_flutter/export_result.dart';
-import 'package:ve_sdk_flutter/features_config.dart';
-import 'package:ve_sdk_flutter/ve_sdk_flutter.dart';
 
-import 'saved_video_edit.dart';
-
-class BanubaEditorException implements Exception {
-  const BanubaEditorException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
+/// Banuba 라이선스 토큰을 대는 곳.
+///
+/// **이제 이 클래스가 하는 일은 토큰 공급 하나뿐이다.** 예전에는 여기서
+/// `ve_sdk_flutter`의 편집기 화면(`openEditorScreen`)을 열고, 돌아온 결과
+/// 영상을 앱 저장소로 복사해 편집기의 새 원본으로 갈아 끼웠다. 앱을 벗어나
+/// UI/UX가 통째로 바뀌는 데다, 돌아온 영상에는 자막까지 구워져 있어서 우리
+/// 편집 내용과 겹쳤다.
+///
+/// 지금은 AR 탭이 우리 화면 안에서 엔진을 직접 부른다(`banuba_mask_channel.dart`).
+/// 그 다리와 저장할 때 마스크를 굽는 쪽 둘 다 토큰이 필요해서, 토큰을 어디서
+/// 읽는지만 여기 한 곳에 남겼다 — dart-define이 먼저고, 없으면
+/// `banuba.local.json`이다.
+///
+/// **`ve_sdk_flutter` 의존성 자체는 빼면 안 된다.** Banuba 네이티브 모듈과
+/// nexus 저장소를 그 플러그인이 끌어온다. Dart 쪽에서 부르지 않을 뿐이다.
 class BanubaVideoEditor {
-  BanubaVideoEditor({VeSdkFlutter? sdk, AssetBundle? assetBundle})
-    : _sdk = sdk ?? VeSdkFlutter(),
-      _assetBundle = assetBundle ?? rootBundle;
+  BanubaVideoEditor({AssetBundle? assetBundle})
+    : _assetBundle = assetBundle ?? rootBundle;
 
   static const _compiledLicenseToken = String.fromEnvironment(
     'BANUBA_LICENSE_TOKEN',
   );
   static const _localConfigAsset = 'assets/config/banuba.local.json';
 
-  final VeSdkFlutter _sdk;
   final AssetBundle _assetBundle;
   String? _resolvedLicenseToken;
 
   Future<bool> get isConfigured async =>
       (await _resolveLicenseToken()).isNotEmpty;
 
-  Future<SavedVideoEdit?> edit({
-    required List<String> sourcePaths,
-    required String outputName,
-  }) async {
-    if (sourcePaths.isEmpty ||
-        sourcePaths.any((path) => !File(path).existsSync())) {
-      throw const BanubaEditorException('AR 편집에 사용할 영상 파일을 찾지 못했어요.');
-    }
-    final licenseToken = await _requireLicenseToken();
-    try {
-      final result = await _sdk.openEditorScreen(
-        licenseToken,
-        _features(),
-        sourcePaths,
-        exportData: _exportData(outputName),
-      );
-      if (result == null) return null;
-      return _saveToAppStorage(result, outputName);
-    } on PlatformException catch (error) {
-      if (error.code == 'ERR_VIDEO_EXPORT_CANCEL') return null;
-      throw BanubaEditorException(_messageFor(error));
-    }
-  }
-
-  FeaturesConfig _features() => FeaturesConfigBuilder()
-      .enableEditorV2(true)
-      .setAudioBrowser(AudioBrowser.fromSource(AudioBrowserSource.local))
-      .setCameraConfig(
-        const CameraConfig(
-          supportsBeauty: true,
-          supportsColorEffects: true,
-          supportsMasks: true,
-        ),
-      )
-      .setEditorConfig(
-        const EditorConfig(
-          enableVideoAspectFill: false,
-          supportsVisualEffects: true,
-          supportsColorEffects: true,
-          supportsVoiceOver: true,
-          supportsAudioEditing: true,
-        ),
-      )
-      .setCoverConfig(const CoverConfig(supportsCoverScreen: true))
-      .setDraftsConfig(DraftsConfig.fromOption(DraftsOption.askToSave))
-      .setVideoDurationConfig(
-        const VideoDurationConfig(
-          maxTotalVideoDuration: 600,
-          videoDurations: [600],
-        ),
-      )
-      .build();
-
-  ExportData _exportData(String outputName) => ExportData(
-    exportedVideos: [
-      ExportedVideo(
-        fileName: outputName,
-        videoResolution: VideoResolution.hd720p,
-      ),
-    ],
-  );
-
-  Future<SavedVideoEdit> _saveToAppStorage(
-    ExportResult result,
-    String outputName,
-  ) async {
-    if (result.videoSources.isEmpty) {
-      throw const BanubaEditorException('AR 편집 결과 영상 파일을 만들지 못했어요.');
-    }
-
-    final documents = await getApplicationDocumentsDirectory();
-    final directory = Directory(
-      '${documents.path}${Platform.pathSeparator}edited_videos',
-    );
-    await directory.create(recursive: true);
-
-    final safeName = _safeName(outputName);
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final videoDestination =
-        '${directory.path}${Platform.pathSeparator}'
-        '${safeName}_banuba_$timestamp.mp4';
-    await _copyResultFile(result.videoSources.first, videoDestination);
-
-    final coverDestination = await _copyOptional(
-      result.previewFilePath,
-      '${directory.path}${Platform.pathSeparator}'
-      '${safeName}_${timestamp}_cover.jpg',
-    );
-    final metaDestination = await _copyOptional(
-      result.metaFilePath,
-      '${directory.path}${Platform.pathSeparator}'
-      '${safeName}_${timestamp}_meta.json',
-    );
-
-    return SavedVideoEdit(
-      videoPath: videoDestination,
-      coverPath: coverDestination,
-      metaPath: metaDestination,
-    );
-  }
-
-  Future<String?> _copyOptional(String? source, String destination) async {
-    if (source == null || source.isEmpty || source == 'null') return null;
-    try {
-      await _copyResultFile(source, destination);
-      return destination;
-    } on FileSystemException {
-      return null;
-    }
-  }
-
-  Future<void> _copyResultFile(String source, String destination) async {
-    final uri = Uri.tryParse(source);
-    final sourcePath = uri?.scheme == 'file' ? uri!.toFilePath() : source;
-    await File(sourcePath).copy(destination);
-  }
+  /// 네이티브 마스크 다리에 넘길 토큰. 없으면 빈 문자열이고, 그때 네이티브가
+  /// "토큰이 없어요"로 답한다.
+  Future<String> get licenseToken => _resolveLicenseToken();
 
   Future<String> _resolveLicenseToken() async {
     final cached = _resolvedLicenseToken;
@@ -178,30 +60,4 @@ class BanubaVideoEditor {
     _resolvedLicenseToken = '';
     return '';
   }
-
-  Future<String> _requireLicenseToken() async {
-    final token = await _resolveLicenseToken();
-    if (token.isEmpty) {
-      throw const BanubaEditorException(
-        'Banuba 라이선스 토큰이 설정되지 않았어요. '
-        '--dart-define 또는 banuba.local.json을 확인해 주세요.',
-      );
-    }
-    return token;
-  }
-
-  String _safeName(String value) {
-    final safe = value.replaceAll(RegExp(r'[^a-zA-Z0-9가-힣_-]'), '_');
-    return safe.isEmpty ? 'bbanggeut_edit' : safe;
-  }
-
-  String _messageFor(PlatformException error) => switch (error.code) {
-    errCodeSdkNotInitialized =>
-      'Banuba 토큰을 인식하지 못했어요. Video Editor SDK용 토큰인지 확인해 주세요.',
-    errCodeSdkLicenseRevoked => 'Banuba 라이선스가 만료되었거나 비활성화됐어요.',
-    errCodeMissingHost => 'Banuba AR 편집 화면을 표시할 Activity를 찾지 못했어요.',
-    errCodeInvalidParams => 'Banuba AR 편집기에 전달한 영상이 올바르지 않아요.',
-    errCodeMissingExportResult => 'Banuba AR 편집 결과 파일을 만들지 못했어요.',
-    _ => error.message ?? 'Banuba AR 편집기를 실행하지 못했어요.',
-  };
 }

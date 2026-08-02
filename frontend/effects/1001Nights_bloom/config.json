@@ -1,0 +1,880 @@
+{
+    "assets": {
+        "attachments": {
+            "EffectRT0_color": {
+                "type": "color"
+            },
+            "EffectRT0_depth": {
+                "clear": [
+                    1.0
+                ],
+                "type": "depth"
+            },
+            "finalColorFilterRT_color": {
+                "type": "color"
+            }
+        },
+        "faces": {
+            "face0": {
+                "index": 0,
+                "mesh": "!glfx_FACE"
+            }
+        },
+        "images": {
+            "37.png": {
+                "file_name": "images/37.png",
+                "type": "texture"
+            },
+            "brdf.ktx": {
+                "file_name": "images/brdf.ktx",
+                "type": "texture"
+            },
+            "camera_image": {
+                "type": "procedural_texture",
+                "algorithm": "camera_composer"
+            },
+            "gold_BaseColor.png": {
+                "file_name": "images/gold_BaseColor.png",
+                "type": "texture"
+            },
+            "gold_Metallic.png": {
+                "file_name": "images/gold_Metallic.png",
+                "type": "texture"
+            },
+            "gold_Normal.png": {
+                "file_name": "images/gold_Normal.png",
+                "type": "texture"
+            },
+            "gold_Roughness.png": {
+                "file_name": "images/gold_Roughness.png",
+                "type": "texture"
+            },
+            "hair": {
+                "active": false,
+                "recognizer_feature_name": "hair",
+                "type": "segmentation_mask"
+            },
+            "ibl_diff.ktx": {
+                "file_name": "images/ibl_diff.ktx",
+                "type": "cubemap"
+            },
+            "ibl_spec.ktx": {
+                "file_name": "images/ibl_spec.ktx",
+                "type": "cubemap"
+            },
+            "left_eye": {
+                "active": false,
+                "recognizer_feature_name": "left_eye",
+                "type": "segmentation_mask"
+            },
+            "lips": {
+                "active": false,
+                "recognizer_feature_name": "lips",
+                "type": "segmentation_mask"
+            },
+            "lips_shining": {
+                "active": false,
+                "recognizer_feature_name": "lips_shining",
+                "type": "segmentation_mask"
+            },
+            "lut_80_percent.png": {
+                "file_name": "images/lut_80_percent.png",
+                "type": "texture"
+            },
+            "no_Base_Color.png": {
+                "file_name": "images/no_Base_Color.png",
+                "type": "texture"
+            },
+            "no_Metallic.png": {
+                "file_name": "images/no_Metallic.png",
+                "type": "texture"
+            },
+            "no_Normal.png": {
+                "file_name": "images/no_Normal.png",
+                "type": "texture"
+            },
+            "no_Roughness.png": {
+                "file_name": "images/no_Roughness.png",
+                "type": "texture"
+            },
+            "null_image.png": {
+                "file_name": "images/null_image.png",
+                "type": "texture"
+            },
+            "null_lut.png": {
+                "file_name": "images/null_lut.png",
+                "type": "texture"
+            },
+            "preview.png": {
+                "file_name": "images/preview.png",
+                "type": "texture"
+            },
+            "redmask_new_3.png": {
+                "file_name": "images/redmask_new_3.png",
+                "type": "texture"
+            },
+            "right_eye": {
+                "active": false,
+                "recognizer_feature_name": "right_eye",
+                "type": "segmentation_mask"
+            },
+            "sh_rough.png": {
+                "file_name": "images/sh_rough.png",
+                "type": "texture"
+            },
+            "shadow_face_BaseColor.png": {
+                "file_name": "images/shadow_face_BaseColor.png",
+                "type": "texture"
+            },
+            "shadow_plane_BaseColor.png": {
+                "file_name": "images/shadow_plane_BaseColor.png",
+                "type": "texture"
+            },
+            "skin": {
+                "active": false,
+                "recognizer_feature_name": "skin",
+                "type": "segmentation_mask"
+            },
+            "soft_princess.png": {
+                "file_name": "images/soft_princess.png",
+                "type": "texture"
+            },
+            "sunny.png": {
+                "file_name": "images/sunny.png",
+                "type": "texture"
+            },
+            "teeth_highlighter5.png": {
+                "file_name": "images/teeth_highlighter5.png",
+                "type": "texture"
+            }
+        },
+        "materials": {
+            "$builtin$materials/copy_pixels.0": {
+                "parameters": {},
+                "samplers": [
+                    {
+                        "image": "camera_image",
+                        "name": "tex_src"
+                    }
+                ],
+                "state": {
+                    "backfaces": true,
+                    "blend": "off",
+                    "colorwrite": true,
+                    "ztest": false,
+                    "zwrite": false
+                }
+            },
+            "shaders/BeautyFace_morph": {
+                "built_in_samplers": [
+                    "bnb_BONES",
+                    "bnb_UVMORPH",
+                    "bnb_STATICPOS",
+                    "bnb_MORPH"
+                ],
+                "samplers": [
+                    {
+                        "image": "no_Base_Color.png",
+                        "name": "tex_diffuse"
+                    },
+                    {
+                        "image": "no_Normal.png",
+                        "name": "tex_normal"
+                    },
+                    {
+                        "image": "no_Metallic.png",
+                        "name": "tex_metallic"
+                    },
+                    {
+                        "image": "no_Roughness.png",
+                        "name": "tex_roughness"
+                    },
+                    {
+                        "name": "bnb_BONES"
+                    },
+                    {
+                        "name": "bnb_UVMORPH"
+                    },
+                    {
+                        "name": "bnb_STATICPOS"
+                    },
+                    {
+                        "name": "bnb_MORPH"
+                    }
+                ],
+                "state": {
+                    "backfaces": false,
+                    "blend": "off",
+                    "colorwrite": false,
+                    "ztest": true,
+                    "zwrite": true
+                }
+            },
+            "shaders/finalColorFilter.fsh": {
+                "samplers": [
+                    {
+                        "image": "EffectRT0_color",
+                        "name": "s_src"
+                    },
+                    {
+                        "image": "sunny.png",
+                        "name": "lookupTexture"
+                    }
+                ],
+                "state": {
+                    "backfaces": true,
+                    "blend": "off",
+                    "colorwrite": true,
+                    "ztest": false,
+                    "zwrite": false
+                }
+            },
+            "shaders/gold": {
+                "built_in_samplers": [
+                    "bnb_BONES",
+                    "bnb_UVMORPH",
+                    "bnb_STATICPOS",
+                    "bnb_MORPH"
+                ],
+                "samplers": [
+                    {
+                        "image": "gold_BaseColor.png",
+                        "name": "tex_diffuse"
+                    },
+                    {
+                        "image": "gold_Normal.png",
+                        "name": "tex_normal"
+                    },
+                    {
+                        "image": "gold_Metallic.png",
+                        "name": "tex_metallic"
+                    },
+                    {
+                        "image": "gold_Roughness.png",
+                        "name": "tex_roughness"
+                    },
+                    {
+                        "image": "brdf.ktx",
+                        "name": "tex_brdf"
+                    },
+                    {
+                        "image": "ibl_diff.ktx",
+                        "name": "tex_ibl_diff"
+                    },
+                    {
+                        "image": "ibl_spec.ktx",
+                        "name": "tex_ibl_spec"
+                    },
+                    {
+                        "name": "bnb_BONES"
+                    },
+                    {
+                        "name": "bnb_UVMORPH"
+                    },
+                    {
+                        "name": "bnb_STATICPOS"
+                    },
+                    {
+                        "name": "bnb_MORPH"
+                    }
+                ],
+                "state": {
+                    "backfaces": false,
+                    "blend": "alpha",
+                    "colorwrite": true,
+                    "ztest": true,
+                    "zwrite": true
+                }
+            },
+            "shaders/gold_physics": {
+                "built_in_samplers": [
+                    "bnb_BONES",
+                    "bnb_UVMORPH",
+                    "bnb_STATICPOS",
+                    "bnb_MORPH"
+                ],
+                "samplers": [
+                    {
+                        "image": "gold_BaseColor.png",
+                        "name": "tex_diffuse"
+                    },
+                    {
+                        "image": "gold_Normal.png",
+                        "name": "tex_normal"
+                    },
+                    {
+                        "image": "gold_Metallic.png",
+                        "name": "tex_metallic"
+                    },
+                    {
+                        "image": "gold_Roughness.png",
+                        "name": "tex_roughness"
+                    },
+                    {
+                        "image": "brdf.ktx",
+                        "name": "tex_brdf"
+                    },
+                    {
+                        "image": "ibl_diff.ktx",
+                        "name": "tex_ibl_diff"
+                    },
+                    {
+                        "image": "ibl_spec.ktx",
+                        "name": "tex_ibl_spec"
+                    },
+                    {
+                        "name": "bnb_BONES"
+                    },
+                    {
+                        "name": "bnb_UVMORPH"
+                    },
+                    {
+                        "name": "bnb_STATICPOS"
+                    },
+                    {
+                        "name": "bnb_MORPH"
+                    }
+                ],
+                "state": {
+                    "backfaces": false,
+                    "blend": "alpha",
+                    "colorwrite": true,
+                    "ztest": true,
+                    "zwrite": true
+                }
+            },
+            "shaders/retouch": {
+                "built_in_samplers": [],
+                "lagacy_onface_flag": true,
+                "samplers": [
+                    {
+                        "image": "redmask_new_3.png",
+                        "name": "selection_tex"
+                    },
+                    {
+                        "image": "teeth_highlighter5.png",
+                        "name": "lookupTexTeeth"
+                    },
+                    {
+                        "image": "lut_80_percent.png",
+                        "name": "lookupTexEyes"
+                    },
+                    {
+                        "image": "soft_princess.png",
+                        "name": "tex_softLight"
+                    },
+                    {
+                        "image": "shadow_face_BaseColor.png",
+                        "name": "tex_normalMakeup"
+                    },
+                    {
+                        "image": "37.png",
+                        "name": "tex_highlight"
+                    },
+                    {
+                        "image": "camera_image",
+                        "name": "glfx_BACKGROUND"
+                    }
+                ],
+                "state": {
+                    "backfaces": false,
+                    "blend": "off",
+                    "colorwrite": true,
+                    "ztest": true,
+                    "zwrite": true
+                }
+            },
+            "shaders/shadow_plane": {
+                "built_in_samplers": [
+                    "bnb_BONES",
+                    "bnb_UVMORPH",
+                    "bnb_STATICPOS",
+                    "bnb_MORPH"
+                ],
+                "samplers": [
+                    {
+                        "image": "shadow_plane_BaseColor.png",
+                        "name": "tex_diffuse"
+                    },
+                    {
+                        "image": "no_Normal.png",
+                        "name": "tex_normal"
+                    },
+                    {
+                        "image": "no_Metallic.png",
+                        "name": "tex_metallic"
+                    },
+                    {
+                        "image": "sh_rough.png",
+                        "name": "tex_roughness"
+                    },
+                    {
+                        "name": "bnb_BONES"
+                    },
+                    {
+                        "name": "bnb_UVMORPH"
+                    },
+                    {
+                        "name": "bnb_STATICPOS"
+                    },
+                    {
+                        "name": "bnb_MORPH"
+                    }
+                ],
+                "state": {
+                    "backfaces": false,
+                    "blend": "alpha",
+                    "colorwrite": true,
+                    "ztest": true,
+                    "zwrite": true
+                }
+            },
+            "shaders/shadow_plane_physics": {
+                "built_in_samplers": [
+                    "bnb_BONES",
+                    "bnb_UVMORPH",
+                    "bnb_STATICPOS",
+                    "bnb_MORPH"
+                ],
+                "samplers": [
+                    {
+                        "image": "shadow_plane_BaseColor.png",
+                        "name": "tex_diffuse"
+                    },
+                    {
+                        "image": "no_Normal.png",
+                        "name": "tex_normal"
+                    },
+                    {
+                        "image": "no_Metallic.png",
+                        "name": "tex_metallic"
+                    },
+                    {
+                        "image": "sh_rough.png",
+                        "name": "tex_roughness"
+                    },
+                    {
+                        "name": "bnb_BONES"
+                    },
+                    {
+                        "name": "bnb_UVMORPH"
+                    },
+                    {
+                        "name": "bnb_STATICPOS"
+                    },
+                    {
+                        "name": "bnb_MORPH"
+                    }
+                ],
+                "state": {
+                    "backfaces": false,
+                    "blend": "alpha",
+                    "colorwrite": true,
+                    "ztest": false,
+                    "zwrite": true
+                }
+            }
+        },
+        "media": {
+            "frx": {
+                "type": "video"
+            }
+        },
+        "meshes": {
+            "!glfx_FACE": "$builtin$meshes/face.stream:0",
+            "BeautyFace.bsm2": "meshes/BeautyFace.bsm2",
+            "camera_surface": "$builtin$meshes/fs_tri",
+            "mod.bsm2": "meshes/mod.bsm2",
+            "mod_physics.bsm2": "meshes/mod_physics.bsm2"
+        },
+        "morphs": {
+            "morph0": {
+                "mesh": "BeautyFace.bsm2",
+                "type": "mesh"
+            }
+        }
+    },
+    "components": {
+        "ComposerRT_copy": {
+            "materials": [
+                "$builtin$materials/copy_pixels.0"
+            ],
+            "mesh": "camera_surface",
+            "type": "mesh_instance"
+        },
+        "face_tracker:0": {
+            "face": "face0",
+            "type": "face_tracker"
+        },
+        "finalColorFilter": {
+            "materials": [
+                "shaders/finalColorFilter.fsh"
+            ],
+            "mesh": "camera_surface",
+            "type": "mesh_instance"
+        },
+        "internal_morph__": {
+            "morph": "morph0",
+            "type": "face_morphing"
+        }
+    },
+    "entities": {
+        "ComposerRT_copy_append_to_root__": {
+            "components": [
+                "ComposerRT_copy"
+            ],
+            "layer": "ComposerRT_copy"
+        },
+        "face_tracker0": {
+            "components": [
+                "face_tracker:0"
+            ]
+        },
+        "finalColorFilter_append_to_root__": {
+            "components": "finalColorFilter",
+            "layer": "finalColorFilter"
+        },
+        "internal_morph": {
+            "components": [
+                "internal_morph__"
+            ],
+            "layer": "internal_face_morph__"
+        },
+        "spawn_entity0": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity1": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity10": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity11": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity12": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity13": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity14": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity15": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity16": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity17": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity18": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity19": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity2": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity3": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity4": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity5": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity6": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity7": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity8": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        },
+        "spawn_entity9": {
+            "add_to_legacy_entities_list": true,
+            "layers": [
+                "retouch",
+                "gold",
+                "shadow_plane",
+                "BeautyFace_morph",
+                "gold_physics",
+                "shadow_plane_physics"
+            ]
+        }
+    },
+    "hierarchy": {
+        "face_tracker0": [
+            "internal_morph",
+            "spawn_entity0",
+            "spawn_entity1",
+            "spawn_entity2",
+            "spawn_entity3",
+            "spawn_entity4",
+            "spawn_entity5",
+            "spawn_entity6",
+            "spawn_entity7",
+            "spawn_entity8",
+            "spawn_entity9",
+            "spawn_entity10",
+            "spawn_entity11",
+            "spawn_entity12",
+            "spawn_entity13",
+            "spawn_entity14",
+            "spawn_entity15",
+            "spawn_entity16",
+            "spawn_entity17",
+            "spawn_entity18",
+            "spawn_entity19"
+        ],
+        "root": [
+            "face_tracker0",
+            "ComposerRT_copy_append_to_root__",
+            "finalColorFilter_append_to_root__"
+        ]
+    },
+    "layers": {
+        "BeautyFace_morph": {},
+        "ComposerRT_copy": {},
+        "finalColorFilter": {},
+        "gold": {},
+        "gold_physics": {},
+        "internal_face_morph__": {},
+        "retouch": {},
+        "shadow_plane": {},
+        "shadow_plane_physics": {}
+    },
+    "main_camera": {
+        "adjust_znear": 150
+    },
+    "render_list": {
+        "default": [
+            {
+                "layer": "ComposerRT_copy",
+                "render_target": "EffectRT0"
+            },
+            {
+                "layer": "retouch",
+                "render_target": "EffectRT0",
+                "sub_geometries": [
+                    "retouch"
+                ]
+            },
+            {
+                "layer": "internal_face_morph__",
+                "render_target": "EffectRT0"
+            },
+            {
+                "layer": "gold",
+                "render_target": "EffectRT0",
+                "sub_geometries": [
+                    "gold"
+                ]
+            },
+            {
+                "layer": "shadow_plane",
+                "render_target": "EffectRT0",
+                "sub_geometries": [
+                    "shadow_plane"
+                ]
+            },
+            {
+                "layer": "BeautyFace_morph",
+                "render_target": "EffectRT0",
+                "sub_geometries": [
+                    "BeautyFace_morph"
+                ]
+            },
+            {
+                "layer": "shadow_plane_physics",
+                "render_target": "EffectRT0",
+                "sub_geometries": [
+                    "shadow_plane_physics"
+                ]
+            },
+            {
+                "layer": "gold_physics",
+                "render_target": "EffectRT0",
+                "sub_geometries": [
+                    "gold_physics"
+                ]
+            },
+            {
+                "layer": "finalColorFilter",
+                "render_target": "finalColorFilterRT"
+            }
+        ]
+    },
+    "render_targets": {
+        "EffectRT0": [
+            "EffectRT0_color",
+            "EffectRT0_depth"
+        ],
+        "finalColorFilterRT": [
+            "finalColorFilterRT_color"
+        ]
+    },
+    "scene": "1001Nights",
+    "script": {
+        "entry_point": "config.js",
+        "type": "legacy"
+    }
+}

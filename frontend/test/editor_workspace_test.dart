@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:william_james_app/editor/banuba_mask_channel.dart';
 import 'package:william_james_app/editor/editor_ar_effects.dart';
 import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
@@ -25,7 +26,9 @@ void main() {
     VoidCallback? onTrimCommitted,
     ValueChanged<String>? onStickerSelected,
     ValueChanged<EditorLook>? onLookSelected,
-    ValueChanged<BanubaArEffect?>? onBanubaAr,
+    ValueChanged<String?>? onMaskSelected,
+    String? selectedMask,
+    List<BanubaMask> availableMasks = const [],
     VoidCallback? onAiCaption,
     VoidCallback? onPlayRange,
     ValueChanged<String>? onBlocked,
@@ -62,7 +65,9 @@ void main() {
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
         onLookSelected: onLookSelected ?? (_) {},
-        onBanubaAr: onBanubaAr ?? (_) {},
+        onMaskSelected: onMaskSelected ?? (_) {},
+        selectedMask: selectedMask,
+        availableMasks: availableMasks,
         onAiCaption: onAiCaption ?? () {},
         onToolSelected: controller.selectTool,
       ),
@@ -115,6 +120,7 @@ void main() {
         '텍스트',
         '오디오',
         '스티커',
+        '효과',
         'AI자막',
         'AR',
       ]) {
@@ -609,12 +615,14 @@ void main() {
     expect(controller.project.clips, hasLength(2));
   });
 
-  testWidgets('AR 탭에서 필터는 그 자리에서 바로 적용된다', (tester) async {
+  testWidgets('효과 탭에서 색감은 그 자리에서 바로 적용된다', (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final controller = newController()..selectTool(EditorTool.ar);
+    // 색감은 얼굴 추적과 상관이 없고, AR 탭 미리보기(SurfaceView) 위에는 Flutter
+    // 색 필터가 닿지 않는다. 그래서 제 자리인 '효과' 탭으로 옮겼다.
+    final controller = newController()..selectTool(EditorTool.effect);
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -631,30 +639,50 @@ void main() {
     expect(controller.project.look, EditorLook.none);
   });
 
-  testWidgets('AR 탭의 얼굴 마스크는 Banuba 편집기를 연다', (tester) async {
+  testWidgets('얼굴 마스크는 화면을 옮기지 않고 그 자리에서 골라진다', (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final controller = newController()..selectTool(EditorTool.ar);
     addTearDown(controller.dispose);
-    final opened = <BanubaArEffect?>[];
+    final picked = <String?>[];
 
-    await tester.pumpWidget(workspace(controller, onBanubaAr: opened.add));
+    // 목록은 네이티브가 준다. 하드코딩한 마스크 이름은 이제 없다.
+    const masks = [
+      BanubaMask(name: 'BulldogHarlamov'),
+      BanubaMask(name: 'Afro'),
+    ];
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onMaskSelected: picked.add,
+        availableMasks: masks,
+      ),
+    );
 
-    // 큰 버튼은 마스크를 정하지 않고 편집기만 연다.
-    await tester.tap(find.byKey(const Key('editor-open-banuba-ar')));
-    await tester.pump();
-    expect(opened, hasLength(1));
-    expect(opened.single, isNull);
+    // 편집기를 여는 단추는 더 이상 없다. Banuba로 가지 않는다.
+    expect(find.byKey(const Key('editor-open-banuba-ar')), findsNothing);
 
-    // 마스크 카드를 누르면 그 마스크와 함께 연다.
     final card = find.byKey(const Key('editor-banuba-effect-BulldogHarlamov'));
     await tester.ensureVisible(card);
     await tester.pumpAndSettle();
     await tester.tap(card);
     await tester.pump();
-    expect(opened.last?.directory, 'BulldogHarlamov');
+    expect(picked, ['BulldogHarlamov']);
+
+    // 씌운 뒤에는 벗기기가 살아난다.
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onMaskSelected: picked.add,
+        selectedMask: 'BulldogHarlamov',
+        availableMasks: masks,
+      ),
+    );
+    await tester.tap(find.byKey(const Key('editor-clear-mask')));
+    await tester.pump();
+    expect(picked.last, isNull);
   });
 
   testWidgets('예전 AR 스티커가 스티커 탭 항목으로 들어와 있다', (tester) async {

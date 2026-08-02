@@ -3,7 +3,7 @@ import 'dart:ui';
 
 /// 하단 네비게이션의 편집 도구. 나열 순서가 화면에 그려지는 순서다 —
 /// `aiCaption`은 요청대로 `ar` 바로 왼쪽에 온다.
-enum EditorTool { cut, ratio, text, audio, sticker, aiCaption, ar }
+enum EditorTool { cut, ratio, text, audio, sticker, effect, aiCaption, ar }
 
 enum EditorCanvasRatio { original, vertical, landscape, square, portrait }
 
@@ -680,6 +680,50 @@ class EditorProject {
     isPlaying: isPlaying ?? this.isPlaying,
     exportState: exportState ?? this.exportState,
     revision: revision ?? this.revision,
+  );
+
+  /// 얼굴 마스크를 구운 중간 파일을 **새 원본**으로 삼는다.
+  ///
+  /// Banuba는 컷 편집이 정한 조각들을 순서대로 이어 붙여 한 편으로 굽는다.
+  /// 그래서 이 파일은 이미 잘려 있고, 남은 일(글자·스티커·색감·자막·비율·소리)만
+  /// media3가 얹으면 된다 — 조각은 파일 전체 하나로 되돌린다.
+  ///
+  /// **레이어 시각은 그대로 둔다.** 글자·스티커·자막은 원본 시각이 아니라
+  /// 이어 붙인 **타임라인** 시각을 들고 있고, 이어 붙인 결과가 곧 이 파일이라
+  /// 옮길 것이 없다. 여기서 손대면 자막이 통째로 밀린다.
+  ///
+  /// [durationMs]와 [size]는 구워진 파일에서 실제로 읽은 값이다. 프레임 경계
+  /// 때문에 요청한 길이와 몇 ms 다를 수 있어서 짐작하지 않는다.
+  EditorProject withBakedSource({
+    required String path,
+    required int durationMs,
+    required EditorSourceSize size,
+  }) => EditorProject(
+    sourceVideoPath: path,
+    sourceDurationMs: durationMs,
+    sourceSize: size,
+    clips: List.unmodifiable([
+      EditorClip(
+        id: 'clip-baked',
+        sourcePath: path,
+        sourceStartMs: 0,
+        sourceEndMs: durationMs,
+      ),
+    ]),
+    canvas: canvas,
+    textLayers: textLayers,
+    stickerLayers: stickerLayers,
+    blurLayers: blurLayers,
+    audio: audio,
+    look: look,
+    arEffectId: arEffectId,
+    selectedTool: selectedTool,
+    selectedClipId: 'clip-baked',
+    selectedLayerId: selectedLayerId,
+    playheadMs: playheadMs.clamp(0, durationMs),
+    isPlaying: isPlaying,
+    exportState: exportState,
+    revision: revision,
   );
 
   Map<String, Object?> toPlatformMap({
