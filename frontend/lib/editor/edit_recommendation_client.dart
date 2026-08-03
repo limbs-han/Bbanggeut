@@ -149,7 +149,10 @@ class EditRecommendationClient {
       options: Options(
         headers: {Headers.contentLengthHeader: length},
         contentType: 'video/mp4',
-        sendTimeout: const Duration(minutes: 5),
+        // 혼잡한 셀룰러에서는 20MB급 업로드가 5분을 넘기기도 한다 —
+        // 실제로 5분 제한에 걸려 다 올라가던 업로드가 끊긴 일이 있었다.
+        // 진행률이 화면에 보이므로 길게 기다려도 멈춘 것으로 보이지 않는다.
+        sendTimeout: const Duration(minutes: 15),
       ),
       onSendProgress: onProgress,
     );

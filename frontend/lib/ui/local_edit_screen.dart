@@ -940,6 +940,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           title: widget.video.title,
           durationMs: exportProject.durationMs,
           capturedAt: widget.video.capturedStartAt,
+          // 진행률이 안 보이면 느린 회선에서 "멈췄다"로 보여 앱을 꺼 버린다
+          // — 실제로 그렇게 업로드가 끊긴 일이 있었다.
+          onProgress: (sent, total) {
+            if (!mounted || total <= 0) return;
+            setState(() {
+              _exportProgress = sent / total;
+              _status =
+                  '편집 영상을 서버에 올리고 있어요 (${(sent / total * 100).round()}%)';
+            });
+          },
         );
         uploadedToServer = true;
       } catch (failure) {
