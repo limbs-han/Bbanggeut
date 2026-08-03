@@ -955,7 +955,7 @@ class SerialNumberHelpScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('시리얼 번호 도움말')),
+    appBar: AppBar(title: const Text('기기 등록 도움말')),
     body: AppBackdrop(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 32),
@@ -1013,6 +1013,49 @@ class SerialNumberHelpScreen extends StatelessWidget {
           const ListTile(
             leading: CircleAvatar(child: Text('3')),
             title: Text('번호가 지워졌다면 고객 지원 또는 제품 구매처에 문의해 주세요.'),
+          ),
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 24),
+          const Text(
+            '카테고리란 무엇인가요?',
+            key: Key('place-category-help-title'),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '기기를 사용하는 장소를 구분하는 이름이에요. 기본 카테고리는 집으로 설정되어 있어요.',
+            style: TextStyle(color: AppColors.inkSoft),
+          ),
+          const SizedBox(height: 18),
+          const SoftCard(
+            color: AppColors.surfaceWarm,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.place_rounded, size: 34, color: AppColors.sageDark),
+                SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    '집 외에 카페, 매장, 사무실처럼 다른 장소에서 기기를 사용한다면 새로운 카테고리를 추가해 보세요. 장소별로 기기를 나누어 확인할 수 있어요.',
+                    style: TextStyle(height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const ListTile(
+            leading: CircleAvatar(child: Text('1')),
+            title: Text('기기 등록 화면에서 카테고리를 선택해요.'),
+          ),
+          const ListTile(
+            leading: CircleAvatar(child: Text('2')),
+            title: Text('필요한 장소가 없다면 새로운 장소를 추가해요.'),
+          ),
+          const ListTile(
+            leading: CircleAvatar(child: Text('3')),
+            title: Text('등록한 기기는 선택한 장소에서 확인할 수 있어요.'),
           ),
         ],
       ),
