@@ -55,6 +55,28 @@ public interface NotificationMapper {
 
     @Insert("""
         INSERT INTO notifications (
+            id, user_id, type, title, body, device_id, vault_id, resource_id, dedupe_key
+        )
+        SELECT #{id}, u.id, 'INVITATION_ACCEPTED', '초대를 수락했어요',
+               #{memberName} || ' 님이 초대를 수락하고 가족이 되었어요.',
+               #{deviceId}, #{vaultId}, #{invitationId},
+               'invitation-accepted:' || CAST(#{invitationId} AS text)
+          FROM users u
+         WHERE u.id = #{inviterId}
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+        ON CONFLICT (user_id, dedupe_key) DO NOTHING
+        """)
+    int insertInvitationAcceptedNotification(
+        @Param("id") UUID id,
+        @Param("inviterId") UUID inviterId,
+        @Param("memberName") String memberName,
+        @Param("deviceId") UUID deviceId,
+        @Param("vaultId") UUID vaultId,
+        @Param("invitationId") UUID invitationId
+    );
+
+    @Insert("""
+        INSERT INTO notifications (
             id, user_id, type, title, body, device_id, resource_id, dedupe_key
         )
         SELECT gen_random_uuid(), m.user_id, 'LAUGHTER_VIDEO_READY',

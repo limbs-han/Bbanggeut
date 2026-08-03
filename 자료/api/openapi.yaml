@@ -2785,7 +2785,7 @@ components:
           format: uuid
         type:
           type: string
-          enum: [INVITATION_RECEIVED, LAUGHTER_VIDEO_READY]
+          enum: [INVITATION_RECEIVED, INVITATION_ACCEPTED, LAUGHTER_VIDEO_READY]
         title:
           type: string
         body:

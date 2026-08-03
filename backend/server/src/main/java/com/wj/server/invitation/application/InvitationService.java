@@ -235,6 +235,17 @@ public class InvitationService {
                 .map(this::toMember)
                 .orElseThrow(this::notFound);
         }
+        // 초대를 보낸 사람에게 수락 소식을 알린다. 알림은 초대자가 이미
+        // 탈퇴했으면 조용히 건너뛴다.
+        String memberName =
+            response.user() != null
+                && response.user().displayName() != null
+                && !response.user().displayName().isBlank()
+            ? response.user().displayName()
+            : email;
+        notificationService.invitationAccepted(
+            invitation.inviterId(), memberName,
+            invitation.deviceId(), invitation.vaultId(), invitation.id());
         auditInvitationSuccess(
             invitation, userId, "MEMBERSHIP", response.id());
         return response;

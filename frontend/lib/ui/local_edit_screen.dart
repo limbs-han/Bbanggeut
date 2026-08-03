@@ -820,6 +820,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       context,
       'AI 자막 ${lines.length}줄을 자막 탭에 넣었어요. 자막 탭에서 고칠 수 있어요.',
     );
+    // 전사는 긴 영상에서 한참 걸려 그동안 다른 앱을 보는 사람이 많다 —
+    // 앱이 뒤로 가 있으면 스낵이 안 보이니 시스템 알림으로도 알린다.
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      unawaited(
+        _editorPlatform.showLocalNotification(
+          title: 'AI 자막이 준비됐어요',
+          body: '자막 ${lines.length}줄을 넣었어요. 편집기에서 다듬어 보세요.',
+        ),
+      );
+    }
     return true;
   }
 
@@ -973,27 +983,23 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       if (!await file.exists() || (await file.length()) == 0) {
         throw const VideoExportException('만들어진 영상 파일이 비어 있어요.');
       }
-      // 완성 영상은 **서버에만** 올린다. 갤러리 저장은 여기서 하지 않는다 —
-      // 추억 > 편집 완료에서 영상을 열고 원할 때 내려받는다.
-      if (mounted) {
-        setState(() {
-          _exportProgress = null;
-          _status = '편집 영상을 서버에 올리고 있어요';
-        });
-      }
-      await _recommendations.uploadEditedVideo(
+      // 완성 영상은 **서버에만** 올리되, 올리는 일은 OS 백그라운드 작업
+      // (WorkManager)에 맡긴다. 셀룰러에서 몇 분씩 걸리는 업로드를 편집기가
+      // 붙잡고 기다리게 했더니 사용자가 앱을 껐고 업로드도 함께 끊겼다 —
+      // 이제 앱을 나가거나 꺼도 계속 올라가고, 진행률은 상단 알림에 보인다.
+      await _editorPlatform.enqueueEditedUpload(
         videoId: widget.video.id,
         filePath: outputPath,
+        uploadUrl: _recommendations.editedVideoUploadUrl(
+          videoId: widget.video.id,
+          title: widget.video.title,
+          durationMs: exportProject.durationMs,
+          capturedAt: widget.video.capturedStartAt,
+        ),
         title: widget.video.title,
-        durationMs: exportProject.durationMs,
-        capturedAt: widget.video.capturedStartAt,
-        // 진행률이 안 보이면 느린 회선에서 "멈췄다"로 보여 앱을 꺼 버린다
-        // — 실제로 그렇게 업로드가 끊긴 일이 있었다.
-        // 퍼센트는 덮개 제목이 보여 준다.
-        onProgress: (sent, total) {
-          if (!mounted || total <= 0) return;
-          setState(() => _exportProgress = sent / total);
-        },
+        // 렌더링 산출물(임시 파일)만 지운다. 원본을 그대로 올릴 때는 캐시라
+        // 지우면 다음 편집 진입이 도로 내려받는다.
+        deleteAfter: requiresRendering,
       );
       // 초안 저장은 렌더링 내내 돌고 있었다. 여기서 결과만 거둔다.
       await draftSaved;
@@ -1008,9 +1014,13 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       setState(() {
         _saving = false;
         _exportProgress = null;
-        _status = '서버에 저장되었습니다';
+        _status = '업로드를 시작했어요';
       });
-      showAppSnack(context, '서버에 저장했어요. 추억 > 편집 완료에서 볼 수 있어요.');
+      showAppSnack(
+        context,
+        '영상을 서버에 올리는 중이에요. 앱을 닫아도 계속 올라가요 — '
+        '끝나면 알림이 오고, 추억 > 편집 완료에서 볼 수 있어요.',
+      );
       Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
     } catch (failure) {
       debugPrint('editor save failed: $failure');

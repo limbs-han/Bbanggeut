@@ -140,15 +140,26 @@ public class IotVideoService {
         deviceEventService.linkUpload(
             deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
             video.capturedStartAt(), video.id(), "READY");
-        if ("LAUGHTER".equals(completed.triggerType())) {
+        if (hasLaughterEvent(completed)) {
             notificationService.laughterVideoReady(
                 completed.deviceId(), completed.id(), completed.title());
         }
         return toResponse(completed);
     }
 
+    /**
+     * 웃음이 잡힌 영상인가. 대표 유형(triggerType)이 CLAP 등 다른 것이어도
+     * 다중 이벤트 목록에 LAUGHTER가 있으면 웃음 영상이다 — 대표 유형만 보면
+     * V33 이후의 다중 이벤트 영상이 알림 없이 지나간다.
+     */
+    private static boolean hasLaughterEvent(VideoRow video) {
+        return VideoEventTypes
+            .fromCsv(video.eventTypesCsv(), video.triggerType())
+            .contains("LAUGHTER");
+    }
+
     private void notifyLaughterVideo(VideoRow video) {
-        if ("LAUGHTER".equals(video.triggerType())) {
+        if (hasLaughterEvent(video)) {
             notificationService.laughterVideoReady(
                 video.deviceId(), video.id(), video.title());
         }
