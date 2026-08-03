@@ -115,6 +115,23 @@ class MqttInboundHandlerTest {
         verify(deviceEventService, never()).accept(org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void validatesAndPersistsClapEventFromYamnet() {
+        UUID deviceId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        handle(deviceId, "events", """
+            {"schemaVersion":"2.0","deviceId":"%s","eventId":"%s","type":"CLAP",
+             "occurredAt":"2026-07-17T09:59:00Z","confidence":0.91,
+             "localClip":{"state":"QUEUED","beforeMs":60000,"afterMs":60000,"mergeWindowMs":5000},
+             "source":{"nodeId":"jetson","component":"YAMNET"}}
+            """.formatted(deviceId, eventId));
+
+        verify(deviceEventService).accept(argThat(event ->
+            event.id().equals(eventId)
+                && event.type().equals("CLAP")
+                && event.confidence() == 0.91));
+    }
+
     private void handle(UUID deviceId, String suffix, String json) {
         handler.handle(("local/wj/v2/devices/" + deviceId + "/" + suffix),
             json.getBytes(StandardCharsets.UTF_8));

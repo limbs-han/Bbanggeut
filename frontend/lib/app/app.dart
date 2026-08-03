@@ -12,6 +12,7 @@ import '../ui/invitation_inbox_screen.dart';
 import '../ui/main_shell.dart';
 import '../ui/onboarding_screen.dart';
 import '../ui/video_detail_screen.dart';
+import '../ui/widgets.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
 
@@ -204,6 +205,8 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
     navigatorKey: navigatorKey,
+    // 홈 위로 다른 화면이 덮이면 실시간 스트리밍을 멈추기 위한 관찰자.
+    navigatorObservers: [mainShellRouteObserver],
     title: '빵긋',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
@@ -246,6 +249,7 @@ class _PushBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final emoji = switch (message.type) {
       'INVITATION_RECEIVED' => '❤️',
+      'INVITATION_ACCEPTED' => '🤝',
       'LAUGHTER_VIDEO_READY' => '📷',
       _ => '🔔',
     };
@@ -361,6 +365,7 @@ class _SplashScreen extends StatelessWidget {
                 'assets/images/bbanggeut_logo.png',
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
+                cacheWidth: decodePixels(context, 240),
                 semanticLabel: '빵긋 로딩 로고',
               ),
             ),

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -88,13 +89,14 @@ class IotVideoServiceTest {
             "video/mp4", 100L, CHECKSUM, 1000L,
             Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
             "private/device/video.mp4", "READY", false,
-            Instant.parse("2026-07-17T10:00:02Z"));
+            Instant.parse("2026-07-17T10:00:02Z"), "LAUGHTER,CLAP");
         when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
             .thenReturn(Optional.of(laughterVideo));
 
-        service.complete(
+        var response = service.complete(
             DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
 
+        assertThat(response.eventTypes()).containsExactly("LAUGHTER", "CLAP");
         verify(notificationService).laughterVideoReady(
             DEVICE_ID, VIDEO_ID, laughterVideo.title());
     }
@@ -140,7 +142,8 @@ class IotVideoServiceTest {
             .thenReturn(Optional.empty(), Optional.empty());
         when(videoMapper.insertIotVideo(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(DEVICE_ID),
-            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(EVENT_ID),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.eq(EVENT_ID),
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong(),
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong(),
@@ -155,6 +158,20 @@ class IotVideoServiceTest {
         verify(objectStorageService, never()).createUploadUrl(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void mixedEventTypesMustContainPrimaryTriggerType() {
+        var request = new IotUploadUrlRequest(
+            EVENT_ID, "LAUGHTER", "혼합 이벤트",
+            Instant.parse("2026-07-17T10:00:00Z"),
+            Instant.parse("2026-07-17T10:00:01Z"),
+            1000, "video/mp4", 100, CHECKSUM, List.of("CLAP"));
+
+        assertThatThrownBy(() -> service.createUploadUrl(DEVICE_ID, EVENT_ID, request))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("VALIDATION_FAILED");
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.SignedUrlResponse;
 import com.wj.server.video.api.VideoPageResponse;
 import com.wj.server.video.api.VideoResponse;
+import com.wj.server.video.domain.VideoEventTypes;
 import com.wj.server.video.domain.VideoRow;
 import com.wj.server.video.persistence.VideoMapper;
 import org.springframework.http.HttpStatus;
@@ -20,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class VideoQueryService {
     private static final Set<String> TRIGGER_TYPES = Set.of(
-        "LAUGHTER", "WAKE_WORD", "TOUCH", "MANUAL", "USER_UPLOAD", "EDIT");
+        "LAUGHTER", "CLAP", "WAKE_WORD", "TOUCH", "MANUAL", "USER_UPLOAD", "EDIT");
 
     private final VideoMapper videoMapper;
     private final VideoCursorCodec cursorCodec;
@@ -146,7 +147,8 @@ public class VideoQueryService {
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
             video.sourceEventId(), video.title(), video.description(), video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
-            video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt());
+            video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
+            VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));
     }
 
     private ApiException notFound() {

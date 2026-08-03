@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>William James · YOLO TensorRT FP16 Benchmark</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Pretendard, "Noto Sans KR", "Segoe UI", sans-serif;
+        background: #07101d;
+        color: #eef6ff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        width: 1600px;
+        height: 1000px;
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 88% 0%, rgba(55, 130, 255, 0.19), transparent 30%),
+          radial-gradient(circle at 8% 100%, rgba(31, 217, 174, 0.12), transparent 35%),
+          linear-gradient(145deg, #07101d, #0a1423 54%, #07101d);
+      }
+      .shell { height: 100%; padding: 36px 48px 30px; }
+      header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
+      .brand { display: flex; align-items: center; gap: 16px; }
+      .mark {
+        width: 52px; height: 52px; border-radius: 16px;
+        border: 1px solid rgba(95, 168, 255, 0.72);
+        background: linear-gradient(145deg, rgba(54, 138, 255, 0.36), rgba(19, 236, 187, 0.2));
+        box-shadow: 0 0 32px rgba(48, 133, 255, 0.2); position: relative;
+      }
+      .mark::before, .mark::after { content: ""; position: absolute; inset: 12px; border: 2px solid #8bc1ff; border-radius: 8px; }
+      .mark::after { inset: 20px; border-color: #40e1bd; border-radius: 50%; }
+      .eyebrow { margin: 0 0 6px; color: #7793b5; font-size: 12px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+      h1 { margin: 0; font-size: 28px; letter-spacing: -.035em; }
+      .stamp { padding: 10px 15px; border: 1px solid rgba(127,154,190,.25); border-radius: 999px; color: #a9bdd7; background: rgba(10,18,32,.78); font-size: 12px; }
+      .grid { display: grid; grid-template-columns: 0.92fr 2.08fr; gap: 18px; }
+      .panel { border: 1px solid rgba(125,159,204,.2); border-radius: 20px; background: rgba(12,20,34,.88); box-shadow: 0 16px 60px rgba(0,0,0,.2); }
+      .identity { min-height: 202px; padding: 25px 27px; position: relative; overflow: hidden; }
+      .identity::after { content: ""; position: absolute; width: 190px; height: 190px; right: -70px; bottom: -100px; border: 30px solid rgba(56,136,255,.08); border-radius: 50%; }
+      .model-name { margin: 7px 0 9px; font-size: 48px; font-weight: 850; line-height: 1; letter-spacing: -.055em; }
+      .model-note { margin: 0; color: #96abc5; font-size: 13px; line-height: 1.6; }
+      .badge { display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; padding: 7px 11px; border-radius: 999px; font-size: 11px; font-weight: 850; letter-spacing: .05em; }
+      .badge.good { color: #73efd0; background: rgba(29,173,137,.1); border: 1px solid rgba(55,224,184,.34); }
+      .badge.pass { color: #8bc1ff; background: rgba(54,138,255,.1); border: 1px solid rgba(95,168,255,.35); }
+      .badge.fail { color: #ffbd78; background: rgba(235,145,52,.09); border: 1px solid rgba(255,184,97,.3); }
+      .metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; padding: 14px; }
+      .metric { min-height: 174px; padding: 19px 18px; border: 1px solid rgba(123,158,202,.15); border-radius: 15px; background: linear-gradient(150deg,rgba(19,31,52,.9),rgba(10,17,29,.9)); }
+      .metric-label { color: #8096b2; font-size: 11px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+      .metric-value { margin-top: 23px; font-size: 32px; font-weight: 850; letter-spacing: -.045em; }
+      .metric-unit { margin-left: 4px; color: #7f97b5; font-size: 12px; font-weight: 750; }
+      .metric-foot { margin-top: 17px; color: #7188a5; font-size: 11px; line-height: 1.5; }
+      .lower { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 18px; margin-top: 18px; }
+      .card { height: 420px; padding: 22px 24px; }
+      .panel-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 19px; }
+      .panel-title h2 { margin: 0; font-size: 16px; }
+      .panel-title span { color: #6e85a2; font-size: 10px; font-weight: 800; letter-spacing: .07em; }
+      .bar-group { margin-bottom: 15px; }
+      .bar-heading { display: flex; justify-content: space-between; margin-bottom: 6px; color: #aabbd0; font-size: 12px; }
+      .bar-track { height: 10px; border-radius: 999px; background: #111c2e; overflow: hidden; }
+      .bar-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#2b7fff,#49c7ff); }
+      .bar-group.selected .bar-heading { color: #f3f8ff; font-weight: 800; }
+      .bar-group.selected .bar-fill { background: linear-gradient(90deg,#36d3af,#83f5db); box-shadow: 0 0 16px rgba(72,227,190,.25); }
+      .divider { height: 1px; margin: 20px 0; background: rgba(127,159,203,.14); }
+      .accuracy-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+      .accuracy-box, .resource { padding: 15px; border-radius: 13px; background: rgba(16,27,45,.76); border: 1px solid rgba(127,159,203,.14); }
+      .accuracy-box strong, .resource strong { display: block; margin-top: 9px; font-size: 23px; }
+      .resource-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; }
+      .resource { min-height: 103px; }
+      .resource p { margin: 5px 0 0; color: #7187a4; font-size: 10px; }
+      .scenario { display: grid; gap: 10px; }
+      .scenario-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 12px 13px; border-radius: 12px; background: rgba(16,27,45,.72); }
+      .scenario-row span { color: #9bb0ca; font-size: 11px; }
+      .scenario-row strong { font-size: 13px; }
+      .decision { margin-top: 14px; padding: 12px 13px; border-radius: 12px; color: #aebfd3; background: rgba(54,138,255,.07); border: 1px solid rgba(95,168,255,.18); font-size: 11px; line-height: 1.55; }
+      footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; color: #657b97; font-size: 10px; }
+      footer code { color: #8198b5; }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="brand">
+          <div class="mark" aria-hidden="true"></div>
+          <div><p class="eyebrow">William James · Edge Observatory</p><h1>YOLO TensorRT FP16 정확도·실시간성 비교</h1></div>
+        </div>
+        <div class="stamp">JETSON ORIN NANO · 395 IMAGES · 3 REPEATS · 2026-08-02</div>
+      </header>
+
+      <section class="grid">
+        <article class="panel identity">
+          <p class="eyebrow">Selected model</p>
+          <div class="model-name" id="modelName"></div>
+          <p class="model-note">TensorRT FP16 · 640×640 · batch 1<br />person only · confidence 0.25</p>
+          <div class="badge" id="badge"></div>
+        </article>
+        <article class="panel metrics">
+          <div class="metric"><div class="metric-label">Throughput mean</div><div class="metric-value"><span id="fps"></span><span class="metric-unit">FPS</span></div><div class="metric-foot" id="fpsStd"></div></div>
+          <div class="metric"><div class="metric-label">Wall latency P95</div><div class="metric-value"><span id="wall"></span><span class="metric-unit">ms</span></div><div class="metric-foot">3회 P95 평균 · 50ms 기준</div></div>
+          <div class="metric"><div class="metric-label">mAP50-95</div><div class="metric-value"><span id="map"></span><span class="metric-unit">%</span></div><div class="metric-foot" id="mapGap"></div></div>
+          <div class="metric"><div class="metric-label">Operating F1</div><div class="metric-value"><span id="f1"></span><span class="metric-unit">%</span></div><div class="metric-foot" id="errors"></div></div>
+        </article>
+      </section>
+
+      <section class="lower">
+        <article class="panel card">
+          <div class="panel-title"><h2>세 모델 비교</h2><span>SAME DATASET · MEAN</span></div>
+          <div id="fpsBars"></div>
+          <div class="divider"></div>
+          <div class="accuracy-grid">
+            <div class="accuracy-box"><span class="metric-label">Precision @0.25</span><strong id="precision"></strong></div>
+            <div class="accuracy-box"><span class="metric-label">Recall @0.25</span><strong id="recall"></strong></div>
+            <div class="accuracy-box"><span class="metric-label">mAP50</span><strong id="map50"></strong></div>
+          </div>
+          <div class="decision" id="decision"></div>
+        </article>
+        <article class="panel card">
+          <div class="panel-title"><h2>조건별 핵심 결과</h2><span>OPERATING CONF 0.25</span></div>
+          <div class="scenario">
+            <div class="scenario-row"><span>두 사람 교차 F1</span><strong id="cross"></strong></div>
+            <div class="scenario-row"><span>한 사람 가림 F1</span><strong id="occlusion"></strong></div>
+            <div class="scenario-row"><span>세 사람 그룹 F1</span><strong id="group"></strong></div>
+            <div class="scenario-row"><span>빈 장면 오탐</span><strong id="emptyFp"></strong></div>
+            <div class="scenario-row"><span>전체 TP / FP / FN</span><strong id="confusion"></strong></div>
+          </div>
+        </article>
+        <article class="panel card">
+          <div class="panel-title"><h2>Jetson 자원 최고값</h2><span>1 SECOND SAMPLES · MAX</span></div>
+          <div class="resource-grid">
+            <div class="resource"><span class="metric-label">GPU</span><strong id="gpu"></strong><p>GR3D peak</p></div>
+            <div class="resource"><span class="metric-label">RAM</span><strong id="ram"></strong><p>used memory peak</p></div>
+            <div class="resource"><span class="metric-label">Temperature</span><strong id="temp"></strong><p>reported peak</p></div>
+            <div class="resource"><span class="metric-label">VDD_IN</span><strong id="power"></strong><p>instantaneous peak</p></div>
+          </div>
+          <div class="decision">서비스 게이트: FPS ≥ 20 · Wall P95 ≤ 50ms · Recall ≥ 90% · 최고 mAP50-95와 격차 ≤ 2%p</div>
+        </article>
+      </section>
+      <footer>
+        <span>DATASET 395 images · 581 boxes · 52 empty · 0 duplicates</span>
+        <code>comparison: yolo-trt-fp16-395-comparison-20260802T055004Z</code>
+      </footer>
+    </main>
+    <script>
+      const results = [
+        { key: "yolov8n", name: "YOLOv8n", badge: "RECOMMENDED", badgeClass: "good", fps: 27.095, fpsStd: 0.124, wall: 39.303, map: 81.3, mapGap: 0.6, f1: 96.7241, precision: 96.8912, recall: 96.5577, map50: 98.7, tp: 561, fp: 18, fn: 20, cross: 91.6031, occlusion: 92.5, group: 95.8199, emptyFp: 2, gpu: 85, ram: 3309, temp: 53.656, power: 5.475, decision: "모든 기준 통과. 통과 모델 중 평균 FPS가 더 높고 운영 F1과 FP·FN 결과가 가장 좋아 현재 서비스 모델로 추천." },
+        { key: "yolo11n", name: "YOLO11n", badge: "SERVICE GATE PASS", badgeClass: "pass", fps: 26.563, fpsStd: 0.031, wall: 40.008, map: 81.9, mapGap: 0.0, f1: 95.4662, precision: 94.8980, recall: 96.0413, map50: 98.8, tp: 558, fp: 30, fn: 23, cross: 86.5672, occlusion: 89.4737, group: 93.4579, emptyFp: 1, gpu: 88, ram: 3352, temp: 52.218, power: 5.436, decision: "mAP50-95는 가장 높지만 YOLOv8n과 차이는 0.6%p. 운영점에서는 더 느리고 오탐 12건·미탐 3건이 더 많아 차선 후보." },
+        { key: "yolo26n", name: "YOLO26n", badge: "MAP GAP FAIL", badgeClass: "fail", fps: 29.203, fpsStd: 0.079, wall: 36.555, map: 79.7, mapGap: 2.2, f1: 93.6245, precision: 95.0355, recall: 92.2547, map50: 97.8, tp: 536, fp: 28, fn: 45, cross: 69.2308, occlusion: 92.3077, group: 92.6667, emptyFp: 1, gpu: 88, ram: 3418, temp: 51.500, power: 5.396, decision: "속도는 가장 높지만 최고 mAP50-95와 2.2%p 차이로 2.0%p 기준을 초과. 교차 장면 F1과 전체 미탐도 가장 불리함." }
+      ];
+      const requested = new URLSearchParams(location.search).get("model") || "yolov8n";
+      const selected = results.find((row) => row.key === requested) || results[0];
+      const pct = (value) => `${value.toFixed(2)}%`;
+      document.getElementById("modelName").textContent = selected.name;
+      const badge = document.getElementById("badge"); badge.textContent = selected.badge; badge.classList.add(selected.badgeClass);
+      document.getElementById("fps").textContent = selected.fps.toFixed(3);
+      document.getElementById("fpsStd").textContent = `3회 표준편차 ± ${selected.fpsStd.toFixed(3)}`;
+      document.getElementById("wall").textContent = selected.wall.toFixed(3);
+      document.getElementById("map").textContent = selected.map.toFixed(1);
+      document.getElementById("mapGap").textContent = `최고 모델과 ${selected.mapGap.toFixed(1)}%p 차이`;
+      document.getElementById("f1").textContent = selected.f1.toFixed(2);
+      document.getElementById("errors").textContent = `FP ${selected.fp} · FN ${selected.fn}`;
+      document.getElementById("precision").textContent = pct(selected.precision);
+      document.getElementById("recall").textContent = pct(selected.recall);
+      document.getElementById("map50").textContent = pct(selected.map50);
+      document.getElementById("decision").textContent = selected.decision;
+      document.getElementById("cross").textContent = pct(selected.cross);
+      document.getElementById("occlusion").textContent = pct(selected.occlusion);
+      document.getElementById("group").textContent = pct(selected.group);
+      document.getElementById("emptyFp").textContent = `${selected.emptyFp}건`;
+      document.getElementById("confusion").textContent = `${selected.tp} / ${selected.fp} / ${selected.fn}`;
+      document.getElementById("gpu").textContent = `${selected.gpu}%`;
+      document.getElementById("ram").textContent = `${selected.ram.toLocaleString()} MB`;
+      document.getElementById("temp").textContent = `${selected.temp.toFixed(3)}°C`;
+      document.getElementById("power").textContent = `${selected.power.toFixed(3)} W`;
+      const maxFps = Math.max(...results.map((row) => row.fps));
+      document.getElementById("fpsBars").innerHTML = results.map((row) => `<div class="bar-group ${row.key === selected.key ? "selected" : ""}"><div class="bar-heading"><span>${row.name}</span><span>${row.fps.toFixed(3)} FPS</span></div><div class="bar-track"><div class="bar-fill" style="width:${(row.fps / maxFps) * 100}%"></div></div></div>`).join("");
+    </script>
+  </body>
+</html>

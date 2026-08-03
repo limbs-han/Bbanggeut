@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
 from datetime import datetime
@@ -93,6 +94,136 @@ def _read_analysis(stem: str, kind: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _face_track(expression: dict[str, Any]) -> list[dict[str, float]]:
+    """앱의 얼굴 추적 스티커가 쓰는 얼굴 궤적.
+
+    expression 분석의 250ms 창에서 얼굴이 잡힌 것만 추린다. 시각은 창의
+    가운데(원본 영상 기준 ms), 좌표는 0~1 정규화 얼굴 중심, h는 화면 대비
+    얼굴 높이다. 얼굴이 없는 구간은 비워 둔다 — 앱이 이웃 표본을 보간한다.
+    """
+    track: list[dict[str, float]] = []
+    for row in expression.get("expressionWindows", []):
+        if int(row.get("faceCount", 0)) <= 0:
+            continue
+        height = float(row.get("faceHeight", 0.0))
+        if height <= 0.0:
+            continue
+        track.append(
+            {
+                "ms": (int(row["startMs"]) + int(row["endMs"])) // 2,
+                "x": round(float(row.get("focusX", 0.5)), 4),
+                "y": round(float(row.get("focusY", 0.5)), 4),
+                "h": round(height, 4),
+            }
+        )
+    return track
+
+
+# 이웃 표본이 이보다 멀리 건너뛰면 같은 사람으로 보지 않는다(0~1 좌표).
+_FACE_LINK_DISTANCE = 0.16
+# 이보다 오래 끊긴 얼굴은 새 궤적으로 시작한다. 근처에서 다시 잡히면
+# 아래 병합 단계가 다시 이어 붙인다.
+_FACE_LINK_GAP_MS = 1500
+# 이보다 짧게 잡힌 궤적은 오검출로 보고 버린다(250ms 창 4개 = 1초).
+_FACE_TRACK_MIN_SAMPLES = 4
+
+
+def _face_tracks(expression: dict[str, Any]) -> list[dict[str, Any]]:
+    """사람별 얼굴 궤적. 앱의 얼굴 추적 스티커가 '누구'를 고를 수 있게 한다.
+
+    v3 분석은 창마다 검출된 얼굴 전부(`faces`)를 남긴다. 창을 시간 순으로
+    돌며 각 얼굴을 살아 있는 궤적 중 가장 가까운 것에 붙이고, 붙일 곳이
+    없으면 새 궤적을 연다. 옛(v2) 분석은 최강 얼굴 하나만 있으므로 그대로
+    한 줄로 잇는다 — 그 경우 사람 구분은 앱의 연속 구간 나누기가 맡는다.
+    """
+    tracks: list[dict[str, Any]] = []
+    for row in expression.get("expressionWindows", []):
+        faces = row.get("faces")
+        if faces is None:
+            if int(row.get("faceCount", 0)) <= 0:
+                continue
+            faces = [
+                {
+                    "focusX": row.get("focusX", 0.5),
+                    "focusY": row.get("focusY", 0.5),
+                    "faceHeight": row.get("faceHeight", 0.0),
+                }
+            ]
+        ms = (int(row["startMs"]) + int(row["endMs"])) // 2
+        claimed: set[int] = set()
+        for face in faces:
+            height = float(face.get("faceHeight", 0.0))
+            if height <= 0.0:
+                continue
+            x = float(face.get("focusX", 0.5))
+            y = float(face.get("focusY", 0.5))
+            best = None
+            best_distance = None
+            for candidate in tracks:
+                if id(candidate) in claimed:
+                    continue
+                last = candidate["samples"][-1]
+                gap = ms - int(last["ms"])
+                if gap > _FACE_LINK_GAP_MS:
+                    continue
+                allowed = _FACE_LINK_DISTANCE * min(3.0, max(1.0, gap / 250))
+                distance = math.hypot(x - last["x"], y - last["y"])
+                if distance <= allowed and (
+                    best_distance is None or distance < best_distance
+                ):
+                    best = candidate
+                    best_distance = distance
+            if best is None:
+                best = {"id": f"face-{len(tracks) + 1}", "samples": []}
+                tracks.append(best)
+            claimed.add(id(best))
+            best["samples"].append(
+                {"ms": ms, "x": round(x, 4), "y": round(y, 4), "h": round(height, 4)}
+            )
+    # 오래 자리를 비웠다 같은 자리에서 다시 잡힌 궤적은 같은 사람이다.
+    merged: list[dict[str, Any]] = []
+    for track in sorted(tracks, key=lambda item: item["samples"][0]["ms"]):
+        target = None
+        for candidate in merged:
+            last = candidate["samples"][-1]
+            first = track["samples"][0]
+            if int(first["ms"]) <= int(last["ms"]):
+                continue
+            if (
+                math.hypot(first["x"] - last["x"], first["y"] - last["y"])
+                <= _FACE_LINK_DISTANCE
+            ):
+                target = candidate
+                break
+        if target is None:
+            merged.append(track)
+        else:
+            target["samples"].extend(track["samples"])
+    solid = [
+        track
+        for track in merged
+        if len(track["samples"]) >= _FACE_TRACK_MIN_SAMPLES
+    ]
+    solid.sort(key=lambda item: len(item["samples"]), reverse=True)
+    return [
+        {"id": f"face-{index + 1}", "samples": track["samples"]}
+        for index, track in enumerate(solid)
+    ]
+
+
+def _attach_face_tracks(
+    recipe: dict[str, Any], expression: dict[str, Any]
+) -> dict[str, Any]:
+    face_tracks = _face_tracks(expression)
+    recipe["faceTracks"] = face_tracks
+    # 하위 호환: 옛 앱은 한 줄짜리 faceTrack만 읽는다. 가장 오래 잡힌
+    # 사람의 궤적을 준다 — 최강 표정을 오가던 예전 초점보다 안정적이다.
+    recipe["faceTrack"] = (
+        face_tracks[0]["samples"] if face_tracks else _face_track(expression)
+    )
+    return recipe
+
+
 def build_fixture_recommendation(request: RecommendationRequest) -> dict[str, Any]:
     stem = _fixture_stem(request.captured_at)
     if stem is None:
@@ -100,17 +231,18 @@ def build_fixture_recommendation(request: RecommendationRequest) -> dict[str, An
     preset = request.duration_preset or FIXTURE_PRESETS[stem]
     if preset not in {"auto", "short", "medium", "long"}:
         raise ValueError("durationPreset must be auto, short, medium, or long")
+    expression = _read_analysis(stem, "expression")
     recipe = build_adaptive_recipe(
         _read_analysis(stem, "yamnet"),
         _read_analysis(stem, "audio"),
         _read_analysis(stem, "video"),
-        _read_analysis(stem, "expression"),
+        expression,
         duration_preset=preset,
         zoom_enabled=request.zoom_enabled,
     )
     recipe["videoId"] = request.video_id
     recipe["fixture"] = stem
-    return recipe
+    return _attach_face_tracks(recipe, expression)
 
 
 class RecipeStore:
@@ -344,7 +476,8 @@ def _build_analyzed_recommendation(
     )
     recipe["videoId"] = request.video_id
     recipe["analyzed"] = True
-    return recipe
+    # 새로 분석한 영상도 얼굴 추적 스티커를 쓸 수 있어야 한다.
+    return _attach_face_tracks(recipe, analyses["expression"])
 
 
 @app.post("/v1/edit-recommendations")

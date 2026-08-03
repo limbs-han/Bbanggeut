@@ -250,6 +250,7 @@ class _CalendarHeroHeader extends StatelessWidget {
             height: 104,
             fit: BoxFit.cover,
             alignment: Alignment.topCenter,
+            cacheWidth: decodePixels(context, 122),
           ),
         ),
         Positioned(
@@ -816,7 +817,11 @@ class _DaySummaryCard extends StatelessWidget {
             color: Colors.white.withValues(alpha: .72),
             borderRadius: BorderRadius.circular(17),
           ),
-          child: Image.asset(iconAsset, fit: BoxFit.contain),
+          child: Image.asset(
+            iconAsset,
+            fit: BoxFit.contain,
+            cacheWidth: decodePixels(context, 54),
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(

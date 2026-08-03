@@ -229,8 +229,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--clap-required-onsets",
         type=int,
-        default=int(os.getenv("YAMNET_CLAP_REQUIRED_ONSETS", "2")),
-        help="Required separated impulse attacks in the audio window (default: 2).",
+        default=int(os.getenv("YAMNET_CLAP_REQUIRED_ONSETS", "3")),
+        help="Required separated impulse attacks in the audio window (default: 3).",
     )
     parser.add_argument(
         "--clap-min-active-seconds",

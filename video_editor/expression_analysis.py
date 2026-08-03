@@ -118,6 +118,19 @@ def analyze_expressions(
                 strongest = max(
                     faces, key=lambda item: float(item["reactionScore"]), default=None
                 )
+                # 검출된 얼굴 **전부**의 자리·크기. 최강 한 명으로 접어 버리면
+                # 여러 명이 나올 때 초점이 사람 사이를 오가고, 얼굴 추적
+                # 스티커가 누구를 따라갈지 정할 수 없다.
+                face_boxes = [
+                    {
+                        "focusX": face["focusX"],
+                        "focusY": face["focusY"],
+                        "faceWidth": face["faceWidth"],
+                        "faceHeight": face["faceHeight"],
+                        "reactionScore": face["reactionScore"],
+                    }
+                    for face in faces
+                ]
                 row = {
                     "startMs": timestamp_ms,
                     "endMs": min(duration_ms, timestamp_ms + sample_interval_ms)
@@ -135,6 +148,7 @@ def analyze_expressions(
                     "focusY": 0.5,
                     "faceWidth": 0.0,
                     "faceHeight": 0.0,
+                    "faces": face_boxes,
                 }
                 if strongest is not None:
                     row.update(strongest)
@@ -147,7 +161,7 @@ def analyze_expressions(
     if duration_ms <= 0:
         duration_ms = int(windows[-1]["endMs"])
     return {
-        "analysisVersion": "expression-v2",
+        "analysisVersion": "expression-v3",
         "sourcePath": video_path.name,
         "durationMs": duration_ms,
         "sampleIntervalMs": sample_interval_ms,

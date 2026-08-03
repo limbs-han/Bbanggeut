@@ -70,6 +70,7 @@ void main() {
         onVolumeChanged: (_) {},
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
+        onFaceStickerSelected: (_) {},
         onLookSelected: onLookSelected ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
@@ -120,7 +121,15 @@ void main() {
       await tester.pumpWidget(workspace(controller));
 
       expect(find.text('영상 편집'), findsOneWidget);
-      for (final label in const ['컷 편집', '비율', '줌', '자막']) {
+      for (final label in const [
+        '컷 편집',
+        '비율',
+        '줌',
+        '자막',
+        '오디오',
+        '스티커',
+        '효과',
+      ]) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
       expect(tester.takeException(), isNull);
@@ -148,7 +157,7 @@ void main() {
         }
         // 색감을 켜도 효과 패널이 넘치지 않아야 한다.
         controller
-          ..selectTool(EditorTool.ar)
+          ..selectTool(EditorTool.effect)
           ..setLook(EditorLook.mono);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
@@ -294,7 +303,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('하단 네비게이션은 컷·비율·텍스트·줌만 제공한다', (tester) async {
+  testWidgets('하단 네비는 클립 도구 다섯에 전체 도구 둘을 구분선 너머에 둔다', (
+    tester,
+  ) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -304,10 +315,24 @@ void main() {
 
     await tester.pumpWidget(workspace(controller));
 
-    expect(find.byKey(const Key('editor-nav-cut')), findsOneWidget);
-    expect(find.byKey(const Key('editor-nav-ratio')), findsOneWidget);
-    expect(find.byKey(const Key('editor-nav-text')), findsOneWidget);
-    expect(find.byKey(const Key('editor-nav-zoom')), findsOneWidget);
+    for (final tool in const [
+      EditorTool.cut,
+      EditorTool.ratio,
+      EditorTool.zoom,
+      EditorTool.text,
+      EditorTool.sticker,
+      EditorTool.audio,
+      EditorTool.effect,
+    ]) {
+      expect(
+        find.byKey(Key('editor-nav-${tool.name}')),
+        findsOneWidget,
+        reason: '${tool.name} 탭이 없다',
+      );
+    }
+    // 오디오·효과는 영상 전체에 걸리는 도구라 구분선 오른쪽에 있다.
+    expect(find.byKey(const Key('editor-nav-divider')), findsOneWidget);
+    // AI 자막은 자막 탭의 버튼으로, AR은 스티커 탭의 줄로 들어갔다.
     expect(find.byKey(const Key('editor-nav-aiCaption')), findsNothing);
     expect(find.byKey(const Key('editor-nav-ar')), findsNothing);
   });
@@ -672,12 +697,14 @@ void main() {
     expect(controller.project.clips, hasLength(2));
   });
 
-  testWidgets('효과 탭에서 필터는 그 자리에서 바로 적용된다', (tester) async {
+  testWidgets('효과 탭에서 색감은 그 자리에서 바로 적용된다', (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final controller = newController()..selectTool(EditorTool.ar);
+    // 색감은 얼굴 추적과 상관이 없고, AR 탭 미리보기(SurfaceView) 위에는 Flutter
+    // 색 필터가 닿지 않는다. 그래서 제 자리인 '효과' 탭으로 옮겼다.
+    final controller = newController()..selectTool(EditorTool.effect);
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(

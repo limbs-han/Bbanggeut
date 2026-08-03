@@ -131,7 +131,7 @@ public class MqttInboundHandler {
     private void detectionEvent(UUID deviceId, JsonNode body) {
         UUID eventId = UUID.fromString(text(body, "eventId"));
         String type = text(body, "type");
-        if (!java.util.Set.of("LAUGHTER", "WAKE_WORD", "TOUCH", "MANUAL").contains(type)) {
+        if (!java.util.Set.of("LAUGHTER", "CLAP", "WAKE_WORD", "TOUCH", "MANUAL").contains(type)) {
             throw new IllegalArgumentException("Unsupported event type");
         }
         Instant occurredAt = Instant.parse(text(body, "occurredAt"));
@@ -143,7 +143,7 @@ public class MqttInboundHandler {
             || confidence.doubleValue() < 0.0 || confidence.doubleValue() > 1.0)) {
             throw new IllegalArgumentException("Invalid confidence");
         }
-        if (java.util.Set.of("LAUGHTER", "WAKE_WORD").contains(type)
+        if (java.util.Set.of("LAUGHTER", "CLAP", "WAKE_WORD").contains(type)
             && (confidence == null || confidence.isNull())) {
             throw new IllegalArgumentException("AI events require confidence");
         }

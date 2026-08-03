@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:gal/gal.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_theme.dart';
@@ -34,7 +38,45 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
   VideoPlayerController? _player;
   List<Map<String, dynamic>> _comments = const [];
   bool _sending = false;
+
+  /// 갤러리 저장 진행률(0~1). null이면 저장 중이 아니다.
+  double? _downloadProgress;
   String? _error;
+
+  /// 편집 완료 영상을 내려받아 휴대폰 갤러리에 넣는다.
+  ///
+  /// 내보내기는 서버 저장까지만 한다 — 갤러리는 여기서 원할 때 받는다.
+  Future<void> _saveToGallery() async {
+    if (_downloadProgress != null) return;
+    setState(() => _downloadProgress = 0);
+    final directory = await getTemporaryDirectory();
+    final savePath =
+        '${directory.path}${Platform.pathSeparator}'
+        'edited-${widget.videoId}.mp4';
+    try {
+      await _client.downloadEditedVideo(
+        widget.videoId,
+        savePath,
+        onProgress: (received, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _downloadProgress = received / total);
+        },
+      );
+      try {
+        if (!await Gal.hasAccess()) await Gal.requestAccess();
+      } catch (_) {
+        // 권한 확인이 실패하는 기기도 있다. 저장은 그대로 시도한다.
+      }
+      await Gal.putVideo(savePath, album: '빵긋');
+      if (mounted) showAppSnack(context, '갤러리에 저장했어요.');
+    } catch (failure) {
+      if (mounted) {
+        showAppSnack(context, '갤러리에 저장하지 못했어요. $failure', error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _downloadProgress = null);
+    }
+  }
 
   @override
   void initState() {
@@ -115,6 +157,23 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title.isEmpty ? '편집한 영상' : widget.title),
+        actions: [
+          IconButton(
+            key: const Key('edited-save-to-gallery'),
+            tooltip: '갤러리에 저장',
+            onPressed: _downloadProgress != null ? null : _saveToGallery,
+            icon: _downloadProgress != null
+                ? SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      value: _downloadProgress == 0 ? null : _downloadProgress,
+                    ),
+                  )
+                : const Icon(Icons.download_rounded),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SafeArea(
         child: Column(

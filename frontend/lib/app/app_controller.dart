@@ -51,6 +51,7 @@ class AppController extends ChangeNotifier {
   final List<String> _placeNames = ['집'];
   String _selectedPlaceName = '집';
   final Map<String, String> _devicePlaces = {};
+  Future<void> _placePreferenceSave = Future.value();
   String? pendingMembershipRequestToken;
   MembershipRequestPreview? pendingMembershipRequestPreview;
   bool openHomeAfterDeviceClaim = false;
@@ -106,22 +107,26 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> _savePlacePreferences() async {
+  Future<void> _savePlacePreferences() {
     final key = _placeStorageKey;
-    if (key == null) return;
-    try {
-      await _placeStorage.write(
-        key: key,
-        value: jsonEncode({
-          'places': _placeNames,
-          'selectedPlace': _selectedPlaceName,
-          'devicePlaces': _devicePlaces,
-        }),
-      );
-    } catch (_) {
-      // 장소 저장 실패가 기기 연결 자체를 실패시키지는 않는다.
-    }
+    if (key == null) return Future.value();
+    final value = jsonEncode({
+      'places': List<String>.of(_placeNames),
+      'selectedPlace': _selectedPlaceName,
+      'devicePlaces': Map<String, String>.of(_devicePlaces),
+    });
+    _placePreferenceSave = _placePreferenceSave.then((_) async {
+      try {
+        await _placeStorage.write(key: key, value: value);
+      } catch (_) {
+        // 장소 저장 실패가 기기 연결 자체를 실패시키지는 않는다.
+      }
+    });
+    return _placePreferenceSave;
   }
+
+  @visibleForTesting
+  Future<void> waitForPlacePreferencesSaved() => _placePreferenceSave;
 
   void selectPlace(String placeName) {
     final normalized = placeName.trim();
@@ -606,6 +611,7 @@ class AppController extends ChangeNotifier {
     String code, {
     String? vaultId,
     String? newVaultName,
+    String? placeName,
   }) async => _guard(() async {
     if (!canRegisterDevice) {
       throw const ApiFailure('OWNER만 새 기기를 등록할 수 있어요.', statusCode: 403);
@@ -635,7 +641,8 @@ class AppController extends ChangeNotifier {
     selectedDevice = devices.firstWhere(
       (device) => device.id == claimedDevice.id,
     );
-    assignDeviceToPlace(claimedDevice.id, _selectedPlaceName);
+    assignDeviceToPlace(claimedDevice.id, placeName ?? _selectedPlaceName);
+    await waitForPlacePreferencesSaved();
     await refreshDeviceData();
   });
 
@@ -687,6 +694,7 @@ class AppController extends ChangeNotifier {
         id: video.id,
         deviceId: video.deviceId,
         triggerType: video.triggerType,
+        eventTypes: video.eventTypes,
         sourceType: video.sourceType,
         title: video.title,
         description: video.description,

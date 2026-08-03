@@ -1,5 +1,5 @@
 {
-  "analysisVersion": "expression-v2",
+  "analysisVersion": "expression-v3",
   "sourcePath": "01_20260731_173932.mp4",
   "durationMs": 120000,
   "sampleIntervalMs": 250,
@@ -18,7 +18,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 250,
@@ -34,7 +35,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 500,
@@ -50,7 +52,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 750,
@@ -66,7 +69,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 1000,
@@ -82,7 +86,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 1250,
@@ -98,7 +103,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 1500,
@@ -114,7 +120,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 1750,
@@ -130,7 +137,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 2000,
@@ -146,7 +154,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 2250,
@@ -162,7 +171,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 2500,
@@ -178,7 +188,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 2750,
@@ -194,7 +205,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 3000,
@@ -210,7 +222,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 3250,
@@ -226,7 +239,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 3500,
@@ -242,7 +256,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 3750,
@@ -258,7 +273,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 4000,
@@ -274,7 +290,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 4250,
@@ -290,7 +307,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 4500,
@@ -306,23 +324,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 4750,
       "endMs": 5000,
       "faceCount": 1,
-      "reactionScore": 0.09127572778379546,
-      "smileScore": 0.015985415317118168,
-      "amusementScore": 0.08509129132144154,
-      "surpriseScore": 0.09127572778379546,
-      "surpriseRawScore": 0.05476543667027727,
-      "jawOpenScore": 0.1238332986831665,
+      "reactionScore": 0.09127585948832956,
+      "smileScore": 0.01598547725006938,
+      "amusementScore": 0.08509132808540015,
+      "surpriseScore": 0.09127585948832956,
+      "surpriseRawScore": 0.05476551569299773,
+      "jawOpenScore": 0.12383347004652023,
       "dominantExpression": "surprise",
       "focusX": 0.48151740431785583,
       "focusY": 0.15421715565025806,
       "faceWidth": 0.1121867299079895,
-      "faceHeight": 0.21244799718260765
+      "faceHeight": 0.21244799718260765,
+      "faces": [
+        {
+          "focusX": 0.48151740431785583,
+          "focusY": 0.15421715565025806,
+          "faceWidth": 0.1121867299079895,
+          "faceHeight": 0.21244799718260765,
+          "reactionScore": 0.09127585948832956
+        }
+      ]
     },
     {
       "startMs": 5000,
@@ -338,7 +366,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 5250,
@@ -354,7 +383,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 5500,
@@ -370,7 +400,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 5750,
@@ -386,7 +417,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 6000,
@@ -402,7 +434,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 6250,
@@ -418,7 +451,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 6500,
@@ -434,7 +468,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 6750,
@@ -450,7 +485,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 7000,
@@ -466,7 +502,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 7250,
@@ -482,7 +519,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 7500,
@@ -498,7 +536,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 7750,
@@ -514,7 +553,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 8000,
@@ -530,7 +570,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 8250,
@@ -546,23 +587,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 8500,
       "endMs": 8750,
       "faceCount": 1,
-      "reactionScore": 0.055151184531860055,
-      "smileScore": 0.013982601929455996,
-      "amusementScore": 0.055151184531860055,
-      "surpriseScore": 0.01404497167095542,
-      "surpriseRawScore": 0.008426983002573251,
-      "jawOpenScore": 0.0017564110457897186,
+      "reactionScore": 0.05515119886258617,
+      "smileScore": 0.013982572592794895,
+      "amusementScore": 0.05515119886258617,
+      "surpriseScore": 0.014044964065154392,
+      "surpriseRawScore": 0.008426978439092635,
+      "jawOpenScore": 0.0017564083682373166,
       "dominantExpression": "smile",
       "focusX": 0.49437761306762695,
       "focusY": 0.18070733919739723,
       "faceWidth": 0.11117291450500488,
-      "faceHeight": 0.22111373394727707
+      "faceHeight": 0.22111373394727707,
+      "faces": [
+        {
+          "focusX": 0.49437761306762695,
+          "focusY": 0.18070733919739723,
+          "faceWidth": 0.11117291450500488,
+          "faceHeight": 0.22111373394727707,
+          "reactionScore": 0.05515119886258617
+        }
+      ]
     },
     {
       "startMs": 8750,
@@ -578,39 +629,58 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 9000,
       "endMs": 9250,
       "faceCount": 1,
-      "reactionScore": 0.08808496420970185,
-      "smileScore": 0.06538878008723259,
-      "amusementScore": 0.08808496420970185,
-      "surpriseScore": 0.020634436616091992,
-      "surpriseRawScore": 0.012380661969655194,
-      "jawOpenScore": 0.0015158759197220206,
+      "reactionScore": 0.08808489735238254,
+      "smileScore": 0.0653887614607811,
+      "amusementScore": 0.08808489735238254,
+      "surpriseScore": 0.020634410257722877,
+      "surpriseRawScore": 0.012380646154633725,
+      "jawOpenScore": 0.001515872310847044,
       "dominantExpression": "smile",
       "focusX": 0.49447110295295715,
       "focusY": 0.18207784742116928,
       "faceWidth": 0.11535614728927612,
-      "faceHeight": 0.21972186863422394
+      "faceHeight": 0.21972186863422394,
+      "faces": [
+        {
+          "focusX": 0.49447110295295715,
+          "focusY": 0.18207784742116928,
+          "faceWidth": 0.11535614728927612,
+          "faceHeight": 0.21972186863422394,
+          "reactionScore": 0.08808489735238254
+        }
+      ]
     },
     {
       "startMs": 9250,
       "endMs": 9500,
       "faceCount": 1,
-      "reactionScore": 0.1430795261170715,
-      "smileScore": 0.1199825368821621,
-      "amusementScore": 0.1430795261170715,
-      "surpriseScore": 0.011845862177627472,
-      "surpriseRawScore": 0.007107517306576483,
-      "jawOpenScore": 0.0037631927989423275,
+      "reactionScore": 0.14307928991038352,
+      "smileScore": 0.11998214200139046,
+      "amusementScore": 0.14307928991038352,
+      "surpriseScore": 0.01184582534187939,
+      "surpriseRawScore": 0.007107495205127634,
+      "jawOpenScore": 0.0037632056046277285,
       "dominantExpression": "smile",
       "focusX": 0.4948008954524994,
       "focusY": 0.18425942957401276,
       "faceWidth": 0.11234086751937866,
-      "faceHeight": 0.21942272782325745
+      "faceHeight": 0.21942272782325745,
+      "faces": [
+        {
+          "focusX": 0.4948008954524994,
+          "focusY": 0.18425942957401276,
+          "faceWidth": 0.11234086751937866,
+          "faceHeight": 0.21942272782325745,
+          "reactionScore": 0.14307928991038352
+        }
+      ]
     },
     {
       "startMs": 9500,
@@ -626,23 +696,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 9750,
       "endMs": 10000,
       "faceCount": 1,
-      "reactionScore": 0.057257871612091546,
-      "smileScore": 0.0014230384840629995,
-      "amusementScore": 0.057257871612091546,
-      "surpriseScore": 0.010768767844031876,
-      "surpriseRawScore": 0.006461260706419125,
-      "jawOpenScore": 0.0033508758060634136,
+      "reactionScore": 0.057257913431385525,
+      "smileScore": 0.001423042151145637,
+      "amusementScore": 0.057257913431385525,
+      "surpriseScore": 0.010768853499030229,
+      "surpriseRawScore": 0.006461312099418137,
+      "jawOpenScore": 0.003350864164531231,
       "dominantExpression": "smile",
       "focusX": 0.4935204088687897,
       "focusY": 0.18133990094065666,
       "faceWidth": 0.11414080858230591,
-      "faceHeight": 0.21587655693292618
+      "faceHeight": 0.21587655693292618,
+      "faces": [
+        {
+          "focusX": 0.4935204088687897,
+          "focusY": 0.18133990094065666,
+          "faceWidth": 0.11414080858230591,
+          "faceHeight": 0.21587655693292618,
+          "reactionScore": 0.057257913431385525
+        }
+      ]
     },
     {
       "startMs": 10000,
@@ -658,7 +738,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 10250,
@@ -674,23 +755,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 10500,
       "endMs": 10750,
       "faceCount": 1,
-      "reactionScore": 0.05148519962385762,
-      "smileScore": 0.0014632529928348958,
-      "amusementScore": 0.05148519962385762,
-      "surpriseScore": 0.03263461222619905,
-      "surpriseRawScore": 0.01958076733571943,
-      "jawOpenScore": 0.009460121393203735,
+      "reactionScore": 0.05148525817203335,
+      "smileScore": 0.0014632471138611436,
+      "amusementScore": 0.05148525817203335,
+      "surpriseScore": 0.032634625696421914,
+      "surpriseRawScore": 0.019580775417853146,
+      "jawOpenScore": 0.009460147470235825,
       "dominantExpression": "smile",
       "focusX": 0.4933306723833084,
       "focusY": 0.17265257239341736,
       "faceWidth": 0.1147744357585907,
-      "faceHeight": 0.21037888526916504
+      "faceHeight": 0.21037888526916504,
+      "faces": [
+        {
+          "focusX": 0.4933306723833084,
+          "focusY": 0.17265257239341736,
+          "faceWidth": 0.1147744357585907,
+          "faceHeight": 0.21037888526916504,
+          "reactionScore": 0.05148525817203335
+        }
+      ]
     },
     {
       "startMs": 10750,
@@ -706,7 +797,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 11000,
@@ -722,23 +814,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 11250,
       "endMs": 11500,
       "faceCount": 1,
-      "reactionScore": 0.06412023711018264,
-      "smileScore": 0.02408329490572214,
-      "amusementScore": 0.06412023711018264,
-      "surpriseScore": 0.03319104022618073,
-      "surpriseRawScore": 0.019914624135708436,
-      "jawOpenScore": 0.001393863931298256,
+      "reactionScore": 0.0641202469007112,
+      "smileScore": 0.024083263240754604,
+      "amusementScore": 0.0641202469007112,
+      "surpriseScore": 0.03319104149704799,
+      "surpriseRawScore": 0.019914624898228792,
+      "jawOpenScore": 0.0013938640477135777,
       "dominantExpression": "smile",
       "focusX": 0.49391092360019684,
       "focusY": 0.19113192707300186,
       "faceWidth": 0.1128062903881073,
-      "faceHeight": 0.2235303372144699
+      "faceHeight": 0.2235303372144699,
+      "faces": [
+        {
+          "focusX": 0.49391092360019684,
+          "focusY": 0.19113192707300186,
+          "faceWidth": 0.1128062903881073,
+          "faceHeight": 0.2235303372144699,
+          "reactionScore": 0.0641202469007112
+        }
+      ]
     },
     {
       "startMs": 11500,
@@ -754,23 +856,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 11750,
       "endMs": 12000,
       "faceCount": 1,
-      "reactionScore": 0.045464334941789274,
-      "smileScore": 0.0007030914566712454,
-      "amusementScore": 0.045464334941789274,
-      "surpriseScore": 0.013518601389174972,
-      "surpriseRawScore": 0.008111160833504983,
-      "jawOpenScore": 0.004254928790032864,
+      "reactionScore": 0.045464365249790716,
+      "smileScore": 0.0007030936831142753,
+      "amusementScore": 0.045464365249790716,
+      "surpriseScore": 0.013518614631417828,
+      "surpriseRawScore": 0.008111168778850696,
+      "jawOpenScore": 0.004254935774952173,
       "dominantExpression": "smile",
       "focusX": 0.49128584563732147,
       "focusY": 0.17701471969485283,
       "faceWidth": 0.11038759350776672,
-      "faceHeight": 0.21155176311731339
+      "faceHeight": 0.21155176311731339,
+      "faces": [
+        {
+          "focusX": 0.49128584563732147,
+          "focusY": 0.17701471969485283,
+          "faceWidth": 0.11038759350776672,
+          "faceHeight": 0.21155176311731339,
+          "reactionScore": 0.045464365249790716
+        }
+      ]
     },
     {
       "startMs": 12000,
@@ -786,7 +898,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 12250,
@@ -802,39 +915,58 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 12500,
       "endMs": 12750,
       "faceCount": 1,
-      "reactionScore": 0.04229861324783997,
-      "smileScore": 0.0005465000140247867,
-      "amusementScore": 0.04229861324783997,
-      "surpriseScore": 0.03248417016584426,
-      "surpriseRawScore": 0.019490502099506556,
-      "jawOpenScore": 0.008521808311343193,
+      "reactionScore": 0.04229863991276943,
+      "smileScore": 0.0005464975693030283,
+      "amusementScore": 0.04229863991276943,
+      "surpriseScore": 0.03248424452613108,
+      "surpriseRawScore": 0.019490546715678646,
+      "jawOpenScore": 0.008521847426891327,
       "dominantExpression": "smile",
       "focusX": 0.4818853288888931,
       "focusY": 0.17010389640927315,
       "faceWidth": 0.11602887511253357,
-      "faceHeight": 0.22498174756765366
+      "faceHeight": 0.22498174756765366,
+      "faces": [
+        {
+          "focusX": 0.4818853288888931,
+          "focusY": 0.17010389640927315,
+          "faceWidth": 0.11602887511253357,
+          "faceHeight": 0.22498174756765366,
+          "reactionScore": 0.04229863991276943
+        }
+      ]
     },
     {
       "startMs": 12750,
       "endMs": 13000,
       "faceCount": 1,
-      "reactionScore": 0.045856056199409065,
-      "smileScore": 0.01430378993973136,
-      "amusementScore": 0.045856056199409065,
-      "surpriseScore": 0.010648215810457867,
-      "surpriseRawScore": 0.00638892948627472,
-      "jawOpenScore": 0.006370934657752514,
+      "reactionScore": 0.04585601270664483,
+      "smileScore": 0.014303756412118673,
+      "amusementScore": 0.04585601270664483,
+      "surpriseScore": 0.01064821567463999,
+      "surpriseRawScore": 0.006388929404783994,
+      "jawOpenScore": 0.006370952352881432,
       "dominantExpression": "smile",
       "focusX": 0.4774188846349716,
       "focusY": 0.15041718259453773,
       "faceWidth": 0.11031964421272278,
-      "faceHeight": 0.21907293051481247
+      "faceHeight": 0.21907293051481247,
+      "faces": [
+        {
+          "focusX": 0.4774188846349716,
+          "focusY": 0.15041718259453773,
+          "faceWidth": 0.11031964421272278,
+          "faceHeight": 0.21907293051481247,
+          "reactionScore": 0.04585601270664483
+        }
+      ]
     },
     {
       "startMs": 13000,
@@ -850,7 +982,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 13250,
@@ -866,7 +999,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 13500,
@@ -882,7 +1016,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 13750,
@@ -898,7 +1033,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 14000,
@@ -914,7 +1050,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 14250,
@@ -930,7 +1067,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 14500,
@@ -946,7 +1084,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 14750,
@@ -962,7 +1101,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 15000,
@@ -978,7 +1118,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 15250,
@@ -994,7 +1135,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 15500,
@@ -1010,7 +1152,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 15750,
@@ -1026,39 +1169,58 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 16000,
       "endMs": 16250,
       "faceCount": 1,
-      "reactionScore": 0.24895082481089054,
-      "smileScore": 0.034221746027469635,
-      "amusementScore": 0.12467278204858304,
-      "surpriseScore": 0.24895082481089054,
-      "surpriseRawScore": 0.1493704948865343,
-      "jawOpenScore": 0.20664556324481964,
+      "reactionScore": 0.24895000193888944,
+      "smileScore": 0.0342220775783062,
+      "amusementScore": 0.12467297185212374,
+      "surpriseScore": 0.24895000193888944,
+      "surpriseRawScore": 0.14937000116333365,
+      "jawOpenScore": 0.20664526522159576,
       "dominantExpression": "surprise",
       "focusX": 0.6472266614437103,
       "focusY": 0.48098619282245636,
       "faceWidth": 0.11403506994247437,
-      "faceHeight": 0.2499438226222992
+      "faceHeight": 0.2499438226222992,
+      "faces": [
+        {
+          "focusX": 0.6472266614437103,
+          "focusY": 0.48098619282245636,
+          "faceWidth": 0.11403506994247437,
+          "faceHeight": 0.2499438226222992,
+          "reactionScore": 0.24895000193888944
+        }
+      ]
     },
     {
       "startMs": 16250,
       "endMs": 16500,
       "faceCount": 1,
-      "reactionScore": 0.2560556826453345,
-      "smileScore": 5.568498477259709e-05,
-      "amusementScore": 0.07624285507280319,
-      "surpriseScore": 0.2560556826453345,
-      "surpriseRawScore": 0.1536334095872007,
-      "jawOpenScore": 0.0348486490547657,
+      "reactionScore": 0.2560553826333489,
+      "smileScore": 5.568508299802488e-05,
+      "amusementScore": 0.07624287600809794,
+      "surpriseScore": 0.2560553826333489,
+      "surpriseRawScore": 0.15363322958000936,
+      "jawOpenScore": 0.03484862297773361,
       "dominantExpression": "surprise",
       "focusX": 0.6610791981220245,
       "focusY": 0.5284538865089417,
       "faceWidth": 0.1316644549369812,
-      "faceHeight": 0.2318439483642578
+      "faceHeight": 0.2318439483642578,
+      "faces": [
+        {
+          "focusX": 0.6610791981220245,
+          "focusY": 0.5284538865089417,
+          "faceWidth": 0.1316644549369812,
+          "faceHeight": 0.2318439483642578,
+          "reactionScore": 0.2560553826333489
+        }
+      ]
     },
     {
       "startMs": 16500,
@@ -1074,7 +1236,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 16750,
@@ -1090,7 +1253,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 17000,
@@ -1106,7 +1270,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 17250,
@@ -1122,7 +1287,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 17500,
@@ -1138,7 +1304,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 17750,
@@ -1154,7 +1321,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 18000,
@@ -1170,7 +1338,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 18250,
@@ -1186,7 +1355,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 18500,
@@ -1202,7 +1372,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 18750,
@@ -1218,7 +1389,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 19000,
@@ -1234,7 +1406,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 19250,
@@ -1250,7 +1423,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 19500,
@@ -1266,7 +1440,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 19750,
@@ -1282,7 +1457,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 20000,
@@ -1298,7 +1474,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 20250,
@@ -1314,7 +1491,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 20500,
@@ -1330,7 +1508,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 20750,
@@ -1346,7 +1525,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 21000,
@@ -1362,23 +1542,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 21250,
       "endMs": 21500,
       "faceCount": 1,
-      "reactionScore": 0.09264380436507054,
-      "smileScore": 0.0023119173711165786,
-      "amusementScore": 0.09264380436507054,
-      "surpriseScore": 0.012210275356968246,
-      "surpriseRawScore": 0.007326165214180947,
-      "jawOpenScore": 0.015391268767416477,
+      "reactionScore": 0.0926437871879898,
+      "smileScore": 0.002311914460733533,
+      "amusementScore": 0.0926437871879898,
+      "surpriseScore": 0.012210322325699964,
+      "surpriseRawScore": 0.007326193395419978,
+      "jawOpenScore": 0.015391342341899872,
       "dominantExpression": "smile",
       "focusX": 0.4897419810295105,
       "focusY": 0.15675215423107147,
       "faceWidth": 0.10919606685638428,
-      "faceHeight": 0.2068054974079132
+      "faceHeight": 0.2068054974079132,
+      "faces": [
+        {
+          "focusX": 0.4897419810295105,
+          "focusY": 0.15675215423107147,
+          "faceWidth": 0.10919606685638428,
+          "faceHeight": 0.2068054974079132,
+          "reactionScore": 0.0926437871879898
+        }
+      ]
     },
     {
       "startMs": 21500,
@@ -1394,7 +1584,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 21750,
@@ -1410,7 +1601,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 22000,
@@ -1426,7 +1618,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 22250,
@@ -1442,7 +1635,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 22500,
@@ -1458,7 +1652,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 22750,
@@ -1474,7 +1669,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 23000,
@@ -1490,7 +1686,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 23250,
@@ -1506,7 +1703,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 23500,
@@ -1522,7 +1720,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 23750,
@@ -1538,23 +1737,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 24000,
       "endMs": 24250,
       "faceCount": 1,
-      "reactionScore": 0.06691450560465455,
-      "smileScore": 0.01252451865002513,
-      "amusementScore": 0.06691450560465455,
-      "surpriseScore": 0.022994146255465846,
-      "surpriseRawScore": 0.013796487753279508,
-      "jawOpenScore": 0.0028978295158594847,
+      "reactionScore": 0.0669145566644147,
+      "smileScore": 0.012524490244686604,
+      "amusementScore": 0.0669145566644147,
+      "surpriseScore": 0.022994100737075012,
+      "surpriseRawScore": 0.013796460442245006,
+      "jawOpenScore": 0.0028978323098272085,
       "dominantExpression": "smile",
       "focusX": 0.49029985070228577,
       "focusY": 0.15668132528662682,
       "faceWidth": 0.11052018404006958,
-      "faceHeight": 0.21999318152666092
+      "faceHeight": 0.21999318152666092,
+      "faces": [
+        {
+          "focusX": 0.49029985070228577,
+          "focusY": 0.15668132528662682,
+          "faceWidth": 0.11052018404006958,
+          "faceHeight": 0.21999318152666092,
+          "reactionScore": 0.0669145566644147
+        }
+      ]
     },
     {
       "startMs": 24250,
@@ -1570,7 +1779,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 24500,
@@ -1586,7 +1796,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 24750,
@@ -1602,7 +1813,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 25000,
@@ -1618,7 +1830,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 25250,
@@ -1634,7 +1847,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 25500,
@@ -1650,7 +1864,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 25750,
@@ -1666,7 +1881,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 26000,
@@ -1682,7 +1898,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 26250,
@@ -1698,7 +1915,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 26500,
@@ -1714,7 +1932,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 26750,
@@ -1730,7 +1949,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 27000,
@@ -1746,39 +1966,58 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 27250,
       "endMs": 27500,
       "faceCount": 1,
-      "reactionScore": 0.07549102770644822,
-      "smileScore": 0.00020459019287955016,
-      "amusementScore": 0.07549102770644822,
-      "surpriseScore": 0.05698831245535985,
-      "surpriseRawScore": 0.03419298747321591,
-      "jawOpenScore": 0.07608099281787872,
+      "reactionScore": 0.07549102951597889,
+      "smileScore": 0.00020458962535485625,
+      "amusementScore": 0.07549102951597889,
+      "surpriseScore": 0.05698819342069328,
+      "surpriseRawScore": 0.034192916052415964,
+      "jawOpenScore": 0.07608088105916977,
       "dominantExpression": "smile",
       "focusX": 0.48508670926094055,
       "focusY": 0.15189266949892044,
       "faceWidth": 0.11587029695510864,
-      "faceHeight": 0.2131013125181198
+      "faceHeight": 0.2131013125181198,
+      "faces": [
+        {
+          "focusX": 0.48508670926094055,
+          "focusY": 0.15189266949892044,
+          "faceWidth": 0.11587029695510864,
+          "faceHeight": 0.2131013125181198,
+          "reactionScore": 0.07549102951597889
+        }
+      ]
     },
     {
       "startMs": 27500,
       "endMs": 27750,
       "faceCount": 1,
-      "reactionScore": 0.07508113116491585,
-      "smileScore": 0.01803451217710972,
-      "amusementScore": 0.07508113116491585,
-      "surpriseScore": 0.017540809509227984,
-      "surpriseRawScore": 0.010524485705536789,
-      "jawOpenScore": 0.0027295800391584635,
+      "reactionScore": 0.07508109444752337,
+      "smileScore": 0.018034511245787144,
+      "amusementScore": 0.07508109444752337,
+      "surpriseScore": 0.01754077241154543,
+      "surpriseRawScore": 0.010524463446927257,
+      "jawOpenScore": 0.0027295774780213833,
       "dominantExpression": "smile",
       "focusX": 0.48514875769615173,
       "focusY": 0.1662926785647869,
       "faceWidth": 0.11531311273574829,
-      "faceHeight": 0.21829811483621597
+      "faceHeight": 0.21829811483621597,
+      "faces": [
+        {
+          "focusX": 0.48514875769615173,
+          "focusY": 0.1662926785647869,
+          "faceWidth": 0.11531311273574829,
+          "faceHeight": 0.21829811483621597,
+          "reactionScore": 0.07508109444752337
+        }
+      ]
     },
     {
       "startMs": 27750,
@@ -1794,7 +2033,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 28000,
@@ -1810,7 +2050,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 28250,
@@ -1826,23 +2067,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 28500,
       "endMs": 28750,
       "faceCount": 1,
-      "reactionScore": 0.09028385793790221,
-      "smileScore": 0.026546994224190712,
-      "amusementScore": 0.09028385793790221,
-      "surpriseScore": 0.008465487679738242,
-      "surpriseRawScore": 0.005079292607842945,
-      "jawOpenScore": 0.011762429028749466,
+      "reactionScore": 0.09028388638980686,
+      "smileScore": 0.026547071523964405,
+      "amusementScore": 0.09028388638980686,
+      "surpriseScore": 0.008465499229108294,
+      "surpriseRawScore": 0.005079299537464977,
+      "jawOpenScore": 0.011762446723878384,
       "dominantExpression": "smile",
       "focusX": 0.4996327608823776,
       "focusY": 0.18696128949522972,
       "faceWidth": 0.11922207474708557,
-      "faceHeight": 0.2195364311337471
+      "faceHeight": 0.2195364311337471,
+      "faces": [
+        {
+          "focusX": 0.4996327608823776,
+          "focusY": 0.18696128949522972,
+          "faceWidth": 0.11922207474708557,
+          "faceHeight": 0.2195364311337471,
+          "reactionScore": 0.09028388638980686
+        }
+      ]
     },
     {
       "startMs": 28750,
@@ -1858,7 +2109,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 29000,
@@ -1874,7 +2126,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 29250,
@@ -1890,7 +2143,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 29500,
@@ -1906,7 +2160,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 29750,
@@ -1922,7 +2177,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 30000,
@@ -1938,7 +2194,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 30250,
@@ -1954,23 +2211,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 30500,
       "endMs": 30750,
       "faceCount": 1,
-      "reactionScore": 0.025517660976038314,
-      "smileScore": 0.00016719306586310267,
-      "amusementScore": 0.025517660976038314,
-      "surpriseScore": 0.02507901315887769,
-      "surpriseRawScore": 0.015047407895326614,
-      "jawOpenScore": 0.011542754247784615,
+      "reactionScore": 0.025517662807033048,
+      "smileScore": 0.00016719265113351867,
+      "amusementScore": 0.025517662807033048,
+      "surpriseScore": 0.025079047113346558,
+      "surpriseRawScore": 0.015047428268007933,
+      "jawOpenScore": 0.011542786844074726,
       "dominantExpression": "smile",
       "focusX": 0.5030281394720078,
       "focusY": 0.17723461240530014,
       "faceWidth": 0.11481598019599915,
-      "faceHeight": 0.23118145763874054
+      "faceHeight": 0.23118145763874054,
+      "faces": [
+        {
+          "focusX": 0.5030281394720078,
+          "focusY": 0.17723461240530014,
+          "faceWidth": 0.11481598019599915,
+          "faceHeight": 0.23118145763874054,
+          "reactionScore": 0.025517662807033048
+        }
+      ]
     },
     {
       "startMs": 30750,
@@ -1986,23 +2253,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 31000,
       "endMs": 31250,
       "faceCount": 1,
-      "reactionScore": 0.03627563693298725,
-      "smileScore": 0.0001337315479759127,
-      "amusementScore": 0.03627563693298725,
-      "surpriseScore": 0.015574429242406042,
-      "surpriseRawScore": 0.009344657545443625,
-      "jawOpenScore": 0.010985353030264378,
+      "reactionScore": 0.036275671435578256,
+      "smileScore": 0.0001337316061835736,
+      "amusementScore": 0.036275671435578256,
+      "surpriseScore": 0.01557442299478377,
+      "surpriseRawScore": 0.009344653796870262,
+      "jawOpenScore": 0.010985362343490124,
       "dominantExpression": "smile",
       "focusX": 0.47623804211616516,
       "focusY": 0.15470033138990402,
       "faceWidth": 0.11002177000045776,
-      "faceHeight": 0.2271132618188858
+      "faceHeight": 0.2271132618188858,
+      "faces": [
+        {
+          "focusX": 0.47623804211616516,
+          "focusY": 0.15470033138990402,
+          "faceWidth": 0.11002177000045776,
+          "faceHeight": 0.2271132618188858,
+          "reactionScore": 0.036275671435578256
+        }
+      ]
     },
     {
       "startMs": 31250,
@@ -2018,39 +2295,58 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 31500,
       "endMs": 31750,
       "faceCount": 1,
-      "reactionScore": 0.06950128481621505,
-      "smileScore": 0.00018803418788593262,
-      "amusementScore": 0.06950128481621505,
-      "surpriseScore": 0.0266097505906752,
-      "surpriseRawScore": 0.01596585035440512,
-      "jawOpenScore": 0.03702140599489212,
+      "reactionScore": 0.06950124108279852,
+      "smileScore": 0.00018803498460329138,
+      "amusementScore": 0.06950124108279852,
+      "surpriseScore": 0.026609708036024436,
+      "surpriseRawScore": 0.01596582482161466,
+      "jawOpenScore": 0.037021342664957047,
       "dominantExpression": "smile",
       "focusX": 0.4781910628080368,
       "focusY": 0.1522606983780861,
       "faceWidth": 0.11039283871650696,
-      "faceHeight": 0.22112254798412323
+      "faceHeight": 0.22112254798412323,
+      "faces": [
+        {
+          "focusX": 0.4781910628080368,
+          "focusY": 0.1522606983780861,
+          "faceWidth": 0.11039283871650696,
+          "faceHeight": 0.22112254798412323,
+          "reactionScore": 0.06950124108279852
+        }
+      ]
     },
     {
       "startMs": 31750,
       "endMs": 32000,
       "faceCount": 1,
-      "reactionScore": 0.07565549875143915,
-      "smileScore": 0.015054806601256132,
-      "amusementScore": 0.07565549875143915,
-      "surpriseScore": 0.01750539152029281,
-      "surpriseRawScore": 0.010503234912175686,
-      "jawOpenScore": 0.015579216182231903,
+      "reactionScore": 0.07565548252314329,
+      "smileScore": 0.015054794028401375,
+      "amusementScore": 0.07565548252314329,
+      "surpriseScore": 0.01750535876878227,
+      "surpriseRawScore": 0.010503215261269362,
+      "jawOpenScore": 0.015579170547425747,
       "dominantExpression": "smile",
       "focusX": 0.47970470786094666,
       "focusY": 0.16205409914255142,
       "faceWidth": 0.11180168390274048,
-      "faceHeight": 0.22970758378505707
+      "faceHeight": 0.22970758378505707,
+      "faces": [
+        {
+          "focusX": 0.47970470786094666,
+          "focusY": 0.16205409914255142,
+          "faceWidth": 0.11180168390274048,
+          "faceHeight": 0.22970758378505707,
+          "reactionScore": 0.07565548252314329
+        }
+      ]
     },
     {
       "startMs": 32000,
@@ -2066,23 +2362,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 32250,
       "endMs": 32500,
       "faceCount": 1,
-      "reactionScore": 0.45673668384552,
-      "smileScore": 0.45673668384552,
-      "amusementScore": 0.36254010240154455,
-      "surpriseScore": 0.0029377209963665036,
-      "surpriseRawScore": 0.0017626325978199022,
-      "jawOpenScore": 4.596194048644975e-05,
+      "reactionScore": 0.45673632621765137,
+      "smileScore": 0.45673632621765137,
+      "amusementScore": 0.3625398207790568,
+      "surpriseScore": 0.0029377221944741905,
+      "surpriseRawScore": 0.0017626333166845141,
+      "jawOpenScore": 4.596203507389873e-05,
       "dominantExpression": "smile",
       "focusX": 0.49523915350437164,
       "focusY": 0.17146630585193634,
       "faceWidth": 0.12202069163322449,
-      "faceHeight": 0.2174149453639984
+      "faceHeight": 0.2174149453639984,
+      "faces": [
+        {
+          "focusX": 0.49523915350437164,
+          "focusY": 0.17146630585193634,
+          "faceWidth": 0.12202069163322449,
+          "faceHeight": 0.2174149453639984,
+          "reactionScore": 0.45673632621765137
+        }
+      ]
     },
     {
       "startMs": 32500,
@@ -2098,7 +2404,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 32750,
@@ -2114,7 +2421,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 33000,
@@ -2130,7 +2438,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 33250,
@@ -2146,7 +2455,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 33500,
@@ -2162,7 +2472,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 33750,
@@ -2178,7 +2489,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 34000,
@@ -2194,23 +2506,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 34250,
       "endMs": 34500,
       "faceCount": 1,
-      "reactionScore": 0.5005901455879211,
-      "smileScore": 0.5005901455879211,
-      "amusementScore": 0.4382966373115778,
-      "surpriseScore": 0.08884490954612072,
-      "surpriseRawScore": 0.05330694572767243,
-      "jawOpenScore": 0.050804462283849716,
+      "reactionScore": 0.5005905479192734,
+      "smileScore": 0.5005905479192734,
+      "amusementScore": 0.43829686976969245,
+      "surpriseScore": 0.08884492217718314,
+      "surpriseRawScore": 0.05330695330630988,
+      "jawOpenScore": 0.05080457404255867,
       "dominantExpression": "smile",
       "focusX": 0.4925212115049362,
       "focusY": 0.19716881215572357,
       "faceWidth": 0.11576393246650696,
-      "faceHeight": 0.23764386773109436
+      "faceHeight": 0.23764386773109436,
+      "faces": [
+        {
+          "focusX": 0.4925212115049362,
+          "focusY": 0.19716881215572357,
+          "faceWidth": 0.11576393246650696,
+          "faceHeight": 0.23764386773109436,
+          "reactionScore": 0.5005905479192734
+        }
+      ]
     },
     {
       "startMs": 34500,
@@ -2226,7 +2548,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 34750,
@@ -2242,7 +2565,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 35000,
@@ -2258,23 +2582,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 35250,
       "endMs": 35500,
       "faceCount": 1,
-      "reactionScore": 0.11839437857270241,
-      "smileScore": 0.11839437857270241,
-      "amusementScore": 0.11042824835749343,
-      "surpriseScore": 0.024532609405772142,
-      "surpriseRawScore": 0.014719565643463285,
-      "jawOpenScore": 0.0009089113445952535,
+      "reactionScore": 0.1183946281671524,
+      "smileScore": 0.1183946281671524,
+      "amusementScore": 0.1104284512461163,
+      "surpriseScore": 0.024532582431371946,
+      "surpriseRawScore": 0.014719549458823167,
+      "jawOpenScore": 0.0009089118102565408,
       "dominantExpression": "smile",
       "focusX": 0.497479110956192,
       "focusY": 0.19315209239721298,
       "faceWidth": 0.11198705434799194,
-      "faceHeight": 0.2212262898683548
+      "faceHeight": 0.2212262898683548,
+      "faces": [
+        {
+          "focusX": 0.497479110956192,
+          "focusY": 0.19315209239721298,
+          "faceWidth": 0.11198705434799194,
+          "faceHeight": 0.2212262898683548,
+          "reactionScore": 0.1183946281671524
+        }
+      ]
     },
     {
       "startMs": 35500,
@@ -2290,7 +2624,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 35750,
@@ -2306,7 +2641,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 36000,
@@ -2322,7 +2658,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 36250,
@@ -2338,7 +2675,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 36500,
@@ -2354,7 +2692,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 36750,
@@ -2370,7 +2709,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 37000,
@@ -2386,7 +2726,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 37250,
@@ -2402,7 +2743,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 37500,
@@ -2418,7 +2760,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 37750,
@@ -2434,7 +2777,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 38000,
@@ -2450,7 +2794,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 38250,
@@ -2466,7 +2811,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 38500,
@@ -2482,7 +2828,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 38750,
@@ -2498,7 +2845,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 39000,
@@ -2514,7 +2862,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 39250,
@@ -2530,7 +2879,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 39500,
@@ -2546,7 +2896,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 39750,
@@ -2562,7 +2913,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 40000,
@@ -2578,7 +2930,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 40250,
@@ -2594,7 +2947,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 40500,
@@ -2610,7 +2964,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 40750,
@@ -2626,7 +2981,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 41000,
@@ -2642,7 +2998,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 41250,
@@ -2658,7 +3015,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 41500,
@@ -2674,7 +3032,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 41750,
@@ -2690,55 +3049,83 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 42000,
       "endMs": 42250,
       "faceCount": 1,
-      "reactionScore": 0.03973072615917772,
-      "smileScore": 0.0021395874209702015,
-      "amusementScore": 0.03973072615917772,
-      "surpriseScore": 0.03208608906910134,
-      "surpriseRawScore": 0.019251653441460802,
-      "jawOpenScore": 0.007091360166668892,
+      "reactionScore": 0.03973074776295107,
+      "smileScore": 0.0021395902731455863,
+      "amusementScore": 0.03973074776295107,
+      "surpriseScore": 0.03208614217389064,
+      "surpriseRawScore": 0.019251685304334385,
+      "jawOpenScore": 0.00709135364741087,
       "dominantExpression": "smile",
       "focusX": 0.47609907388687134,
       "focusY": 0.1843312457203865,
       "faceWidth": 0.11451351642608643,
-      "faceHeight": 0.21808169782161713
+      "faceHeight": 0.21808169782161713,
+      "faces": [
+        {
+          "focusX": 0.47609907388687134,
+          "focusY": 0.1843312457203865,
+          "faceWidth": 0.11451351642608643,
+          "faceHeight": 0.21808169782161713,
+          "reactionScore": 0.03973074776295107
+        }
+      ]
     },
     {
       "startMs": 42250,
       "endMs": 42500,
       "faceCount": 1,
-      "reactionScore": 0.08857205558160786,
-      "smileScore": 0.0057111833011731505,
-      "amusementScore": 0.04606863065273501,
-      "surpriseScore": 0.08857205558160786,
-      "surpriseRawScore": 0.05314323334896471,
-      "jawOpenScore": 0.0019333104137331247,
+      "reactionScore": 0.08857171800142774,
+      "smileScore": 0.005711182369850576,
+      "amusementScore": 0.046068673458648846,
+      "surpriseScore": 0.08857171800142774,
+      "surpriseRawScore": 0.053143030800856646,
+      "jawOpenScore": 0.001933309598825872,
       "dominantExpression": "surprise",
       "focusX": 0.4847295433282852,
       "focusY": 0.1980995200574398,
       "faceWidth": 0.11901053786277771,
-      "faceHeight": 0.228150375187397
+      "faceHeight": 0.228150375187397,
+      "faces": [
+        {
+          "focusX": 0.4847295433282852,
+          "focusY": 0.1980995200574398,
+          "faceWidth": 0.11901053786277771,
+          "faceHeight": 0.228150375187397,
+          "reactionScore": 0.08857171800142774
+        }
+      ]
     },
     {
       "startMs": 42500,
       "endMs": 42750,
       "faceCount": 1,
-      "reactionScore": 0.10560715300962328,
-      "smileScore": 0.09191221371293068,
-      "amusementScore": 0.10560715300962328,
-      "surpriseScore": 0.006842231106323501,
-      "surpriseRawScore": 0.0041053386637941005,
-      "jawOpenScore": 0.005933855660259724,
+      "reactionScore": 0.10560717987827957,
+      "smileScore": 0.09191226959228516,
+      "amusementScore": 0.10560717987827957,
+      "surpriseScore": 0.006842243451198253,
+      "surpriseRawScore": 0.004105346070718952,
+      "jawOpenScore": 0.005933861713856459,
       "dominantExpression": "smile",
       "focusX": 0.4848845601081848,
       "focusY": 0.18559269607067108,
       "faceWidth": 0.1184396743774414,
-      "faceHeight": 0.2231294810771942
+      "faceHeight": 0.2231294810771942,
+      "faces": [
+        {
+          "focusX": 0.4848845601081848,
+          "focusY": 0.18559269607067108,
+          "faceWidth": 0.1184396743774414,
+          "faceHeight": 0.2231294810771942,
+          "reactionScore": 0.10560717987827957
+        }
+      ]
     },
     {
       "startMs": 42750,
@@ -2754,7 +3141,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 43000,
@@ -2770,7 +3158,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 43250,
@@ -2786,7 +3175,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 43500,
@@ -2802,7 +3192,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 43750,
@@ -2818,7 +3209,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 44000,
@@ -2834,39 +3226,58 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 44250,
       "endMs": 44500,
       "faceCount": 1,
-      "reactionScore": 0.07463166241068392,
-      "smileScore": 0.045333970338106155,
-      "amusementScore": 0.07463166241068392,
-      "surpriseScore": 0.02300337268146298,
-      "surpriseRawScore": 0.013802023608877789,
-      "jawOpenScore": 0.003150227712467313,
+      "reactionScore": 0.07463154108263553,
+      "smileScore": 0.045333875343203545,
+      "amusementScore": 0.07463154108263553,
+      "surpriseScore": 0.02300317062084408,
+      "surpriseRawScore": 0.013801902372506447,
+      "jawOpenScore": 0.0031502186320722103,
       "dominantExpression": "smile",
       "focusX": 0.4493516832590103,
       "focusY": 0.1422952637076378,
       "faceWidth": 0.11258789896965027,
-      "faceHeight": 0.2318546324968338
+      "faceHeight": 0.2318546324968338,
+      "faces": [
+        {
+          "focusX": 0.4493516832590103,
+          "focusY": 0.1422952637076378,
+          "faceWidth": 0.11258789896965027,
+          "faceHeight": 0.2318546324968338,
+          "reactionScore": 0.07463154108263553
+        }
+      ]
     },
     {
       "startMs": 44500,
       "endMs": 44750,
       "faceCount": 1,
-      "reactionScore": 0.6114001274108887,
-      "smileScore": 0.6114001274108887,
-      "amusementScore": 0.5094249869696796,
-      "surpriseScore": 0.00571220040001208,
-      "surpriseRawScore": 0.0034273202400072478,
-      "jawOpenScore": 0.00037835631519556046,
+      "reactionScore": 0.6114006042480469,
+      "smileScore": 0.6114006042480469,
+      "amusementScore": 0.5094252895214595,
+      "surpriseScore": 0.005712222853617277,
+      "surpriseRawScore": 0.003427333712170366,
+      "jawOpenScore": 0.000378355965949595,
       "dominantExpression": "smile",
       "focusX": 0.4661567807197571,
       "focusY": 0.1486252099275589,
       "faceWidth": 0.10789740085601807,
-      "faceHeight": 0.2252020537853241
+      "faceHeight": 0.2252020537853241,
+      "faces": [
+        {
+          "focusX": 0.4661567807197571,
+          "focusY": 0.1486252099275589,
+          "faceWidth": 0.10789740085601807,
+          "faceHeight": 0.2252020537853241,
+          "reactionScore": 0.6114006042480469
+        }
+      ]
     },
     {
       "startMs": 44750,
@@ -2882,7 +3293,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 45000,
@@ -2898,23 +3310,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 45250,
       "endMs": 45500,
       "faceCount": 1,
-      "reactionScore": 0.06201884018567701,
-      "smileScore": 0.0002305408488609828,
-      "amusementScore": 0.04537012513137597,
-      "surpriseScore": 0.06201884018567701,
-      "surpriseRawScore": 0.037211304111406204,
-      "jawOpenScore": 0.04218049347400665,
+      "reactionScore": 0.06201886549630824,
+      "smileScore": 0.00023054153280099854,
+      "amusementScore": 0.04537012890395999,
+      "surpriseScore": 0.06201886549630824,
+      "surpriseRawScore": 0.03721131929778494,
+      "jawOpenScore": 0.04218050092458725,
       "dominantExpression": "surprise",
       "focusX": 0.46649686992168427,
       "focusY": 0.1686282977461815,
       "faceWidth": 0.10847201943397522,
-      "faceHeight": 0.23478533327579498
+      "faceHeight": 0.23478533327579498,
+      "faces": [
+        {
+          "focusX": 0.46649686992168427,
+          "focusY": 0.1686282977461815,
+          "faceWidth": 0.10847201943397522,
+          "faceHeight": 0.23478533327579498,
+          "reactionScore": 0.06201886549630824
+        }
+      ]
     },
     {
       "startMs": 45500,
@@ -2930,7 +3352,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 45750,
@@ -2946,7 +3369,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 46000,
@@ -2962,7 +3386,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 46250,
@@ -2978,7 +3403,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 46500,
@@ -2994,7 +3420,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 46750,
@@ -3010,7 +3437,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 47000,
@@ -3026,23 +3454,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 47250,
       "endMs": 47500,
       "faceCount": 1,
-      "reactionScore": 0.046325754850840895,
-      "smileScore": 0.000289035975583829,
-      "amusementScore": 0.046325754850840895,
-      "surpriseScore": 0.01850312139140442,
-      "surpriseRawScore": 0.011101872834842652,
-      "jawOpenScore": 0.008038926869630814,
+      "reactionScore": 0.046325768574388346,
+      "smileScore": 0.00028903775819344446,
+      "amusementScore": 0.046325768574388346,
+      "surpriseScore": 0.018503141468196798,
+      "surpriseRawScore": 0.011101884880918077,
+      "jawOpenScore": 0.008038927800953388,
       "dominantExpression": "smile",
       "focusX": 0.4711226224899292,
       "focusY": 0.1576577052474022,
       "faceWidth": 0.11164474487304688,
-      "faceHeight": 0.23119588196277618
+      "faceHeight": 0.23119588196277618,
+      "faces": [
+        {
+          "focusX": 0.4711226224899292,
+          "focusY": 0.1576577052474022,
+          "faceWidth": 0.11164474487304688,
+          "faceHeight": 0.23119588196277618,
+          "reactionScore": 0.046325768574388346
+        }
+      ]
     },
     {
       "startMs": 47500,
@@ -3058,23 +3496,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 47750,
       "endMs": 48000,
       "faceCount": 1,
-      "reactionScore": 0.06031049982411787,
-      "smileScore": 0.008175442228093743,
-      "amusementScore": 0.06031049982411787,
-      "surpriseScore": 0.01420579739594056,
-      "surpriseRawScore": 0.008523478437564336,
-      "jawOpenScore": 0.006872309371829033,
+      "reactionScore": 0.060310605051927264,
+      "smileScore": 0.008175451774150133,
+      "amusementScore": 0.060310605051927264,
+      "surpriseScore": 0.014205794427349852,
+      "surpriseRawScore": 0.008523476656409911,
+      "jawOpenScore": 0.0068723345175385475,
       "dominantExpression": "smile",
       "focusX": 0.47615674138069153,
       "focusY": 0.15217358618974686,
       "faceWidth": 0.11138099431991577,
-      "faceHeight": 0.22736071050167084
+      "faceHeight": 0.22736071050167084,
+      "faces": [
+        {
+          "focusX": 0.47615674138069153,
+          "focusY": 0.15217358618974686,
+          "faceWidth": 0.11138099431991577,
+          "faceHeight": 0.22736071050167084,
+          "reactionScore": 0.060310605051927264
+        }
+      ]
     },
     {
       "startMs": 48000,
@@ -3090,7 +3538,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 48250,
@@ -3106,7 +3555,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 48500,
@@ -3122,7 +3572,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 48750,
@@ -3138,7 +3589,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 49000,
@@ -3154,7 +3606,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 49250,
@@ -3170,7 +3623,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 49500,
@@ -3186,7 +3640,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 49750,
@@ -3202,71 +3657,108 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 50000,
       "endMs": 50250,
       "faceCount": 1,
-      "reactionScore": 0.23879950183133283,
-      "smileScore": 0.0030975262634456158,
-      "amusementScore": 0.07225799534935504,
-      "surpriseScore": 0.23879950183133283,
-      "surpriseRawScore": 0.1432797010987997,
-      "jawOpenScore": 0.08270163834095001,
+      "reactionScore": 0.2387997966725379,
+      "smileScore": 0.003097512060776353,
+      "amusementScore": 0.07225794967962429,
+      "surpriseScore": 0.2387997966725379,
+      "surpriseRawScore": 0.14327987800352274,
+      "jawOpenScore": 0.08270157873630524,
       "dominantExpression": "surprise",
       "focusX": 0.4573957622051239,
       "focusY": 0.17229428887367249,
       "faceWidth": 0.11309057474136353,
-      "faceHeight": 0.25445783138275146
+      "faceHeight": 0.25445783138275146,
+      "faces": [
+        {
+          "focusX": 0.4573957622051239,
+          "focusY": 0.17229428887367249,
+          "faceWidth": 0.11309057474136353,
+          "faceHeight": 0.25445783138275146,
+          "reactionScore": 0.2387997966725379
+        }
+      ]
     },
     {
       "startMs": 50250,
       "endMs": 50500,
       "faceCount": 1,
-      "reactionScore": 0.072949022334069,
-      "smileScore": 0.022418195381760597,
-      "amusementScore": 0.072949022334069,
-      "surpriseScore": 0.04966632736613975,
-      "surpriseRawScore": 0.029799796419683847,
-      "jawOpenScore": 0.04989850893616676,
+      "reactionScore": 0.07294905791059135,
+      "smileScore": 0.022418199107050896,
+      "amusementScore": 0.07294905791059135,
+      "surpriseScore": 0.049666339715865135,
+      "surpriseRawScore": 0.02979980382951908,
+      "jawOpenScore": 0.04989844560623169,
       "dominantExpression": "smile",
       "focusX": 0.46116797626018524,
       "focusY": 0.17406068369746208,
       "faceWidth": 0.11154261231422424,
-      "faceHeight": 0.2407374158501625
+      "faceHeight": 0.2407374158501625,
+      "faces": [
+        {
+          "focusX": 0.46116797626018524,
+          "focusY": 0.17406068369746208,
+          "faceWidth": 0.11154261231422424,
+          "faceHeight": 0.2407374158501625,
+          "reactionScore": 0.07294905791059135
+        }
+      ]
     },
     {
       "startMs": 50500,
       "endMs": 50750,
       "faceCount": 1,
-      "reactionScore": 0.06777778777759522,
-      "smileScore": 0.015559489373117685,
-      "amusementScore": 0.06777778777759522,
-      "surpriseScore": 0.00565261453690861,
-      "surpriseRawScore": 0.003391568722145166,
-      "jawOpenScore": 0.0045691970735788345,
+      "reactionScore": 0.06777774223592131,
+      "smileScore": 0.01555938133969903,
+      "amusementScore": 0.06777774223592131,
+      "surpriseScore": 0.005652613601948058,
+      "surpriseRawScore": 0.0033915681611688345,
+      "jawOpenScore": 0.004569194279611111,
       "dominantExpression": "smile",
       "focusX": 0.45699848234653473,
       "focusY": 0.1639285311102867,
       "faceWidth": 0.11078318953514099,
-      "faceHeight": 0.23641641438007355
+      "faceHeight": 0.23641641438007355,
+      "faces": [
+        {
+          "focusX": 0.45699848234653473,
+          "focusY": 0.1639285311102867,
+          "faceWidth": 0.11078318953514099,
+          "faceHeight": 0.23641641438007355,
+          "reactionScore": 0.06777774223592131
+        }
+      ]
     },
     {
       "startMs": 50750,
       "endMs": 51000,
       "faceCount": 1,
-      "reactionScore": 0.2701926752924919,
-      "smileScore": 0.2701926752924919,
-      "amusementScore": 0.24182316296501086,
-      "surpriseScore": 0.020664619922172278,
-      "surpriseRawScore": 0.012398771953303366,
-      "jawOpenScore": 0.0006034009857103229,
+      "reactionScore": 0.27019263803958893,
+      "smileScore": 0.27019263803958893,
+      "amusementScore": 0.24182312032789924,
+      "surpriseScore": 0.02066458084542925,
+      "surpriseRawScore": 0.01239874850725755,
+      "jawOpenScore": 0.0006033992976881564,
       "dominantExpression": "smile",
       "focusX": 0.44249799847602844,
       "focusY": 0.14501916617155075,
       "faceWidth": 0.11210072040557861,
-      "faceHeight": 0.22861875593662262
+      "faceHeight": 0.22861875593662262,
+      "faces": [
+        {
+          "focusX": 0.44249799847602844,
+          "focusY": 0.14501916617155075,
+          "faceWidth": 0.11210072040557861,
+          "faceHeight": 0.22861875593662262,
+          "reactionScore": 0.27019263803958893
+        }
+      ]
     },
     {
       "startMs": 51000,
@@ -3282,7 +3774,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 51250,
@@ -3298,7 +3791,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 51500,
@@ -3314,7 +3808,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 51750,
@@ -3330,7 +3825,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 52000,
@@ -3346,23 +3842,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 52250,
       "endMs": 52500,
       "faceCount": 1,
-      "reactionScore": 0.07203842853705282,
-      "smileScore": 0.0005477863742271438,
-      "amusementScore": 0.07203842853705282,
-      "surpriseScore": 0.02776241691026371,
-      "surpriseRawScore": 0.016657450146158225,
-      "jawOpenScore": 0.020941609516739845,
+      "reactionScore": 0.07203840161819243,
+      "smileScore": 0.000547785748494789,
+      "amusementScore": 0.07203840161819243,
+      "surpriseScore": 0.027762378735739432,
+      "surpriseRawScore": 0.01665742724144366,
+      "jawOpenScore": 0.020941613242030144,
       "dominantExpression": "smile",
       "focusX": 0.4502559006214142,
       "focusY": 0.1589421145617962,
       "faceWidth": 0.11134284734725952,
-      "faceHeight": 0.23296818882226944
+      "faceHeight": 0.23296818882226944,
+      "faces": [
+        {
+          "focusX": 0.4502559006214142,
+          "focusY": 0.1589421145617962,
+          "faceWidth": 0.11134284734725952,
+          "faceHeight": 0.23296818882226944,
+          "reactionScore": 0.07203840161819243
+        }
+      ]
     },
     {
       "startMs": 52500,
@@ -3378,7 +3884,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 52750,
@@ -3394,7 +3901,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 53000,
@@ -3410,7 +3918,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 53250,
@@ -3426,7 +3935,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 53500,
@@ -3442,7 +3952,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 53750,
@@ -3458,7 +3969,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 54000,
@@ -3474,7 +3986,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 54250,
@@ -3490,7 +4003,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 54500,
@@ -3506,7 +4020,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 54750,
@@ -3522,7 +4037,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 55000,
@@ -3538,23 +4054,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 55250,
       "endMs": 55500,
       "faceCount": 1,
-      "reactionScore": 0.7853552997112274,
-      "smileScore": 0.7853552997112274,
-      "amusementScore": 0.646617415547371,
-      "surpriseScore": 0.023502579594302613,
-      "surpriseRawScore": 0.014101547756581567,
-      "jawOpenScore": 0.025608936324715614,
+      "reactionScore": 0.7853550910949707,
+      "smileScore": 0.7853550910949707,
+      "amusementScore": 0.6466173050925136,
+      "surpriseScore": 0.0235025243164273,
+      "surpriseRawScore": 0.01410151458985638,
+      "jawOpenScore": 0.025608865544199944,
       "dominantExpression": "smile",
       "focusX": 0.4667522460222244,
       "focusY": 0.15931889414787292,
       "faceWidth": 0.11351141333580017,
-      "faceHeight": 0.24386835098266602
+      "faceHeight": 0.24386835098266602,
+      "faces": [
+        {
+          "focusX": 0.4667522460222244,
+          "focusY": 0.15931889414787292,
+          "faceWidth": 0.11351141333580017,
+          "faceHeight": 0.24386835098266602,
+          "reactionScore": 0.7853550910949707
+        }
+      ]
     },
     {
       "startMs": 55500,
@@ -3570,7 +4096,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 55750,
@@ -3578,15 +4105,24 @@
       "faceCount": 1,
       "reactionScore": 0.7379217743873596,
       "smileScore": 0.7379217743873596,
-      "amusementScore": 0.5944848385464866,
-      "surpriseScore": 0.004942644513600196,
-      "surpriseRawScore": 0.0029655867081601174,
-      "jawOpenScore": 0.0005301170167513192,
+      "amusementScore": 0.594484818278579,
+      "surpriseScore": 0.004942649354537328,
+      "surpriseRawScore": 0.0029655896127223965,
+      "jawOpenScore": 0.0005301155033521354,
       "dominantExpression": "smile",
       "focusX": 0.4765089154243469,
       "focusY": 0.19482315331697464,
       "faceWidth": 0.11592066287994385,
-      "faceHeight": 0.23772035539150238
+      "faceHeight": 0.23772035539150238,
+      "faces": [
+        {
+          "focusX": 0.4765089154243469,
+          "focusY": 0.19482315331697464,
+          "faceWidth": 0.11592066287994385,
+          "faceHeight": 0.23772035539150238,
+          "reactionScore": 0.7379217743873596
+        }
+      ]
     },
     {
       "startMs": 56000,
@@ -3602,7 +4138,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 56250,
@@ -3618,7 +4155,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 56500,
@@ -3634,7 +4172,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 56750,
@@ -3650,7 +4189,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 57000,
@@ -3666,7 +4206,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 57250,
@@ -3682,7 +4223,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 57500,
@@ -3698,7 +4240,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 57750,
@@ -3714,7 +4257,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 58000,
@@ -3730,7 +4274,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 58250,
@@ -3746,7 +4291,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 58500,
@@ -3762,7 +4308,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 58750,
@@ -3778,7 +4325,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 59000,
@@ -3794,7 +4342,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 59250,
@@ -3810,7 +4359,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 59500,
@@ -3826,7 +4376,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 59750,
@@ -3842,7 +4393,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 60000,
@@ -3858,7 +4410,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 60250,
@@ -3874,7 +4427,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 60500,
@@ -3890,7 +4444,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 60750,
@@ -3906,7 +4461,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 61000,
@@ -3922,7 +4478,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 61250,
@@ -3938,7 +4495,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 61500,
@@ -3954,7 +4512,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 61750,
@@ -3970,7 +4529,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 62000,
@@ -3986,7 +4546,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 62250,
@@ -4002,7 +4563,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 62500,
@@ -4018,7 +4580,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 62750,
@@ -4034,7 +4597,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 63000,
@@ -4050,7 +4614,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 63250,
@@ -4066,7 +4631,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 63500,
@@ -4082,7 +4648,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 63750,
@@ -4098,7 +4665,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 64000,
@@ -4114,7 +4682,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 64250,
@@ -4130,7 +4699,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 64500,
@@ -4146,7 +4716,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 64750,
@@ -4162,7 +4733,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 65000,
@@ -4178,7 +4750,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 65250,
@@ -4194,71 +4767,108 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 65500,
       "endMs": 65750,
       "faceCount": 1,
-      "reactionScore": 0.05740101808138813,
-      "smileScore": 0.0012608366669155657,
-      "amusementScore": 0.047187787058646784,
-      "surpriseScore": 0.05740101808138813,
-      "surpriseRawScore": 0.034440610848832875,
-      "jawOpenScore": 0.004118173848837614,
+      "reactionScore": 0.05740090758384515,
+      "smileScore": 0.0012608353281393647,
+      "amusementScore": 0.04718773459899239,
+      "surpriseScore": 0.05740090758384515,
+      "surpriseRawScore": 0.03444054455030709,
+      "jawOpenScore": 0.004118173383176327,
       "dominantExpression": "surprise",
       "focusX": 0.4758276790380478,
       "focusY": 0.1693653091788292,
       "faceWidth": 0.12092116475105286,
-      "faceHeight": 0.23282141983509064
+      "faceHeight": 0.23282141983509064,
+      "faces": [
+        {
+          "focusX": 0.4758276790380478,
+          "focusY": 0.1693653091788292,
+          "faceWidth": 0.12092116475105286,
+          "faceHeight": 0.23282141983509064,
+          "reactionScore": 0.05740090758384515
+        }
+      ]
     },
     {
       "startMs": 65750,
       "endMs": 66000,
       "faceCount": 1,
-      "reactionScore": 0.06817233917536214,
-      "smileScore": 0.008413931587710977,
-      "amusementScore": 0.06483331796480343,
-      "surpriseScore": 0.06817233917536214,
-      "surpriseRawScore": 0.04090340350521728,
-      "jawOpenScore": 0.09096521884202957,
+      "reactionScore": 0.06817240193777252,
+      "smileScore": 0.008413940202444792,
+      "amusementScore": 0.06483331660274416,
+      "surpriseScore": 0.06817240193777252,
+      "surpriseRawScore": 0.04090344116266351,
+      "jawOpenScore": 0.09096535295248032,
       "dominantExpression": "surprise",
       "focusX": 0.47957754135131836,
       "focusY": 0.17905415035784245,
       "faceWidth": 0.11565506458282471,
-      "faceHeight": 0.2442757897078991
+      "faceHeight": 0.2442757897078991,
+      "faces": [
+        {
+          "focusX": 0.47957754135131836,
+          "focusY": 0.17905415035784245,
+          "faceWidth": 0.11565506458282471,
+          "faceHeight": 0.2442757897078991,
+          "reactionScore": 0.06817240193777252
+        }
+      ]
     },
     {
       "startMs": 66000,
       "endMs": 66250,
       "faceCount": 1,
-      "reactionScore": 0.1553766393917613,
-      "smileScore": 0.03751860186457634,
-      "amusementScore": 0.09021740052849055,
-      "surpriseScore": 0.1553766393917613,
-      "surpriseRawScore": 0.09322598363505677,
-      "jawOpenScore": 0.08346612006425858,
+      "reactionScore": 0.15537703636800873,
+      "smileScore": 0.03751896135509014,
+      "amusementScore": 0.09021765226498245,
+      "surpriseScore": 0.15537703636800873,
+      "surpriseRawScore": 0.09322622182080523,
+      "jawOpenScore": 0.08346603065729141,
       "dominantExpression": "surprise",
       "focusX": 0.47583797574043274,
       "focusY": 0.16514844074845314,
       "faceWidth": 0.11397069692611694,
-      "faceHeight": 0.23344730585813522
+      "faceHeight": 0.23344730585813522,
+      "faces": [
+        {
+          "focusX": 0.47583797574043274,
+          "focusY": 0.16514844074845314,
+          "faceWidth": 0.11397069692611694,
+          "faceHeight": 0.23344730585813522,
+          "reactionScore": 0.15537703636800873
+        }
+      ]
     },
     {
       "startMs": 66250,
       "endMs": 66500,
       "faceCount": 1,
-      "reactionScore": 0.1837713765911758,
-      "smileScore": 0.16229307651519775,
-      "amusementScore": 0.1837713765911758,
-      "surpriseScore": 0.011599976845900528,
-      "surpriseRawScore": 0.0069599861075403165,
-      "jawOpenScore": 0.003411627374589443,
+      "reactionScore": 0.18377146136481315,
+      "smileScore": 0.1622931957244873,
+      "amusementScore": 0.18377146136481315,
+      "surpriseScore": 0.011600005445264589,
+      "surpriseRawScore": 0.006960003267158754,
+      "jawOpenScore": 0.0034116257447749376,
       "dominantExpression": "smile",
       "focusX": 0.45590195059776306,
       "focusY": 0.1449529454112053,
       "faceWidth": 0.11452430486679077,
-      "faceHeight": 0.23353101313114166
+      "faceHeight": 0.23353101313114166,
+      "faces": [
+        {
+          "focusX": 0.45590195059776306,
+          "focusY": 0.1449529454112053,
+          "faceWidth": 0.11452430486679077,
+          "faceHeight": 0.23353101313114166,
+          "reactionScore": 0.18377146136481315
+        }
+      ]
     },
     {
       "startMs": 66500,
@@ -4274,7 +4884,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 66750,
@@ -4290,7 +4901,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 67000,
@@ -4306,7 +4918,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 67250,
@@ -4322,7 +4935,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 67500,
@@ -4338,7 +4952,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 67750,
@@ -4354,7 +4969,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 68000,
@@ -4370,7 +4986,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 68250,
@@ -4386,7 +5003,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 68500,
@@ -4402,7 +5020,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 68750,
@@ -4418,7 +5037,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 69000,
@@ -4434,7 +5054,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 69250,
@@ -4450,23 +5071,33 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 69500,
       "endMs": 69750,
       "faceCount": 1,
-      "reactionScore": 0.7396147549152374,
-      "smileScore": 0.7396147549152374,
-      "amusementScore": 0.612210388854146,
-      "surpriseScore": 0.03140671667642892,
-      "surpriseRawScore": 0.01884403000585735,
-      "jawOpenScore": 0.04556984826922417,
+      "reactionScore": 0.739615261554718,
+      "smileScore": 0.739615261554718,
+      "amusementScore": 0.6122108951210976,
+      "surpriseScore": 0.031406638299813494,
+      "surpriseRawScore": 0.018843982979888096,
+      "jawOpenScore": 0.04556972533464432,
       "dominantExpression": "smile",
       "focusX": 0.50650255382061,
       "focusY": 0.1750367134809494,
       "faceWidth": 0.11799290776252747,
-      "faceHeight": 0.21982315182685852
+      "faceHeight": 0.21982315182685852,
+      "faces": [
+        {
+          "focusX": 0.50650255382061,
+          "focusY": 0.1750367134809494,
+          "faceWidth": 0.11799290776252747,
+          "faceHeight": 0.21982315182685852,
+          "reactionScore": 0.739615261554718
+        }
+      ]
     },
     {
       "startMs": 69750,
@@ -4482,7 +5113,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 70000,
@@ -4498,7 +5130,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 70250,
@@ -4514,7 +5147,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 70500,
@@ -4530,7 +5164,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 70750,
@@ -4546,7 +5181,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 71000,
@@ -4562,7 +5198,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 71250,
@@ -4578,7 +5215,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 71500,
@@ -4594,7 +5232,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 71750,
@@ -4610,7 +5249,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 72000,
@@ -4626,7 +5266,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 72250,
@@ -4642,7 +5283,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 72500,
@@ -4658,7 +5300,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 72750,
@@ -4674,7 +5317,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 73000,
@@ -4690,7 +5334,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 73250,
@@ -4706,7 +5351,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 73500,
@@ -4722,7 +5368,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 73750,
@@ -4738,7 +5385,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 74000,
@@ -4754,7 +5402,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 74250,
@@ -4770,7 +5419,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 74500,
@@ -4786,7 +5436,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 74750,
@@ -4802,7 +5453,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 75000,
@@ -4818,7 +5470,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 75250,
@@ -4834,71 +5487,108 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 75500,
       "endMs": 75750,
       "faceCount": 1,
-      "reactionScore": 0.06083764221984893,
-      "smileScore": 0.0031292992644011974,
-      "amusementScore": 0.06083764221984893,
-      "surpriseScore": 0.038856660025582336,
-      "surpriseRawScore": 0.023313996015349402,
-      "jawOpenScore": 0.009097623638808727,
+      "reactionScore": 0.060837628197623415,
+      "smileScore": 0.003129300312139094,
+      "amusementScore": 0.060837628197623415,
+      "surpriseScore": 0.03885639704337033,
+      "surpriseRawScore": 0.023313838226022197,
+      "jawOpenScore": 0.009097609668970108,
       "dominantExpression": "smile",
       "focusX": 0.48350077867507935,
       "focusY": 0.17244669049978256,
       "faceWidth": 0.11487209796905518,
-      "faceHeight": 0.21340663731098175
+      "faceHeight": 0.21340663731098175,
+      "faces": [
+        {
+          "focusX": 0.48350077867507935,
+          "focusY": 0.17244669049978256,
+          "faceWidth": 0.11487209796905518,
+          "faceHeight": 0.21340663731098175,
+          "reactionScore": 0.060837628197623415
+        }
+      ]
     },
     {
       "startMs": 75750,
       "endMs": 76000,
       "faceCount": 1,
-      "reactionScore": 0.06176040192367509,
-      "smileScore": 0.007468055002391338,
-      "amusementScore": 0.06176040192367509,
-      "surpriseScore": 0.05636528494748442,
-      "surpriseRawScore": 0.03381917096849065,
-      "jawOpenScore": 0.0017619353020563722,
+      "reactionScore": 0.061760391283314675,
+      "smileScore": 0.0074680817779153585,
+      "amusementScore": 0.061760391283314675,
+      "surpriseScore": 0.0563656638696557,
+      "surpriseRawScore": 0.03381939832179342,
+      "jawOpenScore": 0.0017619410064071417,
       "dominantExpression": "smile",
       "focusX": 0.5036265552043915,
       "focusY": 0.20361032336950302,
       "faceWidth": 0.11803048849105835,
-      "faceHeight": 0.22068102657794952
+      "faceHeight": 0.22068102657794952,
+      "faces": [
+        {
+          "focusX": 0.5036265552043915,
+          "focusY": 0.20361032336950302,
+          "faceWidth": 0.11803048849105835,
+          "faceHeight": 0.22068102657794952,
+          "reactionScore": 0.061760391283314675
+        }
+      ]
     },
     {
       "startMs": 76000,
       "endMs": 76250,
       "faceCount": 1,
-      "reactionScore": 0.0886420682843891,
-      "smileScore": 0.0001526231353636831,
-      "amusementScore": 0.0886420682843891,
-      "surpriseScore": 0.014900814994083097,
-      "surpriseRawScore": 0.008940488996449858,
-      "jawOpenScore": 0.010739144869148731,
+      "reactionScore": 0.08864209263629164,
+      "smileScore": 0.00015262294618878514,
+      "amusementScore": 0.08864209263629164,
+      "surpriseScore": 0.01490080925092722,
+      "surpriseRawScore": 0.008940485550556331,
+      "jawOpenScore": 0.010739143937826157,
       "dominantExpression": "smile",
       "focusX": 0.5115344822406769,
       "focusY": 0.24130360782146454,
       "faceWidth": 0.12536710500717163,
-      "faceHeight": 0.2395676076412201
+      "faceHeight": 0.2395676076412201,
+      "faces": [
+        {
+          "focusX": 0.5115344822406769,
+          "focusY": 0.24130360782146454,
+          "faceWidth": 0.12536710500717163,
+          "faceHeight": 0.2395676076412201,
+          "reactionScore": 0.08864209263629164
+        }
+      ]
     },
     {
       "startMs": 76250,
       "endMs": 76500,
       "faceCount": 1,
-      "reactionScore": 0.2885106167717216,
-      "smileScore": 0.0014887832221575081,
-      "amusementScore": 0.05673642690235283,
-      "surpriseScore": 0.2885106167717216,
-      "surpriseRawScore": 0.17310637006303295,
-      "jawOpenScore": 0.004358991049230099,
+      "reactionScore": 0.28851049936686957,
+      "smileScore": 0.0014887803699821234,
+      "amusementScore": 0.05673647896619514,
+      "surpriseScore": 0.28851049936686957,
+      "surpriseRawScore": 0.17310629962012172,
+      "jawOpenScore": 0.004358996637165546,
       "dominantExpression": "surprise",
       "focusX": 0.509471520781517,
       "focusY": 0.24521252512931824,
       "faceWidth": 0.12332287430763245,
-      "faceHeight": 0.23295825719833374
+      "faceHeight": 0.23295825719833374,
+      "faces": [
+        {
+          "focusX": 0.509471520781517,
+          "focusY": 0.24521252512931824,
+          "faceWidth": 0.12332287430763245,
+          "faceHeight": 0.23295825719833374,
+          "reactionScore": 0.28851049936686957
+        }
+      ]
     },
     {
       "startMs": 76500,
@@ -4914,7 +5604,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 76750,
@@ -4930,7 +5621,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 77000,
@@ -4946,7 +5638,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 77250,
@@ -4962,7 +5655,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 77500,
@@ -4978,7 +5672,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 77750,
@@ -4994,7 +5689,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 78000,
@@ -5010,7 +5706,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 78250,
@@ -5026,7 +5723,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 78500,
@@ -5042,7 +5740,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 78750,
@@ -5058,7 +5757,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 79000,
@@ -5074,7 +5774,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 79250,
@@ -5090,7 +5791,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 79500,
@@ -5106,7 +5808,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 79750,
@@ -5122,7 +5825,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 80000,
@@ -5138,7 +5842,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 80250,
@@ -5154,7 +5859,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 80500,
@@ -5170,7 +5876,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 80750,
@@ -5186,7 +5893,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 81000,
@@ -5202,7 +5910,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 81250,
@@ -5218,7 +5927,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 81500,
@@ -5234,7 +5944,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 81750,
@@ -5250,7 +5961,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 82000,
@@ -5266,7 +5978,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 82250,
@@ -5282,7 +5995,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 82500,
@@ -5298,7 +6012,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 82750,
@@ -5314,7 +6029,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 83000,
@@ -5330,7 +6046,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 83250,
@@ -5346,7 +6063,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 83500,
@@ -5362,7 +6080,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 83750,
@@ -5378,7 +6097,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 84000,
@@ -5394,7 +6114,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 84250,
@@ -5410,7 +6131,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 84500,
@@ -5426,7 +6148,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 84750,
@@ -5442,7 +6165,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 85000,
@@ -5458,7 +6182,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 85250,
@@ -5474,7 +6199,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 85500,
@@ -5490,7 +6216,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 85750,
@@ -5506,7 +6233,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 86000,
@@ -5522,7 +6250,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 86250,
@@ -5538,7 +6267,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 86500,
@@ -5554,7 +6284,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 86750,
@@ -5570,7 +6301,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 87000,
@@ -5586,7 +6318,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 87250,
@@ -5602,7 +6335,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 87500,
@@ -5618,7 +6352,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 87750,
@@ -5634,7 +6369,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 88000,
@@ -5650,7 +6386,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 88250,
@@ -5666,7 +6403,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 88500,
@@ -5682,7 +6420,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 88750,
@@ -5698,7 +6437,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 89000,
@@ -5714,7 +6454,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 89250,
@@ -5730,7 +6471,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 89500,
@@ -5746,7 +6488,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 89750,
@@ -5762,7 +6505,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 90000,
@@ -5778,7 +6522,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 90250,
@@ -5794,7 +6539,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 90500,
@@ -5810,7 +6556,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 90750,
@@ -5826,7 +6573,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 91000,
@@ -5842,7 +6590,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 91250,
@@ -5858,7 +6607,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 91500,
@@ -5874,7 +6624,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 91750,
@@ -5890,7 +6641,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 92000,
@@ -5906,7 +6658,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 92250,
@@ -5922,7 +6675,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 92500,
@@ -5938,7 +6692,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 92750,
@@ -5954,7 +6709,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 93000,
@@ -5970,7 +6726,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 93250,
@@ -5986,7 +6743,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 93500,
@@ -6002,7 +6760,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 93750,
@@ -6018,7 +6777,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 94000,
@@ -6034,7 +6794,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 94250,
@@ -6050,7 +6811,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 94500,
@@ -6066,7 +6828,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 94750,
@@ -6082,7 +6845,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 95000,
@@ -6098,7 +6862,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 95250,
@@ -6114,7 +6879,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 95500,
@@ -6130,7 +6896,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 95750,
@@ -6146,7 +6913,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 96000,
@@ -6162,7 +6930,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 96250,
@@ -6178,7 +6947,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 96500,
@@ -6194,7 +6964,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 96750,
@@ -6210,7 +6981,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 97000,
@@ -6226,7 +6998,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 97250,
@@ -6242,7 +7015,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 97500,
@@ -6258,7 +7032,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 97750,
@@ -6274,7 +7049,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 98000,
@@ -6290,7 +7066,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 98250,
@@ -6306,7 +7083,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 98500,
@@ -6322,7 +7100,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 98750,
@@ -6338,7 +7117,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 99000,
@@ -6354,7 +7134,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 99250,
@@ -6370,7 +7151,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 99500,
@@ -6386,167 +7168,258 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 99750,
       "endMs": 100000,
       "faceCount": 1,
-      "reactionScore": 0.4189157336950302,
-      "smileScore": 0.4189157336950302,
-      "amusementScore": 0.3937810469418764,
-      "surpriseScore": 0.17467364404971403,
-      "surpriseRawScore": 0.10480418642982842,
-      "jawOpenScore": 0.1481863409280777,
+      "reactionScore": 0.41891562938690186,
+      "smileScore": 0.41891562938690186,
+      "amusementScore": 0.3937809087336064,
+      "surpriseScore": 0.17467372528820613,
+      "surpriseRawScore": 0.10480423517292367,
+      "jawOpenScore": 0.14818662405014038,
       "dominantExpression": "smile",
       "focusX": 0.5882951021194458,
       "focusY": 0.635016530752182,
       "faceWidth": 0.08608150482177734,
-      "faceHeight": 0.19705313444137573
+      "faceHeight": 0.19705313444137573,
+      "faces": [
+        {
+          "focusX": 0.5882951021194458,
+          "focusY": 0.635016530752182,
+          "faceWidth": 0.08608150482177734,
+          "faceHeight": 0.19705313444137573,
+          "reactionScore": 0.41891562938690186
+        }
+      ]
     },
     {
       "startMs": 100000,
       "endMs": 100250,
       "faceCount": 1,
-      "reactionScore": 0.19442687667906283,
-      "smileScore": 0.17947670817375183,
-      "amusementScore": 0.19442687667906283,
-      "surpriseScore": 0.16541198116707773,
-      "surpriseRawScore": 0.09924718870024664,
-      "jawOpenScore": 0.2289895862340927,
+      "reactionScore": 0.19442701376974583,
+      "smileScore": 0.17947683483362198,
+      "amusementScore": 0.19442701376974583,
+      "surpriseScore": 0.1654118874430424,
+      "surpriseRawScore": 0.09924713246582542,
+      "jawOpenScore": 0.22898948192596436,
       "dominantExpression": "smile",
       "focusX": 0.5876793265342712,
       "focusY": 0.6388318538665771,
       "faceWidth": 0.08287239074707031,
-      "faceHeight": 0.18434691429138184
+      "faceHeight": 0.18434691429138184,
+      "faces": [
+        {
+          "focusX": 0.5876793265342712,
+          "focusY": 0.6388318538665771,
+          "faceWidth": 0.08287239074707031,
+          "faceHeight": 0.18434691429138184,
+          "reactionScore": 0.19442701376974583
+        }
+      ]
     },
     {
       "startMs": 100250,
       "endMs": 100500,
       "faceCount": 1,
-      "reactionScore": 0.18352871239185334,
-      "smileScore": 0.16572469472885132,
-      "amusementScore": 0.18352871239185334,
-      "surpriseScore": 0.09061084143468179,
-      "surpriseRawScore": 0.05436650486080907,
-      "jawOpenScore": 0.10714957863092422,
+      "reactionScore": 0.18352898359298705,
+      "smileScore": 0.16572505235671997,
+      "amusementScore": 0.18352898359298705,
+      "surpriseScore": 0.09061106893689914,
+      "surpriseRawScore": 0.054366641362139485,
+      "jawOpenScore": 0.1071498766541481,
       "dominantExpression": "smile",
       "focusX": 0.5879409611225128,
       "focusY": 0.6394975483417511,
       "faceWidth": 0.0823703408241272,
-      "faceHeight": 0.18231195211410522
+      "faceHeight": 0.18231195211410522,
+      "faces": [
+        {
+          "focusX": 0.5879409611225128,
+          "focusY": 0.6394975483417511,
+          "faceWidth": 0.0823703408241272,
+          "faceHeight": 0.18231195211410522,
+          "reactionScore": 0.18352898359298705
+        }
+      ]
     },
     {
       "startMs": 100500,
       "endMs": 100750,
       "faceCount": 1,
-      "reactionScore": 0.2423481497913599,
-      "smileScore": 0.20883112400770187,
-      "amusementScore": 0.2423481497913599,
-      "surpriseScore": 0.06762807392563748,
-      "surpriseRawScore": 0.04057684435538249,
-      "jawOpenScore": 0.0690164640545845,
+      "reactionScore": 0.24234729409217834,
+      "smileScore": 0.20883002877235413,
+      "amusementScore": 0.24234729409217834,
+      "surpriseScore": 0.06762806557890146,
+      "surpriseRawScore": 0.04057683934734087,
+      "jawOpenScore": 0.06901638954877853,
       "dominantExpression": "smile",
       "focusX": 0.582667887210846,
       "focusY": 0.6382595002651215,
       "faceWidth": 0.08092141151428223,
-      "faceHeight": 0.17752033472061157
+      "faceHeight": 0.17752033472061157,
+      "faces": [
+        {
+          "focusX": 0.582667887210846,
+          "focusY": 0.6382595002651215,
+          "faceWidth": 0.08092141151428223,
+          "faceHeight": 0.17752033472061157,
+          "reactionScore": 0.24234729409217834
+        }
+      ]
     },
     {
       "startMs": 100750,
       "endMs": 101000,
       "faceCount": 1,
-      "reactionScore": 0.5431812405586243,
-      "smileScore": 0.5431812405586243,
-      "amusementScore": 0.4793710254132748,
-      "surpriseScore": 0.07038349357511228,
-      "surpriseRawScore": 0.04223009614506737,
-      "jawOpenScore": 0.07286304235458374,
+      "reactionScore": 0.5431814789772034,
+      "smileScore": 0.5431814789772034,
+      "amusementScore": 0.4793712720274925,
+      "surpriseScore": 0.07038376978986587,
+      "surpriseRawScore": 0.04223026187391952,
+      "jawOpenScore": 0.07286325097084045,
       "dominantExpression": "smile",
       "focusX": 0.5774932205677032,
       "focusY": 0.6394249200820923,
       "faceWidth": 0.07692950963973999,
-      "faceHeight": 0.17400193214416504
+      "faceHeight": 0.17400193214416504,
+      "faces": [
+        {
+          "focusX": 0.5774932205677032,
+          "focusY": 0.6394249200820923,
+          "faceWidth": 0.07692950963973999,
+          "faceHeight": 0.17400193214416504,
+          "reactionScore": 0.5431814789772034
+        }
+      ]
     },
     {
       "startMs": 101000,
       "endMs": 101250,
       "faceCount": 1,
-      "reactionScore": 0.5445506572723389,
-      "smileScore": 0.5445506572723389,
-      "amusementScore": 0.4818430349230766,
-      "surpriseScore": 0.04415455473160061,
-      "surpriseRawScore": 0.026492732838960364,
-      "jawOpenScore": 0.04675574600696564,
+      "reactionScore": 0.5445508062839508,
+      "smileScore": 0.5445508062839508,
+      "amusementScore": 0.48184311799705026,
+      "surpriseScore": 0.04415444141098609,
+      "surpriseRawScore": 0.02649266484659165,
+      "jawOpenScore": 0.04675568267703056,
       "dominantExpression": "smile",
       "focusX": 0.5759175419807434,
       "focusY": 0.6425314247608185,
       "faceWidth": 0.07809591293334961,
-      "faceHeight": 0.17685943841934204
+      "faceHeight": 0.17685943841934204,
+      "faces": [
+        {
+          "focusX": 0.5759175419807434,
+          "focusY": 0.6425314247608185,
+          "faceWidth": 0.07809591293334961,
+          "faceHeight": 0.17685943841934204,
+          "reactionScore": 0.5445508062839508
+        }
+      ]
     },
     {
       "startMs": 101250,
       "endMs": 101500,
       "faceCount": 1,
-      "reactionScore": 0.6866571307182312,
-      "smileScore": 0.6866571307182312,
-      "amusementScore": 0.5973338231444358,
-      "surpriseScore": 0.0459574021321411,
-      "surpriseRawScore": 0.02757444127928466,
-      "jawOpenScore": 0.05805714428424835,
+      "reactionScore": 0.6866572499275208,
+      "smileScore": 0.6866572499275208,
+      "amusementScore": 0.5973338056355715,
+      "surpriseScore": 0.0459573384335575,
+      "surpriseRawScore": 0.027574403060134502,
+      "jawOpenScore": 0.05805705860257149,
       "dominantExpression": "smile",
       "focusX": 0.5766398310661316,
       "focusY": 0.6437338292598724,
       "faceWidth": 0.08076488971710205,
-      "faceHeight": 0.1777830719947815
+      "faceHeight": 0.1777830719947815,
+      "faces": [
+        {
+          "focusX": 0.5766398310661316,
+          "focusY": 0.6437338292598724,
+          "faceWidth": 0.08076488971710205,
+          "faceHeight": 0.1777830719947815,
+          "reactionScore": 0.6866572499275208
+        }
+      ]
     },
     {
       "startMs": 101500,
       "endMs": 101750,
       "faceCount": 1,
-      "reactionScore": 0.7370078265666962,
-      "smileScore": 0.7370078265666962,
-      "amusementScore": 0.6454539887607098,
-      "surpriseScore": 0.05553692004953821,
-      "surpriseRawScore": 0.033322152029722926,
-      "jawOpenScore": 0.07055041939020157,
+      "reactionScore": 0.7370078563690186,
+      "smileScore": 0.7370078563690186,
+      "amusementScore": 0.6454540260136128,
+      "surpriseScore": 0.05553694948321208,
+      "surpriseRawScore": 0.033322169689927246,
+      "jawOpenScore": 0.07055047899484634,
       "dominantExpression": "smile",
       "focusX": 0.5777043998241425,
       "focusY": 0.644218921661377,
       "faceWidth": 0.08085638284683228,
-      "faceHeight": 0.17848742008209229
+      "faceHeight": 0.17848742008209229,
+      "faces": [
+        {
+          "focusX": 0.5777043998241425,
+          "focusY": 0.644218921661377,
+          "faceWidth": 0.08085638284683228,
+          "faceHeight": 0.17848742008209229,
+          "reactionScore": 0.7370078563690186
+        }
+      ]
     },
     {
       "startMs": 101750,
       "endMs": 102000,
       "faceCount": 1,
-      "reactionScore": 0.769137442111969,
-      "smileScore": 0.769137442111969,
-      "amusementScore": 0.6789347976446152,
-      "surpriseScore": 0.09676785418802561,
-      "surpriseRawScore": 0.05806071251281537,
-      "jawOpenScore": 0.1322174072265625,
+      "reactionScore": 0.7691375911235809,
+      "smileScore": 0.7691375911235809,
+      "amusementScore": 0.6789348870515823,
+      "surpriseScore": 0.09676779237148973,
+      "surpriseRawScore": 0.05806067542289384,
+      "jawOpenScore": 0.13221727311611176,
       "dominantExpression": "smile",
       "focusX": 0.5783848762512207,
       "focusY": 0.6454081535339355,
       "faceWidth": 0.08110380172729492,
-      "faceHeight": 0.18030250072479248
+      "faceHeight": 0.18030250072479248,
+      "faces": [
+        {
+          "focusX": 0.5783848762512207,
+          "focusY": 0.6454081535339355,
+          "faceWidth": 0.08110380172729492,
+          "faceHeight": 0.18030250072479248,
+          "reactionScore": 0.7691375911235809
+        }
+      ]
     },
     {
       "startMs": 102000,
       "endMs": 102250,
       "faceCount": 1,
-      "reactionScore": 0.7328133881092072,
-      "smileScore": 0.7328133881092072,
-      "amusementScore": 0.6583250120282172,
-      "surpriseScore": 0.1506106303810763,
-      "surpriseRawScore": 0.09036637822864578,
-      "jawOpenScore": 0.21544983983039856,
+      "reactionScore": 0.7328134775161743,
+      "smileScore": 0.7328134775161743,
+      "amusementScore": 0.658325107395649,
+      "surpriseScore": 0.15061075966999246,
+      "surpriseRawScore": 0.09036645580199547,
+      "jawOpenScore": 0.21545007824897766,
       "dominantExpression": "smile",
       "focusX": 0.5770387351512909,
       "focusY": 0.647153913974762,
       "faceWidth": 0.07994824647903442,
-      "faceHeight": 0.18173742294311523
+      "faceHeight": 0.18173742294311523,
+      "faces": [
+        {
+          "focusX": 0.5770387351512909,
+          "focusY": 0.647153913974762,
+          "faceWidth": 0.07994824647903442,
+          "faceHeight": 0.18173742294311523,
+          "reactionScore": 0.7328134775161743
+        }
+      ]
     },
     {
       "startMs": 102250,
@@ -6554,287 +7427,449 @@
       "faceCount": 1,
       "reactionScore": 0.7340027689933777,
       "smileScore": 0.7340027689933777,
-      "amusementScore": 0.6930473417043685,
-      "surpriseScore": 0.32127675716765225,
-      "surpriseRawScore": 0.19276605430059135,
-      "jawOpenScore": 0.4777356684207916,
+      "amusementScore": 0.69304728358984,
+      "surpriseScore": 0.32127669738838455,
+      "surpriseRawScore": 0.1927660184330307,
+      "jawOpenScore": 0.47773557901382446,
       "dominantExpression": "smile",
       "focusX": 0.5748224854469299,
       "focusY": 0.6550189852714539,
       "faceWidth": 0.08346545696258545,
-      "faceHeight": 0.19413983821868896
+      "faceHeight": 0.19413983821868896,
+      "faces": [
+        {
+          "focusX": 0.5748224854469299,
+          "focusY": 0.6550189852714539,
+          "faceWidth": 0.08346545696258545,
+          "faceHeight": 0.19413983821868896,
+          "reactionScore": 0.7340027689933777
+        }
+      ]
     },
     {
       "startMs": 102500,
       "endMs": 102750,
       "faceCount": 1,
-      "reactionScore": 0.8792046010494232,
-      "smileScore": 0.8792046010494232,
-      "amusementScore": 0.8014752268791199,
-      "surpriseScore": 0.44351898281699215,
-      "surpriseRawScore": 0.26611138969019527,
-      "jawOpenScore": 0.6632336378097534,
+      "reactionScore": 0.879204660654068,
+      "smileScore": 0.879204660654068,
+      "amusementScore": 0.8014752555638551,
+      "surpriseScore": 0.443518822445185,
+      "surpriseRawScore": 0.266111293467111,
+      "jawOpenScore": 0.6632333993911743,
       "dominantExpression": "smile",
       "focusX": 0.574876457452774,
       "focusY": 0.6581156551837921,
       "faceWidth": 0.0829285979270935,
-      "faceHeight": 0.21358340978622437
+      "faceHeight": 0.21358340978622437,
+      "faces": [
+        {
+          "focusX": 0.574876457452774,
+          "focusY": 0.6581156551837921,
+          "faceWidth": 0.0829285979270935,
+          "faceHeight": 0.21358340978622437,
+          "reactionScore": 0.879204660654068
+        }
+      ]
     },
     {
       "startMs": 102750,
       "endMs": 103000,
       "faceCount": 1,
-      "reactionScore": 0.8577665984630585,
-      "smileScore": 0.8577665984630585,
-      "amusementScore": 0.792402184009552,
-      "surpriseScore": 0.4495479997276562,
-      "surpriseRawScore": 0.2697287998365937,
-      "jawOpenScore": 0.6722173690795898,
+      "reactionScore": 0.8577667474746704,
+      "smileScore": 0.8577667474746704,
+      "amusementScore": 0.7924024067819119,
+      "surpriseScore": 0.4495477969564187,
+      "surpriseRawScore": 0.2697286781738512,
+      "jawOpenScore": 0.672217071056366,
       "dominantExpression": "smile",
       "focusX": 0.5779362320899963,
       "focusY": 0.6598676443099976,
       "faceWidth": 0.08275258541107178,
-      "faceHeight": 0.2094733715057373
+      "faceHeight": 0.2094733715057373,
+      "faces": [
+        {
+          "focusX": 0.5779362320899963,
+          "focusY": 0.6598676443099976,
+          "faceWidth": 0.08275258541107178,
+          "faceHeight": 0.2094733715057373,
+          "reactionScore": 0.8577667474746704
+        }
+      ]
     },
     {
       "startMs": 103000,
       "endMs": 103250,
       "faceCount": 1,
-      "reactionScore": 0.6929274797439575,
-      "smileScore": 0.6929274797439575,
-      "amusementScore": 0.6803208649158478,
-      "surpriseScore": 0.4333046277849159,
-      "surpriseRawScore": 0.25998277667094954,
-      "jawOpenScore": 0.6474740505218506,
+      "reactionScore": 0.6929275393486023,
+      "smileScore": 0.6929275393486023,
+      "amusementScore": 0.6803209513425827,
+      "surpriseScore": 0.4333046673758267,
+      "surpriseRawScore": 0.259982800425496,
+      "jawOpenScore": 0.6474741101264954,
       "dominantExpression": "smile",
       "focusX": 0.5862314701080322,
       "focusY": 0.662698358297348,
       "faceWidth": 0.08677303791046143,
-      "faceHeight": 0.20243996381759644
+      "faceHeight": 0.20243996381759644,
+      "faces": [
+        {
+          "focusX": 0.5862314701080322,
+          "focusY": 0.662698358297348,
+          "faceWidth": 0.08677303791046143,
+          "faceHeight": 0.20243996381759644,
+          "reactionScore": 0.6929275393486023
+        }
+      ]
     },
     {
       "startMs": 103250,
       "endMs": 103500,
       "faceCount": 1,
-      "reactionScore": 0.7294288873672485,
-      "smileScore": 0.7294288873672485,
-      "amusementScore": 0.6620157226920128,
-      "surpriseScore": 0.22136447634936002,
-      "surpriseRawScore": 0.132818685809616,
-      "jawOpenScore": 0.2915763854980469,
+      "reactionScore": 0.7294288277626038,
+      "smileScore": 0.7294288277626038,
+      "amusementScore": 0.6620156422257423,
+      "surpriseScore": 0.2213640400247338,
+      "surpriseRawScore": 0.1328184240148403,
+      "jawOpenScore": 0.2915758490562439,
       "dominantExpression": "smile",
       "focusX": 0.5846715569496155,
       "focusY": 0.6577306091785431,
       "faceWidth": 0.08305466175079346,
-      "faceHeight": 0.18949109315872192
+      "faceHeight": 0.18949109315872192,
+      "faces": [
+        {
+          "focusX": 0.5846715569496155,
+          "focusY": 0.6577306091785431,
+          "faceWidth": 0.08305466175079346,
+          "faceHeight": 0.18949109315872192,
+          "reactionScore": 0.7294288277626038
+        }
+      ]
     },
     {
       "startMs": 103500,
       "endMs": 103750,
       "faceCount": 1,
-      "reactionScore": 0.7651280760765076,
-      "smileScore": 0.7651280760765076,
-      "amusementScore": 0.6755154132843018,
-      "surpriseScore": 0.1516622030248982,
-      "surpriseRawScore": 0.09099732181493891,
-      "jawOpenScore": 0.22276103496551514,
+      "reactionScore": 0.765127569437027,
+      "smileScore": 0.765127569437027,
+      "amusementScore": 0.6755150429904461,
+      "surpriseScore": 0.15166204730242802,
+      "surpriseRawScore": 0.09099722838145681,
+      "jawOpenScore": 0.22276079654693604,
       "dominantExpression": "smile",
       "focusX": 0.5788182318210602,
       "focusY": 0.6538464426994324,
       "faceWidth": 0.08049362897872925,
-      "faceHeight": 0.19232797622680664
+      "faceHeight": 0.19232797622680664,
+      "faces": [
+        {
+          "focusX": 0.5788182318210602,
+          "focusY": 0.6538464426994324,
+          "faceWidth": 0.08049362897872925,
+          "faceHeight": 0.19232797622680664,
+          "reactionScore": 0.765127569437027
+        }
+      ]
     },
     {
       "startMs": 103750,
       "endMs": 104000,
       "faceCount": 1,
-      "reactionScore": 0.70601487159729,
-      "smileScore": 0.70601487159729,
-      "amusementScore": 0.6473407953977585,
-      "surpriseScore": 0.19450471491048424,
-      "surpriseRawScore": 0.11670282894629054,
-      "jawOpenScore": 0.28114551305770874,
+      "reactionScore": 0.7060150802135468,
+      "smileScore": 0.7060150802135468,
+      "amusementScore": 0.6473409801721572,
+      "surpriseScore": 0.19450468814466151,
+      "surpriseRawScore": 0.1167028128867969,
+      "jawOpenScore": 0.28114548325538635,
       "dominantExpression": "smile",
       "focusX": 0.5760160386562347,
       "focusY": 0.6514043211936951,
       "faceWidth": 0.08115512132644653,
-      "faceHeight": 0.18737590312957764
+      "faceHeight": 0.18737590312957764,
+      "faces": [
+        {
+          "focusX": 0.5760160386562347,
+          "focusY": 0.6514043211936951,
+          "faceWidth": 0.08115512132644653,
+          "faceHeight": 0.18737590312957764,
+          "reactionScore": 0.7060150802135468
+        }
+      ]
     },
     {
       "startMs": 104000,
       "endMs": 104250,
       "faceCount": 1,
-      "reactionScore": 0.6354780495166779,
-      "smileScore": 0.6354780495166779,
-      "amusementScore": 0.5775000341236591,
-      "surpriseScore": 0.09906373593063715,
-      "surpriseRawScore": 0.05943824155838229,
-      "jawOpenScore": 0.13601461052894592,
+      "reactionScore": 0.635478287935257,
+      "smileScore": 0.635478287935257,
+      "amusementScore": 0.5775001607835293,
+      "surpriseScore": 0.09906349702699421,
+      "surpriseRawScore": 0.05943809821619653,
+      "jawOpenScore": 0.13601426780223846,
       "dominantExpression": "smile",
       "focusX": 0.5744846165180206,
       "focusY": 0.6487902700901031,
       "faceWidth": 0.08362120389938354,
-      "faceHeight": 0.18611866235733032
+      "faceHeight": 0.18611866235733032,
+      "faces": [
+        {
+          "focusX": 0.5744846165180206,
+          "focusY": 0.6487902700901031,
+          "faceWidth": 0.08362120389938354,
+          "faceHeight": 0.18611866235733032,
+          "reactionScore": 0.635478287935257
+        }
+      ]
     },
     {
       "startMs": 104250,
       "endMs": 104500,
       "faceCount": 1,
-      "reactionScore": 0.2642125982791185,
-      "smileScore": 0.24452472478151321,
-      "amusementScore": 0.2642125982791185,
-      "surpriseScore": 0.056928274963865995,
-      "surpriseRawScore": 0.0341569649783196,
-      "jawOpenScore": 0.062104471027851105,
+      "reactionScore": 0.2642124067991972,
+      "smileScore": 0.2445245012640953,
+      "amusementScore": 0.2642124067991972,
+      "surpriseScore": 0.056928203737091586,
+      "surpriseRawScore": 0.03415692224225495,
+      "jawOpenScore": 0.06210436671972275,
       "dominantExpression": "smile",
       "focusX": 0.5742104351520538,
       "focusY": 0.6440140008926392,
       "faceWidth": 0.07902425527572632,
-      "faceHeight": 0.17920899391174316
+      "faceHeight": 0.17920899391174316,
+      "faces": [
+        {
+          "focusX": 0.5742104351520538,
+          "focusY": 0.6440140008926392,
+          "faceWidth": 0.07902425527572632,
+          "faceHeight": 0.17920899391174316,
+          "reactionScore": 0.2642124067991972
+        }
+      ]
     },
     {
       "startMs": 104500,
       "endMs": 104750,
       "faceCount": 1,
-      "reactionScore": 0.0805901684119211,
-      "smileScore": 0.00654895999468863,
-      "amusementScore": 0.07907528727082536,
-      "surpriseScore": 0.0805901684119211,
-      "surpriseRawScore": 0.04835410104715265,
-      "jawOpenScore": 0.09335359930992126,
+      "reactionScore": 0.08059026010353894,
+      "smileScore": 0.006548984441906214,
+      "amusementScore": 0.07907531454693525,
+      "surpriseScore": 0.08059026010353894,
+      "surpriseRawScore": 0.048354156062123364,
+      "jawOpenScore": 0.09335368871688843,
       "dominantExpression": "surprise",
       "focusX": 0.5740293860435486,
       "focusY": 0.6422215104103088,
       "faceWidth": 0.07877254486083984,
-      "faceHeight": 0.1755601167678833
+      "faceHeight": 0.1755601167678833,
+      "faces": [
+        {
+          "focusX": 0.5740293860435486,
+          "focusY": 0.6422215104103088,
+          "faceWidth": 0.07877254486083984,
+          "faceHeight": 0.1755601167678833,
+          "reactionScore": 0.08059026010353894
+        }
+      ]
     },
     {
       "startMs": 104750,
       "endMs": 105000,
       "faceCount": 1,
-      "reactionScore": 0.07622278551571071,
-      "smileScore": 0.009513759054243565,
-      "amusementScore": 0.07622278551571071,
-      "surpriseScore": 0.05440484640227321,
-      "surpriseRawScore": 0.03264290784136392,
-      "jawOpenScore": 0.04708888754248619,
+      "reactionScore": 0.07622267003171146,
+      "smileScore": 0.009513729251921177,
+      "amusementScore": 0.07622267003171146,
+      "surpriseScore": 0.054405027127359076,
+      "surpriseRawScore": 0.03264301627641544,
+      "jawOpenScore": 0.04708916321396828,
       "dominantExpression": "smile",
       "focusX": 0.5739824771881104,
       "focusY": 0.6412458419799805,
       "faceWidth": 0.07697701454162598,
-      "faceHeight": 0.17494916915893555
+      "faceHeight": 0.17494916915893555,
+      "faces": [
+        {
+          "focusX": 0.5739824771881104,
+          "focusY": 0.6412458419799805,
+          "faceWidth": 0.07697701454162598,
+          "faceHeight": 0.17494916915893555,
+          "reactionScore": 0.07622267003171146
+        }
+      ]
     },
     {
       "startMs": 105000,
       "endMs": 105250,
       "faceCount": 1,
-      "reactionScore": 0.1633869856595993,
-      "smileScore": 0.1633869856595993,
-      "amusementScore": 0.14882557238452135,
-      "surpriseScore": 0.007100461398901341,
-      "surpriseRawScore": 0.004260276839340805,
-      "jawOpenScore": 0.008565082214772701,
+      "reactionScore": 0.1633870154619217,
+      "smileScore": 0.1633870154619217,
+      "amusementScore": 0.1488255518954247,
+      "surpriseScore": 0.007100452519807733,
+      "surpriseRawScore": 0.004260271511884639,
+      "jawOpenScore": 0.008565072901546955,
       "dominantExpression": "smile",
       "focusX": 0.5703208744525909,
       "focusY": 0.6412080824375153,
       "faceWidth": 0.08307915925979614,
-      "faceHeight": 0.1883884072303772
+      "faceHeight": 0.1883884072303772,
+      "faces": [
+        {
+          "focusX": 0.5703208744525909,
+          "focusY": 0.6412080824375153,
+          "faceWidth": 0.08307915925979614,
+          "faceHeight": 0.1883884072303772,
+          "reactionScore": 0.1633870154619217
+        }
+      ]
     },
     {
       "startMs": 105250,
       "endMs": 105500,
       "faceCount": 1,
-      "reactionScore": 0.16009087746497244,
-      "smileScore": 0.13197025656700134,
-      "amusementScore": 0.16009087746497244,
-      "surpriseScore": 0.0043549259717110544,
-      "surpriseRawScore": 0.0026129555830266328,
-      "jawOpenScore": 0.0028916539158672094,
+      "reactionScore": 0.1600910023553297,
+      "smileScore": 0.13197042793035507,
+      "amusementScore": 0.1600910023553297,
+      "surpriseScore": 0.004354930075351149,
+      "surpriseRawScore": 0.0026129580452106892,
+      "jawOpenScore": 0.0028916511218994856,
       "dominantExpression": "smile",
       "focusX": 0.5737552642822266,
       "focusY": 0.6387082636356354,
       "faceWidth": 0.07711589336395264,
-      "faceHeight": 0.1921592354774475
+      "faceHeight": 0.1921592354774475,
+      "faces": [
+        {
+          "focusX": 0.5737552642822266,
+          "focusY": 0.6387082636356354,
+          "faceWidth": 0.07711589336395264,
+          "faceHeight": 0.1921592354774475,
+          "reactionScore": 0.1600910023553297
+        }
+      ]
     },
     {
       "startMs": 105500,
       "endMs": 105750,
       "faceCount": 1,
-      "reactionScore": 0.1769374224822968,
-      "smileScore": 0.13241194933652878,
-      "amusementScore": 0.1769374224822968,
-      "surpriseScore": 0.00778157715103589,
-      "surpriseRawScore": 0.004668946290621534,
-      "jawOpenScore": 0.00496458588168025,
+      "reactionScore": 0.1769370697438717,
+      "smileScore": 0.13241152092814445,
+      "amusementScore": 0.1769370697438717,
+      "surpriseScore": 0.007781582447933033,
+      "surpriseRawScore": 0.0046689494687598195,
+      "jawOpenScore": 0.004964595660567284,
       "dominantExpression": "smile",
       "focusX": 0.5724250972270966,
       "focusY": 0.6409677863121033,
       "faceWidth": 0.07716518640518188,
-      "faceHeight": 0.18988525867462158
+      "faceHeight": 0.18988525867462158,
+      "faces": [
+        {
+          "focusX": 0.5724250972270966,
+          "focusY": 0.6409677863121033,
+          "faceWidth": 0.07716518640518188,
+          "faceHeight": 0.18988525867462158,
+          "reactionScore": 0.1769370697438717
+        }
+      ]
     },
     {
       "startMs": 105750,
       "endMs": 106000,
       "faceCount": 1,
-      "reactionScore": 0.05729442443698645,
-      "smileScore": 0.0210639126598835,
-      "amusementScore": 0.05729442443698645,
-      "surpriseScore": 0.05380674486999245,
-      "surpriseRawScore": 0.03228404692199547,
-      "jawOpenScore": 0.06719640642404556,
+      "reactionScore": 0.05729441437870264,
+      "smileScore": 0.021063949912786484,
+      "amusementScore": 0.05729441437870264,
+      "surpriseScore": 0.05380664647721763,
+      "surpriseRawScore": 0.03228398788633058,
+      "jawOpenScore": 0.06719629466533661,
       "dominantExpression": "smile",
       "focusX": 0.5634921789169312,
       "focusY": 0.6443362534046173,
       "faceWidth": 0.07781648635864258,
-      "faceHeight": 0.18039506673812866
+      "faceHeight": 0.18039506673812866,
+      "faces": [
+        {
+          "focusX": 0.5634921789169312,
+          "focusY": 0.6443362534046173,
+          "faceWidth": 0.07781648635864258,
+          "faceHeight": 0.18039506673812866,
+          "reactionScore": 0.05729441437870264
+        }
+      ]
     },
     {
       "startMs": 106000,
       "endMs": 106250,
       "faceCount": 1,
-      "reactionScore": 0.2406725212931633,
-      "smileScore": 0.2406725212931633,
-      "amusementScore": 0.22505560240242628,
-      "surpriseScore": 0.0055576040322193885,
-      "surpriseRawScore": 0.003334562419331633,
-      "jawOpenScore": 0.0036658330354839563,
+      "reactionScore": 0.24067255854606628,
+      "smileScore": 0.24067255854606628,
+      "amusementScore": 0.22505563567392528,
+      "surpriseScore": 0.005557620820278923,
+      "surpriseRawScore": 0.003334572492167354,
+      "jawOpenScore": 0.0036658416502177715,
       "dominantExpression": "smile",
       "focusX": 0.5594418346881866,
       "focusY": 0.6463541388511658,
       "faceWidth": 0.08200448751449585,
-      "faceHeight": 0.18338501453399658
+      "faceHeight": 0.18338501453399658,
+      "faces": [
+        {
+          "focusX": 0.5594418346881866,
+          "focusY": 0.6463541388511658,
+          "faceWidth": 0.08200448751449585,
+          "faceHeight": 0.18338501453399658,
+          "reactionScore": 0.24067255854606628
+        }
+      ]
     },
     {
       "startMs": 106250,
       "endMs": 106500,
       "faceCount": 1,
-      "reactionScore": 0.5979355275630951,
-      "smileScore": 0.5979355275630951,
-      "amusementScore": 0.5097838146612048,
-      "surpriseScore": 0.009067147514239576,
-      "surpriseRawScore": 0.005440288508543745,
-      "jawOpenScore": 0.011785870417952538,
+      "reactionScore": 0.5979354381561279,
+      "smileScore": 0.5979354381561279,
+      "amusementScore": 0.5097836828790605,
+      "surpriseScore": 0.009067132331741353,
+      "surpriseRawScore": 0.005440279399044812,
+      "jawOpenScore": 0.011785848997533321,
       "dominantExpression": "smile",
       "focusX": 0.5562559962272644,
       "focusY": 0.645025759935379,
       "faceWidth": 0.0794680118560791,
-      "faceHeight": 0.18753021955490112
+      "faceHeight": 0.18753021955490112,
+      "faces": [
+        {
+          "focusX": 0.5562559962272644,
+          "focusY": 0.645025759935379,
+          "faceWidth": 0.0794680118560791,
+          "faceHeight": 0.18753021955490112,
+          "reactionScore": 0.5979354381561279
+        }
+      ]
     },
     {
       "startMs": 106500,
       "endMs": 106750,
       "faceCount": 1,
-      "reactionScore": 0.7414491176605225,
-      "smileScore": 0.7414491176605225,
-      "amusementScore": 0.6233776966109872,
-      "surpriseScore": 0.02462016646556246,
-      "surpriseRawScore": 0.014772099879337475,
-      "jawOpenScore": 0.027431832626461983,
+      "reactionScore": 0.7414490282535553,
+      "smileScore": 0.7414490282535553,
+      "amusementScore": 0.6233776232227682,
+      "surpriseScore": 0.024620174595232434,
+      "surpriseRawScore": 0.01477210475713946,
+      "jawOpenScore": 0.027431881055235863,
       "dominantExpression": "smile",
       "focusX": 0.5587670505046844,
       "focusY": 0.6447710394859314,
       "faceWidth": 0.07466048002243042,
-      "faceHeight": 0.18236815929412842
+      "faceHeight": 0.18236815929412842,
+      "faces": [
+        {
+          "focusX": 0.5587670505046844,
+          "focusY": 0.6447710394859314,
+          "faceWidth": 0.07466048002243042,
+          "faceHeight": 0.18236815929412842,
+          "reactionScore": 0.7414490282535553
+        }
+      ]
     },
     {
       "startMs": 106750,
@@ -6850,7 +7885,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 107000,
@@ -6866,7 +7902,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 107250,
@@ -6882,7 +7919,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 107500,
@@ -6898,7 +7936,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 107750,
@@ -6914,7 +7953,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 108000,
@@ -6930,7 +7970,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 108250,
@@ -6946,7 +7987,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 108500,
@@ -6962,7 +8004,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 108750,
@@ -6978,7 +8021,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 109000,
@@ -6994,7 +8038,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 109250,
@@ -7010,7 +8055,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 109500,
@@ -7026,39 +8072,58 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 109750,
       "endMs": 110000,
       "faceCount": 1,
-      "reactionScore": 0.7273967266082764,
-      "smileScore": 0.7273967266082764,
-      "amusementScore": 0.673426766321063,
-      "surpriseScore": 0.40839513950292416,
-      "surpriseRawScore": 0.24503708370175448,
-      "jawOpenScore": 0.6019433736801147,
+      "reactionScore": 0.7273968160152435,
+      "smileScore": 0.7273968160152435,
+      "amusementScore": 0.6734268438071012,
+      "surpriseScore": 0.40839505783272523,
+      "surpriseRawScore": 0.24503703469963514,
+      "jawOpenScore": 0.6019432544708252,
       "dominantExpression": "smile",
       "focusX": 0.5715141594409943,
       "focusY": 0.6551330387592316,
       "faceWidth": 0.08400338888168335,
-      "faceHeight": 0.20252734422683716
+      "faceHeight": 0.20252734422683716,
+      "faces": [
+        {
+          "focusX": 0.5715141594409943,
+          "focusY": 0.6551330387592316,
+          "faceWidth": 0.08400338888168335,
+          "faceHeight": 0.20252734422683716,
+          "reactionScore": 0.7273968160152435
+        }
+      ]
     },
     {
       "startMs": 110000,
       "endMs": 110250,
       "faceCount": 1,
-      "reactionScore": 0.3639070646992575,
-      "smileScore": 0.1059534065425396,
-      "amusementScore": 0.19331375155597927,
-      "surpriseScore": 0.3639070646992575,
-      "surpriseRawScore": 0.21834423881955448,
-      "jawOpenScore": 0.5363590717315674,
+      "reactionScore": 0.3639073905069381,
+      "smileScore": 0.10595351830124855,
+      "amusementScore": 0.1933138629421592,
+      "surpriseScore": 0.3639073905069381,
+      "surpriseRawScore": 0.21834443430416287,
+      "jawOpenScore": 0.5363595485687256,
       "dominantExpression": "surprise",
       "focusX": 0.5668834447860718,
       "focusY": 0.6689839065074921,
       "faceWidth": 0.08578002452850342,
-      "faceHeight": 0.19734102487564087
+      "faceHeight": 0.19734102487564087,
+      "faces": [
+        {
+          "focusX": 0.5668834447860718,
+          "focusY": 0.6689839065074921,
+          "faceWidth": 0.08578002452850342,
+          "faceHeight": 0.19734102487564087,
+          "reactionScore": 0.3639073905069381
+        }
+      ]
     },
     {
       "startMs": 110250,
@@ -7074,7 +8139,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 110500,
@@ -7090,7 +8156,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 110750,
@@ -7106,7 +8173,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 111000,
@@ -7122,7 +8190,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 111250,
@@ -7138,7 +8207,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 111500,
@@ -7154,7 +8224,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 111750,
@@ -7170,7 +8241,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 112000,
@@ -7186,7 +8258,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 112250,
@@ -7202,103 +8275,179 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 112500,
       "endMs": 112750,
       "faceCount": 1,
-      "reactionScore": 0.0563640269334428,
-      "smileScore": 0.013720141956582665,
-      "amusementScore": 0.0563640269334428,
-      "surpriseScore": 0.03636132566801583,
-      "surpriseRawScore": 0.021816795400809497,
-      "jawOpenScore": 0.01755783148109913,
+      "reactionScore": 0.05636406854027882,
+      "smileScore": 0.013720170361921191,
+      "amusementScore": 0.05636406854027882,
+      "surpriseScore": 0.036361464920143284,
+      "surpriseRawScore": 0.02181687895208597,
+      "jawOpenScore": 0.01755785569548607,
       "dominantExpression": "smile",
       "focusX": 0.5614229738712311,
       "focusY": 0.656898558139801,
       "faceWidth": 0.1006808876991272,
-      "faceHeight": 0.19852149486541748
+      "faceHeight": 0.19852149486541748,
+      "faces": [
+        {
+          "focusX": 0.5614229738712311,
+          "focusY": 0.656898558139801,
+          "faceWidth": 0.1006808876991272,
+          "faceHeight": 0.19852149486541748,
+          "reactionScore": 0.05636406854027882
+        }
+      ]
     },
     {
       "startMs": 112750,
       "endMs": 113000,
       "faceCount": 2,
-      "reactionScore": 0.8082933723926544,
-      "smileScore": 0.8082933723926544,
-      "amusementScore": 0.6579310324043036,
-      "surpriseScore": 0.06928897303684303,
-      "surpriseRawScore": 0.04157338382210582,
-      "jawOpenScore": 0.026084888726472855,
+      "reactionScore": 0.8082934021949768,
+      "smileScore": 0.8082934021949768,
+      "amusementScore": 0.6579310411587358,
+      "surpriseScore": 0.06928905212165166,
+      "surpriseRawScore": 0.041573431272991,
+      "jawOpenScore": 0.026084864512085915,
       "dominantExpression": "smile",
       "focusX": 0.44689328968524933,
       "focusY": 0.16288378834724426,
       "faceWidth": 0.1162310540676117,
-      "faceHeight": 0.22760838270187378
+      "faceHeight": 0.22760838270187378,
+      "faces": [
+        {
+          "focusX": 0.44689328968524933,
+          "focusY": 0.16288378834724426,
+          "faceWidth": 0.1162310540676117,
+          "faceHeight": 0.22760838270187378,
+          "reactionScore": 0.8082934021949768
+        },
+        {
+          "focusX": 0.5604816675186157,
+          "focusY": 0.6558572053909302,
+          "faceWidth": 0.10033297538757324,
+          "faceHeight": 0.20156407356262207,
+          "reactionScore": 0.05210698964074254
+        }
+      ]
     },
     {
       "startMs": 113000,
       "endMs": 113250,
       "faceCount": 2,
-      "reactionScore": 0.6454578042030334,
-      "smileScore": 0.6454578042030334,
-      "amusementScore": 0.5413492858409882,
-      "surpriseScore": 0.04655886160132165,
-      "surpriseRawScore": 0.02793531696079299,
-      "jawOpenScore": 0.03811076283454895,
+      "reactionScore": 0.6454578638076782,
+      "smileScore": 0.6454578638076782,
+      "amusementScore": 0.5413493037223815,
+      "surpriseScore": 0.04655880818124085,
+      "surpriseRawScore": 0.027935284908744508,
+      "jawOpenScore": 0.0381106398999691,
       "dominantExpression": "smile",
       "focusX": 0.45274868607521057,
       "focusY": 0.160195991396904,
       "faceWidth": 0.11709028482437134,
-      "faceHeight": 0.23246732354164124
+      "faceHeight": 0.23246732354164124,
+      "faces": [
+        {
+          "focusX": 0.45274868607521057,
+          "focusY": 0.160195991396904,
+          "faceWidth": 0.11709028482437134,
+          "faceHeight": 0.23246732354164124,
+          "reactionScore": 0.6454578638076782
+        },
+        {
+          "focusX": 0.5593114495277405,
+          "focusY": 0.657588928937912,
+          "faceWidth": 0.09963178634643555,
+          "faceHeight": 0.20136421918869019,
+          "reactionScore": 0.05452809051494114
+        }
+      ]
     },
     {
       "startMs": 113250,
       "endMs": 113500,
       "faceCount": 2,
-      "reactionScore": 0.545994907617569,
-      "smileScore": 0.545994907617569,
-      "amusementScore": 0.47317870445549487,
-      "surpriseScore": 0.04060276408320836,
-      "surpriseRawScore": 0.02436165844992502,
-      "jawOpenScore": 0.05397307127714157,
+      "reactionScore": 0.5459948033094406,
+      "smileScore": 0.5459948033094406,
+      "amusementScore": 0.4731786370277405,
+      "surpriseScore": 0.04060279853244235,
+      "surpriseRawScore": 0.02436167911946541,
+      "jawOpenScore": 0.053973134607076645,
       "dominantExpression": "smile",
       "focusX": 0.45388221740722656,
       "focusY": 0.14754527062177658,
       "faceWidth": 0.1144639253616333,
-      "faceHeight": 0.22982360422611237
+      "faceHeight": 0.22982360422611237,
+      "faces": [
+        {
+          "focusX": 0.45388221740722656,
+          "focusY": 0.14754527062177658,
+          "faceWidth": 0.1144639253616333,
+          "faceHeight": 0.22982360422611237,
+          "reactionScore": 0.5459948033094406
+        },
+        {
+          "focusX": 0.5630306899547577,
+          "focusY": 0.6539448499679565,
+          "faceWidth": 0.0941266417503357,
+          "faceHeight": 0.1988387107849121,
+          "reactionScore": 0.17810543407298005
+        }
+      ]
     },
     {
       "startMs": 113500,
       "endMs": 113750,
       "faceCount": 1,
-      "reactionScore": 0.05475053135160124,
-      "smileScore": 8.333896403200924e-05,
-      "amusementScore": 0.05475053135160124,
-      "surpriseScore": 0.025106997879144426,
-      "surpriseRawScore": 0.015064198727486655,
-      "jawOpenScore": 0.003806348890066147,
+      "reactionScore": 0.05475052423262241,
+      "smileScore": 8.333890946232714e-05,
+      "amusementScore": 0.05475052423262241,
+      "surpriseScore": 0.025107035966357216,
+      "surpriseRawScore": 0.01506422157981433,
+      "jawOpenScore": 0.0038063451647758484,
       "dominantExpression": "smile",
       "focusX": 0.5592413246631622,
       "focusY": 0.65864497423172,
       "faceWidth": 0.10041183233261108,
-      "faceHeight": 0.19692981243133545
+      "faceHeight": 0.19692981243133545,
+      "faces": [
+        {
+          "focusX": 0.5592413246631622,
+          "focusY": 0.65864497423172,
+          "faceWidth": 0.10041183233261108,
+          "faceHeight": 0.19692981243133545,
+          "reactionScore": 0.05475052423262241
+        }
+      ]
     },
     {
       "startMs": 113750,
       "endMs": 114000,
       "faceCount": 1,
-      "reactionScore": 0.0710569208022207,
-      "smileScore": 0.00016529863933101296,
-      "amusementScore": 0.04472370971634518,
-      "surpriseScore": 0.0710569208022207,
-      "surpriseRawScore": 0.04263415248133242,
-      "jawOpenScore": 0.0556010976433754,
+      "reactionScore": 0.0710568810075832,
+      "smileScore": 0.00016529823187738657,
+      "amusementScore": 0.04472370680305175,
+      "surpriseScore": 0.0710568810075832,
+      "surpriseRawScore": 0.04263412860454992,
+      "jawOpenScore": 0.05560119450092316,
       "dominantExpression": "surprise",
       "focusX": 0.5630438923835754,
       "focusY": 0.6568708121776581,
       "faceWidth": 0.09724760055541992,
-      "faceHeight": 0.20190435647964478
+      "faceHeight": 0.20190435647964478,
+      "faces": [
+        {
+          "focusX": 0.5630438923835754,
+          "focusY": 0.6568708121776581,
+          "faceWidth": 0.09724760055541992,
+          "faceHeight": 0.20190435647964478,
+          "reactionScore": 0.0710568810075832
+        }
+      ]
     },
     {
       "startMs": 114000,
@@ -7314,7 +8463,8 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 114250,
@@ -7330,360 +8480,594 @@
       "focusX": 0.5,
       "focusY": 0.5,
       "faceWidth": 0.0,
-      "faceHeight": 0.0
+      "faceHeight": 0.0,
+      "faces": []
     },
     {
       "startMs": 114500,
       "endMs": 114750,
       "faceCount": 1,
-      "reactionScore": 0.03409168945509009,
-      "smileScore": 0.0010294258827343583,
-      "amusementScore": 0.03409168945509009,
-      "surpriseScore": 0.03133937174667759,
-      "surpriseRawScore": 0.018803623048006556,
-      "jawOpenScore": 0.031205225735902786,
+      "reactionScore": 0.03409165701450547,
+      "smileScore": 0.0010294288222212344,
+      "amusementScore": 0.03409165701450547,
+      "surpriseScore": 0.031339339710636224,
+      "surpriseRawScore": 0.018803603826381732,
+      "jawOpenScore": 0.03120514750480652,
       "dominantExpression": "smile",
       "focusX": 0.5729594230651855,
       "focusY": 0.6457809507846832,
       "faceWidth": 0.08521628379821777,
-      "faceHeight": 0.20071429014205933
+      "faceHeight": 0.20071429014205933,
+      "faces": [
+        {
+          "focusX": 0.5729594230651855,
+          "focusY": 0.6457809507846832,
+          "faceWidth": 0.08521628379821777,
+          "faceHeight": 0.20071429014205933,
+          "reactionScore": 0.03409165701450547
+        }
+      ]
     },
     {
       "startMs": 114750,
       "endMs": 115000,
       "faceCount": 1,
-      "reactionScore": 0.14522269282315395,
-      "smileScore": 0.0003663134411908686,
-      "amusementScore": 0.0689966806647135,
-      "surpriseScore": 0.14522269282315395,
-      "surpriseRawScore": 0.08713361569389236,
-      "jawOpenScore": 0.13960370421409607,
+      "reactionScore": 0.14522281414247118,
+      "smileScore": 0.00036631479451898485,
+      "amusementScore": 0.06899671297214809,
+      "surpriseScore": 0.14522281414247118,
+      "surpriseRawScore": 0.08713368848548271,
+      "jawOpenScore": 0.13960374891757965,
       "dominantExpression": "surprise",
       "focusX": 0.5789009630680084,
       "focusY": 0.6444251239299774,
       "faceWidth": 0.08222681283950806,
-      "faceHeight": 0.18925601243972778
+      "faceHeight": 0.18925601243972778,
+      "faces": [
+        {
+          "focusX": 0.5789009630680084,
+          "focusY": 0.6444251239299774,
+          "faceWidth": 0.08222681283950806,
+          "faceHeight": 0.18925601243972778,
+          "reactionScore": 0.14522281414247118
+        }
+      ]
     },
     {
       "startMs": 115000,
       "endMs": 115250,
       "faceCount": 1,
-      "reactionScore": 0.11784528657153714,
-      "smileScore": 0.026638741372153163,
-      "amusementScore": 0.09564477248350158,
-      "surpriseScore": 0.11784528657153714,
-      "surpriseRawScore": 0.07070717194292228,
-      "jawOpenScore": 0.1716577559709549,
+      "reactionScore": 0.11784521020066072,
+      "smileScore": 0.02663883799687028,
+      "amusementScore": 0.09564481775742023,
+      "surpriseScore": 0.11784521020066072,
+      "surpriseRawScore": 0.07070712612039642,
+      "jawOpenScore": 0.17165765166282654,
       "dominantExpression": "surprise",
       "focusX": 0.5832966268062592,
       "focusY": 0.6434171199798584,
       "faceWidth": 0.08021241426467896,
-      "faceHeight": 0.19860553741455078
+      "faceHeight": 0.19860553741455078,
+      "faces": [
+        {
+          "focusX": 0.5832966268062592,
+          "focusY": 0.6434171199798584,
+          "faceWidth": 0.08021241426467896,
+          "faceHeight": 0.19860553741455078,
+          "reactionScore": 0.11784521020066072
+        }
+      ]
     },
     {
       "startMs": 115250,
       "endMs": 115500,
       "faceCount": 1,
-      "reactionScore": 0.21658536461958044,
-      "smileScore": 1.3462345123116393e-05,
-      "amusementScore": 0.0778842543365954,
-      "surpriseScore": 0.21658536461958044,
-      "surpriseRawScore": 0.12995121877174826,
-      "jawOpenScore": 0.3020879328250885,
+      "reactionScore": 0.21658521797508004,
+      "smileScore": 1.3462290098686935e-05,
+      "amusementScore": 0.07788426696131409,
+      "surpriseScore": 0.21658521797508004,
+      "surpriseRawScore": 0.12995113078504802,
+      "jawOpenScore": 0.3020877242088318,
       "dominantExpression": "surprise",
       "focusX": 0.5840270817279816,
       "focusY": 0.6442902982234955,
       "faceWidth": 0.08441203832626343,
-      "faceHeight": 0.1866794228553772
+      "faceHeight": 0.1866794228553772,
+      "faces": [
+        {
+          "focusX": 0.5840270817279816,
+          "focusY": 0.6442902982234955,
+          "faceWidth": 0.08441203832626343,
+          "faceHeight": 0.1866794228553772,
+          "reactionScore": 0.21658521797508004
+        }
+      ]
     },
     {
       "startMs": 115500,
       "endMs": 115750,
       "faceCount": 1,
-      "reactionScore": 0.1417187922197627,
-      "smileScore": 1.3304551430337597e-05,
-      "amusementScore": 0.06456241890787169,
-      "surpriseScore": 0.1417187922197627,
-      "surpriseRawScore": 0.08503127533185761,
-      "jawOpenScore": 0.1562446653842926,
+      "reactionScore": 0.1417183282028418,
+      "smileScore": 1.3304556887305807e-05,
+      "amusementScore": 0.06456242561748696,
+      "surpriseScore": 0.1417183282028418,
+      "surpriseRawScore": 0.08503099692170508,
+      "jawOpenScore": 0.15624426305294037,
       "dominantExpression": "surprise",
       "focusX": 0.5825329720973969,
       "focusY": 0.640403538942337,
       "faceWidth": 0.08223921060562134,
-      "faceHeight": 0.181246817111969
+      "faceHeight": 0.181246817111969,
+      "faces": [
+        {
+          "focusX": 0.5825329720973969,
+          "focusY": 0.640403538942337,
+          "faceWidth": 0.08223921060562134,
+          "faceHeight": 0.181246817111969,
+          "reactionScore": 0.1417183282028418
+        }
+      ]
     },
     {
       "startMs": 115750,
       "endMs": 116000,
       "faceCount": 1,
-      "reactionScore": 0.05966483816737309,
-      "smileScore": 0.0074855193961411715,
-      "amusementScore": 0.05966483816737309,
-      "surpriseScore": 0.004172444620053284,
-      "surpriseRawScore": 0.0025034667720319702,
-      "jawOpenScore": 0.0031499688047915697,
+      "reactionScore": 0.05966492645675316,
+      "smileScore": 0.007485545007511973,
+      "amusementScore": 0.05966492645675316,
+      "surpriseScore": 0.004172458779066801,
+      "surpriseRawScore": 0.0025034752674400807,
+      "jawOpenScore": 0.0031499890610575676,
       "dominantExpression": "smile",
       "focusX": 0.4410303980112076,
       "focusY": 0.13494014739990234,
       "faceWidth": 0.11370918154716492,
-      "faceHeight": 0.230576753616333
+      "faceHeight": 0.230576753616333,
+      "faces": [
+        {
+          "focusX": 0.4410303980112076,
+          "focusY": 0.13494014739990234,
+          "faceWidth": 0.11370918154716492,
+          "faceHeight": 0.230576753616333,
+          "reactionScore": 0.05966492645675316
+        }
+      ]
     },
     {
       "startMs": 116000,
       "endMs": 116250,
       "faceCount": 1,
-      "reactionScore": 0.13742235101623618,
-      "smileScore": 0.0003975033905589953,
-      "amusementScore": 0.05499568377781543,
-      "surpriseScore": 0.13742235101623618,
-      "surpriseRawScore": 0.0824534106097417,
-      "jawOpenScore": 0.16860590875148773,
+      "reactionScore": 0.13742234219049956,
+      "smileScore": 0.0003975046129198745,
+      "amusementScore": 0.05499565340214758,
+      "surpriseScore": 0.13742234219049956,
+      "surpriseRawScore": 0.08245340531429973,
+      "jawOpenScore": 0.16860581934452057,
       "dominantExpression": "surprise",
       "focusX": 0.574348121881485,
       "focusY": 0.6448160409927368,
       "faceWidth": 0.08254390954971313,
-      "faceHeight": 0.19254612922668457
+      "faceHeight": 0.19254612922668457,
+      "faces": [
+        {
+          "focusX": 0.574348121881485,
+          "focusY": 0.6448160409927368,
+          "faceWidth": 0.08254390954971313,
+          "faceHeight": 0.19254612922668457,
+          "reactionScore": 0.13742234219049956
+        }
+      ]
     },
     {
       "startMs": 116250,
       "endMs": 116500,
       "faceCount": 1,
-      "reactionScore": 0.20678607989490655,
-      "smileScore": 0.00016141154628712684,
-      "amusementScore": 0.06418725191251723,
-      "surpriseScore": 0.20678607989490655,
-      "surpriseRawScore": 0.12407164793694392,
-      "jawOpenScore": 0.12994445860385895,
+      "reactionScore": 0.2067863059346564,
+      "smileScore": 0.00016141108790179715,
+      "amusementScore": 0.06418727019517974,
+      "surpriseScore": 0.2067863059346564,
+      "surpriseRawScore": 0.12407178356079385,
+      "jawOpenScore": 0.12994426488876343,
       "dominantExpression": "surprise",
       "focusX": 0.5733933448791504,
       "focusY": 0.6435522139072418,
       "faceWidth": 0.07650566101074219,
-      "faceHeight": 0.17971712350845337
+      "faceHeight": 0.17971712350845337,
+      "faces": [
+        {
+          "focusX": 0.5733933448791504,
+          "focusY": 0.6435522139072418,
+          "faceWidth": 0.07650566101074219,
+          "faceHeight": 0.17971712350845337,
+          "reactionScore": 0.2067863059346564
+        }
+      ]
     },
     {
       "startMs": 116500,
       "endMs": 116750,
       "faceCount": 1,
-      "reactionScore": 0.13692495281187197,
-      "smileScore": 0.000835603685118258,
-      "amusementScore": 0.05643378809909336,
-      "surpriseScore": 0.13692495281187197,
-      "surpriseRawScore": 0.08215497168712318,
-      "jawOpenScore": 0.08258980512619019,
+      "reactionScore": 0.13692498553427868,
+      "smileScore": 0.0008356059552170336,
+      "amusementScore": 0.05643377117521595,
+      "surpriseScore": 0.13692498553427868,
+      "surpriseRawScore": 0.08215499132056721,
+      "jawOpenScore": 0.08258959650993347,
       "dominantExpression": "surprise",
       "focusX": 0.5707867741584778,
       "focusY": 0.6439932584762573,
       "faceWidth": 0.07771682739257812,
-      "faceHeight": 0.1789870262145996
+      "faceHeight": 0.1789870262145996,
+      "faces": [
+        {
+          "focusX": 0.5707867741584778,
+          "focusY": 0.6439932584762573,
+          "faceWidth": 0.07771682739257812,
+          "faceHeight": 0.1789870262145996,
+          "reactionScore": 0.13692498553427868
+        }
+      ]
     },
     {
       "startMs": 116750,
       "endMs": 117000,
       "faceCount": 2,
-      "reactionScore": 0.13175615113383782,
-      "smileScore": 0.0418271217495203,
-      "amusementScore": 0.09779173536226154,
-      "surpriseScore": 0.13175615113383782,
-      "surpriseRawScore": 0.07905369068030269,
-      "jawOpenScore": 0.1147734597325325,
+      "reactionScore": 0.1317564215278253,
+      "smileScore": 0.041827164590358734,
+      "amusementScore": 0.09779177047312258,
+      "surpriseScore": 0.1317564215278253,
+      "surpriseRawScore": 0.07905385291669517,
+      "jawOpenScore": 0.11477378010749817,
       "dominantExpression": "surprise",
       "focusX": 0.5699909329414368,
       "focusY": 0.6444284617900848,
       "faceWidth": 0.07848763465881348,
-      "faceHeight": 0.17859488725662231
+      "faceHeight": 0.17859488725662231,
+      "faces": [
+        {
+          "focusX": 0.5699909329414368,
+          "focusY": 0.6444284617900848,
+          "faceWidth": 0.07848763465881348,
+          "faceHeight": 0.17859488725662231,
+          "reactionScore": 0.1317564215278253
+        },
+        {
+          "focusX": 0.45286545157432556,
+          "focusY": 0.13433320820331573,
+          "faceWidth": 0.11366480588912964,
+          "faceHeight": 0.2293052077293396,
+          "reactionScore": 0.08100427833851427
+        }
+      ]
     },
     {
       "startMs": 117000,
       "endMs": 117250,
       "faceCount": 1,
-      "reactionScore": 0.4795894920825958,
-      "smileScore": 0.4795894920825958,
-      "amusementScore": 0.42068950831890106,
-      "surpriseScore": 0.10289876663591713,
-      "surpriseRawScore": 0.061739259981550276,
-      "jawOpenScore": 0.11682415008544922,
+      "reactionScore": 0.4795900136232376,
+      "smileScore": 0.4795900136232376,
+      "amusementScore": 0.4206898920238018,
+      "surpriseScore": 0.1028987583219229,
+      "surpriseRawScore": 0.06173925499315374,
+      "jawOpenScore": 0.11682416498661041,
       "dominantExpression": "smile",
       "focusX": 0.5708481669425964,
       "focusY": 0.6441152691841125,
       "faceWidth": 0.07727706432342529,
-      "faceHeight": 0.17732596397399902
+      "faceHeight": 0.17732596397399902,
+      "faces": [
+        {
+          "focusX": 0.5708481669425964,
+          "focusY": 0.6441152691841125,
+          "faceWidth": 0.07727706432342529,
+          "faceHeight": 0.17732596397399902,
+          "reactionScore": 0.4795900136232376
+        }
+      ]
     },
     {
       "startMs": 117250,
       "endMs": 117500,
       "faceCount": 1,
-      "reactionScore": 0.5952205061912537,
-      "smileScore": 0.5952205061912537,
-      "amusementScore": 0.5126602865755558,
-      "surpriseScore": 0.09809101341913144,
-      "surpriseRawScore": 0.058854608051478866,
-      "jawOpenScore": 0.11288323998451233,
+      "reactionScore": 0.5952204167842865,
+      "smileScore": 0.5952204167842865,
+      "amusementScore": 0.5126602351665497,
+      "surpriseScore": 0.09809073114107984,
+      "surpriseRawScore": 0.0588544386846479,
+      "jawOpenScore": 0.11288297176361084,
       "dominantExpression": "smile",
       "focusX": 0.570558488368988,
       "focusY": 0.6425803899765015,
       "faceWidth": 0.0787123441696167,
-      "faceHeight": 0.17833638191223145
+      "faceHeight": 0.17833638191223145,
+      "faces": [
+        {
+          "focusX": 0.570558488368988,
+          "focusY": 0.6425803899765015,
+          "faceWidth": 0.0787123441696167,
+          "faceHeight": 0.17833638191223145,
+          "reactionScore": 0.5952204167842865
+        }
+      ]
     },
     {
       "startMs": 117500,
       "endMs": 117750,
       "faceCount": 2,
-      "reactionScore": 0.3549012839794159,
-      "smileScore": 0.3549012839794159,
-      "amusementScore": 0.32779051214456556,
-      "surpriseScore": 0.1118856425843357,
-      "surpriseRawScore": 0.06713138555060141,
-      "jawOpenScore": 0.12893518805503845,
+      "reactionScore": 0.3549017161130905,
+      "smileScore": 0.3549017161130905,
+      "amusementScore": 0.3277908243238926,
+      "surpriseScore": 0.11188549358242503,
+      "surpriseRawScore": 0.06713129614945501,
+      "jawOpenScore": 0.12893502414226532,
       "dominantExpression": "smile",
       "focusX": 0.5717059373855591,
       "focusY": 0.6423143148422241,
       "faceWidth": 0.07778668403625488,
-      "faceHeight": 0.17725753784179688
+      "faceHeight": 0.17725753784179688,
+      "faces": [
+        {
+          "focusX": 0.5717059373855591,
+          "focusY": 0.6423143148422241,
+          "faceWidth": 0.07778668403625488,
+          "faceHeight": 0.17725753784179688,
+          "reactionScore": 0.3549017161130905
+        },
+        {
+          "focusX": 0.4687225967645645,
+          "focusY": 0.1385841965675354,
+          "faceWidth": 0.1160796582698822,
+          "faceHeight": 0.22036707401275635,
+          "reactionScore": 0.08447924657957628
+        }
+      ]
     },
     {
       "startMs": 117750,
       "endMs": 118000,
       "faceCount": 2,
-      "reactionScore": 0.11757703412634632,
-      "smileScore": 8.676420111441985e-05,
-      "amusementScore": 0.07647139855071146,
-      "surpriseScore": 0.11757703412634632,
-      "surpriseRawScore": 0.07054622047580779,
-      "jawOpenScore": 0.1502683311700821,
+      "reactionScore": 0.11757723474875094,
+      "smileScore": 8.676390643813647e-05,
+      "amusementScore": 0.07647128135558887,
+      "surpriseScore": 0.11757723474875094,
+      "surpriseRawScore": 0.07054634084925056,
+      "jawOpenScore": 0.15026848018169403,
       "dominantExpression": "surprise",
       "focusX": 0.5733453631401062,
       "focusY": 0.6397438049316406,
       "faceWidth": 0.07844901084899902,
-      "faceHeight": 0.17525005340576172
+      "faceHeight": 0.17525005340576172,
+      "faces": [
+        {
+          "focusX": 0.5733453631401062,
+          "focusY": 0.6397438049316406,
+          "faceWidth": 0.07844901084899902,
+          "faceHeight": 0.17525005340576172,
+          "reactionScore": 0.11757723474875094
+        },
+        {
+          "focusX": 0.46528688073158264,
+          "focusY": 0.13516870141029358,
+          "faceWidth": 0.11925989389419556,
+          "faceHeight": 0.22515416145324707,
+          "reactionScore": 0.061534628830850126
+        }
+      ]
     },
     {
       "startMs": 118000,
       "endMs": 118250,
       "faceCount": 1,
-      "reactionScore": 0.49841324985027313,
-      "smileScore": 0.49841324985027313,
-      "amusementScore": 0.4606634065508843,
-      "surpriseScore": 0.17632462282684477,
-      "surpriseRawScore": 0.10579477369610686,
-      "jawOpenScore": 0.2636161148548126,
+      "reactionScore": 0.4984130263328552,
+      "smileScore": 0.4984130263328552,
+      "amusementScore": 0.4606632113456726,
+      "surpriseScore": 0.17632466378563552,
+      "surpriseRawScore": 0.10579479827138132,
+      "jawOpenScore": 0.2636161744594574,
       "dominantExpression": "smile",
       "focusX": 0.5748410820960999,
       "focusY": 0.6374033391475677,
       "faceWidth": 0.07914614677429199,
-      "faceHeight": 0.19302791357040405
+      "faceHeight": 0.19302791357040405,
+      "faces": [
+        {
+          "focusX": 0.5748410820960999,
+          "focusY": 0.6374033391475677,
+          "faceWidth": 0.07914614677429199,
+          "faceHeight": 0.19302791357040405,
+          "reactionScore": 0.4984130263328552
+        }
+      ]
     },
     {
       "startMs": 118250,
       "endMs": 118500,
       "faceCount": 1,
-      "reactionScore": 0.4621758311986923,
-      "smileScore": 0.4621758311986923,
-      "amusementScore": 0.4028359524905682,
-      "surpriseScore": 0.07171436523397764,
-      "surpriseRawScore": 0.04302861914038658,
-      "jawOpenScore": 0.10193244367837906,
+      "reactionScore": 0.46217547357082367,
+      "smileScore": 0.46217547357082367,
+      "amusementScore": 0.4028356947004795,
+      "surpriseScore": 0.07171438206569292,
+      "surpriseRawScore": 0.04302862923941575,
+      "jawOpenScore": 0.10193245857954025,
       "dominantExpression": "smile",
       "focusX": 0.5761395394802094,
       "focusY": 0.6399701237678528,
       "faceWidth": 0.07904273271560669,
-      "faceHeight": 0.17668521404266357
+      "faceHeight": 0.17668521404266357,
+      "faces": [
+        {
+          "focusX": 0.5761395394802094,
+          "focusY": 0.6399701237678528,
+          "faceWidth": 0.07904273271560669,
+          "faceHeight": 0.17668521404266357,
+          "reactionScore": 0.46217547357082367
+        }
+      ]
     },
     {
       "startMs": 118500,
       "endMs": 118750,
       "faceCount": 2,
-      "reactionScore": 0.42140166461467743,
-      "smileScore": 0.42140166461467743,
-      "amusementScore": 0.3840037420392036,
-      "surpriseScore": 0.07257367210695521,
-      "surpriseRawScore": 0.043544203264173124,
+      "reactionScore": 0.4214022010564804,
+      "smileScore": 0.4214022010564804,
+      "amusementScore": 0.3840041399002075,
+      "surpriseScore": 0.07257367379497738,
+      "surpriseRawScore": 0.04354420427698642,
       "jawOpenScore": 0.09016650170087814,
       "dominantExpression": "smile",
       "focusX": 0.5769396126270294,
       "focusY": 0.648257851600647,
       "faceWidth": 0.07703226804733276,
-      "faceHeight": 0.17019987106323242
+      "faceHeight": 0.17019987106323242,
+      "faces": [
+        {
+          "focusX": 0.5769396126270294,
+          "focusY": 0.648257851600647,
+          "faceWidth": 0.07703226804733276,
+          "faceHeight": 0.17019987106323242,
+          "reactionScore": 0.4214022010564804
+        },
+        {
+          "focusX": 0.4744776338338852,
+          "focusY": 0.13505759462714195,
+          "faceWidth": 0.1193559467792511,
+          "faceHeight": 0.21546620875597,
+          "reactionScore": 0.11315363228786736
+        }
+      ]
     },
     {
       "startMs": 118750,
       "endMs": 119000,
       "faceCount": 2,
-      "reactionScore": 0.7143958508968353,
-      "smileScore": 0.7143958508968353,
-      "amusementScore": 0.6262515977025032,
-      "surpriseScore": 0.09446830297383714,
-      "surpriseRawScore": 0.05668098178430228,
-      "jawOpenScore": 0.09208651632070541,
+      "reactionScore": 0.7143955826759338,
+      "smileScore": 0.7143955826759338,
+      "amusementScore": 0.6262514412403106,
+      "surpriseScore": 0.09446839583688416,
+      "surpriseRawScore": 0.056681037502130494,
+      "jawOpenScore": 0.09208660572767258,
       "dominantExpression": "smile",
       "focusX": 0.5839342176914215,
       "focusY": 0.6642925441265106,
       "faceWidth": 0.0824328064918518,
-      "faceHeight": 0.1732843518257141
+      "faceHeight": 0.1732843518257141,
+      "faces": [
+        {
+          "focusX": 0.5839342176914215,
+          "focusY": 0.6642925441265106,
+          "faceWidth": 0.0824328064918518,
+          "faceHeight": 0.1732843518257141,
+          "reactionScore": 0.7143955826759338
+        },
+        {
+          "focusX": 0.47569768130779266,
+          "focusY": 0.14452309533953667,
+          "faceWidth": 0.12226465344429016,
+          "faceHeight": 0.2209804430603981,
+          "reactionScore": 0.552069365978241
+        }
+      ]
     },
     {
       "startMs": 119000,
       "endMs": 119250,
       "faceCount": 1,
-      "reactionScore": 0.12374076402435699,
-      "smileScore": 0.022888359148055315,
-      "amusementScore": 0.07119081929558888,
-      "surpriseScore": 0.12374076402435699,
-      "surpriseRawScore": 0.07424445841461419,
-      "jawOpenScore": 0.001754533383063972,
+      "reactionScore": 0.12374035249619433,
+      "smileScore": 0.022888281382620335,
+      "amusementScore": 0.07119076303206384,
+      "surpriseScore": 0.12374035249619433,
+      "surpriseRawScore": 0.0742442114977166,
+      "jawOpenScore": 0.0017545316368341446,
       "dominantExpression": "surprise",
       "focusX": 0.47427013516426086,
       "focusY": 0.1465749479830265,
       "faceWidth": 0.11465007066726685,
-      "faceHeight": 0.20951544493436813
+      "faceHeight": 0.20951544493436813,
+      "faces": [
+        {
+          "focusX": 0.47427013516426086,
+          "focusY": 0.1465749479830265,
+          "faceWidth": 0.11465007066726685,
+          "faceHeight": 0.20951544493436813,
+          "reactionScore": 0.12374035249619433
+        }
+      ]
     },
     {
       "startMs": 119250,
       "endMs": 119500,
       "faceCount": 1,
-      "reactionScore": 0.367057129740715,
-      "smileScore": 0.367057129740715,
-      "amusementScore": 0.3152071876684204,
-      "surpriseScore": 0.004660543374484405,
-      "surpriseRawScore": 0.0027963260246906428,
-      "jawOpenScore": 0.0035636855755001307,
+      "reactionScore": 0.36705662310123444,
+      "smileScore": 0.36705662310123444,
+      "amusementScore": 0.31520677914377304,
+      "surpriseScore": 0.0046605300982870785,
+      "surpriseRawScore": 0.002796318058972247,
+      "jawOpenScore": 0.003563690697774291,
       "dominantExpression": "smile",
       "focusX": 0.4730817973613739,
       "focusY": 0.1485387422144413,
       "faceWidth": 0.12507885694503784,
-      "faceHeight": 0.2260037586092949
+      "faceHeight": 0.2260037586092949,
+      "faces": [
+        {
+          "focusX": 0.4730817973613739,
+          "focusY": 0.1485387422144413,
+          "faceWidth": 0.12507885694503784,
+          "faceHeight": 0.2260037586092949,
+          "reactionScore": 0.36705662310123444
+        }
+      ]
     },
     {
       "startMs": 119500,
       "endMs": 119750,
       "faceCount": 1,
-      "reactionScore": 0.39979447424411774,
-      "smileScore": 0.39979447424411774,
-      "amusementScore": 0.3675486892461777,
-      "surpriseScore": 0.013239318097475918,
-      "surpriseRawScore": 0.00794359085848555,
-      "jawOpenScore": 0.01799563318490982,
+      "reactionScore": 0.3997960835695267,
+      "smileScore": 0.3997960835695267,
+      "amusementScore": 0.36754985023289916,
+      "surpriseScore": 0.013239246962863643,
+      "surpriseRawScore": 0.007943548177718186,
+      "jawOpenScore": 0.017995530739426613,
       "dominantExpression": "smile",
       "focusX": 0.4732246845960617,
       "focusY": 0.14501021057367325,
       "faceWidth": 0.12106743454933167,
-      "faceHeight": 0.22330646216869354
+      "faceHeight": 0.22330646216869354,
+      "faces": [
+        {
+          "focusX": 0.4732246845960617,
+          "focusY": 0.14501021057367325,
+          "faceWidth": 0.12106743454933167,
+          "faceHeight": 0.22330646216869354,
+          "reactionScore": 0.3997960835695267
+        }
+      ]
     },
     {
       "startMs": 119750,
       "endMs": 120000,
       "faceCount": 1,
-      "reactionScore": 0.6338908672332764,
-      "smileScore": 0.6338908672332764,
-      "amusementScore": 0.5380980653688312,
-      "surpriseScore": 0.006952957293833606,
-      "surpriseRawScore": 0.004171774376300163,
-      "jawOpenScore": 0.008514253422617912,
+      "reactionScore": 0.6338909864425659,
+      "smileScore": 0.6338909864425659,
+      "amusementScore": 0.5380981638096273,
+      "surpriseScore": 0.006952968479405779,
+      "surpriseRawScore": 0.004171781087643467,
+      "jawOpenScore": 0.008514276705682278,
       "dominantExpression": "smile",
       "focusX": 0.4744190573692322,
       "focusY": 0.14530514925718307,
       "faceWidth": 0.1222236156463623,
-      "faceHeight": 0.22521187365055084
+      "faceHeight": 0.22521187365055084,
+      "faces": [
+        {
+          "focusX": 0.4744190573692322,
+          "focusY": 0.14530514925718307,
+          "faceWidth": 0.1222236156463623,
+          "faceHeight": 0.22521187365055084,
+          "reactionScore": 0.6338909864425659
+        }
+      ]
     }
   ],
-  "processingSeconds": 11.068
+  "processingSeconds": 26.108
 }

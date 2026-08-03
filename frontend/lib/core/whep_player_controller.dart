@@ -4,6 +4,30 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+/// 지금 화면에 나오는 그림이 **실시간 맨 앞**인지.
+enum LiveEdge {
+  /// 재생 중이 아니라 따질 것이 없다.
+  unknown,
+
+  /// 맨 앞이다 — 빨간 불이 켜진다.
+  live,
+
+  /// 뒤처졌다 — 화면이 멈췄거나 지연이 커졌다. 빨간 불이 꺼진다.
+  behind,
+}
+
+/// 실시간 여부를 판단할 때 쓰는 인바운드 영상 통계 한 조각.
+class InboundVideoSample {
+  const InboundVideoSample({required this.framesDecoded, this.bufferDelay});
+
+  /// 지금까지 풀어낸 프레임 수(누적). 늘지 않으면 화면이 멈춘 것이다.
+  final int framesDecoded;
+
+  /// 프레임 한 장이 지터 버퍼에서 기다린 평균 시간. 통계를 주지 않는
+  /// 기기도 있어 null일 수 있다.
+  final Duration? bufferDelay;
+}
+
 /// Receives video and audio tracks from a WHEP endpoint.
 ///
 /// Signaling is completed with a non-trickle SDP exchange so MediaMTX can be
@@ -32,6 +56,35 @@ class WhepPlayerController extends ChangeNotifier {
   bool _muted = false;
 
   bool get connected => _connected;
+
+  /// 통계를 얼마나 자주 읽을지. WebRTC `getStats()`는 가벼운 호출이라 1초면
+  /// 표시가 늦다는 느낌 없이 따라온다.
+  static const liveEdgeSampleInterval = Duration(seconds: 1);
+
+  /// 프레임 한 장이 이보다 오래 버퍼에서 기다리면 뒤처진 것으로 본다.
+  ///
+  /// WebRTC 라이브는 보통 50~250ms다. 망이 나빠지면 수신 쪽 지터 버퍼가
+  /// 스스로 늘어나면서 지연이 쌓이는데, 그때가 "실시간이 아닌" 상태다.
+  static const maxLiveEdgeDelay = Duration(milliseconds: 900);
+
+  /// 새 프레임이 이만큼 안 오면 화면이 멈춘 것으로 본다. 멈춘 화면은
+  /// 연결이 살아 있어도 실시간이 아니다.
+  static const maxFrameStall = Duration(seconds: 2);
+
+  LiveEdge _liveEdge = LiveEdge.unknown;
+  Duration? _liveDelay;
+  Timer? _liveEdgeTimer;
+  int? _lastFramesDecoded;
+  DateTime? _lastFrameAdvanceAt;
+
+  /// 지금 실시간 맨 앞인가. 화면의 빨간 불이 이것을 그린다.
+  LiveEdge get liveEdge => _liveEdge;
+
+  /// 마지막으로 잰 지연. 통계를 못 읽는 기기에서는 null이다.
+  Duration? get liveDelay => _liveDelay;
+
+  /// 빨간 불을 켜도 되는 상태.
+  bool get atLiveEdge => _connected && _liveEdge == LiveEdge.live;
 
   @visibleForTesting
   static const receiveMediaTypes = <RTCRtpMediaType>[
@@ -85,6 +138,7 @@ class WhepPlayerController extends ChangeNotifier {
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
         _connected = false;
+        _stopLiveEdgeMonitor();
         notifyListeners();
         if (!videoTrackReady.isCompleted) {
           videoTrackReady.completeError(const WhepPlaybackException());
@@ -161,11 +215,99 @@ class WhepPlayerController extends ChangeNotifier {
         throw const WhepPlaybackException();
       }
       _connected = true;
+      // 방금 붙었으면 정의상 맨 앞이다. unknown으로 두면 첫 통계가 올
+      // 때까지 1초 동안 불이 꺼져 보인다.
+      _liveEdge = LiveEdge.live;
+      _startLiveEdgeMonitor();
       notifyListeners();
     } catch (_) {
       await close();
       throw const WhepPlaybackException();
     }
+  }
+
+  /// 인바운드 영상 통계에서 실시간 판단에 쓸 값만 추린다.
+  @visibleForTesting
+  static InboundVideoSample? readInboundVideo(Iterable<StatsReport> reports) {
+    for (final report in reports) {
+      if (report.type != 'inbound-rtp') continue;
+      final kind = report.values['kind'] ?? report.values['mediaType'];
+      if (kind != 'video') continue;
+      // jitterBufferDelay는 내보낸 프레임마다 더해진 **누적 초**다. 프레임
+      // 수로 나눠야 한 장이 실제로 기다린 시간이 나온다.
+      final emitted = _statNumber(report.values['jitterBufferEmittedCount']);
+      final delay = _statNumber(report.values['jitterBufferDelay']);
+      return InboundVideoSample(
+        framesDecoded: _statNumber(report.values['framesDecoded']).toInt(),
+        bufferDelay: emitted > 0
+            ? Duration(microseconds: (delay / emitted * 1000000).round())
+            : null,
+      );
+    }
+    return null;
+  }
+
+  /// 지연과 정지 시간만 보고 실시간 여부를 정한다.
+  @visibleForTesting
+  static LiveEdge judgeLiveEdge({
+    required Duration? bufferDelay,
+    required Duration sinceLastNewFrame,
+  }) {
+    if (sinceLastNewFrame >= maxFrameStall) return LiveEdge.behind;
+    if (bufferDelay != null && bufferDelay > maxLiveEdgeDelay) {
+      return LiveEdge.behind;
+    }
+    return LiveEdge.live;
+  }
+
+  void _startLiveEdgeMonitor() {
+    _liveEdgeTimer?.cancel();
+    _lastFramesDecoded = null;
+    _lastFrameAdvanceAt = DateTime.now();
+    _liveEdgeTimer = Timer.periodic(
+      liveEdgeSampleInterval,
+      (_) => unawaited(_sampleLiveEdge()),
+    );
+  }
+
+  void _stopLiveEdgeMonitor() {
+    _liveEdgeTimer?.cancel();
+    _liveEdgeTimer = null;
+    _lastFramesDecoded = null;
+    _lastFrameAdvanceAt = null;
+    _liveEdge = LiveEdge.unknown;
+    _liveDelay = null;
+  }
+
+  Future<void> _sampleLiveEdge() async {
+    final peer = _peerConnection;
+    if (peer == null || !_connected || _disposed) return;
+    final InboundVideoSample? sample;
+    try {
+      sample = readInboundVideo(await peer.getStats());
+    } catch (_) {
+      // 통계를 못 읽는 것은 뒤처졌다는 증거가 아니다. 표시를 건드리지 않는다.
+      return;
+    }
+    if (sample == null || _disposed || !_connected) return;
+
+    final now = DateTime.now();
+    final previous = _lastFramesDecoded;
+    if (previous == null || sample.framesDecoded > previous) {
+      _lastFrameAdvanceAt = now;
+    }
+    _lastFramesDecoded = sample.framesDecoded;
+    _liveDelay = sample.bufferDelay;
+
+    final next = judgeLiveEdge(
+      bufferDelay: sample.bufferDelay,
+      sinceLastNewFrame: now.difference(_lastFrameAdvanceAt ?? now),
+    );
+    // 알리는 것은 상태가 바뀔 때뿐이다. 매 초 알리면 라이브 화면 전체가
+    // 초당 한 번씩 다시 그려진다.
+    if (next == _liveEdge) return;
+    _liveEdge = next;
+    notifyListeners();
   }
 
   @visibleForTesting
@@ -247,6 +389,7 @@ class WhepPlayerController extends ChangeNotifier {
   }
 
   Future<void> _closeInternal() async {
+    _stopLiveEdgeMonitor();
     final sessionUri = _sessionUri;
     _sessionUri = null;
     if (sessionUri != null) {

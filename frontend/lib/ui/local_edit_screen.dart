@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gal/gal.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
@@ -14,6 +13,9 @@ import '../core/saved_video_edit.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
 import '../core/video_source_cache.dart';
+import '../features/stt/caption_auto_section.dart';
+import '../features/stt/caption_controller.dart';
+import '../features/stt/mlkit_transcriber.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
 import '../editor/edit_recommendation_client.dart';
@@ -44,6 +46,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   final _exporter = VideoEditorExporter();
   final _editorPlatform = const EditorPlatform();
   final _recommendations = EditRecommendationClient();
+
+  /// AI 자막 시트가 떠 있는가. 탭과 패널 버튼이 겹쳐 두 장 쌓이는 걸 막는다.
+  bool _captionSheetOpen = false;
 
   /// 정해 둔 구간만 돌려 보는 중인가. 이때는 구간 끝에서 다음 클립으로
   /// 넘어가지 않고 선다.
@@ -94,6 +99,17 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   int? _pendingPreviewSeekMs;
   bool _seekingPreview = false;
 
+  /// 들린 대사로 만드는 자동 자막(전사). 전사가 끝나면 일반 자막 레이어로
+  /// 합쳐진다 — 이후 편집·저장은 자막 탭과 같은 길이다.
+  final _autoCaptions = CaptionController();
+
+  /// 마지막으로 자막 레이어에 합친 전사 내용의 서명.
+  ///
+  /// **왜 필요한가**: 병합은 전사 완료 알림과 시트 닫힘, 두 군데서 불린다.
+  /// 같은 내용을 두 번 합치면 자막 탭에서 사용자가 고쳐 둔 AI 자막이
+  /// 이유 없이 원문으로 되돌아간다. 내용이 실제로 바뀌었을 때만 합친다.
+  String? _mergedTranscriptSignature;
+
   bool get _editorReady =>
       _sourcePath != null && _preview?.value.isInitialized == true;
 
@@ -101,7 +117,19 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   void initState() {
     super.initState();
     _editState = VideoEditState(durationMs: 0, originalAspectRatio: 16 / 9);
+    // 전사가 끝나면 미리보기 겹쳐보기가 바로 나타나야 한다. 이걸 안 걸면
+    // 다음 재생 위치 갱신 때까지 자막이 안 보인다.
+    _autoCaptions.addListener(_onCaptionsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
+  }
+
+  void _onCaptionsChanged() {
+    if (!mounted) return;
+    // 전사가 끝나는 순간 자막 탭으로 합친다. 예전에는 시트를 닫을 때만
+    // 합쳤는데, 전사 중에 닫아 버리면 끝나도 아무 일이 없어 "적용이 안
+    // 된다"로 보였다.
+    _mergeTranscriptIntoTextLayers();
+    setState(() {});
   }
 
   Future<void> _prepare() async {
@@ -156,50 +184,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 비율 탭에서 고르고, 그때는 여백 없이 가득 채운다.
     final nextProjectController = EditorProjectController(sourceProject);
 
-    String? recommendationStatus;
-    // 저장해 둔 초안이 있으면 그것부터 — "이어서 편집"이 기본이다.
-    Map<String, dynamic>? draft;
-    try {
-      draft = await _recommendations.loadDraft(widget.video.id);
-    } catch (_) {
-      draft = null;
-    }
-    if (draft != null && draft['recipe'] is Map) {
-      nextProjectController.loadDraftRecipe(
-        Map<String, dynamic>.from(draft['recipe'] as Map),
-      );
-      recommendationStatus = '저장한 편집을 이어서 열었어요';
-    }
-    if (recommendationStatus == null) {
-      try {
-        final recommendation = await _recommendations.recommend(
-          videoId: widget.video.id,
-          capturedAt: widget.video.capturedStartAt,
-        );
-        nextProjectController.applyRecommendation(recommendation);
-        if (const {
-          'short',
-          'medium',
-          'long',
-        }.contains(recommendation.durationPreset)) {
-          _presetRecommendations[recommendation.durationPreset] =
-              recommendation;
-        }
-        final seconds = nextProjectController.project.durationMs / 1000;
-        recommendationStatus =
-            '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · 줌 ${nextProjectController.project.zoomSegments.length}개';
-      } catch (failure) {
-        if (EditRecommendationClient.isAnalysisRequired(failure)) {
-          // 서버는 있는데 이 영상은 처음 본다 — 원본을 올려 분석시키고,
-          // 끝나면 스낵바로 알린 뒤 AI 컷과 자동 줌을 연다.
-          recommendationStatus = 'AI가 영상을 분석하고 있어요';
-          unawaited(_beginServerAnalysis(sourcePath));
-        } else {
-          recommendationStatus = '자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요';
-        }
-      }
-    }
-
+    // **화면부터 연다.** 초안 조회와 AI 추천은 네트워크라 언제 올지 모른다 —
+    // 예전에는 이 둘을 기다렸다가 화면을 열어서, 서버가 안 닿으면 연결
+    // 타임아웃(4초×2)이 고스란히 진입 시간에 얹혔다. 이제 원본 구간으로
+    // 먼저 열고, 도착하면 그때 적용한다.
     final previousPreview = _preview;
     final previousProjectController = _projectController;
     previousPreview?.removeListener(_onPreviewChanged);
@@ -218,37 +206,139 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         durationMs: durationMs,
         originalAspectRatio: aspectRatio,
       );
-      _status = recommendationStatus;
+      _status = '자동 편집을 불러오고 있어요';
     });
 
     previousProjectController?.dispose();
     await previousPreview?.dispose();
-    // 자동 자막은 제품 범위에서 제거했다. 텍스트는 사용자가 직접 추가한다.
+    // 전사는 여기서 시작하지 않는다 — 오디오를 처음부터 끝까지 훑는 일이라
+    // 편집 진입·재생과 CPU를 다툰다. AI자막 탭을 눌렀을 때만
+    // [_startAutoCaptions]가 돈다.
     // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
     // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
     unawaited(_loadThumbnails());
-    unawaited(_loadPresetRecommendations());
+    unawaited(_applyDraftOrRecommendation(nextProjectController));
   }
 
+  /// 저장해 둔 초안이나 자동 추천을 **편집 화면을 연 뒤에** 얹는다.
+  ///
+  /// **왜 기다리지 않는가**: 둘 다 편집 서버 왕복이고, 추천 쪽은 서버가
+  /// 영상을 분석하는 동안 수 초가 걸린다. 예전에는 그 시간을 준비 화면에서
+  /// 통째로 기다렸다 — 원본이 이미 기기에 있어도 편집기가 열리지 않았다.
+  /// 미리보기가 준비된 순간 편집 화면을 열고, 결과가 오면 그때 얹는다.
+  ///
+  /// 기다리는 동안 사용자가 무언가 만졌다면 얹지 않는다. 손으로 한 편집을
+  /// 뒤늦게 도착한 추천이 덮는 것이 훨씬 나쁘다.
+  Future<void> _applyDraftOrRecommendation(
+    EditorProjectController projectController,
+  ) async {
+    Future<void> finish(String status, {bool cutChanged = false}) async {
+      if (!mounted || !identical(_projectController, projectController)) return;
+      setState(() => _status = status);
+      // 컷이 바뀌었으면 재생기를 새 구간 머리에 맞춘다. 맞추지 않으면 첫
+      // 재생이 잘려 나간 앞부분에서 시작한다.
+      if (cutChanged) {
+        await _seekToPosition(projectController.project.playheadMs);
+      }
+      // 프리셋 미리 받기는 여기서 시작한다. 진입에 필요한 추천 한 건과
+      // 서버·CPU를 다투지 않게 한 발 뒤로 물린다.
+      unawaited(_loadPresetRecommendations());
+    }
+
+    bool userTouchedIt() =>
+        !mounted ||
+        !identical(_projectController, projectController) ||
+        // 되돌리기 이력이 생겼다 = 실제 편집이 한 번은 들어갔다. 탭을 옮기거나
+        // 재생 위치를 움직이는 것은 이력을 남기지 않으므로 여기 걸리지 않는다.
+        projectController.canUndo ||
+        _editState.hasUnsavedChanges ||
+        // 저장을 누른 뒤라면 지금 화면에 있는 그대로가 사용자가 고른 것이다.
+        // 그 밑에서 컷을 갈아 끼우지 않는다.
+        _saving;
+
+    // 저장해 둔 초안이 있으면 그것부터 — "이어서 편집"이 기본이다.
+    Map<String, dynamic>? draft;
+    try {
+      draft = await _recommendations.loadDraft(widget.video.id);
+    } catch (_) {
+      draft = null;
+    }
+    if (userTouchedIt()) return;
+    if (draft != null && draft['recipe'] is Map) {
+      projectController.loadDraftRecipe(
+        Map<String, dynamic>.from(draft['recipe'] as Map),
+      );
+      await finish('저장한 편집을 이어서 열었어요', cutChanged: true);
+      return;
+    }
+
+    try {
+      final recommendation = await _recommendations.recommend(
+        videoId: widget.video.id,
+        capturedAt: widget.video.capturedStartAt,
+      );
+      if (userTouchedIt()) return;
+      projectController.applyRecommendation(recommendation);
+      if (const {
+        'short',
+        'medium',
+        'long',
+      }.contains(recommendation.durationPreset)) {
+        _presetRecommendations[recommendation.durationPreset] = recommendation;
+      }
+      final seconds = projectController.project.durationMs / 1000;
+      await finish(
+        '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · '
+        '줌 ${projectController.project.zoomSegments.length}개',
+        cutChanged: true,
+      );
+    } catch (failure) {
+      if (EditRecommendationClient.isAnalysisRequired(failure)) {
+        // 서버는 있는데 이 영상은 처음 본다 — 원본을 분석시키고, 끝나면
+        // 스낵바로 알린 뒤 AI 컷과 자동 줌을 연다. 편집은 그동안 계속된다.
+        final sourcePath = _sourcePath;
+        if (mounted && sourcePath != null) {
+          unawaited(_beginServerAnalysis(sourcePath));
+          if (mounted) setState(() => _status = 'AI가 영상을 분석하고 있어요');
+        }
+      } else {
+        await finish('자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요');
+      }
+    }
+  }
+
+  /// AI자막 탭을 눌렀을 때만 전사를 시작한다.
+  void _startAutoCaptions() {
+    final sourcePath = _sourcePath;
+    if (sourcePath == null) return;
+    // 두 번 불러도 CaptionController가 한 번만 돌린다.
+    _autoCaptions.start(widget.video.id, sourcePath);
+  }
+
+  /// 짧게·중간·길게 프리셋을 **한 번에 하나씩** 미리 받아 둔다.
+  ///
+  /// **왜 나란히 부르지 않는가**: 요청 하나가 서버에서 영상 한 편을 분석하는
+  /// 일이다. 셋을 한꺼번에 던지면 서버가 셋을 나눠 처리하느라 다 같이 느려지고,
+  /// 그 사이 편집 화면에서 실제로 필요한 요청(썸네일·초안 저장)까지 뒤로 밀린다.
+  /// 차례로 받으면 첫 프리셋은 훨씬 빨리 손에 들어오고, 그 뒤는 사용자가 화면을
+  /// 보는 동안 조용히 채워진다.
   Future<void> _loadPresetRecommendations() async {
     if (_recommendationLoading) return;
+    final missing = const ['short', 'medium', 'long']
+        .where((preset) => !_presetRecommendations.containsKey(preset))
+        .toList(growable: false);
+    if (missing.isEmpty) return;
     if (mounted) setState(() => _recommendationLoading = true);
     try {
-      final values = await Future.wait(
-        const ['short', 'medium', 'long'].map(
-          (preset) => _recommendations.recommend(
-            videoId: widget.video.id,
-            capturedAt: widget.video.capturedStartAt,
-            durationPreset: preset,
-          ),
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        for (final value in values) {
-          _presetRecommendations[value.durationPreset] = value;
-        }
-      });
+      for (final preset in missing) {
+        final value = await _recommendations.recommend(
+          videoId: widget.video.id,
+          capturedAt: widget.video.capturedStartAt,
+          durationPreset: preset,
+        );
+        if (!mounted) return;
+        setState(() => _presetRecommendations[value.durationPreset] = value);
+      }
     } catch (_) {
       // 기본 자동 추천은 이미 적용됐다. 프리셋 일부를 못 가져와도 편집은 계속한다.
     } finally {
@@ -327,7 +417,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       );
       final controller = _projectController;
       if (!mounted || controller == null) return;
-      controller.applyRecommendation(recommendation);
       if (const {
         'short',
         'medium',
@@ -335,10 +424,17 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       }.contains(recommendation.durationPreset)) {
         _presetRecommendations[recommendation.durationPreset] = recommendation;
       }
-      _editState.markExternalEditApplied();
+      // 분석을 기다리는 동안 사용자가 이미 편집을 시작했다면 컷·줌을
+      // 덮지 않는다 — 프리셋 칩만 열어 주고, 원하면 직접 누르게 한다.
+      final untouched =
+          !controller.canUndo && !_editState.hasUnsavedChanges && !_saving;
+      if (untouched) {
+        controller.applyRecommendation(recommendation);
+        _editState.markExternalEditApplied();
+      }
       setState(() => _recommendationLoading = false);
       showAppSnack(context, 'AI 분석이 끝났어요 — AI 컷과 자동 줌을 쓸 수 있어요');
-      await _seekToPosition(controller.project.playheadMs);
+      if (untouched) await _seekToPosition(controller.project.playheadMs);
       unawaited(_loadPresetRecommendations());
     } catch (_) {
       if (!mounted) return;
@@ -476,8 +572,14 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onProgress: (received, total) {
         if (!mounted || total <= 0) return;
         final downloadProgress = (received / total).clamp(0.0, 1.0).toDouble();
+        final next = 0.12 + downloadProgress * 0.72;
+        // 진행률 콜백은 내려받는 조각마다 온다 — 초당 수십 번이다. 그때마다
+        // 다시 그리면 준비 화면(FittedBox + 일러스트)을 초당 수십 번 재배치하게
+        // 되고, 정작 다운로드에 쓸 시간을 화면 갱신이 먹는다. 눈에 보이는
+        // 단위(1%)가 바뀔 때만 그린다.
+        if ((next * 100).floor() == (_progress * 100).floor()) return;
         setState(() {
-          _progress = 0.12 + downloadProgress * 0.72;
+          _progress = next;
           _status = '추억 영상을 휴대폰으로 가져오고 있어요';
         });
       },
@@ -761,11 +863,170 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     } catch (failure) {
       debugPrint('editor draft save failed: $failure');
       if (mounted && !quiet) {
-        showAppSnack(context, '편집본 저장에 실패했어요. 편집 서버 연결을 확인해 주세요.',
-            error: true);
+        showAppSnack(context, '편집본 저장에 실패했어요. 편집 서버 연결을 확인해 주세요.', error: true);
       }
       return false;
     }
+  }
+
+  /// AI 자막 시트. 자막을 만들고 고치는 일은 전부 [CaptionAutoSection]이
+  /// 그대로 한다 — 여기서는 열어 주기만 한다.
+  Future<void> _showAiCaptionSheet() async {
+    if (_saving || _captionSheetOpen) return;
+    // 이미 합쳐 둔 AI 자막이 있으면, 다시 만들 때 그것들(자막 탭에서 고친
+    // 내용 포함)이 새 결과로 바뀐다는 것을 먼저 알린다.
+    if (_projectController?.hasTranscriptCaptions == true) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('AI 자막을 다시 만들까요?'),
+          content: const Text(
+            '자막 탭에 있는 AI 자막이 새로 만든 결과로 바뀌어요. '
+            '직접 고친 부분도 함께 바뀌고, 직접 추가한 자막은 그대로예요.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              key: const Key('editor-ai-caption-replace'),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('다시 만들기'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+      // 사용자가 다시 만들기를 골랐다 — 같은 내용이라도 다시 합치도록
+      // 서명을 지운다(고쳐 둔 것을 원문으로 되돌리는 것도 요청의 일부다).
+      _mergedTranscriptSignature = null;
+    }
+    // 자막 탭에 들어온 것이 곧 "자막을 만들어 달라"는 뜻이다. 마이크 권한을
+    // 여기서 먼저 묻는다 — 전사에 맡기면 오디오 추출이 끝난 몇 초 뒤에야
+    // 대화상자가 떠서, 사용자가 무엇 때문에 묻는지 연결하기 어렵다.
+    //
+    // 파일로 자막을 만드는데 마이크를 요구하는 건 ML Kit의 요구사항이다.
+    // 거부해도 시트는 연다 — 안에서 사유를 안내한다.
+    await MlKitTranscriber().requestMicrophone();
+    if (!mounted) return;
+
+    // 전사는 이 버튼을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
+    _startAutoCaptions();
+    _captionSheetOpen = true;
+    try {
+      await _presentAiCaptionSheet();
+    } finally {
+      _captionSheetOpen = false;
+    }
+    if (!mounted) return;
+    final merged = _mergeTranscriptIntoTextLayers();
+    // 전사가 아직 도는 중에 닫았다. 끝나면 리스너가 알아서 합친다 —
+    // 그 말을 안 해 주면 "눌렀는데 아무 일도 없다"로 보인다.
+    if (!merged && _autoCaptions.lines.isEmpty) {
+      showAppSnack(context, '대사를 아직 알아듣는 중이에요. 끝나면 자막 탭에 자동으로 들어가요.');
+    }
+    setState(() {});
+  }
+
+  /// 전사 결과를 **일반 자막 레이어로** 합친다. 실제로 합쳤으면 true.
+  ///
+  /// 전사 완료 알림과 시트 닫힘, 두 군데서 불리므로 내용 서명이 같으면
+  /// 건너뛴다 — 자막 탭에서 고쳐 둔 AI 자막이 원문으로 되돌아가지 않는다.
+  bool _mergeTranscriptIntoTextLayers() {
+    final projectController = _projectController;
+    if (projectController == null) return false;
+    final lines = _autoCaptions.lines;
+    if (lines.isEmpty) return false;
+    final signature = [
+      for (final line in lines) '${line.startMs}:${line.endMs}:${line.text}',
+    ].join('|');
+    if (signature == _mergedTranscriptSignature) return false;
+    _mergedTranscriptSignature = signature;
+    projectController.applyTranscriptCaptions([
+      for (final line in lines)
+        (startMs: line.startMs, endMs: line.endMs, text: line.text),
+    ]);
+    _editState.markExternalEditApplied();
+    showAppSnack(
+      context,
+      'AI 자막 ${lines.length}줄을 자막 탭에 넣었어요. 자막 탭에서 고칠 수 있어요.',
+    );
+    // 전사는 긴 영상에서 한참 걸려 그동안 다른 앱을 보는 사람이 많다 —
+    // 앱이 뒤로 가 있으면 스낵이 안 보이니 시스템 알림으로도 알린다.
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      unawaited(
+        _editorPlatform.showLocalNotification(
+          title: 'AI 자막이 준비됐어요',
+          body: '자막 ${lines.length}줄을 넣었어요. 편집기에서 다듬어 보세요.',
+        ),
+      );
+    }
+    return true;
+  }
+
+  Future<void> _presentAiCaptionSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFFFFDFC),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          16,
+          20,
+          MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'AI 자막',
+                  style: TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: '닫기',
+                  onPressed: () => Navigator.pop(sheetContext),
+                  color: AppColors.muted,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            CaptionAutoSection(
+              controller: _autoCaptions,
+              // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
+              // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
+              estimateSeconds: _editState.durationMs > 0
+                  ? (_editState.durationMs / 1000 * 0.9).round()
+                  : null,
+              // 자막 수정도 저장 안 된 변경이다.
+              onChanged: () =>
+                  setState(() => _editState.markExternalEditApplied()),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              '만들어진 자막은 저장할 때 영상에 함께 구워져요. 줄을 눌러 고칠 수 있어요.',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _saveEdit() async {
@@ -802,28 +1063,28 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       const EditorExportState(phase: EditorExportPhase.preparing, progress: 0),
     );
 
-    // 권한 왕복을 렌더링과 겹쳐 둔다. 저장이 끝난 뒤에 물으면 그 시간이
-    // 고스란히 사용자를 기다리게 하는데, 여기서 시작하면 렌더링이 끝날 즈음엔
-    // 이미 답이 와 있다.
-    final galleryAccess = _requestGalleryAccess();
-
     try {
       final exportProject = projectController.project;
       // 편집 초안부터 서버에 남긴다 — 렌더링이 실패해도 편집본은 산다.
-      try {
-        await _recommendations.saveProject(
-          videoId: widget.video.id,
-          revision: exportProject.revision + 1,
-          recipe: exportProject.toDraftMap(),
-        );
-        debugPrint('editor draft saved before export');
-      } catch (failure) {
-        debugPrint('editor draft save failed: $failure');
-      }
-      const exportCaptions = <Map<String, Object>>[];
-      final requiresRendering = exportProject.requiresRendering(
-        hasCaptions: exportCaptions.isNotEmpty,
-      );
+      //
+      // 기다리지는 않는다. 초안 저장은 편집 서버 왕복 한 번인데, 서버가 멀거나
+      // 응답이 없으면 그 시간(연결 대기만 4초)이 통째로 "저장 버튼을 눌렀는데
+      // 아무 일도 안 일어나는" 시간이 됐다. 렌더링과 나란히 보내면 어차피 더
+      // 오래 걸리는 렌더링 시간 안에 숨는다.
+      final draftSaved = _recommendations
+          .saveProject(
+            videoId: widget.video.id,
+            revision: exportProject.revision + 1,
+            recipe: exportProject.toDraftMap(),
+          )
+          .then((_) => debugPrint('editor draft saved before export'))
+          .catchError(
+            (Object failure) => debugPrint('editor draft save failed: $failure'),
+          );
+
+      // AI 자막은 이미 일반 자막 레이어로 합쳐져 textLayers에 들어 있다 —
+      // 별도 자막 트랙을 넘기지 않는다.
+      final requiresRendering = exportProject.requiresRendering();
       final String outputPath;
       if (requiresRendering) {
         projectController.setExportState(
@@ -832,12 +1093,17 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             progress: 0,
           ),
         );
+        if (mounted) {
+          setState(() {
+            _exportProgress = null;
+            _status = '편집 내용을 영상으로 만들고 있어요';
+          });
+        }
         _startExportProgressPolling();
         try {
           outputPath = await _editorPlatform.exportProject(
             project: exportProject,
             outputPath: _buildOutputPath(),
-            captions: exportCaptions,
           );
         } finally {
           _stopExportProgressPolling();
@@ -849,40 +1115,26 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       if (!await file.exists() || (await file.length()) == 0) {
         throw const VideoExportException('만들어진 영상 파일이 비어 있어요.');
       }
-      // 완성 영상을 서버에 올린다. 갤러리는 최선 노력 — 권한이 거부돼도
-      // 저장 자체는 성공으로 남아야 한다(예전에는 갤러리 실패 = 전체 실패).
-      if (mounted) {
-        setState(() {
-          _exportProgress = null;
-          _status = '편집 영상을 서버에 올리고 있어요';
-        });
-      }
-      var uploadedToServer = false;
-      try {
-        await _recommendations.uploadEditedVideo(
+      // 완성 영상은 **서버에만** 올리되, 올리는 일은 OS 백그라운드 작업
+      // (WorkManager)에 맡긴다. 셀룰러에서 몇 분씩 걸리는 업로드를 편집기가
+      // 붙잡고 기다리게 했더니 사용자가 앱을 껐고 업로드도 함께 끊겼다 —
+      // 이제 앱을 나가거나 꺼도 계속 올라가고, 진행률은 상단 알림에 보인다.
+      await _editorPlatform.enqueueEditedUpload(
+        videoId: widget.video.id,
+        filePath: outputPath,
+        uploadUrl: _recommendations.editedVideoUploadUrl(
           videoId: widget.video.id,
-          filePath: outputPath,
           title: widget.video.title,
           durationMs: exportProject.durationMs,
           capturedAt: widget.video.capturedStartAt,
-        );
-        uploadedToServer = true;
-      } catch (failure) {
-        debugPrint('edited video upload failed: $failure');
-      }
-      if (mounted) {
-        setState(() => _status = '휴대폰 갤러리에 저장하고 있어요');
-      }
-      var savedToGallery = false;
-      try {
-        await _saveToPhoneGallery(outputPath, galleryAccess);
-        savedToGallery = true;
-      } catch (failure) {
-        debugPrint('gallery save failed: $failure');
-      }
-      if (!uploadedToServer && !savedToGallery) {
-        throw const VideoExportException('서버 업로드와 갤러리 저장이 모두 실패했어요.');
-      }
+        ),
+        title: widget.video.title,
+        // 렌더링 산출물(임시 파일)만 지운다. 원본을 그대로 올릴 때는 캐시라
+        // 지우면 다음 편집 진입이 도로 내려받는다.
+        deleteAfter: requiresRendering,
+      );
+      // 초안 저장은 렌더링 내내 돌고 있었다. 여기서 결과만 거둔다.
+      await draftSaved;
       if (!mounted) return;
       _editState.markSaved();
       projectController.setExportState(
@@ -891,16 +1143,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           progress: 1,
         ),
       );
-      final where = [
-        if (uploadedToServer) '서버',
-        if (savedToGallery) '갤러리',
-      ].join('와 ');
       setState(() {
         _saving = false;
         _exportProgress = null;
-        _status = '$where에 저장되었습니다';
+        _status = '업로드를 시작했어요';
       });
-      showAppSnack(context, '$where에 저장되었습니다');
+      showAppSnack(
+        context,
+        '영상을 서버에 올리는 중이에요. 앱을 닫아도 계속 올라가요 — '
+        '끝나면 알림이 오고, 추억 > 편집 완료에서 볼 수 있어요.',
+      );
       Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
     } catch (failure) {
       debugPrint('editor save failed: $failure');
@@ -970,41 +1222,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     }
   }
 
-  /// 갤러리 권한을 물어 둔다. 답을 기다리는 쪽은 렌더링이 끝난 뒤다.
-  Future<void> _requestGalleryAccess() async {
-    try {
-      if (!await Gal.hasAccess()) await Gal.requestAccess();
-    } catch (_) {
-      // 권한 확인 자체가 실패하는 기기도 있다. 저장은 그대로 시도한다.
-    }
-  }
-
-  /// 편집 결과를 휴대폰 갤러리에 넣는다.
-  ///
-  /// **왜 권한으로 막지 않는가**: 예전에는 `Gal.hasAccess()`가 false면 곧바로
-  /// 예외를 던져 저장이 시작조차 못 했다. 안드로이드 10부터 MediaStore에 내
-  /// 앱이 만든 영상을 넣는 데는 권한이 필요 없다 — 거절된 권한 하나 때문에
-  /// 저장 전체가 막히는 게 실제 증상이었다. 그래서 권한은 요청만 해 보고,
-  /// 저장은 MediaStore로 직접 한다. 그쪽이 실패하면 gal로 한 번 더 시도한다.
-  Future<void> _saveToPhoneGallery(
-    String videoPath,
-    Future<void> galleryAccess,
-  ) async {
-    await galleryAccess;
-    try {
-      await _editorPlatform.saveToGallery(
-        inputPath: videoPath,
-        title: _safeTitle(widget.video.title),
-      );
-    } on EditorPlatformException catch (failure) {
-      try {
-        await Gal.putVideo(videoPath, album: '빵긋');
-      } on GalException catch (galFailure) {
-        throw EditorPlatformException('$failure (${galFailure.type.message})');
-      }
-    }
-  }
-
   /// 렌더링을 중간에 그만둔다. 긴 영상에서 화면에 갇히지 않게 한다.
   Future<void> _cancelExport() async {
     if (!_saving || _exportCancelled) return;
@@ -1039,16 +1256,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _exportProgressTimer = null;
   }
 
-  String _buildOutputPath({String? prefix}) {
+  /// [baseName]을 주면 제목 대신 그것을 쓴다. 사람이 볼 일 없는 중간 파일에서
+  /// 이름에 든 글자가 문제를 일으키지 않게 할 때만 쓴다.
+  String _buildOutputPath({String? prefix, String? baseName}) {
     final sourcePath = _sourcePath;
     final directory = sourcePath == null
         ? Directory.systemTemp
         : File(sourcePath).parent;
-    final baseName = _safeTitle(widget.video.title);
+    final name = baseName ?? _safeTitle(widget.video.title);
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final suffix = prefix == null ? '' : '_$prefix';
     return '${directory.path}${Platform.pathSeparator}'
-        '$baseName${suffix}_$timestamp.mp4';
+        '$name${suffix}_$timestamp.mp4';
   }
 
   void _retry() {
@@ -1058,6 +1277,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   @override
   void dispose() {
+    _autoCaptions
+      ..removeListener(_onCaptionsChanged)
+      ..dispose();
     _textInput.dispose();
     _textFocus.dispose();
     _stopExportProgressPolling();
@@ -1294,7 +1516,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                                 child: Image.asset(
                                   'assets/images/editor_loading_features.png',
                                   fit: BoxFit.cover,
-                                  filterQuality: FilterQuality.high,
+                                  cacheWidth: decodePixels(
+                                    context,
+                                    contentWidth,
+                                  ),
+                                  filterQuality: FilterQuality.medium,
                                 ),
                               ),
                             ),
@@ -1346,6 +1572,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         onEditLayer: (id) => _startTextEditing(layerId: id),
         captionColor: _captionColor,
         onLayerChanged: () => setState(_editState.markExternalEditApplied),
+        // AI 자막은 전사가 끝나면 일반 자막 레이어로 합쳐진다 — 별도
+        // 오버레이로 그리지 않는다.
         autoCaptionText: null,
       ),
       thumbnails: _thumbnails,
@@ -1359,8 +1587,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       recommendationLoading: _recommendationLoading,
       onRecommendationSelected: _selectRecommendationPreset,
       onExportCancel: _cancelExport,
-      aiCaptionSummary: null,
-      // 초안 저장은 PopScope가 맡는다 — 시스템 뒤로가기와 같은 길이다.
       onBack: () => Navigator.maybePop(context),
       onSaveDraft: _saveDraft,
       onSave: _saveEdit,
@@ -1404,8 +1630,22 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onVolumeCommitted: _commitAudioVolume,
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
+      onFaceStickerSelected: (value) {
+        // 재생 위치에 얼굴이 없으면 붙일 수 없다 — 얼굴이 잡힌 장면으로
+        // 옮겨 달라고 안내한다.
+        if (!projectController.setFaceSticker(value)) {
+          showAppSnack(
+            context,
+            '이 장면에서는 얼굴을 찾지 못했어요. 얼굴이 나오는 장면으로 이동한 뒤 붙여 주세요.',
+            error: true,
+          );
+          return;
+        }
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
       onLookSelected: _setLook,
-      onAiCaption: () {},
+      onAiCaption: _showAiCaptionSheet,
       onZoomAdd: () {
         if (!projectController.addZoomAtPlayhead()) {
           showAppSnack(context, '이 클립은 줌으로 가득 찼어요. 기존 줌을 지우거나 줄여 주세요.');
@@ -1440,6 +1680,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       EditorCanvasRatio.original => VideoEditRatio.original,
       EditorCanvasRatio.vertical => VideoEditRatio.shortForm,
       EditorCanvasRatio.landscape => VideoEditRatio.landscape,
+      EditorCanvasRatio.square => VideoEditRatio.square,
+      EditorCanvasRatio.portrait => VideoEditRatio.portrait,
     });
     if (mounted) setState(() {});
   }
@@ -1735,7 +1977,8 @@ class _PreparingMascot extends StatelessWidget {
           'assets/images/calendar_header_mascot.png',
           height: height,
           fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
+          cacheHeight: decodePixels(context, height),
+          filterQuality: FilterQuality.medium,
         ),
         Positioned(
           bottom: 34,
@@ -1930,6 +2173,25 @@ class _PreviewSurface extends StatelessWidget {
     return auto != null && auto.isNotEmpty ? auto : null;
   }
 
+  /// 얼굴 추적 스티커의 이 순간 화면 위치·배율. 일반 스티커는 그대로
+  /// 돌려준다.
+  ///
+  /// 저장된 [EditorStickerLayer.position]은 얼굴 중심 기준 **오프셋**이라
+  /// (0.5, 0.5)면 얼굴 정중앙이다. 배치 계산은 모델과 공유한다 — 앵커한
+  /// 얼굴의 경로만 따르고, 얼굴 크기·구간 줌에 맞춰 위치와 크기가 함께
+  /// 움직인다. 얼굴 궤적이 없으면 오프셋을 그대로 화면 좌표로 쓴다 —
+  /// 안 보이는 것보다 가운데라도 보이는 쪽이 덜 놀란다.
+  EditorStickerLayer _resolveFaceSticker(EditorStickerLayer layer) {
+    if (!layer.tracksFace) return layer;
+    final project = projectController.project;
+    final placed = project.faceStickerPlacementAt(layer, project.playheadMs);
+    if (placed == null) return layer;
+    return layer.copyWith(
+      position: placed.position,
+      scale: layer.scale * placed.scale,
+    );
+  }
+
   /// 글자 레이어 하나를 그린다. 편집 중인 레이어만 제자리 입력칸이 된다.
   ///
   /// 입력칸은 [InputDecoration]과 앱 테마를 통째로 벗긴다. 그러지 않으면
@@ -2113,10 +2375,16 @@ class _PreviewSurface extends StatelessWidget {
                   scale: scale,
                 ),
               ),
-            for (final layer in projectController.project.stickerLayers.where(
-              (layer) =>
-                  layer.isVisibleAt(projectController.project.playheadMs),
-            ))
+            for (final layer
+                in projectController.project.stickerLayers
+                    .where(
+                      (layer) => layer.isVisibleAt(
+                        projectController.project.playheadMs,
+                      ),
+                    )
+                    // 얼굴 추적 스티커는 이 순간의 얼굴 위치로 바꿔 그린다.
+                    // 저장된 position은 얼굴 기준 오프셋이다.
+                    .map(_resolveFaceSticker))
               _EditableLayerOverlay(
                 key: ValueKey(layer.id),
                 controller: projectController,

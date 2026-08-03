@@ -9,6 +9,8 @@ class EditRecommendation {
     required this.durationPreset,
     required this.zoomSegments,
     this.scoreTimeline = const [],
+    this.faceTrack = const [],
+    this.faceTracks = const [],
   });
 
   factory EditRecommendation.fromJson(Map<String, dynamic> json) {
@@ -20,12 +22,20 @@ class EditRecommendation {
     final timeline = (recipe['scoreTimeline'] as List? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList(growable: false);
+    final faces = (recipe['faceTrack'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+    final faceTracks = (recipe['faceTracks'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
     return EditRecommendation(
       cutStartMs: (cut['startMs'] as num).round(),
       cutEndMs: (cut['endMs'] as num).round(),
       durationPreset: recipe['durationPreset'] as String? ?? 'auto',
       zoomSegments: zooms,
       scoreTimeline: timeline,
+      faceTrack: faces,
+      faceTracks: faceTracks,
     );
   }
 
@@ -38,6 +48,14 @@ class EditRecommendation {
   /// 웃음·말소리·음량 상승·모션·얼굴 특징을 융합한 `eventScore`가 들어 있다.
   /// 컷 선택이 이 점수를 그대로 쓴다 — 앱에서 점수를 다시 지어내지 않는다.
   final List<Map<String, dynamic>> scoreTimeline;
+
+  /// MediaPipe 표정 분석이 뽑은 얼굴 궤적({ms, x, y, h}, 원본 시각 기준).
+  /// 얼굴을 따라다니는 AR 스티커가 쓴다. 옛 서버 호환용 한 줄 궤적이다.
+  final List<Map<String, dynamic>> faceTrack;
+
+  /// 사람별 얼굴 궤적({id, samples}). 여러 명이 나오는 영상에서 스티커가
+  /// "누구"를 따라갈지 고를 수 있게 한다.
+  final List<Map<String, dynamic>> faceTracks;
 }
 
 /// 서버 분석 작업 상태. `none`(분석한 적 없음) → `running` → `done`/`failed`.
@@ -244,35 +262,25 @@ class EditRecommendationClient {
     ];
   }
 
-  /// 렌더링된 편집 영상을 서버(MinIO)에 올린다.
-  Future<void> uploadEditedVideo({
+  /// 완성본 업로드 주소(쿼리 포함). 백그라운드 업로더(WorkManager)가 앱
+  /// 밖에서 그대로 PUT한다 — Dart가 살아 있지 않아도 되도록 완성된 URL을
+  /// 넘긴다.
+  String editedVideoUploadUrl({
     required String videoId,
-    required String filePath,
     String title = '',
     int durationMs = 0,
     DateTime? capturedAt,
-    void Function(int sent, int total)? onProgress,
-  }) async {
-    final file = File(filePath);
-    final length = await file.length();
-    await _dio.put<void>(
-      '/v1/edited-videos/$videoId',
-      queryParameters: {
-        'title': title,
-        'durationMs': '$durationMs',
-        // 원본이 감지된(촬영된) 시각 — 캘린더가 이 날짜에 표시한다.
-        if (capturedAt != null)
-          'capturedAt': capturedAt.toLocal().toIso8601String(),
-      },
-      data: file.openRead(),
-      options: Options(
-        headers: {Headers.contentLengthHeader: length},
-        contentType: 'video/mp4',
-        sendTimeout: const Duration(minutes: 5),
-      ),
-      onSendProgress: onProgress,
-    );
-  }
+  }) => Uri.parse('${_dio.options.baseUrl}/v1/edited-videos/$videoId')
+      .replace(
+        queryParameters: {
+          'title': title,
+          'durationMs': '$durationMs',
+          // 원본이 감지된(촬영된) 시각 — 캘린더가 이 날짜에 표시한다.
+          if (capturedAt != null)
+            'capturedAt': capturedAt.toLocal().toIso8601String(),
+        },
+      )
+      .toString();
 
   /// 편집 완료 영상 목록(메타).
   Future<List<Map<String, dynamic>>> listEditedVideos() async {
@@ -295,6 +303,20 @@ class EditRecommendationClient {
       '/v1/edited-videos/$videoId/play-url',
     );
     return response.data?['url'] as String?;
+  }
+
+  /// 편집 완료 영상을 파일로 내려받는다. 갤러리 저장이 쓴다.
+  Future<void> downloadEditedVideo(
+    String videoId,
+    String savePath, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    await _dio.download(
+      '/v1/edited-videos/$videoId/file',
+      savePath,
+      onReceiveProgress: onProgress,
+      options: Options(receiveTimeout: const Duration(minutes: 10)),
+    );
   }
 
   Future<List<Map<String, dynamic>>> listComments(String videoId) async {

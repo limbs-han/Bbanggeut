@@ -79,8 +79,41 @@ object EditorLayerOverlay {
             italic = false,
             alignment = Layout.Alignment.ALIGN_CENTER,
             settings = settings(raw),
+            // 얼굴 추적 스티커. 키프레임(타임라인 ms 기준 x·y)을 프레임마다
+            // 보간해 얼굴을 따라 움직인다. 미리보기(_resolveFaceSticker)와
+            // 같은 좌표라 화면에서 본 그대로 구워진다.
+            track = positionTrack(raw),
+            scale = (number(raw, "scale")?.toFloat() ?: 1f).coerceIn(0.2f, 4f),
+            rotationDegrees = number(raw, "rotationDegrees")?.toFloat() ?: 0f,
         )
     }
+
+    /// 스티커 DTO의 `track`([{ms, x, y, s}]) 키프레임. 없으면 null — 고정
+    /// 위치다. `s`는 얼굴 크기·구간 줌이 구워진 배율 계수(없으면 1)다.
+    private fun positionTrack(raw: Map<String, Any?>): List<TrackSample>? {
+        val rawTrack = raw["track"] as? List<*> ?: return null
+        val samples = rawTrack.mapNotNull { entry ->
+            val map = entry as? Map<*, *> ?: return@mapNotNull null
+            val ms = (map["ms"] as? Number)?.toLong() ?: return@mapNotNull null
+            val x = (map["x"] as? Number)?.toFloat() ?: return@mapNotNull null
+            val y = (map["y"] as? Number)?.toFloat() ?: return@mapNotNull null
+            val s = (map["s"] as? Number)?.toFloat() ?: 1f
+            TrackSample(
+                ms * 1000,
+                x.coerceIn(0f, 1f),
+                y.coerceIn(0f, 1f),
+                s.coerceIn(0.1f, 8f),
+            )
+        }
+        return samples.sortedBy { it.timeUs }.ifEmpty { null }
+    }
+
+    private data class TrackSample(
+        val timeUs: Long,
+        val x: Float,
+        val y: Float,
+        val scale: Float = 1f,
+    )
 
     private fun scaled(fontSize: Int, fontScale: Float): Int =
         (fontSize * fontScale).roundToInt().coerceIn(8, 640)
@@ -121,6 +154,9 @@ object EditorLayerOverlay {
         italic: Boolean,
         alignment: Layout.Alignment,
         private val settings: OverlaySettings,
+        private val track: List<TrackSample>? = null,
+        private val scale: Float = 1f,
+        private val rotationDegrees: Float = 0f,
     ) : TextOverlay() {
         /// 보일 때와 안 보일 때, 글은 이 둘뿐이다. 미리 만들어 두고 돌려준다.
         ///
@@ -185,7 +221,43 @@ object EditorLayerOverlay {
                 visible
             }
 
-        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
-            settings
+        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
+            val samples = track ?: return settings
+            val sample = sampleAt(samples, presentationTimeUs)
+            // 얼굴 크기·구간 줌이 구워진 배율 계수를 스티커 배율에 곱한다 —
+            // 미리보기(_resolveFaceSticker)와 같은 식이다.
+            val drawScale = scale * sample.scale
+            // 글자 비트맵과 달리 설정 객체는 media3가 캐시하지 않아서 프레임마다
+            // 새로 만들어도 재기·그리기가 되풀이되지 않는다.
+            return StaticOverlaySettings.Builder()
+                .setBackgroundFrameAnchor(sample.x * 2f - 1f, 1f - sample.y * 2f)
+                .setScale(drawScale, drawScale)
+                .setRotationDegrees(rotationDegrees)
+                .build()
+        }
+
+        /// 이웃 키프레임을 선형 보간한다. 트랙 밖 시각은 가장 가까운 표본이다.
+        private fun sampleAt(
+            samples: List<TrackSample>,
+            timeUs: Long,
+        ): TrackSample {
+            if (timeUs <= samples.first().timeUs) return samples.first()
+            if (timeUs >= samples.last().timeUs) return samples.last()
+            for (index in 1 until samples.size) {
+                val next = samples[index]
+                if (timeUs > next.timeUs) continue
+                val prev = samples[index - 1]
+                val span = (next.timeUs - prev.timeUs).toFloat()
+                if (span <= 0f) return next
+                val t = (timeUs - prev.timeUs) / span
+                return TrackSample(
+                    timeUs,
+                    prev.x + (next.x - prev.x) * t,
+                    prev.y + (next.y - prev.y) * t,
+                    prev.scale + (next.scale - prev.scale) * t,
+                )
+            }
+            return samples.last()
+        }
     }
 }
