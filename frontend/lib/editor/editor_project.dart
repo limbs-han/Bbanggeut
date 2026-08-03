@@ -550,9 +550,15 @@ class EditorStickerLayer extends EditorTimedLayer {
     required super.endMs,
     super.scale,
     super.rotationDegrees,
+    this.clipId,
   });
 
   final String value;
+
+  /// 이 스티커가 묶인 클립. 자막과 같은 규칙이다 — 클립이 옮겨지거나 잘리면
+  /// 컨트롤러가 이 묶음을 따라 다시 계산하고, 클립을 지우면 스티커도 함께
+  /// 사라진다. null이면 어느 클립에도 묶이지 않은 옛 데이터다.
+  final String? clipId;
 
   EditorStickerLayer copyWith({
     String? value,
@@ -561,6 +567,7 @@ class EditorStickerLayer extends EditorTimedLayer {
     int? endMs,
     double? scale,
     double? rotationDegrees,
+    String? clipId,
   }) => EditorStickerLayer(
     id: id,
     value: value ?? this.value,
@@ -569,9 +576,10 @@ class EditorStickerLayer extends EditorTimedLayer {
     endMs: endMs ?? this.endMs,
     scale: (scale ?? this.scale).clamp(0.2, 4.0),
     rotationDegrees: rotationDegrees ?? this.rotationDegrees,
+    clipId: clipId ?? this.clipId,
   );
 
-  Map<String, Object> toMap() => {
+  Map<String, Object?> toMap() => {
     'id': id,
     'value': value,
     'position': position.toMap(),
@@ -579,6 +587,7 @@ class EditorStickerLayer extends EditorTimedLayer {
     'endMs': endMs,
     'scale': scale,
     'rotationDegrees': rotationDegrees,
+    'clipId': clipId,
   };
 
   @override
@@ -590,11 +599,20 @@ class EditorStickerLayer extends EditorTimedLayer {
       other.startMs == startMs &&
       other.endMs == endMs &&
       other.scale == scale &&
-      other.rotationDegrees == rotationDegrees;
+      other.rotationDegrees == rotationDegrees &&
+      other.clipId == clipId;
 
   @override
-  int get hashCode =>
-      Object.hash(id, value, position, startMs, endMs, scale, rotationDegrees);
+  int get hashCode => Object.hash(
+    id,
+    value,
+    position,
+    startMs,
+    endMs,
+    scale,
+    rotationDegrees,
+    clipId,
+  );
 }
 
 class EditorBlurLayer extends EditorTimedLayer {
@@ -965,6 +983,7 @@ class EditorProject {
         },
     ],
     'textLayers': [for (final layer in textLayers) layer.toMap()],
+    'stickerLayers': [for (final layer in stickerLayers) layer.toMap()],
     'audio': {'sourceVolume': audio.sourceVolume, 'muted': audio.muted},
     'look': look.name,
     if (recommendationMarker case final marker?)

@@ -165,6 +165,53 @@ class EditorProjectController extends ChangeNotifier {
     return layers;
   }
 
+  /// 클립 배열이 바뀔 때, 클립에 묶인 스티커의 절대 시각을 클립을 따라
+  /// 다시 계산한다. 자막([_textLayersFollowing])과 같은 규칙이다.
+  List<EditorStickerLayer> _stickerLayersFollowing(
+    List<EditorClip> oldClips,
+    List<EditorClip> newClips,
+  ) {
+    int? startOf(List<EditorClip> clips, String id) {
+      var cursor = 0;
+      for (final clip in clips) {
+        if (clip.id == id) return cursor;
+        cursor += clip.durationMs;
+      }
+      return null;
+    }
+
+    EditorClip? clipOf(List<EditorClip> clips, String id) {
+      for (final clip in clips) {
+        if (clip.id == id) return clip;
+      }
+      return null;
+    }
+
+    final layers = <EditorStickerLayer>[];
+    for (final layer in _project.stickerLayers) {
+      final clipId = layer.clipId;
+      if (clipId == null) {
+        layers.add(layer);
+        continue;
+      }
+      final newStart = startOf(newClips, clipId);
+      final newClip = clipOf(newClips, clipId);
+      if (newStart == null || newClip == null) continue;
+      final oldStart = startOf(oldClips, clipId) ?? newStart;
+      final span = newClip.durationMs;
+      final int relStart = (layer.startMs - oldStart)
+          .clamp(0, math.max(0, span - 100))
+          .toInt();
+      final int relEnd = (layer.endMs - oldStart)
+          .clamp(math.min(relStart + 100, span), span)
+          .toInt();
+      layers.add(
+        layer.copyWith(startMs: newStart + relStart, endMs: newStart + relEnd),
+      );
+    }
+    return layers;
+  }
+
   /// 지워진 클립에 묶여 있던 줌을 걷어낸 목록.
   List<EditorZoomSegment> _zoomsWithoutClip(String clipId) => _project
       .zoomSegments
@@ -254,6 +301,31 @@ class EditorProjectController extends ChangeNotifier {
       );
     }
 
+    final stickers = <EditorStickerLayer>[];
+    for (final raw in recipe['stickerLayers'] as List? ?? const []) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      final value = map['value'] as String? ?? '';
+      if (value.isEmpty) continue;
+      final position = Map<String, dynamic>.from(
+        map['position'] as Map? ?? const {},
+      );
+      stickers.add(
+        EditorStickerLayer(
+          id: map['id'] as String? ?? _nextId('sticker'),
+          value: value,
+          position: NormalizedPoint(
+            (position['x'] as num?)?.toDouble() ?? 0.5,
+            (position['y'] as num?)?.toDouble() ?? 0.5,
+          ),
+          startMs: (map['startMs'] as num?)?.round() ?? 0,
+          endMs: (map['endMs'] as num?)?.round() ?? 3000,
+          scale: (map['scale'] as num?)?.toDouble() ?? 1,
+          rotationDegrees: (map['rotationDegrees'] as num?)?.toDouble() ?? 0,
+          clipId: map['clipId'] as String?,
+        ),
+      );
+    }
+
     final canvasMap = Map<String, dynamic>.from(
       recipe['canvas'] as Map? ?? const {},
     );
@@ -283,6 +355,7 @@ class EditorProjectController extends ChangeNotifier {
       for (final clip in clips) clip.id,
       for (final zoom in zooms) zoom.id,
       for (final layer in texts) layer.id,
+      for (final layer in stickers) layer.id,
     ]) {
       final tail = int.tryParse(id.split('-').last);
       if (tail != null && tail >= _idSeed) _idSeed = tail + 1;
@@ -292,6 +365,7 @@ class EditorProjectController extends ChangeNotifier {
       clips: clips,
       zoomSegments: zooms,
       textLayers: texts,
+      stickerLayers: stickers,
       canvas: canvas,
       audio: EditorAudio(
         sourceVolume: (audioMap['sourceVolume'] as num?)?.toDouble() ?? 1,
@@ -436,6 +510,7 @@ class EditorProjectController extends ChangeNotifier {
         clips: clips,
         zoomSegments: zooms,
         textLayers: _textLayersFollowing(_project.clips, clips),
+        stickerLayers: _stickerLayersFollowing(_project.clips, clips),
         recommendationMarker: EditorRecommendationMarker(
           preset: preset,
           sourceStartMs: start,
@@ -478,6 +553,7 @@ class EditorProjectController extends ChangeNotifier {
       _project.copyWith(
         clips: next,
         textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
         selectedClipId: clip.id,
       ),
     );
@@ -657,6 +733,7 @@ class EditorProjectController extends ChangeNotifier {
         clips: next,
         // 클립에 묶인 자막은 클립을 따라 함께 움직인다.
         textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
         selectedClipId: moved.id,
         playheadMs: 0,
       ),
@@ -757,11 +834,23 @@ class EditorProjectController extends ChangeNotifier {
               )
             : layer.copyWith(clipId: right.id),
     ];
+    final stickers = [
+      for (final layer in _project.stickerLayers)
+        layer.clipId != clip.id
+            ? layer
+            : layer.startMs < splitTimelineMs
+            ? layer.copyWith(
+                clipId: left.id,
+                endMs: math.min(layer.endMs, splitTimelineMs),
+              )
+            : layer.copyWith(clipId: right.id),
+    ];
     _commit(
       _project.copyWith(
         clips: next,
         zoomSegments: zooms,
         textLayers: layers,
+        stickerLayers: stickers,
         selectedClipId: right.id,
         playheadMs: timelinePositionMs,
       ),
@@ -794,6 +883,7 @@ class EditorProjectController extends ChangeNotifier {
           clips: remaining,
           zoomSegments: _zoomsWithoutClip(selected.id),
           textLayers: _textLayersFollowing(_project.clips, remaining),
+          stickerLayers: _stickerLayersFollowing(_project.clips, remaining),
           selectedClipId: remaining.first.id,
           playheadMs: 0,
         ),
@@ -809,6 +899,7 @@ class EditorProjectController extends ChangeNotifier {
         // 클립을 지우면 거기 묶인 줌·자막도 함께 사라진다.
         zoomSegments: _zoomsWithoutClip(selected.id),
         textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
         selectedClipId: next[nextIndex].id,
         playheadMs: math.min(_project.playheadMs, _durationOf(next)),
       ),
@@ -826,6 +917,7 @@ class EditorProjectController extends ChangeNotifier {
       _project.copyWith(
         clips: next,
         textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
         selectedClipId: copy.id,
       ),
     );
@@ -865,6 +957,7 @@ class EditorProjectController extends ChangeNotifier {
       clips: next,
       // 뒤 클립들에 묶인 자막이 길이 변화를 따라간다.
       textLayers: _textLayersFollowing(_project.clips, next),
+      stickerLayers: _stickerLayersFollowing(_project.clips, next),
       playheadMs: math.min(_project.playheadMs, _durationOf(next)),
     );
     if (commit) {
@@ -1194,12 +1287,22 @@ class EditorProjectController extends ChangeNotifier {
 
   void addSticker(String value) {
     if (value.isEmpty) return;
+    // 스티커는 재생 위치가 속한 클립에 묶여 그 클립 구간에 깔린다 —
+    // 자막과 같은 규칙이라 클립을 옮기면 따라가고, 지우면 함께 사라진다.
+    final location = _locateTimelinePosition(_project.playheadMs);
+    final clipStart = location == null
+        ? 0
+        : _project.timelineStartFor(location.clip.id);
+    final clipEnd = location == null
+        ? _project.durationMs
+        : clipStart + location.clip.durationMs;
     final layer = EditorStickerLayer(
       id: _nextId('sticker'),
       value: value,
       position: NormalizedPoint.center,
-      startMs: 0,
-      endMs: _project.durationMs,
+      startMs: clipStart,
+      endMs: clipEnd,
+      clipId: location?.clip.id,
     );
     _commit(
       _project.copyWith(

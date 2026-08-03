@@ -512,4 +512,45 @@ void main() {
     expect(baked.selectedZoomId, isNull);
     expect(baked.recommendationMarker, isNull);
   });
+
+  test('스티커는 클립에 묶여 이동을 따라가고 초안에도 저장된다', () {
+    final subject = controller();
+    subject.splitAt(4000);
+    final firstClip = subject.project.clips.first;
+    subject.setPlayhead(1000);
+    subject.addSticker('⭐');
+    final sticker = subject.project.stickerLayers.single;
+    expect(sticker.clipId, firstClip.id);
+    expect(sticker.startMs, 0);
+    expect(sticker.endMs, firstClip.durationMs);
+
+    // 첫 클립을 뒤로 보내면 스티커도 따라간다.
+    subject.reorderClip(0, 1);
+    final moved = subject.project.stickerLayers.single;
+    expect(
+      moved.startMs,
+      subject.project.timelineStartFor(firstClip.id),
+    );
+
+    // 초안 저장 → 복원 왕복에도 클립 귀속째 남는다.
+    final draft = Map<String, dynamic>.from(subject.project.toDraftMap());
+    final restored = controller()..loadDraftRecipe(draft);
+    final roundTripped = restored.project.stickerLayers.single;
+    expect(roundTripped.value, '⭐');
+    expect(roundTripped.clipId, firstClip.id);
+    expect(roundTripped.startMs, moved.startMs);
+  });
+
+  test('클립을 지우면 거기 묶인 스티커도 사라진다', () {
+    final subject = controller();
+    subject.splitAt(4000);
+    final firstClip = subject.project.clips.first;
+    subject.setPlayhead(1000);
+    subject.addSticker('⭐');
+    expect(subject.project.stickerLayers, hasLength(1));
+
+    subject.selectClip(firstClip.id);
+    expect(subject.deleteSelectedClip(), isTrue);
+    expect(subject.project.stickerLayers, isEmpty);
+  });
 }
