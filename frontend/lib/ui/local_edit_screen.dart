@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gal/gal.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
@@ -922,11 +921,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       const EditorExportState(phase: EditorExportPhase.preparing, progress: 0),
     );
 
-    // 권한 왕복을 렌더링과 겹쳐 둔다. 저장이 끝난 뒤에 물으면 그 시간이
-    // 고스란히 사용자를 기다리게 하는데, 여기서 시작하면 렌더링이 끝날 즈음엔
-    // 이미 답이 와 있다.
-    final galleryAccess = _requestGalleryAccess();
-
     try {
       final exportProject = projectController.project;
       // 편집 초안부터 서버에 남긴다 — 렌더링이 실패해도 편집본은 산다.
@@ -979,48 +973,30 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       if (!await file.exists() || (await file.length()) == 0) {
         throw const VideoExportException('만들어진 영상 파일이 비어 있어요.');
       }
-      // 완성 영상을 서버에 올리고 갤러리에도 넣는다. 갤러리는 최선 노력 —
-      // 권한이 거부돼도 저장 자체는 성공으로 남아야 한다(예전에는 갤러리
-      // 실패 = 전체 실패).
-      //
-      // **왜 나란히 하는가**: 둘은 서로의 결과를 쓰지 않는다. 하나는 네트워크로
-      // 올리고 하나는 기기 안에서 복사한다. 차례로 하면 올리는 내내 갤러리
-      // 복사는 놀고 있다가, 다 올라간 뒤에야 시작했다 — 큰 영상에서 그 시간이
-      // 통째로 더해졌다.
+      // 완성 영상은 **서버에만** 올린다. 갤러리 저장은 여기서 하지 않는다 —
+      // 추억 > 편집 완료에서 영상을 열고 원할 때 내려받는다.
       if (mounted) {
         setState(() {
           _exportProgress = null;
-          _status = '편집 영상을 서버와 갤러리에 저장하고 있어요';
+          _status = '편집 영상을 서버에 올리고 있어요';
         });
       }
-      final results = await Future.wait([
-        _recommendations
-            .uploadEditedVideo(
-              videoId: widget.video.id,
-              filePath: outputPath,
-              title: widget.video.title,
-              durationMs: exportProject.durationMs,
-              capturedAt: widget.video.capturedStartAt,
-            )
-            .then((_) => true)
-            .catchError((Object failure) {
-              debugPrint('edited video upload failed: $failure');
-              return false;
-            }),
-        _saveToPhoneGallery(outputPath, galleryAccess)
-            .then((_) => true)
-            .catchError((Object failure) {
-              debugPrint('gallery save failed: $failure');
-              return false;
-            }),
-        // 초안 저장은 렌더링 내내 돌고 있었다. 여기서 결과만 거둔다.
-        draftSaved.then((_) => true),
-      ]);
-      final uploadedToServer = results[0];
-      final savedToGallery = results[1];
-      if (!uploadedToServer && !savedToGallery) {
-        throw const VideoExportException('서버 업로드와 갤러리 저장이 모두 실패했어요.');
-      }
+      await _recommendations.uploadEditedVideo(
+        videoId: widget.video.id,
+        filePath: outputPath,
+        title: widget.video.title,
+        durationMs: exportProject.durationMs,
+        capturedAt: widget.video.capturedStartAt,
+        // 진행률이 안 보이면 느린 회선에서 "멈췄다"로 보여 앱을 꺼 버린다
+        // — 실제로 그렇게 업로드가 끊긴 일이 있었다.
+        // 퍼센트는 덮개 제목이 보여 준다.
+        onProgress: (sent, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _exportProgress = sent / total);
+        },
+      );
+      // 초안 저장은 렌더링 내내 돌고 있었다. 여기서 결과만 거둔다.
+      await draftSaved;
       if (!mounted) return;
       _editState.markSaved();
       projectController.setExportState(
@@ -1029,16 +1005,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           progress: 1,
         ),
       );
-      final where = [
-        if (uploadedToServer) '서버',
-        if (savedToGallery) '갤러리',
-      ].join('와 ');
       setState(() {
         _saving = false;
         _exportProgress = null;
-        _status = '$where에 저장되었습니다';
+        _status = '서버에 저장되었습니다';
       });
-      showAppSnack(context, '$where에 저장되었습니다');
+      showAppSnack(context, '서버에 저장했어요. 추억 > 편집 완료에서 볼 수 있어요.');
       Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
     } catch (failure) {
       debugPrint('editor save failed: $failure');
@@ -1105,41 +1077,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       unawaited(_seekToPosition(_projectController?.project.playheadMs ?? 0));
     } catch (_) {
       if (mounted) setState(() => _previewReleased = false);
-    }
-  }
-
-  /// 갤러리 권한을 물어 둔다. 답을 기다리는 쪽은 렌더링이 끝난 뒤다.
-  Future<void> _requestGalleryAccess() async {
-    try {
-      if (!await Gal.hasAccess()) await Gal.requestAccess();
-    } catch (_) {
-      // 권한 확인 자체가 실패하는 기기도 있다. 저장은 그대로 시도한다.
-    }
-  }
-
-  /// 편집 결과를 휴대폰 갤러리에 넣는다.
-  ///
-  /// **왜 권한으로 막지 않는가**: 예전에는 `Gal.hasAccess()`가 false면 곧바로
-  /// 예외를 던져 저장이 시작조차 못 했다. 안드로이드 10부터 MediaStore에 내
-  /// 앱이 만든 영상을 넣는 데는 권한이 필요 없다 — 거절된 권한 하나 때문에
-  /// 저장 전체가 막히는 게 실제 증상이었다. 그래서 권한은 요청만 해 보고,
-  /// 저장은 MediaStore로 직접 한다. 그쪽이 실패하면 gal로 한 번 더 시도한다.
-  Future<void> _saveToPhoneGallery(
-    String videoPath,
-    Future<void> galleryAccess,
-  ) async {
-    await galleryAccess;
-    try {
-      await _editorPlatform.saveToGallery(
-        inputPath: videoPath,
-        title: _safeTitle(widget.video.title),
-      );
-    } on EditorPlatformException catch (failure) {
-      try {
-        await Gal.putVideo(videoPath, album: '빵긋');
-      } on GalException catch (galFailure) {
-        throw EditorPlatformException('$failure (${galFailure.type.message})');
-      }
     }
   }
 

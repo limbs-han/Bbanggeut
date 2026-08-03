@@ -149,7 +149,10 @@ class EditRecommendationClient {
       options: Options(
         headers: {Headers.contentLengthHeader: length},
         contentType: 'video/mp4',
-        sendTimeout: const Duration(minutes: 5),
+        // 혼잡한 셀룰러에서는 20MB급 업로드가 5분을 넘기기도 한다 —
+        // 실제로 5분 제한에 걸려 다 올라가던 업로드가 끊긴 일이 있었다.
+        // 진행률이 화면에 보이므로 길게 기다려도 멈춘 것으로 보이지 않는다.
+        sendTimeout: const Duration(minutes: 15),
       ),
       onSendProgress: onProgress,
     );
@@ -167,6 +170,20 @@ class EditRecommendationClient {
   /// 편집 영상 재생 주소. video_player에 그대로 넘긴다.
   String editedVideoUrl(String videoId) =>
       '${_dio.options.baseUrl}/v1/edited-videos/$videoId/file';
+
+  /// 편집 완료 영상을 파일로 내려받는다. 갤러리 저장이 쓴다.
+  Future<void> downloadEditedVideo(
+    String videoId,
+    String savePath, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    await _dio.download(
+      '/v1/edited-videos/$videoId/file',
+      savePath,
+      onReceiveProgress: onProgress,
+      options: Options(receiveTimeout: const Duration(minutes: 10)),
+    );
+  }
 
   Future<List<Map<String, dynamic>>> listComments(String videoId) async {
     final response = await _dio.get<Map<String, dynamic>>(
