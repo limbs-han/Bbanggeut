@@ -22,7 +22,13 @@
 4. 프론트 낡은 TODO 정리(비밀번호 API 계약 주석화, 죽은 ContentNotification
    삭제), 검증: flutter analyze 무결점, flutter test 155개, python unittest
    31개 통과.
-5. **editor-api 실서버 승격 준비 완료(코드·설정, 서버 프로비저닝은 미실행)**:
+5. **editor-api 실서버 승격 — 프로비저닝까지 완료**: 서버에서
+   `https://i15e201.p.ssafy.io/editor/health`가 `analysis:true`,
+   `authRequired:true`로 응답하고 무토큰 `/v1`은 401이다. 서버에 오늘
+   오후 누군가 수동으로 띄워 둔 구버전(무인증) editor-api 컨테이너가
+   있어서 새 이미지로 교체했다. 서버의 nginx·compose는 이 브랜치
+   내용으로 수동 반영됨 — **master 병합 전에 Jenkins 백엔드 배포가 나가면
+   editor-api 라우트·서비스가 되돌아가므로 병합을 먼저 할 것.**
    - nginx `/editor/` 라우트와 deploy compose의 editor-api 서비스 정의 추가
      (배포 wrapper는 건드리지 않아 기존 배포 흐름에 영향 없음)
    - editor-api에 백엔드 JWT(HS256, `EDITOR_JWT_SECRET`=`JWT_SIGNING_KEY`)
