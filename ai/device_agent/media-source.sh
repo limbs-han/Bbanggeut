@@ -64,15 +64,17 @@ exec "$FFMPEG_PATH" \
     -hide_banner -nostdin -loglevel warning \
     -thread_queue_size 1024 \
     -f v4l2 -input_format "$CAMERA_INPUT_FORMAT" \
+    -timestamps abs \
     -framerate "$CAMERA_FPS" -video_size "${CAMERA_WIDTH}x${CAMERA_HEIGHT}" \
     -i "$CAMERA_DEVICE" \
     -thread_queue_size 1024 \
     -f alsa -ac 1 -ar 48000 -i "$AUDIO_DEVICE" \
     -map 0:v:0 -map 1:a:0 \
     -c:v libx264 -preset ultrafast -tune zerolatency \
+    -vf "setpts=PTS-STARTPTS" \
     -pix_fmt yuv420p -profile:v baseline -x264-params repeat-headers=1 \
     -g "$CAMERA_FPS" -keyint_min "$CAMERA_FPS" -sc_threshold 0 -bf 0 \
     -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_BITRATE" -bufsize 5000k \
     -c:a aac -b:a 128k -ar 48000 -ac 1 \
-    -af aresample=async=1:first_pts=0 \
+    -af "asetpts=PTS-STARTPTS,aresample=async=1" \
     -f tee "$tee_outputs"
