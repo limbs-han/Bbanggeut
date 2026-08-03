@@ -88,6 +88,7 @@ class NoDeviceSettingsScreen extends StatelessWidget {
                   child: Image.asset(
                     'assets/images/bbanggeut_mascot.png',
                     fit: BoxFit.contain,
+                    cacheWidth: decodePixels(context, 166),
                   ),
                 ),
                 const Positioned(

@@ -275,6 +275,7 @@ class _DeviceRegistrationScreenState extends State<DeviceRegistrationScreen> {
                             width: 140,
                             height: 148,
                             fit: BoxFit.contain,
+                            cacheWidth: decodePixels(context, 148),
                           ),
                           const SizedBox(width: 14),
                           SizedBox(

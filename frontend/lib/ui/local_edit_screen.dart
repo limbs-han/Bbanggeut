@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gal/gal.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_controller.dart';
@@ -207,61 +206,90 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
     previousProjectController?.dispose();
     await previousPreview?.dispose();
-    // 전사는 여기서 시작하지 않는다 — whisper가 영상 길이의 0.9배쯤 CPU를
-    // 통째로 붙잡아 편집 진입과 재생까지 굼떠진다. AI자막 탭을 눌렀을 때만
+    // 전사는 여기서 시작하지 않는다 — 오디오를 처음부터 끝까지 훑는 일이라
+    // 편집 진입·재생과 CPU를 다툰다. AI자막 탭을 눌렀을 때만
     // [_startAutoCaptions]가 돈다.
     // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
     // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
-    unawaited(_applyDraftOrRecommendation(nextProjectController));
     unawaited(_loadThumbnails());
-    unawaited(_loadPresetRecommendations());
+    unawaited(_applyDraftOrRecommendation(nextProjectController));
   }
 
-  /// 저장한 초안이 있으면 그것을, 없으면 AI 추천을 **화면이 열린 뒤에**
-  /// 불러와 적용한다. 그동안 사용자는 원본 구간으로 편집을 시작할 수 있다.
+  /// 저장해 둔 초안이나 자동 추천을 **편집 화면을 연 뒤에** 얹는다.
+  ///
+  /// **왜 기다리지 않는가**: 둘 다 편집 서버 왕복이고, 추천 쪽은 서버가
+  /// 영상을 분석하는 동안 수 초가 걸린다. 예전에는 그 시간을 준비 화면에서
+  /// 통째로 기다렸다 — 원본이 이미 기기에 있어도 편집기가 열리지 않았다.
+  /// 미리보기가 준비된 순간 편집 화면을 열고, 결과가 오면 그때 얹는다.
+  ///
+  /// 기다리는 동안 사용자가 무언가 만졌다면 얹지 않는다. 손으로 한 편집을
+  /// 뒤늦게 도착한 추천이 덮는 것이 훨씬 나쁘다.
   Future<void> _applyDraftOrRecommendation(
-    EditorProjectController controller,
+    EditorProjectController projectController,
   ) async {
-    String status;
-    try {
-      // 저장해 둔 초안이 있으면 그것부터 — "이어서 편집"이 기본이다.
-      Map<String, dynamic>? draft;
-      try {
-        draft = await _recommendations.loadDraft(widget.video.id);
-      } catch (_) {
-        draft = null;
+    Future<void> finish(String status, {bool cutChanged = false}) async {
+      if (!mounted || !identical(_projectController, projectController)) return;
+      setState(() => _status = status);
+      // 컷이 바뀌었으면 재생기를 새 구간 머리에 맞춘다. 맞추지 않으면 첫
+      // 재생이 잘려 나간 앞부분에서 시작한다.
+      if (cutChanged) {
+        await _seekToPosition(projectController.project.playheadMs);
       }
-      // 기다리는 사이 화면이 닫혔거나 원본이 바뀌었으면 버린다.
-      if (!mounted || _projectController != controller) return;
-      if (draft != null && draft['recipe'] is Map) {
-        controller.loadDraftRecipe(
-          Map<String, dynamic>.from(draft['recipe'] as Map),
-        );
-        status = '저장한 편집을 이어서 열었어요';
-      } else {
-        final recommendation = await _recommendations.recommend(
-          videoId: widget.video.id,
-          capturedAt: widget.video.capturedStartAt,
-        );
-        if (!mounted || _projectController != controller) return;
-        controller.applyRecommendation(recommendation);
-        if (const {
-          'short',
-          'medium',
-          'long',
-        }.contains(recommendation.durationPreset)) {
-          _presetRecommendations[recommendation.durationPreset] =
-              recommendation;
-        }
-        final seconds = controller.project.durationMs / 1000;
-        status =
-            '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · 줌 ${controller.project.zoomSegments.length}개';
-      }
-    } catch (_) {
-      status = '자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요';
+      // 프리셋 미리 받기는 여기서 시작한다. 진입에 필요한 추천 한 건과
+      // 서버·CPU를 다투지 않게 한 발 뒤로 물린다.
+      unawaited(_loadPresetRecommendations());
     }
-    if (!mounted || _projectController != controller) return;
-    setState(() => _status = status);
+
+    bool userTouchedIt() =>
+        !mounted ||
+        !identical(_projectController, projectController) ||
+        // 되돌리기 이력이 생겼다 = 실제 편집이 한 번은 들어갔다. 탭을 옮기거나
+        // 재생 위치를 움직이는 것은 이력을 남기지 않으므로 여기 걸리지 않는다.
+        projectController.canUndo ||
+        _editState.hasUnsavedChanges ||
+        // 저장을 누른 뒤라면 지금 화면에 있는 그대로가 사용자가 고른 것이다.
+        // 그 밑에서 컷을 갈아 끼우지 않는다.
+        _saving;
+
+    // 저장해 둔 초안이 있으면 그것부터 — "이어서 편집"이 기본이다.
+    Map<String, dynamic>? draft;
+    try {
+      draft = await _recommendations.loadDraft(widget.video.id);
+    } catch (_) {
+      draft = null;
+    }
+    if (userTouchedIt()) return;
+    if (draft != null && draft['recipe'] is Map) {
+      projectController.loadDraftRecipe(
+        Map<String, dynamic>.from(draft['recipe'] as Map),
+      );
+      await finish('저장한 편집을 이어서 열었어요', cutChanged: true);
+      return;
+    }
+
+    try {
+      final recommendation = await _recommendations.recommend(
+        videoId: widget.video.id,
+        capturedAt: widget.video.capturedStartAt,
+      );
+      if (userTouchedIt()) return;
+      projectController.applyRecommendation(recommendation);
+      if (const {
+        'short',
+        'medium',
+        'long',
+      }.contains(recommendation.durationPreset)) {
+        _presetRecommendations[recommendation.durationPreset] = recommendation;
+      }
+      final seconds = projectController.project.durationMs / 1000;
+      await finish(
+        '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · '
+        '줌 ${projectController.project.zoomSegments.length}개',
+        cutChanged: true,
+      );
+    } catch (_) {
+      await finish('자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요');
+    }
   }
 
   /// AI자막 탭을 눌렀을 때만 전사를 시작한다.
@@ -272,25 +300,30 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _autoCaptions.start(widget.video.id, sourcePath);
   }
 
+  /// 짧게·중간·길게 프리셋을 **한 번에 하나씩** 미리 받아 둔다.
+  ///
+  /// **왜 나란히 부르지 않는가**: 요청 하나가 서버에서 영상 한 편을 분석하는
+  /// 일이다. 셋을 한꺼번에 던지면 서버가 셋을 나눠 처리하느라 다 같이 느려지고,
+  /// 그 사이 편집 화면에서 실제로 필요한 요청(썸네일·초안 저장)까지 뒤로 밀린다.
+  /// 차례로 받으면 첫 프리셋은 훨씬 빨리 손에 들어오고, 그 뒤는 사용자가 화면을
+  /// 보는 동안 조용히 채워진다.
   Future<void> _loadPresetRecommendations() async {
     if (_recommendationLoading) return;
+    final missing = const ['short', 'medium', 'long']
+        .where((preset) => !_presetRecommendations.containsKey(preset))
+        .toList(growable: false);
+    if (missing.isEmpty) return;
     if (mounted) setState(() => _recommendationLoading = true);
     try {
-      final values = await Future.wait(
-        const ['short', 'medium', 'long'].map(
-          (preset) => _recommendations.recommend(
-            videoId: widget.video.id,
-            capturedAt: widget.video.capturedStartAt,
-            durationPreset: preset,
-          ),
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        for (final value in values) {
-          _presetRecommendations[value.durationPreset] = value;
-        }
-      });
+      for (final preset in missing) {
+        final value = await _recommendations.recommend(
+          videoId: widget.video.id,
+          capturedAt: widget.video.capturedStartAt,
+          durationPreset: preset,
+        );
+        if (!mounted) return;
+        setState(() => _presetRecommendations[value.durationPreset] = value);
+      }
     } catch (_) {
       // 기본 자동 추천은 이미 적용됐다. 프리셋 일부를 못 가져와도 편집은 계속한다.
     } finally {
@@ -407,8 +440,14 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onProgress: (received, total) {
         if (!mounted || total <= 0) return;
         final downloadProgress = (received / total).clamp(0.0, 1.0).toDouble();
+        final next = 0.12 + downloadProgress * 0.72;
+        // 진행률 콜백은 내려받는 조각마다 온다 — 초당 수십 번이다. 그때마다
+        // 다시 그리면 준비 화면(FittedBox + 일러스트)을 초당 수십 번 재배치하게
+        // 되고, 정작 다운로드에 쓸 시간을 화면 갱신이 먹는다. 눈에 보이는
+        // 단위(1%)가 바뀔 때만 그린다.
+        if ((next * 100).floor() == (_progress * 100).floor()) return;
         setState(() {
-          _progress = 0.12 + downloadProgress * 0.72;
+          _progress = next;
           _status = '추억 영상을 휴대폰으로 가져오고 있어요';
         });
       },
@@ -882,24 +921,24 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       const EditorExportState(phase: EditorExportPhase.preparing, progress: 0),
     );
 
-    // 권한 왕복을 렌더링과 겹쳐 둔다. 저장이 끝난 뒤에 물으면 그 시간이
-    // 고스란히 사용자를 기다리게 하는데, 여기서 시작하면 렌더링이 끝날 즈음엔
-    // 이미 답이 와 있다.
-    final galleryAccess = _requestGalleryAccess();
-
     try {
       final exportProject = projectController.project;
       // 편집 초안부터 서버에 남긴다 — 렌더링이 실패해도 편집본은 산다.
-      try {
-        await _recommendations.saveProject(
-          videoId: widget.video.id,
-          revision: exportProject.revision + 1,
-          recipe: exportProject.toDraftMap(),
-        );
-        debugPrint('editor draft saved before export');
-      } catch (failure) {
-        debugPrint('editor draft save failed: $failure');
-      }
+      //
+      // 기다리지는 않는다. 초안 저장은 편집 서버 왕복 한 번인데, 서버가 멀거나
+      // 응답이 없으면 그 시간(연결 대기만 4초)이 통째로 "저장 버튼을 눌렀는데
+      // 아무 일도 안 일어나는" 시간이 됐다. 렌더링과 나란히 보내면 어차피 더
+      // 오래 걸리는 렌더링 시간 안에 숨는다.
+      final draftSaved = _recommendations
+          .saveProject(
+            videoId: widget.video.id,
+            revision: exportProject.revision + 1,
+            recipe: exportProject.toDraftMap(),
+          )
+          .then((_) => debugPrint('editor draft saved before export'))
+          .catchError(
+            (Object failure) => debugPrint('editor draft save failed: $failure'),
+          );
 
       // AI 자막은 이미 일반 자막 레이어로 합쳐져 textLayers에 들어 있다 —
       // 별도 자막 트랙을 넘기지 않는다.
@@ -934,40 +973,30 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       if (!await file.exists() || (await file.length()) == 0) {
         throw const VideoExportException('만들어진 영상 파일이 비어 있어요.');
       }
-      // 완성 영상을 서버에 올린다. 갤러리는 최선 노력 — 권한이 거부돼도
-      // 저장 자체는 성공으로 남아야 한다(예전에는 갤러리 실패 = 전체 실패).
+      // 완성 영상은 **서버에만** 올린다. 갤러리 저장은 여기서 하지 않는다 —
+      // 추억 > 편집 완료에서 영상을 열고 원할 때 내려받는다.
       if (mounted) {
         setState(() {
           _exportProgress = null;
           _status = '편집 영상을 서버에 올리고 있어요';
         });
       }
-      var uploadedToServer = false;
-      try {
-        await _recommendations.uploadEditedVideo(
-          videoId: widget.video.id,
-          filePath: outputPath,
-          title: widget.video.title,
-          durationMs: exportProject.durationMs,
-          capturedAt: widget.video.capturedStartAt,
-        );
-        uploadedToServer = true;
-      } catch (failure) {
-        debugPrint('edited video upload failed: $failure');
-      }
-      if (mounted) {
-        setState(() => _status = '휴대폰 갤러리에 저장하고 있어요');
-      }
-      var savedToGallery = false;
-      try {
-        await _saveToPhoneGallery(outputPath, galleryAccess);
-        savedToGallery = true;
-      } catch (failure) {
-        debugPrint('gallery save failed: $failure');
-      }
-      if (!uploadedToServer && !savedToGallery) {
-        throw const VideoExportException('서버 업로드와 갤러리 저장이 모두 실패했어요.');
-      }
+      await _recommendations.uploadEditedVideo(
+        videoId: widget.video.id,
+        filePath: outputPath,
+        title: widget.video.title,
+        durationMs: exportProject.durationMs,
+        capturedAt: widget.video.capturedStartAt,
+        // 진행률이 안 보이면 느린 회선에서 "멈췄다"로 보여 앱을 꺼 버린다
+        // — 실제로 그렇게 업로드가 끊긴 일이 있었다.
+        // 퍼센트는 덮개 제목이 보여 준다.
+        onProgress: (sent, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _exportProgress = sent / total);
+        },
+      );
+      // 초안 저장은 렌더링 내내 돌고 있었다. 여기서 결과만 거둔다.
+      await draftSaved;
       if (!mounted) return;
       _editState.markSaved();
       projectController.setExportState(
@@ -976,16 +1005,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           progress: 1,
         ),
       );
-      final where = [
-        if (uploadedToServer) '서버',
-        if (savedToGallery) '갤러리',
-      ].join('와 ');
       setState(() {
         _saving = false;
         _exportProgress = null;
-        _status = '$where에 저장되었습니다';
+        _status = '서버에 저장되었습니다';
       });
-      showAppSnack(context, '$where에 저장되었습니다');
+      showAppSnack(context, '서버에 저장했어요. 추억 > 편집 완료에서 볼 수 있어요.');
       Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
     } catch (failure) {
       debugPrint('editor save failed: $failure');
@@ -1052,41 +1077,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       unawaited(_seekToPosition(_projectController?.project.playheadMs ?? 0));
     } catch (_) {
       if (mounted) setState(() => _previewReleased = false);
-    }
-  }
-
-  /// 갤러리 권한을 물어 둔다. 답을 기다리는 쪽은 렌더링이 끝난 뒤다.
-  Future<void> _requestGalleryAccess() async {
-    try {
-      if (!await Gal.hasAccess()) await Gal.requestAccess();
-    } catch (_) {
-      // 권한 확인 자체가 실패하는 기기도 있다. 저장은 그대로 시도한다.
-    }
-  }
-
-  /// 편집 결과를 휴대폰 갤러리에 넣는다.
-  ///
-  /// **왜 권한으로 막지 않는가**: 예전에는 `Gal.hasAccess()`가 false면 곧바로
-  /// 예외를 던져 저장이 시작조차 못 했다. 안드로이드 10부터 MediaStore에 내
-  /// 앱이 만든 영상을 넣는 데는 권한이 필요 없다 — 거절된 권한 하나 때문에
-  /// 저장 전체가 막히는 게 실제 증상이었다. 그래서 권한은 요청만 해 보고,
-  /// 저장은 MediaStore로 직접 한다. 그쪽이 실패하면 gal로 한 번 더 시도한다.
-  Future<void> _saveToPhoneGallery(
-    String videoPath,
-    Future<void> galleryAccess,
-  ) async {
-    await galleryAccess;
-    try {
-      await _editorPlatform.saveToGallery(
-        inputPath: videoPath,
-        title: _safeTitle(widget.video.title),
-      );
-    } on EditorPlatformException catch (failure) {
-      try {
-        await Gal.putVideo(videoPath, album: '빵긋');
-      } on GalException catch (galFailure) {
-        throw EditorPlatformException('$failure (${galFailure.type.message})');
-      }
     }
   }
 
@@ -1383,7 +1373,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
                                 child: Image.asset(
                                   'assets/images/editor_loading_features.png',
                                   fit: BoxFit.cover,
-                                  filterQuality: FilterQuality.high,
+                                  cacheWidth: decodePixels(
+                                    context,
+                                    contentWidth,
+                                  ),
+                                  filterQuality: FilterQuality.medium,
                                 ),
                               ),
                             ),
@@ -1831,7 +1825,8 @@ class _PreparingMascot extends StatelessWidget {
           'assets/images/calendar_header_mascot.png',
           height: height,
           fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
+          cacheHeight: decodePixels(context, height),
+          filterQuality: FilterQuality.medium,
         ),
         Positioned(
           bottom: 34,

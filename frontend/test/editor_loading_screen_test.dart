@@ -69,10 +69,13 @@ void main() {
         final image = tester.widget<Image>(
           find.descendant(of: illustration, matching: find.byType(Image)),
         );
-        expect(
-          (image.image as AssetImage).assetName,
-          'assets/images/editor_loading_features.png',
-        );
+        // 그릴 크기로만 풀도록 cacheWidth를 주면 Image.asset이 AssetImage를
+        // ResizeImage로 한 겹 싼다. 어느 쪽이든 원본 에셋은 같아야 한다.
+        final provider = image.image;
+        final asset = provider is ResizeImage
+            ? provider.imageProvider as AssetImage
+            : provider as AssetImage;
+        expect(asset.assetName, 'assets/images/editor_loading_features.png');
         expect(tester.getTopLeft(illustration).dy, greaterThanOrEqualTo(0));
         expect(
           tester.getBottomRight(illustration).dy,

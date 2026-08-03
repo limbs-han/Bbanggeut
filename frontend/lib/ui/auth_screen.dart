@@ -134,9 +134,6 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
     return null;
   }
 
-  void unavailable(String feature) =>
-      showAppSnack(context, '$feature 로그인은 현재 백엔드에 구현되어 있지 않아요.', error: true);
-
   @override
   Widget build(BuildContext context) => Scaffold(
     resizeToAvoidBottomInset: true,
@@ -170,6 +167,7 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                             width: 96,
                             height: 104,
                             fit: BoxFit.contain,
+                            cacheWidth: decodePixels(context, 104),
                             semanticLabel: '빵긋 캐릭터',
                           ),
                         ],
@@ -223,6 +221,7 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                             width: 122,
                             height: 142,
                             fit: BoxFit.contain,
+                            cacheWidth: decodePixels(context, 142),
                             semanticLabel: '빵긋 캐릭터',
                           ),
                         ],
@@ -363,27 +362,6 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
                       child: Text(signUp ? '로그인으로 돌아가기' : '회원가입'),
                     ),
                     const SizedBox(height: 14),
-                    const _SocialDivider(),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _SocialButton(
-                          label: 'Google',
-                          mark: 'G',
-                          color: const Color(0xFF4285F4),
-                          onTap: () => unavailable('Google'),
-                        ),
-                        const SizedBox(width: 42),
-                        _SocialButton(
-                          label: '카카오',
-                          mark: 'TALK',
-                          color: const Color(0xFFF9DC00),
-                          onTap: () => unavailable('카카오'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     Text(
                       '로그인하면 서비스 이용약관 및 개인정보 처리방침에 동의하게 됩니다.',
                       textAlign: TextAlign.center,
@@ -452,6 +430,7 @@ class _BrandMark extends StatelessWidget {
           'assets/images/bbanggeut_logo.png',
           fit: BoxFit.cover,
           alignment: Alignment.center,
+          cacheWidth: decodePixels(context, 160),
           semanticLabel: '빵긋 로고',
         ),
       ),
@@ -472,79 +451,6 @@ class _FieldLabel extends StatelessWidget {
         fontWeight: FontWeight.w800,
         color: AppColors.inkSoft,
       ),
-    ),
-  );
-}
-
-class _SocialDivider extends StatelessWidget {
-  const _SocialDivider();
-  @override
-  Widget build(BuildContext context) => const Row(
-    children: [
-      Expanded(child: Divider()),
-      Padding(
-        padding: EdgeInsets.symmetric(horizontal: 14),
-        child: Text(
-          '또는 간편 로그인',
-          style: TextStyle(color: AppColors.muted, fontSize: 13),
-        ),
-      ),
-      Expanded(child: Divider()),
-    ],
-  );
-}
-
-class _SocialButton extends StatelessWidget {
-  const _SocialButton({
-    required this.label,
-    required this.mark,
-    required this.onTap,
-    this.color = Colors.black,
-  });
-  final String label;
-  final String mark;
-  final Color color;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(99),
-    onTap: onTap,
-    child: Column(
-      children: [
-        Container(
-          width: 56,
-          height: 56,
-          alignment: Alignment.center,
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x17000000),
-                blurRadius: 14,
-                offset: Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Text(
-            mark,
-            style: TextStyle(
-              fontSize: mark.length > 1 ? 9 : 24,
-              fontWeight: FontWeight.w900,
-              color: color,
-            ),
-          ),
-        ),
-        const SizedBox(height: 7),
-        Text(
-          label,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppColors.inkSoft,
-            fontSize: 12,
-          ),
-        ),
-      ],
     ),
   );
 }

@@ -71,61 +71,27 @@ class HomeScreen extends StatelessWidget {
                         isActive: isActive,
                       ),
                     const SizedBox(height: 26),
-                    const _HomeSectionTitle(
-                      title: '오늘의 기록',
-                      icon: Icons.eco_rounded,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
-                            icon: Icons.sentiment_very_satisfied_rounded,
-                            label: '오늘의 웃음',
-                            value: '${summary?.captureCount ?? 0}',
-                            unit: '회',
-                            color: AppColors.yellowSoft,
-                            onTap: openVideos,
-                          ),
+                    _TodayRecordsCard(
+                      laughCount: summary?.captureCount ?? 0,
+                      favoriteCount: controller.videos
+                          .where((video) => video.favorite)
+                          .length,
+                      reportCount: controller.videoStats?.totalCount ?? 0,
+                      onLaughTap: openVideos,
+                      onFavoriteTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              FavoriteVideosScreen(controller: controller),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _StatCard(
-                            icon: Icons.favorite_rounded,
-                            label: '즐겨찾는 영상',
-                            value:
-                                '${controller.videos.where((video) => video.favorite).length}',
-                            unit: '개',
-                            color: AppColors.greenCard,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => FavoriteVideosScreen(
-                                  controller: controller,
-                                ),
-                              ),
-                            ),
-                          ),
+                      ),
+                      onReportTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              LaughReportContentScreen(controller: controller),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _StatCard(
-                            icon: Icons.bar_chart_rounded,
-                            label: '웃음 리포트',
-                            value: '${controller.videoStats?.totalCount ?? 0}',
-                            unit: '회',
-                            color: AppColors.pink,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => LaughReportContentScreen(
-                                  controller: controller,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                     const SizedBox(height: 26),
                     const _HomeSectionTitle(
@@ -404,6 +370,7 @@ class _HomeHeader extends StatelessWidget {
             width: 100,
             height: 102,
             fit: BoxFit.contain,
+            cacheWidth: decodePixels(context, 102),
           ),
         ),
         Positioned(
@@ -671,97 +638,399 @@ class _LivePreviewCard extends StatelessWidget {
   );
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.unit,
-    required this.color,
-    required this.onTap,
+class _TodayRecordsCard extends StatelessWidget {
+  const _TodayRecordsCard({
+    required this.laughCount,
+    required this.favoriteCount,
+    required this.reportCount,
+    required this.onLaughTap,
+    required this.onFavoriteTap,
+    required this.onReportTap,
   });
-  final IconData icon;
-  final String label;
-  final String value;
-  final String unit;
-  final Color color;
+
+  final int laughCount;
+  final int favoriteCount;
+  final int reportCount;
+  final VoidCallback onLaughTap;
+  final VoidCallback onFavoriteTap;
+  final VoidCallback onReportTap;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const Key('today-records-card'),
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+    decoration: BoxDecoration(
+      color: AppColors.surface.withValues(alpha: .92),
+      borderRadius: BorderRadius.circular(32),
+      border: Border.all(color: Colors.white, width: 1.4),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x1C765337),
+          blurRadius: 24,
+          offset: Offset(0, 9),
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Text(
+              '오늘의 기록',
+              style: TextStyle(
+                color: AppColors.ink,
+                fontSize: 20,
+                height: 1.2,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -.7,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.eco_rounded, size: 17, color: AppColors.sageDark),
+            const Spacer(),
+            Icon(Icons.spa_rounded, size: 19, color: AppColors.yellow),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 154,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 11,
+                child: _TodayLaughCard(count: laughCount, onTap: onLaughTap),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 10,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: _TodayCompactStatCard(
+                        icon: Icons.favorite_rounded,
+                        label: '즐겨찾는 영상',
+                        value: favoriteCount,
+                        unit: '개',
+                        colors: const [Color(0xFFF2F4E9), Color(0xFFE4E9D2)],
+                        borderColor: const Color(0xFFC9D2AD),
+                        onTap: onFavoriteTap,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: _TodayCompactStatCard(
+                        icon: Icons.bar_chart_rounded,
+                        label: '웃음 리포트',
+                        value: reportCount,
+                        unit: '회',
+                        colors: const [Color(0xFFFFF1ED), Color(0xFFF3DDD6)],
+                        borderColor: const Color(0xFFDEC3BA),
+                        onTap: onReportTap,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _TodayLaughCard extends StatelessWidget {
+  const _TodayLaughCard({required this.count, required this.onTap});
+
+  final int count;
   final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(24),
+    borderRadius: BorderRadius.circular(18),
     onTap: onTap,
     child: Container(
-      height: 112,
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(10, 11, 10, 9),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: .75)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x186B4C2D),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFCED), Color(0xFFFFE7A8)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFECCB76), width: 1.2),
       ),
-      child: Column(
+      child: Stack(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          const Positioned(
+            left: -34,
+            bottom: 28,
+            child: _LaughGlowOrb(size: 105),
+          ),
+          const Positioned(
+            right: -26,
+            top: -32,
+            child: _LaughGlowOrb(size: 90),
+          ),
+          const Positioned(
+            right: 3,
+            bottom: 3,
+            child: Icon(
+              Icons.local_florist_rounded,
+              size: 25,
+              color: AppColors.sage,
+            ),
+          ),
+          const Positioned(
+            right: 9,
+            top: 48,
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              size: 14,
+              color: AppColors.yellow,
+            ),
+          ),
+          const Positioned(
+            left: 3,
+            bottom: 8,
+            child: Icon(Icons.eco_rounded, size: 19, color: AppColors.sage),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .58),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, size: 19, color: AppColors.inkSoft),
+              Row(
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      gradient: const RadialGradient(
+                        colors: [Colors.white, Color(0xFFFFF7D1)],
+                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 4),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x66F3C44E),
+                          blurRadius: 13,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.sentiment_very_satisfied_rounded,
+                      color: Color(0xFFF4B72E),
+                      size: 39,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '오늘의 웃음',
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: AppColors.inkSoft,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 3),
+                            Icon(
+                              Icons.eco_rounded,
+                              size: 13,
+                              color: AppColors.sageDark,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 1),
+                        RichText(
+                          text: TextSpan(
+                            style: const TextStyle(color: Color(0xFF6E4D20)),
+                            children: [
+                              TextSpan(
+                                text: '$count',
+                                style: const TextStyle(
+                                  fontSize: 36,
+                                  height: 1,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const TextSpan(
+                                text: '회',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: const TextStyle(
+              const Spacer(),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .64),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: .9)),
+                ),
+                child: const Text(
+                  '오늘도 방긋한\n순간이 쌓였어요!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF765A32),
                     fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.inkSoft,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
             ],
           ),
-          const Spacer(),
-          RichText(
-            text: TextSpan(
-              style: const TextStyle(color: AppColors.ink),
+        ],
+      ),
+    ),
+  );
+}
+
+class _LaughGlowOrb extends StatelessWidget {
+  const _LaughGlowOrb({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: Colors.white.withValues(alpha: .18),
+    ),
+  );
+}
+
+class _TodayCompactStatCard extends StatelessWidget {
+  const _TodayCompactStatCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.colors,
+    required this.borderColor,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+  final String unit;
+  final List<Color> colors;
+  final Color borderColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    borderRadius: BorderRadius.circular(17),
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: colors,
+        ),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: borderColor, width: 1.1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .86),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, size: 19, color: AppColors.inkSoft),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextSpan(
-                  text: value,
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 31,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
+                    color: AppColors.inkSoft,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                TextSpan(
-                  text: unit,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                _TodayValue(value: value, unit: unit),
               ],
             ),
           ),
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Icon(Icons.eco_rounded, size: 15, color: AppColors.sageDark),
+          Container(
+            width: 27,
+            height: 27,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.chevron_right_rounded,
+              size: 21,
+              color: AppColors.muted,
+            ),
           ),
         ],
       ),
+    ),
+  );
+}
+
+class _TodayValue extends StatelessWidget {
+  const _TodayValue({required this.value, required this.unit});
+
+  final int value;
+  final String unit;
+
+  @override
+  Widget build(BuildContext context) => RichText(
+    text: TextSpan(
+      style: const TextStyle(color: AppColors.ink),
+      children: [
+        TextSpan(
+          text: '$value',
+          style: const TextStyle(
+            fontSize: 24,
+            height: 1.05,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        TextSpan(
+          text: unit,
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+        ),
+      ],
     ),
   );
 }
