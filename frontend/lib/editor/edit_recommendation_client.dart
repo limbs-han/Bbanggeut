@@ -10,6 +10,7 @@ class EditRecommendation {
     required this.zoomSegments,
     this.scoreTimeline = const [],
     this.faceTrack = const [],
+    this.faceTracks = const [],
   });
 
   factory EditRecommendation.fromJson(Map<String, dynamic> json) {
@@ -24,6 +25,9 @@ class EditRecommendation {
     final faces = (recipe['faceTrack'] as List? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList(growable: false);
+    final faceTracks = (recipe['faceTracks'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
     return EditRecommendation(
       cutStartMs: (cut['startMs'] as num).round(),
       cutEndMs: (cut['endMs'] as num).round(),
@@ -31,6 +35,7 @@ class EditRecommendation {
       zoomSegments: zooms,
       scoreTimeline: timeline,
       faceTrack: faces,
+      faceTracks: faceTracks,
     );
   }
 
@@ -45,8 +50,12 @@ class EditRecommendation {
   final List<Map<String, dynamic>> scoreTimeline;
 
   /// MediaPipe 표정 분석이 뽑은 얼굴 궤적({ms, x, y, h}, 원본 시각 기준).
-  /// 얼굴을 따라다니는 AR 스티커가 쓴다.
+  /// 얼굴을 따라다니는 AR 스티커가 쓴다. 옛 서버 호환용 한 줄 궤적이다.
   final List<Map<String, dynamic>> faceTrack;
+
+  /// 사람별 얼굴 궤적({id, samples}). 여러 명이 나오는 영상에서 스티커가
+  /// "누구"를 따라갈지 고를 수 있게 한다.
+  final List<Map<String, dynamic>> faceTracks;
 }
 
 class EditRecommendationClient {
@@ -125,38 +134,25 @@ class EditRecommendationClient {
     ];
   }
 
-  /// 렌더링된 편집 영상을 서버(MinIO)에 올린다.
-  Future<void> uploadEditedVideo({
+  /// 완성본 업로드 주소(쿼리 포함). 백그라운드 업로더(WorkManager)가 앱
+  /// 밖에서 그대로 PUT한다 — Dart가 살아 있지 않아도 되도록 완성된 URL을
+  /// 넘긴다.
+  String editedVideoUploadUrl({
     required String videoId,
-    required String filePath,
     String title = '',
     int durationMs = 0,
     DateTime? capturedAt,
-    void Function(int sent, int total)? onProgress,
-  }) async {
-    final file = File(filePath);
-    final length = await file.length();
-    await _dio.put<void>(
-      '/v1/edited-videos/$videoId',
-      queryParameters: {
-        'title': title,
-        'durationMs': '$durationMs',
-        // 원본이 감지된(촬영된) 시각 — 캘린더가 이 날짜에 표시한다.
-        if (capturedAt != null)
-          'capturedAt': capturedAt.toLocal().toIso8601String(),
-      },
-      data: file.openRead(),
-      options: Options(
-        headers: {Headers.contentLengthHeader: length},
-        contentType: 'video/mp4',
-        // 혼잡한 셀룰러에서는 20MB급 업로드가 5분을 넘기기도 한다 —
-        // 실제로 5분 제한에 걸려 다 올라가던 업로드가 끊긴 일이 있었다.
-        // 진행률이 화면에 보이므로 길게 기다려도 멈춘 것으로 보이지 않는다.
-        sendTimeout: const Duration(minutes: 15),
-      ),
-      onSendProgress: onProgress,
-    );
-  }
+  }) => Uri.parse('${_dio.options.baseUrl}/v1/edited-videos/$videoId')
+      .replace(
+        queryParameters: {
+          'title': title,
+          'durationMs': '$durationMs',
+          // 원본이 감지된(촬영된) 시각 — 캘린더가 이 날짜에 표시한다.
+          if (capturedAt != null)
+            'capturedAt': capturedAt.toLocal().toIso8601String(),
+        },
+      )
+      .toString();
 
   /// 편집 완료 영상 목록(메타).
   Future<List<Map<String, dynamic>>> listEditedVideos() async {

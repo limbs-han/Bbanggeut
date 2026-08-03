@@ -484,7 +484,7 @@ void main() {
 
     subject.setFaceSticker('👑');
     expect(subject.faceSticker?.value, '👑');
-    // 다른 것을 고르면 갈아 끼운다 — 얼굴 스티커는 한 번에 하나다.
+    // 다른 것을 고르면 갈아 끼운다 — 얼굴 스티커는 클립마다 하나다.
     subject.setFaceSticker('🕶️');
     final face = subject.faceSticker!;
     expect(face.value, '🕶️');
@@ -492,6 +492,21 @@ void main() {
       subject.project.stickerLayers.where((l) => l.tracksFace),
       hasLength(1),
     );
+    // 자막·일반 스티커처럼 클립에 귀속되고 구간을 조절할 수 있다.
+    // 구간은 얼굴이 잡혀 있는 범위(0~1000ms)로 제한된다.
+    expect(face.clipId, 'clip-a');
+    expect(face.startMs, 0);
+    expect(face.endMs, 1000);
+    subject.updateStickerLayerRangeGesture(face.id, 200, 800);
+    subject.endGesture();
+    final trimmed = subject.faceSticker!;
+    expect(trimmed.startMs, 200);
+    expect(trimmed.endMs, 800);
+    // 손잡이를 얼굴 범위 밖까지 끌어도 범위 끝에서 멈춘다.
+    subject.updateStickerLayerRangeGesture(trimmed.id, 0, 10000);
+    subject.endGesture();
+    expect(subject.faceSticker!.startMs, 0);
+    expect(subject.faceSticker!.endMs, 1000);
 
     // 내보내기 DTO에는 얼굴 키프레임 트랙이 실린다.
     final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
@@ -509,6 +524,219 @@ void main() {
     // 벗기기.
     subject.setFaceSticker(null);
     expect(subject.faceSticker, isNull);
+  });
+
+  test('얼굴이 여럿이면 앵커한 얼굴의 경로만 따라간다', () {
+    final subject = controller();
+    // 두 사람이 있는 영상 — 분석 초점이 왼쪽 위(A)와 오른쪽 아래(B)를
+    // 오간다. 500~750ms 구간은 B가 초점이다.
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      'faceTrack': [
+        {'ms': 0, 'x': 0.20, 'y': 0.20, 'h': 0.3},
+        {'ms': 250, 'x': 0.21, 'y': 0.20, 'h': 0.3},
+        {'ms': 500, 'x': 0.80, 'y': 0.80, 'h': 0.3},
+        {'ms': 750, 'x': 0.80, 'y': 0.80, 'h': 0.3},
+        {'ms': 1000, 'x': 0.22, 'y': 0.20, 'h': 0.3},
+        {'ms': 1250, 'x': 0.23, 'y': 0.20, 'h': 0.3},
+      ],
+    });
+    subject.setFaceSticker('👑');
+    final face = subject.faceSticker!;
+
+    // 전체 궤적 그대로면 600ms에 B(0.8) 쪽으로 튄다.
+    expect(subject.project.faceSampleAt(600)!.x, greaterThan(0.5));
+    // 앵커(구간 시작 = 0ms)는 A다 — B가 초점인 동안에도 A 근처에 머문다.
+    final held = subject.project.faceSampleForLayer(face, 600)!;
+    expect(held.x, lessThan(0.3));
+    // 초점이 A로 돌아오면 다시 따라간다.
+    final resumed = subject.project.faceSampleForLayer(face, 1250)!;
+    expect(resumed.x, closeTo(0.23, 1e-9));
+
+    // 내보내기 키프레임에도 B 구간이 실리지 않는다.
+    final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
+    final stickers = dto['stickerLayers']! as List;
+    final track = (stickers.single as Map)['track']! as List;
+    expect(track, hasLength(4));
+    for (final sample in track) {
+      expect((sample as Map)['x'] as double, lessThan(0.5));
+    }
+  });
+
+  test('사람별 궤적이 있으면 붙인 자리의 사람을 따라가고 구간이 제한된다', () {
+    final subject = controller();
+    List<Map<String, Object>> line(int fromMs, int toMs, double x, double y) =>
+        [
+          for (var ms = fromMs; ms <= toMs; ms += 250)
+            {'ms': ms, 'x': x, 'y': y, 'h': 0.3},
+        ];
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      // 오른쪽 사람(face-1)은 0~8초, 왼쪽 사람(face-2)은 2~4초에 잡힌다.
+      'faceTracks': [
+        {'id': 'face-1', 'samples': line(0, 8000, 0.8, 0.5)},
+        {'id': 'face-2', 'samples': line(2000, 4000, 0.2, 0.5)},
+      ],
+    });
+
+    // 0ms에는 오른쪽 사람만 있다 — 그 사람에게 붙고, 구간은 검출 범위다.
+    expect(subject.setFaceSticker('👑'), isTrue);
+    var face = subject.faceSticker!;
+    expect(face.faceTrackId, 'face-1');
+    expect(face.startMs, 0);
+    expect(face.endMs, 8000);
+
+    // 3초로 옮겨 왼쪽 사람 위로 끌어 놓으면 그 사람으로 갈아탄다.
+    subject.setPlayhead(3000);
+    subject.moveSelectedLayer(NormalizedPoint(0.2, 0.5));
+    face = subject.faceSticker!;
+    expect(face.faceTrackId, 'face-2');
+    expect(face.startMs, 2000);
+    expect(face.endMs, 4000);
+
+    // 손잡이를 밖으로 끌어도 검출 범위 안에서 멈춘다.
+    subject.updateStickerLayerRangeGesture(face.id, 0, 10000);
+    subject.endGesture();
+    face = subject.faceSticker!;
+    expect(face.startMs, 2000);
+    expect(face.endMs, 4000);
+
+    // 얼굴이 아무도 없는 9.5초에서는 붙일 수 없다.
+    subject.setFaceSticker(null);
+    subject.setPlayhead(9500);
+    expect(subject.setFaceSticker('🕶️'), isFalse);
+    expect(subject.faceSticker, isNull);
+  });
+
+  test('스티커를 여러 개 놓으면 같은 자리에 겹쳐 쌓이지 않는다', () {
+    final subject = controller();
+    subject.addSticker('⭐');
+    subject.addSticker('❤️');
+    subject.addSticker('👏');
+    final stickers = subject.project.stickerLayers;
+    expect(stickers, hasLength(3));
+    // 전부 정중앙에 쌓이면 하나만 있는 것처럼 보인다 — 자리가 달라야 한다.
+    final spots = {
+      for (final layer in stickers)
+        '${layer.position.x.toStringAsFixed(2)},'
+            '${layer.position.y.toStringAsFixed(2)}',
+    };
+    expect(spots, hasLength(3));
+  });
+
+  test('얼굴 스티커는 사람마다 하나씩 붙는다', () {
+    final subject = controller();
+    List<Map<String, Object>> line(
+      int fromMs,
+      int toMs,
+      double x,
+      double h,
+    ) => [
+      for (var ms = fromMs; ms <= toMs; ms += 250)
+        {'ms': ms, 'x': x, 'y': 0.5, 'h': h},
+    ];
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      // 두 사람이 같이 잡혀 있다. 오른쪽 사람 얼굴이 더 크다(가깝다).
+      'faceTracks': [
+        {'id': 'face-1', 'samples': line(0, 8000, 0.8, 0.4)},
+        {'id': 'face-2', 'samples': line(0, 8000, 0.2, 0.25)},
+      ],
+    });
+
+    // 첫 이모지는 가장 가까운 사람(face-1)에게.
+    expect(subject.setFaceSticker('👑'), isTrue);
+    // 두 번째 이모지는 아직 스티커가 없는 사람(face-2)에게 간다.
+    expect(subject.setFaceSticker('🕶️'), isTrue);
+    final faces = subject.project.stickerLayers
+        .where((layer) => layer.tracksFace)
+        .toList();
+    expect(faces, hasLength(2));
+    expect(
+      {for (final layer in faces) layer.faceTrackId},
+      {'face-1', 'face-2'},
+    );
+
+    // 모두 쓰고 있으면 가장 가까운 사람 것을 갈아 끼운다.
+    expect(subject.setFaceSticker('🎩'), isTrue);
+    final values = {
+      for (final layer in subject.project.stickerLayers)
+        if (layer.tracksFace) layer.value,
+    };
+    expect(values, {'🎩', '🕶️'});
+
+    // 벗기기는 이 클립의 얼굴 스티커를 전부 걷는다.
+    expect(subject.setFaceSticker(null), isTrue);
+    expect(
+      subject.project.stickerLayers.where((layer) => layer.tracksFace),
+      isEmpty,
+    );
+  });
+
+  test('줌 구간에서는 얼굴 스티커도 같은 식으로 옮겨지고 커진다', () {
+    final subject = controller();
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      // 0~2초를 화면 가운데 기준 2배 확대.
+      'zoomSegments': [
+        {
+          'id': 'zoom-1',
+          'sourceStartMs': 0,
+          'sourceEndMs': 2000,
+          'scale': 2.0,
+          'focusX': 0.5,
+          'focusY': 0.5,
+          'clipId': 'clip-a',
+        },
+      ],
+      'faceTrack': [
+        {'ms': 0, 'x': 0.2, 'y': 0.2, 'h': 0.3},
+        {'ms': 1000, 'x': 0.4, 'y': 0.4, 'h': 0.3},
+      ],
+    });
+    subject.setFaceSticker('👑');
+    final face = subject.faceSticker!;
+
+    // 500ms: 얼굴은 (0.3, 0.3), 줌이 0.5 기준 2배 → 화면에는 (0.1, 0.1).
+    final zoomed = subject.project.faceStickerPlacementAt(face, 500)!;
+    expect(zoomed.position.x, closeTo(0.1, 1e-9));
+    expect(zoomed.position.y, closeTo(0.1, 1e-9));
+    // 스티커도 영상과 같이 2배 커진다.
+    expect(zoomed.scale, closeTo(2.0, 1e-9));
+
+    // 줌이 끝난 3000ms: 얼굴 그대로 (0.4, 0.4), 배율 1.
+    final plain = subject.project.faceStickerPlacementAt(face, 3000)!;
+    expect(plain.position.x, closeTo(0.4, 1e-9));
+    expect(plain.scale, closeTo(1.0, 1e-9));
+
+    // 내보내기 키프레임: 줌 경계(2000ms) 직전·직후가 함께 실려 영상이
+    // 확대를 푸는 순간 스티커도 그 프레임에 맞춰 돌아온다.
+    final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
+    final track = ((dto['stickerLayers']! as List).single as Map)['track']!
+        as List;
+    final byMs = {
+      for (final sample in track)
+        (sample as Map)['ms'] as int: sample,
+    };
+    expect(byMs.keys, containsAll([0, 1000, 1999, 2000]));
+    expect(byMs[1999]!['s'] as double, closeTo(2.0, 1e-9));
+    expect(byMs[2000]!['s'] as double, closeTo(1.0, 1e-9));
+    // 줌 중인 키프레임은 옮겨진 좌표다: 0ms 얼굴 (0.2) → 0.5+(0.2-0.5)*2 = -0.1 → 0으로 잘린다.
+    expect(byMs[0]!['x'] as double, closeTo(0.0, 1e-9));
+    // 줌이 풀린 2000ms 뒤는 원래 좌표다(마지막 표본 0.4).
+    expect(byMs[2000]!['x'] as double, closeTo(0.4, 1e-9));
   });
 
   test('클립을 지우면 거기 묶인 스티커도 사라진다', () {

@@ -52,6 +52,19 @@ public class PushNotificationDispatcher {
                     "resourceId", invitationId.toString())));
     }
 
+    public void invitationAccepted(
+        UUID inviterId, String memberName, UUID invitationId
+    ) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByUser(inviterId),
+            new PushMessage(
+                "초대를 수락했어요",
+                memberName + " 님이 초대를 수락하고 가족이 되었어요.",
+                Map.of(
+                    "type", "INVITATION_ACCEPTED",
+                    "resourceId", invitationId.toString())));
+    }
+
     public void laughterVideoReady(UUID deviceId, UUID videoId, String title) {
         dispatchAfterCommit(
             () -> tokenMapper.findActiveTokensByDevice(deviceId),

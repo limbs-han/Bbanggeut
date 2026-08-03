@@ -313,6 +313,7 @@ class _ContentNotificationsScreenState
 
 ({String emoji, Color background}) _visualFor(String type) => switch (type) {
   'INVITATION_RECEIVED' => (emoji: '❤️', background: const Color(0xFFFFEAE6)),
+  'INVITATION_ACCEPTED' => (emoji: '🤝', background: const Color(0xFFFFEAE6)),
   'LAUGHTER_VIDEO_READY' => (emoji: '📷', background: AppColors.sageSoft),
   _ => (emoji: '🔔', background: AppColors.yellowSoft),
 };
