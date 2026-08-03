@@ -53,6 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               'assets/images/bbanggeut_logo.png',
                               fit: BoxFit.contain,
                               alignment: Alignment.centerLeft,
+                              cacheWidth: decodePixels(context, 112),
                             ),
                           ),
                           const Positioned(
@@ -75,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: Image.asset(
                               'assets/images/bbanggeut_mascot.png',
                               fit: BoxFit.contain,
+                              cacheWidth: decodePixels(context, 126),
                             ),
                           ),
                           const Positioned(

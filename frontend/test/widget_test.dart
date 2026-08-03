@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -6,6 +8,7 @@ import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
 import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/auth_screen.dart';
+import 'package:william_james_app/ui/home_screen.dart';
 import 'package:william_james_app/ui/local_edit_screen.dart';
 import 'package:william_james_app/ui/main_shell.dart';
 import 'package:william_james_app/ui/onboarding_screen.dart';
@@ -76,7 +79,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('로그인 비밀번호를 기본 숨김 처리하고 지정된 간편 로그인만 표시한다', (tester) async {
+  testWidgets('로그인 비밀번호를 기본 숨김 처리하고 간편 로그인은 표시하지 않는다', (tester) async {
     final controller = AppController();
     await tester.pumpWidget(
       MaterialApp(
@@ -91,8 +94,9 @@ void main() {
     );
     expect(tester.widget<TextField>(passwordField).obscureText, isTrue);
     expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
-    expect(find.text('Google'), findsOneWidget);
-    expect(find.text('카카오'), findsOneWidget);
+    expect(find.text('또는 간편 로그인'), findsNothing);
+    expect(find.text('Google'), findsNothing);
+    expect(find.text('카카오'), findsNothing);
     expect(find.text('Apple'), findsNothing);
 
     await tester.tap(find.byIcon(Icons.visibility_off_outlined));
@@ -267,6 +271,75 @@ void main() {
       findsOneWidget,
       reason: '펼친 탭이 사라지면 되돌아올 때 스크롤 위치가 초기화된다',
     );
+    controller.dispose();
+  });
+
+  // 탭 위젯 캐시(보고 있는 탭만 새로 세운다)와 라우트 감시(덮이면 실시간을
+  // 멈춘다)는 서로 다른 브랜치에서 왔다. 캐시가 낡은 `isActive`를 붙들고 있으면
+  // 덮인 홈이 계속 스트리밍하는데, 화면상으로는 아무 표시도 나지 않는다.
+  testWidgets('상세 화면이 홈을 덮는 동안 실시간을 멈추고 돌아오면 다시 켠다', (tester) async {
+    final controller = AppController(api: _FakeApiClient());
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [mainShellRouteObserver],
+        theme: buildTheme(),
+        home: MainShell(controller: controller),
+      ),
+    );
+
+    bool homeIsActive() => tester
+        .widget<HomeScreen>(find.byType(HomeScreen, skipOffstage: false))
+        .isActive;
+    expect(homeIsActive(), isTrue);
+
+    unawaited(
+      navigatorKey.currentState!.push<void>(
+        MaterialPageRoute(builder: (_) => const Scaffold(body: Text('상세'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(homeIsActive(), isFalse, reason: '덮인 홈이 계속 스트리밍하면 대역폭을 먹는다');
+
+    // 덮여 있는 동안 컨트롤러가 알려도 다시 켜지면 안 된다 — 캐시가 아니라
+    // 실제 상태를 보고 그리는지 확인한다.
+    controller.notifyListeners();
+    await tester.pump();
+    expect(homeIsActive(), isFalse);
+
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(homeIsActive(), isTrue, reason: '돌아왔는데 실시간이 꺼져 있으면 검은 화면이다');
+    controller.dispose();
+  });
+
+  testWidgets('다른 탭에서 뒤로가기를 누르면 앱을 나가지 않고 홈으로 돌아온다', (tester) async {
+    final controller = AppController(api: _FakeApiClient());
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: MainShell(controller: controller),
+      ),
+    );
+
+    final navigation = find.byKey(const ValueKey('main-bottom-navigation'));
+    int selectedTab() => tester.widget<NavigationBar>(navigation).selectedIndex;
+
+    for (final tab in ['캘린더', '추억', '가족', '설정']) {
+      await tester.tap(find.descendant(of: navigation, matching: find.text(tab)));
+      await tester.pumpAndSettle();
+      expect(selectedTab(), isNot(2), reason: '$tab 탭으로 옮겨지지 않았다');
+
+      // 시스템 뒤로가기. 가로채지 않으면 여기서 앱이 그대로 닫힌다.
+      final popped = await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(popped, isTrue, reason: '$tab 탭에서 뒤로가기가 앱을 닫았다');
+      expect(selectedTab(), 2, reason: '$tab 탭에서 뒤로가기가 홈으로 오지 않았다');
+    }
+
+    // 홈에서는 가로채지 않는다 — 뒤로가기로 앱을 나가는 것은 기본 기대다.
+    expect(await tester.binding.handlePopRoute(), isFalse);
     controller.dispose();
   });
 

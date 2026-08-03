@@ -202,7 +202,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             width: selected ? 2 : 1,
                           ),
                         ),
-                        child: Image.asset(asset, fit: BoxFit.contain),
+                        child: Image.asset(
+                          asset,
+                          fit: BoxFit.contain,
+                          cacheWidth: decodePixels(context, 96),
+                        ),
                       ),
                     );
                   },
