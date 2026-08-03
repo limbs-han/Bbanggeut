@@ -80,6 +80,24 @@ class AudioEventDetectionTests(unittest.TestCase):
         self.assertIsNone(detector.observe(0.9, 3.0, 2))
         self.assertIsNone(detector.observe(0.9, 3.5, 2))
 
+    def test_three_onset_policy_rejects_two_and_accepts_three(self) -> None:
+        detector = ConsecutiveClapDetector(
+            threshold=0.3,
+            required_windows=2,
+            minimum_active_seconds=0.4,
+            maximum_gap_seconds=0.75,
+            cooldown_seconds=12,
+            required_onsets=3,
+        )
+
+        self.assertIsNone(detector.observe(0.9, 1.0, 2))
+        self.assertIsNone(detector.observe(0.9, 1.5, 3))
+        detection = detector.observe(0.9, 2.0, 3)
+
+        self.assertIsNotNone(detection)
+        assert detection is not None
+        self.assertEqual(detection.onset_count, 3)
+
     def test_clap_gap_restarts_sequence(self) -> None:
         detector = ConsecutiveClapDetector(
             threshold=0.3,

@@ -400,7 +400,8 @@
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | sourceEventId | String | 필수 | `@NotBlank @Size≤100`, UUID 형식 |
-| triggerType | String | 필수 | `@Pattern "LAUGHTER\|WAKE_WORD\|TOUCH\|MANUAL"` |
+| triggerType | String | 필수 | `@Pattern "LAUGHTER\|CLAP\|WAKE_WORD\|TOUCH\|MANUAL"` |
+| eventTypes | List\<String\> | 옵션 | 함께 기록할 유형 1~3개. 생략하면 triggerType만 저장하며 triggerType을 포함해야 함 |
 | title | String | 필수 | `@NotBlank @Size≤120` |
 | capturedStartAt | Instant | 필수 | `@NotNull` |
 | capturedEndAt | Instant | 필수 | `@NotNull` |
@@ -466,7 +467,8 @@
 | id | UUID | 필수 | 비디오 ID |
 | deviceId | UUID | 필수 | 기기 ID |
 | sourceType | String | 필수 | IOT_CAPTURE/USER_UPLOAD/EDIT_OUTPUT |
-| triggerType | String | 필수 | LAUGHTER/WAKE_WORD/TOUCH/MANUAL/USER_UPLOAD/EDIT |
+| triggerType | String | 필수 | LAUGHTER/CLAP/WAKE_WORD/TOUCH/MANUAL/USER_UPLOAD/EDIT |
+| eventTypes | List\<String\> | 필수 | 영상에 함께 기록된 유형. triggerType을 포함하며 중복 없음 |
 | sourceEventId | String | 옵션(nullable) | 원본 이벤트 ID |
 | title | String | 필수 | 제목 |
 | description | String | 옵션(nullable) | 메모 |

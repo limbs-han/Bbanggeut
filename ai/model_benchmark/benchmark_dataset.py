@@ -23,6 +23,7 @@ ALLOWED_CONDITIONS = {
     "occlusion",
     "low-light",
     "laughter",
+    "laughter-with-clap",
     "speech",
     "consecutive-clap",
     "tv-playback",

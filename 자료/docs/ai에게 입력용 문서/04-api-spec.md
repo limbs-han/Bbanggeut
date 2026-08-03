@@ -332,7 +332,8 @@ ID 체계: API-01~70(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 ```json
 {
   "sourceEventId": "uuid-string",          // required, @Size<=100
-  "triggerType": "LAUGHTER",               // required, "LAUGHTER|WAKE_WORD|TOUCH|MANUAL"
+  "triggerType": "LAUGHTER",               // required, "LAUGHTER|CLAP|WAKE_WORD|TOUCH|MANUAL"
+  "eventTypes": ["LAUGHTER", "CLAP"],      // optional, 1~3 unique values, must contain triggerType
   "title": "string",                        // required, @Size<=120
   "capturedStartAt": "2026-07-27T00:00:00Z",// required
   "capturedEndAt": "2026-07-27T00:01:00Z",  // required
@@ -379,7 +380,8 @@ ID 체계: API-01~70(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 {
   "id": "uuid", "deviceId": "uuid",
   "sourceType": "IOT_CAPTURE|USER_UPLOAD|EDIT_OUTPUT",
-  "triggerType": "LAUGHTER|WAKE_WORD|TOUCH|MANUAL|USER_UPLOAD|EDIT",
+  "triggerType": "LAUGHTER|CLAP|WAKE_WORD|TOUCH|MANUAL|USER_UPLOAD|EDIT",
+  "eventTypes": ["LAUGHTER", "CLAP"],
   "sourceEventId": null, "title": "string", "description": null,
   "contentType": "video/mp4", "sizeBytes": 1048576, "checksumSha256": "string",
   "durationMs": 60000, "capturedStartAt": "2026-07-27T00:00:00Z", "capturedEndAt": "2026-07-27T00:01:00Z",

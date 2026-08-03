@@ -210,10 +210,12 @@ class StatusPill extends StatelessWidget {
     required this.label,
     this.positive = true,
     this.color,
+    this.compact = false,
   });
   final String label;
   final bool positive;
   final Color? color;
+  final bool compact;
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
@@ -221,11 +223,14 @@ class StatusPill extends StatelessWidget {
       borderRadius: BorderRadius.circular(99),
     ),
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 12,
+        vertical: compact ? 4 : 7,
+      ),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: compact ? 10 : 12,
           fontWeight: FontWeight.w800,
           color: positive ? AppColors.sageDark : AppColors.danger,
         ),
@@ -278,6 +283,7 @@ class FamilyReferenceImage extends StatelessWidget {
 
 String triggerLabel(String value) => switch (value) {
   'LAUGHTER' => '웃음',
+  'CLAP' => '박수',
   'WAKE_WORD' => '호출',
   'TOUCH' => '일상',
   'MANUAL' => '직접 저장',
@@ -288,6 +294,7 @@ String triggerLabel(String value) => switch (value) {
 
 IconData triggerIcon(String value) => switch (value) {
   'LAUGHTER' => Icons.sentiment_very_satisfied_rounded,
+  'CLAP' => Icons.back_hand_rounded,
   'WAKE_WORD' => Icons.graphic_eq_rounded,
   'TOUCH' => Icons.waving_hand_rounded,
   'MANUAL' => Icons.bookmark_rounded,
@@ -296,10 +303,39 @@ IconData triggerIcon(String value) => switch (value) {
 
 Color triggerColor(String value) => switch (value) {
   'LAUGHTER' => AppColors.yellowSoft,
+  'CLAP' => AppColors.coralSoft,
   'WAKE_WORD' => AppColors.sageSoft,
   'TOUCH' => AppColors.greenCard,
   _ => AppColors.pink,
 };
+
+class VideoEventTypePills extends StatelessWidget {
+  const VideoEventTypePills({
+    super.key,
+    required this.video,
+    this.compact = false,
+    this.alignment = WrapAlignment.start,
+  });
+
+  final VideoMemory video;
+  final bool compact;
+  final WrapAlignment alignment;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    alignment: alignment,
+    spacing: compact ? 4 : 6,
+    runSpacing: compact ? 4 : 6,
+    children: [
+      for (final eventType in video.effectiveEventTypes)
+        StatusPill(
+          label: triggerLabel(eventType),
+          color: triggerColor(eventType),
+          compact: compact,
+        ),
+    ],
+  );
+}
 
 String durationLabel(int? durationMs) {
   if (durationMs == null) return '--:--';
@@ -432,9 +468,13 @@ class MemoryTile extends StatelessWidget {
               ],
             ),
           ),
-          StatusPill(
-            label: triggerLabel(video.triggerType),
-            color: triggerColor(video.triggerType),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: VideoEventTypePills(
+              video: video,
+              compact: true,
+              alignment: WrapAlignment.end,
+            ),
           ),
           if (onFavorite != null || onDelete != null)
             PopupMenuButton<String>(

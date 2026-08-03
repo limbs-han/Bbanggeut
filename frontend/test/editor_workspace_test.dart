@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:william_james_app/editor/banuba_mask_channel.dart';
 import 'package:william_james_app/editor/editor_ar_effects.dart';
 import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
@@ -26,6 +27,9 @@ void main() {
     VoidCallback? onTrimCommitted,
     ValueChanged<String>? onStickerSelected,
     ValueChanged<EditorLook>? onLookSelected,
+    ValueChanged<String?>? onMaskSelected,
+    String? selectedMask,
+    List<BanubaMask> availableMasks = const [],
     VoidCallback? onAiCaption,
     ValueChanged<EditorZoomSegment>? onZoomChanged,
     ValueChanged<String>? onTextEdit,
@@ -71,6 +75,9 @@ void main() {
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
         onLookSelected: onLookSelected ?? (_) {},
+        onMaskSelected: onMaskSelected ?? (_) {},
+        selectedMask: selectedMask,
+        availableMasks: availableMasks,
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
         onZoomRemove: (_) {},
@@ -120,7 +127,17 @@ void main() {
       await tester.pumpWidget(workspace(controller));
 
       expect(find.text('영상 편집'), findsOneWidget);
-      for (final label in const ['컷 편집', '비율', '줌', '자막']) {
+      for (final label in const [
+        '컷 편집',
+        '비율',
+        '줌',
+        '자막',
+        '오디오',
+        '스티커',
+        '효과',
+        'AI자막',
+        'AR',
+      ]) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
       expect(tester.takeException(), isNull);
@@ -148,7 +165,7 @@ void main() {
         }
         // 색감을 켜도 효과 패널이 넘치지 않아야 한다.
         controller
-          ..selectTool(EditorTool.ar)
+          ..selectTool(EditorTool.effect)
           ..setLook(EditorLook.mono);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
@@ -294,7 +311,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('하단 네비게이션은 컷·비율·텍스트·줌만 제공한다', (tester) async {
+  testWidgets('하단 네비게이션은 아홉 개 도구를 전부 제공한다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -304,12 +321,13 @@ void main() {
 
     await tester.pumpWidget(workspace(controller));
 
-    expect(find.byKey(const Key('editor-nav-cut')), findsOneWidget);
-    expect(find.byKey(const Key('editor-nav-ratio')), findsOneWidget);
-    expect(find.byKey(const Key('editor-nav-text')), findsOneWidget);
-    expect(find.byKey(const Key('editor-nav-zoom')), findsOneWidget);
-    expect(find.byKey(const Key('editor-nav-aiCaption')), findsNothing);
-    expect(find.byKey(const Key('editor-nav-ar')), findsNothing);
+    for (final tool in EditorTool.values) {
+      expect(
+        find.byKey(Key('editor-nav-${tool.name}')),
+        findsOneWidget,
+        reason: '${tool.name} 탭이 없다',
+      );
+    }
   });
 
   testWidgets('줌 탭에서 현재 위치에 줌을 추가한다', (tester) async {
@@ -672,12 +690,14 @@ void main() {
     expect(controller.project.clips, hasLength(2));
   });
 
-  testWidgets('효과 탭에서 필터는 그 자리에서 바로 적용된다', (tester) async {
+  testWidgets('효과 탭에서 색감은 그 자리에서 바로 적용된다', (tester) async {
     tester.view
       ..physicalSize = const Size(390, 844)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final controller = newController()..selectTool(EditorTool.ar);
+    // 색감은 얼굴 추적과 상관이 없고, AR 탭 미리보기(SurfaceView) 위에는 Flutter
+    // 색 필터가 닿지 않는다. 그래서 제 자리인 '효과' 탭으로 옮겼다.
+    final controller = newController()..selectTool(EditorTool.effect);
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -692,6 +712,52 @@ void main() {
     await tester.tap(find.byKey(const Key('editor-clear-look')));
     await tester.pump();
     expect(controller.project.look, EditorLook.none);
+  });
+
+  testWidgets('얼굴 마스크는 화면을 옮기지 않고 그 자리에서 골라진다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.ar);
+    addTearDown(controller.dispose);
+    final picked = <String?>[];
+
+    // 목록은 네이티브가 준다. 하드코딩한 마스크 이름은 이제 없다.
+    const masks = [
+      BanubaMask(name: 'BulldogHarlamov'),
+      BanubaMask(name: 'Afro'),
+    ];
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onMaskSelected: picked.add,
+        availableMasks: masks,
+      ),
+    );
+
+    // 편집기를 여는 단추는 더 이상 없다. Banuba로 가지 않는다.
+    expect(find.byKey(const Key('editor-open-banuba-ar')), findsNothing);
+
+    final card = find.byKey(const Key('editor-banuba-effect-BulldogHarlamov'));
+    await tester.ensureVisible(card);
+    await tester.pumpAndSettle();
+    await tester.tap(card);
+    await tester.pump();
+    expect(picked, ['BulldogHarlamov']);
+
+    // 씌운 뒤에는 벗기기가 살아난다.
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onMaskSelected: picked.add,
+        selectedMask: 'BulldogHarlamov',
+        availableMasks: masks,
+      ),
+    );
+    await tester.tap(find.byKey(const Key('editor-clear-mask')));
+    await tester.pump();
+    expect(picked.last, isNull);
   });
 
   testWidgets('꾸미기 스티커가 스티커 탭 항목으로 들어와 있다', (tester) async {

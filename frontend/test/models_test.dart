@@ -42,6 +42,34 @@ void main() {
     expect(video.capturedStartAt, isNotNull);
   });
 
+  test('웃음과 박수가 합쳐진 영상의 모든 이벤트 타입을 보존한다', () {
+    final video = VideoMemory.fromJson({
+      'id': 'mixed-video-id',
+      'deviceId': 'device-id',
+      'triggerType': 'LAUGHTER',
+      'eventTypes': ['CLAP', 'LAUGHTER', 'CLAP'],
+      'title': '웃음과 박수가 함께 포착됐어요',
+      'status': 'READY',
+    });
+
+    expect(video.triggerType, 'LAUGHTER');
+    expect(video.effectiveEventTypes, ['LAUGHTER', 'CLAP']);
+    expect(video.hasEventType('LAUGHTER'), isTrue);
+    expect(video.hasEventType('CLAP'), isTrue);
+  });
+
+  test('eventTypes가 없는 기존 응답은 대표 타입 하나로 호환한다', () {
+    final video = VideoMemory.fromJson({
+      'id': 'legacy-video-id',
+      'deviceId': 'device-id',
+      'triggerType': 'LAUGHTER',
+      'title': '웃음 영상',
+      'status': 'READY',
+    });
+
+    expect(video.effectiveEventTypes, ['LAUGHTER']);
+  });
+
   test('백엔드 알림 payload의 화면 이동 식별자를 보존한다', () {
     final notification = AppNotification.fromJson({
       'id': 'notification-id',

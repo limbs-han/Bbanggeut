@@ -1,0 +1,586 @@
+{
+    "name": "scene_4_faces",
+    "scene": "scene_4_faces",
+
+    "assets": {
+        "attachments": {
+            "camera_color": {
+                "type": "color"
+            },
+            "effect_color": {
+                "type": "color"
+            },
+            "default_depth": {
+                "clear": [
+                    1.0
+                ],
+                "type": "depth"
+            }
+        },
+
+        "images": {
+            "mask_base_color": {
+                "type" : "texture",
+                "streamed": false,
+                "file_name": "mask_Base_Color.ktx"
+            },
+
+            "mask_normal": {
+                "type" : "texture",
+                "streamed": false,
+                "file_name": "mask_Normal.png"
+            },
+
+            "mask_mrao": {
+                "type" : "texture",
+                "streamed": false,
+                "file_name": "mask_MRAO.png"
+            },
+
+            "retouch_lookupTexEyes": {
+                "type" : "texture",
+                "file_name": "teeth_highlighter5.png",
+                "weight": 1.0
+            },
+
+            "retouch_lookupTexTeeth": {
+                "type" : "texture",
+                "file_name": "teeth_highlighter5.png",
+                "weight": 1.0
+            },
+
+            "retouch_selection_tex": {
+                "type" : "texture",
+                "file_name": "redmask_v3.png"
+            },
+
+            "camera: tex_y": {
+                "type" : "camera",
+                "format": "y"
+            },
+
+            "camera: tex_uv": {
+                "type" : "camera",
+                "format": "uv"
+            },
+
+            "camera: tex_rgb": {
+                "type" : "camera",
+                "format": "rgba"
+            },
+
+            "mask_ibl_diff": {
+                "type": "cubemap",
+                "file_name": "ibl_diff.ktx"
+            },
+
+            "mask_ibl_spec": {
+                "type": "cubemap",
+                "file_name": "ibl_spec.ktx"
+            },
+
+            "mask_brdf": {
+                "type": "texture",
+                "file_name": "brdf.ktx"
+            }
+        },
+
+        "materials": {
+            "mask": {
+                "samplers": [
+                    {
+                        "name": "tex_diffuse",
+                        "image": "mask_base_color"
+                    },
+                    {
+                        "name": "tex_normal",
+                        "image": "mask_normal"
+                    },
+                    {
+                        "name": "tex_mrao",
+                        "image": "mask_mrao"
+                    },
+                    {
+                        "name": "tex_brdf",
+                        "image": "mask_brdf"
+                    },
+                    {
+                        "name": "tex_ibl_diff",
+                        "image": "mask_ibl_diff"
+                    },
+                    {
+                        "name": "tex_ibl_spec",
+                        "image": "mask_ibl_spec"
+                    },
+                    {
+                        "name": "bnb_BONES"
+                    }
+                ],
+
+                "state": {
+                    "backfaces": false,
+                    "blend": "off",
+                    "colorwrite": true,
+                    "ztest": true,
+                    "zwrite": true
+                }
+            },
+
+            "retouch": {
+                "samplers": [
+                    {
+                        "name": "lookupTexEyes",
+                        "image": "retouch_lookupTexEyes"
+                    },
+                    {
+                        "name": "lookupTexTeeth",
+                        "image": "retouch_lookupTexTeeth"
+                    },
+                    {
+                        "name": "selection_tex",
+                        "image": "retouch_selection_tex"
+                    },
+                    {
+                        "name": "bnb_BACKGROUND",
+                        "image": "camera_color"
+                    }
+                ],
+
+                "shader": "retouch",
+                "state": {
+                    "backfaces": false,
+                    "blend": "off",
+                    "colorwrite": true,
+                    "ztest": true,
+                    "zwrite": true
+                }
+            },
+
+            "$builtin$materials/camera": {
+                "samplers": [
+                    {
+                        "name": "tex_y",
+                        "image": "camera: tex_y"
+                    },
+                    {
+                        "name": "tex_uv",
+                        "image": "camera: tex_uv"
+                    },
+                    {
+                        "name": "tex_rgb",
+                        "image": "camera: tex_rgb"
+                    }
+                ],
+                "state": {
+                    "backfaces": true,
+                    "blend": "off",
+                    "colorwrite": true,
+                    "ztest": false,
+                    "zwrite": false
+                },
+                "parameters": {
+                    "bnb_camera_orientation": {
+                        "type": "vec4",
+                        "value": [1, 0, 0, 1]
+                    },
+
+                    "bnb_camera_scale": {
+                        "type": "vec4",
+                        "value": [1, 0, 0, 1]
+                    },
+
+                    "bnb_view_width_fraction": {
+                        "type": "vec4",
+                        "value": [1, 0, 0, 0]
+                    }
+                }
+            },
+
+            "$builtin$materials/copy_pixels.0": {
+                "samplers": [
+                    {
+                        "name": "tex_src",
+                        "image": "camera_color"
+                    }
+                ],
+                "state": {
+                    "backfaces": true,
+                    "blend": "off",
+                    "colorwrite": true,
+                    "ztest": false,
+                    "zwrite": false
+                },
+                "parameters": {}
+            }
+        },
+
+        "meshes": {
+            "!bnb_FACE0": "$builtin$meshes/face.stream:0",
+            "!bnb_FACE1": "$builtin$meshes/face.stream:1",
+            "!bnb_FACE2": "$builtin$meshes/face.stream:2",
+            "!bnb_FACE3": "$builtin$meshes/face.stream:3",
+            "fem_mask": "fem_mask.bsm2",
+            "male_mask": "male_mask.bsm2",
+            "fem_mask_2": "fem_mask.bsm2",
+            "male_mask_2": "male_mask.bsm2",
+            "fem_morph": "fem_morph.bsm2",
+            "male_morph": "male_morph.bsm2",
+            "fem_morph_2": "fem_morph.bsm2",
+            "male_morph_2": "male_morph.bsm2",
+            "camera_surface": "$builtin$meshes/fs_tri"
+        },
+
+        "faces": {
+            "face0": {
+                "index": 0,
+                "mesh": "!bnb_FACE0"
+            },
+            "face1": {
+                "index": 1,
+                "mesh": "!bnb_FACE1"
+            },
+            "face2": {
+                "index": 2,
+                "mesh": "!bnb_FACE2"
+            },
+            "face3": {
+                "index": 3,
+                "mesh": "!bnb_FACE3"
+            }
+        },
+
+        "morphs": {
+            "fem_morph": {
+                "type": "mesh",
+                "mesh": "fem_morph"
+            },
+            "fem_morph_2": {
+                "type": "mesh",
+                "mesh": "fem_morph_2"
+            },
+            "male_morph": {
+                "type": "mesh",
+                "mesh": "male_morph"
+            },
+            "male_morph_2": {
+                "type": "mesh",
+                "mesh": "male_morph_2"
+            }
+        }
+    },
+
+    "components": {
+        "camera_tri": {
+            "mesh": "camera_surface",
+            "materials": [
+                "$builtin$materials/camera"
+            ],
+            "type": "mesh_instance"
+        },
+
+        "camera_copy": {
+            "mesh": "camera_surface",
+            "materials": [
+                "$builtin$materials/copy_pixels.0"
+            ],
+            "type": "mesh_instance"
+        },
+
+        "face:0": {
+            "mesh": "!bnb_FACE0",
+            "materials": [
+                "retouch"
+            ],
+            "type": "mesh_instance"
+        },
+
+        "face:1": {
+            "mesh": "!bnb_FACE1",
+            "materials": [
+                "retouch"
+            ],
+            "type": "mesh_instance"
+        },
+
+        "face:2": {
+            "mesh": "!bnb_FACE2",
+            "materials": [
+                "retouch"
+            ],
+            "type": "mesh_instance"
+        },
+
+        "face:3": {
+            "mesh": "!bnb_FACE3",
+            "materials": [
+                "retouch"
+            ],
+            "type": "mesh_instance"
+        },
+
+        "face_tracker:0": {
+            "type": "face_tracker",
+            "face": "face0"
+        },
+
+        "face_tracker:1": {
+            "type": "face_tracker",
+            "face": "face1"
+        },
+
+        "face_tracker:2": {
+            "type": "face_tracker",
+            "face": "face2"
+        },
+
+        "face_tracker:3": {
+            "type": "face_tracker",
+            "face": "face3"
+        },
+
+        "fem_mask": {
+            "mesh": "fem_mask",
+            "materials": [
+                "mask"
+            ],
+            "type": "mesh_instance",
+            "animation": {
+              "mode": "loop",
+              "name": "static"
+            }
+        },
+
+        "fem_mask_2": {
+            "mesh": "fem_mask_2",
+            "materials": [
+                "mask"
+            ],
+            "type": "mesh_instance",
+            "animation": {
+              "mode": "loop",
+              "name": "static"
+            }
+        },
+
+        "male_mask": {
+            "mesh": "male_mask",
+            "materials": [
+                "mask"
+            ],
+            "type": "mesh_instance",
+            "animation": {
+              "mode": "loop",
+              "name": "static"
+            }
+        },
+
+        "male_mask_2": {
+            "mesh": "male_mask_2",
+            "materials": [
+                "mask"
+            ],
+            "type": "mesh_instance",
+            "animation": {
+              "mode": "loop",
+              "name": "static"
+            }
+        },
+
+        "male_morph": {
+          "type": "face_morphing",
+          "morph": "male_morph"
+        },
+
+        "male_morph_2": {
+            "type": "face_morphing",
+            "morph": "male_morph_2"
+          },
+
+        "fem_morph": {
+          "type": "face_morphing",
+          "morph": "fem_morph"
+        },
+
+        "fem_morph_2": {
+            "type": "face_morphing",
+            "morph": "fem_morph_2"
+          }
+    },
+
+    "entities": {
+        "camera": {
+            "components": ["camera_tri"],
+            "layer": "composer_pre"
+        },
+
+        "camera_copy": {
+            "components": ["camera_copy"],
+            "layer": "camera_copy"
+        },
+
+        "face0": {
+            "components": ["face:0"],
+            "layer": "retouch"
+        },
+
+        "face1": {
+            "components": ["face:1"],
+            "layer": "retouch"
+        },
+
+        "face2": {
+            "components": ["face:2"],
+            "layer": "retouch"
+        },
+
+        "face3": {
+            "components": ["face:3"],
+            "layer": "retouch"
+        },
+
+        "face_tracker0": {
+            "components": ["face_tracker:0"]
+        },
+
+        "face_tracker1": {
+            "components": ["face_tracker:1"]
+        },
+
+        "face_tracker2": {
+            "components": ["face_tracker:2"]
+        },
+
+        "face_tracker3": {
+            "components": ["face_tracker:3"]
+        },
+
+        "fem_mask": {
+            "components": ["fem_mask"],
+            "layer": "masks"
+        },
+
+        "fem_morph": {
+          "components": ["fem_morph"],
+          "layer": "morphs"
+        },
+
+        "fem_mask_2": {
+            "components": ["fem_mask_2"],
+            "layer": "masks"
+        },
+
+        "fem_morph_2": {
+          "components": ["fem_morph_2"],
+          "layer": "morphs"
+        },
+
+        "male_mask": {
+            "components": ["male_mask"],
+            "layer": "masks"
+        },
+
+        "male_morph": {
+          "components": ["male_morph"],
+          "layer": "morphs"
+        },
+
+        "male_mask_2": {
+            "components": ["male_mask_2"],
+            "layer": "masks"
+        },
+
+        "male_morph_2": {
+          "components": ["male_morph_2"],
+          "layer": "morphs"
+        }
+    },
+
+    "hierarchy": {
+        "face0": [
+            "fem_mask",
+            "fem_morph"
+        ],
+
+        "face1": [
+            "male_mask",
+            "male_morph"
+        ],
+
+        "face2": [
+            "male_mask_2",
+            "male_morph_2"
+        ],
+
+        "face3": [
+            "fem_mask_2",
+            "fem_morph_2"
+        ],
+
+        "face_tracker0": [
+            "face0"
+        ],
+
+        "face_tracker1": [
+            "face1"
+        ],
+
+        "face_tracker2": [
+            "face2"
+        ],
+
+        "face_tracker3": [
+            "face3"
+        ],
+
+        "root": [
+            "camera",
+            "face_tracker0",
+            "face_tracker1",
+            "face_tracker2",
+            "face_tracker3"
+        ]
+    },
+
+    "layers": {
+        "masks": {},
+        "camera_copy": {},
+        "composer_pre": {},
+        "retouch": {},
+        "morphs": {}
+    },
+
+    "render_list": {
+        "default": [
+            {
+                "layer": "composer_pre",
+                "render_target": "camera"
+            },
+            {
+                "layer": "camera_copy",
+                "render_target": "effect"
+            },
+            {
+                "layer": "retouch",
+                "render_target": "effect"
+            },
+            {
+              "layer": "morphs",
+              "render_target": "effect"
+            },
+            {
+                "layer": "masks",
+                "render_target": "effect"
+            }
+        ]
+    },
+
+    "render_targets": {
+        "camera": [
+            "camera_color"
+        ],
+        "effect": [
+            "effect_color",
+            "default_depth"
+        ]
+    }
+}

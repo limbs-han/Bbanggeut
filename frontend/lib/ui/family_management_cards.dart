@@ -98,7 +98,7 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
                 ),
               ),
             ),
-            if (widget.onOpenInbox != null)
+            if (!vault.isOwner && widget.onOpenInbox != null)
               TextButton.icon(
                 onPressed: widget.onOpenInbox,
                 icon: const Icon(Icons.mark_email_unread_outlined, size: 18),

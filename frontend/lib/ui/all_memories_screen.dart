@@ -112,9 +112,12 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     final keyword = _searchController.text.trim().toLowerCase();
     final result = widget.controller.videos.where((video) {
       final matchesCategory = switch (category) {
-        MemoryCategory.laughter => video.triggerType == 'LAUGHTER',
-        // 편집 중·편집 완료는 editor-api 목록으로 따로 그린다.
-        MemoryCategory.editing || MemoryCategory.edited => false,
+        MemoryCategory.laughter => video.hasEventType('LAUGHTER'),
+        // 편집 중은 editor-api 초안 목록으로 따로 그린다. 편집 완료는
+        // 백엔드 EDIT 영상 + editor-api 완성본 목록을 함께 보여 준다.
+        MemoryCategory.editing => false,
+        MemoryCategory.edited =>
+          video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
       };
       final matchesKeyword =
           keyword.isEmpty ||

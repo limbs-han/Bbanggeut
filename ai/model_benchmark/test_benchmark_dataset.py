@@ -12,6 +12,33 @@ from benchmark_dataset import (
 
 
 class BenchmarkDatasetTests(unittest.TestCase):
+    def test_accepts_laughter_with_clap_condition_and_multiple_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            create_dataset(root, "audio-mixed-events")
+            media = root / "mixed.wav"
+            media.write_bytes(b"mixed-audio")
+
+            sample = add_sample(
+                root,
+                sample_id="validation-laughter-with-clap-001",
+                media_path=media,
+                split="validation",
+                conditions=["laughter-with-clap"],
+                labels=["laughter", "consecutive-clap"],
+                notes="simultaneous laughter and clapping",
+            )
+
+            self.assertEqual(
+                sample["conditions"],
+                ["laughter-with-clap"],
+            )
+            self.assertEqual(
+                sample["labels"],
+                ["consecutive-clap", "laughter"],
+            )
+            self.assertEqual(validate_dataset(root), [])
+
     def test_creates_adds_and_validates_sample(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -1,8 +1,9 @@
 # 직접 구현 영상 편집기
 
 이벤트 영상 상세 화면의 기존 라우팅과 결과 경로 반환 계약은 유지하면서,
-편집 UI와 프로젝트 상태는 Flutter에서 직접 관리한다. 상용 영상 편집 SDK에
-의존하지 않고 앱 자체 편집기와 Android Media3로 미리보기와 내보내기를 처리한다.
+편집 UI와 프로젝트 상태는 Flutter에서 직접 관리한다. 미리보기와 내보내기는
+앱 자체 편집기와 Android Media3가 처리하고, Banuba는 얼굴 마스크를
+그리는 **엔진으로만** 쓰고 그 화면으로는 넘어가지 않는다(아래 Face AR 참조).
 
 ## 구성
 
@@ -12,8 +13,10 @@
 - `lib/editor/editor_text_style_bar.dart`: 영상 위 글자 꾸밈 줄
 - `lib/editor/editor_workspace.dart`: 크림·코랄 반응형 편집 화면
 - `lib/editor/editor_platform.dart`: Android/iOS 영상 처리 MethodChannel 계약
+- `lib/editor/banuba_mask_channel.dart`: 얼굴 마스크 엔진 다리(아래 Face AR)
 - `android/.../EditorProjectExporter.kt`: Media3 Composition 내보내기
 - `android/.../EditorLayerOverlay.kt`: 정규화 좌표 텍스트·스티커 오버레이
+- `android/.../BanubaMask*.kt`: 얼굴 마스크 미리보기와 저장할 때 굽기
 
 자동 자막 생성과 캐시 코드는 `lib/features/stt`에 그대로 유지한다. 편집기는
 기존 컨트롤러가 제공하는 자막 구간을 클립 순서에 맞게 재배치해 네이티브
@@ -65,6 +68,7 @@
 - 확대, 이동, 회전
 - 원본 오디오 볼륨과 음소거
 - 시각별 텍스트·스티커와 기존 자동 자막
+- 얼굴 마스크(Banuba 엔진으로 저장할 때 한 번 굽는다)
 - 진행률 조회, 취소, H.264 내보내기, MediaStore 저장
 
 지역 블러는 커스텀 셰이더가 없으므로 요청 시 명시적 오류를 반환한다.
@@ -302,9 +306,147 @@ Media3 저장도 구간 줌을 세로 `Presentation`보다 먼저 원본 프레�
 `EditorLook.colorFilter`를 쓴다. 내보내기는 Media3의
 RgbFilter/HslAdjustment로 같은 값을 재현한다.
 
-꾸미기 이모지는 스티커 탭에서 사용자가 위치와 크기를 조절한다. 얼굴을
-프레임마다 추적하는 마스크는 현재 제공하지 않는다. 이후 필요하면 서버가 만든
-얼굴 좌표·표정 구간을 편집 레시피로 받아 자체 오버레이로 구현한다.
+꾸미기 이모지는 스티커 탭에서 사용자가 위치와 크기를 조절한다.
+
+**편집기는 우리 것이고 Banuba는 AR 탭이 빌려 쓰는 엔진일 뿐이다.** Banuba
+편집기 화면(`VideoCreationActivity`)으로 넘어가는 길은 없다. 얼굴 마스크만
+그 엔진이 맡고, 컷·글자·스티커·색감·자막·저장은 전부 Flutter와 media3가 한다.
+
+색감 필터는 AR 탭이 아니라 **효과 탭**에 있다. AR 탭 미리보기가 Banuba의
+`SurfaceView`로 바뀌면 그 위에는 Flutter의 색 필터가 닿지 않는다(SurfaceView는
+Flutter가 합성하지 않고 안드로이드가 직접 얹는 층이다). 고를 수는 있는데
+미리보기가 안 되는 자리에 두느니 원래 어울리는 자리로 옮겼다.
+
+### 구성
+
+| 파일 | 하는 일 |
+|------|--------|
+| `lib/editor/banuba_mask_channel.dart` | 채널 계약, 마스크 목록, 굽기 요청 |
+| `android/.../BanubaMaskContract.kt` | 양쪽이 맞춰 쓰는 이름들 (Dart와 **짝**) |
+| `android/.../BanubaMaskRuntime.kt` | Koin 그래프와 라이선스를 프로세스에 한 번만 세운다 |
+| `android/.../BanubaMaskPlugin.kt` | MethodChannel·EventChannel·플랫폼 뷰 등록 |
+| `android/.../BanubaMaskPreview.kt` | 편집 화면 **안**에 박히는 미리보기 |
+| `android/.../BanubaMaskExporter.kt` | 저장할 때 마스크를 한 번 굽는다 |
+| `android/.../BanubaMaskEffectHelper.kt` | 에셋에 든 효과를 파일 경로로 펴 놓는다 |
+
+토큰은 `assets/config/banuba.local.json`의 `BANUBA_LICENSE_TOKEN`이거나
+`--dart-define=BANUBA_LICENSE_TOKEN=...`이고, `lib/core/banuba_video_editor.dart`가
+그 하나만 맡는다. 마스크는 `frontend/effects`에 있고
+`android/app/build.gradle.kts`의 `copyBanubaEffects`가 `assets/bnb-resources/effects`로
+복사하면서 **우리가 넣은 이름 목록**(`bundled_effects.txt`)을 함께 남긴다 —
+SDK가 자기 AAR로 끼워 넣는 효과와 경로가 같아 그것 없이는 가를 수 없다.
+
+목록도 카드 그림도 네이티브가 준다. Flutter 에셋으로 선언하면 효과 폴더를
+갈아 끼울 때마다 pubspec과 어긋나 빌드가 깨진다.
+
+### 미리보기
+
+AR 탭에 있는 동안만 재생 주체가 Banuba 플레이어로 넘어간다. Flutter 재생기는
+서 있고(소리가 겹치지 않는다), 재생 위치는 네이티브가 이벤트로 알려 준다 —
+`VideoPlayer` 인터페이스에 위치를 물어보는 함수가 없어서 그 통로가 유일하다.
+
+**글자·스티커는 그대로 보인다.** 네이티브 뷰는 영상 자리만 대신하고, 그 위에
+평소 쓰던 레이어를 그대로 얹는다(`_PreviewSurface.arView`). 예전에는 미리보기
+위젯을 통째로 갈아 끼워서 AR 탭에 들어가면 편집한 것이 사라진 것처럼 보였다.
+
+컷 편집에서 정한 구간만 물린다. 그래서 네이티브 플레이어의 시각은 **고른
+조각 안에서 0부터** 세고, 타임라인 시각으로 바꿀 때 조각의 시작을 더한다.
+
+### 저장할 때 굽기
+
+마스크가 골라져 있으면 저장이 두 걸음이 된다.
+
+```
+저장
+ → Banuba가 컷 편집 조각들을 순서대로 이어 붙여 한 편으로 굽는다 (마스크만)
+ → 그 파일이 media3 파이프라인의 새 원본이 된다 (EditorProject.withBakedSource)
+ → 컷·글자·스티커·색감·자막·비율·소리는 지금까지처럼 media3가 얹는다
+ → 기존 갤러리 저장 흐름
+```
+
+마스크가 없으면 이 갈래로 오지 않고 경로가 하나도 바뀌지 않는다.
+
+- **왜 저장할 때 한 번인가**: 마스크 카드를 누를 때마다 구우면 몇 번 눌러 보는
+  것만으로 몇 분이 날아간다.
+- **왜 구간까지 넘기는가**: Banuba는 `VideoRangeList`를 이어 붙여 한 편으로
+  내보낸다. 조각을 그쪽에 맡기면 결과 파일이 이미 잘려 있어 media3가 같은
+  자르기를 두 번 하지 않는다. 그래서 구운 뒤 프로젝트의 조각은 **파일 전체
+  하나로 합친다**. 글자·스티커·자막은 원본 시각이 아니라 이어 붙인 타임라인
+  시각을 들고 있으므로 손대지 않는다.
+- **자막은 굽기 전에 옮긴다**: 원본 시각을 지금 조각 배치에 맞춰 타임라인
+  시각으로 바꾸는 계산인데, 구운 뒤에는 그 근거가 사라진다.
+- **해상도**: 최종 저장이 긴 변을 1280으로 제한하므로 굽기도 짧은 변 기준으로
+  거기에 맞춘다. 크게 구워 봐야 곧바로 줄어들 뿐 시간만 두 배로 든다.
+- **취소·정리**: 굽는 동안 취소 버튼은 media3가 아니라 Banuba를 세운다(아직
+  media3는 시작도 하지 않았다). 실패하거나 그만두면 중간 파일을 남기지 않고,
+  성공했더라도 media3가 새 파일을 만들었으면 중간 파일은 지운다.
+
+### 얼굴은 한 명만 잡힌다 (라이선스 한도)
+
+여러 명에게 마스크가 씌워지지 않는다. **조사 끝난 사안이고 앱에서 고칠 수
+없다** — 다시 파헤치지 않도록 근거를 남긴다.
+
+**원인은 라이선스다.** 토큰에 얼굴 수 한도가 들어 있고 지금 값이 1이다.
+`BanubaMaskRuntime.logLicenseLimits`가 진입할 때 한 줄로 찍는다(토큰은 안 찍는다):
+
+```
+license: maxFaces=1 faceAR=true faceARonlyForPhotoEditor=false veSdk=true exportApi=true
+```
+
+확인한 것 세 가지:
+
+1. **효과 콘텐츠**: 번들된 효과 대부분이 얼굴 슬롯을 하나만 선언한다
+   (`config.json`의 `assets.faces = {face0: {index: 0}}` + `face_tracker` 하나).
+   `scene_4_faces`만 넷을 선언한다 — 그래서 콘텐츠 쪽 문제는 아니다.
+2. **라이선스**: `com.banuba.sdk.core.license.License.maxFaces`가 1이다.
+   카메라 경로는 이 값을 그대로 `EffectPlayer.setMaxFaces`에 넣으므로,
+   이 토큰으로는 **카메라도 한 명**이다. 영상만의 문제가 아니다.
+3. **SDK 구현 누락**(별개 사안): `BanubaClassFactory.createOfflineVideoEffectPlayer`는
+   `maxFaces` 인자를 받고도 쓰지 않는다. 바로 옆 `createCameraEffectPlayer`는
+   쓴다. SDK 전체에서 `setMaxFaces`를 부르는 곳은 이 클래스뿐이다
+   (effect-player-adapter 1.53.0). **라이선스를 올려도 이것 때문에 영상
+   경로는 그대로일 수 있다** — 바누바에 함께 짚어야 한다.
+
+`setMaxFaces`를 직접 불러 한도를 넘기는 우회는 하지 않는다. 라이선스가 정한
+값이다. 토큰이 바뀌면 `scene_4_faces`는 코드 수정 없이 동작한다.
+
+### 효과 폴더를 가르는 기준
+
+`frontend/effects` 아래에서 **`config.js` 또는 `config.json`이 있는 폴더**만
+효과다. `config.js`는 동작 스크립트, `config.json`은 장면(어떤 메시를 어느
+얼굴에 붙이는지)이고 **둘 중 하나만 있어도 된다** — 스크립트 없이 장면만 있는
+효과가 실제로 있다(`scene_4_faces`). 스크립트만 보고 가르면 그런 효과는 목록에
+아예 뜨지 않는다.
+
+이 기준은 **두 곳에 있고 서로 같아야 한다.** 한쪽만 고치면 목록에는 뜨는데
+우리 것이 아니라고 걸러지거나 그 반대가 된다.
+
+- `android/app/build.gradle.kts`의 `copyBanubaEffects` → `bundled_effects.txt`
+- `BanubaMaskEffectHelper.availableEffects` / `prepareEffect`
+
+### Koin 그래프의 주인은 우리다
+
+`ve_sdk_flutter` 플러그인도 같은 그래프를 세우지만 그 함수는 `internal`이고
+편집기 화면을 열 때만 돈다. 그래서 우리가 직접 세운다 — `VeSdkKoinModule`,
+`VeExportKoinModule`, `VePlaybackSdkKoinModule`, 그리고 리플렉션으로 얹는
+`BanubaEffectPlayerKoinModule`(Face AR이 꺼진 빌드에는 클래스가 아예 없어
+직접 참조하면 링크 단계에서 터진다).
+
+편집기 화면 모듈(`VeFlowKoinModule`·`VeUiSdkKoinModule`)은 세우지 않는다.
+그래서 두 자리만 우리가 채운다(`BanubaMaskRuntime.ourModule`).
+
+- `CoverContainsInExport` → 표지는 편집기 화면의 기능이라 "없다"로 답한다.
+- `ExportParamsProvider` → 기본값은 SDK가 정한 폴더·이름·해상도로 굽고
+  워터마크 경로를 지나간다. 구운 파일을 곧바로 media3에 넘겨야 해서 우리가 정한다.
+
+먼저 켠 쪽이 그래프를 독점하는 구조라(`startKoin`은 이미 켜져 있으면 던진다)
+남이 켜 뒀으면 얹기만 한다. 순서는 양쪽 다 견딘다.
+
+### 마스크 굽기와 줌
+
+마스크를 구우면 조각들이 이어 붙은 파일이 새 원본이 되어, 원본 좌표에 묶인
+줌 세그먼트는 기준을 잃는다. **마스크를 골랐다면 줌 없이 내보내는 것이
+정책이다** — `EditorProject.withBakedSource`가 줌·추천 마커를 넘기지 않는다.
 
 ## iOS
 

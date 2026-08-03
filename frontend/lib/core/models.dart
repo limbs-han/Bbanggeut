@@ -20,6 +20,24 @@ String normalizeVideoTrigger(Object? value) {
   };
 }
 
+List<String> normalizeVideoEventTypes(
+  Object? value, {
+  required String triggerType,
+}) {
+  final requested = value is List
+      ? value.map(normalizeVideoTrigger)
+      : const <String>[];
+  final normalized = <String>[];
+
+  for (final eventType in [triggerType, ...requested]) {
+    if (eventType.isNotEmpty && !normalized.contains(eventType)) {
+      normalized.add(eventType);
+    }
+  }
+
+  return List.unmodifiable(normalized);
+}
+
 class UserProfile {
   const UserProfile({
     required this.id,
@@ -296,6 +314,7 @@ class VideoMemory {
     required this.title,
     required this.status,
     required this.favorite,
+    this.eventTypes = const [],
     this.sourceType = 'IOT_CAPTURE',
     this.description,
     this.durationMs,
@@ -306,6 +325,7 @@ class VideoMemory {
   final String id;
   final String deviceId;
   final String triggerType;
+  final List<String> eventTypes;
   final String title;
   final String? description;
   final String status;
@@ -315,22 +335,35 @@ class VideoMemory {
   final String? thumbnailUrl;
   final DateTime? capturedStartAt;
   final DateTime? createdAt;
-  factory VideoMemory.fromJson(Map<String, dynamic> json) => VideoMemory(
-    id: json['id'] as String,
-    deviceId: json['deviceId'] as String,
-    triggerType: normalizeVideoTrigger(
+  List<String> get effectiveEventTypes => eventTypes.isEmpty
+      ? List.unmodifiable([triggerType])
+      : eventTypes;
+  bool hasEventType(String eventType) =>
+      effectiveEventTypes.contains(normalizeVideoTrigger(eventType));
+
+  factory VideoMemory.fromJson(Map<String, dynamic> json) {
+    final triggerType = normalizeVideoTrigger(
       json['triggerType'] ?? json['eventType'] ?? json['category'],
-    ),
-    title: json['title'] as String? ?? '이름 없는 추억',
-    description: json['description'] as String?,
-    status: json['status'] as String? ?? 'PROCESSING',
-    favorite: json['isFavorite'] as bool? ?? false,
-    sourceType: json['sourceType'] as String? ?? 'IOT_CAPTURE',
-    durationMs: (json['durationMs'] as num?)?.toInt(),
-    thumbnailUrl: json['thumbnailUrl'] as String?,
-    capturedStartAt: parseDate(json['capturedStartAt']),
-    createdAt: parseDate(json['createdAt']),
-  );
+    );
+    return VideoMemory(
+      id: json['id'] as String,
+      deviceId: json['deviceId'] as String,
+      triggerType: triggerType,
+      eventTypes: normalizeVideoEventTypes(
+        json['eventTypes'],
+        triggerType: triggerType,
+      ),
+      title: json['title'] as String? ?? '이름 없는 추억',
+      description: json['description'] as String?,
+      status: json['status'] as String? ?? 'PROCESSING',
+      favorite: json['isFavorite'] as bool? ?? false,
+      sourceType: json['sourceType'] as String? ?? 'IOT_CAPTURE',
+      durationMs: (json['durationMs'] as num?)?.toInt(),
+      thumbnailUrl: json['thumbnailUrl'] as String?,
+      capturedStartAt: parseDate(json['capturedStartAt']),
+      createdAt: parseDate(json['createdAt']),
+    );
+  }
 }
 
 class VideoPage {

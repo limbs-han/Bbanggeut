@@ -418,4 +418,98 @@ void main() {
     expect(subject.project.canvas.fit, EditorCanvasFit.cover);
     expect(subject.project.canvas.toMap()['fit'], 'cover');
   });
+
+  test('같은 클립을 다시 골라도 다시 그리지 않고 레이어 선택도 남는다', () {
+    final subject = controller();
+    subject.addSticker('⭐');
+    final layerId = subject.project.selectedLayerId;
+    final clipId = subject.project.selectedClipId!;
+
+    var notifications = 0;
+    subject.addListener(() => notifications++);
+
+    // 타임라인을 문지르면 손가락이 움직일 때마다 이게 불린다. 클립은 그대로다.
+    for (var i = 0; i < 20; i++) {
+      subject.selectClip(clipId);
+    }
+
+    expect(notifications, 0);
+    expect(subject.project.selectedLayerId, layerId);
+  });
+
+  test('마스크를 구운 파일이 새 원본이 되고 조각은 하나로 합쳐진다', () {
+    final subject = controller();
+    // 앞뒤를 잘라 5초짜리 한 조각으로 만든다.
+    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
+    subject.setLook(EditorLook.warm);
+
+    // Banuba는 이 조각을 그대로 구워 준다 — 결과는 이미 잘린 5초짜리다.
+    final baked = subject.project.withBakedSource(
+      path: '/tmp/masked.mp4',
+      durationMs: 5000,
+      size: const EditorSourceSize(width: 1280, height: 720),
+    );
+
+    expect(baked.sourceVideoPath, '/tmp/masked.mp4');
+    expect(baked.clips, hasLength(1));
+    expect(baked.clips.single.sourcePath, '/tmp/masked.mp4');
+    expect(baked.clips.single.sourceStartMs, 0);
+    expect(baked.clips.single.sourceEndMs, 5000);
+    expect(baked.durationMs, 5000);
+    // 색감은 아직 남은 일이라 그대로 들고 있어야 한다.
+    expect(baked.look, EditorLook.warm);
+  });
+
+  test('마스크만 입혔으면 구운 파일을 다시 인코딩하지 않는다', () {
+    final subject = controller();
+    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
+
+    // 자른 원본은 다시 만들어야 한다.
+    expect(subject.project.requiresRendering(), isTrue);
+
+    // 구운 뒤에는 자르기까지 끝난 파일이라 남은 일이 없다.
+    final baked = subject.project.withBakedSource(
+      path: '/tmp/masked.mp4',
+      durationMs: 5000,
+      size: const EditorSourceSize(width: 1280, height: 720),
+    );
+    expect(baked.requiresRendering(), isFalse);
+    expect(baked.requiresRendering(hasCaptions: true), isTrue);
+  });
+
+  test('구운 파일 위에서도 글자 시각은 타임라인 그대로다', () {
+    final subject = controller();
+    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
+    subject.setPlayhead(1000);
+    subject.addTextLayer(text: '안녕');
+    final before = subject.project.textLayers.single;
+
+    final baked = subject.project.withBakedSource(
+      path: '/tmp/masked.mp4',
+      durationMs: 5000,
+      size: const EditorSourceSize(width: 1280, height: 720),
+    );
+
+    final after = baked.textLayers.single;
+    expect(after.startMs, before.startMs);
+    expect(after.endMs, before.endMs);
+    expect(after.text, '안녕');
+  });
+
+  test('마스크를 구우면 줌은 버려진다 — 원본 좌표의 기준이 사라지기 때문', () {
+    final subject = controller();
+    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
+    expect(subject.addZoomAtPlayhead(), isTrue);
+    expect(subject.project.zoomSegments, isNotEmpty);
+
+    final baked = subject.project.withBakedSource(
+      path: '/tmp/masked.mp4',
+      durationMs: 5000,
+      size: const EditorSourceSize(width: 1280, height: 720),
+    );
+
+    expect(baked.zoomSegments, isEmpty);
+    expect(baked.selectedZoomId, isNull);
+    expect(baked.recommendationMarker, isNull);
+  });
 }

@@ -3,9 +3,9 @@
 # Disk-backed Jetson AI stack:
 # - YOLO and YAMNet consume the validated shared RTSP path.
 # - YAMNet writes lightweight trigger JSON only.
-# - The uploader merges laughs within 30 seconds and extracts the first
-#   detection -60 seconds through the last detection +60 seconds from the
-#   compressed rolling MPEG-TS segments.
+# - The uploader merges repeated event types within 30 seconds, and merges
+#   laughter with clapping within 5 seconds. It extracts the first detection
+#   -60 seconds through the last detection +60 seconds from rolling MPEG-TS.
 #
 # Keep run_edge_ai_mvp.sh available as the 5-second UDP fallback.
 
@@ -34,6 +34,7 @@ fi
 : "${RECORDING_SEGMENT_SECONDS:=60}"
 : "${EVENT_CLIP_SECONDS:=60}"
 : "${EVENT_MERGE_GAP_SECONDS:=30}"
+: "${EVENT_CROSS_TYPE_MERGE_GAP_SECONDS:=5}"
 : "${DELETE_EVENT_AFTER_UPLOAD:=true}"
 : "${LOCAL_MQTT_HOST:=127.0.0.1}"
 : "${LOCAL_MQTT_PORT:=1883}"
@@ -55,7 +56,7 @@ fi
 : "${YAMNET_CLAP_ENABLED:=false}"
 : "${YAMNET_CLAP_THRESHOLD:=0.30}"
 : "${YAMNET_CLAP_CONSECUTIVE:=2}"
-: "${YAMNET_CLAP_REQUIRED_ONSETS:=2}"
+: "${YAMNET_CLAP_REQUIRED_ONSETS:=3}"
 : "${YAMNET_CLAP_MIN_ACTIVE_SECONDS:=0.4}"
 : "${YAMNET_CLAP_MAX_GAP_SECONDS:=0.75}"
 : "${YAMNET_CLAP_COOLDOWN:=12}"
@@ -365,6 +366,7 @@ UPLOADER_COMMAND=(
     --recording-dir "$RECORDING_DIR"
     --api-base-url "$API_BASE_URL"
     --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
+    --cross-type-merge-gap-seconds "$EVENT_CROSS_TYPE_MERGE_GAP_SECONDS"
     --segment-seconds "$RECORDING_SEGMENT_SECONDS"
     --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
     --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"

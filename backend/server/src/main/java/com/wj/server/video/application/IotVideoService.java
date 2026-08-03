@@ -2,6 +2,7 @@ package com.wj.server.video.application;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -14,6 +15,7 @@ import com.wj.server.video.api.IotUploadCompleteRequest;
 import com.wj.server.video.api.IotUploadUrlRequest;
 import com.wj.server.video.api.IotUploadUrlResponse;
 import com.wj.server.video.api.VideoResponse;
+import com.wj.server.video.domain.VideoEventTypes;
 import com.wj.server.video.domain.VideoRow;
 import com.wj.server.video.persistence.VideoMapper;
 import org.springframework.http.HttpStatus;
@@ -49,6 +51,7 @@ public class IotVideoService {
         IotUploadUrlRequest request
     ) {
         validateIdempotencyKey(idempotencyKey, request.sourceEventId());
+        List<String> eventTypes = validatedEventTypes(request);
         UUID eventId = parseEventId(request.sourceEventId());
         if (request.sizeBytes() > 524_288_000L) {
             throw new ApiException(
@@ -62,8 +65,8 @@ public class IotVideoService {
         }
 
         VideoRow video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
-            .orElseGet(() -> createVideo(deviceId, request));
-        verifySameUpload(video, request);
+            .orElseGet(() -> createVideo(deviceId, request, eventTypes));
+        verifySameUpload(video, request, eventTypes);
         if ("FAILED".equals(video.status())) {
             if (videoMapper.retryFailedUpload(deviceId, video.id()) != 1) {
                 throw new ApiException(
@@ -151,11 +154,16 @@ public class IotVideoService {
         }
     }
 
-    private VideoRow createVideo(UUID deviceId, IotUploadUrlRequest request) {
+    private VideoRow createVideo(
+        UUID deviceId,
+        IotUploadUrlRequest request,
+        List<String> eventTypes
+    ) {
         UUID videoId = UUID.randomUUID();
         String storageKey = "private/" + deviceId + "/events/" + videoId + ".mp4";
         int inserted = videoMapper.insertIotVideo(
-            videoId, deviceId, request.triggerType(), request.sourceEventId(), request.title().trim(),
+            videoId, deviceId, request.triggerType(), VideoEventTypes.toCsv(eventTypes),
+            request.sourceEventId(), request.title().trim(),
             storageKey, request.contentType(), request.sizeBytes(), request.checksumSha256(),
             request.durationMs(), request.capturedStartAt(), request.capturedEndAt());
         return videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
@@ -170,8 +178,13 @@ public class IotVideoService {
             });
     }
 
-    private void verifySameUpload(VideoRow video, IotUploadUrlRequest request) {
+    private void verifySameUpload(
+        VideoRow video,
+        IotUploadUrlRequest request,
+        List<String> eventTypes
+    ) {
         if (!video.triggerType().equals(request.triggerType())
+            || !video.eventTypesCsv().equals(VideoEventTypes.toCsv(eventTypes))
             || !video.title().equals(request.title().trim())
             || !video.contentType().equals(request.contentType())
             || video.sizeBytes() != request.sizeBytes()
@@ -183,6 +196,14 @@ public class IotVideoService {
                 HttpStatus.CONFLICT,
                 "IDEMPOTENCY_CONFLICT",
                 "같은 이벤트 ID에 다른 업로드 정보가 요청되었습니다.");
+        }
+    }
+
+    private List<String> validatedEventTypes(IotUploadUrlRequest request) {
+        try {
+            return VideoEventTypes.normalize(request.triggerType(), request.eventTypes());
+        } catch (IllegalArgumentException exception) {
+            throw validation(exception.getMessage());
         }
     }
 
@@ -219,6 +240,7 @@ public class IotVideoService {
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
             video.sourceEventId(), video.title(), null, video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
-            video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt());
+            video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
+            VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));
     }
 }

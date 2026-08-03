@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/app/app_controller.dart';
 import 'package:william_james_app/app/app_theme.dart';
@@ -207,7 +211,10 @@ void main() {
     expect(find.byKey(const Key('member-request-inbox')), findsOneWidget);
     expect(find.text('받은 요청함'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('member-request-inbox')));
+    final inboxButton = find.byKey(const Key('member-request-inbox'));
+    await tester.ensureVisible(inboxButton);
+    await tester.pumpAndSettle();
+    await tester.tap(inboxButton);
     await tester.pumpAndSettle();
     expect(find.text('받은 요청함'), findsOneWidget);
     expect(find.text('받은 요청이 없어요'), findsOneWidget);
@@ -262,6 +269,38 @@ void main() {
       '장소 이름은 15자 이내로 입력해 주세요.',
     );
     expect(validatePlaceName('카페', const ['집']), isNull);
+  });
+
+  test('연속된 장소 저장은 호출 순서대로 완료되어 최신 기기 연결을 유지한다', () async {
+    final storage = _DelayedPlaceStorage();
+    const cafeCamera = DeviceSummary(
+      id: 'cafe-camera',
+      name: 'William James Camera',
+      model: 'test',
+      status: 'OFFLINE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+    );
+    final controller = AppController(placeStorage: storage)
+      ..user = const UserProfile(
+        id: 'user-1',
+        email: 'user@example.com',
+        displayName: '사용자',
+      )
+      ..devices = const [cafeCamera];
+
+    controller.addPlace('카페');
+    controller.assignDeviceToPlace(cafeCamera.id, '카페');
+
+    await Future<void>.delayed(Duration.zero);
+    expect(storage.writeCount, 1);
+    storage.completeFirstWrite();
+    await controller.waitForPlacePreferencesSaved();
+
+    final saved = jsonDecode(storage.value!) as Map<String, dynamic>;
+    expect(saved['places'], ['집', '카페']);
+    expect(saved['devicePlaces'], {'cafe-camera': '카페'});
+    controller.dispose();
   });
 
   test('장소명 받침에 맞춰 홈 화면 문구를 만든다', () {
@@ -487,6 +526,32 @@ void main() {
       controller.dispose();
     },
   );
+}
+
+class _DelayedPlaceStorage extends FlutterSecureStorage {
+  _DelayedPlaceStorage();
+
+  final Completer<void> _firstWrite = Completer<void>();
+  int writeCount = 0;
+  String? value;
+
+  void completeFirstWrite() => _firstWrite.complete();
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    writeCount += 1;
+    if (writeCount == 1) await _firstWrite.future;
+    this.value = value;
+  }
 }
 
 class _MultipleVaultApiClient extends ApiClient {
