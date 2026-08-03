@@ -23,13 +23,15 @@ public interface VideoMapper {
     @Insert("""
         INSERT INTO videos (
             id, device_id, vault_id, device_binding_id,
-            source_type, trigger_type, source_event_id, title,
+            source_type, trigger_type, event_types, source_event_id, title,
             storage_key, content_type, size_bytes, checksum_sha256, duration_ms,
             captured_start_at, captured_end_at, status
         )
         SELECT
             #{id}, #{deviceId}, b.vault_id, b.id,
-            'IOT_CAPTURE', CAST(#{triggerType} AS video_trigger_type), #{sourceEventId}, #{title},
+            'IOT_CAPTURE', CAST(#{triggerType} AS video_trigger_type),
+            string_to_array(#{eventTypesCsv}, ',')::video_trigger_type[],
+            #{sourceEventId}, #{title},
             #{storageKey}, #{contentType}, #{sizeBytes}, #{checksumSha256}, #{durationMs},
             #{capturedStartAt}, #{capturedEndAt}, 'UPLOADING'
           FROM device_bindings b
@@ -40,6 +42,7 @@ public interface VideoMapper {
         @Param("id") UUID id,
         @Param("deviceId") UUID deviceId,
         @Param("triggerType") String triggerType,
+        @Param("eventTypesCsv") String eventTypesCsv,
         @Param("sourceEventId") String sourceEventId,
         @Param("title") String title,
         @Param("storageKey") String storageKey,
@@ -55,7 +58,8 @@ public interface VideoMapper {
         SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
-               is_favorite AS favorite, created_at
+               is_favorite AS favorite, created_at,
+               array_to_string(event_types, ',') AS event_types_csv
           FROM videos
          WHERE device_id = #{deviceId} AND source_event_id = #{sourceEventId}
         """)
@@ -68,7 +72,8 @@ public interface VideoMapper {
         SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
-               is_favorite AS favorite, created_at
+               is_favorite AS favorite, created_at,
+               array_to_string(event_types, ',') AS event_types_csv
           FROM videos
          WHERE id = #{videoId} AND device_id = #{deviceId}
         """)
@@ -187,7 +192,8 @@ public interface VideoMapper {
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
-               v.is_favorite AS favorite, v.created_at
+               v.is_favorite AS favorite, v.created_at,
+               array_to_string(v.event_types, ',') AS event_types_csv
           FROM videos v
           JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.device_id = #{deviceId}
@@ -195,7 +201,7 @@ public interface VideoMapper {
            AND m.status = 'ACTIVE'
            AND v.status NOT IN ('DELETING', 'DELETED')
         <if test="triggerType != null">
-           AND v.trigger_type = CAST(#{triggerType} AS video_trigger_type)
+           AND CAST(#{triggerType} AS video_trigger_type) = ANY(v.event_types)
         </if>
         <if test="from != null">
            AND v.captured_start_at &gt;= #{from}
@@ -226,14 +232,15 @@ public interface VideoMapper {
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
-               v.is_favorite AS favorite, v.created_at
+               v.is_favorite AS favorite, v.created_at,
+               array_to_string(v.event_types, ',') AS event_types_csv
           FROM videos v
           JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.vault_id = #{vaultId}
            AND m.user_id = #{userId} AND m.status = 'ACTIVE'
            AND v.status NOT IN ('DELETING', 'DELETED')
         <if test="triggerType != null">
-           AND v.trigger_type = CAST(#{triggerType} AS video_trigger_type)
+           AND CAST(#{triggerType} AS video_trigger_type) = ANY(v.event_types)
         </if>
         <if test="from != null">
            AND v.captured_start_at &gt;= #{from}
@@ -288,7 +295,8 @@ public interface VideoMapper {
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
-               v.is_favorite AS favorite, v.created_at
+               v.is_favorite AS favorite, v.created_at,
+               array_to_string(v.event_types, ',') AS event_types_csv
           FROM videos v
           JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.device_id = #{deviceId}
@@ -304,11 +312,12 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT trigger_type::text AS label, count(*) AS count
+        SELECT event_type::text AS label, count(*) AS count
           FROM videos
+          CROSS JOIN LATERAL unnest(event_types) AS event_type
          WHERE device_id = #{deviceId} AND status = 'READY'
            AND captured_start_at >= #{from} AND captured_start_at < #{to}
-         GROUP BY trigger_type
+         GROUP BY event_type
          ORDER BY count DESC, label
         """)
     List<VideoCountRow> countReadyVideosByTrigger(
@@ -368,7 +377,8 @@ public interface VideoMapper {
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
-               v.is_favorite AS favorite, v.created_at
+               v.is_favorite AS favorite, v.created_at,
+               array_to_string(v.event_types, ',') AS event_types_csv
           FROM videos v
           JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.id = #{videoId}
@@ -385,7 +395,8 @@ public interface VideoMapper {
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
-               v.is_favorite AS favorite, v.created_at
+               v.is_favorite AS favorite, v.created_at,
+               array_to_string(v.event_types, ',') AS event_types_csv
           FROM videos v
           JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.id = #{videoId}
