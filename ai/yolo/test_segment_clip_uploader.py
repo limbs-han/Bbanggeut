@@ -36,6 +36,7 @@ from segment_clip_uploader import (
 
 
 UTC = timezone.utc
+KST = timezone(timedelta(hours=9), "Asia/Seoul")
 
 
 def trigger(
@@ -238,12 +239,15 @@ class SegmentClipUploaderTests(unittest.TestCase):
         self.assertEqual(start, datetime(2026, 7, 23, 11, 59, 0, tzinfo=UTC))
         self.assertEqual(end, datetime(2026, 7, 23, 12, 1, 20, tzinfo=UTC))
 
-    def test_segment_name_is_interpreted_as_utc(self) -> None:
-        segment = parse_segment(Path("homecam-20260723T120000.ts"))
+    def test_segment_name_is_interpreted_as_korean_time(self) -> None:
+        segment = parse_segment(
+            Path("homecam-20260723T120000.ts"),
+            KST,
+        )
 
         self.assertEqual(
             segment.started_at,
-            datetime(2026, 7, 23, 12, 0, 0, tzinfo=UTC),
+            datetime(2026, 7, 23, 3, 0, 0, tzinfo=UTC),
         )
 
     def test_selects_only_completed_segments_covering_clip(self) -> None:
@@ -260,6 +264,7 @@ class SegmentClipUploaderTests(unittest.TestCase):
             datetime(2026, 7, 23, 11, 59, 10, tzinfo=UTC),
             datetime(2026, 7, 23, 12, 1, 10, tzinfo=UTC),
             60,
+            UTC,
         )
 
         self.assertEqual(
@@ -284,6 +289,7 @@ class SegmentClipUploaderTests(unittest.TestCase):
                 datetime(2026, 7, 23, 11, 59, 10, tzinfo=UTC),
                 datetime(2026, 7, 23, 12, 0, 10, tzinfo=UTC),
                 60,
+                UTC,
             )
 
     def test_http_error_diagnostics_redact_query_and_bound_body(self) -> None:
@@ -347,6 +353,7 @@ class SegmentClipUploaderTests(unittest.TestCase):
                 retry_max_seconds=300.0,
                 merge_gap_seconds=30.0,
                 cross_type_merge_gap_seconds=5.0,
+                recording_timezone=KST,
             )
             error = HTTPError(
                 "https://api.example/videos/upload-url?secret=value",

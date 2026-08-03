@@ -11,12 +11,11 @@ class MediaSourceTimestampTest(unittest.TestCase):
     def test_video_capture_uses_absolute_timestamps(self) -> None:
         self.assertIn('-timestamps abs', self.script)
 
-    def test_video_and_audio_pts_start_at_zero_symmetrically(self) -> None:
-        self.assertIn('-vf "setpts=PTS-STARTPTS"', self.script)
-        self.assertIn(
-            '-af "asetpts=PTS-STARTPTS,aresample=async=1"',
-            self.script,
-        )
+    def test_video_and_audio_keep_their_wallclock_offset(self) -> None:
+        self.assertIn("-loglevel warning -copyts", self.script)
+        self.assertIn('-af "aresample=async=1"', self.script)
+        self.assertNotIn("setpts=PTS-STARTPTS", self.script)
+        self.assertNotIn("asetpts=PTS-STARTPTS", self.script)
         self.assertNotIn("first_pts=0", self.script)
 
 

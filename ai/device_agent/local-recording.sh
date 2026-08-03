@@ -9,7 +9,7 @@ set -Eeuo pipefail
 : "${LOCAL_RTSP_MAIN_URL:=rtsp://127.0.0.1:8554/homecam/main}"
 : "${RECORDING_DIR:=/var/lib/william-james/recordings}"
 : "${RECORDING_SEGMENT_SECONDS:=60}"
-: "${RECORDING_TIMEZONE:=UTC}"
+: "${RECORDING_TIMEZONE:=Asia/Seoul}"
 
 if [[ "$RECORDING_DIR" != /* || "$RECORDING_DIR" == "/" ]]; then
     echo "RECORDING_DIR must be a specific absolute directory" >&2
