@@ -18,6 +18,7 @@ import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
@@ -25,6 +26,7 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
@@ -41,6 +43,12 @@ class EditorProjectExporter(
 
         /// 다시 인코딩할 때 만드는 영상의 긴 변 상한.
         private const val MAX_OUTPUT_LONG_EDGE = 1280
+
+        /// 다시 인코딩할 때의 영상 비트레이트. 기기 카메라가 2.5Mbps로
+        /// 찍는데(media-source.sh VIDEO_BITRATE) media3 기본 인코더는 그보다
+        /// 높게(~4Mbps) 구워, 화질은 안 좋아지면서 파일만 커졌다 — 셀룰러
+        /// 업로드는 다운로드보다 몇 배 느려서 그 크기가 그대로 대기 시간이다.
+        private const val OUTPUT_VIDEO_BITRATE = 2_500_000
     }
 
     private var transformer: Transformer? = null
@@ -315,6 +323,15 @@ class EditorProjectExporter(
         // media3가 스트림 복사를 포기하고 전부 다시 인코딩한다.
         if (!willTransmuxVideo) {
             builder.setVideoMimeType(MimeTypes.VIDEO_H264)
+            builder.setEncoderFactory(
+                DefaultEncoderFactory.Builder(activity.applicationContext)
+                    .setRequestedVideoEncoderSettings(
+                        VideoEncoderSettings.Builder()
+                            .setBitrate(OUTPUT_VIDEO_BITRATE)
+                            .build(),
+                    )
+                    .build(),
+            )
         }
 
         val active = builder
