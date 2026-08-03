@@ -4,6 +4,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
+
+# 4컷 만화가 원본에서 프레임을 뽑고(ffmpeg·ffprobe), 모델이 낸 그림을 정사각
+# PNG로 맞추는 데 쓴다. slim 이미지에는 없다.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY video_editor/requirements-service.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY video_editor /app/ai/video_editor
