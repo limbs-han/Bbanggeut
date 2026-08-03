@@ -191,9 +191,20 @@ def capture_preflight(*, allow_active_services: bool) -> None:
         )
 
 
-def capture_wav(stream_url: str, destination: Path, duration_seconds: int) -> None:
-    temporary = destination.with_suffix(".wav.tmp")
-    command = [
+def build_capture_command(
+    stream_url: str,
+    temporary: Path,
+    duration_seconds: int,
+) -> list[str]:
+    expected_samples = SAMPLE_RATE * duration_seconds
+    audio_filter = (
+        f"aresample={SAMPLE_RATE},"
+        "asetpts=N/SR/TB,"
+        f"apad=whole_len={expected_samples},"
+        f"atrim=end_sample={expected_samples},"
+        "asetpts=N/SR/TB"
+    )
+    return [
         "/usr/bin/ffmpeg",
         "-hide_banner",
         "-nostdin",
@@ -207,6 +218,8 @@ def capture_wav(stream_url: str, destination: Path, duration_seconds: int) -> No
         "-map",
         "0:a:0",
         "-vn",
+        "-af",
+        audio_filter,
         "-t",
         str(duration_seconds),
         "-ac",
@@ -219,6 +232,11 @@ def capture_wav(stream_url: str, destination: Path, duration_seconds: int) -> No
         "wav",
         str(temporary),
     ]
+
+
+def capture_wav(stream_url: str, destination: Path, duration_seconds: int) -> None:
+    temporary = destination.with_suffix(".wav.tmp")
+    command = build_capture_command(stream_url, temporary, duration_seconds)
     try:
         completed = subprocess.run(
             command,
@@ -271,7 +289,8 @@ def capture_wav(stream_url: str, destination: Path, duration_seconds: int) -> No
     ):
         destination.unlink(missing_ok=True)
         raise ValueError(
-            "captured WAV does not match duration, 48 kHz, and mono requirements"
+            "captured WAV does not match duration, 48 kHz, and mono requirements: "
+            f"duration={actual_duration:.3f}s rate={actual_rate} channels={actual_channels}"
         )
 
 
