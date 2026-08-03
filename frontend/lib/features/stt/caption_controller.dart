@@ -8,6 +8,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import 'caption_line.dart';
+import 'mlkit_transcriber.dart';
 import 'transcript_store.dart';
 
 class CaptionController extends ChangeNotifier {
@@ -59,6 +60,24 @@ class CaptionController extends ChangeNotifier {
   /// 패널 맨 위 한 줄. 실패해도 자르기·저장은 되어야 하므로 그렇게 안내한다.
   String message({int? estimateSeconds}) {
     final state = status;
+
+    // 모델을 처음 받는 기기는 몇 분이 걸린다. 진행률이 없으면 멈춘 것처럼 보인다.
+    final downloading = mlkitDownloadPercent.value;
+    if (downloading != null) {
+      return '자막 기능을 준비하고 있어요. $downloading%';
+    }
+    // 자막을 아예 못 만드는 기기라면 기다리게 두지 말고 바로 알린다.
+    if (state is! TranscriptReady) {
+      switch (mlkitReadiness.value) {
+        case MlKitReadiness.needsPermission:
+          return '자막을 만들려면 마이크 권한이 필요해요. 설정에서 켜 주세요.';
+        case MlKitReadiness.unavailable:
+          return '이 기기는 자동 자막을 지원하지 않아요. 자막 없이 저장할 수 있어요.';
+        case _:
+          break;
+      }
+    }
+
     if (state is TranscriptFailed) {
       return '대사를 알아듣지 못했어요. 자막 없이 저장할 수 있어요.';
     }
