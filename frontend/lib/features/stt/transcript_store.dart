@@ -15,8 +15,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'android_audio.dart';
 import 'caption_line.dart';
-import 'whisper_model.dart';
-import 'whisper_transcriber.dart';
+import 'mlkit_transcriber.dart';
 
 /// 영상 파일 경로를 받아 자막 줄을 돌려준다. 실패하면 던진다.
 typedef VideoTranscriber = Future<List<CaptionLine>> Function(String videoPath);
@@ -159,7 +158,57 @@ TranscriptStore transcriptStore = TranscriptStore(
   },
 );
 
-/// 영상에서 16kHz 모노 WAV를 뽑아 whisper에 넘긴다. WAV는 쓰고 지운다.
+/// 모델 내려받기 진행률(0~100). 준비 중이 아니면 null이다.
+///
+/// 화면이 이 값을 읽어 "자막 준비 중 42%"를 보여 준다 — 모델을 처음 받는 기기는
+/// 몇 분이 걸릴 수 있어서, 표시가 없으면 멈춘 것처럼 보인다.
+final ValueNotifier<int?> mlkitDownloadPercent = ValueNotifier<int?>(null);
+
+/// 이 기기에서 마지막으로 확인한 ML Kit 상태. 화면이 안내 문구를 고르는 데 쓴다.
+final ValueNotifier<MlKitReadiness?> mlkitReadiness =
+    ValueNotifier<MlKitReadiness?>(null);
+
+/// ML Kit을 쓸 수 있는 상태로 만든다 — 권한을 묻고, 필요하면 모델을 받는다.
+///
+/// **이 두 단계를 건너뛰면 안 된다.** 권한은 파일 입력인데도 요구되고,
+/// 모델을 아직 안 받은 기기는 `needsDownload`로 온다. 둘 다 처리하지 않으면
+/// 멀쩡히 쓸 수 있는 기기를 포기하게 된다.
+Future<MlKitReadiness> prepareMlKit(MlKitTranscriber mlkit) async {
+  var state = await mlkit.readiness();
+
+  if (state == MlKitReadiness.needsPermission) {
+    debugPrint('[stt] 마이크 권한을 요청한다 — 파일 입력이어도 ML Kit이 요구한다');
+    if (await mlkit.requestMicrophone()) state = await mlkit.readiness();
+  }
+
+  if (state == MlKitReadiness.needsDownload) {
+    debugPrint('[stt] ML Kit 모델을 내려받는다');
+    mlkitDownloadPercent.value = 0;
+    try {
+      state = await mlkit.ensure(
+        onProgress: (percent) => mlkitDownloadPercent.value = percent,
+      );
+    } finally {
+      mlkitDownloadPercent.value = null;
+    }
+    debugPrint('[stt] 내려받기 끝 — 상태=$state');
+  }
+
+  mlkitReadiness.value = state;
+  if (state != MlKitReadiness.ready) {
+    debugPrint('[stt] ML Kit을 쓸 수 없다($state)');
+  }
+  return state;
+}
+
+/// 영상에서 16kHz 모노 WAV를 뽑아 전사한다. WAV는 쓰고 지운다.
+///
+/// **폴백이 없다.** 예전에는 whisper가 뒤를 받쳤지만 지웠다 — 같은 영상에서
+/// ML Kit이 CER 23.3% 대 35.0%로 앞섰고, 2분짜리에서 whisper는 64초 이후
+/// 무너졌으며, 속도도 18초 대 235초였다. 181MiB 모델 에셋도 함께 없앴다.
+///
+/// 그래서 [prepareMlKit]이 실패하면 자막이 없다. 화면이 이유를 알려 줘야 한다
+/// (`CaptionController.message` 참조).
 Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
   final temporary = await getTemporaryDirectory();
   final directory = Directory(
@@ -168,11 +217,19 @@ Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
   await directory.create(recursive: true);
   final wavPath = '${directory.path}${Platform.pathSeparator}audio_16k.wav';
 
-  // 모델을 먼저 확보한다 — 에셋에서 복사하거나 dart-define 경로를 쓴다.
-  final modelPath = await resolveWhisperModel();
   await AndroidAudioExtractor().toPcmWav16k(videoPath, wavPath);
   try {
-    return await WhisperTranscriber(modelPath: modelPath).transcribe(wavPath);
+    final mlkit = MlKitTranscriber();
+    if (await prepareMlKit(mlkit) != MlKitReadiness.ready) return const [];
+
+    final lines = await mlkit.transcribe(wavPath);
+    debugPrint('[stt] 엔진=ML Kit basic, ${lines.length}줄');
+    // 시각은 낱말이 처음 인식된 시점으로 역산한 근사치다. 싱크가 밀리는지
+    // 눈으로 판단할 수 있게 앞 몇 줄을 찍는다.
+    for (final line in lines.take(5)) {
+      debugPrint('[stt]   ${line.startMs}~${line.endMs}ms "${line.text}"');
+    }
+    return lines;
   } finally {
     final wav = File(wavPath);
     if (wav.existsSync()) await wav.delete();
