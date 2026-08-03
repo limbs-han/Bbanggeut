@@ -404,6 +404,7 @@ class _HomeHeader extends StatelessWidget {
             width: 100,
             height: 102,
             fit: BoxFit.contain,
+            cacheWidth: decodePixels(context, 102),
           ),
         ),
         Positioned(

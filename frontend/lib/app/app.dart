@@ -12,6 +12,7 @@ import '../ui/invitation_inbox_screen.dart';
 import '../ui/main_shell.dart';
 import '../ui/onboarding_screen.dart';
 import '../ui/video_detail_screen.dart';
+import '../ui/widgets.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
 
@@ -361,6 +362,7 @@ class _SplashScreen extends StatelessWidget {
                 'assets/images/bbanggeut_logo.png',
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
+                cacheWidth: decodePixels(context, 240),
                 semanticLabel: '빵긋 로딩 로고',
               ),
             ),

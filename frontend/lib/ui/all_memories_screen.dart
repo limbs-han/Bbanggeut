@@ -42,16 +42,24 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     _loadEditorLists();
   }
 
+  /// 초안 목록과 완성본 목록은 서로의 결과를 쓰지 않는다. 차례로 부르면
+  /// 왕복이 한 번 더 늘고, 그 시간만큼 '편집 중'·'편집 완료' 탭이 비어 있다.
   Future<void> _loadEditorLists() async {
     if (!EditRecommendationClient.networkAllowed) return;
-    try {
-      final drafts = await _editClient.listDrafts();
-      if (mounted) setState(() => _drafts = drafts);
-    } catch (_) {}
-    try {
-      final edited = await _editClient.listEditedVideos();
-      if (mounted) setState(() => _edited = edited);
-    } catch (_) {}
+    await Future.wait([
+      _editClient
+          .listDrafts()
+          .then((drafts) {
+            if (mounted) setState(() => _drafts = drafts);
+          })
+          .catchError((Object _) {}),
+      _editClient
+          .listEditedVideos()
+          .then((edited) {
+            if (mounted) setState(() => _edited = edited);
+          })
+          .catchError((Object _) {}),
+    ]);
   }
 
   VideoMemory? _videoById(String id) {
@@ -104,8 +112,31 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     super.dispose();
   }
 
+  List<VideoMemory>? _seenVideos;
+  bool? _seenLoading;
+  String? _seenError;
+
+  /// 이 화면이 실제로 읽는 값이 바뀌었을 때만 다시 그린다.
+  ///
+  /// **왜 걸러야 하는가**: [AppController]는 즐겨찾기·기기 상태·바쁨 표시 등
+  /// 무엇이 바뀌어도 같은 알림 하나를 보낸다. 이 화면은 다른 탭에 가려져
+  /// 있어도 알림을 받는데, [IndexedStack]은 가려진 자식도 배치까지 마친다 —
+  /// 홈 탭에서 기기 상태를 새로 읽을 때마다 보이지도 않는 영상 목록이 통째로
+  /// 다시 세워지고 있었다. 목록·로딩·오류만 보고, 그대로면 넘긴다.
   void _refresh() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final videos = widget.controller.videos;
+    final loading = widget.controller.videosLoading;
+    final error = widget.controller.videosError;
+    if (identical(videos, _seenVideos) &&
+        loading == _seenLoading &&
+        error == _seenError) {
+      return;
+    }
+    _seenVideos = videos;
+    _seenLoading = loading;
+    _seenError = error;
+    setState(() {});
   }
 
   List<VideoMemory> get _items {

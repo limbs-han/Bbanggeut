@@ -76,7 +76,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('로그인 비밀번호를 기본 숨김 처리하고 지정된 간편 로그인만 표시한다', (tester) async {
+  testWidgets('로그인 비밀번호를 기본 숨김 처리하고 간편 로그인은 표시하지 않는다', (tester) async {
     final controller = AppController();
     await tester.pumpWidget(
       MaterialApp(
@@ -91,8 +91,9 @@ void main() {
     );
     expect(tester.widget<TextField>(passwordField).obscureText, isTrue);
     expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
-    expect(find.text('Google'), findsOneWidget);
-    expect(find.text('카카오'), findsOneWidget);
+    expect(find.text('또는 간편 로그인'), findsNothing);
+    expect(find.text('Google'), findsNothing);
+    expect(find.text('카카오'), findsNothing);
     expect(find.text('Apple'), findsNothing);
 
     await tester.tap(find.byIcon(Icons.visibility_off_outlined));
@@ -267,6 +268,35 @@ void main() {
       findsOneWidget,
       reason: '펼친 탭이 사라지면 되돌아올 때 스크롤 위치가 초기화된다',
     );
+    controller.dispose();
+  });
+
+  testWidgets('다른 탭에서 뒤로가기를 누르면 앱을 나가지 않고 홈으로 돌아온다', (tester) async {
+    final controller = AppController(api: _FakeApiClient());
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: MainShell(controller: controller),
+      ),
+    );
+
+    final navigation = find.byKey(const ValueKey('main-bottom-navigation'));
+    int selectedTab() => tester.widget<NavigationBar>(navigation).selectedIndex;
+
+    for (final tab in ['캘린더', '추억', '가족', '설정']) {
+      await tester.tap(find.descendant(of: navigation, matching: find.text(tab)));
+      await tester.pumpAndSettle();
+      expect(selectedTab(), isNot(2), reason: '$tab 탭으로 옮겨지지 않았다');
+
+      // 시스템 뒤로가기. 가로채지 않으면 여기서 앱이 그대로 닫힌다.
+      final popped = await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(popped, isTrue, reason: '$tab 탭에서 뒤로가기가 앱을 닫았다');
+      expect(selectedTab(), 2, reason: '$tab 탭에서 뒤로가기가 홈으로 오지 않았다');
+    }
+
+    // 홈에서는 가로채지 않는다 — 뒤로가기로 앱을 나가는 것은 기본 기대다.
+    expect(await tester.binding.handlePopRoute(), isFalse);
     controller.dispose();
   });
 
