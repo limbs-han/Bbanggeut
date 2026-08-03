@@ -64,6 +64,76 @@ class LiveViewingScreen extends StatelessWidget {
   );
 }
 
+/// 왼쪽 위 LIVE 표시등.
+///
+/// 빨간 불이 켜져 있으면 지금 보는 그림이 **실시간 맨 앞**이라는 뜻이고,
+/// 꺼져 있으면 화면이 멈췄거나 지연이 쌓여 뒤처졌다는 뜻이다. 뒤처졌을 때
+/// 누르면 맨 앞으로 다시 당긴다 — WebRTC 라이브에는 되감기 버퍼가 없어서
+/// "맨 앞으로 간다"는 곧 재생 연결을 다시 맺는 일이다.
+///
+/// 작은 화면과 전체 화면이 **같은 위젯**을 쓴다. 두 곳에서 불빛의 뜻이
+/// 달라지면 그 표시는 믿을 수 없는 표시가 된다.
+class LiveEdgeChip extends StatelessWidget {
+  const LiveEdgeChip({
+    super.key,
+    required this.atLiveEdge,
+    required this.label,
+    required this.onTap,
+  });
+
+  /// 빨간 불을 켤지.
+  final bool atLiveEdge;
+  final String label;
+
+  /// null이면 지금은 누를 수 없다(이미 맨 앞이거나 연결하는 중).
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: atLiveEdge ? const Color(0xDDD32F2F) : const Color(0xB32D312B),
+    borderRadius: BorderRadius.circular(99),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              key: const Key('live-edge-lamp'),
+              duration: const Duration(milliseconds: 220),
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                // 켜졌을 때는 빨간 바탕 위의 흰 불, 꺼졌을 때는 어두운
+                // 바탕 위의 식은 빨강 — 한눈에 켜짐/꺼짐이 갈린다.
+                color: atLiveEdge
+                    ? Colors.white
+                    : const Color(0xFF7A4B45),
+                boxShadow: atLiveEdge
+                    ? const [
+                        BoxShadow(color: Color(0x88FFFFFF), blurRadius: 6),
+                      ]
+                    : const [],
+              ),
+            ),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: TextStyle(
+                color: atLiveEdge ? Colors.white : Colors.white70,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     with WidgetsBindingObserver {
   StreamSession? session;
@@ -85,7 +155,21 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   bool talkbackBusy = false;
   Future<void>? preferredPlayerFuture;
 
+  /// 실시간 맨 앞으로 다시 붙는 중. 이때 끊기는 것은 고장이 아니라 우리가
+  /// 일부러 끊은 것이라 "연결이 끊어졌습니다"를 띄우면 안 된다.
+  bool resyncing = false;
+
   bool get hasPlayback => whepPlayer.connected;
+
+  /// 지금 보는 그림이 실시간 맨 앞인가. LIVE 표시등이 이것을 그린다.
+  bool get atLiveEdge => hasPlayback && !paused && whepPlayer.atLiveEdge;
+
+  String get liveChipLabel {
+    if (paused) return 'LIVE로 돌아가기';
+    if (!started) return 'LIVE 준비';
+    if (!hasPlayback) return connecting ? 'LIVE 연결 중' : 'LIVE 다시 연결';
+    return atLiveEdge ? 'LIVE' : '실시간으로';
+  }
 
   /// 세션을 만든 순간부터 첫 프레임까지가 전부 "준비 중"이다. 이 동안 재생
   /// 버튼이 살아 있으면 조급한 탭이 _restart()로 이어져 진행 중이던 워밍업을
@@ -112,7 +196,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       setState(() => error = null);
       return;
     }
-    if (!webRtcWasConnected || closing) {
+    if (!webRtcWasConnected || closing || resyncing) {
       setState(() {});
       return;
     }
@@ -371,10 +455,42 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
     });
   }
 
+  /// 실시간 맨 앞으로 당긴다. LIVE 표시등을 누르면 이것이 돈다.
+  ///
+  /// **왜 "새로고침"이 곧 실시간인가**: WebRTC 라이브에는 되감기 버퍼가 없다.
+  /// 뒤처졌다는 것은 받고 있는 그림이 늦거나 멈춰 있다는 뜻이라, 맨 앞으로
+  /// 가는 유일한 길은 재생 연결을 다시 맺는 것이다.
+  ///
+  /// 라이브 세션이 아직 살아 있으면 **그 세션에 다시 붙기만** 한다. 세션까지
+  /// 새로 만들면 카메라를 깨우는 몇 초를 처음부터 다시 기다려야 한다.
   Future<void> _goLive() async {
-    if (starting || !widget.isActive) return;
-    if (hasPlayback && !paused) return;
-    await _restart();
+    if (starting || closing || resyncing || !widget.isActive) return;
+    if (!started) {
+      await _start();
+      return;
+    }
+    final current = session;
+    if (paused || current == null || !current.isReady) {
+      await _restart();
+      return;
+    }
+    if (atLiveEdge) return;
+
+    setState(() {
+      resyncing = true;
+      error = null;
+    });
+    var reconnected = false;
+    try {
+      await _openPreferredPlayer(current);
+      reconnected = whepPlayer.connected;
+    } catch (_) {
+      reconnected = false;
+    }
+    if (!mounted) return;
+    setState(() => resyncing = false);
+    // 세션이 그새 만료됐을 수 있다. 그때는 처음부터 다시 연다.
+    if (!reconnected) await _restart();
   }
 
   Future<void> _closeForDeviceChange() async {
@@ -422,7 +538,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
             player: whepPlayer,
             title: widget.device.name,
             initialMuted: muted,
-            onReturnToLive: _restart,
+            onGoLive: _goLive,
             onMutedChanged: (value) {
               if (mounted) setState(() => muted = value);
             },
@@ -521,9 +637,11 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                                 color: const Color(0xB33A2C22),
                                 borderRadius: BorderRadius.circular(99),
                               ),
-                              child: const Text(
-                                '카메라를 깨우는 중이에요…',
-                                style: TextStyle(
+                              child: Text(
+                                resyncing
+                                    ? '실시간으로 따라가는 중이에요…'
+                                    : '카메라를 깨우는 중이에요…',
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 13,
                                 ),
@@ -535,33 +653,15 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
                   Positioned(
                     left: 12,
                     top: widget.houseMode ? 30 : 12,
-                    child: InkWell(
+                    child: LiveEdgeChip(
                       key: const Key('live-edge-button'),
-                      borderRadius: BorderRadius.circular(99),
-                      onTap: paused ? _goLive : null,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 11,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: hasPlayback
-                              ? const Color(0xDDD32F2F)
-                              : const Color(0xB32D312B),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: Text(
-                          paused
-                              ? 'LIVE로 돌아가기'
-                              : started
-                              ? '●  LIVE'
-                              : 'LIVE 준비',
-                          style: TextStyle(
-                            color: hasPlayback ? Colors.white : Colors.white70,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
+                      atLiveEdge: atLiveEdge,
+                      label: liveChipLabel,
+                      // 이미 맨 앞이면 누를 것이 없다. 연결하는 중에 누르면
+                      // 진행 중인 워밍업을 처음으로 되돌린다.
+                      onTap: (atLiveEdge || connecting || resyncing)
+                          ? null
+                          : _goLive,
                     ),
                   ),
                   // 발화 중 라이브 소리가 꺼지는 것은 에코 차단을 위한 의도된
@@ -891,14 +991,16 @@ class FullscreenWhepView extends StatefulWidget {
     required this.player,
     required this.title,
     required this.initialMuted,
-    required this.onReturnToLive,
+    required this.onGoLive,
     required this.onMutedChanged,
   });
 
   final WhepPlayerController player;
   final String title;
   final bool initialMuted;
-  final Future<void> Function() onReturnToLive;
+
+  /// 실시간 맨 앞으로 당긴다. 작은 화면의 LIVE 표시등과 같은 동작이다.
+  final Future<void> Function() onGoLive;
   final ValueChanged<bool> onMutedChanged;
 
   @override
@@ -982,9 +1084,30 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
                           icon: const Icon(Icons.close_fullscreen_rounded),
                         ),
                         const SizedBox(width: 10),
+                        // 표시등은 작은 화면과 같은 자리(왼쪽 위), 같은 위젯,
+                        // 같은 동작이다. 재생기가 실시간 상태를 알려 주므로
+                        // 그것만 듣고 이 조각만 다시 그린다.
+                        ListenableBuilder(
+                          listenable: widget.player,
+                          builder: (context, _) {
+                            final atLiveEdge = widget.player.atLiveEdge;
+                            return LiveEdgeChip(
+                              key: const Key('fullscreen-live-edge-button'),
+                              atLiveEdge: atLiveEdge,
+                              label: atLiveEdge ? 'LIVE' : '실시간으로',
+                              onTap: atLiveEdge
+                                  ? null
+                                  : () async {
+                                      await widget.onGoLive();
+                                      if (mounted) _scheduleControlsHide();
+                                    },
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '${widget.title} · WebRTC LIVE',
+                            widget.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1029,30 +1152,17 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
                   alignment: Alignment.bottomLeft,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        TextButton.icon(
-                          key: const Key('fullscreen-live-edge-button'),
-                          onPressed: () async {
-                            await widget.onReturnToLive();
-                            if (mounted) _scheduleControlsHide();
-                          },
-                          style: TextButton.styleFrom(
-                            backgroundColor: const Color(0xCCFFF9F5),
-                            foregroundColor: const Color(0xFFE53935),
-                          ),
-                          icon: const Icon(Icons.circle, size: 9),
-                          label: const Text(
-                            'LIVE',
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
+                    child: ListenableBuilder(
+                      listenable: widget.player,
+                      builder: (context, _) => Text(
+                        widget.player.atLiveEdge
+                            ? 'WebRTC 실시간 · 되감기 없음'
+                            : '실시간에서 벗어났어요 · 위 LIVE를 눌러 따라잡기',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'WebRTC 실시간 · DVR 미지원',
-                          style: TextStyle(color: Colors.white70, fontSize: 11),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

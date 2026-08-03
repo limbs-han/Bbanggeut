@@ -82,6 +82,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     width: 104,
                     height: 42,
                     fit: BoxFit.contain,
+                    cacheWidth: decodePixels(context, 104),
                   ),
                   const Spacer(),
                   if (_page != _pages.length - 1)
@@ -313,6 +314,7 @@ class _Visual extends StatelessWidget {
           'assets/images/family_network_cutout.png',
           width: 365,
           fit: BoxFit.contain,
+          cacheWidth: decodePixels(context, 365),
         ),
       );
     }
@@ -343,6 +345,7 @@ class _Visual extends StatelessWidget {
             'assets/images/bbanggeut_mascot.png',
             width: type == _OnboardingVisual.ready ? 300 : 275,
             fit: BoxFit.contain,
+            cacheWidth: decodePixels(context, 300),
           ),
         ],
       ),

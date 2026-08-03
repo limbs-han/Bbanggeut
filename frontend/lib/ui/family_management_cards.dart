@@ -624,6 +624,7 @@ class _InviteEnvelopeDecoration extends StatelessWidget {
     'assets/images/family_invite_envelope.png',
     width: 102,
     fit: BoxFit.contain,
-    filterQuality: FilterQuality.high,
+    cacheWidth: decodePixels(context, 102),
+    filterQuality: FilterQuality.medium,
   );
 }

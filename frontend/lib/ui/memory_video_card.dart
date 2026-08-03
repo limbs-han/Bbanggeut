@@ -22,13 +22,18 @@ class MemoryVideoCard extends StatelessWidget {
   final VoidCallback? onChanged;
   final VoidCallback? onDeleted;
 
+  /// 형식 하나를 만들 때마다 패턴을 파싱하고 로케일을 찾는다. 목록을 넘길 때
+  /// 카드마다 두 개씩 새로 만들던 것을 한 번만 만들어 나눠 쓴다.
+  static final _dayTime = DateFormat('M월 d일 HH:mm');
+  static final _time = DateFormat('HH:mm');
+
   DateTime get _start =>
       video.capturedStartAt ?? video.createdAt ?? DateTime.now();
 
   String get _timeRange {
-    final end = _start.add(const Duration(minutes: 2));
-    return '${DateFormat('M월 d일 HH:mm').format(_start)}'
-        ' - ${DateFormat('HH:mm').format(end)}';
+    final start = _start;
+    final end = start.add(const Duration(minutes: 2));
+    return '${_dayTime.format(start)} - ${_time.format(end)}';
   }
 
   Future<void> _toggleFavorite(BuildContext context) async {
