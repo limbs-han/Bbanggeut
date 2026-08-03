@@ -69,6 +69,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   final Map<String, EditRecommendation> _presetRecommendations = {};
   bool _recommendationLoading = false;
 
+  /// 서버가 이 영상을 분석하는 동안 true. AI 컷 칩은 그동안 흐리게 잠긴다.
+  bool _analysisRunning = false;
+  Timer? _analysisPollTimer;
+  bool _analysisPollBusy = false;
+
   /// 렌더링 진행률(0~1). 네이티브에서 주기적으로 읽어 온다. null이면 아직 모른다.
   double? _exportProgress;
   Timer? _exportProgressTimer;
@@ -183,8 +188,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         final seconds = nextProjectController.project.durationMs / 1000;
         recommendationStatus =
             '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · 줌 ${nextProjectController.project.zoomSegments.length}개';
-      } catch (_) {
-        recommendationStatus = '자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요';
+      } catch (failure) {
+        if (EditRecommendationClient.isAnalysisRequired(failure)) {
+          // 서버는 있는데 이 영상은 처음 본다 — 원본을 올려 분석시키고,
+          // 끝나면 스낵바로 알린 뒤 AI 컷과 자동 줌을 연다.
+          recommendationStatus = 'AI가 영상을 분석하고 있어요';
+          unawaited(_beginServerAnalysis(sourcePath));
+        } else {
+          recommendationStatus = '자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요';
+        }
       }
     }
 
@@ -242,6 +254,106 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     } finally {
       if (mounted) setState(() => _recommendationLoading = false);
     }
+  }
+
+  /// 원본을 편집 서버에 올려 분석을 시작하고 2초마다 상태를 확인한다.
+  /// 그동안 AI 컷 칩은 잠기고, 끝나면 자동 추천(컷+자동 줌)을 적용한 뒤
+  /// 스낵바로 알린다. 실패해도 수동 편집은 그대로 계속된다.
+  Future<void> _beginServerAnalysis(String sourcePath) async {
+    if (_analysisRunning) return;
+    _analysisRunning = true;
+    _recommendationLoading = true;
+    try {
+      final status = await _recommendations.requestAnalysis(
+        videoId: widget.video.id,
+        filePath: sourcePath,
+      );
+      if (!mounted) return;
+      if (status.isDone) {
+        await _finishServerAnalysis();
+        return;
+      }
+      if (status.isFailed) {
+        _failServerAnalysis(status.error);
+        return;
+      }
+      showAppSnack(context, 'AI가 영상을 분석하고 있어요 — 끝나면 알려드릴게요');
+      _analysisPollTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _pollServerAnalysis(),
+      );
+    } catch (_) {
+      _failServerAnalysis(null);
+    }
+  }
+
+  Future<void> _pollServerAnalysis() async {
+    if (_analysisPollBusy) return;
+    _analysisPollBusy = true;
+    try {
+      final status = await _recommendations.analysisStatus(widget.video.id);
+      if (!mounted) return;
+      if (status.isDone) {
+        await _finishServerAnalysis();
+      } else if (status.isFailed || status.status == 'none') {
+        // none은 분석 도중 서버가 재시작해 작업이 사라진 경우다.
+        _failServerAnalysis(status.error);
+      }
+      // running이면 다음 폴링까지 기다린다.
+    } catch (_) {
+      // 일시적 오류는 다음 폴링에서 다시 확인한다.
+    } finally {
+      _analysisPollBusy = false;
+    }
+  }
+
+  Future<void> _finishServerAnalysis() async {
+    _stopServerAnalysis();
+    try {
+      final recommendation = await _recommendations.recommend(
+        videoId: widget.video.id,
+        capturedAt: widget.video.capturedStartAt,
+      );
+      final controller = _projectController;
+      if (!mounted || controller == null) return;
+      controller.applyRecommendation(recommendation);
+      if (const {
+        'short',
+        'medium',
+        'long',
+      }.contains(recommendation.durationPreset)) {
+        _presetRecommendations[recommendation.durationPreset] = recommendation;
+      }
+      _editState.markExternalEditApplied();
+      setState(() => _recommendationLoading = false);
+      showAppSnack(context, 'AI 분석이 끝났어요 — AI 컷과 자동 줌을 쓸 수 있어요');
+      await _seekToPosition(controller.project.playheadMs);
+      unawaited(_loadPresetRecommendations());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _recommendationLoading = false);
+      showAppSnack(context, 'AI 추천을 불러오지 못했어요', error: true);
+    }
+  }
+
+  void _failServerAnalysis(String? error) {
+    _stopServerAnalysis();
+    if (!mounted) return;
+    setState(() => _recommendationLoading = false);
+    showAppSnack(
+      context,
+      error == null || error.isEmpty
+          ? 'AI 분석에 실패했어요 — 수동 편집은 계속할 수 있어요'
+          : 'AI 분석 실패: $error',
+      error: true,
+    );
+  }
+
+  void _stopServerAnalysis() {
+    _analysisPollTimer?.cancel();
+    _analysisPollTimer = null;
+    _analysisRunning = false;
+    _analysisPollBusy = false;
   }
 
   Future<void> _selectRecommendationPreset(String preset) async {
@@ -938,6 +1050,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _textInput.dispose();
     _textFocus.dispose();
     _stopExportProgressPolling();
+    _stopServerAnalysis();
     final preview = _preview;
     if (preview != null) {
       preview.removeListener(_onPreviewChanged);

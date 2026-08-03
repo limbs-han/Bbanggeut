@@ -1,8 +1,27 @@
 # 모바일 자동 영상 편집기 현행 구현·검증 계획
 
 최초 작성일: 2026-08-01  
-현행화: 2026-08-02  
+현행화: 2026-08-03  
 기준 시간대: Asia/Seoul (KST)
+
+### 2026-08-03 세션에서 해결한 것 (브랜치 `refactor/repo/move-video-editor`)
+
+1. **`ai/video_editor/` → 최상위 `video_editor/` 이동**: ai/는 AIOT 기기
+   전용으로 정리. 임포트는 `video_editor.*`, 도커 명령은
+   `-f video_editor/docker-compose.local.yml`로 바뀌었다.
+2. **임의 영상 서버 분석 파이프라인**: 편집 진입 시 fixture에 없는 영상이면
+   앱이 원본을 `PUT /v1/edit-analyses/<videoId>`로 올리고, 서버가
+   음량→YAMNet→영상→표정을 백그라운드로 분석(작업자 1명, 상태는
+   `GET /v1/edit-analyses/<videoId>` 폴링). 끝나면 앱이 스낵바
+   "AI 분석이 끝났어요"를 띄우고 자동 추천(컷+자동 줌)을 적용하며 AI 컷
+   칩이 열린다. 분석 중에는 칩이 `_recommendationLoading`으로 잠긴다.
+   실측: 2분 영상 15~19초, 5분 데모 영상 64초(개발 PC, Docker 밖).
+3. **모델 준비**: `video_editor/models/`(Git 미추적)에 yamnet.tflite,
+   blaze_face_full_range.tflite, face_landmarker.task를 둔다. 없으면
+   `/health`의 `analysis=false`, 분석 요청은 503, fixture 5개는 계속 동작.
+4. 프론트 낡은 TODO 정리(비밀번호 API 계약 주석화, 죽은 ContentNotification
+   삭제), 검증: flutter analyze 무결점, flutter test 155개, python unittest
+   31개 통과.
 
 ## 0. 세션 인수인계 요약
 

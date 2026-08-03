@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -12,10 +13,11 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .adaptive_cli import build_adaptive_recipe
+from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
 
 
 FIXTURE_ROOT = Path(
@@ -146,7 +148,7 @@ class RecipeStore:
         return items
 
 
-app = FastAPI(title="William James Local Video Editor", version="1.0.0")
+app = FastAPI(title="William James Local Video Editor", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -154,11 +156,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 store = RecipeStore()
+jobs = AnalysisJobManager(
+    save=lambda video_id, kind, payload: store.put(
+        f"edit-analyses/{video_id}/{kind}.json", payload
+    )
+)
+
+
+def _load_cached_analyses(video_id: str) -> dict[str, dict[str, Any]] | None:
+    """MinIO에 저장된 4종 분석 결과. 하나라도 없으면 None."""
+    analyses: dict[str, dict[str, Any]] = {}
+    for kind in ANALYSIS_KINDS:
+        payload = store.get_json(f"edit-analyses/{video_id}/{kind}.json")
+        if payload is None:
+            return None
+        analyses[kind] = payload
+    return analyses
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "fixtures": len(FIXTURE_PRESETS)}
+    ready, reason = analysis_ready()
+    return {
+        "status": "ok",
+        "fixtures": len(FIXTURE_PRESETS),
+        "analysis": ready,
+        "analysisUnavailableReason": reason,
+    }
 
 
 @app.get("/v1/fixtures")
@@ -171,12 +195,44 @@ def fixtures() -> dict[str, Any]:
     }
 
 
+def _build_analyzed_recommendation(
+    request: RecommendationRequest, analyses: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    preset = request.duration_preset or "auto"
+    if preset not in {"auto", "short", "medium", "long"}:
+        raise ValueError("durationPreset must be auto, short, medium, or long")
+    recipe = build_adaptive_recipe(
+        analyses["yamnet"],
+        analyses["audio"],
+        analyses["video"],
+        analyses["expression"],
+        duration_preset=preset,
+        zoom_enabled=request.zoom_enabled,
+    )
+    recipe["videoId"] = request.video_id
+    recipe["analyzed"] = True
+    return recipe
+
+
 @app.post("/v1/edit-recommendations")
 def recommend(request: RecommendationRequest) -> dict[str, Any]:
     try:
         recipe = build_fixture_recommendation(request)
-    except (KeyError, FileNotFoundError) as failure:
-        raise HTTPException(status_code=404, detail=str(failure)) from failure
+    except (KeyError, FileNotFoundError):
+        # 검증 fixture가 아닌 영상 — 업로드해서 분석한 결과가 있으면 그걸 쓴다.
+        analyses = _load_cached_analyses(request.video_id)
+        if analyses is None:
+            job = jobs.get(request.video_id)
+            detail = (
+                "analysis-running"
+                if job is not None and job.status == "running"
+                else "analysis-required"
+            )
+            raise HTTPException(status_code=404, detail=detail) from None
+        try:
+            recipe = _build_analyzed_recommendation(request, analyses)
+        except ValueError as failure:
+            raise HTTPException(status_code=422, detail=str(failure)) from failure
     except ValueError as failure:
         raise HTTPException(status_code=422, detail=str(failure)) from failure
     object_key = f"edit-projects/{request.video_id}/auto-v1.json"
@@ -185,6 +241,45 @@ def recommend(request: RecommendationRequest) -> dict[str, Any]:
     except (BotoCoreError, ClientError, OSError) as failure:
         raise HTTPException(status_code=503, detail=f"MinIO 저장 실패: {failure}") from failure
     return {"recipe": recipe, "storedObjectKey": object_key}
+
+
+@app.put("/v1/edit-analyses/{video_id}")
+async def request_analysis(video_id: str, request: Request) -> JSONResponse:
+    """원본 영상을 통째로 받아 백그라운드 분석을 시작한다.
+
+    앱은 편집 진입 시 로컬에 이미 받아 둔 원본을 그대로 올린다(localhost라
+    수 초). 202를 받으면 GET으로 상태를 폴링한다. 이미 분석돼 있으면 즉시
+    done을 돌려준다.
+    """
+    running = jobs.get(video_id)
+    if running is not None and running.status == "running":
+        return JSONResponse(status_code=202, content=running.snapshot())
+    if _load_cached_analyses(video_id) is not None:
+        return JSONResponse(
+            content={"videoId": video_id, "status": "done", "progress": 1.0}
+        )
+    ready, reason = analysis_ready()
+    if not ready:
+        raise HTTPException(status_code=503, detail=f"분석 불가: {reason}")
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=422, detail="empty body")
+    upload_dir = Path(tempfile.gettempdir()) / "wj-edit-analysis"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    video_path = upload_dir / f"{video_id}.mp4"
+    video_path.write_bytes(data)
+    job = jobs.submit(video_id, video_path)
+    return JSONResponse(status_code=202, content=job.snapshot())
+
+
+@app.get("/v1/edit-analyses/{video_id}")
+def analysis_status(video_id: str) -> dict[str, Any]:
+    job = jobs.get(video_id)
+    if job is not None:
+        return job.snapshot()
+    if _load_cached_analyses(video_id) is not None:
+        return {"videoId": video_id, "status": "done", "progress": 1.0}
+    return {"videoId": video_id, "status": "none", "progress": 0.0}
 
 
 @app.put("/v1/edit-projects/{video_id}")

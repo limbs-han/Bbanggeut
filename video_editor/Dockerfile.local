@@ -3,9 +3,15 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# opencv(mediapipe 의존)가 쓰는 공유 라이브러리
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-COPY requirements-service.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY requirements-service.txt requirements-analysis.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements-service.txt -r /tmp/requirements-analysis.txt
+# models/ 디렉터리(Git 미추적)도 함께 들어간다 — README의 모델 준비 절차 참고.
 COPY . /app/video_editor
 
 EXPOSE 18080

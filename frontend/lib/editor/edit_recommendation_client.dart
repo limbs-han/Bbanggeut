@@ -40,6 +40,33 @@ class EditRecommendation {
   final List<Map<String, dynamic>> scoreTimeline;
 }
 
+/// 서버 분석 작업 상태. `none`(분석한 적 없음) → `running` → `done`/`failed`.
+class EditAnalysisStatus {
+  const EditAnalysisStatus({
+    required this.status,
+    this.progress = 0,
+    this.stage,
+    this.error,
+  });
+
+  factory EditAnalysisStatus.fromJson(Map<String, dynamic> json) =>
+      EditAnalysisStatus(
+        status: json['status'] as String? ?? 'none',
+        progress: (json['progress'] as num?)?.toDouble() ?? 0,
+        stage: json['stage'] as String?,
+        error: json['error'] as String?,
+      );
+
+  final String status;
+  final double progress;
+  final String? stage;
+  final String? error;
+
+  bool get isDone => status == 'done';
+  bool get isRunning => status == 'running';
+  bool get isFailed => status == 'failed';
+}
+
 class EditRecommendationClient {
   /// 위젯 테스트에서 화면이 initState에서 이 클라이언트를 부르면 Dio 타이머가
   /// 남아 테스트가 깨진다. flutter test는 FLUTTER_TEST 환경 변수를 세운다 —
@@ -81,6 +108,41 @@ class EditRecommendationClient {
       },
     );
     return EditRecommendation.fromJson(response.data!);
+  }
+
+  /// recommend가 이 실패로 끝났으면 서버는 살아 있지만 이 영상의 분석
+  /// 결과가 아직 없다는 뜻이다 — 원본을 올려 분석을 시작하면 된다.
+  /// (연결 자체가 안 되는 실패는 response가 없어서 여기 걸리지 않는다.)
+  static bool isAnalysisRequired(Object failure) =>
+      failure is DioException && failure.response?.statusCode == 404;
+
+  /// 로컬에 받아 둔 원본을 서버에 올려 백그라운드 분석을 시작한다.
+  /// 이미 분석돼 있으면 서버가 곧바로 done을 돌려준다.
+  Future<EditAnalysisStatus> requestAnalysis({
+    required String videoId,
+    required String filePath,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final file = File(filePath);
+    final length = await file.length();
+    final response = await _dio.put<Map<String, dynamic>>(
+      '/v1/edit-analyses/$videoId',
+      data: file.openRead(),
+      options: Options(
+        headers: {Headers.contentLengthHeader: length},
+        contentType: 'video/mp4',
+        sendTimeout: const Duration(minutes: 5),
+      ),
+      onSendProgress: onProgress,
+    );
+    return EditAnalysisStatus.fromJson(response.data!);
+  }
+
+  Future<EditAnalysisStatus> analysisStatus(String videoId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/v1/edit-analyses/$videoId',
+    );
+    return EditAnalysisStatus.fromJson(response.data!);
   }
 
   Future<void> saveProject({
