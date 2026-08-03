@@ -71,6 +71,32 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
         self.assertIn('kill -KILL "$pid"', cleanup)
         self.assertNotIn("wait 2>/dev/null", cleanup)
 
+    def test_yolo_runtime_is_selected_before_workers_start(self) -> None:
+        selection = self.script.index('YOLO_SELECTOR_COMMAND=(')
+        yamnet_launch = self.script.index("start_yamnet")
+        yolo_model_argument = self.script.index(
+            '--model "$YOLO_SELECTED_MODEL"'
+        )
+
+        self.assertLess(selection, yamnet_launch)
+        self.assertLess(selection, yolo_model_argument)
+
+    def test_yolo_auto_runtime_has_explicit_pytorch_fallback(self) -> None:
+        self.assertIn(': "${YOLO_RUNTIME:=auto}"', self.script)
+        self.assertIn(
+            ': "${YOLO_PYTORCH_MODEL_PATH:=${SCRIPT_DIR}/yolov8n.pt}"',
+            self.script,
+        )
+        self.assertIn(
+            '"${SCRIPT_DIR}/yolo_runtime_selector.py"',
+            self.script,
+        )
+        self.assertIn(
+            '--result-file "$YOLO_SELECTION_FILE"',
+            self.script,
+        )
+        self.assertIn("forcing PyTorch fallback", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

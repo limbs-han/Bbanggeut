@@ -1067,6 +1067,10 @@ def run(args: argparse.Namespace) -> None:
     last_trigger_scan_at = float("-inf")
 
     print(f"Model: {model_path}")
+    print(
+        "Model runtime: "
+        + ("TensorRT" if model_path.suffix.lower() == ".engine" else "PyTorch")
+    )
     print(f"Device: {device}")
     if device != "cpu":
         print(f"CUDA device: {torch.cuda.get_device_name(int(device))}")

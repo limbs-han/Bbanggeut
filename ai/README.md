@@ -284,10 +284,12 @@ ai/
 │   ├── run_ai_stack.sh
 │   ├── run_edge_ai_recording.sh
 │   ├── run_yolo_rtsp_validation.sh
+│   ├── yolo_runtime_selector.py
 │   ├── validate_jetson_release.sh
 │   ├── requirements-autoframe-jetson.txt
 │   ├── requirements-servo-controller.txt
 │   ├── test_autoframe_logic.py
+│   ├── test_yolo_runtime_selector.py
 │   ├── test_servo_controller.py
 │   ├── test_event_fusion.py
 │   ├── test_segment_clip_uploader.py
