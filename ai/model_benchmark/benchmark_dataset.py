@@ -16,7 +16,12 @@ SCHEMA_VERSION = "0.1"
 SAMPLE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,95}$")
 ALLOWED_SPLITS = {"train", "validation", "test"}
 ALLOWED_CONDITIONS = {
+    "ambient-noise",
+    "baby-laughter",
+    "conversation",
+    "daily-noise",
     "empty",
+    "external-generalization",
     "single-person",
     "two-people",
     "movement",
@@ -24,8 +29,14 @@ ALLOWED_CONDITIONS = {
     "low-light",
     "laughter",
     "laughter-with-clap",
+    "music",
+    "multiple-laughter",
+    "quiet-office",
+    "single-impact",
+    "small-laughter",
     "speech",
     "consecutive-clap",
+    "television-laughter",
     "tv-playback",
 }
 
@@ -100,6 +111,10 @@ def add_sample(
     conditions: list[str],
     labels: list[str],
     notes: str | None,
+    duration_seconds: float | None = None,
+    session_id: str | None = None,
+    source_dataset: str | None = None,
+    source_license: str | None = None,
 ) -> dict[str, Any]:
     if not SAMPLE_ID_PATTERN.fullmatch(sample_id):
         raise ValueError(
@@ -110,6 +125,14 @@ def add_sample(
     unsupported = sorted(set(conditions) - ALLOWED_CONDITIONS)
     if unsupported:
         raise ValueError(f"unsupported conditions: {', '.join(unsupported)}")
+    if duration_seconds is not None and duration_seconds <= 0:
+        raise ValueError("duration seconds must be positive")
+    if session_id is not None and not SAMPLE_ID_PATTERN.fullmatch(session_id):
+        raise ValueError(
+            "session ID must use lowercase letters, numbers, dots, underscores or hyphens"
+        )
+    if bool(source_dataset) != bool(source_license):
+        raise ValueError("source dataset and source license must be provided together")
 
     root = root.resolve()
     media_path = media_path.resolve()
@@ -142,8 +165,56 @@ def add_sample(
     }
     if notes:
         sample["notes"] = notes
+    if duration_seconds is not None:
+        sample["durationSeconds"] = duration_seconds
+    if session_id is not None:
+        sample["sessionId"] = session_id
+    if source_dataset and source_license:
+        sample["source"] = {
+            "dataset": source_dataset,
+            "license": source_license,
+        }
 
     samples.append(sample)
+    payload["updatedAt"] = utc_now()
+    write_dataset(root, payload)
+    return sample
+
+
+def review_sample(
+    root: Path,
+    sample_id: str,
+    *,
+    status: str,
+    duration_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Record a listening review without changing the media fingerprint."""
+
+    if status not in {"provisional", "verified"}:
+        raise ValueError(f"unsupported review status: {status}")
+    if duration_seconds is not None and duration_seconds <= 0:
+        raise ValueError("duration seconds must be positive")
+    payload = load_dataset(root)
+    samples = payload.get("samples")
+    if not isinstance(samples, list):
+        raise ValueError("samples must be an array")
+    sample = next(
+        (
+            row
+            for row in samples
+            if isinstance(row, dict) and row.get("sampleId") == sample_id
+        ),
+        None,
+    )
+    if sample is None:
+        raise ValueError(f"unknown sample ID: {sample_id}")
+    sample["review"] = {
+        "status": status,
+        "manualReviewRequired": status != "verified",
+        "reviewedAt": utc_now(),
+    }
+    if duration_seconds is not None:
+        sample["durationSeconds"] = duration_seconds
     payload["updatedAt"] = utc_now()
     write_dataset(root, payload)
     return sample
@@ -160,6 +231,7 @@ def validate_dataset(root: Path) -> list[str]:
         return errors + ["samples must be an array"]
 
     seen: set[str] = set()
+    session_splits: dict[str, set[str]] = {}
     resolved_root = root.resolve()
     for index, sample in enumerate(samples):
         prefix = f"samples[{index}]"
@@ -199,6 +271,15 @@ def validate_dataset(root: Path) -> list[str]:
         if split not in ALLOWED_SPLITS:
             errors.append(f"{prefix}.split is invalid: {split!r}")
 
+        session_id = sample.get("sessionId")
+        if session_id is not None:
+            if not isinstance(session_id, str) or not SAMPLE_ID_PATTERN.fullmatch(
+                session_id
+            ):
+                errors.append(f"{prefix}.sessionId is invalid")
+            elif split in ALLOWED_SPLITS:
+                session_splits.setdefault(session_id, set()).add(split)
+
         conditions = sample.get("conditions")
         if not isinstance(conditions, list):
             errors.append(f"{prefix}.conditions must be an array")
@@ -208,6 +289,42 @@ def validate_dataset(root: Path) -> list[str]:
                 errors.append(
                     f"{prefix}.conditions unsupported: {', '.join(unsupported)}"
                 )
+
+        duration = sample.get("durationSeconds")
+        if duration is not None and (
+            not isinstance(duration, (int, float)) or duration <= 0
+        ):
+            errors.append(f"{prefix}.durationSeconds must be positive")
+
+        review = sample.get("review")
+        if not isinstance(review, dict):
+            errors.append(f"{prefix}.review must be an object")
+        elif review.get("status") not in {"provisional", "verified"}:
+            errors.append(f"{prefix}.review.status is invalid")
+        elif (
+            review.get("status") == "verified"
+            and review.get("manualReviewRequired") is not False
+        ):
+            errors.append(
+                f"{prefix}.review.manualReviewRequired must be false when verified"
+            )
+
+        source = sample.get("source")
+        if source is not None and (
+            not isinstance(source, dict)
+            or not isinstance(source.get("dataset"), str)
+            or not source.get("dataset")
+            or not isinstance(source.get("license"), str)
+            or not source.get("license")
+        ):
+            errors.append(f"{prefix}.source is invalid")
+
+    for session_id, splits in sorted(session_splits.items()):
+        if len(splits) > 1:
+            errors.append(
+                f"sessionId {session_id} appears in multiple splits: "
+                f"{', '.join(sorted(splits))}"
+            )
 
     return errors
 
@@ -236,6 +353,32 @@ def print_summary(payload: dict[str, Any]) -> None:
         "sampleCount": len(samples),
         "splits": split_counts,
         "conditions": condition_counts,
+        "labels": {
+            label: sum(
+                1
+                for row in samples
+                if isinstance(row, dict) and label in row.get("labels", [])
+            )
+            for label in sorted(
+                {
+                    label
+                    for row in samples
+                    if isinstance(row, dict)
+                    for label in row.get("labels", [])
+                    if isinstance(label, str)
+                }
+            )
+        },
+        "reviews": {
+            status: sum(
+                1
+                for row in samples
+                if isinstance(row, dict)
+                and isinstance(row.get("review"), dict)
+                and row["review"].get("status") == status
+            )
+            for status in ("provisional", "verified")
+        },
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
@@ -263,7 +406,21 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(ALLOWED_CONDITIONS),
     )
     add_parser.add_argument("--label", action="append", dest="labels", default=[])
+    add_parser.add_argument("--duration-seconds", type=float)
+    add_parser.add_argument("--session-id")
+    add_parser.add_argument("--source-dataset")
+    add_parser.add_argument("--source-license")
     add_parser.add_argument("--notes")
+
+    review_parser = subparsers.add_parser("review")
+    review_parser.add_argument("--dataset-root", type=Path, required=True)
+    review_parser.add_argument("--sample-id", required=True)
+    review_parser.add_argument(
+        "--status",
+        choices=("provisional", "verified"),
+        required=True,
+    )
+    review_parser.add_argument("--duration-seconds", type=float)
 
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("--dataset-root", type=Path, required=True)
@@ -289,8 +446,23 @@ def main() -> int:
                 conditions=args.conditions,
                 labels=args.labels,
                 notes=args.notes,
+                duration_seconds=args.duration_seconds,
+                session_id=args.session_id,
+                source_dataset=args.source_dataset,
+                source_license=args.source_license,
             )
             print(f"PASS: added sample {sample['sampleId']}")
+        elif args.command == "review":
+            sample = review_sample(
+                root,
+                args.sample_id,
+                status=args.status,
+                duration_seconds=args.duration_seconds,
+            )
+            print(
+                f"PASS: reviewed {sample['sampleId']} "
+                f"status={sample['review']['status']}"
+            )
         elif args.command == "validate":
             errors = validate_dataset(root)
             if errors:

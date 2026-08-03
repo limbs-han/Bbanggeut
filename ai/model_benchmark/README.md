@@ -133,13 +133,62 @@ bash ai/model_benchmark/run_yolo_accuracy_comparison.sh
 조정할 수 있습니다. 시험 후에는 사용자가 명시적으로 운영 서비스를 다시
 시작해야 합니다.
 
+## 웃음·연속 박수 모델 비교
+
+세 후보(YAMNet TFLite, EfficientAT MN10, PANNs CNN10)는 동일한 WAV와
+0.975초 창을 사용해 웃음과 박수 점수를 한 번에 생성합니다. 임계값은
+validation에서만 선택하며 test에는 고정합니다. 선택 우선순위는 시간당
+오탐 이벤트, Recall 0.85 충족 여부, Macro F1, P95 지연시간 순입니다.
+
+원본 음성은 Jetson 로컬에만 두고 Git에는 매니페스트 구조와 실행 코드만
+저장합니다.
+
+```bash
+# 앱 연결·상시 녹화·이벤트 업로드·서보를 중단하고 로컬 RTSP만 유지
+bash ai/model_benchmark/audio_benchmark_services.sh isolate
+
+# validation 60개 + test 60개 수집 계획 생성
+python3 ai/model_benchmark/audio_dataset_capture.py init \
+  --dataset-root ~/ai_datasets/model_benchmark/office-audio-events-v1
+
+python3 ai/model_benchmark/audio_dataset_capture.py capture \
+  --dataset-root ~/ai_datasets/model_benchmark/office-audio-events-v1 \
+  --split validation
+
+python3 ai/model_benchmark/audio_dataset_capture.py capture \
+  --dataset-root ~/ai_datasets/model_benchmark/office-audio-events-v1 \
+  --split test
+
+# 오탐/시간 검증용 4개 × 15분 연속 음성
+python3 ai/model_benchmark/audio_negative_capture.py \
+  --dataset-root ~/ai_datasets/model_benchmark/office-audio-events-v1
+
+# ESC-50 v2.0.0을 고정 커밋·체크섬으로 내려받아 test에 추가
+python3 ai/model_benchmark/prepare_esc50_audio_benchmark.py \
+  --dataset-root ~/ai_datasets/model_benchmark/office-audio-events-v1 \
+  --download \
+  --append
+
+# 세 모델과 공식 소스를 고정 버전으로 준비한 뒤 3회 순환 평가
+bash ai/model_benchmark/prepare_audio_benchmark_models.sh
+bash ai/model_benchmark/run_audio_accuracy_comparison.sh
+
+# 시험 전에 active였던 서비스 복원(서보는 안전상 자동 복원하지 않음)
+bash ai/model_benchmark/audio_benchmark_services.sh restore
+```
+
+ESC-50는 CC BY-NC 3.0이므로 비상업적 평가에만 사용합니다. 공개 모델 세 개가
+모두 AudioSet 계열 사전학습 모델인 점을 고려해 AudioSet 자체는 최종 일반화
+평가 데이터로 사용하지 않습니다.
+
 ## 데이터셋 조건
 
 첫 비교 세트에는 다음 조건을 균형 있게 포함합니다.
 
 - 비전: `empty`, `single-person`, `two-people`, `movement`, `occlusion`,
   `low-light`
-- 오디오: `laughter`, `speech`, `consecutive-clap`, `tv-playback`
+- 오디오: `laughter`, `laughter-with-clap`, `consecutive-clap`,
+  `conversation`, `single-impact`, `music`, `tv-playback`, `daily-noise`
 
 원본은 `~/ai_datasets/model_benchmark/`에 두고 Git에는 올리지 않습니다.
 
@@ -151,13 +200,12 @@ python3 -m unittest discover \
   -p 'test_*.py'
 ```
 
-## 다음 러너
+## 확장 예정
 
-동일 데이터 매니페스트를 소비하는 다음 러너를 순차적으로 추가합니다.
-
-1. YOLOv8n·YOLO11n·YOLO26n × PyTorch·TensorRT FP16
-2. YAMNet·EfficientAT MN10·PANNs CNN10
-3. 반복 실행 결과의 CSV·JSON 요약과 대시보드 자동 반영
+현재 YOLO와 오디오 모델의 단독 반복 평가, CSV·JSON·Markdown 요약 및
+대시보드 반영까지 지원합니다. 다음 단계에서는 1차 기준을 통과한 오디오
+모델을 YOLOv8n TensorRT FP16과 동시에 실행해 자원 경합과 이벤트 종단 동작을
+검증합니다.
 
 ## 실측 보고서
 

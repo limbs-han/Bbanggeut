@@ -1,0 +1,7 @@
+# Keep the Jetson CUDA-enabled torch and torchaudio wheels already installed.
+# Installing generic torch wheels here can replace the NVIDIA build.
+librosa==0.11.0
+numpy==1.26.4
+scipy==1.15.3
+soundfile==0.13.1
+torchlibrosa==0.1.0

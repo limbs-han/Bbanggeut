@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render() {
@@ -39,6 +40,18 @@ test("server-renders the edge observatory dashboard", async () => {
   assert.match(html, /LAN 전용/);
   assert.doesNotMatch(html, /Your site is taking shape/);
   assert.doesNotMatch(html, /codex-preview/);
+});
+
+test("keeps measured laughter and clap comparison cards in the audio tab", async () => {
+  const source = await readFile(
+    new URL("../app/BenchmarkDashboard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /오디오 이벤트 모델 비교/);
+  assert.match(source, /웃음 FP\/hour/);
+  assert.match(source, /박수 FP\/hour/);
+  assert.match(source, /falsePositivesPerHour/);
 });
 
 test("keeps local-only privacy and benchmark context visible", async () => {
