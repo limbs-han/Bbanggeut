@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import threading
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -32,7 +34,13 @@ ANALYSIS_KINDS = ("yamnet", "audio", "video", "expression")
 
 # 단계가 끝난 시점의 누적 진행률. 비율은 검증 영상 5개(2분 내외)의 실측
 # 처리 시간(음량 0.2초, YAMNet 0.7초, 영상 4.5초, 표정 11초)에서 왔다.
-_STAGE_DONE = {"audio": 0.02, "yamnet": 0.06, "video": 0.33, "expression": 1.0}
+_STAGE_DONE = {
+    "download": 0.03,
+    "audio": 0.05,
+    "yamnet": 0.09,
+    "video": 0.35,
+    "expression": 1.0,
+}
 
 
 def analysis_ready() -> tuple[bool, str | None]:
@@ -85,17 +93,27 @@ class AnalysisJobManager:
         with self._lock:
             return self._jobs.get(video_id)
 
-    def submit(self, video_id: str, video_path: Path) -> AnalysisJob:
+    def submit(
+        self, video_id: str, video_path: Path, *, source_url: str | None = None
+    ) -> AnalysisJob:
+        """분석 작업 등록. source_url이 있으면 작업자가 그 주소에서 원본을
+        video_path로 먼저 내려받는다(실서버 — 원본이 이미 MinIO에 있어서
+        폰이 다시 올릴 필요가 없다). 없으면 video_path에 이미 업로드돼
+        있어야 한다."""
         with self._lock:
             existing = self._jobs.get(video_id)
             if existing is not None and existing.status == "running":
                 return existing
-            job = AnalysisJob(video_id=video_id)
+            job = AnalysisJob(
+                video_id=video_id, stage="download" if source_url else "audio"
+            )
             self._jobs[video_id] = job
-        self._executor.submit(self._run, job, video_path)
+        self._executor.submit(self._run, job, video_path, source_url)
         return job
 
-    def _run(self, job: AnalysisJob, video_path: Path) -> None:
+    def _run(
+        self, job: AnalysisJob, video_path: Path, source_url: str | None
+    ) -> None:
         try:
             from . import (
                 audio_features,
@@ -108,6 +126,14 @@ class AnalysisJobManager:
                 job.progress = _STAGE_DONE[stage]
                 if next_stage is not None:
                     job.stage = next_stage
+
+            if source_url is not None:
+                with (
+                    urllib.request.urlopen(source_url, timeout=30) as response,
+                    open(video_path, "wb") as sink,
+                ):
+                    shutil.copyfileobj(response, sink, length=1 << 20)
+                finish_stage("download", "audio")
 
             self._save(job.video_id, "audio", audio_features.analyze_video(video_path))
             finish_stage("audio", "yamnet")

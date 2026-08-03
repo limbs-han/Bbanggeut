@@ -22,6 +22,19 @@
 4. 프론트 낡은 TODO 정리(비밀번호 API 계약 주석화, 죽은 ContentNotification
    삭제), 검증: flutter analyze 무결점, flutter test 155개, python unittest
    31개 통과.
+5. **editor-api 실서버 승격 준비 완료(코드·설정, 서버 프로비저닝은 미실행)**:
+   - nginx `/editor/` 라우트와 deploy compose의 editor-api 서비스 정의 추가
+     (배포 wrapper는 건드리지 않아 기존 배포 흐름에 영향 없음)
+   - editor-api에 백엔드 JWT(HS256, `EDITOR_JWT_SECRET`=`JWT_SIGNING_KEY`)
+     검증 미들웨어 — 실서버 compose는 시크릿 없인 기동 거부, 로컬은 인증 꺼짐
+   - 분석 원본은 앱이 넘긴 백엔드 presigned URL로 서버가 직접 받는다
+     (sourceUrl, 허용 호스트 고정으로 SSRF 차단; 실패 시 폰 업로드 폴백)
+   - **앱 editor-api 기본 주소가 `https://i15e201.p.ssafy.io/editor`로 변경**
+     — 로컬 editor-api 데모는 이제
+     `flutter run --dart-define=EDITOR_API_BASE_URL=http://127.0.0.1:18080`
+     + adb reverse가 필요하다
+   - 서버 작업 순서는 `video_editor/DEPLOY.md`(소스·모델 scp → infra/.env에
+     EDITOR_JWT_SECRET → docker build → minio-init → up -d editor-api)
 
 ## 0. 세션 인수인계 요약
 

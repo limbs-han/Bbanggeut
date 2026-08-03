@@ -85,6 +85,14 @@ class ApiClient {
   String? _memoryRefreshToken;
   bool _persistSession = true;
 
+  /// 편집 서버(editor-api)처럼 별도 Dio를 쓰는 클라이언트가 같은 세션으로
+  /// 인증하도록 현재 액세스 토큰을 내어 준다. 로그인 전이면 null.
+  String? get accessToken => _memoryAccessToken;
+
+  /// 액세스 토큰이 만료됐을 때 외부 클라이언트가 갱신을 부탁하는 통로.
+  /// 진행 중인 갱신이 있으면 그 결과를 같이 기다린다.
+  Future<bool> refreshAccessToken() => _tryRefresh();
+
   bool _isPublicAuthPath(String path) =>
       path.contains('/api/auth/login') ||
       path.contains('/api/auth/signup') ||

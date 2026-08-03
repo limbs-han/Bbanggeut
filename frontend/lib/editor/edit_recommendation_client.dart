@@ -74,6 +74,13 @@ class EditRecommendationClient {
   static bool get networkAllowed =>
       !Platform.environment.containsKey('FLUTTER_TEST');
 
+  /// 실서버 editor-api는 백엔드 액세스 토큰을 요구한다. 화면마다 이
+  /// 클라이언트를 새로 만들기 때문에 세션은 앱이 켜질 때 한 번 전역으로
+  /// 주입한다(AppController 생성자). null이면 헤더를 붙이지 않는다 —
+  /// 로컬 개발 editor-api는 인증이 꺼져 있어 그대로 동작한다.
+  static String? Function()? sessionToken;
+  static Future<bool> Function()? sessionRefresh;
+
   EditRecommendationClient({Dio? dio})
     : _dio =
           dio ??
@@ -81,14 +88,59 @@ class EditRecommendationClient {
             BaseOptions(
               baseUrl: const String.fromEnvironment(
                 'EDITOR_API_BASE_URL',
-                defaultValue: 'http://127.0.0.1:18080',
+                defaultValue: 'https://i15e201.p.ssafy.io/editor',
               ),
               connectTimeout: const Duration(seconds: 4),
               receiveTimeout: const Duration(seconds: 20),
             ),
-          );
+          ) {
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final token = sessionToken?.call();
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          handler.next(options);
+        },
+        onError: (error, handler) async {
+          final refresh = sessionRefresh;
+          // 본문이 스트림(파일 업로드)이면 이미 소비돼 재전송할 수 없다.
+          if (refresh != null &&
+              error.response?.statusCode == 401 &&
+              error.requestOptions.extra['retried'] != true &&
+              error.requestOptions.data is! Stream) {
+            var refreshed = false;
+            try {
+              refreshed = await refresh();
+            } catch (_) {}
+            if (refreshed) {
+              final request = error.requestOptions;
+              request.extra['retried'] = true;
+              final token = sessionToken?.call();
+              if (token != null) {
+                request.headers['Authorization'] = 'Bearer $token';
+              }
+              try {
+                return handler.resolve(await _dio.fetch<dynamic>(request));
+              } on DioException catch (retryError) {
+                return handler.next(retryError);
+              }
+            }
+          }
+          handler.next(error);
+        },
+      ),
+    );
+  }
 
   final Dio _dio;
+
+  /// video_player처럼 Dio를 거치지 않는 요청에 붙일 인증 헤더.
+  Map<String, String> get authHeaders {
+    final token = sessionToken?.call();
+    return token == null ? const {} : {'Authorization': 'Bearer $token'};
+  }
 
   Future<EditRecommendation> recommend({
     required String videoId,
@@ -116,25 +168,39 @@ class EditRecommendationClient {
   static bool isAnalysisRequired(Object failure) =>
       failure is DioException && failure.response?.statusCode == 404;
 
-  /// 로컬에 받아 둔 원본을 서버에 올려 백그라운드 분석을 시작한다.
-  /// 이미 분석돼 있으면 서버가 곧바로 done을 돌려준다.
+  /// 백그라운드 분석을 시작한다. 이미 분석돼 있으면 서버가 곧바로 done을
+  /// 돌려준다.
+  ///
+  /// [sourceUrl]이 있으면 서버가 그 주소(백엔드 presigned URL)에서 원본을
+  /// 직접 내려받는다 — 실서버에서는 원본이 이미 같은 호스트의 MinIO에
+  /// 있으므로 폰이 영상을 LTE로 다시 올리는 낭비를 피한다. 없으면
+  /// [filePath]의 로컬 원본을 통째로 올린다.
   Future<EditAnalysisStatus> requestAnalysis({
     required String videoId,
     required String filePath,
+    String? sourceUrl,
     void Function(int sent, int total)? onProgress,
   }) async {
-    final file = File(filePath);
-    final length = await file.length();
-    final response = await _dio.put<Map<String, dynamic>>(
-      '/v1/edit-analyses/$videoId',
-      data: file.openRead(),
-      options: Options(
-        headers: {Headers.contentLengthHeader: length},
-        contentType: 'video/mp4',
-        sendTimeout: const Duration(minutes: 5),
-      ),
-      onSendProgress: onProgress,
-    );
+    final Response<Map<String, dynamic>> response;
+    if (sourceUrl != null) {
+      response = await _dio.put<Map<String, dynamic>>(
+        '/v1/edit-analyses/$videoId',
+        data: {'sourceUrl': sourceUrl},
+      );
+    } else {
+      final file = File(filePath);
+      final length = await file.length();
+      response = await _dio.put<Map<String, dynamic>>(
+        '/v1/edit-analyses/$videoId',
+        data: file.openRead(),
+        options: Options(
+          headers: {Headers.contentLengthHeader: length},
+          contentType: 'video/mp4',
+          sendTimeout: const Duration(minutes: 5),
+        ),
+        onSendProgress: onProgress,
+      );
+    }
     return EditAnalysisStatus.fromJson(response.data!);
   }
 

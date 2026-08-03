@@ -47,6 +47,9 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
     try {
       final player = VideoPlayerController.networkUrl(
         Uri.parse(_client.editedVideoUrl(widget.videoId)),
+        // 실서버 editor-api는 인증을 요구한다 — video_player는 Dio 인터셉터를
+        // 거치지 않으므로 헤더를 직접 붙인다.
+        httpHeaders: _client.authHeaders,
       );
       await player.initialize();
       await player.setLooping(true);

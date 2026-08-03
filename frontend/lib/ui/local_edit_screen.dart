@@ -264,9 +264,20 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _analysisRunning = true;
     _recommendationLoading = true;
     try {
+      // 원본이 이미 서버(MinIO)에 있으므로 presigned URL을 넘겨 서버가
+      // 직접 받게 한다. URL 발급이 안 되면 로컬 원본을 통째로 올린다.
+      String? sourceUrl;
+      try {
+        sourceUrl = (await widget.controller.api.createDownloadUrl(
+          widget.video.id,
+        )).url;
+      } catch (_) {
+        sourceUrl = null;
+      }
       final status = await _recommendations.requestAnalysis(
         videoId: widget.video.id,
         filePath: sourcePath,
+        sourceUrl: sourceUrl,
       );
       if (!mounted) return;
       if (status.isDone) {

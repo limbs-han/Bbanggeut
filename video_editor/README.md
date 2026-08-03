@@ -59,6 +59,17 @@ docker compose `
 adb reverse tcp:18080 tcp:18080
 ```
 
+앱의 기본 editor-api 주소는 운영(`https://i15e201.p.ssafy.io/editor`)이다.
+로컬 editor-api로 붙으려면 앱을 이렇게 띄운다:
+
+```bash
+flutter run --dart-define=EDITOR_API_BASE_URL=http://127.0.0.1:18080
+```
+
+로컬은 `EDITOR_JWT_SECRET`이 없어서 인증이 꺼진 채 뜬다(루프백 전용).
+실서버 배포는 `DEPLOY.md` 참고 — 거기서는 백엔드와 같은 HS256 시크릿으로
+앱 액세스 토큰을 검증한다.
+
 상태 확인은 `http://127.0.0.1:18080/health`로 한다. 앱은
 `POST /v1/edit-recommendations`에 영상 ID와 로컬 시각의 촬영 시각을 보내고,
 API는 추천 레시피를 반환하는 동시에 MinIO의

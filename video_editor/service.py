@@ -8,8 +8,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import boto3
+import jwt
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +24,30 @@ from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
 
 FIXTURE_ROOT = Path(
     os.environ.get("EDITOR_FIXTURE_ROOT", Path(__file__).with_name("fixtures") / "analysis")
+)
+
+# 백엔드와 같은 HS256 서명 시크릿(JWT_SIGNING_KEY 값). 있으면 모든 /v1
+# 요청에 백엔드 액세스 토큰을 요구한다. 없으면 인증이 꺼진다 — adb reverse
+# 루프백 전용인 로컬 개발을 위한 것이고, 실서버 compose는
+# EDITOR_REQUIRE_AUTH=true로 시크릿 없는 기동 자체를 막는다.
+EDITOR_JWT_SECRET = os.environ.get("EDITOR_JWT_SECRET") or None
+if (
+    os.environ.get("EDITOR_REQUIRE_AUTH", "false").strip().lower() == "true"
+    and EDITOR_JWT_SECRET is None
+):
+    raise RuntimeError(
+        "EDITOR_REQUIRE_AUTH=true인데 EDITOR_JWT_SECRET이 비어 있습니다. "
+        "infra/.env에 백엔드 JWT_SIGNING_KEY와 같은 값을 넣으세요."
+    )
+
+# 서버 측 원본 내려받기(sourceUrl)를 허용할 호스트. 인증된 사용자라도 이
+# 서버가 임의 내부 주소를 대신 요청(SSRF)하게 두지 않는다.
+SOURCE_URL_HOSTS = frozenset(
+    host.strip()
+    for host in os.environ.get(
+        "EDITOR_SOURCE_URL_HOSTS", "i15e201.p.ssafy.io"
+    ).split(",")
+    if host.strip()
 )
 FIXTURE_PRESETS = {
     "01_20260731_173932": "medium",
@@ -155,6 +181,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+def source_url_allowed(source_url: str) -> bool:
+    parsed = urlparse(source_url)
+    return parsed.scheme == "https" and parsed.hostname in SOURCE_URL_HOSTS
+
+
+def verify_bearer(header: str | None) -> str | None:
+    """백엔드 액세스 토큰 검증. 통과하면 None, 아니면 거절 사유.
+
+    서명·만료·발급자(iss=wj-server)만 본다 — 라이브 토큰(iss=wj-live)은
+    같은 키로 서명돼도 거부된다. 백엔드처럼 세션 상태(sid·tv)를 DB로
+    재검증하지는 않으므로 로그아웃 후에도 토큰 수명(15분)까지는 통한다.
+    """
+    if EDITOR_JWT_SECRET is None:
+        return None
+    if header is None or not header.lower().startswith("bearer "):
+        return "missing bearer token"
+    token = header[len("bearer ") :].strip()
+    try:
+        jwt.decode(
+            token,
+            EDITOR_JWT_SECRET,
+            algorithms=["HS256"],
+            issuer="wj-server",
+            options={"require": ["exp", "iss", "sub"]},
+        )
+    except jwt.PyJWTError as failure:
+        return f"invalid token: {type(failure).__name__}"
+    return None
+
+
 store = RecipeStore()
 jobs = AnalysisJobManager(
     save=lambda video_id, kind, payload: store.put(
@@ -174,6 +230,15 @@ def _load_cached_analyses(video_id: str) -> dict[str, dict[str, Any]] | None:
     return analyses
 
 
+@app.middleware("http")
+async def require_session(request: Request, call_next):  # type: ignore[no-untyped-def]
+    if request.url.path.startswith("/v1"):
+        reason = verify_bearer(request.headers.get("authorization"))
+        if reason is not None:
+            return JSONResponse(status_code=401, content={"detail": reason})
+    return await call_next(request)
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     ready, reason = analysis_ready()
@@ -182,6 +247,7 @@ def health() -> dict[str, Any]:
         "fixtures": len(FIXTURE_PRESETS),
         "analysis": ready,
         "analysisUnavailableReason": reason,
+        "authRequired": EDITOR_JWT_SECRET is not None,
     }
 
 
@@ -245,11 +311,14 @@ def recommend(request: RecommendationRequest) -> dict[str, Any]:
 
 @app.put("/v1/edit-analyses/{video_id}")
 async def request_analysis(video_id: str, request: Request) -> JSONResponse:
-    """원본 영상을 통째로 받아 백그라운드 분석을 시작한다.
+    """원본을 받아 백그라운드 분석을 시작한다. 두 가지 방식:
 
-    앱은 편집 진입 시 로컬에 이미 받아 둔 원본을 그대로 올린다(localhost라
-    수 초). 202를 받으면 GET으로 상태를 폴링한다. 이미 분석돼 있으면 즉시
-    done을 돌려준다.
+    - `application/json` + `{"sourceUrl": ...}` — 서버가 그 주소(백엔드
+      presigned URL)에서 직접 내려받는다. 원본이 이미 MinIO에 있는
+      실서버에서는 폰이 영상을 다시 올릴 필요가 없다.
+    - 그 외 Content-Type — 요청 본문이 원본 MP4 그대로다(로컬 개발).
+
+    202를 받으면 GET으로 상태를 폴링한다. 이미 분석돼 있으면 즉시 done.
     """
     running = jobs.get(video_id)
     if running is not None and running.status == "running":
@@ -261,14 +330,30 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
     ready, reason = analysis_ready()
     if not ready:
         raise HTTPException(status_code=503, detail=f"분석 불가: {reason}")
-    data = await request.body()
-    if not data:
-        raise HTTPException(status_code=422, detail="empty body")
+
     upload_dir = Path(tempfile.gettempdir()) / "wj-edit-analysis"
     upload_dir.mkdir(parents=True, exist_ok=True)
     video_path = upload_dir / f"{video_id}.mp4"
-    video_path.write_bytes(data)
-    job = jobs.submit(video_id, video_path)
+
+    content_type = request.headers.get("content-type", "")
+    if content_type.split(";")[0].strip() == "application/json":
+        try:
+            payload = json.loads(await request.body() or b"{}")
+        except json.JSONDecodeError as failure:
+            raise HTTPException(status_code=422, detail="invalid json") from failure
+        source_url = str(payload.get("sourceUrl", ""))
+        if not source_url_allowed(source_url):
+            raise HTTPException(
+                status_code=422,
+                detail="sourceUrl은 허용된 호스트의 https 주소여야 합니다",
+            )
+        job = jobs.submit(video_id, video_path, source_url=source_url)
+    else:
+        data = await request.body()
+        if not data:
+            raise HTTPException(status_code=422, detail="empty body")
+        video_path.write_bytes(data)
+        job = jobs.submit(video_id, video_path)
     return JSONResponse(status_code=202, content=job.snapshot())
 
 
