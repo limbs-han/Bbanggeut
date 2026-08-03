@@ -175,7 +175,8 @@ class EditorWorkspace extends StatelessWidget {
               );
               final rangeToolOpen =
                   project.selectedTool == EditorTool.zoom ||
-                  project.selectedTool == EditorTool.text;
+                  project.selectedTool == EditorTool.text ||
+                  project.selectedTool == EditorTool.sticker;
               final multipleClips = project.clips.length > 1;
               final timelineHeight = compact
                   ? 0.0
@@ -423,6 +424,15 @@ List<EditorTextLayer> _textLayersOfClip(
     if (layer.clipId == null || layer.clipId == clip.id) layer,
 ];
 
+/// 고른 클립에 귀속된 스티커들(얼굴 추적 포함).
+List<EditorStickerLayer> _stickerLayersOfClip(
+  EditorProject project,
+  EditorClip clip,
+) => [
+  for (final layer in project.stickerLayers)
+    if (layer.clipId == null || layer.clipId == clip.id) layer,
+];
+
 /// 줌·자막 탭에서 프레임 타임라인이 다룰 대상. 없으면 타임라인을 접는다.
 _RangeTimelineTarget? _rangeTimelineTarget(EditorProject project) {
   final clip = _scopeClip(project);
@@ -440,6 +450,14 @@ _RangeTimelineTarget? _rangeTimelineTarget(EditorProject project) {
           .where((item) => item.id == project.selectedLayerId)
           .firstOrNull;
       return _RangeTimelineTarget.text(layer ?? layers.first);
+    case EditorTool.sticker:
+      final layers = _stickerLayersOfClip(project, clip);
+      if (layers.isEmpty) return null;
+      // 고른 스티커가 이 클립 것이면 그것, 아니면 클립의 첫 스티커.
+      final layer = layers
+          .where((item) => item.id == project.selectedLayerId)
+          .firstOrNull;
+      return _RangeTimelineTarget.sticker(layer ?? layers.first);
     default:
       return null;
   }
@@ -457,12 +475,18 @@ EditorZoomSegment? _activeZoom(EditorProject project, EditorClip clip) {
 
 class _RangeTimelineTarget {
   const _RangeTimelineTarget.zoom(EditorZoomSegment this.zoomSegment)
-    : textLayer = null;
+    : textLayer = null,
+      stickerLayer = null;
   const _RangeTimelineTarget.text(EditorTextLayer this.textLayer)
-    : zoomSegment = null;
+    : zoomSegment = null,
+      stickerLayer = null;
+  const _RangeTimelineTarget.sticker(EditorStickerLayer this.stickerLayer)
+    : zoomSegment = null,
+      textLayer = null;
 
   final EditorZoomSegment? zoomSegment;
   final EditorTextLayer? textLayer;
+  final EditorStickerLayer? stickerLayer;
 }
 
 /// 미리보기 바로 아래 재생 줄. 재생 단추와 프레임 타임코드는 여기 한 곳에만
@@ -610,6 +634,8 @@ class _RangeTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     final zoom = target.zoomSegment;
     if (zoom != null) return _zoomBar(zoom);
+    final sticker = target.stickerLayer;
+    if (sticker != null) return _stickerBar(sticker);
     return _textBar(target.textLayer!);
   }
 
@@ -712,6 +738,51 @@ class _RangeTimeline extends StatelessWidget {
       windowSlidable: true,
       onTrimChanged: (startMs, endMs, _) =>
           controller.updateTextLayerRangeGesture(
+            layer.id,
+            startMs + clipTimelineStart,
+            endMs + clipTimelineStart,
+            notify: false,
+          ),
+      onTrimCommitted: onEditCommitted,
+      onScrub: (relativeMs) => onSeek(relativeMs + clipTimelineStart),
+    );
+  }
+
+  /// 스티커(얼굴 추적 포함)의 구간 조절 띠. 자막과 같은 규칙 — 묶인 클립의
+  /// 범위만 펼치고, 그 클립의 스티커 전부를 마커로 보여 준다.
+  Widget _stickerBar(EditorStickerLayer layer) {
+    var scope = project.selectedClip ?? project.clips.first;
+    if (layer.clipId != null) {
+      for (final clip in project.clips) {
+        if (clip.id == layer.clipId) {
+          scope = clip;
+          break;
+        }
+      }
+    }
+    final clipTimelineStart = project.timelineStartFor(scope.id);
+    final span = math.max(1, scope.durationMs);
+    return TrimRangeBar(
+      key: const Key('editor-sticker-range-bar'),
+      sourceDurationMs: span,
+      startMs: (layer.startMs - clipTimelineStart).clamp(0, span),
+      endMs: (layer.endMs - clipTimelineStart).clamp(0, span),
+      playheadSourceMs: (project.playheadMs - clipTimelineStart).clamp(0, span),
+      thumbnails: _sliceThumbnails(scope.sourceStartMs, scope.sourceEndMs),
+      zoomSegments: [
+        for (final other in _stickerLayersOfClip(project, scope))
+          EditorZoomSegment(
+            id: 'sticker-${other.id}',
+            sourceStartMs: (other.startMs - clipTimelineStart).clamp(0, span),
+            sourceEndMs: (other.endMs - clipTimelineStart).clamp(0, span),
+            scale: 1,
+            focus: NormalizedPoint.center,
+          ),
+      ],
+      minimumDurationMs: 200,
+      windowSlidable: true,
+      onTrimChanged: (startMs, endMs, _) =>
+          controller.updateStickerLayerRangeGesture(
             layer.id,
             startMs + clipTimelineStart,
             endMs + clipTimelineStart,
@@ -2521,17 +2592,24 @@ class _StickerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 강조·벗기기는 지금 보고 있는 클립의 얼굴 스티커 기준이다 —
+    // 얼굴 스티커도 자막처럼 클립에 귀속된다.
+    final scope = _scopeClip(project);
     final faceSticker = project.stickerLayers
-        .where((layer) => layer.tracksFace)
+        .where(
+          (layer) =>
+              layer.tracksFace &&
+              (layer.clipId == null || layer.clipId == scope?.id),
+        )
         .firstOrNull;
     final faceReady = project.faceTrack.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _PanelTitle('스티커'),
+        const _PanelTitle('스티커 · 이 클립에 붙어요'),
         const SizedBox(height: 1),
         const Text(
-          '누르면 영상 가운데에 놓여요. 끌어 옮기고 모서리로 크기를 바꿔요.',
+          '끌어 옮기고 모서리로 크기를, 아래 타임라인으로 구간을 조절해요.',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: EditorColorTokens.muted, fontSize: 11),

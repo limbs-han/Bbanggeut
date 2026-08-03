@@ -484,7 +484,7 @@ void main() {
 
     subject.setFaceSticker('👑');
     expect(subject.faceSticker?.value, '👑');
-    // 다른 것을 고르면 갈아 끼운다 — 얼굴 스티커는 한 번에 하나다.
+    // 다른 것을 고르면 갈아 끼운다 — 얼굴 스티커는 클립마다 하나다.
     subject.setFaceSticker('🕶️');
     final face = subject.faceSticker!;
     expect(face.value, '🕶️');
@@ -492,6 +492,17 @@ void main() {
       subject.project.stickerLayers.where((l) => l.tracksFace),
       hasLength(1),
     );
+    // 자막·일반 스티커처럼 클립에 귀속되고 구간을 조절할 수 있다.
+    expect(face.clipId, 'clip-a');
+    expect(face.startMs, 0);
+    expect(face.endMs, 10000);
+    subject.updateStickerLayerRangeGesture(face.id, 1000, 4000);
+    subject.endGesture();
+    final trimmed = subject.faceSticker!;
+    expect(trimmed.startMs, 1000);
+    expect(trimmed.endMs, 4000);
+    subject.updateStickerLayerRangeGesture(trimmed.id, 0, 10000);
+    subject.endGesture();
 
     // 내보내기 DTO에는 얼굴 키프레임 트랙이 실린다.
     final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
@@ -509,6 +520,46 @@ void main() {
     // 벗기기.
     subject.setFaceSticker(null);
     expect(subject.faceSticker, isNull);
+  });
+
+  test('얼굴이 여럿이면 앵커한 얼굴의 경로만 따라간다', () {
+    final subject = controller();
+    // 두 사람이 있는 영상 — 분석 초점이 왼쪽 위(A)와 오른쪽 아래(B)를
+    // 오간다. 500~750ms 구간은 B가 초점이다.
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      'faceTrack': [
+        {'ms': 0, 'x': 0.20, 'y': 0.20, 'h': 0.3},
+        {'ms': 250, 'x': 0.21, 'y': 0.20, 'h': 0.3},
+        {'ms': 500, 'x': 0.80, 'y': 0.80, 'h': 0.3},
+        {'ms': 750, 'x': 0.80, 'y': 0.80, 'h': 0.3},
+        {'ms': 1000, 'x': 0.22, 'y': 0.20, 'h': 0.3},
+        {'ms': 1250, 'x': 0.23, 'y': 0.20, 'h': 0.3},
+      ],
+    });
+    subject.setFaceSticker('👑');
+    final face = subject.faceSticker!;
+
+    // 전체 궤적 그대로면 600ms에 B(0.8) 쪽으로 튄다.
+    expect(subject.project.faceSampleAt(600)!.x, greaterThan(0.5));
+    // 앵커(구간 시작 = 0ms)는 A다 — B가 초점인 동안에도 A 근처에 머문다.
+    final held = subject.project.faceSampleForLayer(face, 600)!;
+    expect(held.x, lessThan(0.3));
+    // 초점이 A로 돌아오면 다시 따라간다.
+    final resumed = subject.project.faceSampleForLayer(face, 1250)!;
+    expect(resumed.x, closeTo(0.23, 1e-9));
+
+    // 내보내기 키프레임에도 B 구간이 실리지 않는다.
+    final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
+    final stickers = dto['stickerLayers']! as List;
+    final track = (stickers.single as Map)['track']! as List;
+    expect(track, hasLength(4));
+    for (final sample in track) {
+      expect((sample as Map)['x'] as double, lessThan(0.5));
+    }
   });
 
   test('클립을 지우면 거기 묶인 스티커도 사라진다', () {

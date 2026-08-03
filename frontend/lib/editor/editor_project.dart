@@ -573,7 +573,7 @@ class EditorStickerLayer extends EditorTimedLayer {
 
   /// 얼굴을 따라다니는가(AR 탭). true면 [position]은 화면 좌표가 아니라
   /// **얼굴 중심에서의 오프셋**이다 — (0.5, 0.5)면 얼굴 정중앙에 붙는다.
-  /// 실제 화면 위치는 프레임마다 [EditorProject.faceSampleAt]으로 구한다.
+  /// 실제 화면 위치는 프레임마다 [EditorProject.faceSampleForLayer]로 구한다.
   final bool tracksFace;
 
   EditorStickerLayer copyWith({
@@ -958,14 +958,20 @@ class EditorProject {
   /// 이웃 표본을 선형 보간하고, 트랙 바깥 시각은 가장 가까운 표본을 그대로
   /// 쓴다. 얼굴이 잠깐 사라진 구간도 이웃끼리 보간한다 — 스티커가 사라졌다
   /// 나타나며 깜빡이는 것보다 부드럽게 건너가는 쪽이 덜 거슬린다.
-  EditorFaceSample? faceSampleAt(int sourceMs) {
-    if (faceTrack.isEmpty) return null;
-    if (sourceMs <= faceTrack.first.sourceMs) return faceTrack.first;
-    if (sourceMs >= faceTrack.last.sourceMs) return faceTrack.last;
-    for (var index = 1; index < faceTrack.length; index++) {
-      final next = faceTrack[index];
+  EditorFaceSample? faceSampleAt(int sourceMs) =>
+      _sampleOn(faceTrack, sourceMs);
+
+  static EditorFaceSample? _sampleOn(
+    List<EditorFaceSample> track,
+    int sourceMs,
+  ) {
+    if (track.isEmpty) return null;
+    if (sourceMs <= track.first.sourceMs) return track.first;
+    if (sourceMs >= track.last.sourceMs) return track.last;
+    for (var index = 1; index < track.length; index++) {
+      final next = track[index];
       if (sourceMs > next.sourceMs) continue;
-      final prev = faceTrack[index - 1];
+      final prev = track[index - 1];
       final span = next.sourceMs - prev.sourceMs;
       if (span <= 0) return next;
       final t = (sourceMs - prev.sourceMs) / span;
@@ -976,19 +982,136 @@ class EditorProject {
         height: prev.height + (next.height - prev.height) * t,
       );
     }
-    return faceTrack.last;
+    return track.last;
+  }
+
+  /// 이웃 표본이 이보다 멀리 건너뛰면 분석 초점이 다른 얼굴로 옮겨간 것으로
+  /// 본다. 0~1 정규화 화면 좌표 기준이다.
+  static const _faceJumpDistance = 0.16;
+
+  static double _faceDistance(EditorFaceSample a, EditorFaceSample b) {
+    final dx = a.x - b.x;
+    final dy = a.y - b.y;
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
+  /// 궤적을 "같은 얼굴을 계속 본" 연속 구간으로 나눈다.
+  ///
+  /// 서버 궤적은 매 순간 가장 두드러진 얼굴 **한 점**만 준다. 여러 명이
+  /// 나오면 초점이 사람 사이를 오가는데, 그 순간 표본이 화면을 크게
+  /// 건너뛴다 — 스티커가 얼굴 사이를 왔다갔다 하던 원인. 건너뛴 자리에서
+  /// 구간을 끊어 두면 "한 사람의 경로"만 골라 따라갈 수 있다.
+  List<List<EditorFaceSample>> _faceTrackSegments() {
+    final segments = <List<EditorFaceSample>>[];
+    for (final sample in faceTrack) {
+      final current = segments.isEmpty ? null : segments.last;
+      final prev = current == null || current.isEmpty ? null : current.last;
+      if (prev == null) {
+        segments.add([sample]);
+        continue;
+      }
+      final gapMs = sample.sourceMs - prev.sourceMs;
+      // 표본은 250ms 간격이다. 오래 끊겼다 잡히면 그 사이 실제로 움직였을
+      // 수 있으니 허용치를 시간에 비례해 (최대 3배까지) 늘린다.
+      final allowed =
+          _faceJumpDistance * (gapMs / 250).clamp(1.0, 3.0);
+      if (gapMs > 1500 || _faceDistance(prev, sample) > allowed) {
+        segments.add([sample]);
+      } else {
+        current!.add(sample);
+      }
+    }
+    return segments;
+  }
+
+  /// [anchorSourceMs] 순간의 얼굴에서 이어지는 경로만 추린 궤적.
+  ///
+  /// 앵커 구간에서 시간 순으로 앞뒤를 훑으며, 끊긴 자리 **근처에서** 다시
+  /// 시작하는 구간만 같은 얼굴로 보고 이어 붙인다. 멀리서 시작하는 구간은
+  /// 다른 얼굴이므로 버린다 — 그 시간대에는 이웃 표본 사이에 머물러
+  /// 스티커가 다른 사람에게 튀지 않는다.
+  List<EditorFaceSample> _anchoredFaceTrack(int anchorSourceMs) {
+    final segments = _faceTrackSegments();
+    if (segments.length <= 1) return faceTrack;
+    var anchorIndex = 0;
+    var bestGapMs = 1 << 50;
+    for (var index = 0; index < segments.length; index++) {
+      final first = segments[index].first.sourceMs;
+      final last = segments[index].last.sourceMs;
+      if (anchorSourceMs >= first && anchorSourceMs <= last) {
+        anchorIndex = index;
+        break;
+      }
+      final gap = anchorSourceMs < first
+          ? first - anchorSourceMs
+          : anchorSourceMs - last;
+      if (gap < bestGapMs) {
+        bestGapMs = gap;
+        anchorIndex = index;
+      }
+    }
+    final chained = <List<EditorFaceSample>>[segments[anchorIndex]];
+    var tail = segments[anchorIndex].last;
+    for (var index = anchorIndex + 1; index < segments.length; index++) {
+      if (_faceDistance(tail, segments[index].first) > _faceJumpDistance) {
+        continue;
+      }
+      chained.add(segments[index]);
+      tail = segments[index].last;
+    }
+    var head = segments[anchorIndex].first;
+    for (var index = anchorIndex - 1; index >= 0; index--) {
+      if (_faceDistance(segments[index].last, head) > _faceJumpDistance) {
+        continue;
+      }
+      chained.insert(0, segments[index]);
+      head = segments[index].first;
+    }
+    return [for (final segment in chained) ...segment];
+  }
+
+  /// 이 스티커가 어느 얼굴을 따라갈지 정하는 기준 시각(원본 ms).
+  ///
+  /// 구간 **시작 순간**에 잡힌 얼굴이 "그 얼굴"이다 — 타임라인에서 시작점을
+  /// 옮기면 따라갈 얼굴도 그 순간의 얼굴로 바뀐다.
+  int? faceAnchorFor(EditorStickerLayer layer) {
+    if (layer.clipId != null) {
+      for (final clip in clips) {
+        if (clip.id != layer.clipId) continue;
+        final offset = layer.startMs - timelineStartFor(clip.id);
+        return (clip.sourceStartMs + offset).clamp(
+          clip.sourceStartMs,
+          clip.sourceEndMs,
+        );
+      }
+    }
+    return sourcePositionForTimeline(layer.startMs);
+  }
+
+  /// [layer]가 따라가는 얼굴의 이 원본 시각 위치.
+  ///
+  /// 전체 궤적이 아니라 앵커 얼굴의 경로만 본다 — 분석 초점이 다른 사람으로
+  /// 넘어간 구간에서는 마지막으로 본 위치 근처에 머문다.
+  EditorFaceSample? faceSampleForLayer(EditorStickerLayer layer, int sourceMs) {
+    if (faceTrack.isEmpty) return null;
+    final anchor = faceAnchorFor(layer);
+    if (anchor == null) return faceSampleAt(sourceMs);
+    return _sampleOn(_anchoredFaceTrack(anchor), sourceMs);
   }
 
   /// 얼굴 추적 스티커가 내보내기에서 쓸 키프레임. **타임라인 시각** 기준이고,
   /// 스티커를 끌어 둔 오프셋(위치 - 중앙)이 얼굴 좌표에 더해져 있다.
   List<Map<String, Object>> _faceTrackForExport(EditorStickerLayer layer) {
     if (faceTrack.isEmpty) return const [];
+    // 미리보기와 같은 눈으로 — 앵커 얼굴의 경로만 굽는다.
+    final anchor = faceAnchorFor(layer);
+    final track = anchor == null ? faceTrack : _anchoredFaceTrack(anchor);
     final offsetX = layer.position.x - 0.5;
     final offsetY = layer.position.y - 0.5;
     final samples = <Map<String, Object>>[];
     var timelineStartMs = 0;
     for (final clip in clips) {
-      for (final sample in faceTrack) {
+      for (final sample in track) {
         if (sample.sourceMs < clip.sourceStartMs ||
             sample.sourceMs > clip.sourceEndMs) {
           continue;

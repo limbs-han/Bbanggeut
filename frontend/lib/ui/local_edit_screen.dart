@@ -2030,7 +2030,11 @@ class _PreviewSurface extends StatelessWidget {
     if (!layer.tracksFace) return layer;
     final project = projectController.project;
     final sourceMs = project.sourcePositionForTimeline(project.playheadMs);
-    final face = sourceMs == null ? null : project.faceSampleAt(sourceMs);
+    // 전체 궤적이 아니라 이 스티커가 앵커한 얼굴의 경로만 따른다 —
+    // 여러 명이 나와도 다른 사람에게 튀지 않는다.
+    final face = sourceMs == null
+        ? null
+        : project.faceSampleForLayer(layer, sourceMs);
     if (face == null) return layer;
     return layer.copyWith(
       position: NormalizedPoint(
