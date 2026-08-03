@@ -88,7 +88,8 @@ object EditorLayerOverlay {
         )
     }
 
-    /// 스티커 DTO의 `track`([{ms, x, y}]) 키프레임. 없으면 null — 고정 위치다.
+    /// 스티커 DTO의 `track`([{ms, x, y, s}]) 키프레임. 없으면 null — 고정
+    /// 위치다. `s`는 얼굴 크기·구간 줌이 구워진 배율 계수(없으면 1)다.
     private fun positionTrack(raw: Map<String, Any?>): List<TrackSample>? {
         val rawTrack = raw["track"] as? List<*> ?: return null
         val samples = rawTrack.mapNotNull { entry ->
@@ -96,12 +97,23 @@ object EditorLayerOverlay {
             val ms = (map["ms"] as? Number)?.toLong() ?: return@mapNotNull null
             val x = (map["x"] as? Number)?.toFloat() ?: return@mapNotNull null
             val y = (map["y"] as? Number)?.toFloat() ?: return@mapNotNull null
-            TrackSample(ms * 1000, x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+            val s = (map["s"] as? Number)?.toFloat() ?: 1f
+            TrackSample(
+                ms * 1000,
+                x.coerceIn(0f, 1f),
+                y.coerceIn(0f, 1f),
+                s.coerceIn(0.1f, 8f),
+            )
         }
         return samples.sortedBy { it.timeUs }.ifEmpty { null }
     }
 
-    private data class TrackSample(val timeUs: Long, val x: Float, val y: Float)
+    private data class TrackSample(
+        val timeUs: Long,
+        val x: Float,
+        val y: Float,
+        val scale: Float = 1f,
+    )
 
     private fun scaled(fontSize: Int, fontScale: Float): Int =
         (fontSize * fontScale).roundToInt().coerceIn(8, 640)
@@ -211,38 +223,41 @@ object EditorLayerOverlay {
 
         override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
             val samples = track ?: return settings
-            val (x, y) = positionAt(samples, presentationTimeUs)
+            val sample = sampleAt(samples, presentationTimeUs)
+            // 얼굴 크기·구간 줌이 구워진 배율 계수를 스티커 배율에 곱한다 —
+            // 미리보기(_resolveFaceSticker)와 같은 식이다.
+            val drawScale = scale * sample.scale
             // 글자 비트맵과 달리 설정 객체는 media3가 캐시하지 않아서 프레임마다
             // 새로 만들어도 재기·그리기가 되풀이되지 않는다.
             return StaticOverlaySettings.Builder()
-                .setBackgroundFrameAnchor(x * 2f - 1f, 1f - y * 2f)
-                .setScale(scale, scale)
+                .setBackgroundFrameAnchor(sample.x * 2f - 1f, 1f - sample.y * 2f)
+                .setScale(drawScale, drawScale)
                 .setRotationDegrees(rotationDegrees)
                 .build()
         }
 
         /// 이웃 키프레임을 선형 보간한다. 트랙 밖 시각은 가장 가까운 표본이다.
-        private fun positionAt(
+        private fun sampleAt(
             samples: List<TrackSample>,
             timeUs: Long,
-        ): Pair<Float, Float> {
-            if (timeUs <= samples.first().timeUs) {
-                return samples.first().x to samples.first().y
-            }
-            if (timeUs >= samples.last().timeUs) {
-                return samples.last().x to samples.last().y
-            }
+        ): TrackSample {
+            if (timeUs <= samples.first().timeUs) return samples.first()
+            if (timeUs >= samples.last().timeUs) return samples.last()
             for (index in 1 until samples.size) {
                 val next = samples[index]
                 if (timeUs > next.timeUs) continue
                 val prev = samples[index - 1]
                 val span = (next.timeUs - prev.timeUs).toFloat()
-                if (span <= 0f) return next.x to next.y
+                if (span <= 0f) return next
                 val t = (timeUs - prev.timeUs) / span
-                return (prev.x + (next.x - prev.x) * t) to
-                    (prev.y + (next.y - prev.y) * t)
+                return TrackSample(
+                    timeUs,
+                    prev.x + (next.x - prev.x) * t,
+                    prev.y + (next.y - prev.y) * t,
+                    prev.scale + (next.scale - prev.scale) * t,
+                )
             }
-            return samples.last().x to samples.last().y
+            return samples.last()
         }
     }
 }

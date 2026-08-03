@@ -562,6 +562,63 @@ void main() {
     }
   });
 
+  test('줌 구간에서는 얼굴 스티커도 같은 식으로 옮겨지고 커진다', () {
+    final subject = controller();
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      // 0~2초를 화면 가운데 기준 2배 확대.
+      'zoomSegments': [
+        {
+          'id': 'zoom-1',
+          'sourceStartMs': 0,
+          'sourceEndMs': 2000,
+          'scale': 2.0,
+          'focusX': 0.5,
+          'focusY': 0.5,
+          'clipId': 'clip-a',
+        },
+      ],
+      'faceTrack': [
+        {'ms': 0, 'x': 0.2, 'y': 0.2, 'h': 0.3},
+        {'ms': 1000, 'x': 0.4, 'y': 0.4, 'h': 0.3},
+      ],
+    });
+    subject.setFaceSticker('👑');
+    final face = subject.faceSticker!;
+
+    // 500ms: 얼굴은 (0.3, 0.3), 줌이 0.5 기준 2배 → 화면에는 (0.1, 0.1).
+    final zoomed = subject.project.faceStickerPlacementAt(face, 500)!;
+    expect(zoomed.position.x, closeTo(0.1, 1e-9));
+    expect(zoomed.position.y, closeTo(0.1, 1e-9));
+    // 스티커도 영상과 같이 2배 커진다.
+    expect(zoomed.scale, closeTo(2.0, 1e-9));
+
+    // 줌이 끝난 3000ms: 얼굴 그대로 (0.4, 0.4), 배율 1.
+    final plain = subject.project.faceStickerPlacementAt(face, 3000)!;
+    expect(plain.position.x, closeTo(0.4, 1e-9));
+    expect(plain.scale, closeTo(1.0, 1e-9));
+
+    // 내보내기 키프레임: 줌 경계(2000ms) 직전·직후가 함께 실려 영상이
+    // 확대를 푸는 순간 스티커도 그 프레임에 맞춰 돌아온다.
+    final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
+    final track = ((dto['stickerLayers']! as List).single as Map)['track']!
+        as List;
+    final byMs = {
+      for (final sample in track)
+        (sample as Map)['ms'] as int: sample,
+    };
+    expect(byMs.keys, containsAll([0, 1000, 1999, 2000]));
+    expect(byMs[1999]!['s'] as double, closeTo(2.0, 1e-9));
+    expect(byMs[2000]!['s'] as double, closeTo(1.0, 1e-9));
+    // 줌 중인 키프레임은 옮겨진 좌표다: 0ms 얼굴 (0.2) → 0.5+(0.2-0.5)*2 = -0.1 → 0으로 잘린다.
+    expect(byMs[0]!['x'] as double, closeTo(0.0, 1e-9));
+    // 줌이 풀린 2000ms 뒤는 원래 좌표다(마지막 표본 0.4).
+    expect(byMs[2000]!['x'] as double, closeTo(0.4, 1e-9));
+  });
+
   test('클립을 지우면 거기 묶인 스티커도 사라진다', () {
     final subject = controller();
     subject.splitAt(4000);

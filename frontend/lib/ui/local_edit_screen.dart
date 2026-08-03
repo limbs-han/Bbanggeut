@@ -2021,26 +2021,22 @@ class _PreviewSurface extends StatelessWidget {
     return auto != null && auto.isNotEmpty ? auto : null;
   }
 
-  /// 얼굴 추적 스티커의 이 순간 화면 위치. 일반 스티커는 그대로 돌려준다.
+  /// 얼굴 추적 스티커의 이 순간 화면 위치·배율. 일반 스티커는 그대로
+  /// 돌려준다.
   ///
   /// 저장된 [EditorStickerLayer.position]은 얼굴 중심 기준 **오프셋**이라
-  /// (0.5, 0.5)면 얼굴 정중앙이다. 얼굴 궤적이 없으면 오프셋을 그대로 화면
-  /// 좌표로 쓴다 — 안 보이는 것보다 가운데라도 보이는 쪽이 덜 놀란다.
+  /// (0.5, 0.5)면 얼굴 정중앙이다. 배치 계산은 모델과 공유한다 — 앵커한
+  /// 얼굴의 경로만 따르고, 얼굴 크기·구간 줌에 맞춰 위치와 크기가 함께
+  /// 움직인다. 얼굴 궤적이 없으면 오프셋을 그대로 화면 좌표로 쓴다 —
+  /// 안 보이는 것보다 가운데라도 보이는 쪽이 덜 놀란다.
   EditorStickerLayer _resolveFaceSticker(EditorStickerLayer layer) {
     if (!layer.tracksFace) return layer;
     final project = projectController.project;
-    final sourceMs = project.sourcePositionForTimeline(project.playheadMs);
-    // 전체 궤적이 아니라 이 스티커가 앵커한 얼굴의 경로만 따른다 —
-    // 여러 명이 나와도 다른 사람에게 튀지 않는다.
-    final face = sourceMs == null
-        ? null
-        : project.faceSampleForLayer(layer, sourceMs);
-    if (face == null) return layer;
+    final placed = project.faceStickerPlacementAt(layer, project.playheadMs);
+    if (placed == null) return layer;
     return layer.copyWith(
-      position: NormalizedPoint(
-        face.x + layer.position.x - 0.5,
-        face.y + layer.position.y - 0.5,
-      ),
+      position: placed.position,
+      scale: layer.scale * placed.scale,
     );
   }
 

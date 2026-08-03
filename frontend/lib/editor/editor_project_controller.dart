@@ -1470,7 +1470,9 @@ class EditorProjectController extends ChangeNotifier {
   /// 화면 절대 좌표를 얼굴 기준 오프셋으로 되돌린다.
   ///
   /// 얼굴 추적 스티커의 [EditorStickerLayer.position]은 오프셋이라, 끌어
-  /// 놓은 화면 위치에서 지금 재생 위치의 얼굴 중심을 빼야 한다.
+  /// 놓은 화면 위치에서 지금 재생 위치의 얼굴 중심을 빼야 한다. 구간 줌이
+  /// 걸려 있으면 화면 좌표를 줌 이전 자리로 먼저 되돌린다 — 그려질 때
+  /// 다시 줌이 입혀지므로, 여기서 안 빼면 두 번 적용된다.
   NormalizedPoint _faceOffsetFor(
     EditorStickerLayer layer,
     NormalizedPoint absolute,
@@ -1480,11 +1482,20 @@ class EditorProjectController extends ChangeNotifier {
         ? null
         : _project.faceSampleForLayer(layer, sourceMs);
     if (face == null) return absolute;
-    return NormalizedPoint(
-      0.5 + absolute.x - face.x,
-      0.5 + absolute.y - face.y,
-    );
+    var x = absolute.x;
+    var y = absolute.y;
+    final zoom = _project.zoomAtTimeline(_project.playheadMs);
+    if (zoom != null && zoom.scale > 0) {
+      x = zoom.focus.x + (x - zoom.focus.x) / zoom.scale;
+      y = zoom.focus.y + (y - zoom.focus.y) / zoom.scale;
+    }
+    return NormalizedPoint(0.5 + x - face.x, 0.5 + y - face.y);
   }
+
+  /// 얼굴 추적 스티커가 지금 화면에서 몇 배로 그려지는가(얼굴 크기·줌 반영).
+  /// 핀치로 받은 화면 배율을 저장 배율로 되돌릴 때 나눈다.
+  double _faceDisplayFactor(EditorStickerLayer layer) =>
+      _project.faceStickerPlacementAt(layer, _project.playheadMs)?.scale ?? 1.0;
 
   void addSticker(String value) {
     if (value.isEmpty) return;
@@ -1572,11 +1583,14 @@ class EditorProjectController extends ChangeNotifier {
       for (final layer in _project.stickerLayers)
         layer.id == selected
             ? layer.copyWith(
-                // 얼굴 추적 스티커의 position은 얼굴 기준 오프셋이다.
+                // 얼굴 추적 스티커의 position은 얼굴 기준 오프셋이고,
+                // scale도 화면 배율(얼굴 크기·줌 포함)을 저장 배율로 되돌린다.
                 position: layer.tracksFace
                     ? _faceOffsetFor(layer, position)
                     : position,
-                scale: scale,
+                scale: layer.tracksFace
+                    ? scale / _faceDisplayFactor(layer)
+                    : scale,
                 rotationDegrees: rotationDegrees,
               )
             : layer,
@@ -1596,7 +1610,14 @@ class EditorProjectController extends ChangeNotifier {
     ];
     final stickers = [
       for (final layer in _project.stickerLayers)
-        layer.id == selected ? layer.copyWith(scale: scale) : layer,
+        layer.id == selected
+            ? layer.copyWith(
+                // 얼굴 추적 스티커는 화면 배율을 저장 배율로 되돌린다.
+                scale: layer.tracksFace
+                    ? scale / _faceDisplayFactor(layer)
+                    : scale,
+              )
+            : layer,
     ];
     _project = _project.copyWith(textLayers: texts, stickerLayers: stickers);
     if (notify) notifyListeners();

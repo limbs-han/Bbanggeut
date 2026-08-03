@@ -1099,27 +1099,120 @@ class EditorProject {
     return _sampleOn(_anchoredFaceTrack(anchor), sourceMs);
   }
 
+  /// 얼굴 크기 배율의 안전 범위. 얼굴 높이 표본은 조명·각도에 따라 흔들려서
+  /// 그대로 쓰면 스티커가 숨쉬듯 커졌다 작아진다.
+  static const _faceScaleRange = (min: 0.55, max: 1.8);
+
+  /// 스티커 위치·배율에 얼굴 크기와 구간 줌을 입힌다.
+  ///
+  /// 위치 = 얼굴 중심 + 끌어 둔 오프셋을 줌과 같은 식(p' = f + (p−f)·s)으로
+  /// 옮긴 자리. 배율 = 얼굴이 앵커 순간보다 커진 비율 × 줌 배율 — 사람이
+  /// 다가오거나 화면이 확대되면 스티커도 같이 커진다.
+  ({NormalizedPoint position, double scale}) _composeFacePlacement(
+    EditorStickerLayer layer,
+    EditorFaceSample face,
+    EditorFaceSample? anchorSample,
+    EditorZoomSegment? zoom,
+  ) {
+    var x = face.x + layer.position.x - 0.5;
+    var y = face.y + layer.position.y - 0.5;
+    var scale = 1.0;
+    final anchorHeight = anchorSample?.height ?? 0.0;
+    if (anchorHeight > 0 && face.height > 0) {
+      scale = (face.height / anchorHeight).clamp(
+        _faceScaleRange.min,
+        _faceScaleRange.max,
+      );
+    }
+    if (zoom != null) {
+      x = zoom.focus.x + (x - zoom.focus.x) * zoom.scale;
+      y = zoom.focus.y + (y - zoom.focus.y) * zoom.scale;
+      scale *= zoom.scale;
+    }
+    return (
+      position: NormalizedPoint(x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)),
+      scale: scale,
+    );
+  }
+
+  /// 이 타임라인 순간 얼굴 추적 스티커가 놓일 화면 위치와 배율 계수.
+  /// 미리보기가 프레임마다 부르고, 내보내기도 같은 식으로 굽는다 —
+  /// 화면에서 본 그대로 저장되는 것은 이 공유 계산 덕분이다.
+  ({NormalizedPoint position, double scale})? faceStickerPlacementAt(
+    EditorStickerLayer layer,
+    int timelineMs,
+  ) {
+    if (faceTrack.isEmpty) return null;
+    final sourceMs = sourcePositionForTimeline(timelineMs);
+    if (sourceMs == null) return null;
+    final anchor = faceAnchorFor(layer);
+    final track = anchor == null ? faceTrack : _anchoredFaceTrack(anchor);
+    final face = _sampleOn(track, sourceMs);
+    if (face == null) return null;
+    final anchorSample = anchor == null ? null : _sampleOn(track, anchor);
+    return _composeFacePlacement(
+      layer,
+      face,
+      anchorSample,
+      zoomAtTimeline(timelineMs),
+    );
+  }
+
   /// 얼굴 추적 스티커가 내보내기에서 쓸 키프레임. **타임라인 시각** 기준이고,
-  /// 스티커를 끌어 둔 오프셋(위치 - 중앙)이 얼굴 좌표에 더해져 있다.
+  /// 끌어 둔 오프셋·얼굴 크기 배율·구간 줌이 미리보기와 같은 식으로 구워져
+  /// 있다(`s` = 배율 계수).
   List<Map<String, Object>> _faceTrackForExport(EditorStickerLayer layer) {
     if (faceTrack.isEmpty) return const [];
     // 미리보기와 같은 눈으로 — 앵커 얼굴의 경로만 굽는다.
     final anchor = faceAnchorFor(layer);
     final track = anchor == null ? faceTrack : _anchoredFaceTrack(anchor);
-    final offsetX = layer.position.x - 0.5;
-    final offsetY = layer.position.y - 0.5;
+    if (track.isEmpty) return const [];
+    final anchorSample = anchor == null ? null : _sampleOn(track, anchor);
     final samples = <Map<String, Object>>[];
     var timelineStartMs = 0;
     for (final clip in clips) {
-      for (final sample in track) {
-        if (sample.sourceMs < clip.sourceStartMs ||
-            sample.sourceMs > clip.sourceEndMs) {
-          continue;
+      final times = <int>{
+        for (final sample in track)
+          if (sample.sourceMs >= clip.sourceStartMs &&
+              sample.sourceMs <= clip.sourceEndMs)
+            sample.sourceMs,
+      };
+      if (times.isEmpty) {
+        timelineStartMs += clip.durationMs;
+        continue;
+      }
+      // 줌 경계 직전·직후 키프레임. 없으면 영상은 그 순간 확대되는데
+      // 스티커는 다음 표본까지 250ms에 걸쳐 미끄러진다.
+      for (final zoom in zoomSegments) {
+        if (!zoom.worksIn(clip)) continue;
+        for (final boundary in [zoom.sourceStartMs, zoom.sourceEndMs]) {
+          for (final t in [boundary - 1, boundary]) {
+            if (t >= clip.sourceStartMs && t <= clip.sourceEndMs) times.add(t);
+          }
         }
+      }
+      final sorted = times.toList()..sort();
+      for (final sourceMs in sorted) {
+        EditorZoomSegment? zoom;
+        for (final candidate in zoomSegments.reversed) {
+          if (candidate.worksIn(clip) &&
+              sourceMs >= candidate.sourceStartMs &&
+              sourceMs < candidate.sourceEndMs) {
+            zoom = candidate;
+            break;
+          }
+        }
+        final placed = _composeFacePlacement(
+          layer,
+          _sampleOn(track, sourceMs)!,
+          anchorSample,
+          zoom,
+        );
         samples.add({
-          'ms': timelineStartMs + sample.sourceMs - clip.sourceStartMs,
-          'x': (sample.x + offsetX).clamp(0.0, 1.0),
-          'y': (sample.y + offsetY).clamp(0.0, 1.0),
+          'ms': timelineStartMs + sourceMs - clip.sourceStartMs,
+          'x': placed.position.x,
+          'y': placed.position.y,
+          's': placed.scale,
         });
       }
       timelineStartMs += clip.durationMs;
