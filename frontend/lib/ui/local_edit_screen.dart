@@ -1488,7 +1488,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
       onFaceStickerSelected: (value) {
-        projectController.setFaceSticker(value);
+        // 재생 위치에 얼굴이 없으면 붙일 수 없다 — 얼굴이 잡힌 장면으로
+        // 옮겨 달라고 안내한다.
+        if (!projectController.setFaceSticker(value)) {
+          showAppSnack(
+            context,
+            '이 장면에서는 얼굴을 찾지 못했어요. 얼굴이 나오는 장면으로 이동한 뒤 붙여 주세요.',
+            error: true,
+          );
+          return;
+        }
         _editState.markExternalEditApplied();
         setState(() {});
       },

@@ -322,22 +322,16 @@ class EditorProjectController extends ChangeNotifier {
           rotationDegrees: (map['rotationDegrees'] as num?)?.toDouble() ?? 0,
           clipId: map['clipId'] as String?,
           tracksFace: map['tracksFace'] == true,
+          faceTrackId: map['faceTrackId'] as String?,
         ),
       );
     }
 
-    final faceTrack = <EditorFaceSample>[];
-    for (final raw in recipe['faceTrack'] as List? ?? const []) {
-      final map = Map<String, dynamic>.from(raw as Map);
-      faceTrack.add(
-        EditorFaceSample(
-          sourceMs: (map['ms'] as num?)?.round() ?? 0,
-          x: (map['x'] as num?)?.toDouble() ?? 0.5,
-          y: (map['y'] as num?)?.toDouble() ?? 0.5,
-          height: (map['h'] as num?)?.toDouble() ?? 0,
-        ),
-      );
-    }
+    final faceTrack = <EditorFaceSample>[
+      for (final raw in recipe['faceTrack'] as List? ?? const [])
+        _faceSampleFrom(Map<String, dynamic>.from(raw as Map)),
+    ];
+    final faceTracks = _faceTracksFrom(recipe['faceTracks']);
 
     final canvasMap = Map<String, dynamic>.from(
       recipe['canvas'] as Map? ?? const {},
@@ -383,6 +377,7 @@ class EditorProjectController extends ChangeNotifier {
       textLayers: texts,
       stickerLayers: stickers,
       faceTrack: faceTrack,
+      faceTracks: faceTracks,
       canvas: canvas,
       audio: EditorAudio(
         sourceVolume: (audioMap['sourceVolume'] as num?)?.toDouble() ?? 1,
@@ -522,6 +517,9 @@ class EditorProjectController extends ChangeNotifier {
         ? _project.zoomSegments
         : [...autoZooms, ...manualZooms];
     // 얼굴 궤적은 원본 시각 기준이라 컷과 무관하게 그대로 싣는다.
+    final faceTracks = recommendation == null
+        ? _project.faceTracks
+        : _faceTracksFrom(recommendation.faceTracks);
     final faceTrack = recommendation == null
         ? _project.faceTrack
         : [
@@ -540,6 +538,7 @@ class EditorProjectController extends ChangeNotifier {
         textLayers: _textLayersFollowing(_project.clips, clips),
         stickerLayers: _stickerLayersFollowing(_project.clips, clips),
         faceTrack: faceTrack,
+        faceTracks: faceTracks,
         recommendationMarker: EditorRecommendationMarker(
           preset: preset,
           sourceStartMs: start,
@@ -739,6 +738,9 @@ class EditorProjectController extends ChangeNotifier {
   }
 
   /// 손가락 동작 도중의 스티커 구간 갱신. 확정은 [endGesture]가 한다.
+  ///
+  /// 얼굴 추적 스티커는 그 얼굴이 화면에 잡혀 있는 구간 밖으로 나가지
+  /// 않는다 — 손잡이를 더 끌어도 얼굴 범위 끝에서 멈춘다.
   void updateStickerLayerRangeGesture(
     String id,
     int startMs,
@@ -752,8 +754,18 @@ class EditorProjectController extends ChangeNotifier {
       for (final layer in _project.stickerLayers)
         if (layer.id == id)
           (() {
+            var start = startMs;
+            var end = endMs;
+            if (layer.tracksFace) {
+              final coverage = _project.faceCoverageFor(layer);
+              if (coverage != null) {
+                start = math.max(start, coverage.startMs);
+                end = math.min(end, coverage.endMs);
+              }
+            }
+            if (end - start < 200) return layer;
             changed = true;
-            return layer.copyWith(startMs: startMs, endMs: endMs);
+            return layer.copyWith(startMs: start, endMs: end);
           })()
         else
           layer,
@@ -1394,6 +1406,30 @@ class EditorProjectController extends ChangeNotifier {
     notifyListeners();
   }
 
+  static EditorFaceSample _faceSampleFrom(Map<String, dynamic> map) =>
+      EditorFaceSample(
+        sourceMs: (map['ms'] as num?)?.round() ?? 0,
+        x: (map['x'] as num?)?.toDouble() ?? 0.5,
+        y: (map['y'] as num?)?.toDouble() ?? 0.5,
+        height: (map['h'] as num?)?.toDouble() ?? 0,
+      );
+
+  /// 서버·초안의 `faceTracks`([{id, samples}]) 목록.
+  static List<EditorFaceTrack> _faceTracksFrom(Object? raw) {
+    final tracks = <EditorFaceTrack>[];
+    for (final entry in raw as List? ?? const []) {
+      final map = Map<String, dynamic>.from(entry as Map);
+      final id = map['id'] as String? ?? '';
+      final samples = [
+        for (final sample in map['samples'] as List? ?? const [])
+          _faceSampleFrom(Map<String, dynamic>.from(sample as Map)),
+      ];
+      if (id.isEmpty || samples.isEmpty) continue;
+      tracks.add(EditorFaceTrack(id: id, samples: samples));
+    }
+    return tracks;
+  }
+
   /// 지금 만지고 있는 클립. 고른 클립이 우선, 없으면 재생 위치의 클립이다.
   EditorClip? get _faceStickerScope =>
       _project.selectedClip ??
@@ -1417,9 +1453,14 @@ class EditorProjectController extends ChangeNotifier {
   /// 얼굴 추적 스티커를 지금 클립에 씌우거나(null이면) 벗긴다. 클립마다
   /// 하나만 쓴다 — 같은 클립에서 다른 이모지를 누르면 갈아 끼운다.
   ///
-  /// 자막·일반 스티커처럼 클립에 귀속되고, 구간은 타임라인에서 조절한다.
-  /// 어느 얼굴을 따라갈지는 구간 **시작 시각**의 얼굴이 정한다.
-  void setFaceSticker(String? value) {
+  /// 자막·일반 스티커처럼 클립에 귀속되고, 구간은 타임라인에서 조절하되
+  /// **그 얼굴이 화면에 잡혀 있는 구간 안**으로만 움직인다. 어느 얼굴인지는
+  /// 재생 위치에 잡힌 얼굴로 시작하고, 스티커를 다른 사람 위로 끌어 놓으면
+  /// 그 사람으로 갈아탄다.
+  ///
+  /// 지금 재생 위치 근처에 얼굴이 없으면 아무것도 하지 않고 false를
+  /// 돌려준다 — 화면이 안내를 띄운다.
+  bool setFaceSticker(String? value) {
     final scope = _faceStickerScope;
     // 이 클립의 얼굴 스티커(와 클립에 안 묶인 옛것)만 걷어낸다.
     final others = _project.stickerLayers
@@ -1436,17 +1477,34 @@ class EditorProjectController extends ChangeNotifier {
           (layer.clipId == null || layer.clipId == scope?.id),
     );
     if (value == null || value.isEmpty) {
-      if (others.length == _project.stickerLayers.length) return;
+      if (others.length == _project.stickerLayers.length) return true;
       _commit(
         _project.copyWith(
           stickerLayers: others,
           clearSelectedLayer: removedSelected,
         ),
       );
-      return;
+      return true;
+    }
+    // 재생 위치의 원본 시각. 고른 클립 밖이면 클립 첫 프레임으로 본다.
+    var probeMs = _project.sourcePositionForTimeline(_project.playheadMs);
+    if (scope != null &&
+        (probeMs == null ||
+            probeMs < scope.sourceStartMs ||
+            probeMs >= scope.sourceEndMs)) {
+      probeMs = scope.sourceStartMs;
+    }
+    // 이 순간 화면에 잡힌 사람 중 얼굴이 가장 큰(가까운) 사람에게 붙는다.
+    final candidates = probeMs == null
+        ? const <EditorFaceTrack>[]
+        : _project.faceTracksAt(probeMs);
+    final trackId = candidates.isEmpty ? null : candidates.first.id;
+    if (_project.faceTracks.isNotEmpty && trackId == null) return false;
+    if (_project.faceTracks.isEmpty && _project.faceTrack.isEmpty) {
+      return false;
     }
     final clipStart = scope == null ? 0 : _project.timelineStartFor(scope.id);
-    final layer = EditorStickerLayer(
+    var layer = EditorStickerLayer(
       id: _nextId('ar-face'),
       value: value,
       // 얼굴 정중앙. 끌면 얼굴 기준 오프셋으로 저장된다.
@@ -1458,13 +1516,24 @@ class EditorProjectController extends ChangeNotifier {
       scale: 1.6,
       clipId: scope?.id,
       tracksFace: true,
+      faceTrackId: trackId,
     );
+    // 구간을 그 얼굴이 잡혀 있는 범위로 줄인다 — 얼굴이 없는 시간에
+    // 따라다닐 수는 없다.
+    final coverage = _project.faceCoverageFor(layer);
+    if (coverage == null) return false;
+    layer = layer.copyWith(
+      startMs: math.max(layer.startMs, coverage.startMs),
+      endMs: math.min(layer.endMs, coverage.endMs),
+    );
+    if (layer.endMs - layer.startMs < 200) return false;
     _commit(
       _project.copyWith(
         stickerLayers: [...others, layer],
         selectedLayerId: layer.id,
       ),
     );
+    return true;
   }
 
   /// 화면 절대 좌표를 얼굴 기준 오프셋으로 되돌린다.
@@ -1496,6 +1565,48 @@ class EditorProjectController extends ChangeNotifier {
   /// 핀치로 받은 화면 배율을 저장 배율로 되돌릴 때 나눈다.
   double _faceDisplayFactor(EditorStickerLayer layer) =>
       _project.faceStickerPlacementAt(layer, _project.playheadMs)?.scale ?? 1.0;
+
+  /// 얼굴 추적 스티커를 끌어 놓았을 때. 놓은 자리에서 가장 가까운 사람으로
+  /// 갈아타고("누구 얼굴에 붙일지"는 끌어다 놓기로 정한다), 그 얼굴 기준
+  /// 오프셋으로 저장한다. 갈아타면 구간도 그 사람의 검출 범위로 맞춘다.
+  EditorStickerLayer _faceStickerDragged(
+    EditorStickerLayer layer,
+    NormalizedPoint absolute,
+  ) {
+    final sourceMs = _project.sourcePositionForTimeline(_project.playheadMs);
+    var next = layer;
+    if (sourceMs != null && _project.faceTracks.isNotEmpty) {
+      // 사람 찾기는 줌 이전 좌표로 한다 — 궤적이 그 좌표계다.
+      var x = absolute.x;
+      var y = absolute.y;
+      final zoom = _project.zoomAtTimeline(_project.playheadMs);
+      if (zoom != null && zoom.scale > 0) {
+        x = zoom.focus.x + (x - zoom.focus.x) / zoom.scale;
+        y = zoom.focus.y + (y - zoom.focus.y) / zoom.scale;
+      }
+      final candidates = _project.faceTracksAt(
+        sourceMs,
+        near: NormalizedPoint(x, y),
+      );
+      if (candidates.isNotEmpty && candidates.first.id != layer.faceTrackId) {
+        final switched = layer.copyWith(faceTrackId: candidates.first.id);
+        final coverage = _project.faceCoverageFor(switched);
+        if (coverage != null && coverage.endMs - coverage.startMs >= 200) {
+          next = switched.copyWith(
+            startMs: switched.startMs.clamp(
+              coverage.startMs,
+              coverage.endMs - 200,
+            ),
+            endMs: switched.endMs.clamp(
+              coverage.startMs + 200,
+              coverage.endMs,
+            ),
+          );
+        }
+      }
+    }
+    return next.copyWith(position: _faceOffsetFor(next, absolute));
+  }
 
   void addSticker(String value) {
     if (value.isEmpty) return;
@@ -1534,12 +1645,11 @@ class EditorProjectController extends ChangeNotifier {
     final stickers = [
       for (final layer in _project.stickerLayers)
         if (layer.id == selected)
-          layer.copyWith(
-            // 얼굴 추적 스티커의 position은 얼굴 기준 오프셋이다.
-            position: layer.tracksFace
-                ? _faceOffsetFor(layer, position)
-                : position,
-          )
+          // 얼굴 추적 스티커는 놓은 자리의 사람으로 갈아타고 얼굴 기준
+          // 오프셋으로 저장한다. 일반 스티커는 그대로 화면 좌표다.
+          (layer.tracksFace
+              ? _faceStickerDragged(layer, position)
+              : layer.copyWith(position: position))
         else
           layer,
     ];

@@ -762,6 +762,8 @@ class _RangeTimeline extends StatelessWidget {
     }
     final clipTimelineStart = project.timelineStartFor(scope.id);
     final span = math.max(1, scope.durationMs);
+    // 얼굴 추적 스티커는 그 얼굴이 잡혀 있는 구간이 손잡이의 한계다.
+    final coverage = layer.tracksFace ? project.faceCoverageFor(layer) : null;
     return TrimRangeBar(
       key: const Key('editor-sticker-range-bar'),
       sourceDurationMs: span,
@@ -780,6 +782,12 @@ class _RangeTimeline extends StatelessWidget {
           ),
       ],
       minimumDurationMs: 200,
+      lowerBoundMs: coverage == null
+          ? 0
+          : (coverage.startMs - clipTimelineStart).clamp(0, span),
+      upperBoundMs: coverage == null
+          ? span
+          : (coverage.endMs - clipTimelineStart).clamp(0, span),
       windowSlidable: true,
       onTrimChanged: (startMs, endMs, _) =>
           controller.updateStickerLayerRangeGesture(

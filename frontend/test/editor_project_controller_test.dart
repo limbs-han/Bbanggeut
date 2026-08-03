@@ -493,16 +493,20 @@ void main() {
       hasLength(1),
     );
     // 자막·일반 스티커처럼 클립에 귀속되고 구간을 조절할 수 있다.
+    // 구간은 얼굴이 잡혀 있는 범위(0~1000ms)로 제한된다.
     expect(face.clipId, 'clip-a');
     expect(face.startMs, 0);
-    expect(face.endMs, 10000);
-    subject.updateStickerLayerRangeGesture(face.id, 1000, 4000);
+    expect(face.endMs, 1000);
+    subject.updateStickerLayerRangeGesture(face.id, 200, 800);
     subject.endGesture();
     final trimmed = subject.faceSticker!;
-    expect(trimmed.startMs, 1000);
-    expect(trimmed.endMs, 4000);
+    expect(trimmed.startMs, 200);
+    expect(trimmed.endMs, 800);
+    // 손잡이를 얼굴 범위 밖까지 끌어도 범위 끝에서 멈춘다.
     subject.updateStickerLayerRangeGesture(trimmed.id, 0, 10000);
     subject.endGesture();
+    expect(subject.faceSticker!.startMs, 0);
+    expect(subject.faceSticker!.endMs, 1000);
 
     // 내보내기 DTO에는 얼굴 키프레임 트랙이 실린다.
     final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
@@ -560,6 +564,54 @@ void main() {
     for (final sample in track) {
       expect((sample as Map)['x'] as double, lessThan(0.5));
     }
+  });
+
+  test('사람별 궤적이 있으면 붙인 자리의 사람을 따라가고 구간이 제한된다', () {
+    final subject = controller();
+    List<Map<String, Object>> line(int fromMs, int toMs, double x, double y) =>
+        [
+          for (var ms = fromMs; ms <= toMs; ms += 250)
+            {'ms': ms, 'x': x, 'y': y, 'h': 0.3},
+        ];
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      // 오른쪽 사람(face-1)은 0~8초, 왼쪽 사람(face-2)은 2~4초에 잡힌다.
+      'faceTracks': [
+        {'id': 'face-1', 'samples': line(0, 8000, 0.8, 0.5)},
+        {'id': 'face-2', 'samples': line(2000, 4000, 0.2, 0.5)},
+      ],
+    });
+
+    // 0ms에는 오른쪽 사람만 있다 — 그 사람에게 붙고, 구간은 검출 범위다.
+    expect(subject.setFaceSticker('👑'), isTrue);
+    var face = subject.faceSticker!;
+    expect(face.faceTrackId, 'face-1');
+    expect(face.startMs, 0);
+    expect(face.endMs, 8000);
+
+    // 3초로 옮겨 왼쪽 사람 위로 끌어 놓으면 그 사람으로 갈아탄다.
+    subject.setPlayhead(3000);
+    subject.moveSelectedLayer(NormalizedPoint(0.2, 0.5));
+    face = subject.faceSticker!;
+    expect(face.faceTrackId, 'face-2');
+    expect(face.startMs, 2000);
+    expect(face.endMs, 4000);
+
+    // 손잡이를 밖으로 끌어도 검출 범위 안에서 멈춘다.
+    subject.updateStickerLayerRangeGesture(face.id, 0, 10000);
+    subject.endGesture();
+    face = subject.faceSticker!;
+    expect(face.startMs, 2000);
+    expect(face.endMs, 4000);
+
+    // 얼굴이 아무도 없는 9.5초에서는 붙일 수 없다.
+    subject.setFaceSticker(null);
+    subject.setPlayhead(9500);
+    expect(subject.setFaceSticker('🕶️'), isFalse);
+    expect(subject.faceSticker, isNull);
   });
 
   test('줌 구간에서는 얼굴 스티커도 같은 식으로 옮겨지고 커진다', () {
