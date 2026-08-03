@@ -284,8 +284,18 @@ class EditRecommendationClient {
   }
 
   /// 편집 영상 재생 주소. video_player에 그대로 넘긴다.
+  /// 실서버에서는 [editedVideoPlayUrl]의 presigned URL을 먼저 시도한다.
   String editedVideoUrl(String videoId) =>
       '${_dio.options.baseUrl}/v1/edited-videos/$videoId/file';
+
+  /// 편집본 재생용 presigned URL(1시간). 서버에 공개 endpoint가 설정되지
+  /// 않았으면 null — 그때는 [editedVideoUrl] + [authHeaders]로 폴백한다.
+  Future<String?> editedVideoPlayUrl(String videoId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/v1/edited-videos/$videoId/play-url',
+    );
+    return response.data?['url'] as String?;
+  }
 
   Future<List<Map<String, dynamic>>> listComments(String videoId) async {
     final response = await _dio.get<Map<String, dynamic>>(

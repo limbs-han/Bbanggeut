@@ -114,53 +114,67 @@ class AnalysisJobManager:
     def _run(
         self, job: AnalysisJob, video_path: Path, source_url: str | None
     ) -> None:
+        # 일시 오류(내려받기 끊김, 디코더 개별 실패)를 한 번은 자체 복구한다.
+        # 두 번째도 실패하면 원인을 상태로 남기고 앱 폴백에 맡긴다.
         try:
-            from . import (
-                audio_features,
-                expression_analysis,
-                video_features,
-                yamnet_analysis,
-            )
-
-            def finish_stage(stage: str, next_stage: str | None) -> None:
-                job.progress = _STAGE_DONE[stage]
-                if next_stage is not None:
-                    job.stage = next_stage
-
-            if source_url is not None:
-                with (
-                    urllib.request.urlopen(source_url, timeout=30) as response,
-                    open(video_path, "wb") as sink,
-                ):
-                    shutil.copyfileobj(response, sink, length=1 << 20)
-                finish_stage("download", "audio")
-
-            self._save(job.video_id, "audio", audio_features.analyze_video(video_path))
-            finish_stage("audio", "yamnet")
-            self._save(
-                job.video_id,
-                "yamnet",
-                yamnet_analysis.classify_video(video_path, YAMNET_MODEL),
-            )
-            finish_stage("yamnet", "video")
-            self._save(
-                job.video_id,
-                "video",
-                video_features.analyze_video(video_path, FACE_MODEL),
-            )
-            finish_stage("video", "expression")
-            self._save(
-                job.video_id,
-                "expression",
-                expression_analysis.analyze_expressions(video_path, LANDMARKER_MODEL),
-            )
-            finish_stage("expression", None)
-            job.status = "done"
-        except Exception as failure:  # noqa: BLE001 — 실패 원인을 상태로 보여 준다
-            job.status = "failed"
-            job.error = f"{type(failure).__name__}: {failure}"
+            for attempt in (1, 2):
+                try:
+                    self._run_once(job, video_path, source_url)
+                    job.status = "done"
+                    return
+                except Exception as failure:  # noqa: BLE001 — 상태로 보고한다
+                    if attempt == 2:
+                        job.status = "failed"
+                        job.error = f"{type(failure).__name__}: {failure}"
+                    else:
+                        job.stage = "download" if source_url else "audio"
+                        job.progress = 0.0
         finally:
             try:
                 video_path.unlink(missing_ok=True)
             except OSError:
                 pass
+
+    def _run_once(
+        self, job: AnalysisJob, video_path: Path, source_url: str | None
+    ) -> None:
+        from . import (
+            audio_features,
+            expression_analysis,
+            video_features,
+            yamnet_analysis,
+        )
+
+        def finish_stage(stage: str, next_stage: str | None) -> None:
+            job.progress = _STAGE_DONE[stage]
+            if next_stage is not None:
+                job.stage = next_stage
+
+        if source_url is not None:
+            with (
+                urllib.request.urlopen(source_url, timeout=30) as response,
+                open(video_path, "wb") as sink,
+            ):
+                shutil.copyfileobj(response, sink, length=1 << 20)
+            finish_stage("download", "audio")
+
+        self._save(job.video_id, "audio", audio_features.analyze_video(video_path))
+        finish_stage("audio", "yamnet")
+        self._save(
+            job.video_id,
+            "yamnet",
+            yamnet_analysis.classify_video(video_path, YAMNET_MODEL),
+        )
+        finish_stage("yamnet", "video")
+        self._save(
+            job.video_id,
+            "video",
+            video_features.analyze_video(video_path, FACE_MODEL),
+        )
+        finish_stage("video", "expression")
+        self._save(
+            job.video_id,
+            "expression",
+            expression_analysis.analyze_expressions(video_path, LANDMARKER_MODEL),
+        )
+        finish_stage("expression", None)

@@ -98,6 +98,13 @@ services:
       EDITOR_REQUIRE_AUTH: "true"
       EDITOR_MODEL_ROOT: /models
       EDITOR_SOURCE_URL_HOSTS: ${EDITOR_SOURCE_URL_HOSTS:-i15e201.p.ssafy.io}
+      # 금고(가족) 범위 판정: 사용자 토큰을 이 주소의 GET /api/videos/{id}에
+      # 전달해 백엔드가 구성원 여부·세션 상태를 판정한다. nginx를 한 바퀴
+      # 돌지만(Spring이 loopback 전용이라) 판정 결과는 60초 캐시된다.
+      EDITOR_BACKEND_URL: ${EDITOR_BACKEND_URL:-https://i15e201.p.ssafy.io}
+      # 편집본 재생 presigned URL 서명 기준 호스트(백엔드 S3_PUBLIC_ENDPOINT와
+      # 같은 방식). nginx의 /william-james-edit 경로가 MinIO로 프록시한다.
+      EDITOR_PUBLIC_S3_ENDPOINT: ${EDITOR_PUBLIC_S3_ENDPOINT:-https://i15e201.p.ssafy.io}
     volumes:
       - ${EDITOR_MODEL_DIR:-/home/ubuntu/william-james/editor-models}:/models:ro
     ports:

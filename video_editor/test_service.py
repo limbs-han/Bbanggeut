@@ -146,6 +146,53 @@ class AuthTest(unittest.TestCase):
             )
 
 
+class VaultScopeTest(unittest.TestCase):
+    """금고(가족) 범위 검사 — 백엔드 판정을 editor-api가 그대로 따른다."""
+
+    def test_disabled_without_backend_url(self) -> None:
+        from video_editor import backend_access
+
+        with mock.patch.object(backend_access, "BACKEND_URL", None):
+            self.assertTrue(backend_access.can_access_video(None, "v1"))
+
+    def test_denies_without_token_when_enabled(self) -> None:
+        from video_editor import backend_access
+
+        with mock.patch.object(
+            backend_access, "BACKEND_URL", "https://backend.example"
+        ):
+            self.assertFalse(backend_access.can_access_video(None, "v1"))
+
+    def test_backend_verdict_is_cached(self) -> None:
+        from video_editor import backend_access
+
+        response = mock.MagicMock()
+        response.status = 200
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=False)
+        with (
+            mock.patch.object(
+                backend_access, "BACKEND_URL", "https://backend.example"
+            ),
+            mock.patch.object(backend_access, "_cache", {}),
+            mock.patch.object(
+                backend_access.urllib.request, "urlopen", return_value=response
+            ) as opened,
+        ):
+            self.assertTrue(backend_access.can_access_video("Bearer t", "v1"))
+            self.assertTrue(backend_access.can_access_video("Bearer t", "v1"))
+        opened.assert_called_once()
+
+    def test_endpoint_returns_403_when_backend_denies(self) -> None:
+        request = RecommendationRequest(videoId="other-family-video")
+        with mock.patch.object(
+            service.backend_access, "can_access_video", return_value=False
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                service.recommend(request, http_request=None)
+        self.assertEqual(403, caught.exception.status_code)
+
+
 class SourceUrlTest(unittest.TestCase):
     def test_allows_backend_presigned_host_only(self) -> None:
         self.assertTrue(

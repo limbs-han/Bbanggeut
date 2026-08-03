@@ -45,12 +45,22 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
 
   Future<void> _preparePlayer() async {
     try {
-      final player = VideoPlayerController.networkUrl(
-        Uri.parse(_client.editedVideoUrl(widget.videoId)),
-        // 실서버 editor-api는 인증을 요구한다 — video_player는 Dio 인터셉터를
-        // 거치지 않으므로 헤더를 직접 붙인다.
-        httpHeaders: _client.authHeaders,
-      );
+      // 실서버에서는 MinIO presigned URL로 직접 스트리밍한다(서명이 URL에
+      // 있어 헤더 불필요). 로컬 등 presigned 미지원이면 editor-api 경유
+      // /file + 인증 헤더로 폴백한다.
+      String? playUrl;
+      try {
+        playUrl = await _client.editedVideoPlayUrl(widget.videoId);
+      } catch (_) {
+        playUrl = null;
+      }
+      final player = playUrl != null
+          ? VideoPlayerController.networkUrl(Uri.parse(playUrl))
+          : VideoPlayerController.networkUrl(
+              Uri.parse(_client.editedVideoUrl(widget.videoId)),
+              // video_player는 Dio 인터셉터를 거치지 않으므로 헤더를 직접 붙인다.
+              httpHeaders: _client.authHeaders,
+            );
       await player.initialize();
       await player.setLooping(true);
       if (!mounted) {

@@ -12,12 +12,14 @@ from urllib.parse import urlparse
 
 import boto3
 import jwt
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import backend_access
 from .adaptive_cli import build_adaptive_recipe
 from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
 
@@ -121,6 +123,34 @@ class RecipeStore:
             aws_secret_access_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin"),
             region_name="us-east-1",
         )
+        # 편집본 재생용 presigned URL 서명 클라이언트. 백엔드의
+        # S3_PUBLIC_ENDPOINT와 같은 방식 — nginx가 버킷 경로를 프록시하므로
+        # 공개 호스트 기준으로 서명해야 모바일에서 그대로 재생된다.
+        public_endpoint = os.environ.get("EDITOR_PUBLIC_S3_ENDPOINT") or None
+        self.public_client = (
+            boto3.client(
+                "s3",
+                endpoint_url=public_endpoint,
+                aws_access_key_id=os.environ.get("MINIO_ACCESS_KEY", "minioadmin"),
+                aws_secret_access_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin"),
+                region_name="us-east-1",
+                config=BotoConfig(
+                    signature_version="s3v4", s3={"addressing_style": "path"}
+                ),
+            )
+            if public_endpoint
+            else None
+        )
+
+    def presign_get(self, key: str, expires_seconds: int = 3600) -> str | None:
+        """공개 호스트 기준 presigned GET URL. 공개 endpoint 미설정이면 None."""
+        if self.public_client is None:
+            return None
+        return self.public_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=expires_seconds,
+        )
 
     def ensure_bucket(self) -> None:
         try:
@@ -219,6 +249,41 @@ jobs = AnalysisJobManager(
 )
 
 
+def _require_video_access(http_request: Request | None, video_id: str) -> None:
+    """금고(가족) 범위 검사 — 백엔드가 사용자 토큰으로 판정한다."""
+    header = (
+        http_request.headers.get("authorization")
+        if http_request is not None
+        else None
+    )
+    if not backend_access.can_access_video(header, video_id):
+        raise HTTPException(status_code=403, detail="이 영상에 접근할 수 없습니다")
+
+
+def _accessible(http_request: Request, video_id: str) -> bool:
+    return backend_access.can_access_video(
+        http_request.headers.get("authorization"), video_id
+    )
+
+
+def _token_subject(http_request: Request | None) -> str | None:
+    """토큰의 사용자 UUID(sub). 서명은 미들웨어가 이미 검증했다."""
+    if http_request is None:
+        return None
+    header = http_request.headers.get("authorization") or ""
+    if not header.lower().startswith("bearer "):
+        return None
+    try:
+        claims = jwt.decode(
+            header[len("bearer ") :].strip(),
+            options={"verify_signature": False},
+        )
+    except jwt.PyJWTError:
+        return None
+    subject = claims.get("sub")
+    return str(subject) if subject else None
+
+
 def _load_cached_analyses(video_id: str) -> dict[str, dict[str, Any]] | None:
     """MinIO에 저장된 4종 분석 결과. 하나라도 없으면 None."""
     analyses: dict[str, dict[str, Any]] = {}
@@ -248,6 +313,8 @@ def health() -> dict[str, Any]:
         "analysis": ready,
         "analysisUnavailableReason": reason,
         "authRequired": EDITOR_JWT_SECRET is not None,
+        "vaultScope": backend_access.enabled(),
+        "presignedPlayback": store.public_client is not None,
     }
 
 
@@ -281,7 +348,10 @@ def _build_analyzed_recommendation(
 
 
 @app.post("/v1/edit-recommendations")
-def recommend(request: RecommendationRequest) -> dict[str, Any]:
+def recommend(
+    request: RecommendationRequest, http_request: Request = None
+) -> dict[str, Any]:
+    _require_video_access(http_request, request.video_id)
     try:
         recipe = build_fixture_recommendation(request)
     except (KeyError, FileNotFoundError):
@@ -320,6 +390,7 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
 
     202를 받으면 GET으로 상태를 폴링한다. 이미 분석돼 있으면 즉시 done.
     """
+    _require_video_access(request, video_id)
     running = jobs.get(video_id)
     if running is not None and running.status == "running":
         return JSONResponse(status_code=202, content=running.snapshot())
@@ -358,7 +429,8 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
 
 
 @app.get("/v1/edit-analyses/{video_id}")
-def analysis_status(video_id: str) -> dict[str, Any]:
+def analysis_status(video_id: str, http_request: Request = None) -> dict[str, Any]:
+    _require_video_access(http_request, video_id)
     job = jobs.get(video_id)
     if job is not None:
         return job.snapshot()
@@ -368,7 +440,10 @@ def analysis_status(video_id: str) -> dict[str, Any]:
 
 
 @app.put("/v1/edit-projects/{video_id}")
-def save_project(video_id: str, request: ProjectSaveRequest) -> dict[str, Any]:
+def save_project(
+    video_id: str, request: ProjectSaveRequest, http_request: Request = None
+) -> dict[str, Any]:
+    _require_video_access(http_request, video_id)
     object_key = f"edit-projects/{video_id}/user-v{request.revision}.json"
     payload = {
         "videoId": video_id,
@@ -386,8 +461,11 @@ def save_project(video_id: str, request: ProjectSaveRequest) -> dict[str, Any]:
 
 
 @app.get("/v1/edit-projects")
-def list_projects() -> dict[str, Any]:
-    """편집 중인(초안이 저장된) 영상 목록. 앱의 "이어서 편집"이 쓴다."""
+def list_projects(http_request: Request = None) -> dict[str, Any]:
+    """편집 중인(초안이 저장된) 영상 목록. 앱의 "이어서 편집"이 쓴다.
+
+    다른 가족의 초안은 백엔드 판정으로 걸러낸다(영상 단위 캐시).
+    """
     try:
         keys = store.list_keys("edit-projects/")
     except (BotoCoreError, ClientError, OSError) as failure:
@@ -396,6 +474,8 @@ def list_projects() -> dict[str, Any]:
     for entry in keys:
         parts = entry["key"].split("/")
         if len(parts) != 3 or parts[2] != "latest.json":
+            continue
+        if http_request is not None and not _accessible(http_request, parts[1]):
             continue
         payload = store.get_json(entry["key"]) or {}
         items.append(
@@ -410,8 +490,9 @@ def list_projects() -> dict[str, Any]:
 
 
 @app.get("/v1/edit-projects/{video_id}")
-def load_project(video_id: str) -> dict[str, Any]:
+def load_project(video_id: str, http_request: Request = None) -> dict[str, Any]:
     """가장 최근 사용자 초안. 없으면 404 — 자동 추천은 recommend가 따로 만든다."""
+    _require_video_access(http_request, video_id)
     payload = store.get_json(f"edit-projects/{video_id}/latest.json")
     if payload is None:
         raise HTTPException(status_code=404, detail="no saved draft")
@@ -425,6 +506,7 @@ async def upload_edited_video(video_id: str, request: Request) -> dict[str, Any]
     데모 규모(숏폼 수십 MB)를 넘는 대용량은 다루지 않는다 — 그건 백엔드의
     presigned 업로드 몫이다.
     """
+    _require_video_access(request, video_id)
     data = await request.body()
     if not data:
         raise HTTPException(status_code=422, detail="empty body")
@@ -450,7 +532,7 @@ async def upload_edited_video(video_id: str, request: Request) -> dict[str, Any]
 
 
 @app.get("/v1/edited-videos")
-def list_edited_videos() -> dict[str, Any]:
+def list_edited_videos(http_request: Request = None) -> dict[str, Any]:
     """편집 완료 영상 목록 — 캘린더와 추억 화면이 쓴다."""
     try:
         keys = store.list_keys("edited-videos/")
@@ -461,14 +543,38 @@ def list_edited_videos() -> dict[str, Any]:
         if not entry["key"].endswith("/meta.json"):
             continue
         payload = store.get_json(entry["key"])
-        if payload:
-            items.append(payload)
+        if not payload:
+            continue
+        video_id = str(payload.get("videoId", ""))
+        if http_request is not None and not _accessible(http_request, video_id):
+            continue
+        items.append(payload)
     items.sort(key=lambda item: str(item.get("savedAt", "")), reverse=True)
     return {"items": items}
 
 
+@app.get("/v1/edited-videos/{video_id}/play-url")
+def edited_video_play_url(
+    video_id: str, http_request: Request = None
+) -> dict[str, Any]:
+    """편집본 재생용 presigned URL(1시간).
+
+    재생 스트리밍을 editor-api가 물고 있지 않도록 MinIO가 직접 낸다.
+    공개 endpoint가 설정돼 있지 않으면 url이 null — 앱은 /file로 폴백한다.
+    """
+    _require_video_access(http_request, video_id)
+    if store.get_json(f"edited-videos/{video_id}/meta.json") is None:
+        raise HTTPException(status_code=404, detail="no edited video")
+    try:
+        url = store.presign_get(f"edited-videos/{video_id}/edited.mp4")
+    except (BotoCoreError, ClientError) as failure:
+        raise HTTPException(status_code=503, detail=f"서명 실패: {failure}") from failure
+    return {"url": url}
+
+
 @app.get("/v1/edited-videos/{video_id}/file")
-def edited_video_file(video_id: str) -> StreamingResponse:
+def edited_video_file(video_id: str, http_request: Request = None) -> StreamingResponse:
+    _require_video_access(http_request, video_id)
     stream = store.open_stream(f"edited-videos/{video_id}/edited.mp4")
     if stream is None:
         raise HTTPException(status_code=404, detail="no edited video")
@@ -486,18 +592,26 @@ class CommentRequest(BaseModel):
 
 
 @app.get("/v1/edited-videos/{video_id}/comments")
-def list_comments(video_id: str) -> dict[str, Any]:
+def list_comments(video_id: str, http_request: Request = None) -> dict[str, Any]:
+    _require_video_access(http_request, video_id)
     payload = store.get_json(f"edited-videos/{video_id}/comments.json")
     return payload or {"items": []}
 
 
 @app.post("/v1/edited-videos/{video_id}/comments")
-def add_comment(video_id: str, request: CommentRequest) -> dict[str, Any]:
+def add_comment(
+    video_id: str, request: CommentRequest, http_request: Request = None
+) -> dict[str, Any]:
+    _require_video_access(http_request, video_id)
     key = f"edited-videos/{video_id}/comments.json"
     payload = store.get_json(key) or {"items": []}
     comment = {
         "id": len(payload["items"]) + 1,
         "author": request.author.strip() or "가족",
+        # 표시 이름은 앱 자가 신고지만, 토큰의 사용자 UUID를 함께 기록해
+        # 누가 썼는지는 검증 가능하게 남긴다. 이름까지 서버가 박으려면
+        # 백엔드에 프로필 조회 API(GET /api/auth/me)가 생겨야 한다.
+        "authorUserId": _token_subject(http_request),
         "text": request.text.strip(),
         "createdAt": datetime.now().astimezone().isoformat(),
     }
