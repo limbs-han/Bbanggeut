@@ -9,6 +9,13 @@ import 'no_device_screens.dart';
 import 'settings_screen.dart';
 import 'videos_screen.dart';
 
+/// 다른 화면이 셸 위로 올라오는 것을 지켜보는 관찰자.
+///
+/// 홈의 실시간 스트리밍(WebRTC)은 탭을 옮기면 멈추지만, 상세·편집처럼
+/// **위로 덮이는 화면**은 탭 인덱스를 바꾸지 않아서 밑에서 계속 재생되며
+/// 대역폭을 먹었다. 라우트가 덮이고 걷히는 것을 여기서 듣는다.
+final mainShellRouteObserver = RouteObserver<ModalRoute<void>>();
+
 class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.controller});
   final AppController controller;
@@ -19,13 +26,18 @@ class MainShell extends StatefulWidget {
 /// 아직 펼치지 않은 탭 자리. 크기를 0으로 두어 배치 비용도 남기지 않는다.
 const _closedTab = SizedBox.shrink();
 
-class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
+class _MainShellState extends State<MainShell>
+    with WidgetsBindingObserver, RouteAware {
   // Home and family show the camera's online state, which expires with its
   // heartbeat TTL, so both re-read presence on entry.
   static const _presenceTabs = {2, 3};
 
   int index = 2;
   String? _lastDeviceId;
+
+  /// 다른 화면(상세·편집 등)이 셸 위를 덮고 있는가. 덮여 있는 동안에는
+  /// 홈의 실시간 스트리밍을 멈춘다 — 안 보이는 영상이 대역폭을 먹지 않게.
+  bool _coveredByRoute = false;
 
   /// 한 번이라도 펼친 탭.
   ///
@@ -87,7 +99,27 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) mainShellRouteObserver.subscribe(this, route);
+  }
+
+  /// 다른 화면이 위로 올라왔다.
+  @override
+  void didPushNext() {
+    if (mounted) setState(() => _coveredByRoute = true);
+  }
+
+  /// 위를 덮던 화면이 걷혔다.
+  @override
+  void didPopNext() {
+    if (mounted) setState(() => _coveredByRoute = false);
+  }
+
+  @override
   void dispose() {
+    mainShellRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_handleRequestedRoute);
     super.dispose();
@@ -104,7 +136,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       VideosScreen(controller: widget.controller),
       HomeScreen(
         controller: widget.controller,
-        isActive: index == 2,
+        isActive: index == 2 && !_coveredByRoute,
         openVideos: () => _selectIndex(1),
         openCalendar: () => _selectIndex(0),
       ),

@@ -179,43 +179,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 비율 탭에서 고르고, 그때는 여백 없이 가득 채운다.
     final nextProjectController = EditorProjectController(sourceProject);
 
-    String? recommendationStatus;
-    // 저장해 둔 초안이 있으면 그것부터 — "이어서 편집"이 기본이다.
-    Map<String, dynamic>? draft;
-    try {
-      draft = await _recommendations.loadDraft(widget.video.id);
-    } catch (_) {
-      draft = null;
-    }
-    if (draft != null && draft['recipe'] is Map) {
-      nextProjectController.loadDraftRecipe(
-        Map<String, dynamic>.from(draft['recipe'] as Map),
-      );
-      recommendationStatus = '저장한 편집을 이어서 열었어요';
-    }
-    if (recommendationStatus == null) {
-      try {
-        final recommendation = await _recommendations.recommend(
-          videoId: widget.video.id,
-          capturedAt: widget.video.capturedStartAt,
-        );
-        nextProjectController.applyRecommendation(recommendation);
-        if (const {
-          'short',
-          'medium',
-          'long',
-        }.contains(recommendation.durationPreset)) {
-          _presetRecommendations[recommendation.durationPreset] =
-              recommendation;
-        }
-        final seconds = nextProjectController.project.durationMs / 1000;
-        recommendationStatus =
-            '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · 줌 ${nextProjectController.project.zoomSegments.length}개';
-      } catch (_) {
-        recommendationStatus = '자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요';
-      }
-    }
-
+    // **화면부터 연다.** 초안 조회와 AI 추천은 네트워크라 언제 올지 모른다 —
+    // 예전에는 이 둘을 기다렸다가 화면을 열어서, 서버가 안 닿으면 연결
+    // 타임아웃(4초×2)이 고스란히 진입 시간에 얹혔다. 이제 원본 구간으로
+    // 먼저 열고, 도착하면 그때 적용한다.
     final previousPreview = _preview;
     final previousProjectController = _projectController;
     previousPreview?.removeListener(_onPreviewChanged);
@@ -234,7 +201,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         durationMs: durationMs,
         originalAspectRatio: aspectRatio,
       );
-      _status = recommendationStatus;
+      _status = '자동 편집을 불러오고 있어요';
     });
 
     previousProjectController?.dispose();
@@ -244,8 +211,56 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // [_startAutoCaptions]가 돈다.
     // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
     // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
+    unawaited(_applyDraftOrRecommendation(nextProjectController));
     unawaited(_loadThumbnails());
     unawaited(_loadPresetRecommendations());
+  }
+
+  /// 저장한 초안이 있으면 그것을, 없으면 AI 추천을 **화면이 열린 뒤에**
+  /// 불러와 적용한다. 그동안 사용자는 원본 구간으로 편집을 시작할 수 있다.
+  Future<void> _applyDraftOrRecommendation(
+    EditorProjectController controller,
+  ) async {
+    String status;
+    try {
+      // 저장해 둔 초안이 있으면 그것부터 — "이어서 편집"이 기본이다.
+      Map<String, dynamic>? draft;
+      try {
+        draft = await _recommendations.loadDraft(widget.video.id);
+      } catch (_) {
+        draft = null;
+      }
+      // 기다리는 사이 화면이 닫혔거나 원본이 바뀌었으면 버린다.
+      if (!mounted || _projectController != controller) return;
+      if (draft != null && draft['recipe'] is Map) {
+        controller.loadDraftRecipe(
+          Map<String, dynamic>.from(draft['recipe'] as Map),
+        );
+        status = '저장한 편집을 이어서 열었어요';
+      } else {
+        final recommendation = await _recommendations.recommend(
+          videoId: widget.video.id,
+          capturedAt: widget.video.capturedStartAt,
+        );
+        if (!mounted || _projectController != controller) return;
+        controller.applyRecommendation(recommendation);
+        if (const {
+          'short',
+          'medium',
+          'long',
+        }.contains(recommendation.durationPreset)) {
+          _presetRecommendations[recommendation.durationPreset] =
+              recommendation;
+        }
+        final seconds = controller.project.durationMs / 1000;
+        status =
+            '자동 편집 적용 · ${seconds.toStringAsFixed(1)}초 · 줌 ${controller.project.zoomSegments.length}개';
+      }
+    } catch (_) {
+      status = '자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요';
+    }
+    if (!mounted || _projectController != controller) return;
+    setState(() => _status = status);
   }
 
   /// AI자막 탭을 눌렀을 때만 전사를 시작한다.
