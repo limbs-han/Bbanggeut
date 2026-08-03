@@ -98,7 +98,7 @@ class _FamilyManagementCardsState extends State<FamilyManagementCards> {
                 ),
               ),
             ),
-            if (widget.onOpenInbox != null)
+            if (!vault.isOwner && widget.onOpenInbox != null)
               TextButton.icon(
                 onPressed: widget.onOpenInbox,
                 icon: const Icon(Icons.mark_email_unread_outlined, size: 18),
@@ -624,6 +624,7 @@ class _InviteEnvelopeDecoration extends StatelessWidget {
     'assets/images/family_invite_envelope.png',
     width: 102,
     fit: BoxFit.contain,
-    filterQuality: FilterQuality.high,
+    cacheWidth: decodePixels(context, 102),
+    filterQuality: FilterQuality.medium,
   );
 }

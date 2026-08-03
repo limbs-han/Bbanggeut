@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/push_notification_service.dart';
-import '../features/stt/transcript_store.dart';
 import '../ui/auth_screen.dart';
 import '../ui/content_notifications_screen.dart';
 import '../ui/device_registration_screen.dart';
@@ -13,6 +12,7 @@ import '../ui/invitation_inbox_screen.dart';
 import '../ui/main_shell.dart';
 import '../ui/onboarding_screen.dart';
 import '../ui/video_detail_screen.dart';
+import '../ui/widgets.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
 
@@ -42,10 +42,6 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
     controller = AppController(
       pushNotifications: PushNotificationService.shared,
     );
-    // 자막 통로도 이 컨트롤러의 ApiClient **하나**를 쓴다. 자기 것을 새로 만들면
-    // 로그인 유지를 끈 사용자는 토큰이 없어 자막이 아예 안 되고, 켠 사용자는
-    // 토큰 회전이 어긋나 편집 도중 로그아웃된다(wireTranscriptStore 주석 참고).
-    wireTranscriptStore(controller.api);
     controller.addListener(_handleControllerState);
     unawaited(controller.initialize());
     appLinks = AppLinks();
@@ -209,6 +205,8 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
     navigatorKey: navigatorKey,
+    // 홈 위로 다른 화면이 덮이면 실시간 스트리밍을 멈추기 위한 관찰자.
+    navigatorObservers: [mainShellRouteObserver],
     title: '빵긋',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
@@ -366,6 +364,7 @@ class _SplashScreen extends StatelessWidget {
                 'assets/images/bbanggeut_logo.png',
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
+                cacheWidth: decodePixels(context, 240),
                 semanticLabel: '빵긋 로딩 로고',
               ),
             ),

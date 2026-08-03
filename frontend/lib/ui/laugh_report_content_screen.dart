@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import 'widgets.dart';
 
 class LaughReportContentScreen extends StatelessWidget {
   const LaughReportContentScreen({super.key, required this.controller});
@@ -13,7 +14,7 @@ class LaughReportContentScreen extends StatelessWidget {
   Map<DateTime, int> get _countsByDay {
     final result = <DateTime, int>{};
     for (final video in controller.videos.where(
-      (item) => item.triggerType == 'LAUGHTER',
+      (item) => item.hasEventType('LAUGHTER'),
     )) {
       final at = video.capturedStartAt ?? video.createdAt;
       if (at == null) continue;
@@ -226,6 +227,7 @@ class _ReportHeader extends StatelessWidget {
             width: 122,
             height: 122,
             fit: BoxFit.contain,
+            cacheWidth: decodePixels(context, 122),
           ),
         ),
       ],
@@ -327,6 +329,7 @@ class _LuckyPouchCard extends StatelessWidget {
               'assets/images/laugh_report_lucky_pouch.png',
               width: 225,
               fit: BoxFit.contain,
+              cacheWidth: decodePixels(context, 225),
             ),
           ),
         ],
@@ -433,6 +436,8 @@ class _WeekPouchCard extends StatelessWidget {
                             width: 56,
                             height: 64,
                             fit: BoxFit.contain,
+                            // 1.12배까지 커지므로 그만큼 여유를 두고 푼다.
+                            cacheWidth: decodePixels(context, 72),
                           ),
                         ),
                       ),

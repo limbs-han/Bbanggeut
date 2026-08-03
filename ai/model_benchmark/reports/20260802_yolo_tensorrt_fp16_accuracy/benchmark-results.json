@@ -1,0 +1,186 @@
+{
+  "schemaVersion": "1.0",
+  "comparisonId": "yolo-trt-fp16-395-comparison-20260802T055004Z",
+  "recordedAt": "2026-08-02T06:01:58.182Z",
+  "device": {
+    "name": "NVIDIA Jetson Orin Nano",
+    "powerMode": "25W"
+  },
+  "dataset": {
+    "name": "yolo-person-test-395-dedup",
+    "imageCount": 395,
+    "emptyImageCount": 52,
+    "boxCount": 581,
+    "duplicateImageCount": 0,
+    "sha256": "311e908bde11b3bc69d580bcf94b3701abe9ba5084eecf7fcd419aaca7e2d260"
+  },
+  "configuration": {
+    "runtime": "TensorRT FP16",
+    "device": 0,
+    "imageSize": 640,
+    "batch": 1,
+    "warmupFrames": 10,
+    "mapConfidence": 0.001,
+    "operatingConfidence": 0.25,
+    "nmsIou": 0.7,
+    "matchIou": 0.5,
+    "classId": 0,
+    "className": "person",
+    "repeats": 3,
+    "executionOrder": [
+      "YOLOv8n",
+      "YOLO11n",
+      "YOLO26n",
+      "YOLO11n",
+      "YOLO26n",
+      "YOLOv8n",
+      "YOLO26n",
+      "YOLOv8n",
+      "YOLO11n"
+    ]
+  },
+  "selectionPolicy": {
+    "status": "provisional",
+    "minimumFps": 20.0,
+    "maximumWallP95Ms": 50.0,
+    "minimumRecall": 0.9,
+    "maximumMap50_95Gap": 0.02,
+    "rule": "Pass all service gates, remain within 0.02 mAP50-95 of the best model, then prefer higher FPS."
+  },
+  "aggregates": [
+    {
+      "model": "YOLOv8n-TensorRT-FP16",
+      "modelSha256": "cea7f5dd8393ccd8b1e67489f4e58085f4ad3547883076dd2fc41833a652a1f1",
+      "engineSizeBytes": 9375717,
+      "runs": 3,
+      "fpsMean": 27.095,
+      "fpsPopulationStd": 0.124,
+      "wallP95MeanMs": 39.303,
+      "wallP95PopulationStdMs": 0.415,
+      "inferenceMeanMs": 14.53,
+      "inferencePopulationStdMs": 0.014,
+      "accuracy": {
+        "standardPrecision": 0.991,
+        "standardRecall": 0.944,
+        "mAP50": 0.987,
+        "mAP50_95": 0.813,
+        "operatingTruePositive": 561,
+        "operatingFalsePositive": 18,
+        "operatingFalseNegative": 20,
+        "operatingPrecision": 0.968912,
+        "operatingRecall": 0.965577,
+        "operatingF1": 0.967241
+      },
+      "resourceMaximums": {
+        "gpuPercent": 85.0,
+        "ramUsedMb": 3309.0,
+        "temperatureC": 53.656,
+        "powerMw": 5475.0
+      },
+      "scenarioHighlights": {
+        "emptySceneFalsePositive": 2,
+        "twoPersonCrossF1": 0.916031,
+        "occlusionF1": 0.925,
+        "threePersonGroupF1": 0.958199
+      },
+      "selection": {
+        "passes": true,
+        "recommended": true,
+        "reason": "All service gates pass; among passing models it has the higher mean FPS and the best operating-point F1."
+      }
+    },
+    {
+      "model": "YOLO11n-TensorRT-FP16",
+      "modelSha256": "f2e0d4def720462176b19619e092afd61becef6492c46b8e9a570e48b0b8fe5e",
+      "engineSizeBytes": 8789991,
+      "runs": 3,
+      "fpsMean": 26.563,
+      "fpsPopulationStd": 0.031,
+      "wallP95MeanMs": 40.008,
+      "wallP95PopulationStdMs": 0.105,
+      "inferenceMeanMs": 15.155,
+      "inferencePopulationStdMs": 0.047,
+      "accuracy": {
+        "standardPrecision": 0.963,
+        "standardRecall": 0.95,
+        "mAP50": 0.988,
+        "mAP50_95": 0.819,
+        "operatingTruePositive": 558,
+        "operatingFalsePositive": 30,
+        "operatingFalseNegative": 23,
+        "operatingPrecision": 0.94898,
+        "operatingRecall": 0.960413,
+        "operatingF1": 0.954662
+      },
+      "resourceMaximums": {
+        "gpuPercent": 88.0,
+        "ramUsedMb": 3352.0,
+        "temperatureC": 52.218,
+        "powerMw": 5436.0
+      },
+      "scenarioHighlights": {
+        "emptySceneFalsePositive": 1,
+        "twoPersonCrossF1": 0.865672,
+        "occlusionF1": 0.894737,
+        "threePersonGroupF1": 0.934579
+      },
+      "selection": {
+        "passes": true,
+        "recommended": false,
+        "reason": "It has the best mAP50-95, but YOLOv8n stays within 0.006 and is faster with fewer operating-point errors."
+      }
+    },
+    {
+      "model": "YOLO26n-TensorRT-FP16",
+      "modelSha256": "65d2dee9e9e6b64887c6fa8fdd80226aa131cce8db4f76e8d3bba10800ac8f67",
+      "engineSizeBytes": 8379836,
+      "runs": 3,
+      "fpsMean": 29.203,
+      "fpsPopulationStd": 0.079,
+      "wallP95MeanMs": 36.555,
+      "wallP95PopulationStdMs": 0.133,
+      "inferenceMeanMs": 15.012,
+      "inferencePopulationStdMs": 0.047,
+      "accuracy": {
+        "standardPrecision": 0.955,
+        "standardRecall": 0.919,
+        "mAP50": 0.978,
+        "mAP50_95": 0.797,
+        "operatingTruePositive": 536,
+        "operatingFalsePositive": 28,
+        "operatingFalseNegative": 45,
+        "operatingPrecision": 0.950355,
+        "operatingRecall": 0.922547,
+        "operatingF1": 0.936245
+      },
+      "resourceMaximums": {
+        "gpuPercent": 88.0,
+        "ramUsedMb": 3418.0,
+        "temperatureC": 51.5,
+        "powerMw": 5396.0
+      },
+      "scenarioHighlights": {
+        "emptySceneFalsePositive": 1,
+        "twoPersonCrossF1": 0.692308,
+        "occlusionF1": 0.923077,
+        "threePersonGroupF1": 0.926667
+      },
+      "selection": {
+        "passes": false,
+        "recommended": false,
+        "reason": "Fastest throughput, but its mAP50-95 gap from the best model is 0.022 and exceeds the provisional 0.020 gate."
+      }
+    }
+  ],
+  "runs": [
+    {"order": 1, "trial": 1, "model": "YOLOv8n", "fps": 27.114, "wallP95Ms": 39.487, "inferenceMeanMs": 14.520, "gpuPercentMax": 85, "ramUsedMbMax": 3309, "temperatureCMax": 53.656, "powerMwMax": 5396},
+    {"order": 2, "trial": 1, "model": "YOLO11n", "fps": 26.593, "wallP95Ms": 39.872, "inferenceMeanMs": 15.219, "gpuPercentMax": 88, "ramUsedMbMax": 3338, "temperatureCMax": 52.218, "powerMwMax": 5396},
+    {"order": 3, "trial": 1, "model": "YOLO26n", "fps": 29.275, "wallP95Ms": 36.387, "inferenceMeanMs": 14.945, "gpuPercentMax": 88, "ramUsedMbMax": 3377, "temperatureCMax": 51.500, "powerMwMax": 5356},
+    {"order": 4, "trial": 2, "model": "YOLO11n", "fps": 26.577, "wallP95Ms": 40.126, "inferenceMeanMs": 15.137, "gpuPercentMax": 87, "ramUsedMbMax": 3352, "temperatureCMax": 51.250, "powerMwMax": 5436},
+    {"order": 5, "trial": 2, "model": "YOLO26n", "fps": 29.242, "wallP95Ms": 36.712, "inferenceMeanMs": 15.042, "gpuPercentMax": 88, "ramUsedMbMax": 3364, "temperatureCMax": 51.031, "powerMwMax": 5356},
+    {"order": 6, "trial": 2, "model": "YOLOv8n", "fps": 26.934, "wallP95Ms": 39.693, "inferenceMeanMs": 14.550, "gpuPercentMax": 84, "ramUsedMbMax": 3257, "temperatureCMax": 50.875, "powerMwMax": 5396},
+    {"order": 7, "trial": 3, "model": "YOLO26n", "fps": 29.093, "wallP95Ms": 36.565, "inferenceMeanMs": 15.049, "gpuPercentMax": 88, "ramUsedMbMax": 3418, "temperatureCMax": 51.000, "powerMwMax": 5396},
+    {"order": 8, "trial": 3, "model": "YOLOv8n", "fps": 27.237, "wallP95Ms": 38.729, "inferenceMeanMs": 14.519, "gpuPercentMax": 85, "ramUsedMbMax": 3262, "temperatureCMax": 50.750, "powerMwMax": 5475},
+    {"order": 9, "trial": 3, "model": "YOLO11n", "fps": 26.520, "wallP95Ms": 40.027, "inferenceMeanMs": 15.108, "gpuPercentMax": 87, "ramUsedMbMax": 3351, "temperatureCMax": 51.125, "powerMwMax": 5356}
+  ]
+}

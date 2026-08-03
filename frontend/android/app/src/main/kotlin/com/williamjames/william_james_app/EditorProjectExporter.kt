@@ -131,6 +131,7 @@ class EditorProjectExporter(
         val stickerLayers =
             call.argument<List<Map<String, Any?>>>("stickerLayers") ?: emptyList()
         val blurLayers = call.argument<List<Map<String, Any?>>>("blurLayers") ?: emptyList()
+        val zoomSegments = call.argument<List<Map<String, Any?>>>("zoomSegments") ?: emptyList()
         val captions = call.argument<List<Map<String, Any?>>>("captions") ?: emptyList()
         @Suppress("UNCHECKED_CAST")
         val sourceSize = call.argument<Map<String, Any?>>("sourceSize") ?: emptyMap()
@@ -217,7 +218,8 @@ class EditorProjectExporter(
             rotation != 0f ||
             offsetX != 0f ||
             offsetY != 0f
-        val hasVideoWork = hasOverlayWork || hasCanvasWork || lookEffect(look) != null
+        val hasVideoWork = hasOverlayWork || hasCanvasWork || zoomSegments.isNotEmpty() ||
+            lookEffect(look) != null
 
         // 영상 트랙을 통째로 다시 인코딩하지 않아도 되는가.
         //
@@ -255,6 +257,7 @@ class EditorProjectExporter(
                 offsetX,
                 offsetY,
                 volume,
+                zoomSegments,
             )
         }
         if (items.size != clips.size || items.isEmpty()) {
@@ -329,6 +332,14 @@ class EditorProjectExporter(
                         exportResult: ExportResult,
                         exportException: ExportException,
                     ) {
+                        // 원인 체인을 통째로 남긴다 — "frame processing error"
+                        // 한 줄로는 어느 효과가 죽였는지 알 수 없다.
+                        android.util.Log.e("WJExport", "export failed", exportException)
+                        var cause: Throwable? = exportException.cause
+                        while (cause != null) {
+                            android.util.Log.e("WJExport", "caused by: $cause")
+                            cause = cause.cause
+                        }
                         finishError(
                             "EXPORT_FAILED",
                             exportException.message ?: "The video could not be exported.",
@@ -394,6 +405,7 @@ class EditorProjectExporter(
         offsetX: Float,
         offsetY: Float,
         volume: Float,
+        zoomSegments: List<Map<String, Any?>>,
     ): EditedMediaItem? {
         val sourcePath = raw["sourcePath"] as? String ?: return null
         val input = File(sourcePath)
@@ -417,6 +429,16 @@ class EditorProjectExporter(
             )
         }
         val videoEffects = mutableListOf<Effect>()
+        // 구간 줌은 세로 Presentation보다 먼저 원본 영상 프레임 안에서 자른다.
+        // Presentation 뒤에 적용하면 16:9 영상 띠가 위아래 검은 영역까지
+        // 커져 미리보기와 저장 결과가 달라진다.
+        if (zoomSegments.isNotEmpty()) {
+            val timelineStartMs = number(raw, "timelineStartMs")?.toLong() ?: 0L
+            videoEffects += TimelineZoomTransformation(
+                rawSegments = zoomSegments,
+                timelineOffsetMs = timelineStartMs,
+            )
+        }
         presentation?.let(videoEffects::add)
         if (scale != 1f || rotation != 0f || offsetX != 0f || offsetY != 0f) {
             videoEffects += CanvasMatrixTransformation(
@@ -536,5 +558,42 @@ class EditorProjectExporter(
                 postRotate(rotationDegrees)
                 postTranslate(offsetX, -offsetY)
             }
+    }
+
+    private class TimelineZoomTransformation(
+        rawSegments: List<Map<String, Any?>>,
+        private val timelineOffsetMs: Long = 0L,
+    ) : MatrixTransformation {
+        private data class Segment(
+            val startMs: Long,
+            val endMs: Long,
+            val scale: Float,
+            val focusX: Float,
+            val focusY: Float,
+        )
+
+        private val segments = rawSegments.mapNotNull { raw ->
+            val start = (raw["startMs"] as? Number)?.toLong() ?: return@mapNotNull null
+            val end = (raw["endMs"] as? Number)?.toLong() ?: return@mapNotNull null
+            if (end <= start) return@mapNotNull null
+            Segment(
+                startMs = start,
+                endMs = end,
+                scale = ((raw["scale"] as? Number)?.toFloat() ?: 1f).coerceIn(1f, 2.8f),
+                focusX = ((raw["focusX"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
+                focusY = ((raw["focusY"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
+            )
+        }
+
+        override fun getMatrix(presentationTimeUs: Long): Matrix {
+            val timeMs = timelineOffsetMs + presentationTimeUs / 1000L
+            val segment = segments.lastOrNull { timeMs >= it.startMs && timeMs < it.endMs }
+                ?: return Matrix()
+            val pivotX = segment.focusX * 2f - 1f
+            val pivotY = 1f - segment.focusY * 2f
+            return Matrix().apply {
+                postScale(segment.scale, segment.scale, pivotX, pivotY)
+            }
+        }
     }
 }

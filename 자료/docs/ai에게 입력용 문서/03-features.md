@@ -52,7 +52,7 @@ ID 체계: `FN-` + 영역(A=앱/S=서버/E=엣지/H=하드웨어) + 연속번호
 | `ui/laugh_report_content_screen.dart`(`LaughReportContentScreen`) | FN-A36 · **FN-A38 [구현]** (동일 화면) |
 | `core/api_client.dart` | (전 화면 공용 API 호출 지점) |
 | `core/video_exporter.dart`, `core/video_edit_state.dart`, `core/portrait_video_canvas.dart`, `ui/local_edit_screen.dart` | FN-A21 자체 로컬 편집기 |
-| `features/stt/`(transcript_api, caption_line, transcript_store, caption_controller, caption_auto_section — 서버 전사 경로 / pcm_wav, speech_analysis, android_audio, whisper_model, whisper_transcriber — 배선 끊긴 온디바이스 잔존 코드) | FN-A39 |
+| `features/stt/`(mlkit_transcriber — ML Kit 온디바이스 인식 / android_audio, pcm_wav, speech_analysis — 오디오 추출·16kHz 변환 / caption_line, transcript_store, caption_controller, caption_auto_section — 캐시·상태·UI) | FN-A39 |
 | `features/comic/`(comic_script, comic_gateway, comic_controller, panel_subtitle, comic_screen) | FN-A40 |
 
 ### 0.3 엣지/하드웨어 경로
@@ -145,8 +145,8 @@ flowchart TD
 | FN-A19 | 즐겨찾기 토글 | API-29 | `ui/content_video_detail_screen.dart`, `ui/favorite_videos_screen.dart`, `app/app_controller.dart` | - |
 | FN-A20 | 영상 다운로드 | API-32 | `ui/content_video_detail_screen.dart` | 409, 503 |
 | FN-A21 | 로컬 영상 편집 | API-32 | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt`(exportWithTrim) | 구간 자르기(트림)·화면 비율 6종·음량·자막·필터 3종·이모지 스티커 편집(애니메이션·음악 스텁 제외). MediaStore 갤러리 저장 단독(앱 내 공유 없음) |
-| FN-A39 | 자동 자막(서버 전사) | API-73 **[제안·미구현]** | `features/stt/*`, `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `SubtitleOverlay.kt` | 전사는 서버가 한다 — 폰은 `videoId`만 보내고 서버가 저장된 원본에서 오디오·대표 프레임을 뽑아 Gemini로 보낸다. 결과는 `videoId`별로 캐시해 다시 열 때 재사용한다(빈 결과·실패는 캐시하지 않음). **모델 `assets/models/ggml-small-ko-q5_1.bin`(약 181MiB)은 아직 앱에 들어 있고** 앱이 첫 실행 때 파일로 복사한다 — 온디바이스 코드(`whisper_*`)와 함께 남아 있으나 배선돼 있지 않다. `SttChannel.kt`(채널 `stt/media`)는 그 온디바이스 경로의 오디오 추출기라 **이 기능의 코드 경로가 아니다** — `transcribeVideo`에서만 닿고 그것을 부르는 곳이 없다. `SubtitleOverlay.kt`는 굽기에 계속 쓰인다. 자르기·자막·효과는 인코딩 1회에 함께 처리 |
-| FN-A40 | 4컷 만화 만들기 | API-71, API-72 **[제안·미구현]** | `features/comic/*`, `ui/content_video_detail_screen.dart`, `core/api_client.dart` | 전사문(글)만 서버로 보냄. 키는 서버 보관. **앱만 구현, 서버 없음** — COMIC_SERVER가 없으면 FakeComicGateway |
+| FN-A39 | 온디바이스 자동 자막(ML Kit) | **서버 API 없음** | `features/stt/mlkit_transcriber.dart`, `transcript_store.dart`, `caption_controller.dart`, `caption_auto_section.dart`, `caption_line.dart`, `android_audio.dart`, `pcm_wav.dart`, `speech_analysis.dart`, `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `MlKitTranscriber.kt`, `SttChannel.kt`, `AudioDecoder.kt`, `MicPermission.kt`, `SubtitleOverlay.kt` | **자막은 폰에서 만든다.** ML Kit GenAI 온디바이스 음성 인식이 전사하고 오디오·전사문은 기기를 떠나지 않는다 — 서버 API가 없다. 2분 영상 약 18초(재생 시간의 약 1/8, 오디오를 8배속으로 먹인다). 결과는 `videoId`별로 캐시해 다시 열 때 재사용한다(빈 결과·실패는 캐시하지 않음). **마이크 권한은 자막 탭 진입 시점에 묻는다** — 파일 입력인데도 ML Kit이 요구한다(`local_edit_screen.dart`가 `MlKitTranscriber().requestMicrophone()`을 먼저 부른다). `SttChannel.kt`(채널 `stt/media`)와 `AudioDecoder.kt`는 **이 기능의 코드 경로다** — ML Kit에 넣을 16kHz 모노 WAV를 만든다(`android_audio.dart`가 리샘플). **폴백이 없다** — ML Kit이 준비되지 않으면 자막이 없고 `CaptionController.message`가 사유를 알린다(모델 내려받기 진행률 / 마이크 권한 / 기기 미지원). whisper 모델 에셋과 코드는 삭제됐다(커밋 `3bb0a47`). `SubtitleOverlay.kt`는 굽기에 계속 쓰인다. 자르기·자막·효과는 인코딩 1회에 함께 처리 |
+| FN-A40 | 4컷 만화 만들기 | API-71, API-72 **[제안·미구현]** | `features/comic/*`, `ui/content_video_detail_screen.dart`, `core/api_client.dart` | 폰이 올리는 것은 전사문(글)뿐. **서버가 자기 저장소의 원본에서 프레임 4~6장을 뽑아 전사문과 함께 Gemini로 보낸다**(외부 AI 고지 대상). 키는 서버 보관. **앱만 구현, 서버 없음** — COMIC_SERVER가 없으면 FakeComicGateway |
 | FN-A22 | 가족 목록/초대 | API-23, API-14, API-18 | `ui/family_screen.dart` | 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
 | FN-A23 | 보낸 초대 취소 | API-19 | `ui/family_screen.dart` | 403, 409 INVITATION_NOT_PENDING |
 | FN-A24 | 소유권 이전/구성원 내보내기 | API-12, API-24 | `ui/family_screen.dart` | transfer는 `controller.api` 직접호출(래퍼 미사용); 409 ALREADY_OWNER/TRANSFER_TARGET_NOT_ACTIVE_MEMBER/OWNER_CANNOT_BE_REVOKED |
@@ -234,12 +234,12 @@ flowchart TD
 | FN ID | 기능 | 담당 | 동작 규칙 | 관련 REQ·API | 코드 경로 |
 |---|---|---|---|---|---|
 | FN-A21 | 로컬 영상 편집 | 폰 | 서명 다운로드 URL로 원본을 내려받아 자체 편집 화면에서 구간 자르기(트림)·화면 비율 6종(원본/9:16/1:1/16:9/4:3/3:4)·음량(0~100%)·자막(수동+FN-A39 자동)·필터 3종(warm/vivid/mono)·이모지 스티커를 편집하고 결과를 MediaStore(`Movies/WilliamJames`) 갤러리에 저장('애니메이션' 툴과 준비화면 '음악' 카드는 미기능 스텁이므로 제외) | REQ-F-27 / API-32(재사용) | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt` |
-| FN-A39 | 자동 자막(서버 전사) | 폰+서버 | 서버가 원본에서 Gemini로 전사한 시각별 자막(API-73)을 받아 줄마다 수정할 수 있게 한다. 결과는 `videoId`로 캐시하고, 저장 시 다른 편집 효과와 한 번에 인코딩한다 | REQ-F-27 / API-73 **[제안·미구현]** | `features/stt/*`, `SubtitleOverlay.kt` |
-| FN-A40 | 4컷 만화 만들기 | 폰+서버 | 자막이 만든 전사문을 서버에 보내 4컷 구성을 받고, 사용자가 대사를 고친 뒤 만화 그림 한 장(2x2 격자)을 받는다. 대사는 영화 자막처럼 각 컷에 앱이 얹고, 완성작은 갤러리에 저장한다 | REQ-F-27 / API-71, API-72 **[제안·미구현]**(`04-api-spec.md` 6절) | `features/comic/*`, `ui/content_video_detail_screen.dart` |
+| FN-A39 | 온디바이스 자동 자막(ML Kit) | 폰 | ML Kit GenAI 온디바이스 음성 인식이 **폰에서** 시각별 자막을 만들고, 줄마다 수정할 수 있게 한다. 2분 영상 약 18초. 마이크 권한은 자막 탭 진입 시점에 묻는다(파일 입력인데도 ML Kit이 요구한다). 결과는 `videoId`로 캐시하고, 저장 시 다른 편집 효과와 한 번에 인코딩한다. **오디오·전사문이 기기를 떠나지 않는다** | REQ-F-27 / **서버 API 없음** | `features/stt/*`(mlkit_transcriber, transcript_store, caption_controller, caption_auto_section, caption_line, android_audio, pcm_wav, speech_analysis), `MlKitTranscriber.kt`, `SttChannel.kt`, `AudioDecoder.kt`, `MicPermission.kt`, `SubtitleOverlay.kt` |
+| FN-A40 | 4컷 만화 만들기 | 폰+서버 | 자막이 만든 전사문을 서버에 보내면, **서버가 저장된 원본에서 프레임 4~6장을 뽑아 전사문과 함께 Gemini에 넣어** 4컷 구성을 만든다(API-71). 사용자가 대사를 고친 뒤 만화 그림 한 장(2x2 격자)을 받는다(API-72). 대사는 영화 자막처럼 각 컷에 앱이 얹고, 완성작은 갤러리에 저장한다. **외부 AI(Gemini, 구글)로 전사문과 프레임이 나가므로 개인정보 고지 대상이다** | REQ-F-27 / API-71, API-72 **[제안·미구현]**(`04-api-spec.md` 6절) | `features/comic/*`, `ui/content_video_detail_screen.dart` |
 
-폰 완결인 것은 편집(FN-A21)뿐이다 — 원본 다운로드는 API-32를 재사용한다. 자동 자막(FN-A39)과 4컷 만화(FN-A40)는 서버 AI를 쓴다(API-71·72·73). 폰이 보내는 것은 `videoId`뿐이고(원본은 서버에 이미 있다), 서버가 오디오·대표 프레임을 Gemini에 전달한다. Gemini 키와 이미지 생성 키는 서버가 보관한다.
+폰 완결인 것은 편집(FN-A21)과 자동 자막(FN-A39) 둘이다 — 원본 다운로드는 API-32를 재사용하고, 자막은 서버 API가 없다. 서버 AI를 쓰는 것은 4컷 만화(FN-A40)뿐이다(API-71·72). 폰이 올리는 것은 전사문(글)뿐이고 영상·오디오는 어느 기능도 올리지 않는다 — 단 **API-71에서 서버가 자기 저장소의 원본에서 프레임을 뽑아 Gemini에 전달한다.** Gemini 키와 이미지 생성 키는 서버가 보관한다.
 
-**모델 파일은 아직 앱에 들어 있다.** 음성 인식 모델 `frontend/assets/models/ggml-small-ko-q5_1.bin`은 약 181MiB이고 온디바이스 전사 코드도 남아 있으나, 아무도 배선하지 않는다(옮긴 근거는 `06-stt-model-guide.md`의 실측 — 배포 형태 CER 11.3%, 2분 영상 168초). 전사 실패는 자르기·저장을 막지 않고, 직접 입력한 한 줄 자막이 있으면 자동 자막보다 우선한다.
+**whisper 모델 파일과 온디바이스 whisper 코드는 삭제됐다**(커밋 `3bb0a47`). 같은 영상에서 ML Kit이 CER 23.3% 대 35.0%, 속도 약 18초 대 235초로 앞섰기 때문이다 — APK가 압축 기준 약 35MB 줄고, 첫 실행 때 182MiB를 파일로 풀던 단계도 사라졌다(측정 기록은 `06-stt-model-guide.md`). **폴백이 없으므로** ML Kit이 준비되지 않으면 자막이 없고, 그 사유를 `CaptionController.message`가 문구로 알린다. 전사 실패는 자르기·저장을 막지 않고, 직접 입력한 한 줄 자막이 있으면 자동 자막보다 우선한다.
 
 ---
 
@@ -384,7 +384,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 
 ## 12. 부록 B: 현재 구현 현황
 
-MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-62 서버 집계는 제안·미구현이다. FN-A39 자동 자막과 FN-A40 4컷 만화도 앱만 구현됐고 API-73·API-71·API-72 서버는 미구현이다.
+MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-62 서버 집계는 제안·미구현이다. FN-A39 자동 자막은 **폰에서 완결됐다**(ML Kit 온디바이스, 서버 API 없음). FN-A40 4컷 만화는 앱만 구현됐고 API-71·API-72 서버가 미구현이다.
 
 | # | MVP 단계 | 상태 | 비고 |
 |---|---|---|---|
@@ -392,7 +392,7 @@ MVP 7단계 기준. FN-A38 Flutter 화면은 구현됐고 FN-S26/API-62 서버 �
 | 2 | 기기 등록 | 구현됨 | 8자리 코드 claim, 자격증명 발급/회전 포함 전체 동작 |
 | 3 | 홈에서 라이브 스트리밍 시청 | 구현됨 | 홈 카드 + 전체화면, WHEP/WebRTC 전용 |
 | 4 | 이벤트(웃음) 감지 영상 확인 | 구현됨 | 감지 → 자동 업로드 → 목록/재생 전체 동작 |
-| 5 | 영상 편집 | 부분 구현 | 폰 내 수동 편집(자체 편집 화면) 동작. **FN-A39 자동 자막과 FN-A40 4컷 만화는 앱만 구현 — API-73·API-71·API-72 서버 미구현**(둘 다 견본 응답으로 동작) |
+| 5 | 영상 편집 | 부분 구현 | 폰 내 수동 편집(자체 편집 화면)과 **FN-A39 자동 자막(ML Kit 온디바이스, 서버 불요) 동작.** **FN-A40 4컷 만화는 앱만 구현 — API-71·API-72 서버 미구현**(견본 응답으로 동작) |
 | 6 | 편집 영상 다운로드 | 구현됨 | 편집본 MediaStore 갤러리 저장 단독(앱 내 공유 기능 없음), 원본 서버 다운로드 동작 |
 | 7 | 통계 / 리포트 | 부분 구현 | 캘린더·웃음 통계와 **FN-A38 Flutter 리포트 구현**. **FN-S26/API-62 서버 집계는 제안·미구현** |
 

@@ -66,6 +66,7 @@ void main() {
     expect(find.text('가족 구성원 1명'), findsOneWidget);
     expect(find.text('owner@example.com'), findsNWidgets(2));
     expect(find.text('함께할 가족을 초대해요'), findsOneWidget);
+    expect(find.text('받은 초대함'), findsNothing);
     expect(find.byKey(const Key('settings-owner-crown')), findsOneWidget);
     expect(find.text('👑'), findsOneWidget);
     expect(

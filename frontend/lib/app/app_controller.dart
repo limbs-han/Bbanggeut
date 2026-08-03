@@ -686,6 +686,7 @@ class AppController extends ChangeNotifier {
         id: video.id,
         deviceId: video.deviceId,
         triggerType: video.triggerType,
+        eventTypes: video.eventTypes,
         sourceType: video.sourceType,
         title: video.title,
         description: video.description,

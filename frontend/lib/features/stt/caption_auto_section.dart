@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_theme.dart';
 import 'caption_controller.dart';
-import 'transcript_api.dart' show transcriptServerReady;
+import 'transcript_store.dart';
 
 /// 미리보기가 쓸 한 줄. 미리보기 위젯에 넘길 값을 만든다.
 String? autoCaptionAt(CaptionController controller, int positionMs) =>
@@ -105,22 +105,16 @@ class _CaptionAutoSectionState extends State<CaptionAutoSection> {
             ),
           ],
         ),
-        if (!transcriptServerReady) ...[
-          const SizedBox(height: 6),
-          const _SampleNotice(),
-        ],
         const SizedBox(height: 6),
-        Text(
-          widget.controller.message(estimateSeconds: widget.estimateSeconds),
-          style: const TextStyle(color: AppColors.muted, fontSize: 12),
-        ),
-        if (widget.controller.canRetry)
-          TextButton.icon(
-            key: const ValueKey('auto-caption-retry'),
-            onPressed: widget.controller.retry,
-            icon: const Icon(Icons.refresh_rounded, size: 16),
-            label: const Text('다시 시도'),
+        // 내려받기 진행률은 컨트롤러가 아니라 별도 notifier로 올라온다.
+        // 여기서 같이 듣지 않으면 퍼센트가 올라가도 화면이 그대로다.
+        ValueListenableBuilder<int?>(
+          valueListenable: mlkitDownloadPercent,
+          builder: (_, _, _) => Text(
+            widget.controller.message(estimateSeconds: widget.estimateSeconds),
+            style: const TextStyle(color: AppColors.muted, fontSize: 12),
           ),
+        ),
         if (lines.isNotEmpty) ...[
           const SizedBox(height: 8),
           // 시트가 화면을 다 먹지 않게 높이를 묶는다.
@@ -164,27 +158,4 @@ class _CaptionAutoSectionState extends State<CaptionAutoSection> {
     final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
   }
-}
-
-/// 서버 통로가 없을 때 자막 목록 위에 붙는 알림. 만화 화면의 `_SampleNotice`와
-/// 같은 이유이고 같은 말투다.
-///
-/// 가짜 통로는 고정된 대사 세 줄을 돌려준다. 알리지 않으면 사용자가 그것을 자기
-/// 가족의 말로 오해하고, 미리보기 위에 얹혀 보이는 데다 그대로 저장하면
-/// **갤러리에 남는 MP4에 구워진다.** `COMIC_SERVER=true`로 켜면 사라진다.
-class _SampleNotice extends StatelessWidget {
-  const _SampleNotice();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    key: const ValueKey('caption-sample-notice'),
-    width: double.infinity,
-    color: AppColors.yellowSoft,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    child: const Text(
-      '아직 서버 통로가 없어서 예시 대사를 보여주고 있어요. '
-      '실제로 들린 말이 아니고, 저장하면 영상에도 이 대사가 들어가요.',
-      style: TextStyle(fontSize: 12),
-    ),
-  );
 }

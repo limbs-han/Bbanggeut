@@ -35,7 +35,72 @@ void main() {
     expect(api.createStreamCalls, 0);
     controller.dispose();
   });
+
+  testWidgets('실시간 맨 앞이면 빨간 불이 켜진다', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: const Scaffold(
+          // 이미 맨 앞이면 당길 것이 없어 화면이 onTap을 주지 않는다.
+          body: LiveEdgeChip(atLiveEdge: true, label: 'LIVE', onTap: null),
+        ),
+      ),
+    );
+
+    expect(_lampColor(tester), Colors.white);
+    expect(_chipColor(tester), const Color(0xDDD32F2F));
+    expect(
+      tester
+          .widget<InkWell>(
+            find.descendant(
+              of: find.byType(LiveEdgeChip),
+              matching: find.byType(InkWell),
+            ),
+          )
+          .onTap,
+      isNull,
+    );
+  });
+
+  testWidgets('실시간에서 뒤처지면 불이 꺼지고 누르면 맨 앞으로 당긴다', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: Scaffold(
+          body: LiveEdgeChip(
+            atLiveEdge: false,
+            label: '실시간으로',
+            onTap: () => taps += 1,
+          ),
+        ),
+      ),
+    );
+
+    expect(_lampColor(tester), isNot(Colors.white));
+    expect(_chipColor(tester), const Color(0xB32D312B));
+
+    await tester.tap(find.byType(LiveEdgeChip));
+    await tester.pump();
+    expect(taps, 1);
+  });
 }
+
+Color? _lampColor(WidgetTester tester) {
+  final lamp = tester.widget<AnimatedContainer>(
+    find.byKey(const Key('live-edge-lamp')),
+  );
+  return (lamp.decoration as BoxDecoration?)?.color;
+}
+
+Color? _chipColor(WidgetTester tester) => tester
+    .widget<Material>(
+      find.descendant(
+        of: find.byType(LiveEdgeChip),
+        matching: find.byType(Material),
+      ),
+    )
+    .color;
 
 class _LiveApiClient extends ApiClient {
   static const device = DeviceSummary(

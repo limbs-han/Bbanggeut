@@ -15,8 +15,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/features/stt/caption_auto_section.dart';
 import 'package:william_james_app/features/stt/caption_controller.dart';
 import 'package:william_james_app/features/stt/caption_line.dart';
-import 'package:william_james_app/features/stt/transcript_api.dart'
-    show transcriptServerReady;
 import 'package:william_james_app/features/stt/transcript_store.dart';
 
 /// 파일을 만들지 않는 저장소. read/write만 갈아끼우면 나머지 흐름은 그대로다.
@@ -140,30 +138,6 @@ void main() {
     // 붙잡은 것을 풀어 준다 — 안 그러면 미완 작업을 남기고 끝난다.
     gate.complete(const []);
     await store.pending;
-  });
-
-  testWidgets('가짜 통로일 때 견본이라고 알린다 — 이 대사가 영상에 구워진다', (tester) async {
-    // 만화 화면의 comic-sample-notice와 같은 이유다. COMIC_SERVER를 주지 않은
-    // 빌드에서는 fakeTranscriber가 지어낸 대사 세 줄이 진짜처럼 보인다.
-    expect(transcriptServerReady, isFalse, reason: '기본 빌드에서 도는 테스트다');
-
-    await pumpSection(tester, await ready());
-    await tester.pump();
-
-    expect(find.byKey(const ValueKey('caption-sample-notice')), findsOneWidget);
-    expect(find.textContaining('예시 대사'), findsOneWidget);
-  });
-
-  testWidgets('연결·서버 실패에는 다시 시도 버튼이 뜬다', (tester) async {
-    final store = _MemoryStore((_) async => throw StateError('서버 없음'));
-    final controller = CaptionController(store: store);
-    controller.start('v1', '/video/v1.mp4');
-    await store.pending;
-
-    await pumpSection(tester, controller);
-    await tester.pump();
-
-    expect(find.byKey(const ValueKey('auto-caption-retry')), findsOneWidget);
   });
 
   test('autoCaptionAt은 그 시각의 줄만 돌려준다', () async {

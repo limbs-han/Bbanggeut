@@ -658,11 +658,6 @@ class ApiClient {
     }
   }
 
-  /// 서버가 원본(이미 서버에 있다)을 Gemini로 전사한 자막을 돌려준다.
-  /// 폰은 아무것도 올리지 않는다 — 경로의 videoId가 전부다.
-  Future<Map<String, dynamic>> createTranscript(String videoId) =>
-      _post('/api/videos/$videoId/transcript', options: _aiOptions);
-
   /// 전사문으로 4컷 구성을 받는다. 서버가 키를 들고 LLM을 대신 부른다.
   ///
   /// **글만 보낸다** — 영상·오디오·프레임은 보내지 않는다.
@@ -686,7 +681,7 @@ class ApiClient {
     options: _aiOptions,
   );
 
-  /// 서버 AI 세 엔드포인트(API-71·72·73)에만 붙이는 긴 수신 대기. 나머지 호출은
+  /// 만화 두 엔드포인트(API-71·72)에만 붙이는 긴 수신 대기. 나머지 호출은
   /// 전역 기본값 20초 그대로다 — 평범한 요청까지 3분을 기다리면 안 된다.
   static final _aiOptions = Options(receiveTimeout: aiReceiveTimeout);
 

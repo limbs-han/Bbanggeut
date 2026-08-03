@@ -9,6 +9,16 @@ import '../core/api_client.dart';
 import '../core/models.dart';
 import '../core/video_thumbnail_cache.dart';
 
+/// 그림을 **그릴 크기만큼만** 풀도록 [Image]에 넘길 픽셀 수.
+///
+/// **왜 필요한가**: 이 앱의 일러스트는 대부분 1254×1254 PNG인데 화면에서는
+/// 100dp 안팎으로 그린다. 정해 주지 않으면 한 장이 RGBA로 6MB를 차지한다.
+/// 열 장이면 Flutter 이미지 캐시(기본 100MB)가 그것만으로 차고, 그때부터는
+/// 화면을 옮길 때마다 밀려난 그림을 다시 푼다 — 여기저기서 툭툭 걸리는
+/// 정체다. 그릴 크기로 풀면 같은 그림이 수십 분의 일로 줄어든다.
+int decodePixels(BuildContext context, double logicalSize) =>
+    (logicalSize * MediaQuery.devicePixelRatioOf(context)).ceil();
+
 class AppBackdrop extends StatelessWidget {
   const AppBackdrop({super.key, required this.child});
   final Widget child;
@@ -210,10 +220,12 @@ class StatusPill extends StatelessWidget {
     required this.label,
     this.positive = true,
     this.color,
+    this.compact = false,
   });
   final String label;
   final bool positive;
   final Color? color;
+  final bool compact;
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
@@ -221,11 +233,14 @@ class StatusPill extends StatelessWidget {
       borderRadius: BorderRadius.circular(99),
     ),
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 12,
+        vertical: compact ? 4 : 7,
+      ),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: compact ? 10 : 12,
           fontWeight: FontWeight.w800,
           color: positive ? AppColors.sageDark : AppColors.danger,
         ),
@@ -265,7 +280,12 @@ class FamilyReferenceImage extends StatelessWidget {
                 child: Image.asset(
                   'assets/images/family_live_reference.png',
                   fit: BoxFit.fitWidth,
-                  filterQuality: FilterQuality.high,
+                  // 이 그림은 추억 목록에서 썸네일이 아직 없는 카드마다 깔린다.
+                  // 780×1688 원본을 그대로 풀면 한 장에 5MB고, 목록을 넘기는
+                  // 내내 그걸 132dp로 줄여 그린다. 그릴 크기로 풀고 보간도
+                  // 한 단계 낮춘다 — 줄여 그리는 그림에서 cubic은 값만 비싸다.
+                  cacheWidth: decodePixels(context, _sourceWidth * scale),
+                  filterQuality: FilterQuality.medium,
                 ),
               ),
             ],
@@ -278,6 +298,7 @@ class FamilyReferenceImage extends StatelessWidget {
 
 String triggerLabel(String value) => switch (value) {
   'LAUGHTER' => '웃음',
+  'CLAP' => '박수',
   'WAKE_WORD' => '호출',
   'TOUCH' => '일상',
   'MANUAL' => '직접 저장',
@@ -288,6 +309,7 @@ String triggerLabel(String value) => switch (value) {
 
 IconData triggerIcon(String value) => switch (value) {
   'LAUGHTER' => Icons.sentiment_very_satisfied_rounded,
+  'CLAP' => Icons.back_hand_rounded,
   'WAKE_WORD' => Icons.graphic_eq_rounded,
   'TOUCH' => Icons.waving_hand_rounded,
   'MANUAL' => Icons.bookmark_rounded,
@@ -296,10 +318,39 @@ IconData triggerIcon(String value) => switch (value) {
 
 Color triggerColor(String value) => switch (value) {
   'LAUGHTER' => AppColors.yellowSoft,
+  'CLAP' => AppColors.coralSoft,
   'WAKE_WORD' => AppColors.sageSoft,
   'TOUCH' => AppColors.greenCard,
   _ => AppColors.pink,
 };
+
+class VideoEventTypePills extends StatelessWidget {
+  const VideoEventTypePills({
+    super.key,
+    required this.video,
+    this.compact = false,
+    this.alignment = WrapAlignment.start,
+  });
+
+  final VideoMemory video;
+  final bool compact;
+  final WrapAlignment alignment;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    alignment: alignment,
+    spacing: compact ? 4 : 6,
+    runSpacing: compact ? 4 : 6,
+    children: [
+      for (final eventType in video.effectiveEventTypes)
+        StatusPill(
+          label: triggerLabel(eventType),
+          color: triggerColor(eventType),
+          compact: compact,
+        ),
+    ],
+  );
+}
 
 String durationLabel(int? durationMs) {
   if (durationMs == null) return '--:--';
@@ -307,16 +358,22 @@ String durationLabel(int? durationMs) {
   return '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
 }
 
+/// 날짜 형식은 만들 때마다 패턴을 파싱하고 로케일을 찾는다. 목록 한 화면에서
+/// 수십 번 부르는 자리라 한 번만 만들어 나눠 쓴다.
+final _koreanClock = DateFormat('a h:mm', 'ko');
+final _clock = DateFormat('HH:mm');
+final _dayClock = DateFormat('M월 d일 HH:mm');
+
 String memoryDate(DateTime? date) {
   if (date == null) return '시간 정보 없음';
   final now = DateTime.now();
   if (DateUtils.isSameDay(now, date)) {
-    return '오늘 ${DateFormat('a h:mm', 'ko').format(date)}';
+    return '오늘 ${_koreanClock.format(date)}';
   }
   if (DateUtils.isSameDay(now.subtract(const Duration(days: 1)), date)) {
-    return '어제 ${DateFormat('HH:mm').format(date)}';
+    return '어제 ${_clock.format(date)}';
   }
-  return DateFormat('M월 d일 HH:mm').format(date);
+  return _dayClock.format(date);
 }
 
 class MemoryThumbnail extends StatelessWidget {
@@ -357,29 +414,40 @@ class MemoryThumbnail extends StatelessWidget {
         )
       : const FamilyReferenceImage(borderRadius: 0);
 
-  @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(13),
-    child: SizedBox(
-      width: width,
-      height: height,
-      child: FutureBuilder<String?>(
-        future: VideoThumbnailCache.frameAtOneMinute(api, video),
-        builder: (context, snapshot) {
-          final path = snapshot.data;
-          if (path != null) {
-            return Image.file(
-              File(path),
-              fit: BoxFit.cover,
-              cacheWidth: _decodeWidth(context),
-              errorBuilder: (_, _, _) => _fallback(context),
-            );
-          }
-          return _fallback(context);
-        },
-      ),
-    ),
+  Widget _frame(BuildContext context, String path) => Image.file(
+    File(path),
+    fit: BoxFit.cover,
+    cacheWidth: _decodeWidth(context),
+    // 같은 그림을 다시 그릴 때 한 프레임 비었다가 채워지는 깜빡임을 없앤다.
+    gaplessPlayback: true,
+    errorBuilder: (_, _, _) => _fallback(context),
   );
+
+  @override
+  Widget build(BuildContext context) {
+    // 이미 뽑아 둔 프레임이 있으면 [FutureBuilder]를 태우지 않는다.
+    // 스크롤을 되돌릴 때마다 한 프레임 대체 이미지가 스쳤고, 그 대체 이미지가
+    // 원격 썸네일이면 스크롤 도중에 네트워크 요청까지 새로 나갔다.
+    final ready = VideoThumbnailCache.readyPath(video.id);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(13),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: ready != null
+            ? _frame(context, ready)
+            : FutureBuilder<String?>(
+                future: VideoThumbnailCache.frameAtOneMinute(api, video),
+                builder: (context, snapshot) {
+                  final path = snapshot.data;
+                  return path == null
+                      ? _fallback(context)
+                      : _frame(context, path);
+                },
+              ),
+      ),
+    );
+  }
 }
 
 class MemoryTile extends StatelessWidget {
@@ -432,9 +500,13 @@ class MemoryTile extends StatelessWidget {
               ],
             ),
           ),
-          StatusPill(
-            label: triggerLabel(video.triggerType),
-            color: triggerColor(video.triggerType),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: VideoEventTypePills(
+              video: video,
+              compact: true,
+              alignment: WrapAlignment.end,
+            ),
           ),
           if (onFavorite != null || onDelete != null)
             PopupMenuButton<String>(
@@ -458,9 +530,20 @@ class MemoryTile extends StatelessWidget {
 }
 
 void showAppSnack(BuildContext context, String message, {bool error = false}) {
-  ScaffoldMessenger.of(context).showSnackBar(
+  final messenger = ScaffoldMessenger.of(context)
+    // 새 안내가 오면 이전 것부터 걷는다. 안내가 줄줄이 쌓여 화면을 가리는
+    // 것이 "창이 거슬린다"의 정체였다.
+    ..hideCurrentSnackBar();
+  messenger.showSnackBar(
     SnackBar(
-      content: Text(message),
+      // 누르면 바로 사라진다.
+      content: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: messenger.hideCurrentSnackBar,
+        child: Text(message),
+      ),
+      duration: const Duration(seconds: 2),
+      dismissDirection: DismissDirection.horizontal,
       backgroundColor: error ? AppColors.danger : AppColors.ink,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

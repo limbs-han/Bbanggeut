@@ -18,6 +18,7 @@ required_files=(
     "$YAMNET_PYTHON"
     "${SCRIPT_DIR}/yolov8n.pt"
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py"
+    "${SCRIPT_DIR}/yolo_runtime_selector.py"
     "${SCRIPT_DIR}/servo_controller.py"
     "${SCRIPT_DIR}/servo_dashboard.py"
     "${SCRIPT_DIR}/servo_dashboard_web/index.html"
@@ -79,6 +80,12 @@ grep -Fq ': "${WAKE_NAME_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${SERVO_DASHBOARD_HOST:=127.0.0.1}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${YOLO_RUNTIME:=auto}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${YOLO_TENSORRT_PROBE:=true}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq -- '--model "$YOLO_SELECTED_MODEL"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq -- '--diagnostics-jsonl "$YAMNET_DIAGNOSTICS_PATH"' \
@@ -99,6 +106,7 @@ grep -Fq 'restarting only YAMNet' \
 echo "[2/5] Python syntax"
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py" \
+    "${SCRIPT_DIR}/yolo_runtime_selector.py" \
     "${SCRIPT_DIR}/servo_controller.py" \
     "${SCRIPT_DIR}/servo_dashboard.py" \
     "${SCRIPT_DIR}/stream_capture.py" \
@@ -129,6 +137,7 @@ echo "[3/5] YOLO-side tests"
         -m unittest \
         test_autoframe_logic \
         test_edge_ai_recording_startup \
+        test_yolo_runtime_selector \
         test_servo_controller \
         test_servo_dashboard \
         test_event_fusion \

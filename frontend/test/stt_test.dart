@@ -575,47 +575,6 @@ void main() {
       expect(await subject.read('v1'), isNull);
     });
 
-    test('견본으로 만든 캐시는 서버 빌드에 내주지 않는다 — 지어낸 대사가 굳는다', () async {
-      // 견본(가짜) 빌드가 남긴 파일을 서버 빌드가 읽는 상황. 그대로 내주면
-      // 스위치를 켜도 영영 다시 받지 않고, 만화(API-71)도 그 대사로 만들어진다.
-      final sample = TranscriptStore(
-        transcriber: (_) async => lines(),
-        root: () async => temporary,
-        serverBuild: false,
-      );
-      await sample.write('v1', lines());
-
-      var calls = 0;
-      final real = TranscriptStore(
-        transcriber: (_) async {
-          calls++;
-          return lines();
-        },
-        root: () async => temporary,
-        serverBuild: true,
-      );
-
-      expect(await real.read('v1'), isNull, reason: '견본 캐시는 없는 것으로 본다');
-      real.ensure('v1', '/video/v1.mp4');
-      await real.pending;
-      expect(calls, 1, reason: '다시 받아야 한다');
-      expect(await real.read('v1'), hasLength(2), reason: '이번엔 서버 캐시라 읽힌다');
-    });
-
-    test('source가 없는 옛 캐시도 서버 빌드는 버리고 다시 받는다 — 던지지 않는다', () async {
-      await File('${temporary.path}${Platform.pathSeparator}v1.json')
-          .writeAsString(
-            '{"version":1,"lines":[{"startMs":0,"endMs":1,"text":"옛 캐시"}]}',
-          );
-      final real = TranscriptStore(
-        transcriber: (_) async => lines(),
-        root: () async => temporary,
-        serverBuild: true,
-      );
-
-      expect(await real.read('v1'), isNull);
-    });
-
     test('캐시 파일이 깨졌으면 null로 읽고 다시 전사한다', () async {
       var calls = 0;
       final subject = store((_) async {

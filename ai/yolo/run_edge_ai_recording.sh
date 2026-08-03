@@ -3,9 +3,9 @@
 # Disk-backed Jetson AI stack:
 # - YOLO and YAMNet consume the validated shared RTSP path.
 # - YAMNet writes lightweight trigger JSON only.
-# - The uploader merges laughs within 30 seconds and extracts the first
-#   detection -60 seconds through the last detection +60 seconds from the
-#   compressed rolling MPEG-TS segments.
+# - The uploader merges repeated event types within 30 seconds, and merges
+#   laughter with clapping within 5 seconds. It extracts the first detection
+#   -60 seconds through the last detection +60 seconds from rolling MPEG-TS.
 #
 # Keep run_edge_ai_mvp.sh available as the 5-second UDP fallback.
 
@@ -32,14 +32,22 @@ fi
 : "${LOCAL_RTSP_AI_URL:=rtsp://127.0.0.1:8554/homecam/ai}"
 : "${RECORDING_DIR:=/var/lib/william-james/recordings}"
 : "${RECORDING_SEGMENT_SECONDS:=60}"
+: "${RECORDING_TIMEZONE:=Asia/Seoul}"
 : "${EVENT_CLIP_SECONDS:=60}"
 : "${EVENT_MERGE_GAP_SECONDS:=30}"
+: "${EVENT_CROSS_TYPE_MERGE_GAP_SECONDS:=5}"
 : "${DELETE_EVENT_AFTER_UPLOAD:=true}"
 : "${LOCAL_MQTT_HOST:=127.0.0.1}"
 : "${LOCAL_MQTT_PORT:=1883}"
 : "${YOLO_DEADZONE_WIDTH:=0.08}"
 : "${YOLO_DEADZONE_HEIGHT:=0.06}"
 : "${YOLO_SUBJECT_Y_RATIO:=0.35}"
+: "${YOLO_RUNTIME:=auto}"
+: "${YOLO_TENSORRT_ENGINE_PATH:=${HOME}/ai_models/yolo-detect-engine/yolov8n-fp16-b1-640.engine}"
+: "${YOLO_TENSORRT_ENGINE_SHA256:=}"
+: "${YOLO_PYTORCH_MODEL_PATH:=${SCRIPT_DIR}/yolov8n.pt}"
+: "${YOLO_TENSORRT_PROBE:=true}"
+: "${YOLO_TENSORRT_PROBE_DEVICE:=0}"
 : "${SERVO_DASHBOARD_HOST:=127.0.0.1}"
 : "${SERVO_DASHBOARD_PORT:=8765}"
 : "${SERVO_DASHBOARD_FRAME_WIDTH:=960}"
@@ -55,7 +63,7 @@ fi
 : "${YAMNET_CLAP_ENABLED:=false}"
 : "${YAMNET_CLAP_THRESHOLD:=0.30}"
 : "${YAMNET_CLAP_CONSECUTIVE:=2}"
-: "${YAMNET_CLAP_REQUIRED_ONSETS:=2}"
+: "${YAMNET_CLAP_REQUIRED_ONSETS:=3}"
 : "${YAMNET_CLAP_MIN_ACTIVE_SECONDS:=0.4}"
 : "${YAMNET_CLAP_MAX_GAP_SECONDS:=0.75}"
 : "${YAMNET_CLAP_COOLDOWN:=12}"
@@ -97,6 +105,8 @@ for required in \
     "$YOLO_PYTHON" \
     "$YAMNET_PYTHON" \
     "${SCRIPT_DIR}/yolov8_autoframe_jetson.py" \
+    "${SCRIPT_DIR}/yolo_runtime_selector.py" \
+    "$YOLO_PYTORCH_MODEL_PATH" \
     "${SCRIPT_DIR}/segment_clip_uploader.py" \
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py" \
     "${YAMNET_DIR}/local_wake_name_detect_jetson.py" \
@@ -131,6 +141,51 @@ mkdir -p "$EVENT_DIR"
 RUN_DIR="${EVENT_DIR}/logs/$(date '+%Y%m%d_%H%M%S')"
 mkdir -p "$RUN_DIR"
 YAMNET_DIAGNOSTICS_PATH="${RUN_DIR}/yamnet_diagnostics.jsonl"
+YOLO_SELECTION_FILE="${RUN_DIR}/yolo_runtime_selection.tsv"
+
+YOLO_SELECTOR_COMMAND=(
+    "$YOLO_PYTHON" "${SCRIPT_DIR}/yolo_runtime_selector.py"
+    --runtime "$YOLO_RUNTIME"
+    --engine-path "$YOLO_TENSORRT_ENGINE_PATH"
+    --pytorch-path "$YOLO_PYTORCH_MODEL_PATH"
+    --engine-sha256 "$YOLO_TENSORRT_ENGINE_SHA256"
+    --probe-device "$YOLO_TENSORRT_PROBE_DEVICE"
+    --result-file "$YOLO_SELECTION_FILE"
+)
+case "${YOLO_TENSORRT_PROBE,,}" in
+    true|1|yes)
+        ;;
+    false|0|no)
+        YOLO_SELECTOR_COMMAND+=(--skip-engine-probe)
+        ;;
+    *)
+        echo "YOLO_TENSORRT_PROBE must be true or false" >&2
+        exit 2
+        ;;
+esac
+
+if ! "${YOLO_SELECTOR_COMMAND[@]}"; then
+    if [[ "${YOLO_RUNTIME,,}" != "auto" ]]; then
+        echo "Strict YOLO runtime selection failed" >&2
+        exit 1
+    fi
+    echo \
+        "YOLO runtime selector exited unexpectedly; forcing PyTorch fallback" \
+        >&2
+    rm -f -- "$YOLO_SELECTION_FILE"
+    "$YOLO_PYTHON" "${SCRIPT_DIR}/yolo_runtime_selector.py" \
+        --runtime pytorch \
+        --engine-path "$YOLO_TENSORRT_ENGINE_PATH" \
+        --pytorch-path "$YOLO_PYTORCH_MODEL_PATH" \
+        --skip-engine-probe \
+        --result-file "$YOLO_SELECTION_FILE"
+fi
+IFS=$'\t' read -r YOLO_SELECTED_RUNTIME YOLO_SELECTED_MODEL \
+    < "$YOLO_SELECTION_FILE"
+if [[ -z "$YOLO_SELECTED_RUNTIME" || -z "$YOLO_SELECTED_MODEL" ]]; then
+    echo "YOLO runtime selector returned an invalid result" >&2
+    exit 1
+fi
 
 declare -a PIDS=()
 YAMNET_PID=""
@@ -210,6 +265,9 @@ echo "Starting disk-backed edge AI for device ${DEVICE_ID}"
 echo "AI source: loopback RTSP"
 echo "Rolling recordings: ${RECORDING_DIR}"
 echo "Event clips: ${EVENT_DIR}"
+echo \
+    "YOLO runtime: requested=${YOLO_RUNTIME} " \
+    "selected=${YOLO_SELECTED_RUNTIME} model=${YOLO_SELECTED_MODEL}"
 echo \
     "YAMNet detector: aggregation=${YAMNET_SCORE_AGGREGATION} " \
     "threshold=${YAMNET_THRESHOLD} consecutive=${YAMNET_CONSECUTIVE} " \
@@ -365,7 +423,9 @@ UPLOADER_COMMAND=(
     --recording-dir "$RECORDING_DIR"
     --api-base-url "$API_BASE_URL"
     --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
+    --cross-type-merge-gap-seconds "$EVENT_CROSS_TYPE_MERGE_GAP_SECONDS"
     --segment-seconds "$RECORDING_SEGMENT_SECONDS"
+    --recording-timezone "$RECORDING_TIMEZONE"
     --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
     --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"
 )
@@ -408,6 +468,7 @@ esac
 
 YOLO_COMMAND=(
     "$YOLO_PYTHON" -u "${SCRIPT_DIR}/yolov8_autoframe_jetson.py"
+    --model "$YOLO_SELECTED_MODEL"
     --stream-url "$LOCAL_RTSP_AI_URL"
     --device-id "$DEVICE_ID"
     --mqtt-host "$LOCAL_MQTT_HOST"

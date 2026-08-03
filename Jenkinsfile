@@ -142,9 +142,13 @@ pipeline {
                                 sh '.venv-ci/bin/python -m unittest discover -s tests -v'
                             }
                             dir('ai/yolo') {
-                                sh 'python3 -m unittest -v test_event_fusion.py test_laughter_clip_uploader.py'
+                                sh 'python3 -m unittest -v test_event_fusion.py test_laughter_clip_uploader.py test_segment_clip_uploader.py test_edge_ai_recording_startup.py test_yolo_runtime_selector.py'
                                 sh 'python3 -m py_compile *.py'
-                                sh 'bash -n run_ai_stack.sh run_edge_ai_mvp.sh'
+                                sh 'bash -n run_ai_stack.sh run_edge_ai_mvp.sh run_edge_ai_recording.sh'
+                            }
+                            dir('ai/yamnet') {
+                                sh 'python3 -m unittest -v test_audio_event_detection.py test_audio_event_trigger.py'
+                                sh 'python3 -m py_compile audio_event_detection.py audio_event_trigger.py yamnet_laughter_detect_jetson.py'
                             }
                         }
                     }

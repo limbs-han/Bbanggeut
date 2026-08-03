@@ -62,13 +62,6 @@ android {
         }
     }
 
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-            pickFirsts += "**/libbanuba-ve-yuv.so"
-        }
-    }
-
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
@@ -86,20 +79,13 @@ flutter {
     source = "../.."
 }
 
-val copyBanubaEffects =
-    tasks.register<Sync>("copyBanubaEffects") {
-        from("../../effects")
-        into(layout.buildDirectory.dir("generated/banubaAssets/bnb-resources/effects"))
-    }
-
-android.sourceSets.getByName("main").assets.srcDir(
-    layout.buildDirectory.dir("generated/banubaAssets"),
-)
-tasks.named("preBuild").configure {
-    dependsOn(copyBanubaEffects)
-}
-
 dependencies {
+    // ML Kit GenAI 온디바이스 음성 인식 — 자막의 whisper 대안 경로(MlKitTranscriber.kt).
+    // **실험 중이다.** alpha 버전이고, 판정이 끝나면 이 줄과 함께 한쪽을 지운다.
+    // implementation인 이유: MlKitTranscriber가 main 소스셋에 있어 release도 컴파일된다.
+    implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
     // Keep every Media3 module on the same version used by video_player_android.
     implementation("androidx.media3:media3-common:1.9.2")
     implementation("androidx.media3:media3-effect:1.9.2")
