@@ -408,10 +408,29 @@ export function BenchmarkDashboard() {
       snapshot?.comparisons.filter((row) => row.component === "vision") ?? [],
     [snapshot?.comparisons],
   );
-  const audioComparisons = useMemo(
+  const audioComparisonRows = useMemo(
     () =>
       snapshot?.comparisons.filter((row) => row.component === "audio") ?? [],
     [snapshot?.comparisons],
+  );
+  const latestAudioComparisonId = useMemo(() => {
+    const latest = audioComparisonRows
+      .filter((row) => row.comparison?.id)
+      .sort(
+        (first, second) =>
+          Date.parse(second.createdAt ?? "") -
+          Date.parse(first.createdAt ?? ""),
+      )[0];
+    return latest?.comparison?.id ?? null;
+  }, [audioComparisonRows]);
+  const audioComparisons = useMemo(
+    () =>
+      latestAudioComparisonId
+        ? audioComparisonRows.filter(
+            (row) => row.comparison?.id === latestAudioComparisonId,
+          )
+        : audioComparisonRows,
+    [audioComparisonRows, latestAudioComparisonId],
   );
   const comparisonDecisions = useMemo(() => {
     const computed = comparisons.filter(
@@ -1019,6 +1038,9 @@ export function BenchmarkDashboard() {
                     </div>
                     <span className="mono result-count">
                       {audioComparisons.length} RUNS
+                      {latestAudioComparisonId
+                        ? ` · ${latestAudioComparisonId}`
+                        : ""}
                     </span>
                   </div>
                   <div className="audio-grid">
