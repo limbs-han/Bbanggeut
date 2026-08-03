@@ -22,10 +22,10 @@ import base64
 import json
 import os
 import subprocess
-import urllib.error
-import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
+
+import httpx
 
 
 GMS_BASE = os.environ.get(
@@ -40,9 +40,16 @@ IMAGE_MODEL = os.environ.get("COMIC_IMAGE_MODEL", "gemini-2.5-flash-image")
 TIMEOUT_SECONDS = float(os.environ.get("COMIC_TIMEOUT_SECONDS", "150"))
 
 CUT_COUNT = 4
-FRAME_COUNT = max(1, min(8, int(os.environ.get("COMIC_FRAME_COUNT", "5"))))
 
-# 프레임 해상도는 토큰 수와 무관하다(장당 1,089토큰 고정). 업로드 크기만 줄인다.
+# **5장이 상한이다. 늘리지 마라.** GMS 프록시가 요청 본문 약 100KB에서 끊는다 —
+# 실측(2026-08-03, 139초 영상, 512폭 q5 JPEG): 5장 base64 86KB는 통과하고
+# 6장 103KB는 `contents is not specified`(400)로 거부된다. 프레임 자체가 아니라
+# **요청 크기** 문제라서, 더 넣고 싶으면 FRAME_WIDTH나 JPEG 품질을 먼저 낮춰야 한다.
+FRAME_LIMIT = 5
+FRAME_COUNT = max(1, min(FRAME_LIMIT, int(os.environ.get("COMIC_FRAME_COUNT", "5"))))
+
+# 프레임 해상도는 토큰 수와 무관하다(장당 약 1,100토큰 고정 — 1장 1,766 대 5장
+# 6,166으로 실측). 줄이는 것은 **요청 크기**뿐이고, 위 100KB 제한이 그래서 중요하다.
 FRAME_WIDTH = 512
 
 DEFAULT_STYLE = "soft webtoon"
@@ -119,24 +126,37 @@ _SCRIPT_SCHEMA: dict[str, Any] = {
 
 
 def _gms(model: str, body: Mapping[str, Any]) -> dict[str, Any]:
-    """GMS 프록시로 generateContent 한 번. 키는 환경변수에서만 읽는다."""
+    """GMS 프록시로 generateContent 한 번. 키는 환경변수에서만 읽는다.
+
+    **`urllib`을 쓰지 마라.** 같은 요청을 표준 `urllib.request`로 보내면 응답
+    본문의 **앞부분이 잘린 채** 온다 — 실측(컨테이너 안, 2026-08-03)으로 같은
+    호출에서 urllib은 79바이트를 `modelVersion": ...`부터 받았고 httpx는
+    1,036바이트를 `{"candidates": ...`부터 온전히 받았다. 프록시가 내려주는
+    응답을 urllib이 잘못 읽는다.
+    """
     key = os.environ.get("GMS_KEY")
     if not key:
         raise ComicError("GMS_KEY 환경변수가 없습니다.")
-    request = urllib.request.Request(
-        f"{GMS_BASE}/models/{model}:generateContent",
-        data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "x-goog-api-key": key},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            return json.loads(response.read())
-    except urllib.error.HTTPError as failure:
-        detail = failure.read().decode("utf-8", "replace").strip()[:400]
-        raise ComicError(f"GMS {failure.code}: {detail}") from failure
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as failure:
+        response = httpx.post(
+            f"{GMS_BASE}/models/{model}:generateContent",
+            json=dict(body),
+            headers={"Content-Type": "application/json", "x-goog-api-key": key},
+            timeout=TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as failure:
         raise ComicError(f"GMS 호출 실패: {failure}") from failure
+    if response.status_code >= 400:
+        raise ComicError(f"GMS {response.status_code}: {response.text.strip()[:400]}")
+    try:
+        payload = response.json()
+    except json.JSONDecodeError as failure:
+        raise ComicError(f"GMS 응답이 JSON이 아닙니다: {response.text[:200]}") from failure
+    # 크레딧은 여기서만 실측할 수 있다. 응답에 담아 앱까지 보내지 않고 로그로만
+    # 남긴다 — 프레임 수를 조정할 때 이 숫자를 보고 정한다.
+    usage = usage_summary(payload)
+    print(f"[comic] {model} tokens={usage}", flush=True)
+    return payload
 
 
 # ── 프레임 뽑기 ────────────────────────────────────────────────────────────
@@ -192,8 +212,13 @@ def frame_timestamps(duration: float, count: int = FRAME_COUNT) -> list[float]:
 
 
 def extract_frames(video_url: str, count: int = FRAME_COUNT) -> list[bytes]:
-    """원본에서 JPEG 프레임 몇 장을 뽑는다. presigned URL을 그대로 먹인다."""
+    """원본에서 JPEG 프레임 몇 장을 뽑는다. presigned URL을 그대로 먹인다.
+
+    [FRAME_LIMIT]을 넘겨 부르면 잘라 낸다 — 넘기면 GMS가 요청을 거부하므로,
+    많이 달라는 요청을 그대로 따르면 아예 실패한다.
+    """
     frames: list[bytes] = []
+    count = max(1, min(FRAME_LIMIT, count))
     for at in frame_timestamps(video_duration_seconds(video_url), count):
         # -ss를 -i 앞에 두면 빠른 탐색이다. 뒤에 두면 앞부터 디코딩한다.
         jpeg = _run(

@@ -373,7 +373,7 @@ class ComicScriptRequest(BaseModel):
     lines: list[dict[str, Any]] = Field(default_factory=list)
     """앱이 ML Kit으로 만든 자막. `{startMs, text}` 목록. 무발화면 빈 목록."""
 
-    frame_count: int | None = Field(default=None, alias="frameCount", ge=1, le=8)
+    frame_count: int | None = Field(default=None, alias="frameCount", ge=1, le=comic.FRAME_LIMIT)
 
 
 class ComicImageRequest(BaseModel):
@@ -430,7 +430,14 @@ def comic_image(video_id: str, request: ComicImageRequest) -> dict[str, Any]:
 
     `data:image/png;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
     """
-    sheet = store.get_json(_comic_sheet_key(video_id)) or {}
+    # 시트는 있으면 좋고 없으면 없는 대로 간다. MinIO가 죽었다고 그림까지
+    # 못 만들 이유가 없다 — `get_json`은 ClientError만 잡아서 연결 오류
+    # (BotoCoreError)는 그대로 올라온다.
+    try:
+        sheet = store.get_json(_comic_sheet_key(video_id)) or {}
+    except (BotoCoreError, ClientError, OSError):
+        sheet = {}
+
     try:
         png = comic.render_comic(
             request.cuts,
