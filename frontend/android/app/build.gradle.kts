@@ -86,6 +86,10 @@ dependencies {
     implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
+    // 편집 완성본 업로드를 앱 밖에서도 이어가는 백그라운드 작업
+    // (EditedVideoUploadWorker.kt). 앱을 꺼도 OS가 마저 올린다.
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+
     // Keep every Media3 module on the same version used by video_player_android.
     implementation("androidx.media3:media3-common:1.9.2")
     implementation("androidx.media3:media3-effect:1.9.2")

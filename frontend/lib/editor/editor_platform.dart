@@ -90,6 +90,35 @@ class EditorPlatform {
     }
   }
 
+  /// 렌더링된 완성본 업로드를 OS 백그라운드 작업(WorkManager)에 맡긴다.
+  ///
+  /// 앱을 나가거나 꺼도 계속 올라가고, 회선이 끊기면 다시 붙을 때
+  /// 재시도한다. 진행률은 상단 알림으로 보인다. [deleteAfter]는 렌더링
+  /// 산출물처럼 올린 뒤 지워도 되는 파일일 때만 켠다 — 원본 캐시를 지우면
+  /// 다음 편집 진입이 도로 내려받는다.
+  Future<void> enqueueEditedUpload({
+    required String videoId,
+    required String filePath,
+    required String uploadUrl,
+    String title = '',
+    bool deleteAfter = false,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>('enqueueEditedUpload', {
+        'videoId': videoId,
+        'filePath': filePath,
+        'uploadUrl': uploadUrl,
+        'title': title,
+        'deleteAfter': deleteAfter,
+      });
+    } on PlatformException catch (failure) {
+      throw EditorPlatformException(
+        '업로드를 준비하지 못했어요. [${failure.code}] '
+        '${failure.message ?? '알 수 없는 오류'}',
+      );
+    }
+  }
+
   Future<double> getExportProgress() async {
     final result = await _channel.invokeMapMethod<Object?, Object?>(
       'getExportProgress',

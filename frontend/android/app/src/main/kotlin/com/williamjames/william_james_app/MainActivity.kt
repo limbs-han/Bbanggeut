@@ -35,6 +35,13 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -43,6 +50,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
@@ -102,6 +110,52 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
+    /**
+     * 렌더링된 완성본 업로드를 WorkManager에 맡긴다. 앱을 나가거나 꺼도
+     * OS가 이어서 올리고, 회선이 끊기면 붙을 때 다시 시도한다. 같은 영상의
+     * 재내보내기는 이전 업로드를 갈아치운다 — 마지막 결과만 남으면 된다.
+     */
+    private fun enqueueEditedUpload(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        val filePath = call.argument<String>("filePath")
+        val uploadUrl = call.argument<String>("uploadUrl")
+        val videoId = call.argument<String>("videoId").orEmpty()
+        if (filePath.isNullOrBlank() || uploadUrl.isNullOrBlank()) {
+            result.error(
+                "INVALID_ARGUMENT",
+                "filePath and uploadUrl are required.",
+                null,
+            )
+            return
+        }
+        val request = OneTimeWorkRequestBuilder<EditedVideoUploadWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build(),
+            )
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
+            .setInputData(
+                workDataOf(
+                    EditedVideoUploadWorker.KEY_FILE_PATH to filePath,
+                    EditedVideoUploadWorker.KEY_UPLOAD_URL to uploadUrl,
+                    EditedVideoUploadWorker.KEY_TITLE to
+                        call.argument<String>("title").orEmpty(),
+                    EditedVideoUploadWorker.KEY_DELETE_AFTER to
+                        (call.argument<Boolean>("deleteAfter") ?: false),
+                ),
+            )
+            .build()
+        WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+            "edited-upload-$videoId",
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
+        result.success(true)
+    }
+
     private fun handleVideoCanvasCall(
         call: MethodCall,
         result: MethodChannel.Result,
@@ -111,6 +165,7 @@ class MainActivity : FlutterActivity() {
             return
         }
         when (call.method) {
+            "enqueueEditedUpload" -> enqueueEditedUpload(call, result)
             "generateThumbnails" -> {
                 val inputPath = call.argument<String>("inputPath")
                 val count = call.argument<Int>("count") ?: 8
