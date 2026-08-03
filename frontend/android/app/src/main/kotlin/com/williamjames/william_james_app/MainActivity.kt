@@ -111,6 +111,42 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * 편집기 안 사건(AI 자막 완료 등)을 앱이 뒤로 가 있을 때 알려 주는
+     * 단순 로컬 알림. 채널은 낮은 중요도 — 소리 없이 조용히 얹힌다.
+     */
+    private fun showLocalNotification(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        val title = call.argument<String>("title").orEmpty()
+        val body = call.argument<String>("body").orEmpty()
+        if (title.isBlank()) {
+            result.error("INVALID_ARGUMENT", "title is required.", null)
+            return
+        }
+        val manager =
+            getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                android.app.NotificationChannel(
+                    "editor-events",
+                    "편집기 안내",
+                    android.app.NotificationManager.IMPORTANCE_DEFAULT,
+                ),
+            )
+        }
+        val notification =
+            androidx.core.app.NotificationCompat.Builder(this, "editor-events")
+                .setSmallIcon(android.R.drawable.stat_notify_chat)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setAutoCancel(true)
+                .build()
+        manager.notify(20411, notification)
+        result.success(null)
+    }
+
+    /**
      * 렌더링된 완성본 업로드를 WorkManager에 맡긴다. 앱을 나가거나 꺼도
      * OS가 이어서 올리고, 회선이 끊기면 붙을 때 다시 시도한다. 같은 영상의
      * 재내보내기는 이전 업로드를 갈아치운다 — 마지막 결과만 남으면 된다.
@@ -166,6 +202,7 @@ class MainActivity : FlutterActivity() {
         }
         when (call.method) {
             "enqueueEditedUpload" -> enqueueEditedUpload(call, result)
+            "showLocalNotification" -> showLocalNotification(call, result)
             "generateThumbnails" -> {
                 val inputPath = call.argument<String>("inputPath")
                 val count = call.argument<Int>("count") ?: 8

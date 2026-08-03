@@ -119,6 +119,22 @@ class EditorPlatform {
     }
   }
 
+  /// 앱이 뒤로 가 있을 때 쓰는 간단한 로컬 알림(예: AI 자막 완료).
+  /// 실패해도 기능이 아니라 안내일 뿐이라 조용히 넘어간다.
+  Future<void> showLocalNotification({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>('showLocalNotification', {
+        'title': title,
+        'body': body,
+      });
+    } on PlatformException {
+      // 알림 권한이 없거나 채널 생성이 막혀도 편집은 계속된다.
+    }
+  }
+
   Future<double> getExportProgress() async {
     final result = await _channel.invokeMapMethod<Object?, Object?>(
       'getExportProgress',

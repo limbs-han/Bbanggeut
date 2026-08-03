@@ -820,6 +820,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       context,
       'AI 자막 ${lines.length}줄을 자막 탭에 넣었어요. 자막 탭에서 고칠 수 있어요.',
     );
+    // 전사는 긴 영상에서 한참 걸려 그동안 다른 앱을 보는 사람이 많다 —
+    // 앱이 뒤로 가 있으면 스낵이 안 보이니 시스템 알림으로도 알린다.
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      unawaited(
+        _editorPlatform.showLocalNotification(
+          title: 'AI 자막이 준비됐어요',
+          body: '자막 ${lines.length}줄을 넣었어요. 편집기에서 다듬어 보세요.',
+        ),
+      );
+    }
     return true;
   }
 
