@@ -804,9 +804,15 @@ class EditorExportBlocker extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(
-              progress == null
-                  ? '영상을 준비하고 있어요'
-                  : '영상 만드는 중 ${(progress! * 100).round()}%',
+              // 단계에 맞는 제목 하나만 보인다. 업로드 중인데 "만드는 중"이
+              // 남아 있으면 두 단계가 섞여 보인다.
+              switch ((status ?? '', progress)) {
+                (final s, final p) when s.contains('서버에 올리고') =>
+                  p == null ? '서버에 올리는 중' : '서버에 올리는 중 ${(p * 100).round()}%',
+                (final s, _) when s.contains('갤러리') => '거의 다 됐어요',
+                (_, null) => '영상을 준비하고 있어요',
+                (_, final p?) => '영상 만드는 중 ${(p * 100).round()}%',
+              },
               style: const TextStyle(
                 color: EditorColorTokens.ink,
                 fontSize: 15,
