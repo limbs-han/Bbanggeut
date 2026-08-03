@@ -1907,12 +1907,11 @@ class _RatioPanel extends StatelessWidget {
         height: 36,
         child: Row(
           children: [
+            // 1:1·4:5는 UI에서 뺐다(요청). enum 값은 예전 초안 호환으로 남는다.
             for (final entry in const [
               (EditorCanvasRatio.original, '원본', Icons.crop_original),
               (EditorCanvasRatio.vertical, '9:16', Icons.crop_portrait),
               (EditorCanvasRatio.landscape, '16:9', Icons.crop_landscape),
-              (EditorCanvasRatio.square, '1:1', Icons.crop_square),
-              (EditorCanvasRatio.portrait, '4:5', Icons.crop_5_4),
             ]) ...[
               Expanded(
                 child: _PanelChoice(
@@ -1922,7 +1921,7 @@ class _RatioPanel extends StatelessWidget {
                   onTap: () => onSelected(entry.$1),
                 ),
               ),
-              if (entry.$1 != EditorCanvasRatio.portrait)
+              if (entry.$1 != EditorCanvasRatio.landscape)
                 const SizedBox(width: 5),
             ],
           ],
