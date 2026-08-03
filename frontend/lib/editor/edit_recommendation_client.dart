@@ -171,6 +171,20 @@ class EditRecommendationClient {
   String editedVideoUrl(String videoId) =>
       '${_dio.options.baseUrl}/v1/edited-videos/$videoId/file';
 
+  /// 편집 완료 영상을 파일로 내려받는다. 갤러리 저장이 쓴다.
+  Future<void> downloadEditedVideo(
+    String videoId,
+    String savePath, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    await _dio.download(
+      '/v1/edited-videos/$videoId/file',
+      savePath,
+      onReceiveProgress: onProgress,
+      options: Options(receiveTimeout: const Duration(minutes: 10)),
+    );
+  }
+
   Future<List<Map<String, dynamic>>> listComments(String videoId) async {
     final response = await _dio.get<Map<String, dynamic>>(
       '/v1/edited-videos/$videoId/comments',
