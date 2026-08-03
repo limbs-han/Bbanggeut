@@ -23,6 +23,7 @@ SCHEMA_VERSION = "0.1"
 PREDICTION_SCHEMA_VERSION = "0.1"
 SCORE_AGGREGATIONS = ("max", "mean", "p90")
 EVENT_TYPES = ("laughter", "clap")
+COHORTS = ("localDirect", "continuousNegative", "externalGeneralization")
 DEFAULT_POSITIVE_LABELS = {
     "laughter": {"laughter"},
     "clap": {"clap"},
@@ -540,6 +541,78 @@ def by_condition(
     return rows
 
 
+def cohort_name(sample: DatasetSample) -> str:
+    if "external-generalization" in sample.conditions:
+        return "externalGeneralization"
+    if sample.sample_id.startswith("test-continuous-negative-"):
+        return "continuousNegative"
+    return "localDirect"
+
+
+def by_cohort(
+    results: Sequence[SampleResult],
+    grouped: dict[str, tuple[float, str | None, int, float | None]],
+    predictions: Sequence[Prediction],
+    *,
+    event_type: str,
+    threshold: float,
+    required_consecutive_windows: int,
+    cooldown_seconds: float,
+    hop_seconds: float,
+) -> dict[str, dict[str, float | int | None]]:
+    """Measure each evidence cohort without diluting long-running false alarms."""
+
+    rows: dict[str, dict[str, float | int | None]] = {}
+    for name in COHORTS:
+        selected_results = [
+            result for result in results if cohort_name(result.sample) == name
+        ]
+        selected_samples = [result.sample for result in selected_results]
+        if not selected_results:
+            rows[name] = {
+                "sampleCount": 0,
+                "positiveSamples": 0,
+                "negativeSamples": 0,
+                **metrics_from_counts(Counts()),
+                "falseEventsPerHour": None,
+                "falseEventCount": 0,
+                "negativeDurationSeconds": None,
+                "falsePositiveClipsPerHour": None,
+                "negativeClipDurationSeconds": None,
+            }
+            continue
+        event_rate, false_event_count, negative_duration = (
+            false_event_rate_per_hour(
+                selected_samples,
+                predictions,
+                event_type=event_type,
+                threshold=threshold,
+                required_consecutive_windows=required_consecutive_windows,
+                cooldown_seconds=cooldown_seconds,
+                hop_seconds=hop_seconds,
+            )
+        )
+        clip_rate, clip_duration = false_positives_per_hour(
+            selected_results, grouped
+        )
+        rows[name] = {
+            "sampleCount": len(selected_results),
+            "positiveSamples": sum(
+                result.sample.positive for result in selected_results
+            ),
+            "negativeSamples": sum(
+                not result.sample.positive for result in selected_results
+            ),
+            **metrics_from_counts(count_results(selected_results)),
+            "falseEventsPerHour": rounded(event_rate),
+            "falseEventCount": false_event_count,
+            "negativeDurationSeconds": rounded(negative_duration, 3),
+            "falsePositiveClipsPerHour": rounded(clip_rate),
+            "negativeClipDurationSeconds": rounded(clip_duration, 3),
+        }
+    return rows
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-root", type=Path, required=True)
@@ -827,6 +900,16 @@ def main() -> int:
                 "threshold": rounded(threshold),
                 **operating,
             },
+            "byCohort": by_cohort(
+                results,
+                grouped,
+                predictions,
+                event_type=args.event_type,
+                threshold=threshold,
+                required_consecutive_windows=args.required_consecutive_windows,
+                cooldown_seconds=args.cooldown_seconds,
+                hop_seconds=args.hop_seconds,
+            ),
             "byCondition": by_condition(results),
             "failureCases": failures,
         },

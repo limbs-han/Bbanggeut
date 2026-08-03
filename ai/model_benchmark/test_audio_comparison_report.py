@@ -71,6 +71,14 @@ class AudioComparisonReportTests(unittest.TestCase):
             self.assertEqual(payload["selection"]["selectedModel"], "EfficientAT MN10")
             self.assertEqual(payload["rankings"]["serviceFit"][-1], "PANNs CNN10")
             self.assertEqual(len(payload["models"][0]["events"]), 2)
+            self.assertEqual(
+                payload["models"][0]["serviceGates"]["recallCohort"],
+                "localDirect",
+            )
+            self.assertEqual(
+                payload["models"][0]["serviceGates"]["falsePositiveRateCohort"],
+                "continuousNegative",
+            )
             self.assertTrue((report_dir / "comparison.csv").is_file())
             self.assertTrue((report_dir / "comparison.md").is_file())
 
@@ -169,6 +177,35 @@ class AudioComparisonReportTests(unittest.TestCase):
                     "f1": f1,
                     "falsePositivesPerHour": fp_rate,
                     "falseEventCount": 1,
+                },
+                "byCohort": {
+                    "localDirect": {
+                        "sampleCount": 60,
+                        "precision": f1,
+                        "recall": recall,
+                        "f1": f1,
+                        "falseEventsPerHour": fp_rate,
+                        "falseEventCount": 1,
+                        "negativeDurationSeconds": 200,
+                    },
+                    "continuousNegative": {
+                        "sampleCount": 4,
+                        "precision": 0.0,
+                        "recall": 0.0,
+                        "f1": 0.0,
+                        "falseEventsPerHour": fp_rate,
+                        "falseEventCount": 1,
+                        "negativeDurationSeconds": 3600,
+                    },
+                    "externalGeneralization": {
+                        "sampleCount": 2000,
+                        "precision": f1,
+                        "recall": recall,
+                        "f1": f1,
+                        "falseEventsPerHour": fp_rate,
+                        "falseEventCount": 1,
+                        "negativeDurationSeconds": 9600,
+                    },
                 },
                 "failureCases": [],
             },

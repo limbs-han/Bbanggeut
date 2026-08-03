@@ -15,6 +15,8 @@ from audio_accuracy_runner import (
     DatasetSample,
     Prediction,
     aggregate_scores,
+    by_cohort,
+    evaluate,
     false_event_rate_per_hour,
     metrics_from_counts,
     select_threshold,
@@ -96,6 +98,82 @@ class AudioAccuracyRunnerTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertEqual(rate, 120.0)
         self.assertEqual(duration, 60.0)
+
+    def test_cohort_metrics_keep_continuous_negatives_separate(self) -> None:
+        samples = [
+            DatasetSample("test-local-laugh", "test", True, (), 2.0),
+            DatasetSample("test-local-noise", "test", False, (), 2.0),
+            DatasetSample(
+                "test-continuous-negative-quiet-office-001",
+                "test",
+                False,
+                ("quiet-office",),
+                3600.0,
+            ),
+            DatasetSample(
+                "esc50-laughing-001",
+                "test",
+                True,
+                ("external-generalization",),
+                5.0,
+            ),
+            DatasetSample(
+                "esc50-dog-001",
+                "test",
+                False,
+                ("external-generalization",),
+                5.0,
+            ),
+        ]
+        scores = {
+            "test-local-laugh": 0.9,
+            "test-local-noise": 0.1,
+            "test-continuous-negative-quiet-office-001": 0.9,
+            "esc50-laughing-001": 0.8,
+            "esc50-dog-001": 0.1,
+        }
+        predictions = [
+            Prediction(
+                sample.sample_id,
+                scores[sample.sample_id],
+                {"laughter": scores[sample.sample_id], "clap": 0.1},
+                1.0,
+                sample.duration_seconds,
+                "Laughter",
+                0,
+                0.0,
+            )
+            for sample in samples
+        ]
+        grouped = {
+            sample.sample_id: (
+                scores[sample.sample_id],
+                "Laughter",
+                1,
+                sample.duration_seconds,
+            )
+            for sample in samples
+        }
+        results = evaluate(samples, grouped, 0.5)
+
+        cohorts = by_cohort(
+            results,
+            grouped,
+            predictions,
+            event_type="laughter",
+            threshold=0.5,
+            required_consecutive_windows=1,
+            cooldown_seconds=12.0,
+            hop_seconds=1.0,
+        )
+
+        self.assertEqual(cohorts["localDirect"]["sampleCount"], 2)
+        self.assertEqual(cohorts["continuousNegative"]["sampleCount"], 1)
+        self.assertEqual(
+            cohorts["continuousNegative"]["falseEventsPerHour"], 1.0
+        )
+        self.assertEqual(cohorts["externalGeneralization"]["sampleCount"], 2)
+        self.assertEqual(cohorts["externalGeneralization"]["recall"], 1.0)
 
     def test_cli_writes_reproducible_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_name:
@@ -187,6 +265,10 @@ class AudioAccuracyRunnerTests(unittest.TestCase):
             self.assertEqual(operating["falsePositivesPerHour"], 1800.0)
             self.assertEqual(summary["metrics"]["inferenceP95Ms"], 12.9)
             self.assertEqual(summary["resources"]["gpuPercentMax"], 42.0)
+            self.assertEqual(
+                summary["accuracy"]["byCohort"]["localDirect"]["sampleCount"],
+                2,
+            )
             self.assertEqual(len(summary["accuracy"]["failureCases"]), 1)
             self.assertTrue((output / "progress.json").is_file())
             self.assertTrue((output / "predictions-evaluated.jsonl").is_file())

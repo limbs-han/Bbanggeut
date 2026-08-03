@@ -14,6 +14,7 @@ from typing import Any, Iterable, Sequence
 
 EXPECTED_MODELS = ("YAMNet", "EfficientAT MN10", "PANNs CNN10")
 EVENT_TYPES = ("laughter", "clap")
+COHORTS = ("localDirect", "continuousNegative", "externalGeneralization")
 
 
 def utc_now() -> str:
@@ -76,6 +77,64 @@ def ensure_same(rows: list[dict[str, Any]], getter: Any, label: str) -> Any:
     return getter(rows[0])
 
 
+def aggregate_cohort(
+    rows: list[dict[str, Any]], cohort: str
+) -> dict[str, float | int | None]:
+    return {
+        "sampleCount": int(
+            maximum(
+                nested_number(row, "accuracy", "byCohort", cohort, "sampleCount")
+                for row in rows
+            )
+            or 0
+        ),
+        "f1Mean": mean(
+            nested_number(row, "accuracy", "byCohort", cohort, "f1")
+            for row in rows
+        ),
+        "precisionMean": mean(
+            nested_number(row, "accuracy", "byCohort", cohort, "precision")
+            for row in rows
+        ),
+        "recallMean": mean(
+            nested_number(row, "accuracy", "byCohort", cohort, "recall")
+            for row in rows
+        ),
+        "recallMin": minimum(
+            nested_number(row, "accuracy", "byCohort", cohort, "recall")
+            for row in rows
+        ),
+        "falseEventsPerHourMean": mean(
+            nested_number(
+                row, "accuracy", "byCohort", cohort, "falseEventsPerHour"
+            )
+            for row in rows
+        ),
+        "falseEventsPerHourMax": maximum(
+            nested_number(
+                row, "accuracy", "byCohort", cohort, "falseEventsPerHour"
+            )
+            for row in rows
+        ),
+        "falseEventCountMax": maximum(
+            nested_number(
+                row, "accuracy", "byCohort", cohort, "falseEventCount"
+            )
+            for row in rows
+        ),
+        "negativeDurationSeconds": maximum(
+            nested_number(
+                row,
+                "accuracy",
+                "byCohort",
+                cohort,
+                "negativeDurationSeconds",
+            )
+            for row in rows
+        ),
+    }
+
+
 def aggregate_event(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "trialCount": len(rows),
@@ -120,6 +179,9 @@ def aggregate_event(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "failureCases": sum(
             len(row.get("accuracy", {}).get("failureCases", [])) for row in rows
         ),
+        "cohorts": {
+            cohort: aggregate_cohort(rows, cohort) for cohort in COHORTS
+        },
         "runs": [
             {
                 "runId": row.get("runId"),
@@ -144,15 +206,22 @@ def aggregate_model(
         for event_type in EVENT_TYPES
     }
     all_rows = [row for rows in event_rows.values() for row in rows]
-    recalls = [events[event_type]["recallMin"] for event_type in EVENT_TYPES]
-    false_rates = [
-        events[event_type]["falsePositivesPerHourMax"] for event_type in EVENT_TYPES
+    local_recalls = [
+        events[event_type]["cohorts"]["localDirect"]["recallMin"]
+        for event_type in EVENT_TYPES
+    ]
+    continuous_false_rates = [
+        events[event_type]["cohorts"]["continuousNegative"][
+            "falseEventsPerHourMax"
+        ]
+        for event_type in EVENT_TYPES
     ]
     recall_gate = all(
-        value is not None and value >= minimum_recall for value in recalls
+        value is not None and value >= minimum_recall for value in local_recalls
     )
     fp_gate = all(
-        value is not None and value <= maximum_fp_per_hour for value in false_rates
+        value is not None and value <= maximum_fp_per_hour
+        for value in continuous_false_rates
     )
     return {
         "model": name,
@@ -161,8 +230,18 @@ def aggregate_model(
             "macroF1Mean": mean(
                 events[event_type]["f1Mean"] for event_type in EVENT_TYPES
             ),
-            "minimumRecallMean": minimum(recalls),
-            "maximumFalsePositivesPerHourMean": maximum(false_rates),
+            "localDirectMacroF1Mean": mean(
+                events[event_type]["cohorts"]["localDirect"]["f1Mean"]
+                for event_type in EVENT_TYPES
+            ),
+            "localDirectMinimumRecall": minimum(local_recalls),
+            "continuousMaximumFalseEventsPerHour": maximum(
+                continuous_false_rates
+            ),
+            "externalGeneralizationMacroF1Mean": mean(
+                events[event_type]["cohorts"]["externalGeneralization"]["f1Mean"]
+                for event_type in EVENT_TYPES
+            ),
         },
         "performance": {
             "inferenceMeanMs": mean(
@@ -192,6 +271,8 @@ def aggregate_model(
         "serviceGates": {
             "minimumRecall": minimum_recall,
             "maximumFalsePositivesPerHour": maximum_fp_per_hour,
+            "recallCohort": "localDirect",
+            "falsePositiveRateCohort": "continuousNegative",
             "recallPass": recall_gate,
             "falsePositiveRatePass": fp_gate,
             "eligible": recall_gate and fp_gate,
@@ -199,18 +280,27 @@ def aggregate_model(
     }
 
 
-def rank_key(row: dict[str, Any]) -> tuple[float, float, float, float, float]:
+def rank_key(row: dict[str, Any]) -> tuple[float, float, float, float, float, float]:
     combined = row["combined"]
     latency = row["performance"]["inferenceP95MsMean"]
     return (
         -float(row["serviceGates"]["eligible"]),
-        combined["maximumFalsePositivesPerHourMean"]
-        if combined["maximumFalsePositivesPerHourMean"] is not None
+        combined["continuousMaximumFalseEventsPerHour"]
+        if combined["continuousMaximumFalseEventsPerHour"] is not None
         else float("inf"),
-        -(combined["macroF1Mean"] if combined["macroF1Mean"] is not None else -1),
         -(
-            combined["minimumRecallMean"]
-            if combined["minimumRecallMean"] is not None
+            combined["localDirectMacroF1Mean"]
+            if combined["localDirectMacroF1Mean"] is not None
+            else -1
+        ),
+        -(
+            combined["localDirectMinimumRecall"]
+            if combined["localDirectMinimumRecall"] is not None
+            else -1
+        ),
+        -(
+            combined["externalGeneralizationMacroF1Mean"]
+            if combined["externalGeneralizationMacroF1Mean"] is not None
             else -1
         ),
         latency if latency is not None else float("inf"),
@@ -229,29 +319,71 @@ def markdown_report(payload: dict[str, Any]) -> str:
         f"- 데이터셋: `{payload['dataset']['name']}`",
         f"- 반복 횟수: 모델당 {payload['expectedRepeats']}회",
         "- 임계값은 validation에서만 결정하고 test에는 고정했다.",
-        "- 선택 우선순위는 오탐 억제, Recall 기준 충족, Macro F1, 지연시간 순이다.",
+        "- 서비스 통과 조건은 직접 수집 데이터 Recall과 1시간 연속 음성 FP/hour로 판단한다.",
+        "- ESC-50은 낯선 환경에 대한 일반화 근거이며 통과 모델의 동률 해소에 사용한다.",
         "",
         "## 모델별 핵심 지표",
         "",
-        "| 모델 | 웃음 F1 | 웃음 Recall | 웃음 FP/h | 박수 F1 | 박수 Recall | 박수 FP/h | Macro F1 | P95 ms | 판정 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| 모델 | 직접 웃음 F1 | 직접 웃음 Recall | 직접 박수 F1 | 직접 박수 Recall | 연속 음성 웃음 FP/h | 연속 음성 박수 FP/h | P95 ms | 판정 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for row in payload["models"]:
         laughter = row["events"]["laughter"]
         clap = row["events"]["clap"]
+        local_laughter = laughter["cohorts"]["localDirect"]
+        local_clap = clap["cohorts"]["localDirect"]
+        continuous_laughter = laughter["cohorts"]["continuousNegative"]
+        continuous_clap = clap["cohorts"]["continuousNegative"]
         lines.append(
-            "| {model} | {lf1} | {lr} | {lfp} | {cf1} | {cr} | {cfp} | {macro} | {p95} | {gate} |".format(
+            "| {model} | {lf1} | {lr} | {cf1} | {cr} | {lfp} | {cfp} | {p95} | {gate} |".format(
                 model=row["model"],
-                lf1=format_value(laughter["f1Mean"]),
-                lr=format_value(laughter["recallMean"]),
-                lfp=format_value(laughter["falsePositivesPerHourMean"], 2),
-                cf1=format_value(clap["f1Mean"]),
-                cr=format_value(clap["recallMean"]),
-                cfp=format_value(clap["falsePositivesPerHourMean"], 2),
-                macro=format_value(row["combined"]["macroF1Mean"]),
+                lf1=format_value(local_laughter["f1Mean"]),
+                lr=format_value(local_laughter["recallMean"]),
+                lfp=format_value(continuous_laughter["falseEventsPerHourMean"], 2),
+                cf1=format_value(local_clap["f1Mean"]),
+                cr=format_value(local_clap["recallMean"]),
+                cfp=format_value(continuous_clap["falseEventsPerHourMean"], 2),
                 p95=format_value(row["performance"]["inferenceP95MsMean"], 2),
                 gate="통과" if row["serviceGates"]["eligible"] else "미달",
             )
+        )
+    lines.extend(
+        [
+            "",
+            "## ESC-50 외부 일반화",
+            "",
+            "| 모델 | 웃음 F1 | 웃음 Recall | 박수 F1 | 박수 Recall |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in payload["models"]:
+        laughter = row["events"]["laughter"]["cohorts"][
+            "externalGeneralization"
+        ]
+        clap = row["events"]["clap"]["cohorts"]["externalGeneralization"]
+        lines.append(
+            f"| {row['model']} | {format_value(laughter['f1Mean'])} | "
+            f"{format_value(laughter['recallMean'])} | "
+            f"{format_value(clap['f1Mean'])} | "
+            f"{format_value(clap['recallMean'])} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Jetson 실시간성과 자원",
+            "",
+            "| 모델 | 평균 추론 ms | P95 ms | GPU 최대 % | RAM 최대 MB | 온도 최대 °C | 전력 최대 mW |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in payload["models"]:
+        lines.append(
+            f"| {row['model']} | {format_value(row['performance']['inferenceMeanMs'], 2)} | "
+            f"{format_value(row['performance']['inferenceP95MsMean'], 2)} | "
+            f"{format_value(row['resources']['gpuPercentMax'], 1)} | "
+            f"{format_value(row['resources']['ramUsedMbMax'], 0)} | "
+            f"{format_value(row['resources']['temperatureCMax'], 1)} | "
+            f"{format_value(row['resources']['powerMwMax'], 0)} |"
         )
     selection = payload["selection"]
     lines.extend(
@@ -347,7 +479,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     eligible = [row for row in ranked if row["serviceGates"]["eligible"]]
     selected = eligible[0]["model"] if eligible else None
     payload = {
-        "schemaVersion": "0.2",
+        "schemaVersion": "0.3",
         "createdAt": utc_now(),
         "comparisonId": comparison_id,
         "expectedRepeats": args.expected_repeats,
@@ -355,11 +487,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "selectionPolicy": {
             "minimumRecall": args.minimum_recall,
             "maximumFalsePositivesPerHour": args.maximum_fp_per_hour,
+            "recallCohort": "localDirect",
+            "falsePositiveRateCohort": "continuousNegative",
+            "externalGeneralizationRole": "supporting-ranking-evidence",
             "priority": [
                 "service-gates",
-                "false-positives-per-hour",
-                "macro-f1",
-                "minimum-recall",
+                "continuous-negative-false-events-per-hour",
+                "local-direct-macro-f1",
+                "local-direct-minimum-recall",
+                "external-generalization-macro-f1",
                 "p95-latency",
             ],
         },
@@ -369,9 +505,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "status": "recommended-pending-concurrent-e2e" if selected else "no-model-passed-gates",
             "selectedModel": selected,
             "reason": (
-                "Both event recalls and false-event/hour gates passed; concurrent YOLO and app E2E remain."
+                "Both local-direct recalls and continuous-negative false-event/hour gates passed; concurrent YOLO and app E2E remain."
                 if selected
-                else "No model passed both the recall and false-event/hour gates."
+                else "No model passed both local-direct recall and continuous-negative false-event/hour gates."
             ),
         },
     }
@@ -396,6 +532,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "precision_mean",
                 "recall_mean",
                 "false_events_per_hour_mean",
+                "local_direct_f1_mean",
+                "local_direct_recall_mean",
+                "continuous_negative_false_events_per_hour_mean",
+                "external_generalization_f1_mean",
+                "external_generalization_recall_mean",
                 "threshold_mean",
                 "inference_p95_ms_mean",
                 "gpu_percent_max",
@@ -406,6 +547,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         for row in models:
             for event_type in EVENT_TYPES:
                 event = row["events"][event_type]
+                local_direct = event["cohorts"]["localDirect"]
+                continuous = event["cohorts"]["continuousNegative"]
+                external = event["cohorts"]["externalGeneralization"]
                 writer.writerow(
                     [
                         row["model"],
@@ -415,6 +559,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         event["precisionMean"],
                         event["recallMean"],
                         event["falsePositivesPerHourMean"],
+                        local_direct["f1Mean"],
+                        local_direct["recallMean"],
+                        continuous["falseEventsPerHourMean"],
+                        external["f1Mean"],
+                        external["recallMean"],
                         event["thresholdMean"],
                         row["performance"]["inferenceP95MsMean"],
                         row["resources"]["gpuPercentMax"],

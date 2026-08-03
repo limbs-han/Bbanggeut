@@ -113,6 +113,18 @@ type Snapshot = {
         falsePositivesPerHour?: number | null;
         falseEventCount?: number | null;
       };
+      byCohort?: Record<
+        "localDirect" | "continuousNegative" | "externalGeneralization" | string,
+        {
+          sampleCount?: number | null;
+          precision?: number | null;
+          recall?: number | null;
+          f1?: number | null;
+          falseEventsPerHour?: number | null;
+          falseEventCount?: number | null;
+          negativeDurationSeconds?: number | null;
+        }
+      >;
       byScenario?: Array<{
         scenario: string;
         imageCount: number;
@@ -1017,33 +1029,66 @@ export function BenchmarkDashboard() {
                         (row) => row.accuracy?.eventType === "clap",
                       );
                       const laughterF1 = average(
-                        laughter.map((row) => row.accuracy?.operatingPoint?.f1),
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.localDirect?.f1,
+                        ),
                       );
                       const laughterRecall = average(
                         laughter.map(
-                          (row) => row.accuracy?.operatingPoint?.recall,
+                          (row) =>
+                            row.accuracy?.byCohort?.localDirect?.recall,
                         ),
                       );
                       const laughterFalseRate = average(
                         laughter.map(
                           (row) =>
-                            row.accuracy?.operatingPoint
-                              ?.falsePositivesPerHour,
+                            row.accuracy?.byCohort?.continuousNegative
+                              ?.falseEventsPerHour,
+                        ),
+                      );
+                      const laughterExternalF1 = average(
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization?.f1,
+                        ),
+                      );
+                      const laughterExternalRecall = average(
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization
+                              ?.recall,
                         ),
                       );
                       const clapF1 = average(
-                        clap.map((row) => row.accuracy?.operatingPoint?.f1),
+                        clap.map(
+                          (row) => row.accuracy?.byCohort?.localDirect?.f1,
+                        ),
                       );
                       const clapRecall = average(
                         clap.map(
-                          (row) => row.accuracy?.operatingPoint?.recall,
+                          (row) =>
+                            row.accuracy?.byCohort?.localDirect?.recall,
                         ),
                       );
                       const clapFalseRate = average(
                         clap.map(
                           (row) =>
-                            row.accuracy?.operatingPoint
-                              ?.falsePositivesPerHour,
+                            row.accuracy?.byCohort?.continuousNegative
+                              ?.falseEventsPerHour,
+                        ),
+                      );
+                      const clapExternalF1 = average(
+                        clap.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization?.f1,
+                        ),
+                      );
+                      const clapExternalRecall = average(
+                        clap.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization
+                              ?.recall,
                         ),
                       );
                       const latency = average(
@@ -1054,14 +1099,14 @@ export function BenchmarkDashboard() {
                           <h3>{model.name}</h3>
                           <p>{model.note}</p>
                           <div className="audio-stat">
-                            <span>웃음 F1 / Recall</span>
+                            <span>직접 수집 웃음 F1 / Recall</span>
                             <strong>
                               {formatPercent(laughterF1)} /{" "}
                               {formatPercent(laughterRecall)}
                             </strong>
                           </div>
                           <div className="audio-stat">
-                            <span>웃음 FP/hour</span>
+                            <span>1시간 음성 웃음 FP/hour</span>
                             <strong>
                               {formatNumber(
                                 laughterFalseRate,
@@ -1070,19 +1115,33 @@ export function BenchmarkDashboard() {
                             </strong>
                           </div>
                           <div className="audio-stat">
-                            <span>박수 F1 / Recall</span>
+                            <span>직접 수집 박수 F1 / Recall</span>
                             <strong>
                               {formatPercent(clapF1)} /{" "}
                               {formatPercent(clapRecall)}
                             </strong>
                           </div>
                           <div className="audio-stat">
-                            <span>박수 FP/hour</span>
+                            <span>1시간 음성 박수 FP/hour</span>
                             <strong>
                               {formatNumber(
                                 clapFalseRate,
                                 2,
                               )}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>ESC-50 웃음 F1 / Recall</span>
+                            <strong>
+                              {formatPercent(laughterExternalF1)} /{" "}
+                              {formatPercent(laughterExternalRecall)}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>ESC-50 박수 F1 / Recall</span>
+                            <strong>
+                              {formatPercent(clapExternalF1)} /{" "}
+                              {formatPercent(clapExternalRecall)}
                             </strong>
                           </div>
                           <div className="audio-stat">

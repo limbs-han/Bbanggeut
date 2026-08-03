@@ -113,6 +113,38 @@ for split in ("validation", "test"):
                 f"ERROR: {split}/{event_type} requires at least 10 positive "
                 "and 10 negative samples"
             )
+
+test_rows = [row for row in rows if row.get("split") == "test"]
+continuous = [
+    row
+    for row in test_rows
+    if str(row.get("sampleId", "")).startswith("test-continuous-negative-")
+]
+external = [
+    row
+    for row in test_rows
+    if "external-generalization" in row.get("conditions", [])
+]
+local_direct = [
+    row
+    for row in test_rows
+    if row not in continuous and row not in external
+]
+print(
+    f"TEST_COHORTS localDirect={len(local_direct)} "
+    f"continuousNegative={len(continuous)} "
+    f"externalGeneralization={len(external)}"
+)
+if len(local_direct) != 60:
+    raise SystemExit("ERROR: localDirect test cohort must contain exactly 60 samples")
+if len(continuous) != 4:
+    raise SystemExit(
+        "ERROR: continuousNegative test cohort must contain exactly 4 samples"
+    )
+if len(external) != 2000:
+    raise SystemExit(
+        "ERROR: externalGeneralization test cohort must contain exactly 2000 samples"
+    )
 PY
 
 echo "=== MODEL AND SOURCE CHECKS ==="
