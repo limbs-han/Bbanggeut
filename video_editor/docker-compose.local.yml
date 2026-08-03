@@ -1,7 +1,9 @@
 services:
   editor-api:
     build:
-      context: .
+      # 여러 -f 파일을 합치면 상대 경로는 첫 번째 compose 파일(backend/)
+      # 기준으로 풀린다 — README의 병합 실행 명령 전제.
+      context: ../video_editor
       dockerfile: Dockerfile.local
     container_name: wj-editor-api
     environment:
