@@ -10,6 +10,7 @@ class EditRecommendation {
     required this.zoomSegments,
     this.scoreTimeline = const [],
     this.faceTrack = const [],
+    this.faceTracks = const [],
   });
 
   factory EditRecommendation.fromJson(Map<String, dynamic> json) {
@@ -24,6 +25,9 @@ class EditRecommendation {
     final faces = (recipe['faceTrack'] as List? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList(growable: false);
+    final faceTracks = (recipe['faceTracks'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
     return EditRecommendation(
       cutStartMs: (cut['startMs'] as num).round(),
       cutEndMs: (cut['endMs'] as num).round(),
@@ -31,6 +35,7 @@ class EditRecommendation {
       zoomSegments: zooms,
       scoreTimeline: timeline,
       faceTrack: faces,
+      faceTracks: faceTracks,
     );
   }
 
@@ -45,8 +50,12 @@ class EditRecommendation {
   final List<Map<String, dynamic>> scoreTimeline;
 
   /// MediaPipe 표정 분석이 뽑은 얼굴 궤적({ms, x, y, h}, 원본 시각 기준).
-  /// 얼굴을 따라다니는 AR 스티커가 쓴다.
+  /// 얼굴을 따라다니는 AR 스티커가 쓴다. 옛 서버 호환용 한 줄 궤적이다.
   final List<Map<String, dynamic>> faceTrack;
+
+  /// 사람별 얼굴 궤적({id, samples}). 여러 명이 나오는 영상에서 스티커가
+  /// "누구"를 따라갈지 고를 수 있게 한다.
+  final List<Map<String, dynamic>> faceTracks;
 }
 
 class EditRecommendationClient {
