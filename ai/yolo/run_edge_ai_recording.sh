@@ -32,6 +32,7 @@ fi
 : "${LOCAL_RTSP_AI_URL:=rtsp://127.0.0.1:8554/homecam/ai}"
 : "${RECORDING_DIR:=/var/lib/william-james/recordings}"
 : "${RECORDING_SEGMENT_SECONDS:=60}"
+: "${RECORDING_TIMEZONE:=Asia/Seoul}"
 : "${EVENT_CLIP_SECONDS:=60}"
 : "${EVENT_MERGE_GAP_SECONDS:=30}"
 : "${EVENT_CROSS_TYPE_MERGE_GAP_SECONDS:=5}"
@@ -424,6 +425,7 @@ UPLOADER_COMMAND=(
     --merge-gap-seconds "$EVENT_MERGE_GAP_SECONDS"
     --cross-type-merge-gap-seconds "$EVENT_CROSS_TYPE_MERGE_GAP_SECONDS"
     --segment-seconds "$RECORDING_SEGMENT_SECONDS"
+    --recording-timezone "$RECORDING_TIMEZONE"
     --retry-initial-seconds "$UPLOAD_RETRY_INITIAL_SECONDS"
     --retry-max-seconds "$UPLOAD_RETRY_MAX_SECONDS"
 )

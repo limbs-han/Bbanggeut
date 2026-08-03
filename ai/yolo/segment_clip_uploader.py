@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 import json
 import os
 from pathlib import Path
@@ -15,6 +15,7 @@ import time
 from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from laughter_clip_uploader import (
     instant,
@@ -80,6 +81,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--device-token", default=os.getenv("DEVICE_BEARER_TOKEN"))
     parser.add_argument("--ffmpeg", default=os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg"))
+    parser.add_argument(
+        "--recording-timezone",
+        default=os.getenv("RECORDING_TIMEZONE", "Asia/Seoul"),
+        help="IANA time zone used in recording segment filenames.",
+    )
     parser.add_argument("--poll-seconds", type=float, default=1.0)
     parser.add_argument("--merge-gap-seconds", type=float, default=30.0)
     parser.add_argument(
@@ -255,11 +261,11 @@ def clip_interval(group: list[Trigger]) -> tuple[datetime, datetime]:
     return start, end
 
 
-def parse_segment(path: Path) -> Segment:
-    """Interpret recording filenames in the UTC configured by the recorder."""
+def parse_segment(path: Path, segment_timezone: tzinfo) -> Segment:
+    """Convert a recorder-local segment filename to an absolute UTC time."""
 
     naive = datetime.strptime(path.name, SEGMENT_NAME_FORMAT)
-    started_at = naive.replace(tzinfo=timezone.utc)
+    started_at = naive.replace(tzinfo=segment_timezone).astimezone(timezone.utc)
     return Segment(path=path, started_at=started_at)
 
 
@@ -268,6 +274,7 @@ def select_completed_segments(
     clip_start: datetime,
     clip_end: datetime,
     segment_seconds: float,
+    segment_timezone: tzinfo,
     *,
     timing_tolerance_seconds: float = 2.0,
 ) -> list[Segment]:
@@ -278,7 +285,7 @@ def select_completed_segments(
     """
 
     segments = sorted(
-        (parse_segment(path) for path in paths),
+        (parse_segment(path, segment_timezone) for path in paths),
         key=lambda item: item.started_at,
     )
     if len(segments) < 2:
@@ -653,6 +660,7 @@ def process_group(
         clip_start,
         clip_end,
         args.segment_seconds,
+        args.recording_timezone,
     )
     canonical = canonical_trigger(group)
     merged = merged_triggers(group)
@@ -754,6 +762,16 @@ def validate_args(args: argparse.Namespace) -> None:
             f"Recording safety marker is missing: "
             f"{args.recording_dir / '.homecam-recordings'}"
         )
+    if isinstance(args.recording_timezone, str):
+        try:
+            args.recording_timezone = ZoneInfo(args.recording_timezone)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise SystemExit(
+                "--recording-timezone must be an IANA zone name such as "
+                f"Asia/Seoul: {error}"
+            ) from error
+    elif not isinstance(args.recording_timezone, tzinfo):
+        raise SystemExit("--recording-timezone must be an IANA zone name")
 
 
 def run(args: argparse.Namespace) -> None:

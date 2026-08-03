@@ -61,7 +61,7 @@ tee_outputs+="|[f=mpegts:onfail=ignore]udp://127.0.0.1:${LIVE_UDP_PORT}?pkt_size
 tee_outputs+="|[f=mpegts:onfail=ignore]udp://127.0.0.1:${LOCAL_RTSP_UDP_PORT}?pkt_size=1316"
 
 exec "$FFMPEG_PATH" \
-    -hide_banner -nostdin -loglevel warning \
+    -hide_banner -nostdin -loglevel warning -copyts \
     -thread_queue_size 1024 \
     -f v4l2 -input_format "$CAMERA_INPUT_FORMAT" \
     -timestamps abs \
@@ -71,10 +71,9 @@ exec "$FFMPEG_PATH" \
     -f alsa -ac 1 -ar 48000 -i "$AUDIO_DEVICE" \
     -map 0:v:0 -map 1:a:0 \
     -c:v libx264 -preset ultrafast -tune zerolatency \
-    -vf "setpts=PTS-STARTPTS" \
     -pix_fmt yuv420p -profile:v baseline -x264-params repeat-headers=1 \
     -g "$CAMERA_FPS" -keyint_min "$CAMERA_FPS" -sc_threshold 0 -bf 0 \
     -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_BITRATE" -bufsize 5000k \
     -c:a aac -b:a 128k -ar 48000 -ac 1 \
-    -af "asetpts=PTS-STARTPTS,aresample=async=1" \
+    -af "aresample=async=1" \
     -f tee "$tee_outputs"
