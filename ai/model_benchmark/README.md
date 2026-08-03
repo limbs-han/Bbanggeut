@@ -158,3 +158,7 @@ python3 -m unittest discover \
 1. YOLOv8n·YOLO11n·YOLO26n × PyTorch·TensorRT FP16
 2. YAMNet·EfficientAT MN10·PANNs CNN10
 3. 반복 실행 결과의 CSV·JSON 요약과 대시보드 자동 반영
+
+## 실측 보고서
+
+- [2026-08-02 YOLO TensorRT FP16 정확도·실시간성 비교](./reports/20260802_yolo_tensorrt_fp16_accuracy/README.md)

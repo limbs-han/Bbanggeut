@@ -261,6 +261,37 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('기기 등록 도움말에서 시리얼 번호와 카테고리를 함께 안내한다', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(theme: buildTheme(), home: const SerialNumberHelpScreen()),
+    );
+
+    expect(find.text('기기 등록 도움말'), findsOneWidget);
+    expect(find.text('제품 아래쪽을 확인해 주세요'), findsOneWidget);
+
+    final categoryTitle = find.byKey(const Key('place-category-help-title'));
+    await tester.scrollUntilVisible(
+      categoryTitle,
+      300,
+      scrollable: find.byType(Scrollable),
+    );
+
+    expect(categoryTitle, findsOneWidget);
+    for (final text in [
+      '기기를 사용하는 장소를 구분하는 이름이에요. 기본 카테고리는 집으로 설정되어 있어요.',
+      '집 외에 카페, 매장, 사무실처럼 다른 장소에서 기기를 사용한다면 새로운 카테고리를 추가해 보세요. 장소별로 기기를 나누어 확인할 수 있어요.',
+      '등록한 기기는 선택한 장소에서 확인할 수 있어요.',
+    ]) {
+      final guideText = find.text(text);
+      await tester.scrollUntilVisible(
+        guideText,
+        200,
+        scrollable: find.byType(Scrollable),
+      );
+      expect(guideText, findsOneWidget);
+    }
+  });
+
   test('장소 이름의 빈 값, 중복, 길이를 검증한다', () {
     expect(validatePlaceName('   ', const ['집']), '장소 이름을 입력해 주세요.');
     expect(validatePlaceName(' 집 ', const ['집']), '이미 등록된 장소입니다.');

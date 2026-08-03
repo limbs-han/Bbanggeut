@@ -337,6 +337,28 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('오늘의 추억  🌱'), findsOneWidget);
+    expect(find.text('등록된 메모가 없습니다'), findsOneWidget);
+    expect(find.text('메모를 남겨보세요!'), findsOneWidget);
+    expect(find.text('갤러리에 저장'), findsOneWidget);
+    expect(find.byType(Image), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('empty-memory-memo-action')),
+        matching: find.byIcon(Icons.edit_rounded),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('메모를 남겨보세요!'));
+    await tester.pumpAndSettle();
+    expect(find.text('추억 기록하기'), findsOneWidget);
+    expect(find.byKey(const Key('memory-title-input')), findsOneWidget);
+    expect(find.byKey(const Key('memory-memo-input')), findsOneWidget);
+    expect(find.byKey(const Key('memory-metadata-save')), findsOneWidget);
+    await tester.tap(find.byTooltip('닫기'));
+    await tester.pumpAndSettle();
+
     final editButton = find.widgetWithText(FilledButton, '영상 편집하기');
     await tester.ensureVisible(editButton);
     await tester.tap(editButton);
