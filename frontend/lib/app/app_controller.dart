@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/api_client.dart';
 import '../core/models.dart';
 import '../core/push_notification_service.dart';
+import '../editor/edit_recommendation_client.dart';
 
 const devHomeCam = bool.fromEnvironment('DEV_HOME_CAM');
 
@@ -16,7 +17,14 @@ class AppController extends ChangeNotifier {
     this.pushNotifications,
     FlutterSecureStorage? placeStorage,
   }) : api = api ?? ApiClient(),
-       _placeStorage = placeStorage ?? const FlutterSecureStorage();
+       _placeStorage = placeStorage ?? const FlutterSecureStorage() {
+    // 편집 서버(editor-api)는 백엔드와 같은 액세스 토큰을 요구한다.
+    // 편집 관련 화면들이 각자 만드는 EditRecommendationClient에 세션을
+    // 여기서 한 번 이어 준다.
+    EditRecommendationClient.sessionToken = () => this.api.accessToken;
+    EditRecommendationClient.sessionRefresh = () =>
+        this.api.refreshAccessToken();
+  }
   final ApiClient api;
   final PushNotificationService? pushNotifications;
   final FlutterSecureStorage _placeStorage;

@@ -67,6 +67,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_VIDEO_BUCKET: ${MINIO_VIDEO_BUCKET}
+      MINIO_EDIT_BUCKET: ${MINIO_EDIT_BUCKET:-william-james-edit}
     entrypoint:
       - /bin/sh
       - -ec
@@ -74,6 +75,43 @@ services:
         mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         mc mb --ignore-existing "local/$${MINIO_VIDEO_BUCKET}"
         mc anonymous set none "local/$${MINIO_VIDEO_BUCKET}"
+        mc mb --ignore-existing "local/$${MINIO_EDIT_BUCKET}"
+        mc anonymous set none "local/$${MINIO_EDIT_BUCKET}"
+
+  # 앱 편집 서버(video_editor). 자동 편집 추천·초안·편집본·댓글을 담당한다.
+  # 이미지는 배포 파이프라인 밖에서 서버가 직접 빌드한다 — video_editor/DEPLOY.md
+  # 참고. 배포 wrapper(wj-deploy-backend)는 이 서비스를 올리거나 내리지
+  # 않으므로 기존 배포 흐름에는 영향이 없다. 최초 기동과 갱신은
+  # `docker compose ... up -d editor-api`로 한다.
+  editor-api:
+    image: wj-editor-api:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_EDIT_BUCKET:-william-james-edit}
+      # 백엔드 JWT_SIGNING_KEY와 같은 값. 앱 액세스 토큰을 직접 검증한다.
+      EDITOR_JWT_SECRET: ${EDITOR_JWT_SECRET:-}
+      # 시크릿이 비면 기동을 거부한다 — 실서버에서 인증 없는 편집 API를
+      # 열어 두는 실수를 막는다.
+      EDITOR_REQUIRE_AUTH: "true"
+      EDITOR_MODEL_ROOT: /models
+      EDITOR_SOURCE_URL_HOSTS: ${EDITOR_SOURCE_URL_HOSTS:-i15e201.p.ssafy.io}
+      # 금고(가족) 범위 판정: 사용자 토큰을 이 주소의 GET /api/videos/{id}에
+      # 전달해 백엔드가 구성원 여부·세션 상태를 판정한다. nginx를 한 바퀴
+      # 돌지만(Spring이 loopback 전용이라) 판정 결과는 60초 캐시된다.
+      EDITOR_BACKEND_URL: ${EDITOR_BACKEND_URL:-https://i15e201.p.ssafy.io}
+      # 편집본 재생 presigned URL 서명 기준 호스트(백엔드 S3_PUBLIC_ENDPOINT와
+      # 같은 방식). nginx의 /william-james-edit 경로가 MinIO로 프록시한다.
+      EDITOR_PUBLIC_S3_ENDPOINT: ${EDITOR_PUBLIC_S3_ENDPOINT:-https://i15e201.p.ssafy.io}
+    volumes:
+      - ${EDITOR_MODEL_DIR:-/home/ubuntu/william-james/editor-models}:/models:ro
+    ports:
+      - "127.0.0.1:18080:18080"
+    depends_on:
+      minio:
+        condition: service_healthy
 
   mosquitto:
     image: eclipse-mosquitto:2

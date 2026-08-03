@@ -1,27 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-enum ContentNotificationType { birthday, laughter, invitation, device }
-
-class ContentNotification {
-  const ContentNotification({
-    required this.id,
-    required this.type,
-    required this.title,
-    required this.message,
-    required this.createdAt,
-    this.videoId,
-    this.read = false,
-  });
-
-  final String id;
-  final ContentNotificationType type;
-  final String title;
-  final String message;
-  final DateTime createdAt;
-  final String? videoId;
-  final bool read;
-}
-
 class CalendarSchedule {
   const CalendarSchedule({
     required this.id,
@@ -57,9 +35,12 @@ class CalendarSchedule {
 
 const calendarScheduleEmojis = ['❤️', '🎂', '🍚', '☎️', '📷', '⭐', '🎁', '🌸'];
 
-/// 콘텐츠 API가 준비되기 전 화면 간 상태를 공유하는 임시 저장소입니다.
+/// 일정 API가 준비되기 전 화면 간 상태를 공유하는 임시 저장소입니다.
+/// 앱을 다시 시작하면 사라집니다. 알림 목록/읽음 처리는 이미
+/// `/api/notifications`로 옮겨 갔고, 여기 남은 것은 일정뿐입니다.
 ///
-/// TODO(content-api): 일정 CRUD와 알림 목록/읽음 처리를 백엔드 API로 교체합니다.
+/// TODO(content-api): 백엔드에 일정 CRUD API가 생기면 교체합니다(2026-08-03
+/// 기준 서버에 일정/캘린더 엔드포인트 없음).
 class ContentState extends ChangeNotifier {
   ContentState._();
 
