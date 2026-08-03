@@ -18,8 +18,8 @@ Whisper, Qwen, STT 단어 밀도, 문장 경계, 자동 자막은 사용하지 �
 ## 로컬 검증
 
 ```bash
-python -m unittest -v ai.video_editor.test_cut_selector
-python -m compileall -q ai/video_editor
+python -m unittest -v video_editor.test_cut_selector
+python -m compileall -q video_editor
 ```
 
 ## 앱 연동용 로컬 Docker API
@@ -32,7 +32,7 @@ python -m compileall -q ai/video_editor
 $env:MQTT_PASSWORD='local-edit-unused'
 docker compose `
   -f backend/docker-compose.yml `
-  -f ai/video_editor/docker-compose.local.yml `
+  -f video_editor/docker-compose.local.yml `
   up -d minio minio-init editor-api
 adb reverse tcp:18080 tcp:18080
 ```
@@ -46,18 +46,18 @@ API는 추천 레시피를 반환하는 동시에 MinIO의
 분석 의존성은 `requirements-analysis.txt`에 있다. 모델 바이너리는 Git에 넣지 않는다.
 
 ```bash
-python -m ai.video_editor.yamnet_analysis \
+python -m video_editor.yamnet_analysis \
   --model /models/yamnet.tflite \
   --output-dir /tmp/analysis video.mp4
 
-python -m ai.video_editor.audio_features \
+python -m video_editor.audio_features \
   --output-dir /tmp/analysis video.mp4
 
-python -m ai.video_editor.video_features \
+python -m video_editor.video_features \
   --face-model /models/blaze_face_full_range.tflite \
   --output-dir /tmp/analysis video.mp4
 
-python -m ai.video_editor.expression_analysis \
+python -m video_editor.expression_analysis \
   --model /models/face_landmarker.task \
   --output-dir /tmp/analysis video.mp4
 ```
@@ -65,7 +65,7 @@ python -m ai.video_editor.expression_analysis \
 recipe 생성:
 
 ```bash
-python -m ai.video_editor.adaptive_cli \
+python -m video_editor.adaptive_cli \
   --yamnet /tmp/analysis/video.yamnet.json \
   --audio /tmp/analysis/video.audio.json \
   --video /tmp/analysis/video.video.json \
@@ -84,7 +84,7 @@ STT 문맥을 사용하지 않으므로 프리셋은 이야기의 의미적 완�
 렌더링:
 
 ```bash
-python -m ai.video_editor.render_video \
+python -m video_editor.render_video \
   --source video.mp4 \
   --recipe /tmp/recipe-v10.json \
   --output /tmp/video-edited.mp4

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime
 
-from ai.video_editor.service import RecommendationRequest, _fixture_stem, build_fixture_recommendation
+from video_editor.service import RecommendationRequest, _fixture_stem, build_fixture_recommendation
 
 
 class VideoEditorServiceTest(unittest.TestCase):

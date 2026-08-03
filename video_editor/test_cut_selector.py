@@ -3,26 +3,26 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from ai.video_editor.adaptive_selector import (
+from video_editor.adaptive_selector import (
     AdaptiveConfig,
     build_timeline,
     select_adaptive_highlight,
 )
-from ai.video_editor.adaptive_cli import build_adaptive_recipe
-from ai.video_editor.cli import build_recipe
-from ai.video_editor.cut_selector import select_cut
-from ai.video_editor.models import ScoreSegment, SelectorConfig
-from ai.video_editor.audio_features import extract_audio_features
-from ai.video_editor.yamnet_analysis import (
+from video_editor.adaptive_cli import build_adaptive_recipe
+from video_editor.cli import build_recipe
+from video_editor.cut_selector import select_cut
+from video_editor.models import ScoreSegment, SelectorConfig
+from video_editor.audio_features import extract_audio_features
+from video_editor.yamnet_analysis import (
     is_laughter_category,
     is_music_category,
     is_speech_category,
 )
-from ai.video_editor.video_features import normalize_video_windows
-from ai.video_editor.duration_presets import apply_duration_preset
-from ai.video_editor.zoom_planner import plan_zoom_segments
-from ai.video_editor.render_video import build_zoompan_filter
-from ai.video_editor.expression_analysis import _face_reaction
+from video_editor.video_features import normalize_video_windows
+from video_editor.duration_presets import apply_duration_preset
+from video_editor.zoom_planner import plan_zoom_segments
+from video_editor.render_video import build_zoompan_filter
+from video_editor.expression_analysis import _face_reaction
 
 
 def segment(
