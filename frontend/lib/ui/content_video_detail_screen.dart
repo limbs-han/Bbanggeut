@@ -188,6 +188,18 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _openEditor() async {
+    // 편집 진입 다운로드가 회선을 독차지하도록 재생기를 **완전히** 놓아준다.
+    // 일시정지로는 부족하다 — 재생기는 멈춰 있어도 버퍼를 계속 채워서
+    // 편집 원본 다운로드와 대역폭을 나눠 쓴다.
+    final player = _player;
+    if (player != null) {
+      setState(() {
+        _player = null;
+        _loading = true;
+      });
+      await player.dispose();
+    }
+    if (!mounted) return;
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
@@ -195,6 +207,9 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
             LocalEditScreen(controller: widget.controller, video: _video),
       ),
     );
+    // 돌아오면 다시 만든다. 편집기가 원본을 받아 뒀으므로 이번에는
+    // 네트워크 없이 캐시 파일로 열린다.
+    if (mounted) await _loadPlayer();
   }
 
   Future<void> _deleteVideo() async {
