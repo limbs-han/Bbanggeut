@@ -74,6 +74,62 @@ class AudioComparisonReportTests(unittest.TestCase):
             self.assertTrue((report_dir / "comparison.csv").is_file())
             self.assertTrue((report_dir / "comparison.md").is_file())
 
+    def test_cli_rejects_a_missing_repeat(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "trial-1" / "YAMNet" / "laughter"
+            output.mkdir(parents=True)
+            (output / "summary.json").write_text(
+                json.dumps(
+                    self.summary(
+                        "YAMNet",
+                        "laughter",
+                        1,
+                        1,
+                        0.9,
+                        0.9,
+                        0.2,
+                        12.0,
+                    )
+                ),
+                encoding="utf-8",
+            )
+
+            completed = self.run_report(root, root / "report-output")
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("has 1 runs; expected 3", completed.stderr)
+
+    def test_cli_rejects_malformed_summary_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "trial-1" / "YAMNet" / "laughter"
+            output.mkdir(parents=True)
+            (output / "summary.json").write_text("{broken", encoding="utf-8")
+
+            completed = self.run_report(root, root / "report-output")
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("ERROR:", completed.stderr)
+
+    @staticmethod
+    def run_report(results_dir: Path, output_dir: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("audio_comparison_report.py")),
+                "--results-dir",
+                str(results_dir),
+                "--output-dir",
+                str(output_dir),
+                "--expected-repeats",
+                "3",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
     @staticmethod
     def summary(
         model: str,
