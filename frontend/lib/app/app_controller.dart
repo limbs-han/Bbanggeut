@@ -43,6 +43,7 @@ class AppController extends ChangeNotifier {
   final List<String> _placeNames = ['집'];
   String _selectedPlaceName = '집';
   final Map<String, String> _devicePlaces = {};
+  Future<void> _placePreferenceSave = Future.value();
   String? pendingMembershipRequestToken;
   MembershipRequestPreview? pendingMembershipRequestPreview;
   bool openHomeAfterDeviceClaim = false;
@@ -98,22 +99,26 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> _savePlacePreferences() async {
+  Future<void> _savePlacePreferences() {
     final key = _placeStorageKey;
-    if (key == null) return;
-    try {
-      await _placeStorage.write(
-        key: key,
-        value: jsonEncode({
-          'places': _placeNames,
-          'selectedPlace': _selectedPlaceName,
-          'devicePlaces': _devicePlaces,
-        }),
-      );
-    } catch (_) {
-      // 장소 저장 실패가 기기 연결 자체를 실패시키지는 않는다.
-    }
+    if (key == null) return Future.value();
+    final value = jsonEncode({
+      'places': List<String>.of(_placeNames),
+      'selectedPlace': _selectedPlaceName,
+      'devicePlaces': Map<String, String>.of(_devicePlaces),
+    });
+    _placePreferenceSave = _placePreferenceSave.then((_) async {
+      try {
+        await _placeStorage.write(key: key, value: value);
+      } catch (_) {
+        // 장소 저장 실패가 기기 연결 자체를 실패시키지는 않는다.
+      }
+    });
+    return _placePreferenceSave;
   }
+
+  @visibleForTesting
+  Future<void> waitForPlacePreferencesSaved() => _placePreferenceSave;
 
   void selectPlace(String placeName) {
     final normalized = placeName.trim();
@@ -215,10 +220,10 @@ class AppController extends ChangeNotifier {
     if (authenticated) {
       user = await api.cachedUser;
       try {
-        await _loadPlacePreferences();
-        await refreshAll();
+        // 장소 설정은 기기에 저장된 값이라 서버 응답과 아무 관계가 없다.
+        // 나란히 읽으면 보안 저장소를 거치는 시간이 네트워크 시간에 숨는다.
+        await Future.wait([_loadPlacePreferences(), refreshAll()]);
         await resolvePendingMembershipRequest();
-        await pushNotifications?.activate(api);
       } on ApiFailure catch (error) {
         if (error.statusCode == 401) {
           await api.clearSession();
@@ -227,9 +232,23 @@ class AppController extends ChangeNotifier {
           errorMessage = error.message;
         }
       }
+      if (authenticated) _activatePushInBackground();
     }
     initialized = true;
     notifyListeners();
+  }
+
+  /// 푸시 등록을 시작하고 **기다리지 않는다.**
+  ///
+  /// **왜**: `activate`는 FCM 토큰을 받아 서버에 올리는 일이다. 토큰 발급은 네트워크
+  /// 상태에 따라 몇 초가 걸리는데, 화면에 바꾸는 것은 하나도 없고 실패도 스스로
+  /// 삼킨다. 그런데 이걸 기다리는 동안 [initialized]가 false여서 스플래시가 그대로
+  /// 떠 있었고, 로그인 버튼도 계속 돌고 있었다 — 앱이 안 켜지는 것처럼 보이던
+  /// 시간의 정체다. 등록은 그대로 일어나고, 다음 앱 시작이나 토큰 갱신 때 다시
+  /// 시도하므로 놓칠 일도 없다.
+  void _activatePushInBackground() {
+    final activation = pushNotifications?.activate(api);
+    if (activation != null) unawaited(activation);
   }
 
   Future<bool> login(
@@ -244,12 +263,11 @@ class AppController extends ChangeNotifier {
         persistSession: persistSession,
       );
       user = session.user;
-      await _loadPlacePreferences();
-      await refreshAll();
+      await Future.wait([_loadPlacePreferences(), refreshAll()]);
       await resolvePendingMembershipRequest();
       requiresInitialDeviceRegistration = false;
       authenticated = true;
-      await pushNotifications?.activate(api);
+      _activatePushInBackground();
     },
     failureMessage: (error) =>
         error.code == 'INVALID_CREDENTIALS' || error.statusCode == 401
@@ -270,12 +288,11 @@ class AppController extends ChangeNotifier {
       persistSession: persistSession,
     );
     user = session.user;
-    await _loadPlacePreferences();
-    await refreshAll();
+    await Future.wait([_loadPlacePreferences(), refreshAll()]);
     await resolvePendingMembershipRequest();
     requiresInitialDeviceRegistration = selectedDevice == null;
     authenticated = true;
-    await pushNotifications?.activate(api);
+    _activatePushInBackground();
   });
 
   Future<void> logout() async {
@@ -316,9 +333,19 @@ class AppController extends ChangeNotifier {
     await api.changePassword(currentPassword, newPassword);
   });
 
+  /// 받은 초대와 Vault 목록을 **나란히** 불러온다.
+  ///
+  /// **왜**: 두 요청은 서로의 결과를 쓰지 않는다. 차례로 부르면 왕복이 한 번 더
+  /// 늘고, 그 시간은 그대로 스플래시·로그인 대기 시간이 된다. Vault 쪽은 이어서
+  /// 기기·영상·멤버를 또 불러오므로 초대를 먼저 기다릴 이유가 없다.
   Future<void> refreshAll() async {
-    receivedInvitations = await api.listMyInvitations();
-    await refreshVaults();
+    final results = await Future.wait<Object?>([
+      api.listMyInvitations(),
+      refreshVaults(),
+    ]);
+    receivedInvitations = results[0] as List<Invitation>;
+    // Vault 쪽이 중간에 알린 뒤에 초대가 들어오므로 한 번 더 알린다.
+    notifyListeners();
   }
 
   Future<void> refreshVaults() async {
@@ -576,6 +603,7 @@ class AppController extends ChangeNotifier {
     String code, {
     String? vaultId,
     String? newVaultName,
+    String? placeName,
   }) async => _guard(() async {
     if (!canRegisterDevice) {
       throw const ApiFailure('OWNER만 새 기기를 등록할 수 있어요.', statusCode: 403);
@@ -605,7 +633,8 @@ class AppController extends ChangeNotifier {
     selectedDevice = devices.firstWhere(
       (device) => device.id == claimedDevice.id,
     );
-    assignDeviceToPlace(claimedDevice.id, _selectedPlaceName);
+    assignDeviceToPlace(claimedDevice.id, placeName ?? _selectedPlaceName);
+    await waitForPlacePreferencesSaved();
     await refreshDeviceData();
   });
 
@@ -657,6 +686,7 @@ class AppController extends ChangeNotifier {
         id: video.id,
         deviceId: video.deviceId,
         triggerType: video.triggerType,
+        eventTypes: video.eventTypes,
         sourceType: video.sourceType,
         title: video.title,
         description: video.description,

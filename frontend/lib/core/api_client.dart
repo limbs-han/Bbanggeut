@@ -92,9 +92,18 @@ class ApiClient {
       path.contains('/api/auth/password/forgot') ||
       path.contains('/api/auth/password/reset');
 
+  /// 저장된 세션을 읽어 메모리에 올린다.
+  ///
+  /// 두 열쇠를 나란히 읽는다. 안드로이드 보안 저장소는 읽을 때마다 키스토어를
+  /// 거치므로 차례로 읽으면 그 비용이 두 배가 되는데, 이건 앱이 켜질 때 가장
+  /// 먼저 하는 일이라 그 시간이 통째로 스플래시에 더해진다.
   Future<bool> get hasSession async {
-    _memoryAccessToken = await _storage.read(key: _accessKey);
-    _memoryRefreshToken = await _storage.read(key: _refreshKey);
+    final tokens = await Future.wait([
+      _storage.read(key: _accessKey),
+      _storage.read(key: _refreshKey),
+    ]);
+    _memoryAccessToken = tokens[0];
+    _memoryRefreshToken = tokens[1];
     _persistSession = true;
     return _memoryAccessToken != null;
   }

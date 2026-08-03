@@ -1,14 +1,17 @@
 /// 앱 안에서 도는 AR 효과 목록.
 ///
-/// **왜 앱 안인가**: 예전에는 AR 탭이 Banuba 편집 화면(별도 Activity)을 띄웠다.
-/// 앱을 벗어나 UI/UX가 통째로 바뀌고, 돌아온 결과를 다시 편집기에 밀어넣어야
-/// 했다. 이제 효과는 우리 미리보기 위에 바로 얹히고, 저장할 때 media3
-/// 오버레이·색 보정으로 그대로 구워진다. 화면을 벗어나지 않는다.
+/// 효과는 편집기 미리보기 위에 바로 얹히고, 저장할 때 media3
+/// 오버레이·색 보정으로 그대로 구워진다.
 ///
 /// 각 효과는 두 부분이다.
 /// - 얼굴에 얹는 스티커: 얼굴이 있을 만한 자리에 미리 놓아 두고, 사용자가 끌어
 ///   옮기거나 크기를 바꿀 수 있다(스티커 레이어와 같은 조작).
 /// - 화면 색감([EditorLook]): 미리보기와 내보내기가 같은 값을 쓴다.
+///
+/// **여기 있는 것은 손으로 얹는 그림뿐이다.** 얼굴을 따라다니는 진짜 Banuba
+/// 마스크는 목록도 미리보기 그림도 네이티브가 준다(`banuba_mask_channel.dart`의
+/// `BanubaMask`). 효과 폴더를 갈아 끼워도 Dart 쪽 목록을 고칠 일이 없도록
+/// 그렇게 옮겼다.
 library;
 
 import 'editor_project.dart';
@@ -144,5 +147,16 @@ class EditorArEffect {
       if (effect.id == id) return effect;
     }
     return null;
+  }
+
+  /// 스티커 탭에 함께 올릴 이모지들.
+  static List<String> get stickerValues {
+    final values = <String>[];
+    for (final effect in all) {
+      for (final sticker in effect.stickers) {
+        if (!values.contains(sticker.value)) values.add(sticker.value);
+      }
+    }
+    return values;
   }
 }

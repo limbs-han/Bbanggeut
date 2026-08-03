@@ -6,6 +6,7 @@ import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.video.api.UpdateVideoRequest;
 import com.wj.server.video.api.VideoResponse;
+import com.wj.server.video.domain.VideoEventTypes;
 import com.wj.server.video.domain.VideoRow;
 import com.wj.server.video.persistence.VideoMapper;
 import org.springframework.http.HttpStatus;
@@ -86,7 +87,8 @@ public class VideoCommandService {
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(), video.sourceEventId(),
             video.title(), video.description(), video.contentType(), video.sizeBytes(), video.checksumSha256(),
             video.durationMs(), video.capturedStartAt(), video.capturedEndAt(), video.status(), video.favorite(),
-            null, video.createdAt());
+            null, video.createdAt(),
+            VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));
     }
 
     private ApiException notFound() {

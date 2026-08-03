@@ -1,13 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:william_james_app/app/app_controller.dart';
 import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
-import 'package:william_james_app/core/banuba_video_editor.dart';
 import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/auth_screen.dart';
 import 'package:william_james_app/ui/local_edit_screen.dart';
@@ -17,15 +13,6 @@ import 'package:william_james_app/ui/video_detail_screen.dart';
 
 void main() {
   setUpAll(() => initializeDateFormatting('ko'));
-
-  testWidgets('로컬 Banuba 토큰 설정을 자동으로 불러온다', (tester) async {
-    expect(
-      await BanubaVideoEditor(
-        assetBundle: _BanubaConfigAssetBundle(),
-      ).isConfigured,
-      isTrue,
-    );
-  });
 
   testWidgets('로그인과 회원가입 화면을 전환한다', (tester) async {
     final controller = AppController();
@@ -253,6 +240,15 @@ void main() {
       );
     }
 
+    // 아직 펼치지 않은 탭은 세우지 않는다. 세우면 그 화면의 목록이 재생 URL을
+    // 받아 원격 프레임을 뽑기 시작해, 아무도 보지 않는 탭 때문에 켜는 순간
+    // 네트워크 요청이 나간다.
+    //
+    // `skipOffstage: false`가 핵심이다. IndexedStack은 고르지 않은 자식을 화면
+    // 밖으로 두므로, 기본 검색으로는 "세워졌지만 안 보이는" 것과 "아예 세우지
+    // 않은" 것이 똑같이 안 잡힌다 — 그러면 이 테스트가 아무것도 지키지 못한다.
+    expect(find.text('전체 추억', skipOffstage: false), findsNothing);
+
     await tester.tap(
       find.descendant(of: navigation, matching: find.text('추억')),
     );
@@ -261,6 +257,16 @@ void main() {
     expect(find.text('웃음 감지'), findsOneWidget);
     expect(find.text('편집 완료'), findsOneWidget);
     expect(find.text('최신순'), findsOneWidget);
+
+    // 한 번 펼친 탭은 다른 탭으로 옮겨도 남아 있다 — 스크롤 위치와 상태를
+    // 지키려고 IndexedStack을 쓰는 것이므로 그 성질은 그대로여야 한다.
+    await tester.tap(find.descendant(of: navigation, matching: find.text('홈')));
+    await tester.pump();
+    expect(
+      find.text('전체 추억', skipOffstage: false),
+      findsOneWidget,
+      reason: '펼친 탭이 사라지면 되돌아올 때 스크롤 위치가 초기화된다',
+    );
     controller.dispose();
   });
 
@@ -331,6 +337,28 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('오늘의 추억  🌱'), findsOneWidget);
+    expect(find.text('등록된 메모가 없습니다'), findsOneWidget);
+    expect(find.text('메모를 남겨보세요!'), findsOneWidget);
+    expect(find.text('갤러리에 저장'), findsOneWidget);
+    expect(find.byType(Image), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('empty-memory-memo-action')),
+        matching: find.byIcon(Icons.edit_rounded),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('메모를 남겨보세요!'));
+    await tester.pumpAndSettle();
+    expect(find.text('추억 기록하기'), findsOneWidget);
+    expect(find.byKey(const Key('memory-title-input')), findsOneWidget);
+    expect(find.byKey(const Key('memory-memo-input')), findsOneWidget);
+    expect(find.byKey(const Key('memory-metadata-save')), findsOneWidget);
+    await tester.tap(find.byTooltip('닫기'));
+    await tester.pumpAndSettle();
+
     final editButton = find.widgetWithText(FilledButton, '영상 편집하기');
     await tester.ensureVisible(editButton);
     await tester.tap(editButton);
@@ -339,16 +367,6 @@ void main() {
     expect(find.byType(LocalEditScreen), findsOneWidget);
     controller.dispose();
   });
-}
-
-class _BanubaConfigAssetBundle extends CachingAssetBundle {
-  @override
-  Future<ByteData> load(String key) async {
-    final bytes = utf8.encode(
-      jsonEncode({'BANUBA_LICENSE_TOKEN': 'test-license-token'}),
-    );
-    return ByteData.sublistView(Uint8List.fromList(bytes));
-  }
 }
 
 class _FakeApiClient extends ApiClient {

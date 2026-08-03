@@ -142,13 +142,42 @@ class CollectorIntegrationTests(unittest.TestCase):
                     {
                         "runId": "vision-test",
                         "createdAt": "2026-07-30T00:00:00.000Z",
+                        "comparison": {
+                            "id": "comparison-test",
+                            "trialIndex": 2,
+                            "trialCount": 3,
+                            "executionOrder": 5,
+                        },
                         "model": {
                             "name": "YOLO11n",
                             "path": "/private/model.engine",
                             "runtime": "tensorrt",
+                            "sizeBytes": 1234,
+                            "sha256": "b" * 64,
                         },
-                        "dataset": {"name": "office-mix-v1"},
+                        "dataset": {
+                            "name": "office-mix-v1",
+                            "imageCount": 406,
+                            "boxCount": 597,
+                            "sha256": "a" * 64,
+                        },
                         "metrics": {"fps": 31.7},
+                        "accuracy": {
+                            "status": "computed",
+                            "standard": {"mAP50_95": 0.62},
+                            "operatingPoint": {"recall": 0.91},
+                        },
+                        "resources": {
+                            "status": "computed",
+                            "gpuPercentMax": 82,
+                        },
+                        "selectionPolicy": {
+                            "minimumFps": 20,
+                        },
+                        "configuration": {
+                            "imgsz": 640,
+                            "operatingConfidence": 0.25,
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -158,6 +187,18 @@ class CollectorIntegrationTests(unittest.TestCase):
 
             self.assertEqual(rows[0]["model"], "YOLO11n")
             self.assertEqual(rows[0]["metrics"]["fps"], 31.7)
+            self.assertEqual(
+                rows[0]["accuracy"]["standard"]["mAP50_95"],
+                0.62,
+            )
+            self.assertEqual(rows[0]["resources"]["gpuPercentMax"], 82)
+            self.assertEqual(rows[0]["configuration"]["imgsz"], 640)
+            self.assertEqual(rows[0]["datasetDetails"]["imageCount"], 406)
+            self.assertEqual(rows[0]["datasetDetails"]["boxCount"], 597)
+            self.assertEqual(rows[0]["modelDetails"]["sha256"], "b" * 64)
+            self.assertEqual(rows[0]["comparison"]["trialIndex"], 2)
+            self.assertEqual(rows[0]["comparison"]["trialCount"], 3)
+            self.assertEqual(rows[0]["comparison"]["executionOrder"], 5)
             self.assertNotIn("path", rows[0])
 
     def test_loads_latest_benchmark_progress_without_private_paths(self):
@@ -244,6 +285,41 @@ class CollectorIntegrationTests(unittest.TestCase):
             self.assertTrue(
                 snapshot["freshness"]["sources"]["resources"]["stale"]
             )
+
+    def test_prefers_active_benchmark_resources_for_live_dashboard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "operational"
+            results = root / "results"
+            benchmark = results / "accuracy-yolo11n"
+            run.mkdir()
+            benchmark.mkdir(parents=True)
+            (run / "resources.log").write_text(
+                "RAM 2000/7620MB GR3D_FREQ 10% gpu@40.0C VDD_IN 3000mW\n",
+                encoding="utf-8",
+            )
+            (benchmark / "resources.log").write_text(
+                "RAM 3500/7620MB GR3D_FREQ 75% gpu@51.0C VDD_IN 6500mW\n",
+                encoding="utf-8",
+            )
+            (benchmark / "progress.json").write_text(
+                json.dumps(
+                    {
+                        "status": "running",
+                        "model": "YOLO11n",
+                        "progress": {"percent": 50},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            snapshot = BenchmarkCollector(
+                CollectorPaths(run_dir=run, results_dir=results)
+            ).snapshot()
+
+        self.assertEqual(snapshot["systemSource"], "benchmark")
+        self.assertEqual(snapshot["system"]["gpuPercent"], 75)
+        self.assertEqual(snapshot["system"]["ramUsedMb"], 3500)
 
 
 class RequestRouteTests(unittest.TestCase):

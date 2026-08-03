@@ -1,0 +1,18 @@
+services:
+  editor-api:
+    build:
+      context: ../ai
+      dockerfile: video_editor/Dockerfile.local
+    container_name: wj-editor-api
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: wj-videos
+      EDITOR_FIXTURE_ROOT: /app/ai/video_editor/fixtures/analysis
+    ports:
+      - "127.0.0.1:18080:18080"
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: unless-stopped

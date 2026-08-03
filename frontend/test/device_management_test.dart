@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/app/app_controller.dart';
 import 'package:william_james_app/app/app_theme.dart';
@@ -207,7 +211,10 @@ void main() {
     expect(find.byKey(const Key('member-request-inbox')), findsOneWidget);
     expect(find.text('받은 요청함'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('member-request-inbox')));
+    final inboxButton = find.byKey(const Key('member-request-inbox'));
+    await tester.ensureVisible(inboxButton);
+    await tester.pumpAndSettle();
+    await tester.tap(inboxButton);
     await tester.pumpAndSettle();
     expect(find.text('받은 요청함'), findsOneWidget);
     expect(find.text('받은 요청이 없어요'), findsOneWidget);
@@ -254,6 +261,37 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('기기 등록 도움말에서 시리얼 번호와 카테고리를 함께 안내한다', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(theme: buildTheme(), home: const SerialNumberHelpScreen()),
+    );
+
+    expect(find.text('기기 등록 도움말'), findsOneWidget);
+    expect(find.text('제품 아래쪽을 확인해 주세요'), findsOneWidget);
+
+    final categoryTitle = find.byKey(const Key('place-category-help-title'));
+    await tester.scrollUntilVisible(
+      categoryTitle,
+      300,
+      scrollable: find.byType(Scrollable),
+    );
+
+    expect(categoryTitle, findsOneWidget);
+    for (final text in [
+      '기기를 사용하는 장소를 구분하는 이름이에요. 기본 카테고리는 집으로 설정되어 있어요.',
+      '집 외에 카페, 매장, 사무실처럼 다른 장소에서 기기를 사용한다면 새로운 카테고리를 추가해 보세요. 장소별로 기기를 나누어 확인할 수 있어요.',
+      '등록한 기기는 선택한 장소에서 확인할 수 있어요.',
+    ]) {
+      final guideText = find.text(text);
+      await tester.scrollUntilVisible(
+        guideText,
+        200,
+        scrollable: find.byType(Scrollable),
+      );
+      expect(guideText, findsOneWidget);
+    }
+  });
+
   test('장소 이름의 빈 값, 중복, 길이를 검증한다', () {
     expect(validatePlaceName('   ', const ['집']), '장소 이름을 입력해 주세요.');
     expect(validatePlaceName(' 집 ', const ['집']), '이미 등록된 장소입니다.');
@@ -262,6 +300,38 @@ void main() {
       '장소 이름은 15자 이내로 입력해 주세요.',
     );
     expect(validatePlaceName('카페', const ['집']), isNull);
+  });
+
+  test('연속된 장소 저장은 호출 순서대로 완료되어 최신 기기 연결을 유지한다', () async {
+    final storage = _DelayedPlaceStorage();
+    const cafeCamera = DeviceSummary(
+      id: 'cafe-camera',
+      name: 'William James Camera',
+      model: 'test',
+      status: 'OFFLINE',
+      myRole: 'OWNER',
+      retentionDays: 30,
+    );
+    final controller = AppController(placeStorage: storage)
+      ..user = const UserProfile(
+        id: 'user-1',
+        email: 'user@example.com',
+        displayName: '사용자',
+      )
+      ..devices = const [cafeCamera];
+
+    controller.addPlace('카페');
+    controller.assignDeviceToPlace(cafeCamera.id, '카페');
+
+    await Future<void>.delayed(Duration.zero);
+    expect(storage.writeCount, 1);
+    storage.completeFirstWrite();
+    await controller.waitForPlacePreferencesSaved();
+
+    final saved = jsonDecode(storage.value!) as Map<String, dynamic>;
+    expect(saved['places'], ['집', '카페']);
+    expect(saved['devicePlaces'], {'cafe-camera': '카페'});
+    controller.dispose();
   });
 
   test('장소명 받침에 맞춰 홈 화면 문구를 만든다', () {
@@ -487,6 +557,32 @@ void main() {
       controller.dispose();
     },
   );
+}
+
+class _DelayedPlaceStorage extends FlutterSecureStorage {
+  _DelayedPlaceStorage();
+
+  final Completer<void> _firstWrite = Completer<void>();
+  int writeCount = 0;
+  String? value;
+
+  void completeFirstWrite() => _firstWrite.complete();
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    writeCount += 1;
+    if (writeCount == 1) await _firstWrite.future;
+    this.value = value;
+  }
 }
 
 class _MultipleVaultApiClient extends ApiClient {

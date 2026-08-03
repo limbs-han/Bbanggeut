@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -209,10 +210,12 @@ class StatusPill extends StatelessWidget {
     required this.label,
     this.positive = true,
     this.color,
+    this.compact = false,
   });
   final String label;
   final bool positive;
   final Color? color;
+  final bool compact;
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
@@ -220,11 +223,14 @@ class StatusPill extends StatelessWidget {
       borderRadius: BorderRadius.circular(99),
     ),
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 12,
+        vertical: compact ? 4 : 7,
+      ),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: compact ? 10 : 12,
           fontWeight: FontWeight.w800,
           color: positive ? AppColors.sageDark : AppColors.danger,
         ),
@@ -277,6 +283,7 @@ class FamilyReferenceImage extends StatelessWidget {
 
 String triggerLabel(String value) => switch (value) {
   'LAUGHTER' => '웃음',
+  'CLAP' => '박수',
   'WAKE_WORD' => '호출',
   'TOUCH' => '일상',
   'MANUAL' => '직접 저장',
@@ -287,6 +294,7 @@ String triggerLabel(String value) => switch (value) {
 
 IconData triggerIcon(String value) => switch (value) {
   'LAUGHTER' => Icons.sentiment_very_satisfied_rounded,
+  'CLAP' => Icons.back_hand_rounded,
   'WAKE_WORD' => Icons.graphic_eq_rounded,
   'TOUCH' => Icons.waving_hand_rounded,
   'MANUAL' => Icons.bookmark_rounded,
@@ -295,10 +303,39 @@ IconData triggerIcon(String value) => switch (value) {
 
 Color triggerColor(String value) => switch (value) {
   'LAUGHTER' => AppColors.yellowSoft,
+  'CLAP' => AppColors.coralSoft,
   'WAKE_WORD' => AppColors.sageSoft,
   'TOUCH' => AppColors.greenCard,
   _ => AppColors.pink,
 };
+
+class VideoEventTypePills extends StatelessWidget {
+  const VideoEventTypePills({
+    super.key,
+    required this.video,
+    this.compact = false,
+    this.alignment = WrapAlignment.start,
+  });
+
+  final VideoMemory video;
+  final bool compact;
+  final WrapAlignment alignment;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    alignment: alignment,
+    spacing: compact ? 4 : 6,
+    runSpacing: compact ? 4 : 6,
+    children: [
+      for (final eventType in video.effectiveEventTypes)
+        StatusPill(
+          label: triggerLabel(eventType),
+          color: triggerColor(eventType),
+          compact: compact,
+        ),
+    ],
+  );
+}
 
 String durationLabel(int? durationMs) {
   if (durationMs == null) return '--:--';
@@ -331,10 +368,26 @@ class MemoryThumbnail extends StatelessWidget {
   final double width;
   final double height;
 
-  Widget _fallback() => video.thumbnailUrl != null
+  /// 몇 픽셀로 풀어 둘지.
+  ///
+  /// **왜 정해 주는가**: [VideoThumbnailCache]가 만드는 그림은 폭 720px인데
+  /// 여기서 그리는 자리는 92×68dp다. 정해 주지 않으면 720px 그대로 풀려 한 장에
+  /// 1MB 넘게 이미지 캐시를 차지한다 — 추억 목록처럼 수십 장이 스크롤되는 화면에서는
+  /// 그게 수십 MB가 되고, 푸는 시간도 그만큼 들어 스크롤이 걸린다.
+  ///
+  /// [BoxFit.cover]는 원본 비율에 따라 가로·세로 중 한쪽이 기준이 된다. 원본이
+  /// 세로 영상이면 가로가 기준이고, 가로 영상(16:9)이면 세로가 기준이라 그때 필요한
+  /// 가로 픽셀이 더 크다. 둘 중 큰 쪽으로 잡아 어느 비율이 와도 흐려지지 않게 한다.
+  int _decodeWidth(BuildContext context) {
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    return (math.max(width, height * 16 / 9) * ratio).round();
+  }
+
+  Widget _fallback(BuildContext context) => video.thumbnailUrl != null
       ? Image.network(
           video.thumbnailUrl!,
           fit: BoxFit.cover,
+          cacheWidth: _decodeWidth(context),
           errorBuilder: (_, _, _) =>
               const FamilyReferenceImage(borderRadius: 0),
         )
@@ -354,10 +407,11 @@ class MemoryThumbnail extends StatelessWidget {
             return Image.file(
               File(path),
               fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _fallback(),
+              cacheWidth: _decodeWidth(context),
+              errorBuilder: (_, _, _) => _fallback(context),
             );
           }
-          return _fallback();
+          return _fallback(context);
         },
       ),
     ),
@@ -414,9 +468,13 @@ class MemoryTile extends StatelessWidget {
               ],
             ),
           ),
-          StatusPill(
-            label: triggerLabel(video.triggerType),
-            color: triggerColor(video.triggerType),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: VideoEventTypePills(
+              video: video,
+              compact: true,
+              alignment: WrapAlignment.end,
+            ),
           ),
           if (onFavorite != null || onDelete != null)
             PopupMenuButton<String>(
@@ -440,9 +498,20 @@ class MemoryTile extends StatelessWidget {
 }
 
 void showAppSnack(BuildContext context, String message, {bool error = false}) {
-  ScaffoldMessenger.of(context).showSnackBar(
+  final messenger = ScaffoldMessenger.of(context)
+    // 새 안내가 오면 이전 것부터 걷는다. 안내가 줄줄이 쌓여 화면을 가리는
+    // 것이 "창이 거슬린다"의 정체였다.
+    ..hideCurrentSnackBar();
+  messenger.showSnackBar(
     SnackBar(
-      content: Text(message),
+      // 누르면 바로 사라진다.
+      content: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: messenger.hideCurrentSnackBar,
+        child: Text(message),
+      ),
+      duration: const Duration(seconds: 2),
+      dismissDirection: DismissDirection.horizontal,
       backgroundColor: error ? AppColors.danger : AppColors.ink,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

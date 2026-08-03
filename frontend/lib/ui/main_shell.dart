@@ -16,6 +16,9 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
+/// 아직 펼치지 않은 탭 자리. 크기를 0으로 두어 배치 비용도 남기지 않는다.
+const _closedTab = SizedBox.shrink();
+
 class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   // Home and family show the camera's online state, which expires with its
   // heartbeat TTL, so both re-read presence on entry.
@@ -23,6 +26,18 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   int index = 2;
   String? _lastDeviceId;
+
+  /// 한 번이라도 펼친 탭.
+  ///
+  /// **왜 세는가**: [IndexedStack]은 자식을 **모두** 만들어 두고 고른 하나만
+  /// 그린다. 그래서 앱을 켜면 보고 있지도 않은 캘린더·추억·가족·설정 화면이 함께
+  /// 세워졌다. 그 화면들이 목록을 그리면 각 항목의 [MemoryThumbnail]이 재생 URL을
+  /// 받아 원격 프레임을 뽑기 시작한다 — 아무도 보지 않는 탭 때문에 켜는 순간
+  /// 네트워크 요청이 여러 개 나가고 홈 화면이 그만큼 늦어졌다.
+  ///
+  /// 처음 펼칠 때까지는 빈 자리를 두고, 한 번 펼친 탭은 그대로 남겨 둔다 —
+  /// IndexedStack을 쓰는 이유(탭을 옮겨도 스크롤 위치와 상태가 남는 것)는 그대로다.
+  final _openedTabs = <int>{};
 
   void _selectIndex(int value) {
     if (value == 1 && widget.controller.authenticated) {
@@ -80,6 +95,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    _openedTabs.add(index);
     final pages = [
       CalendarScreen(
         controller: widget.controller,
@@ -108,7 +124,13 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
             : widget.controller.selectedDevice == null
             ? widget.controller.refreshVaultData
             : widget.controller.refreshDeviceData,
-        child: IndexedStack(index: index, children: pages),
+        child: IndexedStack(
+          index: index,
+          children: [
+            for (var tab = 0; tab < pages.length; tab++)
+              if (_openedTabs.contains(tab)) pages[tab] else _closedTab,
+          ],
+        ),
       ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(

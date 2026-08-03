@@ -124,7 +124,7 @@ class FlywayMigrationIntegrationTest {
         // 마이그레이션을 추가할 때마다 함께 올린다. 일부러 하드코딩해서 스키마
         // 변경이 리뷰 없이 지나가지 않게 한다. 실패하면 마이그레이션이 깨진 것이
         // 아니라 이 숫자가 뒤처진 것이다 — result.success는 그대로 통과한다.
-        assertThat(result.targetSchemaVersion).isEqualTo("32");
+        assertThat(result.targetSchemaVersion).isEqualTo("33");
         try (var connection = DriverManager.getConnection(
             jdbcUrl, username, password);
              var statement = connection.prepareStatement(

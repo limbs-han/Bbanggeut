@@ -13,6 +13,11 @@ Jetson에서 모델을 공정하게 비교하기 위한 로컬 전용 도구 모
 - `benchmark_dataset.py`
   - 평가 데이터셋의 로컬 JSON 매니페스트를 생성합니다.
   - 파일 SHA-256, 크기, 분할, 촬영 조건과 라벨을 검증합니다.
+- `vision_accuracy_runner.py`
+  - YOLO 형식의 프레임별 정답 박스로 표준 mAP와 운영 임계값 정확도를
+    분리해 계산합니다.
+  - 모델·데이터셋 SHA-256, 조건별 FP/FN, 실패 프레임, Jetson 자원 사용량을
+    함께 기록합니다.
 - `models/`
   - 기존 PC 재현용 소형 모델 파일입니다.
   - TensorRT 엔진은 Jetson 환경 의존적이므로 저장소에 커밋하지 않습니다.
@@ -76,6 +81,58 @@ python3 vision_benchmark_runner.py \
 비교를 위해 confidence, IoU, 클래스 필터를 모든 실행에서 같은 값으로
 명시하고, 해당 값은 `summary.json`의 `configuration`에 기록합니다.
 
+## YOLO 정확도 러너
+
+라벨링된 정적 프레임은 영상 처리량 러너와 분리해 평가합니다. 표준 mAP는
+전체 PR 곡선을 만들 수 있도록 낮은 confidence floor를 사용하고, 실제 서비스
+판정은 운영 confidence `0.25`에서 Precision·Recall·F1을 다시 계산합니다.
+
+```bash
+python3 vision_accuracy_runner.py \
+  --dataset-root \
+    ~/ai_datasets/model_benchmark/office-vision-gt-v1/exports/yolo-person-test-406 \
+  --model ~/ai_models/yolo-detect-pt/yolo11n.pt \
+  --model-name YOLO11n \
+  --output-dir ~/ai_benchmark_results/yolo-accuracy/yolo11n \
+  --device 0 \
+  --imgsz 640 \
+  --batch 1 \
+  --map-confidence 0.001 \
+  --operating-confidence 0.25 \
+  --nms-iou 0.7 \
+  --match-iou 0.5 \
+  --class-id 0
+```
+
+결과물은 다음 질문에 재현 가능한 수치로 답하도록 구성합니다.
+
+1. 최신 모델이나 공개 COCO 수치가 아니라 왜 해당 모델을 선택했는가?
+2. 실제 Jetson·홈캠 환경에서도 정확도와 실시간성을 모두 만족하는가?
+
+기본 선정 가이드는 `FPS ≥ 20`, `Wall P95 ≤ 50ms`, 운영 Recall `≥ 0.90`,
+최고 mAP50-95 대비 차이 `≤ 0.02`입니다. 모든 기준을 통과한 후보 중 FPS가
+높은 모델을 우선합니다. 첫 실측 후 서비스 요구에 따라 기준값을 확정합니다.
+
+세 모델을 같은 설정으로 반복 실행할 때는 운영 Edge AI를 먼저 중지하고 다음
+스크립트를 사용합니다. 스크립트는 검증된 406장·597박스 데이터셋과 세 개의
+로컬 모델 파일을 확인하며 모델을 자동 다운로드하지 않습니다. 기본값은 모델별
+3회입니다. 회차마다 시작 모델을 바꿔 열·캐시·실행 순서 편향을 줄입니다.
+
+```bash
+sudo systemctl stop wj-edge-ai-recording
+
+cd ~/william-james
+bash ai/model_benchmark/run_yolo_accuracy_comparison.sh
+```
+
+반복 횟수와 실행 사이 냉각 시간은 `YOLO_REPEAT_COUNT`와
+`YOLO_COOLDOWN_SECONDS`로 바꿀 수 있습니다. 각 `summary.json`에는 비교 ID,
+회차, 전체 회차 수와 실제 실행 순서가 함께 기록됩니다.
+
+각 모델 사이에는 기본 30초 냉각 시간을 두며 `YOLO_COOLDOWN_SECONDS`로
+조정할 수 있습니다. 시험 후에는 사용자가 명시적으로 운영 서비스를 다시
+시작해야 합니다.
+
 ## 데이터셋 조건
 
 첫 비교 세트에는 다음 조건을 균형 있게 포함합니다.
@@ -91,7 +148,7 @@ python3 vision_benchmark_runner.py \
 ```bash
 python3 -m unittest discover \
   -s ai/model_benchmark \
-  -p 'test_benchmark_*.py'
+  -p 'test_*.py'
 ```
 
 ## 다음 러너
@@ -101,3 +158,7 @@ python3 -m unittest discover \
 1. YOLOv8n·YOLO11n·YOLO26n × PyTorch·TensorRT FP16
 2. YAMNet·EfficientAT MN10·PANNs CNN10
 3. 반복 실행 결과의 CSV·JSON 요약과 대시보드 자동 반영
+
+## 실측 보고서
+
+- [2026-08-02 YOLO TensorRT FP16 정확도·실시간성 비교](./reports/20260802_yolo_tensorrt_fp16_accuracy/README.md)

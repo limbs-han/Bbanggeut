@@ -10,6 +10,7 @@ import java.util.UUID;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.home.api.HomeSummaryResponse;
 import com.wj.server.video.api.VideoResponse;
+import com.wj.server.video.domain.VideoEventTypes;
 import com.wj.server.video.domain.VideoRow;
 import com.wj.server.video.persistence.VideoMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,6 +69,7 @@ public class HomeSummaryService {
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
             video.sourceEventId(), video.title(), video.description(), video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
-            video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt());
+            video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
+            VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));
     }
 }

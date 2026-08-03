@@ -1,9 +1,11 @@
 package com.williamjames.william_james_app
 
 import android.graphics.Typeface
+import android.text.Layout
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.style.AbsoluteSizeSpan
+import android.text.style.AlignmentSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
@@ -45,6 +47,7 @@ object EditorLayerOverlay {
             ?: 0x99000000.toInt()
         val fontSize = number(raw, "fontSize")?.toInt()?.coerceIn(16, 160) ?: 42
         val bold = raw["bold"] as? Boolean ?: true
+        val italic = raw["italic"] as? Boolean ?: false
         return TimedLayerText(
             startUs = startMs * 1000,
             endUs = endMs * 1000,
@@ -53,6 +56,8 @@ object EditorLayerOverlay {
             backgroundColor = backgroundColor,
             fontSize = scaled(fontSize, fontScale),
             bold = bold,
+            italic = italic,
+            alignment = alignment(raw["align"] as? String),
             settings = settings(raw),
         )
     }
@@ -71,12 +76,43 @@ object EditorLayerOverlay {
             backgroundColor = 0x00000000,
             fontSize = scaled(STICKER_FONT_SIZE, fontScale),
             bold = false,
+            italic = false,
+            alignment = Layout.Alignment.ALIGN_CENTER,
             settings = settings(raw),
+            // 얼굴 추적 스티커. 키프레임(타임라인 ms 기준 x·y)을 프레임마다
+            // 보간해 얼굴을 따라 움직인다. 미리보기(_resolveFaceSticker)와
+            // 같은 좌표라 화면에서 본 그대로 구워진다.
+            track = positionTrack(raw),
+            scale = (number(raw, "scale")?.toFloat() ?: 1f).coerceIn(0.2f, 4f),
+            rotationDegrees = number(raw, "rotationDegrees")?.toFloat() ?: 0f,
         )
     }
 
+    /// 스티커 DTO의 `track`([{ms, x, y}]) 키프레임. 없으면 null — 고정 위치다.
+    private fun positionTrack(raw: Map<String, Any?>): List<TrackSample>? {
+        val rawTrack = raw["track"] as? List<*> ?: return null
+        val samples = rawTrack.mapNotNull { entry ->
+            val map = entry as? Map<*, *> ?: return@mapNotNull null
+            val ms = (map["ms"] as? Number)?.toLong() ?: return@mapNotNull null
+            val x = (map["x"] as? Number)?.toFloat() ?: return@mapNotNull null
+            val y = (map["y"] as? Number)?.toFloat() ?: return@mapNotNull null
+            TrackSample(ms * 1000, x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+        }
+        return samples.sortedBy { it.timeUs }.ifEmpty { null }
+    }
+
+    private data class TrackSample(val timeUs: Long, val x: Float, val y: Float)
+
     private fun scaled(fontSize: Int, fontScale: Float): Int =
         (fontSize * fontScale).roundToInt().coerceIn(8, 640)
+
+    /// 미리보기의 `EditorTextAlign`과 짝이다. 여러 줄일 때 줄들이 어느 쪽으로
+    /// 붙는지를 정한다.
+    private fun alignment(raw: String?): Layout.Alignment = when (raw) {
+        "left" -> Layout.Alignment.ALIGN_NORMAL
+        "right" -> Layout.Alignment.ALIGN_OPPOSITE
+        else -> Layout.Alignment.ALIGN_CENTER
+    }
 
     private fun settings(raw: Map<String, Any?>): OverlaySettings {
         @Suppress("UNCHECKED_CAST")
@@ -103,7 +139,12 @@ object EditorLayerOverlay {
         backgroundColor: Int,
         fontSize: Int,
         bold: Boolean,
+        italic: Boolean,
+        alignment: Layout.Alignment,
         private val settings: OverlaySettings,
+        private val track: List<TrackSample>? = null,
+        private val scale: Float = 1f,
+        private val rotationDegrees: Float = 0f,
     ) : TextOverlay() {
         /// 보일 때와 안 보일 때, 글은 이 둘뿐이다. 미리 만들어 두고 돌려준다.
         ///
@@ -137,14 +178,26 @@ object EditorLayerOverlay {
                 length,
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
             )
-            if (bold) {
+            val typefaceStyle = when {
+                bold && italic -> Typeface.BOLD_ITALIC
+                bold -> Typeface.BOLD
+                italic -> Typeface.ITALIC
+                else -> Typeface.NORMAL
+            }
+            if (typefaceStyle != Typeface.NORMAL) {
                 setSpan(
-                    StyleSpan(Typeface.BOLD),
+                    StyleSpan(typefaceStyle),
                     0,
                     length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
             }
+            setSpan(
+                AlignmentSpan.Standard(alignment),
+                0,
+                length,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
         }
 
         private val hidden = SpannableString("")
@@ -156,7 +209,40 @@ object EditorLayerOverlay {
                 visible
             }
 
-        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
-            settings
+        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
+            val samples = track ?: return settings
+            val (x, y) = positionAt(samples, presentationTimeUs)
+            // 글자 비트맵과 달리 설정 객체는 media3가 캐시하지 않아서 프레임마다
+            // 새로 만들어도 재기·그리기가 되풀이되지 않는다.
+            return StaticOverlaySettings.Builder()
+                .setBackgroundFrameAnchor(x * 2f - 1f, 1f - y * 2f)
+                .setScale(scale, scale)
+                .setRotationDegrees(rotationDegrees)
+                .build()
+        }
+
+        /// 이웃 키프레임을 선형 보간한다. 트랙 밖 시각은 가장 가까운 표본이다.
+        private fun positionAt(
+            samples: List<TrackSample>,
+            timeUs: Long,
+        ): Pair<Float, Float> {
+            if (timeUs <= samples.first().timeUs) {
+                return samples.first().x to samples.first().y
+            }
+            if (timeUs >= samples.last().timeUs) {
+                return samples.last().x to samples.last().y
+            }
+            for (index in 1 until samples.size) {
+                val next = samples[index]
+                if (timeUs > next.timeUs) continue
+                val prev = samples[index - 1]
+                val span = (next.timeUs - prev.timeUs).toFloat()
+                if (span <= 0f) return next.x to next.y
+                val t = (timeUs - prev.timeUs) / span
+                return (prev.x + (next.x - prev.x) * t) to
+                    (prev.y + (next.y - prev.y) * t)
+            }
+            return samples.last().x to samples.last().y
+        }
     }
 }

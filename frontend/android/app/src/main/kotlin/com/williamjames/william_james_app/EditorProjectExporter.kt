@@ -131,6 +131,7 @@ class EditorProjectExporter(
         val stickerLayers =
             call.argument<List<Map<String, Any?>>>("stickerLayers") ?: emptyList()
         val blurLayers = call.argument<List<Map<String, Any?>>>("blurLayers") ?: emptyList()
+        val zoomSegments = call.argument<List<Map<String, Any?>>>("zoomSegments") ?: emptyList()
         val captions = call.argument<List<Map<String, Any?>>>("captions") ?: emptyList()
         @Suppress("UNCHECKED_CAST")
         val sourceSize = call.argument<Map<String, Any?>>("sourceSize") ?: emptyMap()
@@ -173,6 +174,10 @@ class EditorProjectExporter(
             return
         }
 
+        // 잘랐다가 그대로 이어 붙인 조각은 하나로 되돌린다. 조각이 하나면
+        // 스트림을 그대로 옮겨 담는 길이 열린다.
+        val clips = mergeAdjacentClips(rawClips)
+
         val aspectRatio = number(canvas, "aspectRatio")?.toDouble()?.coerceIn(0.4, 2.5)
             ?: (16.0 / 9.0)
         // 원본보다 크게 만들지 않는다. 예전에는 비율만 보고 언제나 긴 변을
@@ -194,9 +199,46 @@ class EditorProjectExporter(
         val offsetX = number(canvas, "offsetX")?.toFloat()?.coerceIn(-1f, 1f) ?: 0f
         val offsetY = number(canvas, "offsetY")?.toFloat()?.coerceIn(-1f, 1f) ?: 0f
         val volume = number(audio, "sourceVolume")?.toFloat()?.coerceIn(0f, 1f) ?: 1f
-        // 컷 편집만 한 경우 Presentation을 넣지 않아 Transformer가 가능한
-        // 입력에서는 재인코딩 대신 빠른 스트림 복사를 선택할 수 있게 한다.
-        val presentation = if (canvasRatio == "original") {
+
+        // 이번 내보내기가 **화면을 다시 그려야 하는 일**인지 먼저 정한다.
+        //
+        // 프레임을 건드리지 않는다면 media3가 원본 영상 스트림을 그대로 옮겨
+        // 담는다. 몇십 초 걸리던 저장이 몇 초로 끝나고 화질도 원본 그대로다.
+        // 그러니 그 길을 막는 것(Presentation·코덱 강제)을 하나도 붙이지 않는다.
+        //
+        // **소리와 화면을 따로 따진다**: 예전에는 볼륨을 줄이거나 클립을 나누기만
+        // 해도 "자르기만 한 게 아니다"로 보고 모든 프레임을 다시 인코딩했다.
+        // 소리만 바꿨는데 화면까지 다시 그릴 이유가 없다 — media3는 트랙마다
+        // 따로 정하므로 오디오만 다시 만들고 영상은 그대로 옮겨 담으면 된다.
+        val hasOverlayWork = textLayers.isNotEmpty() ||
+            stickerLayers.isNotEmpty() ||
+            captions.isNotEmpty()
+        val hasCanvasWork = canvasRatio != "original" ||
+            scale != 1f ||
+            rotation != 0f ||
+            offsetX != 0f ||
+            offsetY != 0f
+        val hasVideoWork = hasOverlayWork || hasCanvasWork || zoomSegments.isNotEmpty() ||
+            lookEffect(look) != null
+
+        // 영상 트랙을 통째로 다시 인코딩하지 않아도 되는가.
+        //
+        // media3는 조각이 둘 이상이면 화면을 안 건드려도 무조건 다시 인코딩한다
+        // (`TransformerUtil.shouldTranscodeVideo`의 첫 줄이
+        // `return !composition.transmuxVideo`다). 그래서 조각 수까지 따진다.
+        // 하나짜리 자르기는 `experimentalSetTrimOptimizationEnabled`가 맨 앞
+        // GOP만 다시 만들고 나머지를 복사하므로, 자른 위치는 프레임 단위로
+        // 정확하면서 속도는 복사에 가깝다.
+        val willTransmuxVideo = !hasVideoWork && clips.size == 1
+
+        // 다시 그려야 하는 경우에만 크기를 맞춘다. 이때는 긴 변을
+        // MAX_OUTPUT_LONG_EDGE로 제한한다 — 원본 비율이어도 마찬가지다.
+        // 1080p를 그대로 다시 인코딩하면 720p보다 갑절 넘게 걸리는데, 손에
+        // 들고 보는 영상에서 그 차이는 잘 드러나지 않는다.
+        //
+        // 반대로 그대로 옮겨 담을 수 있는 길이라면 이걸 붙이는 순간 그 길이
+        // 막힌다. 화질도 손해, 속도도 손해다.
+        val presentation = if (willTransmuxVideo) {
             null
         } else {
             Presentation.createForWidthAndHeight(
@@ -206,7 +248,7 @@ class EditorProjectExporter(
             )
         }
 
-        val items = rawClips.mapNotNull { raw ->
+        val items = clips.mapNotNull { raw ->
             editedItem(
                 raw,
                 presentation,
@@ -215,9 +257,10 @@ class EditorProjectExporter(
                 offsetX,
                 offsetY,
                 volume,
+                zoomSegments,
             )
         }
-        if (items.size != rawClips.size || items.isEmpty()) {
+        if (items.size != clips.size || items.isEmpty()) {
             result.error("INVALID_CLIP", "One or more clips are invalid.", null)
             return
         }
@@ -247,26 +290,34 @@ class EditorProjectExporter(
         val sequence = EditedMediaItemSequence.withAudioAndVideoFrom(items)
         val composition = Composition.Builder(sequence)
             .setEffects(compositionEffects)
+            // 소리를 건드리지 않았으면 소리는 그대로 옮겨 담는다.
+            //
+            // media3는 조각이 둘 이상이면 소리도 무조건 다시 인코딩한다
+            // (`TransformerUtil.shouldTranscodeAudio`의 첫 줄). 화면을 다시
+            // 그려야 해서 어차피 오래 걸리는 저장에서도, 소리까지 풀었다
+            // 다시 만들 이유는 없다 — 시간도 들고 소리도 한 세대 나빠진다.
+            .setTransmuxAudio(volume >= 0.999f)
             .build()
 
-        // 자르기만 한 내보내기는 화면에 그릴 것이 하나도 없다. media3에 알려
-        // 주면 프레임을 다시 인코딩하지 않고 그대로 옮겨 담아(맨 앞 GOP만
-        // 다시 만든다) 몇십 초 걸리던 저장이 몇 초로 끝난다.
+        // `experimentalSetMaxFramesInEncoder`는 **일부러 부르지 않는다.**
         //
-        // 조건을 여기서 직접 따진다. media3도 못 쓰는 경우를 스스로 알아채
-        // 보통 경로로 되돌아가지만, 그 판단에 드는 시간을 애초에 만들지 않는다.
-        val trimOnly = presentation == null &&
-            compositionVideoEffects.isEmpty() &&
-            items.size == 1 &&
-            volume >= 0.999f &&
-            scale == 1f &&
-            rotation == 0f &&
-            offsetX == 0f &&
-            offsetY == 0f
+        // 한동안 8을 넣어 두고 "인코더에 미리 채워 둔다"고 적어 두었는데,
+        // 라이브러리를 뜯어보니 정반대였다. 기본값은 8이 아니라 제한 없음
+        // (`C.LENGTH_UNSET`)이고, 그때 media3는 프레임을 자동으로 흘려보낸다.
+        // 값을 넣는 순간 수동 모드로 바뀌어 "인코더에 떠 있는 프레임 수"를
+        // 세면서 그 수를 넘지 않게 붙잡는다(`VideoSampleExporter`의
+        // `maybeRenderEarliestOutputFrame`). 메모리를 아끼려는 손잡이지
+        // 속도를 내는 손잡이가 아니다 — 빼는 쪽이 빠르다.
+        val builder = Transformer.Builder(activity)
+            .experimentalSetTrimOptimizationEnabled(willTransmuxVideo)
+        // 코덱을 H.264로 못박는 건 화면을 다시 그릴 때만이다. 원본이 HEVC인데
+        // 여기서 H.264를 요구하면 출력 형식이 입력과 달라져, 자르기만 해도
+        // media3가 스트림 복사를 포기하고 전부 다시 인코딩한다.
+        if (!willTransmuxVideo) {
+            builder.setVideoMimeType(MimeTypes.VIDEO_H264)
+        }
 
-        val active = Transformer.Builder(activity)
-            .setVideoMimeType(MimeTypes.VIDEO_H264)
-            .experimentalSetTrimOptimizationEnabled(trimOnly)
+        val active = builder
             .addListener(
                 object : Transformer.Listener {
                     override fun onCompleted(
@@ -281,6 +332,14 @@ class EditorProjectExporter(
                         exportResult: ExportResult,
                         exportException: ExportException,
                     ) {
+                        // 원인 체인을 통째로 남긴다 — "frame processing error"
+                        // 한 줄로는 어느 효과가 죽였는지 알 수 없다.
+                        android.util.Log.e("WJExport", "export failed", exportException)
+                        var cause: Throwable? = exportException.cause
+                        while (cause != null) {
+                            android.util.Log.e("WJExport", "caused by: $cause")
+                            cause = cause.cause
+                        }
                         finishError(
                             "EXPORT_FAILED",
                             exportException.message ?: "The video could not be exported.",
@@ -304,6 +363,40 @@ class EditorProjectExporter(
         }
     }
 
+    /// 원본에서 맞닿아 있는 조각들을 하나로 되돌린다.
+    ///
+    /// **왜 필요한가**: 분할해 놓고 아무것도 지우지 않으면 [0,t)와 [t,끝) 두
+    /// 조각이 남는다. 이어 붙인 결과는 원본과 한 프레임도 다르지 않은데,
+    /// media3는 조각이 둘 이상이라는 이유만으로 모든 프레임을 다시 인코딩한다.
+    /// 붙여서 하나로 만들면 그대로 옮겨 담는 길이 열린다 — 결과는 똑같고,
+    /// 화질은 원본 그대로이며, 몇십 초가 몇 초가 된다.
+    ///
+    /// 가운데를 지워 사이가 벌어진 조각들은 붙이지 않는다. 그건 실제로 다른
+    /// 영상이라 다시 만들어야 한다.
+    private fun mergeAdjacentClips(
+        rawClips: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> {
+        if (rawClips.size < 2) return rawClips
+        val merged = mutableListOf<Map<String, Any?>>()
+        for (clip in rawClips) {
+            val previous = merged.lastOrNull()
+            val previousEnd = previous?.let { number(it, "sourceEndMs")?.toLong() }
+            val start = number(clip, "sourceStartMs")?.toLong()
+            val joins = previous != null &&
+                previousEnd != null &&
+                start != null &&
+                previousEnd == start &&
+                previous["sourcePath"] == clip["sourcePath"]
+            if (joins) {
+                merged[merged.lastIndex] =
+                    previous!! + ("sourceEndMs" to clip["sourceEndMs"])
+            } else {
+                merged += clip
+            }
+        }
+        return merged
+    }
+
     private fun editedItem(
         raw: Map<String, Any?>,
         presentation: Effect?,
@@ -312,6 +405,7 @@ class EditorProjectExporter(
         offsetX: Float,
         offsetY: Float,
         volume: Float,
+        zoomSegments: List<Map<String, Any?>>,
     ): EditedMediaItem? {
         val sourcePath = raw["sourcePath"] as? String ?: return null
         val input = File(sourcePath)
@@ -335,6 +429,16 @@ class EditorProjectExporter(
             )
         }
         val videoEffects = mutableListOf<Effect>()
+        // 구간 줌은 세로 Presentation보다 먼저 원본 영상 프레임 안에서 자른다.
+        // Presentation 뒤에 적용하면 16:9 영상 띠가 위아래 검은 영역까지
+        // 커져 미리보기와 저장 결과가 달라진다.
+        if (zoomSegments.isNotEmpty()) {
+            val timelineStartMs = number(raw, "timelineStartMs")?.toLong() ?: 0L
+            videoEffects += TimelineZoomTransformation(
+                rawSegments = zoomSegments,
+                timelineOffsetMs = timelineStartMs,
+            )
+        }
         presentation?.let(videoEffects::add)
         if (scale != 1f || rotation != 0f || offsetX != 0f || offsetY != 0f) {
             videoEffects += CanvasMatrixTransformation(
@@ -454,5 +558,42 @@ class EditorProjectExporter(
                 postRotate(rotationDegrees)
                 postTranslate(offsetX, -offsetY)
             }
+    }
+
+    private class TimelineZoomTransformation(
+        rawSegments: List<Map<String, Any?>>,
+        private val timelineOffsetMs: Long = 0L,
+    ) : MatrixTransformation {
+        private data class Segment(
+            val startMs: Long,
+            val endMs: Long,
+            val scale: Float,
+            val focusX: Float,
+            val focusY: Float,
+        )
+
+        private val segments = rawSegments.mapNotNull { raw ->
+            val start = (raw["startMs"] as? Number)?.toLong() ?: return@mapNotNull null
+            val end = (raw["endMs"] as? Number)?.toLong() ?: return@mapNotNull null
+            if (end <= start) return@mapNotNull null
+            Segment(
+                startMs = start,
+                endMs = end,
+                scale = ((raw["scale"] as? Number)?.toFloat() ?: 1f).coerceIn(1f, 2.8f),
+                focusX = ((raw["focusX"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
+                focusY = ((raw["focusY"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
+            )
+        }
+
+        override fun getMatrix(presentationTimeUs: Long): Matrix {
+            val timeMs = timelineOffsetMs + presentationTimeUs / 1000L
+            val segment = segments.lastOrNull { timeMs >= it.startMs && timeMs < it.endMs }
+                ?: return Matrix()
+            val pivotX = segment.focusX * 2f - 1f
+            val pivotY = 1f - segment.focusY * 2f
+            return Matrix().apply {
+                postScale(segment.scale, segment.scale, pivotX, pivotY)
+            }
+        }
     }
 }

@@ -1,0 +1,13 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY video_editor/requirements-service.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY video_editor /app/ai/video_editor
+RUN touch /app/ai/__init__.py
+
+EXPOSE 18080
+CMD ["uvicorn", "ai.video_editor.service:app", "--host", "0.0.0.0", "--port", "18080"]

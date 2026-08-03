@@ -62,13 +62,6 @@ android {
         }
     }
 
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-            pickFirsts += "**/libbanuba-ve-yuv.so"
-        }
-    }
-
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
@@ -84,19 +77,6 @@ kotlin {
 
 flutter {
     source = "../.."
-}
-
-val copyBanubaEffects =
-    tasks.register<Sync>("copyBanubaEffects") {
-        from("../../effects")
-        into(layout.buildDirectory.dir("generated/banubaAssets/bnb-resources/effects"))
-    }
-
-android.sourceSets.getByName("main").assets.srcDir(
-    layout.buildDirectory.dir("generated/banubaAssets"),
-)
-tasks.named("preBuild").configure {
-    dependsOn(copyBanubaEffects)
 }
 
 dependencies {

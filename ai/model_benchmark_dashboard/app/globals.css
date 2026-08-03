@@ -518,6 +518,90 @@ button {
   font-size: 0.63rem;
 }
 
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.evidence-card {
+  min-height: 165px;
+  padding: 1rem;
+  border-right: 1px solid var(--line);
+}
+
+.evidence-card:last-child {
+  border-right: 0;
+}
+
+.evidence-kicker {
+  color: var(--coral);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.61rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.evidence-card h3,
+.failure-list h3 {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+}
+
+.evidence-card strong {
+  display: block;
+  margin-top: 1rem;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 1rem;
+}
+
+.evidence-card p,
+.failure-list p {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.6;
+}
+
+.evidence-footnote {
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+.scenario-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.6fr);
+}
+
+.scenario-layout > .comparison-wrap {
+  border-right: 1px solid var(--line);
+}
+
+.compact-table td,
+.compact-table th {
+  padding: 0.62rem 0.75rem;
+}
+
+.failure-list {
+  padding: 1rem;
+}
+
+.failure-row {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
+.failure-row strong {
+  color: var(--coral);
+  font-size: 0.62rem;
+}
+
 .comparison-table td > .empty-state {
   min-height: 150px;
 }
@@ -561,6 +645,10 @@ button {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+}
+
+.model-cell small {
+  display: block;
 }
 
 .model-dot {
@@ -935,6 +1023,17 @@ button {
 
   .audio-grid {
     grid-template-columns: 1fr;
+  }
+
+  .evidence-grid,
+  .scenario-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-card,
+  .scenario-layout > .comparison-wrap {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 }
 
