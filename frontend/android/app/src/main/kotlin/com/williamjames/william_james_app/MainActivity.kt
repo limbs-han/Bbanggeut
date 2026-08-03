@@ -86,7 +86,20 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             VIDEO_CANVAS_CHANNEL,
         ).setMethodCallHandler(::handleVideoCanvasCall)
-        SttChannel.register(flutterEngine)
+        SttChannel.register(flutterEngine, this)
+    }
+
+    /**
+     * 자막용 마이크 권한 응답을 [MicPermission]에 넘긴다. ML Kit 음성 인식이
+     * 파일 입력인데도 RECORD_AUDIO를 요구해서 물어봐야 한다.
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (MicPermission.handleResult(requestCode, grantResults)) return
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     private fun handleVideoCanvasCall(

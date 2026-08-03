@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_theme.dart';
 import 'caption_controller.dart';
+import 'transcript_store.dart';
 
 /// 미리보기가 쓸 한 줄. 미리보기 위젯에 넘길 값을 만든다.
 String? autoCaptionAt(CaptionController controller, int positionMs) =>
@@ -105,9 +106,14 @@ class _CaptionAutoSectionState extends State<CaptionAutoSection> {
           ],
         ),
         const SizedBox(height: 6),
-        Text(
-          widget.controller.message(estimateSeconds: widget.estimateSeconds),
-          style: const TextStyle(color: AppColors.muted, fontSize: 12),
+        // 내려받기 진행률은 컨트롤러가 아니라 별도 notifier로 올라온다.
+        // 여기서 같이 듣지 않으면 퍼센트가 올라가도 화면이 그대로다.
+        ValueListenableBuilder<int?>(
+          valueListenable: mlkitDownloadPercent,
+          builder: (_, _, _) => Text(
+            widget.controller.message(estimateSeconds: widget.estimateSeconds),
+            style: const TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
         ),
         if (lines.isNotEmpty) ...[
           const SizedBox(height: 8),
