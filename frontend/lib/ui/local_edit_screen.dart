@@ -16,6 +16,7 @@ import '../core/video_exporter.dart';
 import '../core/video_source_cache.dart';
 import '../features/stt/caption_auto_section.dart';
 import '../features/stt/caption_controller.dart';
+import '../features/stt/mlkit_transcriber.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
 import '../editor/edit_recommendation_client.dart';
@@ -715,6 +716,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       // 서명을 지운다(고쳐 둔 것을 원문으로 되돌리는 것도 요청의 일부다).
       _mergedTranscriptSignature = null;
     }
+    // 자막 탭에 들어온 것이 곧 "자막을 만들어 달라"는 뜻이다. 마이크 권한을
+    // 여기서 먼저 묻는다 — 전사에 맡기면 오디오 추출이 끝난 몇 초 뒤에야
+    // 대화상자가 떠서, 사용자가 무엇 때문에 묻는지 연결하기 어렵다.
+    //
+    // 파일로 자막을 만드는데 마이크를 요구하는 건 ML Kit의 요구사항이다.
+    // 거부해도 시트는 연다 — 안에서 사유를 안내한다.
+    await MlKitTranscriber().requestMicrophone();
+    if (!mounted) return;
+
     // 전사는 이 버튼을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
     _startAutoCaptions();
     _captionSheetOpen = true;

@@ -16,8 +16,6 @@ import 'package:path_provider/path_provider.dart';
 import 'android_audio.dart';
 import 'caption_line.dart';
 import 'mlkit_transcriber.dart';
-import 'whisper_model.dart';
-import 'whisper_transcriber.dart';
 
 /// 영상 파일 경로를 받아 자막 줄을 돌려준다. 실패하면 던진다.
 typedef VideoTranscriber = Future<List<CaptionLine>> Function(String videoPath);
@@ -160,12 +158,6 @@ TranscriptStore transcriptStore = TranscriptStore(
   },
 );
 
-/// ML Kit 온디바이스 인식을 먼저 쓸지 여부. **실험 중이라 기본으로 켜 둔다.**
-///
-/// 끄려면 `--dart-define=STT_ENGINE=whisper`로 빌드한다. 판정이 끝나면
-/// 한쪽을 지운다 — 두 경로를 오래 들고 갈 생각은 아니다.
-const _preferMlKit = String.fromEnvironment('STT_ENGINE') != 'whisper';
-
 /// 모델 내려받기 진행률(0~100). 준비 중이 아니면 null이다.
 ///
 /// 화면이 이 값을 읽어 "자막 준비 중 42%"를 보여 준다 — 모델을 처음 받는 기기는
@@ -211,9 +203,12 @@ Future<MlKitReadiness> prepareMlKit(MlKitTranscriber mlkit) async {
 
 /// 영상에서 16kHz 모노 WAV를 뽑아 전사한다. WAV는 쓰고 지운다.
 ///
-/// ML Kit을 먼저 시도하고, 이 기기에서 못 쓰거나 실패하면 whisper로 간다.
-/// 어느 쪽이 돌았는지는 로그에 남긴다 — 자막 품질을 볼 때 엔진을 모르면
-/// 무엇을 평가하는지 알 수 없다.
+/// **폴백이 없다.** 예전에는 whisper가 뒤를 받쳤지만 지웠다 — 같은 영상에서
+/// ML Kit이 CER 23.3% 대 35.0%로 앞섰고, 2분짜리에서 whisper는 64초 이후
+/// 무너졌으며, 속도도 18초 대 235초였다. 181MiB 모델 에셋도 함께 없앴다.
+///
+/// 그래서 [prepareMlKit]이 실패하면 자막이 없다. 화면이 이유를 알려 줘야 한다
+/// (`CaptionController.message` 참조).
 Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
   final temporary = await getTemporaryDirectory();
   final directory = Directory(
@@ -224,30 +219,16 @@ Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
 
   await AndroidAudioExtractor().toPcmWav16k(videoPath, wavPath);
   try {
-    if (_preferMlKit) {
-      final mlkit = MlKitTranscriber();
-      if (await prepareMlKit(mlkit) == MlKitReadiness.ready) {
-        try {
-          final lines = await mlkit.transcribe(wavPath);
-          debugPrint('[stt] 엔진=ML Kit basic, ${lines.length}줄');
-          // 시각은 낱말이 처음 인식된 시점으로 역산한 근사치다. 싱크가 밀리는지
-          // 눈으로 판단할 수 있게 앞 몇 줄을 찍는다.
-          for (final line in lines.take(5)) {
-            debugPrint('[stt]   ${line.startMs}~${line.endMs}ms "${line.text}"');
-          }
-          if (lines.isNotEmpty) return lines;
-          // 빈 결과는 무발화일 수도, 엔진이 놓친 것일 수도 있다. whisper에 한 번 더 묻는다.
-          debugPrint('[stt] ML Kit이 빈 결과 — whisper로 확인한다');
-        } catch (error) {
-          debugPrint('[stt] ML Kit 실패($error) — whisper로 물러선다');
-        }
-      }
-    }
+    final mlkit = MlKitTranscriber();
+    if (await prepareMlKit(mlkit) != MlKitReadiness.ready) return const [];
 
-    // 모델을 먼저 확보한다 — 에셋에서 복사하거나 dart-define 경로를 쓴다.
-    final modelPath = await resolveWhisperModel();
-    final lines = await WhisperTranscriber(modelPath: modelPath).transcribe(wavPath);
-    debugPrint('[stt] 엔진=whisper q5_1, ${lines.length}줄');
+    final lines = await mlkit.transcribe(wavPath);
+    debugPrint('[stt] 엔진=ML Kit basic, ${lines.length}줄');
+    // 시각은 낱말이 처음 인식된 시점으로 역산한 근사치다. 싱크가 밀리는지
+    // 눈으로 판단할 수 있게 앞 몇 줄을 찍는다.
+    for (final line in lines.take(5)) {
+      debugPrint('[stt]   ${line.startMs}~${line.endMs}ms "${line.text}"');
+    }
     return lines;
   } finally {
     final wav = File(wavPath);
