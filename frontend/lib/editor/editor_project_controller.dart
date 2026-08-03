@@ -1197,6 +1197,11 @@ class EditorProjectController extends ChangeNotifier {
     );
   }
 
+  /// AI 자막이 만들어 둔 레이어가 있는가. 다시 만들면 이것들이 갈아
+  /// 끼워지므로, 화면이 경고를 띄울지 정할 때 쓴다.
+  bool get hasTranscriptCaptions =>
+      _project.textLayers.any((layer) => layer.id.startsWith('ai-caption-'));
+
   /// AI 자막(전사) 결과를 **일반 자막 레이어**로 바꿔 얹는다.
   ///
   /// [sourceCaptions]의 시각은 원본 영상 시각이다. 지금 클립 배치에 맞춰

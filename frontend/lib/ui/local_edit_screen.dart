@@ -94,9 +94,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   int? _pendingPreviewSeekMs;
   bool _seekingPreview = false;
 
-  /// 들린 대사로 만드는 자동 자막(전사). 전사가 끝나 시트를 닫으면
-  /// 일반 자막 레이어로 합쳐진다 — 이후 편집·저장은 자막 탭과 같은 길이다.
+  /// 들린 대사로 만드는 자동 자막(전사). 전사가 끝나면 일반 자막 레이어로
+  /// 합쳐진다 — 이후 편집·저장은 자막 탭과 같은 길이다.
   final _autoCaptions = CaptionController();
+
+  /// 마지막으로 자막 레이어에 합친 전사 내용의 서명.
+  ///
+  /// **왜 필요한가**: 병합은 전사 완료 알림과 시트 닫힘, 두 군데서 불린다.
+  /// 같은 내용을 두 번 합치면 자막 탭에서 사용자가 고쳐 둔 AI 자막이
+  /// 이유 없이 원문으로 되돌아간다. 내용이 실제로 바뀌었을 때만 합친다.
+  String? _mergedTranscriptSignature;
 
   bool get _editorReady =>
       _sourcePath != null && _preview?.value.isInitialized == true;
@@ -112,7 +119,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   }
 
   void _onCaptionsChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // 전사가 끝나는 순간 자막 탭으로 합친다. 예전에는 시트를 닫을 때만
+    // 합쳤는데, 전사 중에 닫아 버리면 끝나도 아무 일이 없어 "적용이 안
+    // 된다"로 보였다.
+    _mergeTranscriptIntoTextLayers();
+    setState(() {});
   }
 
   Future<void> _prepare() async {
@@ -673,10 +685,37 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   /// AI 자막 시트. 자막을 만들고 고치는 일은 전부 [CaptionAutoSection]이
   /// 그대로 한다 — 여기서는 열어 주기만 한다.
   Future<void> _showAiCaptionSheet() async {
-    // 이제 'AI자막' 탭을 누르는 것만으로도 열린다. 탭과 패널 버튼이 겹쳐
-    // 시트가 두 장 쌓이지 않게 막는다.
     if (_saving || _captionSheetOpen) return;
-    // 전사는 이 탭을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
+    // 이미 합쳐 둔 AI 자막이 있으면, 다시 만들 때 그것들(자막 탭에서 고친
+    // 내용 포함)이 새 결과로 바뀐다는 것을 먼저 알린다.
+    if (_projectController?.hasTranscriptCaptions == true) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('AI 자막을 다시 만들까요?'),
+          content: const Text(
+            '자막 탭에 있는 AI 자막이 새로 만든 결과로 바뀌어요. '
+            '직접 고친 부분도 함께 바뀌고, 직접 추가한 자막은 그대로예요.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              key: const Key('editor-ai-caption-replace'),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('다시 만들기'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+      // 사용자가 다시 만들기를 골랐다 — 같은 내용이라도 다시 합치도록
+      // 서명을 지운다(고쳐 둔 것을 원문으로 되돌리는 것도 요청의 일부다).
+      _mergedTranscriptSignature = null;
+    }
+    // 전사는 이 버튼을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
     _startAutoCaptions();
     _captionSheetOpen = true;
     try {
@@ -685,20 +724,29 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       _captionSheetOpen = false;
     }
     if (!mounted) return;
-    _mergeTranscriptIntoTextLayers();
+    final merged = _mergeTranscriptIntoTextLayers();
+    // 전사가 아직 도는 중에 닫았다. 끝나면 리스너가 알아서 합친다 —
+    // 그 말을 안 해 주면 "눌렀는데 아무 일도 없다"로 보인다.
+    if (!merged && _autoCaptions.lines.isEmpty) {
+      showAppSnack(context, '대사를 아직 알아듣는 중이에요. 끝나면 자막 탭에 자동으로 들어가요.');
+    }
     setState(() {});
   }
 
-  /// 시트를 닫을 때 전사 결과를 **일반 자막 레이어로** 합친다.
+  /// 전사 결과를 **일반 자막 레이어로** 합친다. 실제로 합쳤으면 true.
   ///
-  /// 이후에는 자막 탭에서 손 자막과 똑같이 고치고, 초안 저장·내보내기도
-  /// 같은 길을 탄다. 전사가 아직 도는 중이면 아무것도 안 한다 — 끝난 뒤
-  /// 시트를 다시 열었다 닫으면 그때 합쳐진다.
-  void _mergeTranscriptIntoTextLayers() {
+  /// 전사 완료 알림과 시트 닫힘, 두 군데서 불리므로 내용 서명이 같으면
+  /// 건너뛴다 — 자막 탭에서 고쳐 둔 AI 자막이 원문으로 되돌아가지 않는다.
+  bool _mergeTranscriptIntoTextLayers() {
     final projectController = _projectController;
-    if (projectController == null) return;
+    if (projectController == null) return false;
     final lines = _autoCaptions.lines;
-    if (lines.isEmpty) return;
+    if (lines.isEmpty) return false;
+    final signature = [
+      for (final line in lines) '${line.startMs}:${line.endMs}:${line.text}',
+    ].join('|');
+    if (signature == _mergedTranscriptSignature) return false;
+    _mergedTranscriptSignature = signature;
     projectController.applyTranscriptCaptions([
       for (final line in lines)
         (startMs: line.startMs, endMs: line.endMs, text: line.text),
@@ -708,6 +756,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       context,
       'AI 자막 ${lines.length}줄을 자막 탭에 넣었어요. 자막 탭에서 고칠 수 있어요.',
     );
+    return true;
   }
 
   Future<void> _presentAiCaptionSheet() async {
