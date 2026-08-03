@@ -205,6 +205,8 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
     navigatorKey: navigatorKey,
+    // 홈 위로 다른 화면이 덮이면 실시간 스트리밍을 멈추기 위한 관찰자.
+    navigatorObservers: [mainShellRouteObserver],
     title: '빵긋',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),

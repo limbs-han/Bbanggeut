@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -6,6 +8,7 @@ import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/core/api_client.dart';
 import 'package:william_james_app/core/models.dart';
 import 'package:william_james_app/ui/auth_screen.dart';
+import 'package:william_james_app/ui/home_screen.dart';
 import 'package:william_james_app/ui/local_edit_screen.dart';
 import 'package:william_james_app/ui/main_shell.dart';
 import 'package:william_james_app/ui/onboarding_screen.dart';
@@ -268,6 +271,46 @@ void main() {
       findsOneWidget,
       reason: '펼친 탭이 사라지면 되돌아올 때 스크롤 위치가 초기화된다',
     );
+    controller.dispose();
+  });
+
+  // 탭 위젯 캐시(보고 있는 탭만 새로 세운다)와 라우트 감시(덮이면 실시간을
+  // 멈춘다)는 서로 다른 브랜치에서 왔다. 캐시가 낡은 `isActive`를 붙들고 있으면
+  // 덮인 홈이 계속 스트리밍하는데, 화면상으로는 아무 표시도 나지 않는다.
+  testWidgets('상세 화면이 홈을 덮는 동안 실시간을 멈추고 돌아오면 다시 켠다', (tester) async {
+    final controller = AppController(api: _FakeApiClient());
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [mainShellRouteObserver],
+        theme: buildTheme(),
+        home: MainShell(controller: controller),
+      ),
+    );
+
+    bool homeIsActive() => tester
+        .widget<HomeScreen>(find.byType(HomeScreen, skipOffstage: false))
+        .isActive;
+    expect(homeIsActive(), isTrue);
+
+    unawaited(
+      navigatorKey.currentState!.push<void>(
+        MaterialPageRoute(builder: (_) => const Scaffold(body: Text('상세'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(homeIsActive(), isFalse, reason: '덮인 홈이 계속 스트리밍하면 대역폭을 먹는다');
+
+    // 덮여 있는 동안 컨트롤러가 알려도 다시 켜지면 안 된다 — 캐시가 아니라
+    // 실제 상태를 보고 그리는지 확인한다.
+    controller.notifyListeners();
+    await tester.pump();
+    expect(homeIsActive(), isFalse);
+
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(homeIsActive(), isTrue, reason: '돌아왔는데 실시간이 꺼져 있으면 검은 화면이다');
     controller.dispose();
   });
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -36,6 +37,16 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   bool _deleting = false;
   String? _error;
 
+  /// 편집·저장 대비 미리받기를 시작했는가.
+  ///
+  /// **왜 재생 중에는 안 받나**: 스트리밍 재생과 미리받기가 같은 원본
+  /// (수십 MB)을 **동시에** 받으면 서로 대역폭을 나눠 써서 재생 버퍼링도
+  /// 미리받기도 함께 느려진다. 다 봤거나 일시정지한 틈 — 대개 편집·저장
+  /// 버튼을 누르기 직전 — 에 시작하면 한 번에 한 전송만 돈다.
+  bool _prefetchStarted = false;
+  bool _hasPlayed = false;
+  Timer? _idlePrefetchTimer;
+
   @override
   void initState() {
     super.initState();
@@ -55,14 +66,6 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
       // 이미 받아 둔 원본이 있으면 그걸로 튼다. 재생 URL 왕복도, 스트리밍
       // 트래픽도 없어진다 — 같은 파일을 저장·편집도 그대로 쓴다.
       final cached = await VideoSourceCache.cachedPath(_video.id);
-      if (cached == null) {
-        // 이 화면에서 다음에 누를 버튼은 대개 '갤러리에 저장'이나 '영상
-        // 편집하기'고, 둘 다 같은 원본을 필요로 한다. 보는 동안 받아 둔다.
-        VideoSourceCache.prefetch(
-          api: widget.controller.api,
-          videoId: _video.id,
-        );
-      }
       final player = cached != null
           ? VideoPlayerController.file(File(cached))
           : VideoPlayerController.networkUrl(
@@ -79,6 +82,14 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
         _player = player;
         _loading = false;
       });
+      if (cached == null) {
+        player.addListener(_prefetchWhenPlaybackRests);
+        // 재생하지 않고 훑어보기만 하는 사람도 있다. 몇 초 기다려도 재생이
+        // 시작되지 않으면 회선이 놀고 있는 것이니 그때 미리받는다.
+        _idlePrefetchTimer = Timer(const Duration(seconds: 5), () {
+          if (!_hasPlayed) _startPrefetch();
+        });
+      }
     } catch (failure) {
       if (mounted) {
         setState(() {
@@ -89,8 +100,33 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
     }
   }
 
+  /// 재생이 쉬는 틈에 원본 미리받기를 시작한다.
+  void _prefetchWhenPlaybackRests() {
+    final player = _player;
+    if (player == null || _prefetchStarted) return;
+    final value = player.value;
+    if (value.isPlaying) {
+      _hasPlayed = true;
+      return;
+    }
+    final ended =
+        value.duration > Duration.zero && value.position >= value.duration;
+    // 한 번이라도 재생했다가 멈췄거나(일시정지) 끝까지 봤다 — 다음 행동은
+    // 대개 편집이나 저장이고, 회선은 지금 비어 있다.
+    if (_hasPlayed || ended) _startPrefetch();
+  }
+
+  void _startPrefetch() {
+    if (_prefetchStarted || !mounted) return;
+    _prefetchStarted = true;
+    _idlePrefetchTimer?.cancel();
+    _player?.removeListener(_prefetchWhenPlaybackRests);
+    VideoSourceCache.prefetch(api: widget.controller.api, videoId: _video.id);
+  }
+
   @override
   void dispose() {
+    _idlePrefetchTimer?.cancel();
     _player?.dispose();
     super.dispose();
   }
@@ -152,6 +188,18 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _openEditor() async {
+    // 편집 진입 다운로드가 회선을 독차지하도록 재생기를 **완전히** 놓아준다.
+    // 일시정지로는 부족하다 — 재생기는 멈춰 있어도 버퍼를 계속 채워서
+    // 편집 원본 다운로드와 대역폭을 나눠 쓴다.
+    final player = _player;
+    if (player != null) {
+      setState(() {
+        _player = null;
+        _loading = true;
+      });
+      await player.dispose();
+    }
+    if (!mounted) return;
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
@@ -159,6 +207,9 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
             LocalEditScreen(controller: widget.controller, video: _video),
       ),
     );
+    // 돌아오면 다시 만든다. 편집기가 원본을 받아 뒀으므로 이번에는
+    // 네트워크 없이 캐시 파일로 열린다.
+    if (mounted) await _loadPlayer();
   }
 
   Future<void> _deleteVideo() async {

@@ -16,6 +16,7 @@ import '../core/video_exporter.dart';
 import '../core/video_source_cache.dart';
 import '../features/stt/caption_auto_section.dart';
 import '../features/stt/caption_controller.dart';
+import '../features/stt/mlkit_transcriber.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
 import '../editor/edit_recommendation_client.dart';
@@ -179,6 +180,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 비율 탭에서 고르고, 그때는 여백 없이 가득 채운다.
     final nextProjectController = EditorProjectController(sourceProject);
 
+    // **화면부터 연다.** 초안 조회와 AI 추천은 네트워크라 언제 올지 모른다 —
+    // 예전에는 이 둘을 기다렸다가 화면을 열어서, 서버가 안 닿으면 연결
+    // 타임아웃(4초×2)이 고스란히 진입 시간에 얹혔다. 이제 원본 구간으로
+    // 먼저 열고, 도착하면 그때 적용한다.
     final previousPreview = _preview;
     final previousProjectController = _projectController;
     previousPreview?.removeListener(_onPreviewChanged);
@@ -197,18 +202,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         durationMs: durationMs,
         originalAspectRatio: aspectRatio,
       );
-      _status = '자동 편집을 불러오는 중이에요';
+      _status = '자동 편집을 불러오고 있어요';
     });
 
     previousProjectController?.dispose();
     await previousPreview?.dispose();
-    // 전사는 여기서 시작하지 않는다 — whisper가 영상 길이의 0.9배쯤 CPU를
-    // 통째로 붙잡아 편집 진입과 재생까지 굼떠진다. AI자막 탭을 눌렀을 때만
+    // 전사는 여기서 시작하지 않는다 — 오디오를 처음부터 끝까지 훑는 일이라
+    // 편집 진입·재생과 CPU를 다툰다. AI자막 탭을 눌렀을 때만
     // [_startAutoCaptions]가 돈다.
     // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
     // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
     unawaited(_loadThumbnails());
-    unawaited(_applyStoredOrRecommendedEdit(nextProjectController));
+    unawaited(_applyDraftOrRecommendation(nextProjectController));
   }
 
   /// 저장해 둔 초안이나 자동 추천을 **편집 화면을 연 뒤에** 얹는다.
@@ -220,7 +225,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   ///
   /// 기다리는 동안 사용자가 무언가 만졌다면 얹지 않는다. 손으로 한 편집을
   /// 뒤늦게 도착한 추천이 덮는 것이 훨씬 나쁘다.
-  Future<void> _applyStoredOrRecommendedEdit(
+  Future<void> _applyDraftOrRecommendation(
     EditorProjectController projectController,
   ) async {
     Future<void> finish(String status, {bool cutChanged = false}) async {
@@ -766,6 +771,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       // 서명을 지운다(고쳐 둔 것을 원문으로 되돌리는 것도 요청의 일부다).
       _mergedTranscriptSignature = null;
     }
+    // 자막 탭에 들어온 것이 곧 "자막을 만들어 달라"는 뜻이다. 마이크 권한을
+    // 여기서 먼저 묻는다 — 전사에 맡기면 오디오 추출이 끝난 몇 초 뒤에야
+    // 대화상자가 떠서, 사용자가 무엇 때문에 묻는지 연결하기 어렵다.
+    //
+    // 파일로 자막을 만드는데 마이크를 요구하는 건 ML Kit의 요구사항이다.
+    // 거부해도 시트는 연다 — 안에서 사유를 안내한다.
+    await MlKitTranscriber().requestMicrophone();
+    if (!mounted) return;
+
     // 전사는 이 버튼을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
     _startAutoCaptions();
     _captionSheetOpen = true;
