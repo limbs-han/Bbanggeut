@@ -206,6 +206,24 @@ def aggregate_model(
         for event_type in EVENT_TYPES
     }
     all_rows = [row for rows in event_rows.values() for row in rows]
+    streaming = ensure_same(
+        all_rows,
+        lambda row: {
+            "windowSeconds": nested_number(row, "configuration", "windowSeconds"),
+            "hopSeconds": nested_number(row, "configuration", "hopSeconds"),
+            "requiredConsecutiveWindows": nested_number(
+                row,
+                "configuration",
+                "requiredConsecutiveWindows",
+            ),
+            "minimumPositiveSpanSeconds": nested_number(
+                row,
+                "configuration",
+                "minimumPositiveSpanSeconds",
+            ),
+        },
+        f"{name} streaming configuration",
+    )
     local_recalls = [
         events[event_type]["cohorts"]["localDirect"]["recallMin"]
         for event_type in EVENT_TYPES
@@ -225,6 +243,7 @@ def aggregate_model(
     )
     return {
         "model": name,
+        "streaming": streaming,
         "events": events,
         "combined": {
             "macroF1Mean": mean(
@@ -280,9 +299,12 @@ def aggregate_model(
     }
 
 
-def rank_key(row: dict[str, Any]) -> tuple[float, float, float, float, float, float]:
+def rank_key(
+    row: dict[str, Any],
+) -> tuple[float, float, float, float, float, float, float]:
     combined = row["combined"]
     latency = row["performance"]["inferenceP95MsMean"]
+    context = row["streaming"]["windowSeconds"]
     return (
         -float(row["serviceGates"]["eligible"]),
         combined["continuousMaximumFalseEventsPerHour"]
@@ -303,6 +325,7 @@ def rank_key(row: dict[str, Any]) -> tuple[float, float, float, float, float, fl
             if combined["externalGeneralizationMacroF1Mean"] is not None
             else -1
         ),
+        context if context is not None else float("inf"),
         latency if latency is not None else float("inf"),
     )
 
@@ -366,6 +389,23 @@ def markdown_report(payload: dict[str, Any]) -> str:
             f"{format_value(laughter['recallMean'])} | "
             f"{format_value(clap['f1Mean'])} | "
             f"{format_value(clap['recallMean'])} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 모델별 입력 및 판정 정책",
+            "",
+            "| 모델 | 입력 창 초 | 갱신 hop 초 | 연속 양성 창 | 최소 판정 구간 초 |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in payload["models"]:
+        streaming = row["streaming"]
+        lines.append(
+            f"| {row['model']} | {format_value(streaming['windowSeconds'])} | "
+            f"{format_value(streaming['hopSeconds'])} | "
+            f"{format_value(streaming['requiredConsecutiveWindows'], 0)} | "
+            f"{format_value(streaming['minimumPositiveSpanSeconds'])} |"
         )
     lines.extend(
         [
@@ -496,6 +536,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "local-direct-macro-f1",
                 "local-direct-minimum-recall",
                 "external-generalization-macro-f1",
+                "model-input-context",
                 "p95-latency",
             ],
         },
@@ -538,6 +579,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "external_generalization_f1_mean",
                 "external_generalization_recall_mean",
                 "threshold_mean",
+                "window_seconds",
+                "hop_seconds",
+                "required_consecutive_windows",
+                "minimum_positive_span_seconds",
                 "inference_p95_ms_mean",
                 "gpu_percent_max",
                 "ram_used_mb_max",
@@ -565,6 +610,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         external["f1Mean"],
                         external["recallMean"],
                         event["thresholdMean"],
+                        row["streaming"]["windowSeconds"],
+                        row["streaming"]["hopSeconds"],
+                        row["streaming"]["requiredConsecutiveWindows"],
+                        row["streaming"]["minimumPositiveSpanSeconds"],
                         row["performance"]["inferenceP95MsMean"],
                         row["resources"]["gpuPercentMax"],
                         row["resources"]["ramUsedMbMax"],

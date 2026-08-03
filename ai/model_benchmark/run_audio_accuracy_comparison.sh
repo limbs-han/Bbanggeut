@@ -23,9 +23,9 @@ comparison_id="audio-accuracy-comparison-$timestamp"
 batch_dir="$results_root/$comparison_id"
 
 models=(
-  "YAMNet:yamnet-tflite:yamnet.tflite:yamnet_class_map.csv:-:tflite:yamnet"
-  "EfficientAT MN10:efficientat-mn10:efficientat_mn10_as.pt:class_labels_indices.csv:EfficientAT:pytorch:efficientat-mn10"
-  "PANNs CNN10:panns-cnn10:Cnn10_mAP=0.380.pth:class_labels_indices.csv:audioset_tagging_cnn:pytorch:panns-cnn10"
+  "YAMNet:yamnet-tflite:yamnet.tflite:yamnet_class_map.csv:-:tflite:yamnet:0.975:0.4875:2"
+  "EfficientAT MN10:efficientat-mn10:efficientat_mn10_as.pt:class_labels_indices.csv:EfficientAT:pytorch:efficientat-mn10:10:2.5:1"
+  "PANNs CNN10:panns-cnn10:Cnn10_mAP=0.380.pth:class_labels_indices.csv:audioset_tagging_cnn:pytorch:panns-cnn10:2:1:2"
 )
 
 echo "=== PRECHECK ==="
@@ -198,6 +198,7 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
     model_index=$(((round_index + position) % ${#models[@]}))
     IFS=: read -r \
       model_name model_kind model_file class_map_file source_name runtime slug \
+      window_seconds hop_seconds required_consecutive_windows \
       <<<"${models[$model_index]}"
     run_dir="$batch_dir/round-$round_slug/$slug"
     prediction_file="$run_dir/predictions.jsonl"
@@ -221,6 +222,9 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
 
     echo
     echo "=== RUN $execution_order/$total_runs: $model_name ==="
+    echo "WINDOW_SECONDS=$window_seconds"
+    echo "HOP_SECONDS=$hop_seconds"
+    echo "REQUIRED_CONSECUTIVE_WINDOWS=$required_consecutive_windows"
 
     prediction_command=(
       "$python_bin" -u "$prediction_runner"
@@ -233,8 +237,8 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
       --split validation
       --split test
       --device cuda
-      --window-seconds 0.975
-      --hop-seconds 0.4875
+      --window-seconds "$window_seconds"
+      --hop-seconds "$hop_seconds"
       --warmup-windows 3
     )
     if test -n "$source_repo"; then
@@ -257,9 +261,9 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
         --model "$model_path" \
         --event-type "$event_type" \
         --minimum-recall 0.85 \
-        --required-consecutive-windows 2 \
+        --required-consecutive-windows "$required_consecutive_windows" \
         --cooldown-seconds 12 \
-        --hop-seconds 0.4875 \
+        --hop-seconds "$hop_seconds" \
         --score-aggregation max \
         --comparison-id "$comparison_id" \
         --trial-index "$round_number" \

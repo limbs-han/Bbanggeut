@@ -79,6 +79,16 @@ class AudioComparisonReportTests(unittest.TestCase):
                 payload["models"][0]["serviceGates"]["falsePositiveRateCohort"],
                 "continuousNegative",
             )
+            efficientat = next(
+                row
+                for row in payload["models"]
+                if row["model"] == "EfficientAT MN10"
+            )
+            self.assertEqual(efficientat["streaming"]["windowSeconds"], 10.0)
+            self.assertEqual(
+                efficientat["streaming"]["minimumPositiveSpanSeconds"],
+                10.0,
+            )
             self.assertTrue((report_dir / "comparison.csv").is_file())
             self.assertTrue((report_dir / "comparison.md").is_file())
 
@@ -149,6 +159,11 @@ class AudioComparisonReportTests(unittest.TestCase):
         fp_rate: float,
         latency: float,
     ) -> dict:
+        streaming = {
+            "YAMNet": (0.975, 0.4875, 2, 1.4625),
+            "EfficientAT MN10": (10.0, 2.5, 1, 10.0),
+            "PANNs CNN10": (2.0, 1.0, 2, 3.0),
+        }[model]
         return {
             "component": "audio",
             "runId": f"{model}-{event_type}-{trial}",
@@ -163,7 +178,13 @@ class AudioComparisonReportTests(unittest.TestCase):
                 "name": "audio-test-v1",
                 "manifestSha256": "dataset-sha",
             },
-            "configuration": {"scoreAggregation": "max"},
+            "configuration": {
+                "scoreAggregation": "max",
+                "windowSeconds": streaming[0],
+                "hopSeconds": streaming[1],
+                "requiredConsecutiveWindows": streaming[2],
+                "minimumPositiveSpanSeconds": streaming[3],
+            },
             "metrics": {
                 "inferenceMeanMs": latency - 2,
                 "inferenceP95Ms": latency,

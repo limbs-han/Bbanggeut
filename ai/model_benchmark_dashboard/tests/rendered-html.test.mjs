@@ -52,6 +52,8 @@ test("keeps measured laughter and clap comparison cards in the audio tab", async
   assert.match(source, /웃음 FP\/hour/);
   assert.match(source, /박수 FP\/hour/);
   assert.match(source, /falsePositivesPerHour/);
+  assert.match(source, /입력 창 \/ 갱신 hop/);
+  assert.match(source, /연속 양성 창 \/ 최소 판정 구간/);
 });
 
 test("keeps local-only privacy and benchmark context visible", async () => {

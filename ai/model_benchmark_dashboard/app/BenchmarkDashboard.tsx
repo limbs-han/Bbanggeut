@@ -149,6 +149,10 @@ type Snapshot = {
       operatingConfidence?: number | null;
       nmsIou?: number | null;
       matchIou?: number | null;
+      windowSeconds?: number | null;
+      hopSeconds?: number | null;
+      requiredConsecutiveWindows?: number | null;
+      minimumPositiveSpanSeconds?: number | null;
     } | null;
     resources?: {
       status?: string;
@@ -1094,6 +1098,28 @@ export function BenchmarkDashboard() {
                       const latency = average(
                         measured.map((row) => row.metrics.inferenceP95Ms),
                       );
+                      const windowSeconds = average(
+                        measured.map(
+                          (row) => row.configuration?.windowSeconds,
+                        ),
+                      );
+                      const hopSeconds = average(
+                        measured.map(
+                          (row) => row.configuration?.hopSeconds,
+                        ),
+                      );
+                      const requiredConsecutiveWindows = average(
+                        measured.map(
+                          (row) =>
+                            row.configuration?.requiredConsecutiveWindows,
+                        ),
+                      );
+                      const minimumPositiveSpanSeconds = average(
+                        measured.map(
+                          (row) =>
+                            row.configuration?.minimumPositiveSpanSeconds,
+                        ),
+                      );
                       return (
                         <article className="audio-model" key={model.name}>
                           <h3>{model.name}</h3>
@@ -1142,6 +1168,23 @@ export function BenchmarkDashboard() {
                             <strong>
                               {formatPercent(clapExternalF1)} /{" "}
                               {formatPercent(clapExternalRecall)}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>입력 창 / 갱신 hop</span>
+                            <strong>
+                              {windowSeconds != null && hopSeconds != null
+                                ? `${formatNumber(windowSeconds, 4)} s / ${formatNumber(hopSeconds, 4)} s`
+                                : "N/A"}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>연속 양성 창 / 최소 판정 구간</span>
+                            <strong>
+                              {requiredConsecutiveWindows != null &&
+                              minimumPositiveSpanSeconds != null
+                                ? `${formatNumber(requiredConsecutiveWindows, 0)}회 / ${formatNumber(minimumPositiveSpanSeconds, 4)} s`
+                                : "N/A"}
                             </strong>
                           </div>
                           <div className="audio-stat">

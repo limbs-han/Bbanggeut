@@ -686,6 +686,37 @@ def main() -> int:
             dataset_root=dataset_root,
             model_path=model_path,
         )
+        prediction_configuration = (
+            prediction_metadata.get("configuration")
+            if isinstance(prediction_metadata, dict)
+            and isinstance(prediction_metadata.get("configuration"), dict)
+            else {}
+        )
+        window_value = prediction_configuration.get("windowSeconds")
+        window_seconds = (
+            float(window_value)
+            if isinstance(window_value, (int, float))
+            and not isinstance(window_value, bool)
+            else None
+        )
+        metadata_hop_value = prediction_configuration.get("hopSeconds")
+        metadata_hop_seconds = (
+            float(metadata_hop_value)
+            if isinstance(metadata_hop_value, (int, float))
+            and not isinstance(metadata_hop_value, bool)
+            else None
+        )
+        if window_seconds is not None and window_seconds <= 0:
+            raise ValueError("prediction metadata windowSeconds must be positive")
+        if metadata_hop_seconds is not None and not math.isclose(
+            metadata_hop_seconds,
+            args.hop_seconds,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        ):
+            raise ValueError(
+                "prediction metadata hopSeconds does not match evaluation hop"
+            )
         evaluation_samples = [
             sample for sample in samples.values() if sample.split == args.evaluation_split
         ]
@@ -754,6 +785,12 @@ def main() -> int:
         if prediction.sample_id in used_sample_ids
     ]
     score_values = [result.score for result in results]
+    minimum_positive_span_seconds = (
+        window_seconds
+        + (args.required_consecutive_windows - 1) * args.hop_seconds
+        if window_seconds is not None
+        else None
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     evaluated_rows = []
@@ -847,6 +884,11 @@ def main() -> int:
             "requiredConsecutiveWindows": args.required_consecutive_windows,
             "cooldownSeconds": args.cooldown_seconds,
             "hopSeconds": args.hop_seconds,
+            "windowSeconds": rounded(window_seconds, 6),
+            "minimumPositiveSpanSeconds": rounded(
+                minimum_positive_span_seconds,
+                6,
+            ),
         },
         "metrics": {
             "measuredSamples": len(evaluation_samples),
