@@ -86,8 +86,6 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             VIDEO_CANVAS_CHANNEL,
         ).setMethodCallHandler(::handleVideoCanvasCall)
-        // AR 탭이 쓰는 Banuba 엔진 다리. 편집기는 우리 것이고 이건 엔진일 뿐이다.
-        BanubaMaskPlugin(this).register(flutterEngine)
         SttChannel.register(flutterEngine)
     }
 

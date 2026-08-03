@@ -194,7 +194,7 @@ void main() {
 
     final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
     final clips = dto['clips']! as List<Map<String, Object?>>;
-    final texts = dto['textLayers']! as List<Map<String, Object>>;
+    final texts = dto['textLayers']! as List<Map<String, Object?>>;
 
     expect(clips[0]['timelineStartMs'], 0);
     expect(clips[1]['timelineStartMs'], 2500);
@@ -368,6 +368,57 @@ void main() {
     expect(layer.rotationDegrees, -18);
   });
 
+  test('클립 순서를 바꾸면 내보내기 순서도 함께 바뀐다', () {
+    final subject = controller();
+    subject.splitAt(4000);
+    final before = subject.project.clips
+        .map((clip) => clip.sourceStartMs)
+        .toList();
+    subject.reorderClip(1, 0);
+    final after = subject.project.clips
+        .map((clip) => clip.sourceStartMs)
+        .toList();
+
+    expect(after, before.reversed.toList());
+    final maps =
+        subject.project.toPlatformMap(outputPath: '/tmp/out.mp4')['clips']
+            as List;
+    expect((maps.first as Map)['sourceStartMs'], after.first);
+  });
+
+  test('9:16은 가로 영상을 확대하지 않고 가운데 그대로 둔다', () {
+    // 예전에는 cover라 최소 배율 3.16×가 걸려 "엄청 줌 된" 화면이 됐다.
+    // 지금은 contain — 영상은 제 크기로 가운데, 위아래는 자막용 검은 띠다.
+    final subject = controller();
+    subject.setCanvasRatio(EditorCanvasRatio.vertical);
+    final canvas = subject.project.canvas;
+    expect(canvas.fit, EditorCanvasFit.contain);
+    expect(canvas.scale, 1);
+    expect(canvas.minimumScale, 1);
+    expect(canvas.toMap()['fit'], 'contain');
+  });
+
+  test('원본·16:9 비율은 여백 없는 채우기로 돌아간다', () {
+    final subject = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/video.mp4',
+        sourceDurationMs: 10000,
+        sourceSize: const EditorSourceSize(width: 1920, height: 1080),
+      ).copyWith(
+        canvas: const EditorCanvas(
+          sourceAspectRatio: 16 / 9,
+          ratio: EditorCanvasRatio.vertical,
+          fit: EditorCanvasFit.contain,
+        ),
+      ),
+    );
+
+    subject.setCanvasRatio(EditorCanvasRatio.landscape);
+
+    expect(subject.project.canvas.fit, EditorCanvasFit.cover);
+    expect(subject.project.canvas.toMap()['fit'], 'cover');
+  });
+
   test('같은 클립을 다시 골라도 다시 그리지 않고 레이어 선택도 남는다', () {
     final subject = controller();
     subject.addSticker('⭐');
@@ -386,62 +437,90 @@ void main() {
     expect(subject.project.selectedLayerId, layerId);
   });
 
-  test('마스크를 구운 파일이 새 원본이 되고 조각은 하나로 합쳐진다', () {
+  test('스티커는 클립에 묶여 이동을 따라가고 초안에도 저장된다', () {
     final subject = controller();
-    // 앞뒤를 잘라 5초짜리 한 조각으로 만든다.
-    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
-    subject.setLook(EditorLook.warm);
-
-    // Banuba는 이 조각을 그대로 구워 준다 — 결과는 이미 잘린 5초짜리다.
-    final baked = subject.project.withBakedSource(
-      path: '/tmp/masked.mp4',
-      durationMs: 5000,
-      size: const EditorSourceSize(width: 1280, height: 720),
-    );
-
-    expect(baked.sourceVideoPath, '/tmp/masked.mp4');
-    expect(baked.clips, hasLength(1));
-    expect(baked.clips.single.sourcePath, '/tmp/masked.mp4');
-    expect(baked.clips.single.sourceStartMs, 0);
-    expect(baked.clips.single.sourceEndMs, 5000);
-    expect(baked.durationMs, 5000);
-    // 색감은 아직 남은 일이라 그대로 들고 있어야 한다.
-    expect(baked.look, EditorLook.warm);
-  });
-
-  test('마스크만 입혔으면 구운 파일을 다시 인코딩하지 않는다', () {
-    final subject = controller();
-    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
-
-    // 자른 원본은 다시 만들어야 한다.
-    expect(subject.project.requiresRendering(), isTrue);
-
-    // 구운 뒤에는 자르기까지 끝난 파일이라 남은 일이 없다.
-    final baked = subject.project.withBakedSource(
-      path: '/tmp/masked.mp4',
-      durationMs: 5000,
-      size: const EditorSourceSize(width: 1280, height: 720),
-    );
-    expect(baked.requiresRendering(), isFalse);
-    expect(baked.requiresRendering(hasCaptions: true), isTrue);
-  });
-
-  test('구운 파일 위에서도 글자 시각은 타임라인 그대로다', () {
-    final subject = controller();
-    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
+    subject.splitAt(4000);
+    final firstClip = subject.project.clips.first;
     subject.setPlayhead(1000);
-    subject.addTextLayer(text: '안녕');
-    final before = subject.project.textLayers.single;
+    subject.addSticker('⭐');
+    final sticker = subject.project.stickerLayers.single;
+    expect(sticker.clipId, firstClip.id);
+    expect(sticker.startMs, 0);
+    expect(sticker.endMs, firstClip.durationMs);
 
-    final baked = subject.project.withBakedSource(
-      path: '/tmp/masked.mp4',
-      durationMs: 5000,
-      size: const EditorSourceSize(width: 1280, height: 720),
+    // 첫 클립을 뒤로 보내면 스티커도 따라간다.
+    subject.reorderClip(0, 1);
+    final moved = subject.project.stickerLayers.single;
+    expect(moved.startMs, subject.project.timelineStartFor(firstClip.id));
+
+    // 초안 저장 → 복원 왕복에도 클립 귀속째 남는다.
+    final draft = Map<String, dynamic>.from(subject.project.toDraftMap());
+    final restored = controller()..loadDraftRecipe(draft);
+    final roundTripped = restored.project.stickerLayers.single;
+    expect(roundTripped.value, '⭐');
+    expect(roundTripped.clipId, firstClip.id);
+    expect(roundTripped.startMs, moved.startMs);
+  });
+
+  test('얼굴 추적 스티커는 한 번에 하나이고 트랙 좌표로 내보낸다', () {
+    final subject = controller();
+    // 서버 얼굴 궤적을 흉내 낸다 — 0.5초마다 오른쪽 아래로 움직인다.
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      'faceTrack': [
+        {'ms': 0, 'x': 0.2, 'y': 0.2, 'h': 0.3},
+        {'ms': 1000, 'x': 0.4, 'y': 0.4, 'h': 0.3},
+      ],
+    });
+    expect(subject.project.faceTrack, hasLength(2));
+
+    // 보간: 500ms는 두 표본의 중간이다.
+    final mid = subject.project.faceSampleAt(500)!;
+    expect(mid.x, closeTo(0.3, 1e-9));
+    expect(mid.y, closeTo(0.3, 1e-9));
+
+    subject.setFaceSticker('👑');
+    expect(subject.faceSticker?.value, '👑');
+    // 다른 것을 고르면 갈아 끼운다 — 얼굴 스티커는 한 번에 하나다.
+    subject.setFaceSticker('🕶️');
+    final face = subject.faceSticker!;
+    expect(face.value, '🕶️');
+    expect(
+      subject.project.stickerLayers.where((l) => l.tracksFace),
+      hasLength(1),
     );
 
-    final after = baked.textLayers.single;
-    expect(after.startMs, before.startMs);
-    expect(after.endMs, before.endMs);
-    expect(after.text, '안녕');
+    // 내보내기 DTO에는 얼굴 키프레임 트랙이 실린다.
+    final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
+    final stickers = dto['stickerLayers']! as List;
+    final tracked = (stickers.single as Map)['track']! as List;
+    expect(tracked, hasLength(2));
+    expect((tracked.first as Map)['x'], closeTo(0.2, 1e-9));
+
+    // 초안 왕복에도 얼굴 궤적·추적 여부가 남는다.
+    final draft = Map<String, dynamic>.from(subject.project.toDraftMap());
+    final restored = controller()..loadDraftRecipe(draft);
+    expect(restored.project.faceTrack, hasLength(2));
+    expect(restored.faceSticker?.value, '🕶️');
+
+    // 벗기기.
+    subject.setFaceSticker(null);
+    expect(subject.faceSticker, isNull);
+  });
+
+  test('클립을 지우면 거기 묶인 스티커도 사라진다', () {
+    final subject = controller();
+    subject.splitAt(4000);
+    final firstClip = subject.project.clips.first;
+    subject.setPlayhead(1000);
+    subject.addSticker('⭐');
+    expect(subject.project.stickerLayers, hasLength(1));
+
+    subject.selectClip(firstClip.id);
+    expect(subject.deleteSelectedClip(), isTrue);
+    expect(subject.project.stickerLayers, isEmpty);
   });
 }

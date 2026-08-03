@@ -1,0 +1,6344 @@
+{
+  "analysisVersion": "yamnet-mediapipe-v1",
+  "sourcePath": "03_20260731_153341.mp4",
+  "durationMs": 139648,
+  "processingSeconds": 0.675,
+  "yamnetWindows": [
+    {
+      "startMs": 0,
+      "endMs": 975,
+      "laughterScore": 0.0,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Animal",
+          "score": 0.011719
+        },
+        {
+          "name": "Typing",
+          "score": 0.011719
+        },
+        {
+          "name": "Typewriter",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.007812
+        },
+        {
+          "name": "Crackle",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 975,
+      "endMs": 1950,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.007812
+        },
+        {
+          "name": "Fly, housefly",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Insect",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 1950,
+      "endMs": 2925,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Writing",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 2925,
+      "endMs": 3900,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Animal",
+          "score": 0.019531
+        },
+        {
+          "name": "Bird",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.007812
+        },
+        {
+          "name": "Writing",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 3900,
+      "endMs": 4875,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.414062,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Pigeon, dove",
+          "score": 0.414062
+        },
+        {
+          "name": "Speech",
+          "score": 0.414062
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.414062
+        },
+        {
+          "name": "Bird",
+          "score": 0.414062
+        },
+        {
+          "name": "Animal",
+          "score": 0.261719
+        },
+        {
+          "name": "Coo",
+          "score": 0.148438
+        },
+        {
+          "name": "Bird vocalization, bird call, bird song",
+          "score": 0.082031
+        },
+        {
+          "name": "Chirp, tweet",
+          "score": 0.042969
+        }
+      ]
+    },
+    {
+      "startMs": 4875,
+      "endMs": 5850,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.058594
+        },
+        {
+          "name": "Bird",
+          "score": 0.058594
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.058594
+        },
+        {
+          "name": "Animal",
+          "score": 0.042969
+        },
+        {
+          "name": "Coo",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Bird vocalization, bird call, bird song",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 5850,
+      "endMs": 6825,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.082031
+        },
+        {
+          "name": "Writing",
+          "score": 0.015625
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.011719
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.003906
+        },
+        {
+          "name": "Shuffling cards",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 6825,
+      "endMs": 7800,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.058594
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.007812
+        },
+        {
+          "name": "Frying (food)",
+          "score": 0.003906
+        },
+        {
+          "name": "Liquid",
+          "score": 0.003906
+        },
+        {
+          "name": "Sizzle",
+          "score": 0.003906
+        },
+        {
+          "name": "Cutlery, silverware",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 7800,
+      "endMs": 8775,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Cutlery, silverware",
+          "score": 0.011719
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.011719
+        },
+        {
+          "name": "Liquid",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 8775,
+      "endMs": 9750,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.019531,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Music",
+          "score": 0.019531
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 9750,
+      "endMs": 10725,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 10725,
+      "endMs": 11700,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.007812,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Music",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 11700,
+      "endMs": 12675,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 12675,
+      "endMs": 13650,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Writing",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 13650,
+      "endMs": 14625,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.058594
+        },
+        {
+          "name": "Dog",
+          "score": 0.042969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.042969
+        },
+        {
+          "name": "Animal",
+          "score": 0.042969
+        },
+        {
+          "name": "Whimper (dog)",
+          "score": 0.007812
+        },
+        {
+          "name": "Canidae, dogs, wolves",
+          "score": 0.007812
+        },
+        {
+          "name": "Bark",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 14625,
+      "endMs": 15600,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Writing",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 15600,
+      "endMs": 16575,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 16575,
+      "endMs": 17550,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.042969
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Writing",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Cutlery, silverware",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 17550,
+      "endMs": 18525,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.5,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.5
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.414062
+        },
+        {
+          "name": "Bird",
+          "score": 0.332031
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.332031
+        },
+        {
+          "name": "Animal",
+          "score": 0.261719
+        },
+        {
+          "name": "Coo",
+          "score": 0.148438
+        },
+        {
+          "name": "Bird vocalization, bird call, bird song",
+          "score": 0.042969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        }
+      ]
+    },
+    {
+      "startMs": 18525,
+      "endMs": 19500,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.007812
+        },
+        {
+          "name": "Horse",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 19500,
+      "endMs": 20475,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.414062,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.414062
+        },
+        {
+          "name": "Animal",
+          "score": 0.03125
+        },
+        {
+          "name": "Bird",
+          "score": 0.019531
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 20475,
+      "endMs": 21450,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.042969
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Writing",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 21450,
+      "endMs": 22425,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 22425,
+      "endMs": 23400,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        },
+        {
+          "name": "Bird",
+          "score": 0.007812
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird vocalization, bird call, bird song",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 23400,
+      "endMs": 24375,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.03125
+        },
+        {
+          "name": "Animal",
+          "score": 0.019531
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.019531
+        },
+        {
+          "name": "Bird",
+          "score": 0.019531
+        },
+        {
+          "name": "Coo",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 24375,
+      "endMs": 25350,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.082031
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.042969
+        },
+        {
+          "name": "Dog",
+          "score": 0.042969
+        },
+        {
+          "name": "Animal",
+          "score": 0.03125
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Whimper (dog)",
+          "score": 0.011719
+        },
+        {
+          "name": "Writing",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 25350,
+      "endMs": 26325,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Conversation",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Dog",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 26325,
+      "endMs": 27300,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.011719,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Music",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Musical instrument",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        },
+        {
+          "name": "Cluck",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 27300,
+      "endMs": 28275,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Fire engine, fire truck (siren)",
+          "score": 0.0
+        },
+        {
+          "name": "Drum",
+          "score": 0.0
+        },
+        {
+          "name": "Sliding door",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 28275,
+      "endMs": 29250,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Radio",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 29250,
+      "endMs": 30225,
+      "laughterScore": 0.007812,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Laughter",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        },
+        {
+          "name": "Snicker",
+          "score": 0.003906
+        },
+        {
+          "name": "Breathing",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 30225,
+      "endMs": 31200,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Livestock, farm animals, working animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Outside, urban or manmade",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 31200,
+      "endMs": 32175,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.007812
+        },
+        {
+          "name": "Crumpling, crinkling",
+          "score": 0.007812
+        },
+        {
+          "name": "Crackle",
+          "score": 0.003906
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 32175,
+      "endMs": 33150,
+      "laughterScore": 0.082031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.667969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.667969
+        },
+        {
+          "name": "Laughter",
+          "score": 0.082031
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.042969
+        },
+        {
+          "name": "Snicker",
+          "score": 0.042969
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.007812
+        },
+        {
+          "name": "Dog",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 33150,
+      "endMs": 34125,
+      "laughterScore": 0.042969,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.332031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.332031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.082031
+        },
+        {
+          "name": "Laughter",
+          "score": 0.042969
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.042969
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Snicker",
+          "score": 0.015625
+        },
+        {
+          "name": "Breathing",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 34125,
+      "endMs": 35100,
+      "laughterScore": 0.148438,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.261719,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.261719
+        },
+        {
+          "name": "Laughter",
+          "score": 0.148438
+        },
+        {
+          "name": "Hiccup",
+          "score": 0.109375
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.082031
+        },
+        {
+          "name": "Cough",
+          "score": 0.082031
+        },
+        {
+          "name": "Burping, eructation",
+          "score": 0.058594
+        },
+        {
+          "name": "Snicker",
+          "score": 0.058594
+        },
+        {
+          "name": "Throat clearing",
+          "score": 0.042969
+        }
+      ]
+    },
+    {
+      "startMs": 35100,
+      "endMs": 36075,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Cutlery, silverware",
+          "score": 0.003906
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 36075,
+      "endMs": 37050,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Wood",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 37050,
+      "endMs": 38025,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 38025,
+      "endMs": 39000,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Door",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 39000,
+      "endMs": 39975,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Rub",
+          "score": 0.015625
+        },
+        {
+          "name": "Filing (rasp)",
+          "score": 0.015625
+        },
+        {
+          "name": "Tools",
+          "score": 0.011719
+        },
+        {
+          "name": "Wood",
+          "score": 0.007812
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 39975,
+      "endMs": 40950,
+      "laughterScore": 0.058594,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Laughter",
+          "score": 0.058594
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.03125
+        },
+        {
+          "name": "Snicker",
+          "score": 0.03125
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Breathing",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 40950,
+      "endMs": 41925,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Liquid",
+          "score": 0.007812
+        },
+        {
+          "name": "Drip",
+          "score": 0.003906
+        },
+        {
+          "name": "Water",
+          "score": 0.003906
+        },
+        {
+          "name": "Trickle, dribble",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 41925,
+      "endMs": 42900,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 42900,
+      "endMs": 43875,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        },
+        {
+          "name": "Bird",
+          "score": 0.011719
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.007812
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.007812
+        },
+        {
+          "name": "Livestock, farm animals, working animals",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 43875,
+      "endMs": 44850,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Breathing",
+          "score": 0.148438
+        },
+        {
+          "name": "Snoring",
+          "score": 0.109375
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        },
+        {
+          "name": "Cluck",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 44850,
+      "endMs": 45825,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 45825,
+      "endMs": 46800,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Writing",
+          "score": 0.003906
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 46800,
+      "endMs": 47775,
+      "laughterScore": 0.0,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.03125,
+      "silenceScore": 0.011719,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Rub",
+          "score": 0.332031
+        },
+        {
+          "name": "Writing",
+          "score": 0.261719
+        },
+        {
+          "name": "Filing (rasp)",
+          "score": 0.199219
+        },
+        {
+          "name": "Scratch",
+          "score": 0.148438
+        },
+        {
+          "name": "Wood",
+          "score": 0.109375
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.109375
+        },
+        {
+          "name": "Pant",
+          "score": 0.082031
+        },
+        {
+          "name": "Printer",
+          "score": 0.082031
+        }
+      ]
+    },
+    {
+      "startMs": 47775,
+      "endMs": 48750,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 48750,
+      "endMs": 49725,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 49725,
+      "endMs": 50700,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Breathing",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Television",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 50700,
+      "endMs": 51675,
+      "laughterScore": 0.019531,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.007812,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.042969
+        },
+        {
+          "name": "Laughter",
+          "score": 0.019531
+        },
+        {
+          "name": "Breathing",
+          "score": 0.015625
+        },
+        {
+          "name": "Dog",
+          "score": 0.015625
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 51675,
+      "endMs": 52650,
+      "laughterScore": 0.019531,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.011719,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Laughter",
+          "score": 0.019531
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.015625
+        },
+        {
+          "name": "Music",
+          "score": 0.011719
+        },
+        {
+          "name": "Snicker",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 52650,
+      "endMs": 53625,
+      "laughterScore": 0.058594,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Laughter",
+          "score": 0.058594
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.03125
+        },
+        {
+          "name": "Snicker",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Giggle",
+          "score": 0.011719
+        },
+        {
+          "name": "Crying, sobbing",
+          "score": 0.007812
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 53625,
+      "endMs": 54600,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.007812,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Music",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Television",
+          "score": 0.003906
+        },
+        {
+          "name": "Radio",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 54600,
+      "endMs": 55575,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Snicker",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 55575,
+      "endMs": 56550,
+      "laughterScore": 0.019531,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Laughter",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.011719
+        },
+        {
+          "name": "Snicker",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 56550,
+      "endMs": 57525,
+      "laughterScore": 0.199219,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Laughter",
+          "score": 0.199219
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.148438
+        },
+        {
+          "name": "Snicker",
+          "score": 0.109375
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Giggle",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Belly laugh",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 57525,
+      "endMs": 58500,
+      "laughterScore": 0.148438,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.667969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.667969
+        },
+        {
+          "name": "Laughter",
+          "score": 0.148438
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.082031
+        },
+        {
+          "name": "Snicker",
+          "score": 0.058594
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.015625
+        },
+        {
+          "name": "Breathing",
+          "score": 0.011719
+        },
+        {
+          "name": "Hands",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 58500,
+      "endMs": 59475,
+      "laughterScore": 0.332031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.414062,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.414062
+        },
+        {
+          "name": "Laughter",
+          "score": 0.332031
+        },
+        {
+          "name": "Snicker",
+          "score": 0.261719
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.199219
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.007812
+        },
+        {
+          "name": "Giggle",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 59475,
+      "endMs": 60450,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Snicker",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Radio",
+          "score": 0.011719
+        },
+        {
+          "name": "Television",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Snicker",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 60450,
+      "endMs": 61425,
+      "laughterScore": 0.011719,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.011719
+        },
+        {
+          "name": "Laughter",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Radio",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 61425,
+      "endMs": 62400,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Bird",
+          "score": 0.015625
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.015625
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Rub",
+          "score": 0.007812
+        },
+        {
+          "name": "Filing (rasp)",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 62400,
+      "endMs": 63375,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 63375,
+      "endMs": 64350,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Dog",
+          "score": 0.003906
+        },
+        {
+          "name": "Breathing",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 64350,
+      "endMs": 65325,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 65325,
+      "endMs": 66300,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.414062,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.414062
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.019531
+        },
+        {
+          "name": "Cutlery, silverware",
+          "score": 0.011719
+        },
+        {
+          "name": "Wood",
+          "score": 0.011719
+        },
+        {
+          "name": "Rub",
+          "score": 0.007812
+        },
+        {
+          "name": "Filing (rasp)",
+          "score": 0.003906
+        },
+        {
+          "name": "Chink, clink",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 66300,
+      "endMs": 67275,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.042969
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 67275,
+      "endMs": 68250,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 68250,
+      "endMs": 69225,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.015625
+        },
+        {
+          "name": "Bird",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird vocalization, bird call, bird song",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 69225,
+      "endMs": 70200,
+      "laughterScore": 0.007812,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.011719
+        },
+        {
+          "name": "Bird",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.007812
+        },
+        {
+          "name": "Breathing",
+          "score": 0.007812
+        },
+        {
+          "name": "Laughter",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 70200,
+      "endMs": 71175,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Writing",
+          "score": 0.003906
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 71175,
+      "endMs": 72150,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.011719
+        },
+        {
+          "name": "Writing",
+          "score": 0.007812
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Snoring",
+          "score": 0.003906
+        },
+        {
+          "name": "Dog",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 72150,
+      "endMs": 73125,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Door",
+          "score": 0.003906
+        },
+        {
+          "name": "Cutlery, silverware",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 73125,
+      "endMs": 74100,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.082031,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Music",
+          "score": 0.082031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Drum",
+          "score": 0.007812
+        },
+        {
+          "name": "Spray",
+          "score": 0.007812
+        },
+        {
+          "name": "Bass drum",
+          "score": 0.003906
+        },
+        {
+          "name": "Drum roll",
+          "score": 0.003906
+        },
+        {
+          "name": "Plucked string instrument",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 74100,
+      "endMs": 75075,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 75075,
+      "endMs": 76050,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.015625
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Outside, urban or manmade",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 76050,
+      "endMs": 77025,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Hands",
+          "score": 0.007812
+        },
+        {
+          "name": "Door",
+          "score": 0.003906
+        },
+        {
+          "name": "Tap",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 77025,
+      "endMs": 78000,
+      "laughterScore": 0.042969,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Laughter",
+          "score": 0.042969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.03125
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.019531
+        },
+        {
+          "name": "Giggle",
+          "score": 0.015625
+        },
+        {
+          "name": "Crying, sobbing",
+          "score": 0.011719
+        },
+        {
+          "name": "Hands",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 78000,
+      "endMs": 78975,
+      "laughterScore": 0.332031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.199219,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Laughter",
+          "score": 0.332031
+        },
+        {
+          "name": "Speech",
+          "score": 0.199219
+        },
+        {
+          "name": "Snicker",
+          "score": 0.199219
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.148438
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.042969
+        },
+        {
+          "name": "Giggle",
+          "score": 0.03125
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.03125
+        },
+        {
+          "name": "Belly laugh",
+          "score": 0.015625
+        }
+      ]
+    },
+    {
+      "startMs": 78975,
+      "endMs": 79950,
+      "laughterScore": 0.082031,
+      "laughterLabel": "Snicker",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.03125,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Snicker",
+          "score": 0.082031
+        },
+        {
+          "name": "Laughter",
+          "score": 0.082031
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.058594
+        },
+        {
+          "name": "Music",
+          "score": 0.03125
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 79950,
+      "endMs": 80925,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Outside, urban or manmade",
+          "score": 0.015625
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.011719
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.011719
+        },
+        {
+          "name": "Dog",
+          "score": 0.011719
+        },
+        {
+          "name": "Bow-wow",
+          "score": 0.007812
+        },
+        {
+          "name": "Vehicle",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 80925,
+      "endMs": 81900,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Bird",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 81900,
+      "endMs": 82875,
+      "laughterScore": 0.007812,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Animal",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Laughter",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 82875,
+      "endMs": 83850,
+      "laughterScore": 0.011719,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Laughter",
+          "score": 0.011719
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.007812
+        },
+        {
+          "name": "Television",
+          "score": 0.007812
+        },
+        {
+          "name": "Snicker",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 83850,
+      "endMs": 84825,
+      "laughterScore": 0.332031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.261719,
+      "silenceScore": 0.003906,
+      "musicScore": 0.0,
+      "reactionScore": 0.011719,
+      "topCategories": [
+        {
+          "name": "Laughter",
+          "score": 0.332031
+        },
+        {
+          "name": "Speech",
+          "score": 0.261719
+        },
+        {
+          "name": "Snicker",
+          "score": 0.199219
+        },
+        {
+          "name": "Hiccup",
+          "score": 0.199219
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.148438
+        },
+        {
+          "name": "Giggle",
+          "score": 0.082031
+        },
+        {
+          "name": "Burping, eructation",
+          "score": 0.058594
+        },
+        {
+          "name": "Belly laugh",
+          "score": 0.042969
+        }
+      ]
+    },
+    {
+      "startMs": 84825,
+      "endMs": 85800,
+      "laughterScore": 0.082031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Laughter",
+          "score": 0.082031
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.082031
+        },
+        {
+          "name": "Snicker",
+          "score": 0.042969
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 85800,
+      "endMs": 86775,
+      "laughterScore": 0.042969,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Laughter",
+          "score": 0.042969
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.03125
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Snicker",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 86775,
+      "endMs": 87750,
+      "laughterScore": 0.414062,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.261719,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Laughter",
+          "score": 0.414062
+        },
+        {
+          "name": "Snicker",
+          "score": 0.261719
+        },
+        {
+          "name": "Speech",
+          "score": 0.261719
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.199219
+        },
+        {
+          "name": "Giggle",
+          "score": 0.019531
+        },
+        {
+          "name": "Belly laugh",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Whimper",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 87750,
+      "endMs": 88725,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Television",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 88725,
+      "endMs": 89700,
+      "laughterScore": 0.019531,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.019531
+        },
+        {
+          "name": "Conversation",
+          "score": 0.019531
+        },
+        {
+          "name": "Laughter",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.011719
+        },
+        {
+          "name": "Snicker",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 89700,
+      "endMs": 90675,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 90675,
+      "endMs": 91650,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.984375,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.984375
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 91650,
+      "endMs": 92625,
+      "laughterScore": 0.019531,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.019531
+        },
+        {
+          "name": "Laughter",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Snicker",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 92625,
+      "endMs": 93600,
+      "laughterScore": 0.0,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.800781,
+      "silenceScore": 0.0,
+      "musicScore": 0.015625,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.800781
+        },
+        {
+          "name": "Music",
+          "score": 0.015625
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.015625
+        },
+        {
+          "name": "Bird",
+          "score": 0.007812
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.007812
+        },
+        {
+          "name": "Snake",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird vocalization, bird call, bird song",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 93600,
+      "endMs": 94575,
+      "laughterScore": 0.058594,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.058594
+        },
+        {
+          "name": "Laughter",
+          "score": 0.03125
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Snicker",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 94575,
+      "endMs": 95550,
+      "laughterScore": 0.082031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.5,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.5
+        },
+        {
+          "name": "Laughter",
+          "score": 0.082031
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.03125
+        },
+        {
+          "name": "Snicker",
+          "score": 0.03125
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Giggle",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Crying, sobbing",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 95550,
+      "endMs": 96525,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Dog",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 96525,
+      "endMs": 97500,
+      "laughterScore": 0.082031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Laughter",
+          "score": 0.082031
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.03125
+        },
+        {
+          "name": "Snicker",
+          "score": 0.019531
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Belly laugh",
+          "score": 0.011719
+        },
+        {
+          "name": "Crying, sobbing",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 97500,
+      "endMs": 98475,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 98475,
+      "endMs": 99450,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Conversation",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 99450,
+      "endMs": 100425,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Animal",
+          "score": 0.019531
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.019531
+        },
+        {
+          "name": "Bird",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.011719
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.011719
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 100425,
+      "endMs": 101400,
+      "laughterScore": 0.007812,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Animal",
+          "score": 0.019531
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.007812
+        },
+        {
+          "name": "Laughter",
+          "score": 0.007812
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 101400,
+      "endMs": 102375,
+      "laughterScore": 0.058594,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.261719,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.261719
+        },
+        {
+          "name": "Laughter",
+          "score": 0.058594
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.042969
+        },
+        {
+          "name": "Snicker",
+          "score": 0.042969
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Hands",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 102375,
+      "endMs": 103350,
+      "laughterScore": 0.042969,
+      "laughterLabel": "Snicker",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Snicker",
+          "score": 0.042969
+        },
+        {
+          "name": "Laughter",
+          "score": 0.042969
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Dog",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 103350,
+      "endMs": 104325,
+      "laughterScore": 0.03125,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Conversation",
+          "score": 0.042969
+        },
+        {
+          "name": "Laughter",
+          "score": 0.03125
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.03125
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Snicker",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 104325,
+      "endMs": 105300,
+      "laughterScore": 0.109375,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.667969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.667969
+        },
+        {
+          "name": "Laughter",
+          "score": 0.109375
+        },
+        {
+          "name": "Snicker",
+          "score": 0.082031
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.082031
+        },
+        {
+          "name": "Whimper",
+          "score": 0.015625
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.015625
+        },
+        {
+          "name": "Giggle",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 105300,
+      "endMs": 106275,
+      "laughterScore": 0.011719,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Laughter",
+          "score": 0.011719
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 106275,
+      "endMs": 107250,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 107250,
+      "endMs": 108225,
+      "laughterScore": 0.019531,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Laughter",
+          "score": 0.019531
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.007812
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.007812
+        },
+        {
+          "name": "Hiccup",
+          "score": 0.003906
+        },
+        {
+          "name": "Belly laugh",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 108225,
+      "endMs": 109200,
+      "laughterScore": 0.109375,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Laughter",
+          "score": 0.109375
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.082031
+        },
+        {
+          "name": "Snicker",
+          "score": 0.058594
+        },
+        {
+          "name": "Conversation",
+          "score": 0.019531
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Outside, urban or manmade",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 109200,
+      "endMs": 110175,
+      "laughterScore": 0.082031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Laughter",
+          "score": 0.082031
+        },
+        {
+          "name": "Snicker",
+          "score": 0.042969
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.042969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 110175,
+      "endMs": 111150,
+      "laughterScore": 0.007812,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Laughter",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Snicker",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 111150,
+      "endMs": 112125,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 112125,
+      "endMs": 113100,
+      "laughterScore": 0.015625,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Laughter",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Snicker",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 113100,
+      "endMs": 114075,
+      "laughterScore": 0.082031,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Laughter",
+          "score": 0.082031
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.058594
+        },
+        {
+          "name": "Snicker",
+          "score": 0.042969
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Radio",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 114075,
+      "endMs": 115050,
+      "laughterScore": 0.03125,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.738281,
+      "silenceScore": 0.0,
+      "musicScore": 0.007812,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.738281
+        },
+        {
+          "name": "Laughter",
+          "score": 0.03125
+        },
+        {
+          "name": "Snicker",
+          "score": 0.015625
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Music",
+          "score": 0.007812
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 115050,
+      "endMs": 116025,
+      "laughterScore": 0.261719,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.148438,
+      "silenceScore": 0.0,
+      "musicScore": 0.03125,
+      "reactionScore": 0.019531,
+      "topCategories": [
+        {
+          "name": "Laughter",
+          "score": 0.261719
+        },
+        {
+          "name": "Speech",
+          "score": 0.148438
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.109375
+        },
+        {
+          "name": "Snicker",
+          "score": 0.082031
+        },
+        {
+          "name": "Giggle",
+          "score": 0.058594
+        },
+        {
+          "name": "Belly laugh",
+          "score": 0.042969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.042969
+        },
+        {
+          "name": "Sneeze",
+          "score": 0.042969
+        }
+      ]
+    },
+    {
+      "startMs": 116025,
+      "endMs": 117000,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        },
+        {
+          "name": "Cluck",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 117000,
+      "endMs": 117975,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Clapping",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Hands",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 117975,
+      "endMs": 118950,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.917969,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.917969
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Animal",
+          "score": 0.011719
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.011719
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.007812
+        },
+        {
+          "name": "Dog",
+          "score": 0.007812
+        },
+        {
+          "name": "Whimper (dog)",
+          "score": 0.003906
+        },
+        {
+          "name": "Babbling",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 118950,
+      "endMs": 119925,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.414062,
+      "silenceScore": 0.0,
+      "musicScore": 0.03125,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.414062
+        },
+        {
+          "name": "Music",
+          "score": 0.03125
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Plucked string instrument",
+          "score": 0.007812
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.007812
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Strum",
+          "score": 0.003906
+        },
+        {
+          "name": "Bowed string instrument",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 119925,
+      "endMs": 120900,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.851562,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.003906,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.851562
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.007812
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.007812
+        },
+        {
+          "name": "Rodents, rats, mice",
+          "score": 0.003906
+        },
+        {
+          "name": "Clapping",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 120900,
+      "endMs": 121875,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.667969,
+      "silenceScore": 0.0,
+      "musicScore": 0.015625,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.667969
+        },
+        {
+          "name": "Music",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Maraca",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Rattle (instrument)",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 121875,
+      "endMs": 122850,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.019531
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Television",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 122850,
+      "endMs": 123825,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 123825,
+      "endMs": 124800,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 124800,
+      "endMs": 125775,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.019531
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Television",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 125775,
+      "endMs": 126750,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.5,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.5
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.082031
+        },
+        {
+          "name": "Animal",
+          "score": 0.082031
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.058594
+        },
+        {
+          "name": "Bird",
+          "score": 0.058594
+        },
+        {
+          "name": "Coo",
+          "score": 0.03125
+        },
+        {
+          "name": "Bird vocalization, bird call, bird song",
+          "score": 0.015625
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.015625
+        }
+      ]
+    },
+    {
+      "startMs": 126750,
+      "endMs": 127725,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.96875,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.96875
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        },
+        {
+          "name": "Television",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 127725,
+      "endMs": 128700,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Bird",
+          "score": 0.003906
+        },
+        {
+          "name": "Clip-clop",
+          "score": 0.003906
+        },
+        {
+          "name": "Horse",
+          "score": 0.003906
+        },
+        {
+          "name": "Outside, urban or manmade",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 128700,
+      "endMs": 129675,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.003906,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Music",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 129675,
+      "endMs": 130650,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.980469,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.980469
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Child speech, kid speaking",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 130650,
+      "endMs": 131625,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.007812
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.003906
+        },
+        {
+          "name": "Outside, urban or manmade",
+          "score": 0.003906
+        },
+        {
+          "name": "Noise",
+          "score": 0.003906
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 131625,
+      "endMs": 132600,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Animal",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.011719
+        },
+        {
+          "name": "Bird",
+          "score": 0.007812
+        },
+        {
+          "name": "Conversation",
+          "score": 0.007812
+        }
+      ]
+    },
+    {
+      "startMs": 132600,
+      "endMs": 133575,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.984375,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.984375
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.042969
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 133575,
+      "endMs": 134550,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Laughter",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Animal",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.019531
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.015625
+        },
+        {
+          "name": "Pigeon, dove",
+          "score": 0.015625
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.011719
+        }
+      ]
+    },
+    {
+      "startMs": 134550,
+      "endMs": 135525,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.585938,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.148438,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.585938
+        },
+        {
+          "name": "Hands",
+          "score": 0.199219
+        },
+        {
+          "name": "Finger snapping",
+          "score": 0.199219
+        },
+        {
+          "name": "Clapping",
+          "score": 0.148438
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.03125
+        },
+        {
+          "name": "Ping",
+          "score": 0.015625
+        },
+        {
+          "name": "Slap, smack",
+          "score": 0.011719
+        },
+        {
+          "name": "Typewriter",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 135525,
+      "endMs": 136500,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.957031,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.957031
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.015625
+        },
+        {
+          "name": "Conversation",
+          "score": 0.011719
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.007812
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.007812
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.003906
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 136500,
+      "endMs": 137475,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Conversation",
+          "score": 0.015625
+        },
+        {
+          "name": "Inside, public space",
+          "score": 0.011719
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.011719
+        },
+        {
+          "name": "Animal",
+          "score": 0.007812
+        },
+        {
+          "name": "Chatter",
+          "score": 0.007812
+        },
+        {
+          "name": "Outside, rural or natural",
+          "score": 0.003906
+        },
+        {
+          "name": "Wild animals",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 137475,
+      "endMs": 138450,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.941406,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.941406
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.015625
+        },
+        {
+          "name": "Domestic animals, pets",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        },
+        {
+          "name": "Flute",
+          "score": 0.0
+        },
+        {
+          "name": "Telephone",
+          "score": 0.0
+        }
+      ]
+    },
+    {
+      "startMs": 138450,
+      "endMs": 139425,
+      "laughterScore": 0.003906,
+      "laughterLabel": "Chuckle, chortle",
+      "speechScore": 0.890625,
+      "silenceScore": 0.0,
+      "musicScore": 0.0,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.890625
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.011719
+        },
+        {
+          "name": "Chuckle, chortle",
+          "score": 0.003906
+        },
+        {
+          "name": "Animal",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, large room or hall",
+          "score": 0.003906
+        },
+        {
+          "name": "Laughter",
+          "score": 0.003906
+        },
+        {
+          "name": "Dishes, pots, and pans",
+          "score": 0.003906
+        },
+        {
+          "name": "Conversation",
+          "score": 0.003906
+        }
+      ]
+    },
+    {
+      "startMs": 139425,
+      "endMs": 139648,
+      "laughterScore": 0.0,
+      "laughterLabel": "Belly laugh",
+      "speechScore": 0.5,
+      "silenceScore": 0.007812,
+      "musicScore": 0.007812,
+      "reactionScore": 0.0,
+      "topCategories": [
+        {
+          "name": "Speech",
+          "score": 0.5
+        },
+        {
+          "name": "Speech synthesizer",
+          "score": 0.011719
+        },
+        {
+          "name": "Silence",
+          "score": 0.007812
+        },
+        {
+          "name": "Music",
+          "score": 0.007812
+        },
+        {
+          "name": "Sound effect",
+          "score": 0.003906
+        },
+        {
+          "name": "Inside, small room",
+          "score": 0.003906
+        },
+        {
+          "name": "Narration, monologue",
+          "score": 0.003906
+        },
+        {
+          "name": "Spray",
+          "score": 0.0
+        }
+      ]
+    }
+  ]
+}

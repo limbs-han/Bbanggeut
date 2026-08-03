@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 import 'editor_ar_effects.dart';
+import 'edit_recommendation_client.dart';
 import 'editor_project.dart';
 
 class EditorProjectController extends ChangeNotifier {
@@ -71,8 +72,703 @@ class EditorProjectController extends ChangeNotifier {
 
   void selectTool(EditorTool tool) {
     if (_project.selectedTool == tool) return;
-    _project = _project.copyWith(selectedTool: tool);
+    _project = _project.copyWith(
+      selectedTool: tool,
+      // 자막 탭을 나가면 이동·크기 손잡이도 함께 걷는다. 남겨 두면 다른
+      // 탭에서 영상 위에 조절 상자가 계속 떠 있다.
+      clearSelectedLayer: tool != EditorTool.text && tool != EditorTool.sticker,
+    );
+    _autoSelectForScope();
     notifyListeners();
+  }
+
+  /// 줌·자막 탭에서 고른 클립의 첫 항목을 자동으로 골라 둔다.
+  ///
+  /// 하나라도 있으면 "선택돼 있고 바로 만질 수 있는" 상태가 기본이어야
+  /// 한다 — 빈 선택 상태는 타임라인도 슬라이더도 죽어 있는 것처럼 보인다.
+  /// 이미 이 클립의 항목을 고르고 있었다면 그대로 둔다.
+  void _autoSelectForScope() {
+    final clip =
+        _project.selectedClip ??
+        (_project.clips.isEmpty ? null : _project.clips.first);
+    if (clip == null) return;
+    if (_project.selectedTool == EditorTool.zoom) {
+      final zooms = _project.zoomSegments
+          .where((zoom) => zoom.worksIn(clip))
+          .toList(growable: false);
+      if (!zooms.any((zoom) => zoom.id == _project.selectedZoomId)) {
+        _project = _project.copyWith(
+          selectedZoomId: zooms.isEmpty ? null : zooms.first.id,
+          clearSelectedZoom: zooms.isEmpty,
+        );
+      }
+    } else if (_project.selectedTool == EditorTool.text) {
+      final layers = _project.textLayers
+          .where((layer) => layer.clipId == null || layer.clipId == clip.id)
+          .toList(growable: false);
+      if (!layers.any((layer) => layer.id == _project.selectedLayerId)) {
+        _project = _project.copyWith(
+          selectedLayerId: layers.isEmpty ? null : layers.first.id,
+          clearSelectedLayer: layers.isEmpty,
+        );
+      }
+    }
+  }
+
+  /// 클립 배열이 바뀔 때, 클립에 묶인 자막의 절대 시각을 클립을 따라
+  /// 다시 계산한다. 클립 안에서의 상대 위치는 그대로 유지되고, 묶인 클립이
+  /// 사라졌으면 자막도 함께 사라진다.
+  List<EditorTextLayer> _textLayersFollowing(
+    List<EditorClip> oldClips,
+    List<EditorClip> newClips,
+  ) {
+    int? startOf(List<EditorClip> clips, String id) {
+      var cursor = 0;
+      for (final clip in clips) {
+        if (clip.id == id) return cursor;
+        cursor += clip.durationMs;
+      }
+      return null;
+    }
+
+    EditorClip? clipOf(List<EditorClip> clips, String id) {
+      for (final clip in clips) {
+        if (clip.id == id) return clip;
+      }
+      return null;
+    }
+
+    final layers = <EditorTextLayer>[];
+    for (final layer in _project.textLayers) {
+      final clipId = layer.clipId;
+      if (clipId == null) {
+        layers.add(layer);
+        continue;
+      }
+      final newStart = startOf(newClips, clipId);
+      final newClip = clipOf(newClips, clipId);
+      if (newStart == null || newClip == null) continue;
+      final oldStart = startOf(oldClips, clipId) ?? newStart;
+      final span = newClip.durationMs;
+      final int relStart = (layer.startMs - oldStart)
+          .clamp(0, math.max(0, span - 100))
+          .toInt();
+      final int relEnd = (layer.endMs - oldStart)
+          .clamp(math.min(relStart + 100, span), span)
+          .toInt();
+      layers.add(
+        layer.copyWith(startMs: newStart + relStart, endMs: newStart + relEnd),
+      );
+    }
+    return layers;
+  }
+
+  /// 클립 배열이 바뀔 때, 클립에 묶인 스티커의 절대 시각을 클립을 따라
+  /// 다시 계산한다. 자막([_textLayersFollowing])과 같은 규칙이다.
+  List<EditorStickerLayer> _stickerLayersFollowing(
+    List<EditorClip> oldClips,
+    List<EditorClip> newClips,
+  ) {
+    int? startOf(List<EditorClip> clips, String id) {
+      var cursor = 0;
+      for (final clip in clips) {
+        if (clip.id == id) return cursor;
+        cursor += clip.durationMs;
+      }
+      return null;
+    }
+
+    EditorClip? clipOf(List<EditorClip> clips, String id) {
+      for (final clip in clips) {
+        if (clip.id == id) return clip;
+      }
+      return null;
+    }
+
+    final layers = <EditorStickerLayer>[];
+    for (final layer in _project.stickerLayers) {
+      final clipId = layer.clipId;
+      if (clipId == null) {
+        layers.add(layer);
+        continue;
+      }
+      final newStart = startOf(newClips, clipId);
+      final newClip = clipOf(newClips, clipId);
+      if (newStart == null || newClip == null) continue;
+      final oldStart = startOf(oldClips, clipId) ?? newStart;
+      final span = newClip.durationMs;
+      final int relStart = (layer.startMs - oldStart)
+          .clamp(0, math.max(0, span - 100))
+          .toInt();
+      final int relEnd = (layer.endMs - oldStart)
+          .clamp(math.min(relStart + 100, span), span)
+          .toInt();
+      layers.add(
+        layer.copyWith(startMs: newStart + relStart, endMs: newStart + relEnd),
+      );
+    }
+    return layers;
+  }
+
+  /// 지워진 클립에 묶여 있던 줌을 걷어낸 목록.
+  List<EditorZoomSegment> _zoomsWithoutClip(String clipId) => _project
+      .zoomSegments
+      .where((zoom) => zoom.clipId != clipId)
+      .toList(growable: false);
+
+  /// 저장해 둔 초안(toDraftMap 결과)을 그대로 되살린다. 편집을 이어서
+  /// 하는 진입이므로 되돌리기 이력은 쌓지 않는다.
+  void loadDraftRecipe(Map<String, dynamic> recipe) {
+    if (recipe['type'] != 'draft-v1') return;
+    final total = _project.sourceDurationMs;
+    int msOf(Object? value, {int fallback = 0}) =>
+        (value as num?)?.round().clamp(0, total) ?? fallback;
+
+    final clips = <EditorClip>[];
+    for (final raw in recipe['clips'] as List? ?? const []) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      final start = msOf(map['sourceStartMs']);
+      final end = msOf(map['sourceEndMs'], fallback: total);
+      if (end - start < minimumClipDurationMs) continue;
+      clips.add(
+        EditorClip(
+          id: map['id'] as String? ?? _nextId('clip'),
+          sourcePath: _project.sourceVideoPath,
+          sourceStartMs: start,
+          sourceEndMs: end,
+          automatic: map['automatic'] == true,
+          score: (map['score'] as num?)?.toDouble(),
+        ),
+      );
+    }
+    if (clips.isEmpty) return;
+
+    final zooms = <EditorZoomSegment>[];
+    for (final raw in recipe['zoomSegments'] as List? ?? const []) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      final start = msOf(map['sourceStartMs']);
+      final end = msOf(map['sourceEndMs']);
+      if (end <= start) continue;
+      zooms.add(
+        EditorZoomSegment(
+          id: map['id'] as String? ?? _nextId('zoom'),
+          sourceStartMs: start,
+          sourceEndMs: end,
+          scale: ((map['scale'] as num?)?.toDouble() ?? 1.35).clamp(1.0, 2.8),
+          focus: NormalizedPoint(
+            (map['focusX'] as num?)?.toDouble() ?? 0.5,
+            (map['focusY'] as num?)?.toDouble() ?? 0.5,
+          ),
+          automatic: map['automatic'] == true,
+          clipId: map['clipId'] as String?,
+        ),
+      );
+    }
+
+    final texts = <EditorTextLayer>[];
+    for (final raw in recipe['textLayers'] as List? ?? const []) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      final text = (map['text'] as String? ?? '').trim();
+      if (text.isEmpty) continue;
+      final position = Map<String, dynamic>.from(
+        map['position'] as Map? ?? const {},
+      );
+      texts.add(
+        EditorTextLayer(
+          id: map['id'] as String? ?? _nextId('text'),
+          text: text,
+          position: NormalizedPoint(
+            (position['x'] as num?)?.toDouble() ?? 0.5,
+            (position['y'] as num?)?.toDouble() ?? 0.78,
+          ),
+          startMs: (map['startMs'] as num?)?.round() ?? 0,
+          endMs: (map['endMs'] as num?)?.round() ?? 3000,
+          scale: (map['scale'] as num?)?.toDouble() ?? 1,
+          rotationDegrees: (map['rotationDegrees'] as num?)?.toDouble() ?? 0,
+          color: Color((map['color'] as num?)?.toInt() ?? 0xFFFFFFFF),
+          backgroundColor: Color(
+            (map['backgroundColor'] as num?)?.toInt() ?? 0,
+          ),
+          fontSize: (map['fontSize'] as num?)?.toDouble() ?? 42,
+          bold: map['bold'] != false,
+          italic: map['italic'] == true,
+          align:
+              EditorTextAlign.values.asNameMap()[map['align']] ??
+              EditorTextAlign.center,
+          clipId: map['clipId'] as String?,
+        ),
+      );
+    }
+
+    final stickers = <EditorStickerLayer>[];
+    for (final raw in recipe['stickerLayers'] as List? ?? const []) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      final value = map['value'] as String? ?? '';
+      if (value.isEmpty) continue;
+      final position = Map<String, dynamic>.from(
+        map['position'] as Map? ?? const {},
+      );
+      stickers.add(
+        EditorStickerLayer(
+          id: map['id'] as String? ?? _nextId('sticker'),
+          value: value,
+          position: NormalizedPoint(
+            (position['x'] as num?)?.toDouble() ?? 0.5,
+            (position['y'] as num?)?.toDouble() ?? 0.5,
+          ),
+          startMs: (map['startMs'] as num?)?.round() ?? 0,
+          endMs: (map['endMs'] as num?)?.round() ?? 3000,
+          scale: (map['scale'] as num?)?.toDouble() ?? 1,
+          rotationDegrees: (map['rotationDegrees'] as num?)?.toDouble() ?? 0,
+          clipId: map['clipId'] as String?,
+          tracksFace: map['tracksFace'] == true,
+        ),
+      );
+    }
+
+    final faceTrack = <EditorFaceSample>[];
+    for (final raw in recipe['faceTrack'] as List? ?? const []) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      faceTrack.add(
+        EditorFaceSample(
+          sourceMs: (map['ms'] as num?)?.round() ?? 0,
+          x: (map['x'] as num?)?.toDouble() ?? 0.5,
+          y: (map['y'] as num?)?.toDouble() ?? 0.5,
+          height: (map['h'] as num?)?.toDouble() ?? 0,
+        ),
+      );
+    }
+
+    final canvasMap = Map<String, dynamic>.from(
+      recipe['canvas'] as Map? ?? const {},
+    );
+    final canvas =
+        EditorCanvas(
+          sourceAspectRatio: _project.canvas.sourceAspectRatio,
+          ratio:
+              EditorCanvasRatio.values.asNameMap()[canvasMap['ratio']] ??
+              EditorCanvasRatio.original,
+          fit:
+              EditorCanvasFit.values.asNameMap()[canvasMap['fit']] ??
+              EditorCanvasFit.cover,
+          outputWidth: (canvasMap['outputWidth'] as num?)?.round() ?? 1280,
+          outputHeight: (canvasMap['outputHeight'] as num?)?.round() ?? 720,
+        ).copyWith(
+          scale: (canvasMap['scale'] as num?)?.toDouble() ?? 1,
+          offsetX: (canvasMap['offsetX'] as num?)?.toDouble() ?? 0,
+          offsetY: (canvasMap['offsetY'] as num?)?.toDouble() ?? 0,
+          rotationDegrees:
+              (canvasMap['rotationDegrees'] as num?)?.toDouble() ?? 0,
+        );
+
+    final audioMap = Map<String, dynamic>.from(
+      recipe['audio'] as Map? ?? const {},
+    );
+    final markerMap = recipe['recommendationMarker'] as Map?;
+
+    // 복원한 id들과 새로 만들 id가 부딪히지 않게 씨앗을 올려 둔다.
+    for (final id in [
+      for (final clip in clips) clip.id,
+      for (final zoom in zooms) zoom.id,
+      for (final layer in texts) layer.id,
+      for (final layer in stickers) layer.id,
+    ]) {
+      final tail = int.tryParse(id.split('-').last);
+      if (tail != null && tail >= _idSeed) _idSeed = tail + 1;
+    }
+
+    _project = _project.copyWith(
+      clips: clips,
+      zoomSegments: zooms,
+      textLayers: texts,
+      stickerLayers: stickers,
+      faceTrack: faceTrack,
+      canvas: canvas,
+      audio: EditorAudio(
+        sourceVolume: (audioMap['sourceVolume'] as num?)?.toDouble() ?? 1,
+        muted: audioMap['muted'] == true,
+      ),
+      look: EditorLook.values.asNameMap()[recipe['look']] ?? EditorLook.none,
+      recommendationMarker: markerMap == null
+          ? null
+          : EditorRecommendationMarker(
+              preset: markerMap['preset'] as String? ?? 'medium',
+              sourceStartMs: msOf(markerMap['sourceStartMs']),
+              sourceEndMs: msOf(markerMap['sourceEndMs']),
+            ),
+      selectedClipId: clips.first.id,
+      playheadMs: 0,
+    );
+    notifyListeners();
+  }
+
+  /// 서버 추천(구간·줌)을 컷으로 적용한다.
+  void applyRecommendation(EditRecommendation recommendation) {
+    _applyScoredCut(
+      preset: recommendation.durationPreset,
+      recommendation: recommendation,
+    );
+  }
+
+  /// 추천 서버 없이 길이 프리셋만으로 컷을 다시 만든다.
+  void applyPreset(String preset) => _applyScoredCut(preset: preset);
+
+  /// 프리셋 컷은 **고른 클립 하나의 구간만** 이어진 한 구간으로 바꾼다 —
+  /// 짧게 ~45초, 중간 ~90초, 길게 90초 이상. 사용자가 추가해 둔 다른
+  /// 클립은 절대 지우지도, 건드리지도 않는다.
+  ///
+  /// 어느 구간으로 바꿀지는 점수가 정한다. 서버 recipe가 있으면 셀렉터
+  /// (ai/video_editor의 adaptive_selector + duration_presets)가 웃음·말소리·
+  /// 음량 상승·모션·얼굴 특징의 `eventScore`로 이미 골라 준 cut 구간을
+  /// 그대로 쓰고, scoreTimeline의 평균 점수를 그 클립에 실어 보여 준다.
+  /// 서버가 없으면 원본 가운데에서 목표 길이만큼 잡는다(점수 표시 없음).
+  void _applyScoredCut({
+    required String preset,
+    EditRecommendation? recommendation,
+  }) {
+    final total = _project.sourceDurationMs;
+    if (total < minimumClipDurationMs || _project.clips.isEmpty) return;
+    final targetClip = _project.selectedClip ?? _project.clips.first;
+    final autoZooms = (recommendation?.zoomSegments ?? const []).indexed
+        .map((entry) {
+          final value = entry.$2;
+          var scale = (value['scale'] as num).toDouble();
+          // 서버(zoom_planner)는 얼굴 높이를 화면의 0.28~0.33으로 맞춘다.
+          // 우리는 반응 얼굴이 화면의 1/3~1/2은 차야 한다고 본다 — 서버가
+          // 함께 보내는 targetFaceHeight로 실제 얼굴 크기를 되짚어 목표
+          // 0.40(1/3과 1/2 사이) 기준으로 배율을 다시 잡는다.
+          final targetFaceHeight =
+              (value['targetFaceHeight'] as num?)?.toDouble() ?? 0;
+          if (targetFaceHeight > 0) {
+            scale = (scale * 0.40 / targetFaceHeight).clamp(1.2, 2.8);
+          }
+          return EditorZoomSegment(
+            id: 'auto-zoom-${entry.$1}',
+            sourceStartMs: (value['startMs'] as num).round(),
+            sourceEndMs: (value['endMs'] as num).round(),
+            scale: scale,
+            focus: NormalizedPoint(
+              (value['focusX'] as num).toDouble(),
+              (value['focusY'] as num).toDouble(),
+            ),
+            automatic: true,
+            clipId: targetClip.id,
+          );
+        })
+        .toList(growable: false);
+
+    final int start;
+    final int end;
+    if (recommendation != null) {
+      // 서버 셀렉터가 점수로 고른 연속 하이라이트 구간.
+      start = recommendation.cutStartMs.clamp(0, total);
+      end = recommendation.cutEndMs.clamp(
+        math.min(total, start + minimumClipDurationMs),
+        total,
+      );
+    } else {
+      // 서버가 없을 때의 기본 창 — 프리셋 길이 약속만 지킨다.
+      final targetMs = math.min(total, switch (preset) {
+        'short' => 45000,
+        'long' => math.max(90000, (total * 0.8).round()),
+        _ => 90000,
+      });
+      start = ((total - targetMs) / 2).round();
+      end = start + targetMs;
+    }
+
+    final timeline = recommendation?.scoreTimeline ?? const [];
+
+    /// [rangeStart, rangeEnd) 구간의 사건 점수(길이 가중 평균).
+    /// 타임라인이 그 구간을 덮지 않으면 null.
+    double? eventScore(int rangeStart, int rangeEnd) {
+      var weighted = 0.0;
+      var covered = 0.0;
+      for (final row in timeline) {
+        final rowStart = (row['startMs'] as num?)?.round() ?? 0;
+        final rowEnd = (row['endMs'] as num?)?.round() ?? 0;
+        final overlap =
+            (math.min(rangeEnd, rowEnd) - math.max(rangeStart, rowStart))
+                .toDouble();
+        if (overlap <= 0) continue;
+        weighted += overlap * ((row['eventScore'] as num?)?.toDouble() ?? 0);
+        covered += overlap;
+      }
+      return covered == 0 ? null : weighted / covered;
+    }
+
+    // 고른 클립의 구간만 바꾼다. id를 그대로 두므로 순서·다른 클립·선택
+    // 상태가 전부 유지된다.
+    final target = targetClip;
+    final updated = EditorClip(
+      id: target.id,
+      sourcePath: target.sourcePath,
+      sourceStartMs: start,
+      sourceEndMs: end,
+      arEffectId: target.arEffectId,
+      automatic: true,
+      // "왜 이 구간인지"를 칩에서 보여 줄 실제 사건 점수. 서버 타임라인이
+      // 없으면 null — 점수를 지어내 표시하지 않는다.
+      score: eventScore(start, end),
+    );
+    final clips = [
+      for (final clip in _project.clips) clip.id == target.id ? updated : clip,
+    ];
+    // 서버 줌은 자동 줌만 갈아 끼운다. 사용자가 직접 만든 줌은 남긴다.
+    final manualZooms = _project.zoomSegments
+        .where((zoom) => !zoom.automatic)
+        .toList(growable: false);
+    final zooms = autoZooms.isEmpty
+        ? _project.zoomSegments
+        : [...autoZooms, ...manualZooms];
+    // 얼굴 궤적은 원본 시각 기준이라 컷과 무관하게 그대로 싣는다.
+    final faceTrack = recommendation == null
+        ? _project.faceTrack
+        : [
+            for (final sample in recommendation.faceTrack)
+              EditorFaceSample(
+                sourceMs: (sample['ms'] as num?)?.round() ?? 0,
+                x: (sample['x'] as num?)?.toDouble() ?? 0.5,
+                y: (sample['y'] as num?)?.toDouble() ?? 0.5,
+                height: (sample['h'] as num?)?.toDouble() ?? 0,
+              ),
+          ];
+    _commit(
+      _project.copyWith(
+        clips: clips,
+        zoomSegments: zooms,
+        textLayers: _textLayersFollowing(_project.clips, clips),
+        stickerLayers: _stickerLayersFollowing(_project.clips, clips),
+        faceTrack: faceTrack,
+        recommendationMarker: EditorRecommendationMarker(
+          preset: preset,
+          sourceStartMs: start,
+          sourceEndMs: end,
+        ),
+        selectedZoomId: autoZooms.isEmpty ? null : autoZooms.first.id,
+        selectedClipId: target.id,
+        // 바뀐 클립의 시작을 바로 보여 준다.
+        playheadMs: clips
+            .takeWhile((clip) => clip.id != target.id)
+            .fold<int>(0, (sum, clip) => sum + clip.durationMs),
+      ),
+    );
+  }
+
+  /// 재생 위치에서 3초짜리 클립을 하나 더 얹는다. 고른 클립 뒤에 들어가고,
+  /// 구간은 손잡이·창 끌기로 바로 다듬는다.
+  bool addClipAtPlayhead() {
+    final sourceMs = _project.sourcePositionForTimeline(_project.playheadMs);
+    if (sourceMs == null) return false;
+    final start = math.min(
+      sourceMs,
+      math.max(0, _project.sourceDurationMs - minimumClipDurationMs),
+    );
+    final end = math.min(_project.sourceDurationMs, start + 3000);
+    if (end - start < minimumClipDurationMs) return false;
+    final clip = EditorClip(
+      id: _nextId('clip'),
+      sourcePath: _project.sourceVideoPath,
+      sourceStartMs: start,
+      sourceEndMs: end,
+    );
+    final selectedIndex = _project.clips.indexWhere(
+      (item) => item.id == _project.selectedClipId,
+    );
+    final next = [..._project.clips]
+      ..insert(
+        selectedIndex < 0 ? _project.clips.length : selectedIndex + 1,
+        clip,
+      );
+    _commit(
+      _project.copyWith(
+        clips: next,
+        textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
+        selectedClipId: clip.id,
+      ),
+    );
+    return true;
+  }
+
+  /// 재생 위치가 속한 클립 안에 줌을 하나 만든다. 그 자리에 이미 줌이
+  /// 있으면 막지 않고 **클립 안의 가장 가까운 빈 틈**에 만든다. 클립이
+  /// 줌으로 가득 차 틈이 없을 때만 false를 준다.
+  bool addZoomAtPlayhead() {
+    final location = _locateTimelinePosition(_project.playheadMs);
+    if (location == null) return false;
+    final clip = location.clip;
+    final sourceMs = clip.sourceStartMs + location.offsetMs;
+    // 이 클립에 묶인 줌들 사이의 빈 틈을 모은다.
+    final occupied =
+        _project.zoomSegments.where((zoom) => zoom.worksIn(clip)).toList()
+          ..sort((a, b) => a.sourceStartMs.compareTo(b.sourceStartMs));
+    final gaps = <(int, int)>[];
+    var cursor = clip.sourceStartMs;
+    for (final zoom in occupied) {
+      if (zoom.sourceStartMs - cursor >= 300) {
+        gaps.add((cursor, zoom.sourceStartMs));
+      }
+      cursor = math.max(cursor, zoom.sourceEndMs);
+    }
+    if (clip.sourceEndMs - cursor >= 300) gaps.add((cursor, clip.sourceEndMs));
+    if (gaps.isEmpty) return false;
+    // 재생 위치를 품은 틈이 있으면 거기, 없으면 가장 가까운 틈에.
+    (int, int) best = gaps.first;
+    var bestDistance = 1 << 30;
+    for (final gap in gaps) {
+      final distance = sourceMs < gap.$1
+          ? gap.$1 - sourceMs
+          : sourceMs >= gap.$2
+          ? sourceMs - gap.$2
+          : 0;
+      if (distance < bestDistance) {
+        best = gap;
+        bestDistance = distance;
+      }
+    }
+    var start = math.max(best.$1, math.min(sourceMs - 1000, best.$2 - 3000));
+    var end = math.min(best.$2, start + 3000);
+    start = math.max(best.$1, end - 3000);
+    final zoom = EditorZoomSegment(
+      id: _nextId('zoom'),
+      sourceStartMs: start,
+      sourceEndMs: end,
+      scale: 1.35,
+      focus: NormalizedPoint.center,
+      clipId: clip.id,
+    );
+    _commit(
+      _project.copyWith(
+        zoomSegments: [..._project.zoomSegments, zoom],
+        selectedZoomId: zoom.id,
+        // 줌이 묶인 클립을 함께 고른다 — 줌 탭은 고른 클립의 줌만 보여
+        // 주므로, 방금 만든 줌이 바로 보여야 한다.
+        selectedClipId: clip.id,
+      ),
+    );
+    return true;
+  }
+
+  /// 줌을 고르고 재생 위치를 그 장면 시작으로 옮긴다.
+  ///
+  /// 줌은 클립에 귀속되므로 **묶인 클립**을 함께 고른다 — 장면 카드를
+  /// 누르면 그 클립의 타임라인 위 제자리로 간다. 묶이지 않은 옛 줌은
+  /// 시작 시각을 품은 클립을 찾아 고른다(못 찾아도 선택은 된다 — 반응
+  /// 없는 카드처럼 보이면 안 된다).
+  void selectZoom(String zoomId) {
+    EditorZoomSegment? zoom;
+    for (final item in _project.zoomSegments) {
+      if (item.id == zoomId) zoom = item;
+    }
+    if (zoom == null) return;
+    EditorClip? boundClip;
+    var boundTimelineStart = 0;
+    var cursor = 0;
+    for (final clip in _project.clips) {
+      final matches = zoom.clipId == null
+          ? zoom.sourceStartMs >= clip.sourceStartMs &&
+                zoom.sourceStartMs < clip.sourceEndMs
+          : clip.id == zoom.clipId;
+      if (matches) {
+        boundClip = clip;
+        boundTimelineStart = cursor;
+        break;
+      }
+      cursor += clip.durationMs;
+    }
+    _project = _project.copyWith(
+      selectedZoomId: zoomId,
+      selectedClipId: boundClip?.id ?? _project.selectedClipId,
+      playheadMs: boundClip == null
+          ? _project.playheadMs
+          : boundTimelineStart +
+                (zoom.sourceStartMs - boundClip.sourceStartMs).clamp(
+                  0,
+                  boundClip.durationMs,
+                ),
+    );
+    notifyListeners();
+  }
+
+  void updateZoom(EditorZoomSegment segment) {
+    final next = _project.zoomSegments
+        .map((item) => item.id == segment.id ? segment : item)
+        .toList(growable: false);
+    _commit(_project.copyWith(zoomSegments: next));
+  }
+
+  /// 손가락 동작(슬라이더·손잡이·핀치) 도중의 줌 갱신. 이력에 쌓지 않고,
+  /// 손을 뗄 때 [endGesture]가 한 칸으로 확정한다. [beginGesture]를 먼저
+  /// 부르지 않았다면 여기서 대신 시작해 둔다.
+  void updateZoomGesture(EditorZoomSegment segment, {bool notify = true}) {
+    beginGesture();
+    final next = _project.zoomSegments
+        .map((item) => item.id == segment.id ? segment : item)
+        .toList(growable: false);
+    _project = _project.copyWith(
+      zoomSegments: next,
+      selectedZoomId: segment.id,
+    );
+    if (notify) notifyListeners();
+  }
+
+  /// 손가락 동작 도중의 자막 구간 갱신. 확정은 [endGesture]가 한다.
+  void updateTextLayerRangeGesture(
+    String id,
+    int startMs,
+    int endMs, {
+    bool notify = true,
+  }) {
+    if (endMs - startMs < 200) return;
+    beginGesture();
+    var changed = false;
+    final texts = [
+      for (final layer in _project.textLayers)
+        if (layer.id == id)
+          (() {
+            changed = true;
+            return layer.copyWith(startMs: startMs, endMs: endMs);
+          })()
+        else
+          layer,
+    ];
+    if (!changed) return;
+    _project = _project.copyWith(textLayers: texts, selectedLayerId: id);
+    if (notify) notifyListeners();
+  }
+
+  void removeZoom(EditorZoomSegment segment) {
+    _commit(
+      _project.copyWith(
+        zoomSegments: _project.zoomSegments
+            .where((item) => item.id != segment.id)
+            .toList(),
+        clearSelectedZoom: _project.selectedZoomId == segment.id,
+      ),
+    );
+  }
+
+  void reorderClip(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _project.clips.length) return;
+    if (newIndex == oldIndex ||
+        newIndex < 0 ||
+        newIndex >= _project.clips.length) {
+      return;
+    }
+    final next = [..._project.clips];
+    final moved = next.removeAt(oldIndex);
+    next.insert(newIndex, moved);
+    _commit(
+      _project.copyWith(
+        clips: next,
+        // 클립에 묶인 자막은 클립을 따라 함께 움직인다.
+        textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
+        selectedClipId: moved.id,
+        playheadMs: 0,
+      ),
+    );
   }
 
   /// 이미 고른 클립이면 **아무것도 하지 않는다.**
@@ -93,6 +789,8 @@ class EditorProjectController extends ChangeNotifier {
       selectedClipId: clipId,
       clearSelectedLayer: true,
     );
+    // 줌·자막 탭이라면 새 클립의 첫 항목이 곧바로 골라진다.
+    _autoSelectForScope();
     notifyListeners();
   }
 
@@ -141,9 +839,49 @@ class EditorProjectController extends ChangeNotifier {
     final next = [..._project.clips]
       ..removeAt(location.index)
       ..insertAll(location.index, [left, right]);
+    // 나뉜 클립에 묶여 있던 줌·자막은 각자 시작 위치가 속한 반쪽으로
+    // 다시 묶는다. 타임라인 전체 길이는 그대로라 절대 시각은 안 바뀐다.
+    final splitTimelineMs =
+        _project.timelineStartFor(clip.id) + location.offsetMs;
+    final zooms = [
+      for (final zoom in _project.zoomSegments)
+        zoom.clipId != clip.id
+            ? zoom
+            : zoom.sourceStartMs < sourceSplitMs
+            ? zoom.copyWith(
+                clipId: left.id,
+                sourceEndMs: math.min(zoom.sourceEndMs, sourceSplitMs),
+              )
+            : zoom.copyWith(clipId: right.id),
+    ];
+    final layers = [
+      for (final layer in _project.textLayers)
+        layer.clipId != clip.id
+            ? layer
+            : layer.startMs < splitTimelineMs
+            ? layer.copyWith(
+                clipId: left.id,
+                endMs: math.min(layer.endMs, splitTimelineMs),
+              )
+            : layer.copyWith(clipId: right.id),
+    ];
+    final stickers = [
+      for (final layer in _project.stickerLayers)
+        layer.clipId != clip.id
+            ? layer
+            : layer.startMs < splitTimelineMs
+            ? layer.copyWith(
+                clipId: left.id,
+                endMs: math.min(layer.endMs, splitTimelineMs),
+              )
+            : layer.copyWith(clipId: right.id),
+    ];
     _commit(
       _project.copyWith(
         clips: next,
+        zoomSegments: zooms,
+        textLayers: layers,
+        stickerLayers: stickers,
         selectedClipId: right.id,
         playheadMs: timelinePositionMs,
       ),
@@ -174,6 +912,9 @@ class EditorProjectController extends ChangeNotifier {
       _commit(
         _project.copyWith(
           clips: remaining,
+          zoomSegments: _zoomsWithoutClip(selected.id),
+          textLayers: _textLayersFollowing(_project.clips, remaining),
+          stickerLayers: _stickerLayersFollowing(_project.clips, remaining),
           selectedClipId: remaining.first.id,
           playheadMs: 0,
         ),
@@ -186,6 +927,10 @@ class EditorProjectController extends ChangeNotifier {
     _commit(
       _project.copyWith(
         clips: next,
+        // 클립을 지우면 거기 묶인 줌·자막도 함께 사라진다.
+        zoomSegments: _zoomsWithoutClip(selected.id),
+        textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
         selectedClipId: next[nextIndex].id,
         playheadMs: math.min(_project.playheadMs, _durationOf(next)),
       ),
@@ -199,7 +944,14 @@ class EditorProjectController extends ChangeNotifier {
     final index = _project.clips.indexWhere((clip) => clip.id == selected.id);
     final copy = selected.copyWith(id: _nextId('clip'));
     final next = [..._project.clips]..insert(index + 1, copy);
-    _commit(_project.copyWith(clips: next, selectedClipId: copy.id));
+    _commit(
+      _project.copyWith(
+        clips: next,
+        textLayers: _textLayersFollowing(_project.clips, next),
+        stickerLayers: _stickerLayersFollowing(_project.clips, next),
+        selectedClipId: copy.id,
+      ),
+    );
     return true;
   }
 
@@ -234,6 +986,9 @@ class EditorProjectController extends ChangeNotifier {
       ..[index] = selected.copyWith(sourceStartMs: start, sourceEndMs: end);
     final updated = _project.copyWith(
       clips: next,
+      // 뒤 클립들에 묶인 자막이 길이 변화를 따라간다.
+      textLayers: _textLayersFollowing(_project.clips, next),
+      stickerLayers: _stickerLayersFollowing(_project.clips, next),
       playheadMs: math.min(_project.playheadMs, _durationOf(next)),
     );
     if (commit) {
@@ -245,9 +1000,33 @@ class EditorProjectController extends ChangeNotifier {
     return true;
   }
 
+  /// 출력 비율을 바꾼다.
+  ///
+  /// 9:16은 가로 영상을 **중앙에 그대로** 놓고 위아래를 검은 띠로 남긴다
+  /// (숏폼 구도 — 띠는 자막 자리다). 확대해서 가득 채우면 영상이 3배로
+  /// 확대돼 알아볼 수 없었다. 원본·16:9는 영상이 캔버스와 같거나 넓어
+  /// 채우기(cover)로 두면 여백이 없다.
   void setCanvasRatio(EditorCanvasRatio ratio) {
     if (_project.canvas.ratio == ratio) return;
-    _commit(_project.copyWith(canvas: _project.canvas.copyWith(ratio: ratio)));
+    _commit(
+      _project.copyWith(
+        canvas: _project.canvas.copyWith(
+          ratio: ratio,
+          fit: switch (ratio) {
+            // 원본보다 좁은 비율은 중앙에 그대로 놓고 띠를 남긴다.
+            EditorCanvasRatio.vertical ||
+            EditorCanvasRatio.square ||
+            EditorCanvasRatio.portrait => EditorCanvasFit.contain,
+            EditorCanvasRatio.original ||
+            EditorCanvasRatio.landscape => EditorCanvasFit.cover,
+          },
+          scale: 1,
+          offsetX: 0,
+          offsetY: 0,
+          rotationDegrees: 0,
+        ),
+      ),
+    );
   }
 
   void setCanvasTransform({
@@ -402,6 +1181,7 @@ class EditorProjectController extends ChangeNotifier {
       position: NormalizedPoint(0.5, 0.78),
       startMs: startMs ?? _project.playheadMs,
       endMs: endMs ?? _project.durationMs,
+      clipId: _locateTimelinePosition(startMs ?? _project.playheadMs)?.clip.id,
       color: color,
       backgroundColor: backgroundColor,
       fontSize: fontSize,
@@ -415,6 +1195,59 @@ class EditorProjectController extends ChangeNotifier {
         selectedLayerId: layer.id,
       ),
     );
+  }
+
+  /// AI 자막이 만들어 둔 레이어가 있는가. 다시 만들면 이것들이 갈아
+  /// 끼워지므로, 화면이 경고를 띄울지 정할 때 쓴다.
+  bool get hasTranscriptCaptions =>
+      _project.textLayers.any((layer) => layer.id.startsWith('ai-caption-'));
+
+  /// AI 자막(전사) 결과를 **일반 자막 레이어**로 바꿔 얹는다.
+  ///
+  /// [sourceCaptions]의 시각은 원본 영상 시각이다. 지금 클립 배치에 맞춰
+  /// 타임라인 시각으로 바꾸고, 겹치는 클립에 귀속시킨다 — 이후 편집·이동·
+  /// 저장·내보내기는 손으로 만든 자막과 완전히 같은 길을 탄다.
+  ///
+  /// 다시 부르면 **이 함수가 전에 만든 레이어만** 갈아 끼운다. 사용자가
+  /// 직접 만든 자막은 건드리지 않는다.
+  void applyTranscriptCaptions(
+    List<({int startMs, int endMs, String text})> sourceCaptions,
+  ) {
+    const prefix = 'ai-caption-';
+    final kept = _project.textLayers
+        .where((layer) => !layer.id.startsWith(prefix))
+        .toList(growable: false);
+    final added = <EditorTextLayer>[];
+    var timelineStartMs = 0;
+    for (final clip in _project.clips) {
+      for (final caption in sourceCaptions) {
+        final text = caption.text.trim();
+        if (text.isEmpty) continue;
+        final overlapStart = caption.startMs.clamp(
+          clip.sourceStartMs,
+          clip.sourceEndMs,
+        );
+        final overlapEnd = caption.endMs.clamp(
+          clip.sourceStartMs,
+          clip.sourceEndMs,
+        );
+        if (overlapEnd - overlapStart < 200) continue;
+        added.add(
+          EditorTextLayer(
+            id: _nextId('ai-caption'),
+            text: text,
+            position: NormalizedPoint(0.5, 0.78),
+            startMs: timelineStartMs + overlapStart - clip.sourceStartMs,
+            endMs: timelineStartMs + overlapEnd - clip.sourceStartMs,
+            fontSize: 28,
+            clipId: clip.id,
+          ),
+        );
+      }
+      timelineStartMs += clip.durationMs;
+    }
+    if (added.isEmpty && kept.length == _project.textLayers.length) return;
+    _commit(_project.copyWith(textLayers: [...kept, ...added]));
   }
 
   /// 아직 글이 없는 글자 레이어를 만들고 그 id를 준다.
@@ -431,12 +1264,31 @@ class EditorProjectController extends ChangeNotifier {
     EditorTextAlign align = EditorTextAlign.center,
   }) {
     beginGesture();
+    // 자막은 재생 위치부터 3초가 기본이되, **재생 위치가 속한 클립 안**에
+    // 머문다 — 자막 편집이 클립별로 분리된다. 예전에는 영상 전체에 깔려서
+    // 두 번째 자막부터는 서로 평생 겹쳤다. 구간은 타임라인 손잡이로 언제든
+    // 다시 잡고, 구간이 겹치면 같은 시각에 함께 뜬다(동시 자막).
+    final location = _locateTimelinePosition(_project.playheadMs);
+    final clipTimelineStart = location == null
+        ? 0
+        : _project.timelineStartFor(location.clip.id);
+    final clipTimelineEnd = location == null
+        ? _project.durationMs
+        : clipTimelineStart + location.clip.durationMs;
+    final int startMs = _project.playheadMs
+        .clamp(
+          clipTimelineStart,
+          math.max(clipTimelineStart, clipTimelineEnd - 1000),
+        )
+        .toInt();
+    final endMs = math.min(clipTimelineEnd, startMs + 3000);
     final layer = EditorTextLayer(
       id: _nextId('text'),
       text: '',
       position: NormalizedPoint(0.5, 0.5),
-      startMs: 0,
-      endMs: _project.durationMs,
+      startMs: startMs,
+      endMs: math.max(endMs, startMs + 500),
+      clipId: location?.clip.id,
       color: color,
       backgroundColor: backgroundColor,
       fontSize: fontSize,
@@ -487,6 +1339,18 @@ class EditorProjectController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 자막 레이어 하나를 이력에 남기며 지운다.
+  void removeTextLayer(String id) {
+    final texts = _project.textLayers.where((layer) => layer.id != id).toList();
+    if (texts.length == _project.textLayers.length) return;
+    _commit(
+      _project.copyWith(
+        textLayers: texts,
+        clearSelectedLayer: _project.selectedLayerId == id,
+      ),
+    );
+  }
+
   /// 레이어 하나를 걷어낸다. 빈 글자로 끝난 편집을 정리할 때 쓴다.
   void removeLayer(String id) {
     final texts = _project.textLayers.where((layer) => layer.id != id).toList();
@@ -505,14 +1369,84 @@ class EditorProjectController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 지금 씌워져 있는 얼굴 추적 스티커. 없으면 null.
+  EditorStickerLayer? get faceSticker {
+    for (final layer in _project.stickerLayers) {
+      if (layer.tracksFace) return layer;
+    }
+    return null;
+  }
+
+  /// 얼굴 추적 스티커를 씌우거나(null이면) 벗긴다. 한 번에 하나만 쓴다.
+  ///
+  /// 위치는 얼굴 궤적이 정하므로 클립에 묶지 않고 영상 전체에 깔린다 —
+  /// 궤적이 **원본 시각** 기준이라 클립을 자르고 옮겨도 그 순간의 얼굴
+  /// 위치는 늘 맞는다.
+  void setFaceSticker(String? value) {
+    final others = _project.stickerLayers
+        .where((layer) => !layer.tracksFace)
+        .toList(growable: false);
+    if (value == null || value.isEmpty) {
+      if (others.length == _project.stickerLayers.length) return;
+      _commit(
+        _project.copyWith(
+          stickerLayers: others,
+          clearSelectedLayer:
+              faceSticker?.id == _project.selectedLayerId,
+        ),
+      );
+      return;
+    }
+    final layer = EditorStickerLayer(
+      id: _nextId('ar-face'),
+      value: value,
+      // 얼굴 정중앙. 끌면 얼굴 기준 오프셋으로 저장된다.
+      position: NormalizedPoint.center,
+      startMs: 0,
+      endMs: _project.sourceDurationMs,
+      scale: 1.6,
+      tracksFace: true,
+    );
+    _commit(
+      _project.copyWith(
+        stickerLayers: [...others, layer],
+        selectedLayerId: layer.id,
+      ),
+    );
+  }
+
+  /// 화면 절대 좌표를 얼굴 기준 오프셋으로 되돌린다.
+  ///
+  /// 얼굴 추적 스티커의 [EditorStickerLayer.position]은 오프셋이라, 끌어
+  /// 놓은 화면 위치에서 지금 재생 위치의 얼굴 중심을 빼야 한다.
+  NormalizedPoint _faceOffsetFor(NormalizedPoint absolute) {
+    final sourceMs = _project.sourcePositionForTimeline(_project.playheadMs);
+    final face = sourceMs == null ? null : _project.faceSampleAt(sourceMs);
+    if (face == null) return absolute;
+    return NormalizedPoint(
+      0.5 + absolute.x - face.x,
+      0.5 + absolute.y - face.y,
+    );
+  }
+
   void addSticker(String value) {
     if (value.isEmpty) return;
+    // 스티커는 재생 위치가 속한 클립에 묶여 그 클립 구간에 깔린다 —
+    // 자막과 같은 규칙이라 클립을 옮기면 따라가고, 지우면 함께 사라진다.
+    final location = _locateTimelinePosition(_project.playheadMs);
+    final clipStart = location == null
+        ? 0
+        : _project.timelineStartFor(location.clip.id);
+    final clipEnd = location == null
+        ? _project.durationMs
+        : clipStart + location.clip.durationMs;
     final layer = EditorStickerLayer(
       id: _nextId('sticker'),
       value: value,
       position: NormalizedPoint.center,
-      startMs: 0,
-      endMs: _project.durationMs,
+      startMs: clipStart,
+      endMs: clipEnd,
+      clipId: location?.clip.id,
     );
     _commit(
       _project.copyWith(
@@ -531,7 +1465,13 @@ class EditorProjectController extends ChangeNotifier {
     ];
     final stickers = [
       for (final layer in _project.stickerLayers)
-        if (layer.id == selected) layer.copyWith(position: position) else layer,
+        if (layer.id == selected)
+          layer.copyWith(
+            // 얼굴 추적 스티커의 position은 얼굴 기준 오프셋이다.
+            position: layer.tracksFace ? _faceOffsetFor(position) : position,
+          )
+        else
+          layer,
     ];
     if (listEquals(texts, _project.textLayers) &&
         listEquals(stickers, _project.stickerLayers)) {
@@ -573,7 +1513,10 @@ class EditorProjectController extends ChangeNotifier {
       for (final layer in _project.stickerLayers)
         layer.id == selected
             ? layer.copyWith(
-                position: position,
+                // 얼굴 추적 스티커의 position은 얼굴 기준 오프셋이다.
+                position: layer.tracksFace
+                    ? _faceOffsetFor(position)
+                    : position,
                 scale: scale,
                 rotationDegrees: rotationDegrees,
               )
@@ -735,10 +1678,12 @@ class EditorProjectController extends ChangeNotifier {
   /// 화면 상태는 이력을 만들 이유가 없으므로 비교에서 뺀다.
   bool _sameEdits(EditorProject a, EditorProject b) =>
       listEquals(a.clips, b.clips) &&
+      listEquals(a.zoomSegments, b.zoomSegments) &&
       listEquals(a.textLayers, b.textLayers) &&
       listEquals(a.stickerLayers, b.stickerLayers) &&
       listEquals(a.blurLayers, b.blurLayers) &&
       a.canvas.ratio == b.canvas.ratio &&
+      a.canvas.fit == b.canvas.fit &&
       a.canvas.scale == b.canvas.scale &&
       a.canvas.offsetX == b.canvas.offsetX &&
       a.canvas.offsetY == b.canvas.offsetY &&

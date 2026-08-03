@@ -3,7 +3,9 @@
 ## 영상 편집 SDK
 
 - Banuba `ve_sdk_flutter` 의존성과 Android 네이티브 패키징 설정을 제거했다.
+- Banuba 라이선스 로더, 외부 편집기 진입 UI와 약 56MB의 마스크 리소스를 제거했다.
 - 영상 편집은 `LocalEditScreen`과 `VideoEditorExporter` 기반의 앱 자체 로컬 편집기를 사용한다.
+- 효과 탭의 인앱 색감과 스티커 꾸미기는 유지하며 얼굴 추적 마스크는 제공하지 않는다.
 - 편집 결과의 기기 갤러리 저장은 `gal` 플러그인을 사용한다.
 
 ## 푸시 알림

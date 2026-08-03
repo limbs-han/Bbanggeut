@@ -498,9 +498,20 @@ class MemoryTile extends StatelessWidget {
 }
 
 void showAppSnack(BuildContext context, String message, {bool error = false}) {
-  ScaffoldMessenger.of(context).showSnackBar(
+  final messenger = ScaffoldMessenger.of(context)
+    // 새 안내가 오면 이전 것부터 걷는다. 안내가 줄줄이 쌓여 화면을 가리는
+    // 것이 "창이 거슬린다"의 정체였다.
+    ..hideCurrentSnackBar();
+  messenger.showSnackBar(
     SnackBar(
-      content: Text(message),
+      // 누르면 바로 사라진다.
+      content: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: messenger.hideCurrentSnackBar,
+        child: Text(message),
+      ),
+      duration: const Duration(seconds: 2),
+      dismissDirection: DismissDirection.horizontal,
       backgroundColor: error ? AppColors.danger : AppColors.ink,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

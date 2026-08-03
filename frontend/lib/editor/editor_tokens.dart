@@ -16,6 +16,21 @@ abstract final class EditorColorTokens {
   static const shadow = Color(0x147A4F32);
 }
 
+/// 줌·자막처럼 한 클립에 여러 구간이 달릴 때 서로를 구분하는 색.
+/// 타임라인 마커, 장면 카드, 자막 칩이 같은 순번에 같은 색을 쓴다.
+abstract final class EditorMarkerTokens {
+  static const palette = <Color>[
+    Color(0xFF5A7CFF), // 파랑
+    Color(0xFFFFA726), // 주황
+    Color(0xFF66BB6A), // 초록
+    Color(0xFFAB47BC), // 보라
+    Color(0xFF26C6DA), // 청록
+    Color(0xFFEC407A), // 분홍
+  ];
+
+  static Color colorAt(int index) => palette[index % palette.length];
+}
+
 abstract final class EditorSpacingTokens {
   static const xxs = 2.0;
   static const xs = 4.0;
