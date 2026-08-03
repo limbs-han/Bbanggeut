@@ -2601,16 +2601,16 @@ class _StickerPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 강조·벗기기는 지금 보고 있는 클립의 얼굴 스티커 기준이다 —
-    // 얼굴 스티커도 자막처럼 클립에 귀속된다.
+    // 얼굴 스티커도 자막처럼 클립에 귀속되고, 사람마다 하나씩 붙는다.
     final scope = _scopeClip(project);
-    final faceSticker = project.stickerLayers
-        .where(
-          (layer) =>
-              layer.tracksFace &&
-              (layer.clipId == null || layer.clipId == scope?.id),
-        )
-        .firstOrNull;
-    final faceReady = project.faceTrack.isNotEmpty;
+    final wornFaceValues = {
+      for (final layer in project.stickerLayers)
+        if (layer.tracksFace &&
+            (layer.clipId == null || layer.clipId == scope?.id))
+          layer.value,
+    };
+    final faceReady =
+        project.faceTrack.isNotEmpty || project.faceTracks.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2664,7 +2664,7 @@ class _StickerPanel extends StatelessWidget {
               const Expanded(
                 child: _PanelTitle('AR · 얼굴을 따라다니는 스티커'),
               ),
-              if (faceSticker != null)
+              if (wornFaceValues.isNotEmpty)
                 TextButton(
                   key: const Key('editor-clear-face-sticker'),
                   onPressed: () => onFaceStickerSelected(null),
@@ -2704,10 +2704,10 @@ class _StickerPanel extends StatelessWidget {
                                 EditorRadiusTokens.control,
                               ),
                               border: Border.all(
-                                color: faceSticker?.value == sticker
+                                color: wornFaceValues.contains(sticker)
                                     ? EditorColorTokens.coral
                                     : EditorColorTokens.border,
-                                width: faceSticker?.value == sticker
+                                width: wornFaceValues.contains(sticker)
                                     ? 2.5
                                     : 1,
                               ),

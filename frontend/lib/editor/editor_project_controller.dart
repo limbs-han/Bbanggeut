@@ -1450,8 +1450,9 @@ class EditorProjectController extends ChangeNotifier {
     return null;
   }
 
-  /// 얼굴 추적 스티커를 지금 클립에 씌우거나(null이면) 벗긴다. 클립마다
-  /// 하나만 쓴다 — 같은 클립에서 다른 이모지를 누르면 갈아 끼운다.
+  /// 얼굴 추적 스티커를 지금 클립에 씌우거나(null이면 전부) 벗긴다.
+  /// **사람마다 하나**다 — 같은 사람에게 다른 이모지를 누르면 갈아 끼우고,
+  /// 다른 사람에게는 따로 붙는다(할머니에겐 왕관, 아기에겐 선글라스).
   ///
   /// 자막·일반 스티커처럼 클립에 귀속되고, 구간은 타임라인에서 조절하되
   /// **그 얼굴이 화면에 잡혀 있는 구간 안**으로만 움직인다. 어느 얼굴인지는
@@ -1462,22 +1463,18 @@ class EditorProjectController extends ChangeNotifier {
   /// 돌려준다 — 화면이 안내를 띄운다.
   bool setFaceSticker(String? value) {
     final scope = _faceStickerScope;
-    // 이 클립의 얼굴 스티커(와 클립에 안 묶인 옛것)만 걷어낸다.
-    final others = _project.stickerLayers
-        .where(
-          (layer) =>
-              !layer.tracksFace ||
-              (layer.clipId != null && layer.clipId != scope?.id),
-        )
-        .toList(growable: false);
-    final removedSelected = _project.stickerLayers.any(
-      (layer) =>
-          layer.id == _project.selectedLayerId &&
-          layer.tracksFace &&
-          (layer.clipId == null || layer.clipId == scope?.id),
-    );
+    bool inScope(EditorStickerLayer layer) =>
+        layer.tracksFace &&
+        (layer.clipId == null || layer.clipId == scope?.id);
     if (value == null || value.isEmpty) {
+      // 벗기기 — 이 클립의 얼굴 스티커를 전부 걷어낸다.
+      final others = _project.stickerLayers
+          .where((layer) => !inScope(layer))
+          .toList(growable: false);
       if (others.length == _project.stickerLayers.length) return true;
+      final removedSelected = _project.stickerLayers.any(
+        (layer) => layer.id == _project.selectedLayerId && inScope(layer),
+      );
       _commit(
         _project.copyWith(
           stickerLayers: others,
@@ -1494,15 +1491,34 @@ class EditorProjectController extends ChangeNotifier {
             probeMs >= scope.sourceEndMs)) {
       probeMs = scope.sourceStartMs;
     }
-    // 이 순간 화면에 잡힌 사람 중 얼굴이 가장 큰(가까운) 사람에게 붙는다.
+    // 이 순간 화면에 잡힌 사람 중, 아직 스티커가 없는 사람을 우선으로
+    // 얼굴이 큰(가까운) 순서로 고른다 — 두 번째 이모지는 자연스럽게
+    // 다른 사람에게 간다.
     final candidates = probeMs == null
         ? const <EditorFaceTrack>[]
         : _project.faceTracksAt(probeMs);
-    final trackId = candidates.isEmpty ? null : candidates.first.id;
+    final wearing = {
+      for (final layer in _project.stickerLayers)
+        if (inScope(layer) && layer.faceTrackId != null) layer.faceTrackId!,
+    };
+    final fresh = [
+      for (final track in candidates)
+        if (!wearing.contains(track.id)) track,
+    ];
+    final trackId = fresh.isNotEmpty
+        ? fresh.first.id
+        : (candidates.isEmpty ? null : candidates.first.id);
     if (_project.faceTracks.isNotEmpty && trackId == null) return false;
     if (_project.faceTracks.isEmpty && _project.faceTrack.isEmpty) {
       return false;
     }
+    // 같은 사람의 기존 스티커만 갈아 끼운다. 옛 데이터(사람 구분 없음)는
+    // 클립당 하나로 본다.
+    final others = _project.stickerLayers
+        .where(
+          (layer) => !(inScope(layer) && layer.faceTrackId == trackId),
+        )
+        .toList(growable: false);
     final clipStart = scope == null ? 0 : _project.timelineStartFor(scope.id);
     var layer = EditorStickerLayer(
       id: _nextId('ar-face'),
@@ -1608,6 +1624,27 @@ class EditorProjectController extends ChangeNotifier {
     return next.copyWith(position: _faceOffsetFor(next, absolute));
   }
 
+  /// 새 스티커가 놓일 자리. 전에는 늘 정중앙이라 여러 개를 누르면 같은
+  /// 자리에 겹겹이 쌓여 **하나만 있는 것처럼** 보였다 — 이미 스티커가
+  /// 있는 자리는 피해 대각선으로 한 칸씩 비켜 놓는다.
+  NormalizedPoint _vacantStickerSpot() {
+    bool taken(NormalizedPoint spot) => _project.stickerLayers.any((layer) {
+      // 얼굴 스티커는 어차피 얼굴을 따라 움직이니 자리를 차지하지 않는다.
+      if (layer.tracksFace) return false;
+      return (layer.position.x - spot.x).abs() < 0.05 &&
+          (layer.position.y - spot.y).abs() < 0.05;
+    });
+    var spot = NormalizedPoint.center;
+    for (var step = 1; step <= 8 && taken(spot); step++) {
+      final offset = 0.09 * step;
+      spot = NormalizedPoint(
+        (0.5 + offset).clamp(0.1, 0.92),
+        (0.5 + offset).clamp(0.1, 0.92),
+      );
+    }
+    return spot;
+  }
+
   void addSticker(String value) {
     if (value.isEmpty) return;
     // 스티커는 재생 위치가 속한 클립에 묶여 그 클립 구간에 깔린다 —
@@ -1622,7 +1659,7 @@ class EditorProjectController extends ChangeNotifier {
     final layer = EditorStickerLayer(
       id: _nextId('sticker'),
       value: value,
-      position: NormalizedPoint.center,
+      position: _vacantStickerSpot(),
       startMs: clipStart,
       endMs: clipEnd,
       clipId: location?.clip.id,

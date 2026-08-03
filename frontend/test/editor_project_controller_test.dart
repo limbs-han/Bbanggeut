@@ -614,6 +614,74 @@ void main() {
     expect(subject.faceSticker, isNull);
   });
 
+  test('스티커를 여러 개 놓으면 같은 자리에 겹쳐 쌓이지 않는다', () {
+    final subject = controller();
+    subject.addSticker('⭐');
+    subject.addSticker('❤️');
+    subject.addSticker('👏');
+    final stickers = subject.project.stickerLayers;
+    expect(stickers, hasLength(3));
+    // 전부 정중앙에 쌓이면 하나만 있는 것처럼 보인다 — 자리가 달라야 한다.
+    final spots = {
+      for (final layer in stickers)
+        '${layer.position.x.toStringAsFixed(2)},'
+            '${layer.position.y.toStringAsFixed(2)}',
+    };
+    expect(spots, hasLength(3));
+  });
+
+  test('얼굴 스티커는 사람마다 하나씩 붙는다', () {
+    final subject = controller();
+    List<Map<String, Object>> line(
+      int fromMs,
+      int toMs,
+      double x,
+      double h,
+    ) => [
+      for (var ms = fromMs; ms <= toMs; ms += 250)
+        {'ms': ms, 'x': x, 'y': 0.5, 'h': h},
+    ];
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      // 두 사람이 같이 잡혀 있다. 오른쪽 사람 얼굴이 더 크다(가깝다).
+      'faceTracks': [
+        {'id': 'face-1', 'samples': line(0, 8000, 0.8, 0.4)},
+        {'id': 'face-2', 'samples': line(0, 8000, 0.2, 0.25)},
+      ],
+    });
+
+    // 첫 이모지는 가장 가까운 사람(face-1)에게.
+    expect(subject.setFaceSticker('👑'), isTrue);
+    // 두 번째 이모지는 아직 스티커가 없는 사람(face-2)에게 간다.
+    expect(subject.setFaceSticker('🕶️'), isTrue);
+    final faces = subject.project.stickerLayers
+        .where((layer) => layer.tracksFace)
+        .toList();
+    expect(faces, hasLength(2));
+    expect(
+      {for (final layer in faces) layer.faceTrackId},
+      {'face-1', 'face-2'},
+    );
+
+    // 모두 쓰고 있으면 가장 가까운 사람 것을 갈아 끼운다.
+    expect(subject.setFaceSticker('🎩'), isTrue);
+    final values = {
+      for (final layer in subject.project.stickerLayers)
+        if (layer.tracksFace) layer.value,
+    };
+    expect(values, {'🎩', '🕶️'});
+
+    // 벗기기는 이 클립의 얼굴 스티커를 전부 걷는다.
+    expect(subject.setFaceSticker(null), isTrue);
+    expect(
+      subject.project.stickerLayers.where((layer) => layer.tracksFace),
+      isEmpty,
+    );
+  });
+
   test('줌 구간에서는 얼굴 스티커도 같은 식으로 옮겨지고 커진다', () {
     final subject = controller();
     subject.loadDraftRecipe({
