@@ -33,6 +33,16 @@ void main() {
           favorite: false,
           capturedStartAt: today,
         ),
+        VideoMemory(
+          id: 'laugh-and-clap',
+          deviceId: 'device-1',
+          triggerType: 'CLAP',
+          eventTypes: const ['LAUGHTER', 'CLAP'],
+          title: '웃음과 박수',
+          status: 'READY',
+          favorite: false,
+          capturedStartAt: today,
+        ),
       ];
 
     await tester.pumpWidget(
@@ -46,6 +56,7 @@ void main() {
     expect(find.text('웃음 리포트'), findsOneWidget);
     expect(find.text('이번 주 웃음 복주머니 ♥'), findsOneWidget);
     expect(find.text('웃음 횟수'), findsOneWidget);
+    expect(find.text('3회'), findsOneWidget);
     expect(find.text('요일별 웃음복 ♥'), findsOneWidget);
     expect(find.text('한 줄 리포트 🍃'), findsOneWidget);
     expect(find.text('웃음 잔디'), findsNothing);
