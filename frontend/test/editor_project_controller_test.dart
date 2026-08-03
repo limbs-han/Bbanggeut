@@ -437,82 +437,6 @@ void main() {
     expect(subject.project.selectedLayerId, layerId);
   });
 
-  test('마스크를 구운 파일이 새 원본이 되고 조각은 하나로 합쳐진다', () {
-    final subject = controller();
-    // 앞뒤를 잘라 5초짜리 한 조각으로 만든다.
-    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
-    subject.setLook(EditorLook.warm);
-
-    // Banuba는 이 조각을 그대로 구워 준다 — 결과는 이미 잘린 5초짜리다.
-    final baked = subject.project.withBakedSource(
-      path: '/tmp/masked.mp4',
-      durationMs: 5000,
-      size: const EditorSourceSize(width: 1280, height: 720),
-    );
-
-    expect(baked.sourceVideoPath, '/tmp/masked.mp4');
-    expect(baked.clips, hasLength(1));
-    expect(baked.clips.single.sourcePath, '/tmp/masked.mp4');
-    expect(baked.clips.single.sourceStartMs, 0);
-    expect(baked.clips.single.sourceEndMs, 5000);
-    expect(baked.durationMs, 5000);
-    // 색감은 아직 남은 일이라 그대로 들고 있어야 한다.
-    expect(baked.look, EditorLook.warm);
-  });
-
-  test('마스크만 입혔으면 구운 파일을 다시 인코딩하지 않는다', () {
-    final subject = controller();
-    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
-
-    // 자른 원본은 다시 만들어야 한다.
-    expect(subject.project.requiresRendering(), isTrue);
-
-    // 구운 뒤에는 자르기까지 끝난 파일이라 남은 일이 없다.
-    final baked = subject.project.withBakedSource(
-      path: '/tmp/masked.mp4',
-      durationMs: 5000,
-      size: const EditorSourceSize(width: 1280, height: 720),
-    );
-    expect(baked.requiresRendering(), isFalse);
-    expect(baked.requiresRendering(hasCaptions: true), isTrue);
-  });
-
-  test('구운 파일 위에서도 글자 시각은 타임라인 그대로다', () {
-    final subject = controller();
-    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
-    subject.setPlayhead(1000);
-    subject.addTextLayer(text: '안녕');
-    final before = subject.project.textLayers.single;
-
-    final baked = subject.project.withBakedSource(
-      path: '/tmp/masked.mp4',
-      durationMs: 5000,
-      size: const EditorSourceSize(width: 1280, height: 720),
-    );
-
-    final after = baked.textLayers.single;
-    expect(after.startMs, before.startMs);
-    expect(after.endMs, before.endMs);
-    expect(after.text, '안녕');
-  });
-
-  test('마스크를 구우면 줌은 버려진다 — 원본 좌표의 기준이 사라지기 때문', () {
-    final subject = controller();
-    subject.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 7000);
-    expect(subject.addZoomAtPlayhead(), isTrue);
-    expect(subject.project.zoomSegments, isNotEmpty);
-
-    final baked = subject.project.withBakedSource(
-      path: '/tmp/masked.mp4',
-      durationMs: 5000,
-      size: const EditorSourceSize(width: 1280, height: 720),
-    );
-
-    expect(baked.zoomSegments, isEmpty);
-    expect(baked.selectedZoomId, isNull);
-    expect(baked.recommendationMarker, isNull);
-  });
-
   test('스티커는 클립에 묶여 이동을 따라가고 초안에도 저장된다', () {
     final subject = controller();
     subject.splitAt(4000);
@@ -527,10 +451,7 @@ void main() {
     // 첫 클립을 뒤로 보내면 스티커도 따라간다.
     subject.reorderClip(0, 1);
     final moved = subject.project.stickerLayers.single;
-    expect(
-      moved.startMs,
-      subject.project.timelineStartFor(firstClip.id),
-    );
+    expect(moved.startMs, subject.project.timelineStartFor(firstClip.id));
 
     // 초안 저장 → 복원 왕복에도 클립 귀속째 남는다.
     final draft = Map<String, dynamic>.from(subject.project.toDraftMap());

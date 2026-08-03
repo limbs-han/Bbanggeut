@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:william_james_app/editor/banuba_mask_channel.dart';
 import 'package:william_james_app/editor/editor_ar_effects.dart';
 import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
@@ -27,9 +26,6 @@ void main() {
     VoidCallback? onTrimCommitted,
     ValueChanged<String>? onStickerSelected,
     ValueChanged<EditorLook>? onLookSelected,
-    ValueChanged<String?>? onMaskSelected,
-    String? selectedMask,
-    List<BanubaMask> availableMasks = const [],
     VoidCallback? onAiCaption,
     ValueChanged<EditorZoomSegment>? onZoomChanged,
     ValueChanged<String>? onTextEdit,
@@ -75,9 +71,6 @@ void main() {
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
         onLookSelected: onLookSelected ?? (_) {},
-        onMaskSelected: onMaskSelected ?? (_) {},
-        selectedMask: selectedMask,
-        availableMasks: availableMasks,
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
         onZoomRemove: (_) {},
@@ -712,52 +705,6 @@ void main() {
     await tester.tap(find.byKey(const Key('editor-clear-look')));
     await tester.pump();
     expect(controller.project.look, EditorLook.none);
-  });
-
-  testWidgets('얼굴 마스크는 화면을 옮기지 않고 그 자리에서 골라진다', (tester) async {
-    tester.view
-      ..physicalSize = const Size(390, 844)
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final controller = newController()..selectTool(EditorTool.ar);
-    addTearDown(controller.dispose);
-    final picked = <String?>[];
-
-    // 목록은 네이티브가 준다. 하드코딩한 마스크 이름은 이제 없다.
-    const masks = [
-      BanubaMask(name: 'BulldogHarlamov'),
-      BanubaMask(name: 'Afro'),
-    ];
-    await tester.pumpWidget(
-      workspace(
-        controller,
-        onMaskSelected: picked.add,
-        availableMasks: masks,
-      ),
-    );
-
-    // 편집기를 여는 단추는 더 이상 없다. Banuba로 가지 않는다.
-    expect(find.byKey(const Key('editor-open-banuba-ar')), findsNothing);
-
-    final card = find.byKey(const Key('editor-banuba-effect-BulldogHarlamov'));
-    await tester.ensureVisible(card);
-    await tester.pumpAndSettle();
-    await tester.tap(card);
-    await tester.pump();
-    expect(picked, ['BulldogHarlamov']);
-
-    // 씌운 뒤에는 벗기기가 살아난다.
-    await tester.pumpWidget(
-      workspace(
-        controller,
-        onMaskSelected: picked.add,
-        selectedMask: 'BulldogHarlamov',
-        availableMasks: masks,
-      ),
-    );
-    await tester.tap(find.byKey(const Key('editor-clear-mask')));
-    await tester.pump();
-    expect(picked.last, isNull);
   });
 
   testWidgets('꾸미기 스티커가 스티커 탭 항목으로 들어와 있다', (tester) async {

@@ -76,8 +76,7 @@ class EditorProjectController extends ChangeNotifier {
       selectedTool: tool,
       // 자막 탭을 나가면 이동·크기 손잡이도 함께 걷는다. 남겨 두면 다른
       // 탭에서 영상 위에 조절 상자가 계속 떠 있다.
-      clearSelectedLayer:
-          tool != EditorTool.text && tool != EditorTool.sticker,
+      clearSelectedLayer: tool != EditorTool.text && tool != EditorTool.sticker,
     );
     _autoSelectForScope();
     notifyListeners();
@@ -89,7 +88,8 @@ class EditorProjectController extends ChangeNotifier {
   /// 한다 — 빈 선택 상태는 타임라인도 슬라이더도 죽어 있는 것처럼 보인다.
   /// 이미 이 클립의 항목을 고르고 있었다면 그대로 둔다.
   void _autoSelectForScope() {
-    final clip = _project.selectedClip ??
+    final clip =
+        _project.selectedClip ??
         (_project.clips.isEmpty ? null : _project.clips.first);
     if (clip == null) return;
     if (_project.selectedTool == EditorTool.zoom) {
@@ -104,9 +104,7 @@ class EditorProjectController extends ChangeNotifier {
       }
     } else if (_project.selectedTool == EditorTool.text) {
       final layers = _project.textLayers
-          .where(
-            (layer) => layer.clipId == null || layer.clipId == clip.id,
-          )
+          .where((layer) => layer.clipId == null || layer.clipId == clip.id)
           .toList(growable: false);
       if (!layers.any((layer) => layer.id == _project.selectedLayerId)) {
         _project = _project.copyWith(
@@ -294,7 +292,8 @@ class EditorProjectController extends ChangeNotifier {
           fontSize: (map['fontSize'] as num?)?.toDouble() ?? 42,
           bold: map['bold'] != false,
           italic: map['italic'] == true,
-          align: EditorTextAlign.values.asNameMap()[map['align']] ??
+          align:
+              EditorTextAlign.values.asNameMap()[map['align']] ??
               EditorTextAlign.center,
           clipId: map['clipId'] as String?,
         ),
@@ -329,21 +328,24 @@ class EditorProjectController extends ChangeNotifier {
     final canvasMap = Map<String, dynamic>.from(
       recipe['canvas'] as Map? ?? const {},
     );
-    final canvas = EditorCanvas(
-      sourceAspectRatio: _project.canvas.sourceAspectRatio,
-      ratio: EditorCanvasRatio.values.asNameMap()[canvasMap['ratio']] ??
-          EditorCanvasRatio.original,
-      fit: EditorCanvasFit.values.asNameMap()[canvasMap['fit']] ??
-          EditorCanvasFit.cover,
-      outputWidth: (canvasMap['outputWidth'] as num?)?.round() ?? 1280,
-      outputHeight: (canvasMap['outputHeight'] as num?)?.round() ?? 720,
-    ).copyWith(
-      scale: (canvasMap['scale'] as num?)?.toDouble() ?? 1,
-      offsetX: (canvasMap['offsetX'] as num?)?.toDouble() ?? 0,
-      offsetY: (canvasMap['offsetY'] as num?)?.toDouble() ?? 0,
-      rotationDegrees:
-          (canvasMap['rotationDegrees'] as num?)?.toDouble() ?? 0,
-    );
+    final canvas =
+        EditorCanvas(
+          sourceAspectRatio: _project.canvas.sourceAspectRatio,
+          ratio:
+              EditorCanvasRatio.values.asNameMap()[canvasMap['ratio']] ??
+              EditorCanvasRatio.original,
+          fit:
+              EditorCanvasFit.values.asNameMap()[canvasMap['fit']] ??
+              EditorCanvasFit.cover,
+          outputWidth: (canvasMap['outputWidth'] as num?)?.round() ?? 1280,
+          outputHeight: (canvasMap['outputHeight'] as num?)?.round() ?? 720,
+        ).copyWith(
+          scale: (canvasMap['scale'] as num?)?.toDouble() ?? 1,
+          offsetX: (canvasMap['offsetX'] as num?)?.toDouble() ?? 0,
+          offsetY: (canvasMap['offsetY'] as num?)?.toDouble() ?? 0,
+          rotationDegrees:
+              (canvasMap['rotationDegrees'] as num?)?.toDouble() ?? 0,
+        );
 
     final audioMap = Map<String, dynamic>.from(
       recipe['audio'] as Map? ?? const {},
@@ -495,8 +497,7 @@ class EditorProjectController extends ChangeNotifier {
       score: eventScore(start, end),
     );
     final clips = [
-      for (final clip in _project.clips)
-        clip.id == target.id ? updated : clip,
+      for (final clip in _project.clips) clip.id == target.id ? updated : clip,
     ];
     // 서버 줌은 자동 줌만 갈아 끼운다. 사용자가 직접 만든 줌은 남긴다.
     final manualZooms = _project.zoomSegments
@@ -547,8 +548,10 @@ class EditorProjectController extends ChangeNotifier {
       (item) => item.id == _project.selectedClipId,
     );
     final next = [..._project.clips]
-      ..insert(selectedIndex < 0 ? _project.clips.length : selectedIndex + 1,
-          clip);
+      ..insert(
+        selectedIndex < 0 ? _project.clips.length : selectedIndex + 1,
+        clip,
+      );
     _commit(
       _project.copyWith(
         clips: next,
@@ -1164,6 +1167,54 @@ class EditorProjectController extends ChangeNotifier {
         selectedLayerId: layer.id,
       ),
     );
+  }
+
+  /// AI 자막(전사) 결과를 **일반 자막 레이어**로 바꿔 얹는다.
+  ///
+  /// [sourceCaptions]의 시각은 원본 영상 시각이다. 지금 클립 배치에 맞춰
+  /// 타임라인 시각으로 바꾸고, 겹치는 클립에 귀속시킨다 — 이후 편집·이동·
+  /// 저장·내보내기는 손으로 만든 자막과 완전히 같은 길을 탄다.
+  ///
+  /// 다시 부르면 **이 함수가 전에 만든 레이어만** 갈아 끼운다. 사용자가
+  /// 직접 만든 자막은 건드리지 않는다.
+  void applyTranscriptCaptions(
+    List<({int startMs, int endMs, String text})> sourceCaptions,
+  ) {
+    const prefix = 'ai-caption-';
+    final kept = _project.textLayers
+        .where((layer) => !layer.id.startsWith(prefix))
+        .toList(growable: false);
+    final added = <EditorTextLayer>[];
+    var timelineStartMs = 0;
+    for (final clip in _project.clips) {
+      for (final caption in sourceCaptions) {
+        final text = caption.text.trim();
+        if (text.isEmpty) continue;
+        final overlapStart = caption.startMs.clamp(
+          clip.sourceStartMs,
+          clip.sourceEndMs,
+        );
+        final overlapEnd = caption.endMs.clamp(
+          clip.sourceStartMs,
+          clip.sourceEndMs,
+        );
+        if (overlapEnd - overlapStart < 200) continue;
+        added.add(
+          EditorTextLayer(
+            id: _nextId('ai-caption'),
+            text: text,
+            position: NormalizedPoint(0.5, 0.78),
+            startMs: timelineStartMs + overlapStart - clip.sourceStartMs,
+            endMs: timelineStartMs + overlapEnd - clip.sourceStartMs,
+            fontSize: 28,
+            clipId: clip.id,
+          ),
+        );
+      }
+      timelineStartMs += clip.durationMs;
+    }
+    if (added.isEmpty && kept.length == _project.textLayers.length) return;
+    _commit(_project.copyWith(textLayers: [...kept, ...added]));
   }
 
   /// 아직 글이 없는 글자 레이어를 만들고 그 id를 준다.

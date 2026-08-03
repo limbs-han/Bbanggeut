@@ -1,8 +1,5 @@
 import com.android.build.api.dsl.LibraryExtension
 
-// Banuba SDK version required by the banuba_sdk plugin (see its integration guide).
-extra["bnb_sdk_version"] = "1.18.+"
-
 allprojects {
     repositories {
         google()
@@ -23,7 +20,7 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
-    if (name == "video_thumbnail" || name == "banuba_sdk") {
+    if (name == "video_thumbnail") {
         afterEvaluate {
             extensions.configure<LibraryExtension> {
                 compileSdk = 36

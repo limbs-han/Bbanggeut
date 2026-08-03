@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../editor/banuba_mask_channel.dart';
 import 'editor_ar_effects.dart';
 import 'edit_recommendation_client.dart';
 import 'editor_project.dart';
@@ -43,7 +42,6 @@ class EditorWorkspace extends StatelessWidget {
     required this.onMutedChanged,
     required this.onStickerSelected,
     required this.onLookSelected,
-    required this.onMaskSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
     required this.onZoomRemove,
@@ -54,10 +52,6 @@ class EditorWorkspace extends StatelessWidget {
     this.onVolumeCommitted,
     this.textEditing = false,
     this.rangePreviewing = false,
-    this.selectedMask,
-    this.availableMasks = const [],
-    this.banubaBusy = false,
-    this.banubaStatus,
     this.aiCaptionSummary,
     this.exportProgress,
     this.exportStatus,
@@ -78,6 +72,7 @@ class EditorWorkspace extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onPlay;
   final ValueChanged<int> onSeek;
+
   /// 재생 위치에 3초짜리 클립을 하나 더 얹는다.
   final VoidCallback onClipAdd;
   final VoidCallback onDelete;
@@ -123,17 +118,6 @@ class EditorWorkspace extends StatelessWidget {
 
   /// 영상 전체 색감. 앱 안에서 바로 입히고 저장할 때 함께 구워진다.
   final ValueChanged<EditorLook> onLookSelected;
-
-  /// 얼굴 마스크를 고른다. null이면 벗긴다. 화면은 옮기지 않는다.
-  final ValueChanged<String?> onMaskSelected;
-
-  /// 지금 씌워진 마스크와, 엔진이 쓸 수 있다고 알려 준 목록.
-  final String? selectedMask;
-  final List<BanubaMask> availableMasks;
-
-  /// 마스크를 굽는 중인가와, 그때 사용자에게 보여 줄 한 줄 상태.
-  final bool banubaBusy;
-  final String? banubaStatus;
 
   /// 영상 위에서 글을 쓰는 중인가.
   ///
@@ -224,9 +208,7 @@ class EditorWorkspace extends StatelessWidget {
                         onSaveDraft: onSaveDraft,
                         onSave: onSave,
                       ),
-                      Expanded(
-                        child: VideoPreviewWorkspace(preview: preview),
-                      ),
+                      Expanded(child: VideoPreviewWorkspace(preview: preview)),
                       if (!compact)
                         EditorTransportBar(
                           playing: playing,
@@ -315,11 +297,6 @@ class EditorWorkspace extends StatelessWidget {
                             onVolumeCommitted: onVolumeCommitted,
                             onStickerSelected: onStickerSelected,
                             onLookSelected: onLookSelected,
-                            onMaskSelected: onMaskSelected,
-                            selectedMask: selectedMask,
-                            availableMasks: availableMasks,
-                            banubaBusy: banubaBusy,
-                            banubaStatus: banubaStatus,
                             thumbnails: thumbnails,
                             previewFrame: thumbnails.isEmpty
                                 ? null
@@ -425,7 +402,8 @@ double _timelineHeightFor(
 
 /// 줌·자막 탭이 다루는 클립. 클립을 고르면 그 클립에 귀속된 것만 보인다.
 EditorClip? _scopeClip(EditorProject project) =>
-    project.selectedClip ?? (project.clips.isEmpty ? null : project.clips.first);
+    project.selectedClip ??
+    (project.clips.isEmpty ? null : project.clips.first);
 
 /// 고른 클립에 귀속된 줌들. 옛 데이터(묶이지 않은 줌)는 어디서나 보인다.
 List<EditorZoomSegment> _zoomsOfClip(EditorProject project, EditorClip clip) =>
@@ -1512,10 +1490,11 @@ class ClipChooser extends StatelessWidget {
   List<String> _framesFor(EditorClip clip) {
     if (thumbnails.isEmpty) return const [];
     final total = math.max(1, project.sourceDurationMs);
-    String frameAt(int sourceMs) => thumbnails[(sourceMs / total *
-            thumbnails.length)
-        .floor()
-        .clamp(0, thumbnails.length - 1)];
+    String frameAt(int sourceMs) =>
+        thumbnails[(sourceMs / total * thumbnails.length).floor().clamp(
+          0,
+          thumbnails.length - 1,
+        )];
     return [
       frameAt(clip.sourceStartMs),
       frameAt((clip.sourceStartMs + clip.sourceEndMs) ~/ 2),
@@ -1783,17 +1762,12 @@ class SelectedToolPanel extends StatelessWidget {
     required this.onMutedChanged,
     required this.onStickerSelected,
     required this.onLookSelected,
-    required this.onMaskSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
     required this.onZoomRemove,
     required this.onZoomSelected,
     this.thumbnails = const [],
     this.previewFrame,
-    this.selectedMask,
-    this.availableMasks = const [],
-    this.banubaBusy = false,
-    this.banubaStatus,
     this.onVolumeCommitted,
     this.aiCaptionSummary,
   });
@@ -1814,11 +1788,6 @@ class SelectedToolPanel extends StatelessWidget {
   final ValueChanged<bool> onMutedChanged;
   final ValueChanged<String> onStickerSelected;
   final ValueChanged<EditorLook> onLookSelected;
-  final ValueChanged<String?> onMaskSelected;
-  final String? selectedMask;
-  final List<BanubaMask> availableMasks;
-  final bool banubaBusy;
-  final String? banubaStatus;
   final String? previewFrame;
   final VoidCallback onAiCaption;
   final VoidCallback onZoomAdd;
@@ -1886,13 +1855,7 @@ class SelectedToolPanel extends StatelessWidget {
             summary: aiCaptionSummary,
             onOpen: onAiCaption,
           ),
-          EditorTool.ar => _ArPanel(
-            busy: banubaBusy,
-            status: banubaStatus,
-            onMaskSelected: onMaskSelected,
-            selectedMask: selectedMask,
-            availableMasks: availableMasks,
-          ),
+          EditorTool.ar => const _ArPanel(),
           EditorTool.cut => const SizedBox.shrink(),
         },
       ),
@@ -2677,97 +2640,6 @@ class _LookPanel extends StatelessWidget {
   );
 }
 
-class _ArPanel extends StatelessWidget {
-  const _ArPanel({
-    required this.busy,
-    required this.status,
-    required this.onMaskSelected,
-    required this.selectedMask,
-    required this.availableMasks,
-  });
-
-  final bool busy;
-  final String? status;
-
-  /// 얼굴 마스크를 고른다. null이면 벗긴다. **화면은 옮기지 않는다** —
-  /// 미리보기에 그 자리에서 씌워진다.
-  final ValueChanged<String?> onMaskSelected;
-
-  /// 지금 씌워진 마스크 이름.
-  final String? selectedMask;
-
-  /// 엔진이 실제로 쓸 수 있다고 알려 준 효과들.
-  final List<BanubaMask> availableMasks;
-
-  @override
-  Widget build(BuildContext context) => ListView(
-    padding: EdgeInsets.zero,
-    children: [
-      SizedBox(
-        height: 22,
-        child: Row(
-          children: [
-            const Expanded(child: _PanelTitle('얼굴 마스크')),
-            TextButton.icon(
-              key: const Key('editor-clear-mask'),
-              onPressed: busy || selectedMask == null
-                  ? null
-                  : () => onMaskSelected(null),
-              icon: busy
-                  ? const SizedBox.square(
-                      dimension: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.face_retouching_off_rounded, size: 14),
-              label: Text(
-                busy ? '씌우는 중' : '벗기기',
-                style: const TextStyle(fontSize: 11),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: EditorColorTokens.coral,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                minimumSize: const Size(0, 22),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 4),
-      SizedBox(
-        height: 50,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            // 엔진이 실제로 읽을 수 있다고 알려 준 것만 그린다. 이름도 그림도
-            // 네이티브가 준다 — 효과 폴더를 갈아 끼워도 코드는 그대로다.
-            for (final mask in availableMasks)
-              _BanubaEffectCard(
-                mask: mask,
-                enabled: !busy,
-                selected: mask.name == selectedMask,
-                onTap: () => onMaskSelected(mask.name),
-              ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 6),
-      Text(
-        status ?? '누르면 이 화면에서 바로 씌워져요. 얼굴이 보일 때 따라 움직여요.',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: EditorColorTokens.muted,
-          fontSize: 11,
-          height: 1.3,
-        ),
-      ),
-      const SizedBox(height: 4),
-    ],
-  );
-}
-
 /// 색감 카드. 지금 편집 중인 영상 프레임에 그 색감을 그대로 입혀 보여 준다.
 class _LookCard extends StatelessWidget {
   const _LookCard({
@@ -2851,96 +2723,34 @@ class _LookCard extends StatelessWidget {
   }
 }
 
-/// 미리보기 그림이 없을 때 카드에 그리는 것.
-class _MaskCardFallback extends StatelessWidget {
-  const _MaskCardFallback();
-
-  @override
-  Widget build(BuildContext context) => const ColoredBox(
-    color: EditorColorTokens.background,
-    child: Center(
-      child: Icon(
-        Icons.face_retouching_natural,
-        size: 20,
-        color: EditorColorTokens.muted,
-      ),
-    ),
-  );
-}
-
-/// 마스크 카드 그림을 디코딩할 가로 픽셀.
+/// AR 탭 자리표시 패널.
 ///
-/// 카드는 50dp다. 화소 밀도가 가장 높은 기기(4x)에서도 200px면 충분하고,
-/// 원본보다 크면 플러터가 그냥 원본 크기로 둔다(늘리지 않는다).
-const _maskCardCachePx = 200;
-
-class _BanubaEffectCard extends StatelessWidget {
-  const _BanubaEffectCard({
-    required this.mask,
-    required this.enabled,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final BanubaMask mask;
-  final bool enabled;
-
-  /// 지금 씌워져 있는 마스크. 카드 하나만 표시된다.
-  final bool selected;
-  final VoidCallback onTap;
+/// Banuba 마스크는 걷어냈다. 다음 구현은 서버가 이미 뽑는 MediaPipe 얼굴
+/// 좌표(expression/video 분석)를 레시피로 받아, 얼굴을 따라다니는 스티커를
+/// 자체 오버레이로 그리는 방식이다 — 자막 오버레이와 같은 경로에 시간에
+/// 따라 움직이는 좌표만 더한다.
+class _ArPanel extends StatelessWidget {
+  const _ArPanel();
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 8),
-    child: InkWell(
-      key: Key('editor-banuba-effect-${mask.name}'),
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(EditorRadiusTokens.control),
-      child: SizedBox(
-        width: 50,
-        child: Column(
-          children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(
-                    EditorRadiusTokens.control,
-                  ),
-                  border: selected
-                      ? Border.all(color: EditorColorTokens.coral, width: 2.5)
-                      : null,
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: mask.previewPath == null
-                    ? const _MaskCardFallback()
-                    : Image.file(
-                        File(mask.previewPath!),
-                        fit: BoxFit.cover,
-                        // 카드는 50dp인데 원본은 512×512까지 온다. 줄여서
-                        // 디코딩하지 않으면 열 장이 통째로 메모리에 풀린다 —
-                        // 화면에는 어차피 그 크기로 안 보인다.
-                        cacheWidth: _maskCardCachePx,
-                        // 그림이 빠져도 카드는 눌러야 한다.
-                        errorBuilder: (_, _, _) => const _MaskCardFallback(),
-                      ),
-              ),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const _PanelTitle('얼굴 스티커'),
+      const SizedBox(height: 8),
+      Expanded(
+        child: Center(
+          child: Text(
+            '얼굴을 따라다니는 스티커를 준비하고 있어요.',
+            key: const Key('editor-ar-placeholder'),
+            style: const TextStyle(
+              color: EditorColorTokens.muted,
+              fontSize: 12,
             ),
-            const SizedBox(height: 2),
-            Text(
-              mask.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: EditorColorTokens.ink,
-                fontSize: 10,
-                height: 1.1,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
-    ),
+    ],
   );
 }
 
