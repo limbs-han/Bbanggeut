@@ -94,4 +94,20 @@ public interface PushTokenMapper {
          ORDER BY pt.created_at, pt.id
         """)
     List<String> findActiveTokensByUser(@Param("userId") UUID userId);
+
+    @Select("""
+        SELECT DISTINCT pt.token
+          FROM notification_push_tokens pt
+          JOIN users u ON u.id = pt.user_id
+          JOIN vault_memberships m ON m.user_id = pt.user_id
+          JOIN videos v ON v.vault_id = m.vault_id
+         WHERE v.id = #{videoId} AND m.status = 'ACTIVE'
+           AND pt.user_id <> #{excludeUserId}
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+         ORDER BY pt.token
+        """)
+    List<String> findActiveTokensByVideoExcluding(
+        @Param("videoId") UUID videoId,
+        @Param("excludeUserId") UUID excludeUserId
+    );
 }

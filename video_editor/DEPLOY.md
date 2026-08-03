@@ -50,6 +50,14 @@ nginx `/editor/` 라우트와 compose의 `editor-api` 서비스 정의는 기존
 
 소스 재복사 → `docker build` → `docker compose --env-file .env up -d editor-api`.
 
+## 백엔드 쪽 짝 설정 (FCM 알림·삭제 연동)
+
+- `secrets/app.env`에 `S3_EDIT_BUCKET=william-james-edit` 추가 — 영상 삭제
+  워커가 편집 부산물(분석 캐시·초안·편집본·댓글)을 함께 지운다. 비워
+  두면 청소만 건너뛴다.
+- FCM 푸시는 `FCM_ENABLED=true` + `GOOGLE_APPLICATION_CREDENTIALS`가
+  설정된 경우에만 나간다. 꺼져 있어도 알림센터에는 쌓인다.
+
 ## 주의
 
 - 백엔드 배포가 실패해 자동 롤백되면 이전 compose(editor-api 정의가 없는

@@ -96,6 +96,47 @@ public interface NotificationMapper {
         @Param("title") String title
     );
 
+    @Insert("""
+        INSERT INTO notifications (
+            id, user_id, type, title, body, vault_id, resource_id, dedupe_key
+        )
+        SELECT gen_random_uuid(), u.id, 'EDIT_ANALYSIS_READY',
+               'AI 분석이 끝났어요', '편집기에서 AI 컷과 자동 줌을 쓸 수 있어요',
+               v.vault_id, v.id, 'edit-analysis:' || CAST(v.id AS text)
+          FROM videos v
+          JOIN users u ON u.id = #{userId}
+         WHERE v.id = #{videoId}
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+        ON CONFLICT (user_id, dedupe_key) DO NOTHING
+        """)
+    int insertEditAnalysisReadyNotification(
+        @Param("userId") UUID userId,
+        @Param("videoId") UUID videoId
+    );
+
+    @Insert("""
+        INSERT INTO notifications (
+            id, user_id, type, title, body, vault_id, resource_id, dedupe_key
+        )
+        SELECT gen_random_uuid(), m.user_id, 'EDIT_COMMENT_ADDED',
+               '가족이 편집 영상에 댓글을 남겼어요', #{body},
+               v.vault_id, v.id,
+               'edit-comment:' || CAST(v.id AS text) || ':' || #{commentId}
+          FROM videos v
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
+          JOIN users u ON u.id = m.user_id
+         WHERE v.id = #{videoId} AND m.status = 'ACTIVE'
+           AND m.user_id <> #{actorUserId}
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+        ON CONFLICT (user_id, dedupe_key) DO NOTHING
+        """)
+    int insertEditCommentNotifications(
+        @Param("videoId") UUID videoId,
+        @Param("actorUserId") UUID actorUserId,
+        @Param("body") String body,
+        @Param("commentId") String commentId
+    );
+
     @Select("""
         SELECT id, type::text, title, body, device_id, vault_id,
                resource_id, read_at, created_at

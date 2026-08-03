@@ -77,6 +77,30 @@ public class PushNotificationDispatcher {
                     "resourceId", videoId.toString())));
     }
 
+    /** 편집 서버 분석 완료 — 분석을 요청한 사용자에게만 보낸다. */
+    public void editAnalysisReady(UUID userId, UUID videoId) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByUser(userId),
+            new PushMessage(
+                "AI 분석이 끝났어요",
+                "편집기에서 AI 컷과 자동 줌을 쓸 수 있어요",
+                Map.of(
+                    "type", "EDIT_ANALYSIS_READY",
+                    "resourceId", videoId.toString())));
+    }
+
+    /** 편집 영상 새 댓글 — 작성자를 뺀 금고 구성원 전체에게 보낸다. */
+    public void editCommentAdded(UUID actorUserId, UUID videoId, String body) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByVideoExcluding(videoId, actorUserId),
+            new PushMessage(
+                "가족이 편집 영상에 댓글을 남겼어요",
+                body,
+                Map.of(
+                    "type", "EDIT_COMMENT_ADDED",
+                    "resourceId", videoId.toString())));
+    }
+
     private void dispatchAfterCommit(TokenSupplier tokenSupplier, PushMessage message) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(

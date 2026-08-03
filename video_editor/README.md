@@ -50,6 +50,19 @@ fixture에 없는 영상은 앱이 원본을 올려 분석시킨다:
 3. `POST /v1/edit-recommendations` — fixture가 없으면 이 분석 결과로
    레시피를 만든다. 분석 전이면 404(detail `analysis-required`).
 
+컷·줌만 있는 프로젝트는 완성본도 서버가 만든다(앱 렌더링·업로드 생략):
+
+- `POST /v1/edit-renders/<videoId>` — `{sourceUrl, recipe, title, capturedAt}`.
+  서버가 원본을 받아 FFmpeg(render_video.py)로 렌더링해 편집본 자리
+  (`edited-videos/<videoId>/`)에 올린다. 자막·스티커·필터·캔버스 변형·
+  다중 클립이 있으면 앱이 지금처럼 Media3로 만들어 올린다.
+- `GET /v1/edit-renders/<videoId>` — 상태 폴링(내부용; 앱은 요청만 하고
+  목록 갱신으로 확인한다).
+
+분석 완료와 편집 영상 새 댓글은 백엔드 `/api/editor/events`로 승격돼
+알림센터·FCM 푸시로 이어진다(editor-api가 같은 서명 키로 iss=wj-editor
+서비스 토큰을 만들어 호출; 시크릿 없는 로컬에서는 꺼짐).
+
 ```powershell
 $env:MQTT_PASSWORD='local-edit-unused'
 docker compose `
@@ -132,6 +145,7 @@ python -m video_editor.render_video \
 - 분석은 실패하면 한 번만 자체 재시도한다. 두 번째 실패는 앱 폴백 몫이다.
 - 작업 상태는 프로세스 메모리에만 있어서 서버를 재시작하면 진행 중이던
   분석은 사라진다(완료된 결과는 MinIO에 남는다).
-- 댓글 표시 이름은 앱 자가 신고다(사용자 UUID는 함께 기록). 분석 완료·새
-  댓글의 FCM 푸시, 원본 삭제 시 편집 데이터 청소, Jenkins 자동 배포,
-  서버 렌더링은 아직 없다.
+- 댓글 표시 이름은 앱 자가 신고다(사용자 UUID는 함께 기록).
+- 서버 렌더링은 컷 하나+줌까지만 안다. 자막·스티커·필터·캔버스 변형·
+  다중 클립·오디오 변경은 앱(Media3) 렌더링 몫이다.
+- Jenkins 자동 배포는 아직 없다(이미지는 서버에서 직접 빌드).

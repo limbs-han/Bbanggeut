@@ -229,6 +229,37 @@ class EditRecommendationClient {
     return EditAnalysisStatus.fromJson(response.data!);
   }
 
+  /// 컷·줌만 있는 프로젝트의 완성본을 서버가 만들게 한다.
+  ///
+  /// 레시피(몇 KB)만 보내므로 완성본 MP4를 폰에서 올리는 시간이 통째로
+  /// 사라진다. 서버는 원본을 [sourceUrl](백엔드 presigned)에서 직접 받는다.
+  Future<EditAnalysisStatus> requestServerRender({
+    required String videoId,
+    required String sourceUrl,
+    required Map<String, Object?> recipe,
+    String title = '',
+    DateTime? capturedAt,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/v1/edit-renders/$videoId',
+      data: <String, Object?>{
+        'sourceUrl': sourceUrl,
+        'recipe': recipe,
+        'title': title,
+        if (capturedAt != null)
+          'capturedAt': capturedAt.toLocal().toIso8601String(),
+      },
+    );
+    return EditAnalysisStatus.fromJson(response.data!);
+  }
+
+  Future<EditAnalysisStatus> serverRenderStatus(String videoId) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/v1/edit-renders/$videoId',
+    );
+    return EditAnalysisStatus.fromJson(response.data!);
+  }
+
   Future<void> saveProject({
     required String videoId,
     required int revision,
