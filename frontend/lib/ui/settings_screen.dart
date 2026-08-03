@@ -612,35 +612,195 @@ class _RenameDeviceDialogState extends State<_RenameDeviceDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('기기 관리'),
-    content: TextField(
-      controller: input,
-      autofocus: true,
-      maxLength: 80,
-      decoration: const InputDecoration(labelText: '기기 이름'),
-    ),
-    actions: [
-      TextButton.icon(
-        style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-        onPressed: () =>
-            Navigator.pop(context, const _DeviceManageResult.release()),
-        icon: const Icon(Icons.link_off_rounded),
-        label: const Text('기기 해제'),
-      ),
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('취소'),
-      ),
-      FilledButton(
-        onPressed: () => Navigator.pop(
-          context,
-          _DeviceManageResult.rename(input.text.trim()),
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Dialog(
+      key: const Key('device-management-dialog'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(top: 58, bottom: bottomInset),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            Container(
+              constraints: const BoxConstraints(maxWidth: 440),
+              padding: const EdgeInsets.fromLTRB(28, 92, 28, 28),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceWarm,
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x2E33291F),
+                    blurRadius: 28,
+                    offset: Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '기기 관리',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 27,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '연결된 기기의 이름을 변경할 수 있어요',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  const Text(
+                    '기기 이름',
+                    style: TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    key: const Key('device-name-field'),
+                    controller: input,
+                    autofocus: true,
+                    maxLength: 80,
+                    decoration: InputDecoration(
+                      counterText: '',
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 17,
+                      ),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.all(9),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceWarm,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.photo_camera_outlined,
+                            color: AppColors.coral,
+                            size: 21,
+                          ),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(
+                          color: AppColors.coral,
+                          width: 1.6,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: input,
+                      builder: (context, value, child) => Text(
+                        '${value.text.characters.length}/80',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  const Text(
+                    '가족들이 알아보기 쉬운 이름으로 설정해 주세요.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 28),
+                  FilledButton(
+                    key: const Key('save-device-name-button'),
+                    onPressed: () => Navigator.pop(
+                      context,
+                      _DeviceManageResult.rename(input.text.trim()),
+                    ),
+                    style: FilledButton.styleFrom(
+                      shadowColor: AppColors.coral.withValues(alpha: 0.4),
+                      elevation: 5,
+                    ),
+                    child: const Text('변경사항 저장'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.muted,
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                    child: const Text('취소'),
+                  ),
+                  const Divider(height: 26),
+                  TextButton.icon(
+                    key: const Key('release-device-button'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      minimumSize: const Size.fromHeight(38),
+                    ),
+                    onPressed: () => Navigator.pop(
+                      context,
+                      const _DeviceManageResult.release(),
+                    ),
+                    icon: const Icon(Icons.link_off_rounded, size: 20),
+                    label: const Text('이 기기 연결 해제하기'),
+                  ),
+                  const Text(
+                    '기존 추억은 그대로 유지돼요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: -58,
+              child: Container(
+                width: 116,
+                height: 116,
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceWarm,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 4),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x2633291F),
+                      blurRadius: 16,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/images/bbanggeut_mascot.png',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
-        child: const Text('저장'),
       ),
-    ],
-  );
+    );
+  }
 }
 
 class _GroupLabel extends StatelessWidget {
