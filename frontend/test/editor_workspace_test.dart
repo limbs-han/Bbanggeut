@@ -70,6 +70,7 @@ void main() {
         onVolumeChanged: (_) {},
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
+        onFaceStickerSelected: (_) {},
         onLookSelected: onLookSelected ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
@@ -128,8 +129,6 @@ void main() {
         '오디오',
         '스티커',
         '효과',
-        'AI자막',
-        'AR',
       ]) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
@@ -304,7 +303,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('하단 네비게이션은 아홉 개 도구를 전부 제공한다', (tester) async {
+  testWidgets('하단 네비는 클립 도구 다섯에 전체 도구 둘을 구분선 너머에 둔다', (
+    tester,
+  ) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -314,13 +315,26 @@ void main() {
 
     await tester.pumpWidget(workspace(controller));
 
-    for (final tool in EditorTool.values) {
+    for (final tool in const [
+      EditorTool.cut,
+      EditorTool.ratio,
+      EditorTool.zoom,
+      EditorTool.text,
+      EditorTool.sticker,
+      EditorTool.audio,
+      EditorTool.effect,
+    ]) {
       expect(
         find.byKey(Key('editor-nav-${tool.name}')),
         findsOneWidget,
         reason: '${tool.name} 탭이 없다',
       );
     }
+    // 오디오·효과는 영상 전체에 걸리는 도구라 구분선 오른쪽에 있다.
+    expect(find.byKey(const Key('editor-nav-divider')), findsOneWidget);
+    // AI 자막은 자막 탭의 버튼으로, AR은 스티커 탭의 줄로 들어갔다.
+    expect(find.byKey(const Key('editor-nav-aiCaption')), findsNothing);
+    expect(find.byKey(const Key('editor-nav-ar')), findsNothing);
   });
 
   testWidgets('줌 탭에서 현재 위치에 줌을 추가한다', (tester) async {

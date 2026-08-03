@@ -63,6 +63,31 @@ def _read_analysis(stem: str, kind: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _face_track(expression: dict[str, Any]) -> list[dict[str, float]]:
+    """앱의 얼굴 추적 스티커가 쓰는 얼굴 궤적.
+
+    expression 분석의 250ms 창에서 얼굴이 잡힌 것만 추린다. 시각은 창의
+    가운데(원본 영상 기준 ms), 좌표는 0~1 정규화 얼굴 중심, h는 화면 대비
+    얼굴 높이다. 얼굴이 없는 구간은 비워 둔다 — 앱이 이웃 표본을 보간한다.
+    """
+    track: list[dict[str, float]] = []
+    for row in expression.get("expressionWindows", []):
+        if int(row.get("faceCount", 0)) <= 0:
+            continue
+        height = float(row.get("faceHeight", 0.0))
+        if height <= 0.0:
+            continue
+        track.append(
+            {
+                "ms": (int(row["startMs"]) + int(row["endMs"])) // 2,
+                "x": round(float(row.get("focusX", 0.5)), 4),
+                "y": round(float(row.get("focusY", 0.5)), 4),
+                "h": round(height, 4),
+            }
+        )
+    return track
+
+
 def build_fixture_recommendation(request: RecommendationRequest) -> dict[str, Any]:
     stem = _fixture_stem(request.captured_at)
     if stem is None:
@@ -70,16 +95,18 @@ def build_fixture_recommendation(request: RecommendationRequest) -> dict[str, An
     preset = request.duration_preset or FIXTURE_PRESETS[stem]
     if preset not in {"auto", "short", "medium", "long"}:
         raise ValueError("durationPreset must be auto, short, medium, or long")
+    expression = _read_analysis(stem, "expression")
     recipe = build_adaptive_recipe(
         _read_analysis(stem, "yamnet"),
         _read_analysis(stem, "audio"),
         _read_analysis(stem, "video"),
-        _read_analysis(stem, "expression"),
+        expression,
         duration_preset=preset,
         zoom_enabled=request.zoom_enabled,
     )
     recipe["videoId"] = request.video_id
     recipe["fixture"] = stem
+    recipe["faceTrack"] = _face_track(expression)
     return recipe
 
 

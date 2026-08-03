@@ -41,6 +41,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.onVolumeChanged,
     required this.onMutedChanged,
     required this.onStickerSelected,
+    required this.onFaceStickerSelected,
     required this.onLookSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
@@ -52,7 +53,6 @@ class EditorWorkspace extends StatelessWidget {
     this.onVolumeCommitted,
     this.textEditing = false,
     this.rangePreviewing = false,
-    this.aiCaptionSummary,
     this.exportProgress,
     this.exportStatus,
     this.onExportCancel,
@@ -116,6 +116,9 @@ class EditorWorkspace extends StatelessWidget {
   final ValueChanged<bool> onMutedChanged;
   final ValueChanged<String> onStickerSelected;
 
+  /// 얼굴을 따라다니는 AR 스티커(스티커 탭의 둘째 줄). null이면 벗긴다.
+  final ValueChanged<String?> onFaceStickerSelected;
+
   /// 영상 전체 색감. 앱 안에서 바로 입히고 저장할 때 함께 구워진다.
   final ValueChanged<EditorLook> onLookSelected;
 
@@ -139,7 +142,6 @@ class EditorWorkspace extends StatelessWidget {
   final ValueChanged<EditorZoomSegment> onZoomSelected;
 
   /// AI 자막 패널에 보여줄 한 줄 상태. 자막 컨트롤러가 만든 문구를 그대로 받는다.
-  final String? aiCaptionSummary;
 
   final ValueChanged<EditorTool> onToolSelected;
 
@@ -302,7 +304,7 @@ class EditorWorkspace extends StatelessWidget {
                                 ? null
                                 : thumbnails[thumbnails.length ~/ 2],
                             onAiCaption: onAiCaption,
-                            aiCaptionSummary: aiCaptionSummary,
+                            onFaceStickerSelected: onFaceStickerSelected,
                             onZoomAdd: onZoomAdd,
                             onZoomRemove: onZoomRemove,
                             onZoomSelected: onZoomSelected,
@@ -735,7 +737,6 @@ double _toolPanelHeightFor(
   required double timelineHeight,
 }) {
   if (project.selectedTool == EditorTool.cut) return 0;
-  // AR 탭은 필터 줄과 마스크 줄을 함께 담아야 해서 한 뼘 더 쓴다.
   final wanted = switch (project.selectedTool) {
     // 장면 카드 한 줄과 배율 슬라이더 한 줄.
     EditorTool.zoom => layout.toolPanelHeight * 1.45,
@@ -743,7 +744,8 @@ double _toolPanelHeightFor(
     EditorTool.ratio => layout.toolPanelHeight * 1.5,
     // 자막 목록 아래에 구간 조절 줄이 한 줄 더 붙는다.
     EditorTool.text => layout.toolPanelHeight * 1.3,
-    EditorTool.ar => layout.toolPanelHeight * 1.6,
+    // 일반 스티커 줄과 얼굴 추적(AR) 줄, 두 줄을 담는다.
+    EditorTool.sticker => layout.toolPanelHeight * 1.7,
     _ => layout.toolPanelHeight,
   };
   final leftover =
@@ -1761,6 +1763,7 @@ class SelectedToolPanel extends StatelessWidget {
     required this.onVolumeChanged,
     required this.onMutedChanged,
     required this.onStickerSelected,
+    required this.onFaceStickerSelected,
     required this.onLookSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
@@ -1769,7 +1772,6 @@ class SelectedToolPanel extends StatelessWidget {
     this.thumbnails = const [],
     this.previewFrame,
     this.onVolumeCommitted,
-    this.aiCaptionSummary,
   });
 
   final EditorProject project;
@@ -1787,13 +1789,13 @@ class SelectedToolPanel extends StatelessWidget {
   final VoidCallback? onVolumeCommitted;
   final ValueChanged<bool> onMutedChanged;
   final ValueChanged<String> onStickerSelected;
+  final ValueChanged<String?> onFaceStickerSelected;
   final ValueChanged<EditorLook> onLookSelected;
   final String? previewFrame;
   final VoidCallback onAiCaption;
   final VoidCallback onZoomAdd;
   final ValueChanged<EditorZoomSegment> onZoomRemove;
   final ValueChanged<EditorZoomSegment> onZoomSelected;
-  final String? aiCaptionSummary;
 
   @override
   Widget build(BuildContext context) {
@@ -1829,6 +1831,7 @@ class SelectedToolPanel extends StatelessWidget {
             onText: onText,
             onTextEdit: onTextEdit,
             onTextRemove: onTextRemove,
+            onAiCaption: onAiCaption,
           ),
           EditorTool.zoom => _SimpleZoomPanel(
             project: project,
@@ -1845,17 +1848,19 @@ class SelectedToolPanel extends StatelessWidget {
             onVolumeCommitted: onVolumeCommitted,
             onMutedChanged: onMutedChanged,
           ),
-          EditorTool.sticker => _StickerPanel(onSelected: onStickerSelected),
+          EditorTool.sticker => _StickerPanel(
+            project: project,
+            onSelected: onStickerSelected,
+            onFaceStickerSelected: onFaceStickerSelected,
+          ),
           EditorTool.effect => _LookPanel(
             look: project.look,
             previewFrame: previewFrame,
             onLookSelected: onLookSelected,
           ),
-          EditorTool.aiCaption => _AiCaptionPanel(
-            summary: aiCaptionSummary,
-            onOpen: onAiCaption,
-          ),
-          EditorTool.ar => const _ArPanel(),
+          // AI 자막은 자막 탭의 버튼으로, AR은 스티커 탭의 줄로 들어갔다.
+          // 하단 네비에는 없지만 enum은 남아 있어 빈 칸으로 답한다.
+          EditorTool.aiCaption || EditorTool.ar => const SizedBox.shrink(),
           EditorTool.cut => const SizedBox.shrink(),
         },
       ),
@@ -2222,10 +2227,14 @@ class _TextPanel extends StatelessWidget {
     required this.onText,
     required this.onTextEdit,
     required this.onTextRemove,
+    required this.onAiCaption,
   });
 
   final EditorProject project;
   final VoidCallback onText;
+
+  /// 들린 대사로 자막을 만드는 시트를 연다. 결과는 이 탭의 자막으로 합쳐진다.
+  final VoidCallback onAiCaption;
   final ValueChanged<String> onTextEdit;
 
   /// 칩을 눌러 그 자막을 고르고 시작 시각으로 이동한다.
@@ -2262,6 +2271,22 @@ class _TextPanel extends StatelessWidget {
                 color: EditorColorTokens.muted,
                 fontSize: 10,
               ),
+            ),
+            const SizedBox(width: 6),
+            // AI 자막도 이 탭의 일이다 — 만들어진 자막이 이 목록으로 합쳐진다.
+            OutlinedButton(
+              key: const Key('editor-open-ai-caption'),
+              onPressed: onAiCaption,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(56, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                textStyle: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('AI 자막'),
             ),
             const SizedBox(width: 6),
             FilledButton(
@@ -2464,9 +2489,17 @@ class _AudioPanel extends StatelessWidget {
 }
 
 class _StickerPanel extends StatelessWidget {
-  const _StickerPanel({required this.onSelected});
+  const _StickerPanel({
+    required this.project,
+    required this.onSelected,
+    required this.onFaceStickerSelected,
+  });
 
+  final EditorProject project;
   final ValueChanged<String> onSelected;
+
+  /// 얼굴을 따라다니는 AR 스티커를 씌우거나(null이면) 벗긴다.
+  final ValueChanged<String?> onFaceStickerSelected;
 
   static const _base = ['😊', '😂', '❤️', '⭐', '👏', '🌸', '🍰', '🐱', '👍'];
 
@@ -2482,92 +2515,135 @@ class _StickerPanel extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const _PanelTitle('스티커'),
-      const SizedBox(height: 1),
-      const Text(
-        '누르면 영상 가운데에 놓여요. 끌어 옮기고 모서리로 크기를 바꿔요.',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: EditorColorTokens.muted, fontSize: 11),
-      ),
-      const SizedBox(height: 4),
-      Expanded(
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            for (final sticker in _stickers)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: InkWell(
-                  key: Key('editor-sticker-$sticker'),
-                  onTap: () => onSelected(sticker),
-                  borderRadius: BorderRadius.circular(
-                    EditorRadiusTokens.control,
-                  ),
-                  child: Container(
-                    width: 50,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: EditorColorTokens.background,
-                      borderRadius: BorderRadius.circular(
-                        EditorRadiusTokens.control,
-                      ),
-                      border: Border.all(color: EditorColorTokens.border),
+  Widget build(BuildContext context) {
+    final faceSticker = project.stickerLayers
+        .where((layer) => layer.tracksFace)
+        .firstOrNull;
+    final faceReady = project.faceTrack.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _PanelTitle('스티커'),
+        const SizedBox(height: 1),
+        const Text(
+          '누르면 영상 가운데에 놓여요. 끌어 옮기고 모서리로 크기를 바꿔요.',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: EditorColorTokens.muted, fontSize: 11),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (final sticker in _stickers)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: InkWell(
+                    key: Key('editor-sticker-$sticker'),
+                    onTap: () => onSelected(sticker),
+                    borderRadius: BorderRadius.circular(
+                      EditorRadiusTokens.control,
                     ),
-                    child: Text(sticker, style: const TextStyle(fontSize: 25)),
+                    child: Container(
+                      width: 50,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: EditorColorTokens.background,
+                        borderRadius: BorderRadius.circular(
+                          EditorRadiusTokens.control,
+                        ),
+                        border: Border.all(color: EditorColorTokens.border),
+                      ),
+                      child: Text(
+                        sticker,
+                        style: const TextStyle(fontSize: 25),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-      ),
-    ],
-  );
-}
-
-/// AI 자막 탭. 자막을 만드는 코드는 features/stt 쪽 그대로 쓰고, 여기서는
-/// 그 화면을 여는 버튼과 상태 한 줄만 그린다.
-class _AiCaptionPanel extends StatelessWidget {
-  const _AiCaptionPanel({required this.onOpen, this.summary});
-
-  final VoidCallback onOpen;
-  final String? summary;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const _PanelTitle('AI 자막'),
-      const SizedBox(height: 2),
-      Expanded(
-        child: Text(
-          summary ?? '들린 대사로 자막을 만들어 영상에 얹어요.',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: EditorColorTokens.muted,
-            fontSize: 11,
-            height: 1.3,
+            ],
           ),
         ),
-      ),
-      // 고정 높이 SizedBox로 버튼을 감싸지 않는다 — _TextPanel 주석 참고.
-      FilledButton.icon(
-        key: const Key('editor-open-ai-caption'),
-        onPressed: onOpen,
-        icon: const Icon(Icons.closed_caption_rounded, size: 20),
-        label: const Text('AI 자막 만들기 · 고치기'),
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(40),
-          backgroundColor: EditorColorTokens.sage,
-          foregroundColor: EditorColorTokens.ink,
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 20,
+          child: Row(
+            children: [
+              const Expanded(
+                child: _PanelTitle('AR · 얼굴을 따라다니는 스티커'),
+              ),
+              if (faceSticker != null)
+                TextButton(
+                  key: const Key('editor-clear-face-sticker'),
+                  onPressed: () => onFaceStickerSelected(null),
+                  style: TextButton.styleFrom(
+                    foregroundColor: EditorColorTokens.muted,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: const Size(0, 20),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('벗기기', style: TextStyle(fontSize: 11)),
+                ),
+            ],
+          ),
         ),
-      ),
-    ],
-  );
+        const SizedBox(height: 4),
+        Expanded(
+          child: faceReady
+              ? ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final sticker in EditorArEffect.stickerValues)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: InkWell(
+                          key: Key('editor-face-sticker-$sticker'),
+                          onTap: () => onFaceStickerSelected(sticker),
+                          borderRadius: BorderRadius.circular(
+                            EditorRadiusTokens.control,
+                          ),
+                          child: Container(
+                            width: 50,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: EditorColorTokens.background,
+                              borderRadius: BorderRadius.circular(
+                                EditorRadiusTokens.control,
+                              ),
+                              border: Border.all(
+                                color: faceSticker?.value == sticker
+                                    ? EditorColorTokens.coral
+                                    : EditorColorTokens.border,
+                                width: faceSticker?.value == sticker
+                                    ? 2.5
+                                    : 1,
+                              ),
+                            ),
+                            child: Text(
+                              sticker,
+                              style: const TextStyle(fontSize: 25),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                )
+              : const Center(
+                  child: Text(
+                    '이 영상에서는 얼굴 정보를 아직 받지 못했어요.',
+                    key: Key('editor-face-sticker-unavailable'),
+                    style: TextStyle(
+                      color: EditorColorTokens.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
 }
 
 /// 인앱 색감 효과 탭.
@@ -2723,37 +2799,6 @@ class _LookCard extends StatelessWidget {
   }
 }
 
-/// AR 탭 자리표시 패널.
-///
-/// Banuba 마스크는 걷어냈다. 다음 구현은 서버가 이미 뽑는 MediaPipe 얼굴
-/// 좌표(expression/video 분석)를 레시피로 받아, 얼굴을 따라다니는 스티커를
-/// 자체 오버레이로 그리는 방식이다 — 자막 오버레이와 같은 경로에 시간에
-/// 따라 움직이는 좌표만 더한다.
-class _ArPanel extends StatelessWidget {
-  const _ArPanel();
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const _PanelTitle('얼굴 스티커'),
-      const SizedBox(height: 8),
-      Expanded(
-        child: Center(
-          child: Text(
-            '얼굴을 따라다니는 스티커를 준비하고 있어요.',
-            key: const Key('editor-ar-placeholder'),
-            style: const TextStyle(
-              color: EditorColorTokens.muted,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      ),
-    ],
-  );
-}
-
 class EditorBottomNavigation extends StatelessWidget {
   const EditorBottomNavigation({
     super.key,
@@ -2770,16 +2815,21 @@ class EditorBottomNavigation extends StatelessWidget {
   final double fontSize;
   final double iconSize;
 
-  static const _items = <(EditorTool, String, IconData)>[
+  /// 클립 단위 도구. AI자막은 자막 탭의 버튼으로, AR은 스티커 탭의 줄로
+  /// 들어가서 하단 네비에는 없다.
+  static const _clipItems = <(EditorTool, String, IconData)>[
     (EditorTool.cut, '컷 편집', Icons.content_cut_rounded),
     (EditorTool.ratio, '비율', Icons.aspect_ratio_rounded),
     (EditorTool.zoom, '줌', Icons.zoom_in_rounded),
     (EditorTool.text, '자막', Icons.subtitles_rounded),
-    (EditorTool.audio, '오디오', Icons.music_note_rounded),
     (EditorTool.sticker, '스티커', Icons.emoji_emotions_outlined),
+  ];
+
+  /// 영상 **전체**에 걸리는 도구. 클립 단위가 아니라서 구분선 너머
+  /// 오른쪽에 따로 둔다.
+  static const _globalItems = <(EditorTool, String, IconData)>[
+    (EditorTool.audio, '오디오', Icons.music_note_rounded),
     (EditorTool.effect, '효과', Icons.auto_awesome_rounded),
-    (EditorTool.aiCaption, 'AI자막', Icons.closed_caption_rounded),
-    (EditorTool.ar, 'AR', Icons.face_retouching_natural),
   ];
 
   @override
@@ -2802,7 +2852,23 @@ class EditorBottomNavigation extends StatelessWidget {
     ),
     child: Row(
       children: [
-        for (final item in _items)
+        for (final item in _clipItems)
+          _NavigationItem(
+            tool: item.$1,
+            label: item.$2,
+            icon: item.$3,
+            selected: selectedTool == item.$1,
+            fontSize: fontSize,
+            iconSize: iconSize,
+            onSelected: onSelected,
+          ),
+        Container(
+          key: const Key('editor-nav-divider'),
+          width: 1,
+          margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 3),
+          color: EditorColorTokens.border,
+        ),
+        for (final item in _globalItems)
           _NavigationItem(
             tool: item.$1,
             label: item.$2,

@@ -9,6 +9,7 @@ class EditRecommendation {
     required this.durationPreset,
     required this.zoomSegments,
     this.scoreTimeline = const [],
+    this.faceTrack = const [],
   });
 
   factory EditRecommendation.fromJson(Map<String, dynamic> json) {
@@ -20,12 +21,16 @@ class EditRecommendation {
     final timeline = (recipe['scoreTimeline'] as List? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList(growable: false);
+    final faces = (recipe['faceTrack'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
     return EditRecommendation(
       cutStartMs: (cut['startMs'] as num).round(),
       cutEndMs: (cut['endMs'] as num).round(),
       durationPreset: recipe['durationPreset'] as String? ?? 'auto',
       zoomSegments: zooms,
       scoreTimeline: timeline,
+      faceTrack: faces,
     );
   }
 
@@ -38,6 +43,10 @@ class EditRecommendation {
   /// 웃음·말소리·음량 상승·모션·얼굴 특징을 융합한 `eventScore`가 들어 있다.
   /// 컷 선택이 이 점수를 그대로 쓴다 — 앱에서 점수를 다시 지어내지 않는다.
   final List<Map<String, dynamic>> scoreTimeline;
+
+  /// MediaPipe 표정 분석이 뽑은 얼굴 궤적({ms, x, y, h}, 원본 시각 기준).
+  /// 얼굴을 따라다니는 AR 스티커가 쓴다.
+  final List<Map<String, dynamic>> faceTrack;
 }
 
 class EditRecommendationClient {

@@ -462,6 +462,55 @@ void main() {
     expect(roundTripped.startMs, moved.startMs);
   });
 
+  test('얼굴 추적 스티커는 한 번에 하나이고 트랙 좌표로 내보낸다', () {
+    final subject = controller();
+    // 서버 얼굴 궤적을 흉내 낸다 — 0.5초마다 오른쪽 아래로 움직인다.
+    subject.loadDraftRecipe({
+      'type': 'draft-v1',
+      'clips': [
+        {'id': 'clip-a', 'sourceStartMs': 0, 'sourceEndMs': 10000},
+      ],
+      'faceTrack': [
+        {'ms': 0, 'x': 0.2, 'y': 0.2, 'h': 0.3},
+        {'ms': 1000, 'x': 0.4, 'y': 0.4, 'h': 0.3},
+      ],
+    });
+    expect(subject.project.faceTrack, hasLength(2));
+
+    // 보간: 500ms는 두 표본의 중간이다.
+    final mid = subject.project.faceSampleAt(500)!;
+    expect(mid.x, closeTo(0.3, 1e-9));
+    expect(mid.y, closeTo(0.3, 1e-9));
+
+    subject.setFaceSticker('👑');
+    expect(subject.faceSticker?.value, '👑');
+    // 다른 것을 고르면 갈아 끼운다 — 얼굴 스티커는 한 번에 하나다.
+    subject.setFaceSticker('🕶️');
+    final face = subject.faceSticker!;
+    expect(face.value, '🕶️');
+    expect(
+      subject.project.stickerLayers.where((l) => l.tracksFace),
+      hasLength(1),
+    );
+
+    // 내보내기 DTO에는 얼굴 키프레임 트랙이 실린다.
+    final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
+    final stickers = dto['stickerLayers']! as List;
+    final tracked = (stickers.single as Map)['track']! as List;
+    expect(tracked, hasLength(2));
+    expect((tracked.first as Map)['x'], closeTo(0.2, 1e-9));
+
+    // 초안 왕복에도 얼굴 궤적·추적 여부가 남는다.
+    final draft = Map<String, dynamic>.from(subject.project.toDraftMap());
+    final restored = controller()..loadDraftRecipe(draft);
+    expect(restored.project.faceTrack, hasLength(2));
+    expect(restored.faceSticker?.value, '🕶️');
+
+    // 벗기기.
+    subject.setFaceSticker(null);
+    expect(subject.faceSticker, isNull);
+  });
+
   test('클립을 지우면 거기 묶인 스티커도 사라진다', () {
     final subject = controller();
     subject.splitAt(4000);

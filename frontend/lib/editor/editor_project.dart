@@ -561,6 +561,7 @@ class EditorStickerLayer extends EditorTimedLayer {
     super.scale,
     super.rotationDegrees,
     this.clipId,
+    this.tracksFace = false,
   });
 
   final String value;
@@ -570,6 +571,11 @@ class EditorStickerLayer extends EditorTimedLayer {
   /// 사라진다. null이면 어느 클립에도 묶이지 않은 옛 데이터다.
   final String? clipId;
 
+  /// 얼굴을 따라다니는가(AR 탭). true면 [position]은 화면 좌표가 아니라
+  /// **얼굴 중심에서의 오프셋**이다 — (0.5, 0.5)면 얼굴 정중앙에 붙는다.
+  /// 실제 화면 위치는 프레임마다 [EditorProject.faceSampleAt]으로 구한다.
+  final bool tracksFace;
+
   EditorStickerLayer copyWith({
     String? value,
     NormalizedPoint? position,
@@ -578,6 +584,7 @@ class EditorStickerLayer extends EditorTimedLayer {
     double? scale,
     double? rotationDegrees,
     String? clipId,
+    bool? tracksFace,
   }) => EditorStickerLayer(
     id: id,
     value: value ?? this.value,
@@ -587,6 +594,7 @@ class EditorStickerLayer extends EditorTimedLayer {
     scale: (scale ?? this.scale).clamp(0.2, 4.0),
     rotationDegrees: rotationDegrees ?? this.rotationDegrees,
     clipId: clipId ?? this.clipId,
+    tracksFace: tracksFace ?? this.tracksFace,
   );
 
   Map<String, Object?> toMap() => {
@@ -598,6 +606,7 @@ class EditorStickerLayer extends EditorTimedLayer {
     'scale': scale,
     'rotationDegrees': rotationDegrees,
     'clipId': clipId,
+    'tracksFace': tracksFace,
   };
 
   @override
@@ -610,7 +619,8 @@ class EditorStickerLayer extends EditorTimedLayer {
       other.endMs == endMs &&
       other.scale == scale &&
       other.rotationDegrees == rotationDegrees &&
-      other.clipId == clipId;
+      other.clipId == clipId &&
+      other.tracksFace == tracksFace;
 
   @override
   int get hashCode => Object.hash(
@@ -622,6 +632,7 @@ class EditorStickerLayer extends EditorTimedLayer {
     scale,
     rotationDegrees,
     clipId,
+    tracksFace,
   );
 }
 
@@ -703,6 +714,43 @@ class EditorExportState {
   );
 }
 
+/// 서버 분석(MediaPipe)이 뽑은 어느 순간의 얼굴 위치.
+///
+/// [sourceMs]는 **원본 영상 시각**이다 — 클립을 자르고 옮겨도 원본 기준
+/// 좌표는 변하지 않아, 얼굴 추적 스티커가 클립 배치와 무관하게 맞는다.
+/// [x]·[y]는 0~1 정규화 얼굴 중심, [height]는 화면 대비 얼굴 높이다.
+class EditorFaceSample {
+  const EditorFaceSample({
+    required this.sourceMs,
+    required this.x,
+    required this.y,
+    this.height = 0,
+  });
+
+  final int sourceMs;
+  final double x;
+  final double y;
+  final double height;
+
+  Map<String, Object> toMap() => {
+    'ms': sourceMs,
+    'x': x,
+    'y': y,
+    'h': height,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is EditorFaceSample &&
+      other.sourceMs == sourceMs &&
+      other.x == x &&
+      other.y == y &&
+      other.height == height;
+
+  @override
+  int get hashCode => Object.hash(sourceMs, x, y, height);
+}
+
 class EditorProject {
   const EditorProject({
     required this.sourceVideoPath,
@@ -714,6 +762,7 @@ class EditorProject {
     this.zoomSegments = const [],
     this.stickerLayers = const [],
     this.blurLayers = const [],
+    this.faceTrack = const [],
     this.audio = const EditorAudio(),
     this.look = EditorLook.none,
     this.arEffectId,
@@ -757,6 +806,9 @@ class EditorProject {
   final List<EditorZoomSegment> zoomSegments;
   final List<EditorStickerLayer> stickerLayers;
   final List<EditorBlurLayer> blurLayers;
+
+  /// 서버 분석이 준 얼굴 궤적(원본 시각순). 얼굴 추적 스티커가 쓴다.
+  final List<EditorFaceSample> faceTrack;
   final EditorAudio audio;
   final EditorLook look;
 
@@ -901,6 +953,57 @@ class EditorProject {
     return null;
   }
 
+  /// 이 원본 시각의 얼굴 중심. 트랙이 비었으면 null.
+  ///
+  /// 이웃 표본을 선형 보간하고, 트랙 바깥 시각은 가장 가까운 표본을 그대로
+  /// 쓴다. 얼굴이 잠깐 사라진 구간도 이웃끼리 보간한다 — 스티커가 사라졌다
+  /// 나타나며 깜빡이는 것보다 부드럽게 건너가는 쪽이 덜 거슬린다.
+  EditorFaceSample? faceSampleAt(int sourceMs) {
+    if (faceTrack.isEmpty) return null;
+    if (sourceMs <= faceTrack.first.sourceMs) return faceTrack.first;
+    if (sourceMs >= faceTrack.last.sourceMs) return faceTrack.last;
+    for (var index = 1; index < faceTrack.length; index++) {
+      final next = faceTrack[index];
+      if (sourceMs > next.sourceMs) continue;
+      final prev = faceTrack[index - 1];
+      final span = next.sourceMs - prev.sourceMs;
+      if (span <= 0) return next;
+      final t = (sourceMs - prev.sourceMs) / span;
+      return EditorFaceSample(
+        sourceMs: sourceMs,
+        x: prev.x + (next.x - prev.x) * t,
+        y: prev.y + (next.y - prev.y) * t,
+        height: prev.height + (next.height - prev.height) * t,
+      );
+    }
+    return faceTrack.last;
+  }
+
+  /// 얼굴 추적 스티커가 내보내기에서 쓸 키프레임. **타임라인 시각** 기준이고,
+  /// 스티커를 끌어 둔 오프셋(위치 - 중앙)이 얼굴 좌표에 더해져 있다.
+  List<Map<String, Object>> _faceTrackForExport(EditorStickerLayer layer) {
+    if (faceTrack.isEmpty) return const [];
+    final offsetX = layer.position.x - 0.5;
+    final offsetY = layer.position.y - 0.5;
+    final samples = <Map<String, Object>>[];
+    var timelineStartMs = 0;
+    for (final clip in clips) {
+      for (final sample in faceTrack) {
+        if (sample.sourceMs < clip.sourceStartMs ||
+            sample.sourceMs > clip.sourceEndMs) {
+          continue;
+        }
+        samples.add({
+          'ms': timelineStartMs + sample.sourceMs - clip.sourceStartMs,
+          'x': (sample.x + offsetX).clamp(0.0, 1.0),
+          'y': (sample.y + offsetY).clamp(0.0, 1.0),
+        });
+      }
+      timelineStartMs += clip.durationMs;
+    }
+    return samples;
+  }
+
   EditorProject copyWith({
     List<EditorClip>? clips,
     EditorCanvas? canvas,
@@ -908,6 +1011,7 @@ class EditorProject {
     List<EditorZoomSegment>? zoomSegments,
     List<EditorStickerLayer>? stickerLayers,
     List<EditorBlurLayer>? blurLayers,
+    List<EditorFaceSample>? faceTrack,
     EditorAudio? audio,
     EditorLook? look,
     String? arEffectId,
@@ -935,6 +1039,7 @@ class EditorProject {
     zoomSegments: List.unmodifiable(zoomSegments ?? this.zoomSegments),
     stickerLayers: List.unmodifiable(stickerLayers ?? this.stickerLayers),
     blurLayers: List.unmodifiable(blurLayers ?? this.blurLayers),
+    faceTrack: List.unmodifiable(faceTrack ?? this.faceTrack),
     audio: audio ?? this.audio,
     look: look ?? this.look,
     arEffectId: clearArEffect ? null : arEffectId ?? this.arEffectId,
@@ -995,6 +1100,7 @@ class EditorProject {
     ],
     'textLayers': [for (final layer in textLayers) layer.toMap()],
     'stickerLayers': [for (final layer in stickerLayers) layer.toMap()],
+    'faceTrack': [for (final sample in faceTrack) sample.toMap()],
     'audio': {'sourceVolume': audio.sourceVolume, 'muted': audio.muted},
     'look': look.name,
     if (recommendationMarker case final marker?)
@@ -1040,7 +1146,15 @@ class EditorProject {
       'durationPreset': recommendationMarker?.preset,
       'textLayers': textLayers.map((layer) => layer.toMap()).toList(),
       'zoomSegments': zoomMaps,
-      'stickerLayers': stickerLayers.map((layer) => layer.toMap()).toList(),
+      'stickerLayers': [
+        for (final layer in stickerLayers)
+          {
+            ...layer.toMap(),
+            // 얼굴 추적 스티커는 프레임별 위치 키프레임을 함께 넘긴다.
+            // 네이티브(EditorLayerOverlay.kt)가 보간해 얼굴을 따라 그린다.
+            if (layer.tracksFace) 'track': _faceTrackForExport(layer),
+          },
+      ],
       'blurLayers': blurLayers.map((layer) => layer.toMap()).toList(),
       'audio': audio.toMap(),
       'look': look.name,

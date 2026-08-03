@@ -1376,11 +1376,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       recommendationLoading: _recommendationLoading,
       onRecommendationSelected: _selectRecommendationPreset,
       onExportCancel: _cancelExport,
-      aiCaptionSummary: _autoCaptions.message(
-        estimateSeconds: _editState.durationMs > 0
-            ? (_editState.durationMs / 1000 * 0.9).round()
-            : null,
-      ),
       onBack: () => Navigator.maybePop(context),
       onSaveDraft: _saveDraft,
       onSave: _saveEdit,
@@ -1424,6 +1419,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onVolumeCommitted: _commitAudioVolume,
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
+      onFaceStickerSelected: (value) {
+        projectController.setFaceSticker(value);
+        _editState.markExternalEditApplied();
+        setState(() {});
+      },
       onLookSelected: _setLook,
       onAiCaption: _showAiCaptionSheet,
       onZoomAdd: () {
@@ -1452,9 +1452,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     if (_saving) return;
     _projectController?.selectTool(tool);
     if (mounted) setState(() {});
-    // AI 자막은 탭을 고르는 것만으로 바로 열어 준다. 탭 → 패널 → 버튼으로
-    // 두 번 누르게 하면 "연결이 안 된 것"처럼 보인다.
-    if (tool == EditorTool.aiCaption) unawaited(_showAiCaptionSheet());
   }
 
   void _selectCanvasRatio(EditorCanvasRatio ratio) {
@@ -1955,6 +1952,25 @@ class _PreviewSurface extends StatelessWidget {
     return auto != null && auto.isNotEmpty ? auto : null;
   }
 
+  /// 얼굴 추적 스티커의 이 순간 화면 위치. 일반 스티커는 그대로 돌려준다.
+  ///
+  /// 저장된 [EditorStickerLayer.position]은 얼굴 중심 기준 **오프셋**이라
+  /// (0.5, 0.5)면 얼굴 정중앙이다. 얼굴 궤적이 없으면 오프셋을 그대로 화면
+  /// 좌표로 쓴다 — 안 보이는 것보다 가운데라도 보이는 쪽이 덜 놀란다.
+  EditorStickerLayer _resolveFaceSticker(EditorStickerLayer layer) {
+    if (!layer.tracksFace) return layer;
+    final project = projectController.project;
+    final sourceMs = project.sourcePositionForTimeline(project.playheadMs);
+    final face = sourceMs == null ? null : project.faceSampleAt(sourceMs);
+    if (face == null) return layer;
+    return layer.copyWith(
+      position: NormalizedPoint(
+        face.x + layer.position.x - 0.5,
+        face.y + layer.position.y - 0.5,
+      ),
+    );
+  }
+
   /// 글자 레이어 하나를 그린다. 편집 중인 레이어만 제자리 입력칸이 된다.
   ///
   /// 입력칸은 [InputDecoration]과 앱 테마를 통째로 벗긴다. 그러지 않으면
@@ -2138,10 +2154,16 @@ class _PreviewSurface extends StatelessWidget {
                   scale: scale,
                 ),
               ),
-            for (final layer in projectController.project.stickerLayers.where(
-              (layer) =>
-                  layer.isVisibleAt(projectController.project.playheadMs),
-            ))
+            for (final layer
+                in projectController.project.stickerLayers
+                    .where(
+                      (layer) => layer.isVisibleAt(
+                        projectController.project.playheadMs,
+                      ),
+                    )
+                    // 얼굴 추적 스티커는 이 순간의 얼굴 위치로 바꿔 그린다.
+                    // 저장된 position은 얼굴 기준 오프셋이다.
+                    .map(_resolveFaceSticker))
               _EditableLayerOverlay(
                 key: ValueKey(layer.id),
                 controller: projectController,
