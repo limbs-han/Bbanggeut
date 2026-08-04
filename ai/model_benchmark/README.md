@@ -135,10 +135,16 @@ bash ai/model_benchmark/run_yolo_accuracy_comparison.sh
 
 ## 웃음·연속 박수 모델 비교
 
-세 후보(YAMNet TFLite, EfficientAT MN10, PANNs CNN10)는 동일한 WAV와
-0.975초 창을 사용해 웃음과 박수 점수를 한 번에 생성합니다. 임계값은
-validation에서만 선택하며 test에는 고정합니다. 선택 우선순위는 시간당
-오탐 이벤트, Recall 0.85 충족 여부, Macro F1, P95 지연시간 순입니다.
+세 후보(YAMNet TFLite, EfficientAT MN10, PANNs CNN10)는 동일한 WAV에서
+웃음과 박수 점수를 한 번에 생성합니다. 모델 고유 입력 문맥을 유지하므로 입력
+창은 각각 0.975초, 10초, 2초입니다. 최초 비교에서는 validation Recall 0.85를
+만족한 후보 중 오탐이 적은 임계값을 test에 고정했습니다.
+
+비교 결과를 검토한 뒤에는 저장된 원시 window 점수로 Recall–오탐 Pareto를
+다시 계산합니다. 재튜닝 도구는 임계값과 연속 양성 창 수를 실제 서비스와 같은
+규칙으로 Recall과 오탐 양쪽에 적용합니다. validation Pareto 전선에서 F2가 가장
+높은 값을 섀도 후보로 제시하며, 이미 확인한 test 결과는 사후 진단으로만
+표시합니다.
 
 원본 음성은 Jetson 로컬에만 두고 Git에는 매니페스트 구조와 실행 코드만
 저장합니다.
@@ -173,9 +179,23 @@ python3 ai/model_benchmark/prepare_esc50_audio_benchmark.py \
 bash ai/model_benchmark/prepare_audio_benchmark_models.sh
 bash ai/model_benchmark/run_audio_accuracy_comparison.sh
 
+# 기존 9회 원시 예측으로 Recall–오탐 Pareto와 섀도 후보 재계산
+python3 ai/model_benchmark/audio_threshold_tuning.py \
+  --results-dir \
+    ~/ai_benchmark_results/audio-accuracy-comparison-20260803T235943Z \
+  --dataset-root \
+    ~/ai_datasets/model_benchmark/office-audio-events-v1
+
 # 시험 전에 active였던 서비스 복원(서보는 안전상 자동 복원하지 않음)
 bash ai/model_benchmark/audio_benchmark_services.sh restore
 ```
+
+재튜닝 결과는 비교 결과 디렉터리의 `recall-tuning` 아래에 생성됩니다.
+
+- `threshold-tuning.md`: 발표와 검토에 사용할 요약표
+- `threshold-tuning.json`: 전체 Pareto 후보와 test 사후 진단
+- `threshold-sweep.jsonl`: validation의 모든 임계값·연속 창 조합
+- `failure-cases.jsonl`: 추천 섀도 후보의 test FN·FP 목록
 
 ESC-50는 CC BY-NC 3.0이므로 비상업적 평가에만 사용합니다. 공개 모델 세 개가
 모두 AudioSet 계열 사전학습 모델인 점을 고려해 AudioSet 자체는 최종 일반화
