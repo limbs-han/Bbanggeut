@@ -55,16 +55,24 @@ public interface VideoMapper {
         @Param("premiumRetentionDays") int premiumRetentionDays
     );
 
+    /**
+     * 금고의 편집 완성본. 도착을 기다리는 것({@code UPLOADING})과 끝내 오지
+     * 못한 것({@code FAILED})도 함께 준다 — 업로드는 세션 없는 OS 백그라운드
+     * 작업이 하고 진행 상황이 상단 알림으로만 나가서, 알림을 껐거나 권한을
+     * 주지 않은 기기에서는 목록이 유일한 단서다. {@code READY}만 주면 올라가는
+     * 중에는 아무것도 안 보이고 실패한 줄은 조용히 사라진다.
+     */
     @Select("""
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id,
                v.title, v.description, v.content_type, v.size_bytes, v.checksum_sha256,
-               v.duration_ms, v.captured_start_at, v.captured_end_at, v.status,
-               v.is_favorite, v.storage_key, v.thumbnail_storage_key, v.created_at,
-               array_to_string(v.event_types, ',') AS eventTypesCsv
+               v.duration_ms, v.captured_start_at, v.captured_end_at, v.storage_key,
+               v.status, v.is_favorite AS favorite, v.created_at,
+               array_to_string(v.event_types, ',') AS event_types_csv
           FROM videos v
           JOIN vault_memberships m ON m.vault_id = v.vault_id
          WHERE v.vault_id = #{vaultId} AND m.user_id = #{userId} AND m.status = 'ACTIVE'
-           AND v.source_type = 'EDIT_OUTPUT' AND v.status = 'READY'
+           AND v.source_type = 'EDIT_OUTPUT'
+           AND v.status IN ('READY', 'UPLOADING', 'FAILED')
            AND v.deleted_at IS NULL
          ORDER BY v.created_at DESC, v.id DESC
          LIMIT #{limit}
@@ -80,11 +88,11 @@ public interface VideoMapper {
      * 부를 수 없으므로 서버가 객체가 왔는지 훑어 승격한다.
      */
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
-               description, content_type, size_bytes, checksum_sha256, duration_ms,
-               captured_start_at, captured_end_at, status, is_favorite,
-               storage_key, thumbnail_storage_key, created_at,
-               array_to_string(event_types, ',') AS eventTypesCsv
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+               content_type, size_bytes, checksum_sha256, duration_ms,
+               captured_start_at, captured_end_at, storage_key, status,
+               is_favorite AS favorite, created_at,
+               array_to_string(event_types, ',') AS event_types_csv
           FROM videos
          WHERE status = 'UPLOADING' AND source_type = 'EDIT_OUTPUT'
            AND deleted_at IS NULL

@@ -1036,7 +1036,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-78 | `GET /api/notifications/preferences` | 알림 설정 조회(`{anniversaryAlerts, weeklyReport, newMemoryAlerts}`) — 저장 행이 없으면 모두 true |
 | API-79 | `PUT /api/notifications/preferences` | 알림 설정 저장(세 토글 일괄, 200에 저장값 반환) — `newMemoryAlerts=false`면 새 영상 푸시 발송 대상에서 제외 |
 | API-81 | `POST /api/videos/{videoId}/edits` | 편집 완성본 업로드 예약 — 원본에서 금고·기기·보관 기준을 상속한 `EDIT_OUTPUT` 행을 만들고 서명 URL 발급. 서명에 `Content-Type`만 들어간다(백그라운드 업로더가 헤더를 못 붙임). 완료 통보 없이 서버가 도착을 훑어 READY로 승격 |
-| API-82 | `GET /api/vaults/{vaultId}/edits` | 금고의 편집 완성본 목록(READY만, 최신순 100건) |
+| API-82 | `GET /api/vaults/{vaultId}/edits` | 금고의 편집 완성본 목록(최신순 100건). 올라가는 중(UPLOADING)과 실패(FAILED)도 함께 준다 — 업로드 진행 상황이 상단 알림으로만 나가서, 알림을 끈 기기에서는 목록이 유일한 단서다 |
 | API-83 | `GET /api/videos/{videoId}/comments` | 영상 댓글 목록 — 작성자 표시 이름은 서버가 `users`에서 조인 |
 | API-84 | `POST /api/videos/{videoId}/comments` | 영상 댓글 작성 — 작성자는 토큰의 사용자 UUID(앱이 보낸 이름을 믿지 않는다), 작성자 외 금고 구성원에게 알림·FCM |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + 기기별 분해(`byDevice`). Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계해 기기 양도 후에도 과거 금고 통계가 오염되지 않음. **앱 웃음 리포트의 "가족 전체" 토글이 사용** |
