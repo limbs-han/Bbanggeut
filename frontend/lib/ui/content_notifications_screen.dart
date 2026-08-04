@@ -94,12 +94,9 @@ class _ContentNotificationsScreenState
         context,
         MaterialPageRoute(
           builder: (_) => EditedVideoScreen(
+            api: widget.controller.api,
             videoId: item.resourceId!,
             title: '',
-            authorName:
-                widget.controller.user?.displayName.trim().isNotEmpty == true
-                ? widget.controller.user!.displayName
-                : '가족',
           ),
         ),
       );

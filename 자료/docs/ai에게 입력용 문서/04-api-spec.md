@@ -882,6 +882,10 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-77 | `DELETE /api/schedules/{scheduleId}` | 일정 삭제(204). 남의 일정·없는 id는 404 |
 | API-78 | `GET /api/notifications/preferences` | 알림 설정 조회(`{anniversaryAlerts, weeklyReport, newMemoryAlerts}`). 저장 행이 없으면 모두 true |
 | API-79 | `PUT /api/notifications/preferences` | 알림 설정 저장(세 토글 일괄 → 200에 저장값). `newMemoryAlerts=false`면 새 영상 푸시 발송 대상에서 제외(인앱 알림은 계속 쌓임) |
+| API-81 | `POST /api/videos/{videoId}/edits` | 편집 완성본 업로드 예약(EDIT_OUTPUT 행 + 서명 URL, Content-Type만 서명). 완료 통보 없이 서버가 도착 감지 |
+| API-82 | `GET /api/vaults/{vaultId}/edits` | 금고 편집 완성본 목록(READY, 최신 100) |
+| API-83 | `GET /api/videos/{videoId}/comments` | 댓글 목록(작성자 이름은 users 조인) |
+| API-84 | `POST /api/videos/{videoId}/comments` | 댓글 작성(작성자=토큰 sub, 금고 구성원 알림) |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + `byDevice` 분해. Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계(기기 양도 후 과거 금고 통계 비오염). 앱 웃음 리포트의 "가족 전체" 토글이 사용 |
 
 **알림 생성 및 FCM 연동**: 알림 생성 API는 없다. 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 READY 확정 + triggerType=LAUGHTER → LAUGHTER_VIDEO_READY를 그 기기 활성 구성원 전원에게, ② 초대 발송(API-14) → INVITATION_RECEIVED를 초대받은 1명에게. UNIQUE (user_id, dedupe_key) + ON CONFLICT DO NOTHING으로 재시도해도 사용자당 1건만 남는다. 클라이언트는 알림함 화면(`ui/content_notifications_screen.dart`)에서 목록(API-58), 개별 읽음(API-60), 전체 읽음(API-61)을 사용하며, FCM(`core/push_notification_service.dart`)으로 푸시 토큰을 등록(API-69)/해제(API-70)하고 푸시 수신 시 해당 화면으로 이동한다. 알림 설정(API-78·79)의 동작 — `newMemoryAlerts`를 끈 사용자는 LAUGHTER_VIDEO_READY 푸시 대상에서 빠지지만 인앱 알림함에는 계속 쌓이고, 설정 행이 없으면 모두 켜진 것으로 본다. `anniversaryAlerts`(매일 09:00 KST, dedupe `anniversary:{scheduleId}:{year}`)·`weeklyReport`(매주 월 09:00 KST, 지난주 금고 기기 LAUGHTER 합계, dedupe `weekly-report:{userId}:{ISO주차}`)는 스케줄러가 발송하며, 끈 사용자는 대상 조회에서 제외되어 인앱 알림도 만들지 않는다.

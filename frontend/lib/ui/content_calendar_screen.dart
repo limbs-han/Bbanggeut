@@ -5,8 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/api_client.dart';
 import '../core/models.dart';
-import '../editor/edit_recommendation_client.dart';
 import 'content_state.dart';
 import 'edited_video_screen.dart';
 import 'schedule_editor_screen.dart';
@@ -34,9 +34,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
   late DateTime _selected;
   List<VideoMemory> _videos = const [];
 
-  /// 편집 완료 영상(editor-api). 편집한 날짜 기준으로 달력에 표시한다.
+  /// 편집 완료 영상(API-82). 원본이 감지된 날짜 기준으로 달력에 표시한다.
   List<Map<String, dynamic>> _edited = const [];
-  final _editClient = EditRecommendationClient();
   bool _loading = false;
   String? _error;
 
@@ -72,14 +71,15 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
       return;
     }
     // 편집 완료 영상은 감지 영상과 별개로 불러온다. 실패해도 달력은 뜬다.
-    if (EditRecommendationClient.networkAllowed) {
+    final vaultId = widget.controller.selectedVault?.id;
+    if (vaultId != null) {
       unawaited(
-        _editClient
-            .listEditedVideos()
+        widget.controller.api
+            .listVaultEdits(vaultId)
             .then((edited) {
               if (mounted) setState(() => _edited = edited);
             })
-            .catchError((_) {}),
+            .catchError((Object _) {}),
       );
     }
     setState(() {
@@ -220,6 +220,7 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
                     _SelectedEditedCard(
                       date: _selected,
                       edited: selectedEdited,
+                      api: widget.controller.api,
                     ),
                   ],
                 ],
@@ -853,10 +854,15 @@ class _DaySummaryCard extends StatelessWidget {
 
 /// 선택한 날짜의 편집 완료 영상. 누르면 재생·댓글 화면으로 간다.
 class _SelectedEditedCard extends StatelessWidget {
-  const _SelectedEditedCard({required this.date, required this.edited});
+  const _SelectedEditedCard({
+    required this.date,
+    required this.edited,
+    required this.api,
+  });
 
   final DateTime date;
   final List<Map<String, dynamic>> edited;
+  final ApiClient api;
 
   @override
   Widget build(BuildContext context) => _DaySummaryCard(
@@ -894,6 +900,7 @@ class _SelectedEditedCard extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (_) => EditedVideoScreen(
+                    api: api,
                     videoId: meta['videoId'] as String? ?? '',
                     title: (meta['title'] as String?)?.isNotEmpty == true
                         ? meta['title'] as String
