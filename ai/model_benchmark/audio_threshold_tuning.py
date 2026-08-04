@@ -775,9 +775,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             ]
             test_samples = [sample for sample in samples.values() if sample.split == "test"]
             validation_ids = {sample.sample_id for sample in validation_samples}
+            thresholds = threshold_candidates(runs, validation_ids, event_type)
+            print(
+                "START: threshold sweep "
+                f"model={model_name} event={event_type} "
+                f"thresholds={len(thresholds)} "
+                f"consecutive={','.join(str(value) for value in consecutive_windows)}",
+                flush=True,
+            )
             candidates: list[dict[str, Any]] = []
             for consecutive in consecutive_windows:
-                for threshold in threshold_candidates(runs, validation_ids, event_type):
+                for threshold in thresholds:
                     candidate, _ = evaluate_candidate(
                         runs,
                         validation_samples,
@@ -794,6 +802,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                             **candidate,
                         }
                     )
+                print(
+                    "PROGRESS: threshold sweep "
+                    f"model={model_name} event={event_type} "
+                    f"consecutive={consecutive} "
+                    f"completed={len(thresholds)}/{len(thresholds)}",
+                    flush=True,
+                )
             frontier = pareto_frontier(candidates)
             representatives = representative_candidates(candidates, frontier)
             current_candidate, _ = evaluate_candidate(
@@ -836,6 +851,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "shadowCandidate": enriched["shadowCandidate"],
                 "paretoFrontier": enriched_frontier,
             }
+            shadow = representatives["shadowCandidate"]
+            print(
+                "PASS: event tuning "
+                f"model={model_name} event={event_type} "
+                f"pareto={len(frontier)} "
+                f"shadowThreshold={shadow['threshold']:.6f} "
+                f"shadowConsecutive={shadow['requiredConsecutiveWindows']}",
+                flush=True,
+            )
         model_payloads.append(
             {
                 "model": model_name,
