@@ -859,8 +859,14 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-61 | `PATCH /api/notifications/read-all` | 전체 읽음(`ContentNotificationsScreen` 연동) |
 | API-69 | `PUT /api/notifications/push-tokens` | FCM 푸시 토큰 등록(`{installationId, token, platform}`, 204, `push_notification_service.dart` 연동) |
 | API-70 | `DELETE /api/notifications/push-tokens/{installationId}` | 푸시 토큰 해제(204, `push_notification_service.dart` 연동) |
+| API-74 | `GET /api/schedules` | 캘린더 일정 목록(사용자 귀속, 날짜 오름차순). 응답 `{id, title, date, memo, yearly, emoji}` 배열 |
+| API-75 | `POST /api/schedules` | 일정 등록(`{title(1~80), date, memo?(≤500), yearly?(기본 false), emoji?(기본 ❤️)}` → 201). 사용자당 200개 상한 초과 시 422 |
+| API-76 | `PUT /api/schedules/{scheduleId}` | 일정 수정(API-75와 같은 본문 → 200). 남의 일정·없는 id는 404 |
+| API-77 | `DELETE /api/schedules/{scheduleId}` | 일정 삭제(204). 남의 일정·없는 id는 404 |
+| API-78 | `GET /api/notifications/preferences` | 알림 설정 조회(`{anniversaryAlerts, weeklyReport, newMemoryAlerts}`). 저장 행이 없으면 모두 true |
+| API-79 | `PUT /api/notifications/preferences` | 알림 설정 저장(세 토글 일괄 → 200에 저장값). `newMemoryAlerts=false`면 새 영상 푸시 발송 대상에서 제외(인앱 알림은 계속 쌓임) |
 
-**알림 생성 및 FCM 연동**: 알림 생성 API는 없다. 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 READY 확정 + triggerType=LAUGHTER → LAUGHTER_VIDEO_READY를 그 기기 활성 구성원 전원에게, ② 초대 발송(API-14) → INVITATION_RECEIVED를 초대받은 1명에게. UNIQUE (user_id, dedupe_key) + ON CONFLICT DO NOTHING으로 재시도해도 사용자당 1건만 남는다. 클라이언트는 알림함 화면(`ui/content_notifications_screen.dart`)에서 목록(API-58), 개별 읽음(API-60), 전체 읽음(API-61)을 사용하며, FCM(`core/push_notification_service.dart`)으로 푸시 토큰을 등록(API-69)/해제(API-70)하고 푸시 수신 시 해당 화면으로 이동한다.
+**알림 생성 및 FCM 연동**: 알림 생성 API는 없다. 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 READY 확정 + triggerType=LAUGHTER → LAUGHTER_VIDEO_READY를 그 기기 활성 구성원 전원에게, ② 초대 발송(API-14) → INVITATION_RECEIVED를 초대받은 1명에게. UNIQUE (user_id, dedupe_key) + ON CONFLICT DO NOTHING으로 재시도해도 사용자당 1건만 남는다. 클라이언트는 알림함 화면(`ui/content_notifications_screen.dart`)에서 목록(API-58), 개별 읽음(API-60), 전체 읽음(API-61)을 사용하며, FCM(`core/push_notification_service.dart`)으로 푸시 토큰을 등록(API-69)/해제(API-70)하고 푸시 수신 시 해당 화면으로 이동한다. 알림 설정(API-78·79)은 FCM 발송만 거른다 — `newMemoryAlerts`를 끈 사용자는 LAUGHTER_VIDEO_READY 푸시 대상에서 빠지지만 인앱 알림함에는 계속 쌓이고, 설정 행이 없으면 모두 켜진 것으로 본다. `anniversaryAlerts`·`weeklyReport`는 저장만 하며 해당 푸시 발송기는 아직 없다.
 
 ---
 
@@ -901,9 +907,10 @@ MVP 7단계의 신규 API 중 **API-62 서버 집계, API-71·API-72 만화 엔�
 ### ID 검증
 
 - 본문(2~9절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, 51~54, 63~68, (신규)62, (신규)71, 72 — 41개 + 신규 3개. **API-73은 스키마 없이 회수 사유만 남았으므로 세지 않는다.**
-- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50, 55~61, 69, 70 — 27개.
-- 합계 41 + 27 = 68개 + 신규 3개(62, 71, 72) = **71개.** ID 폭은 그대로 API-01~73(73개)이고 그 안에 **스키마 없는 항목이 둘**이다 — **API-06(결번, 서버 부재)과 API-73(회수, 구현 전 폐기)**. 73 − 2 = **71개로 맞는다. max ID는 API-73(예약·재사용 금지), 스키마가 있는 최대 번호는 API-72.** 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
+- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50, 55~61, 69, 70, 74~79 — 33개.
+- 합계 41 + 33 = 74개 + 신규 3개(62, 71, 72) = **77개.** ID 폭은 API-01~79(79개)이고 그 안에 **스키마 없는 항목이 둘**이다 — **API-06(결번, 서버 부재)과 API-73(회수, 구현 전 폐기)**. 79 − 2 = **77개로 맞는다. max ID는 API-79이고, 회수된 API-73은 재사용하지 않는다.** 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 4절(01, 04) + 10절(02, 03, 05~09) + 12절(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
 - 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 금고 가족 공유(API-63~68)·푸시 토큰(API-69, 70)을 문서화해 max는 **API-70**이 되었다.
 - **만화·자막 제안도 같은 이유로 옮겼다.** FN-A40 만화(comic/script, comic/image)와 FN-A39 서버 전사(transcript)는 처음에 옛 max(API-51) 다음 번호인 **API-52·53·54**를 받았으나, 그 번호 역시 금고 구독(API-51~53)·금고 접근 기록(API-54)과 겹쳤다. 리포트 제안과 같은 원칙(구현·병합된 API 우선)으로 세 개를 max(API-70) 다음인 **API-71(만화 구성)·API-72(만화 그림)·API-73(자막 전사)**로 옮겼다. 이로써 max는 **API-73**이 되었다.
 - **그 뒤 API-73은 구현 전에 회수됐다.** ML Kit 온디바이스 인식이 자막을 폰에서 완결시켜 서버 전사가 필요 없어졌다(6절 API-73). **번호는 재사용하지 않는다** — API-06을 결번으로 비워 둔 것과 같은 처리이며, 그래서 ID 폭(01~73)은 줄지 않고 비어 있는 항목만 하나 늘었다. 다음 신규 API는 **API-74**부터다.
+- **API-74~79는 그 규칙대로 붙였다.** 캘린더 일정 CRUD(API-74~77)와 알림 설정(API-78·79)이 2026-08-04에 구현·문서화됐다. 이로써 max는 **API-79**다.
