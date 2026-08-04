@@ -139,6 +139,7 @@ flowchart TD
 | FN-A13 | 월별 캘린더 영상조회 | API-27 | `ui/content_calendar_screen.dart` | - |
 | FN-A14 | 일정(기념일) 추가/수정(부분 구현) | 없음 ❌ | `ui/content_calendar_screen.dart`, `ui/schedule_editor_screen.dart` | 앱 메모리 전용(재실행 시 소실, 서버 미연동) |
 | FN-A15 | 영상 목록/필터 | API-27(간접, 로컬필터) | `ui/all_memories_screen.dart` | 웃음 감지/편집 완료 분류 + 기간(날짜 범위) 필터. 참여 중인 모든 금고 병렬 조회 후 합침 |
+| FN-A15a | 편집본 업로드 상태 표시 | API-82 | `ui/all_memories_screen.dart` | UPLOADING·FAILED 편집본도 상태와 함께 표시. UPLOADING이 있으면 5초 간격 최대 60회 자동 재조회 |
 | FN-A16 | 영상 삭제 | API-30 | `ui/all_memories_screen.dart` | 403 FORBIDDEN_ROLE, 404 |
 | FN-A17 | 영상 상세/재생 | API-31 | `ui/content_video_detail_screen.dart` | 409 VIDEO_NOT_READY, 503 |
 | FN-A18 | 메타데이터(제목/메모) 편집 | API-29, API-28 | `ui/content_video_detail_screen.dart` | 403, 422 VALIDATION_FAILED |
@@ -223,6 +224,7 @@ flowchart TD
 | FN-E07 | 이벤트 클립 업로드 | 젯슨+서버 | 트리거 전후 구간 클립 생성해 서버 업로드 흐름으로 전달 | REQ-F-37 / API-25,26 | `ai/yolo/laughter_clip_uploader.py`, `segment_clip_uploader.py`(systemd Restart=always) |
 | FN-S11 | 영상 업로드(기기측, presigned URL) | 서버 | `Idempotency-Key`로 중복 방지, 500MiB 초과 거부, 업로드URL TTL15분 | REQ-F-37 / API-25,26 | `video/api/IotVideoController.java`, `IotVideoService.java` |
 | FN-A15 | 영상 목록/필터 | 폰 | 웃음 감지/편집 완료 분류 + 기간(날짜 범위) 필터. 참여 중인 모든 금고를 병렬 조회해 합침 | REQ-F-21 | `ui/all_memories_screen.dart` |
+| FN-A15a | 편집본 업로드 상태 표시 | 폰+서버 | UPLOADING·FAILED 편집본도 상태와 함께 표시하고, UPLOADING이 있으면 목록을 5초 간격 최대 60회 자동 재조회 | REQ-F-21 / API-82 | `ui/all_memories_screen.dart` |
 | FN-S12 | 영상 목록/상세 조회 | 서버 | 커서 페이지네이션(size 1~100) | REQ-F-19,21 / API-27,28 | `video/api/VideoController.java`, `VideoQueryService.java` — ⚠️ `thumbnailUrl` 항상 null |
 | FN-A17 | 영상 상세/재생 | 폰+서버 | READY 상태일 때만 서명 재생 URL 발급받아 재생 | REQ-F-22 / API-31 | `ui/content_video_detail_screen.dart` — 409 `VIDEO_NOT_READY`, 503 |
 | FN-S14 | 영상 재생/다운로드 URL 발급 | 서버 | READY 아니면 거부, 재생/다운로드 URL TTL5분(`attachment` 옵션만 다름) | REQ-F-22,26 / API-31,32 | `video/application/VideoQueryService.java` |
