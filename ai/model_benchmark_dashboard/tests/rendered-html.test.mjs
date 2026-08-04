@@ -56,6 +56,10 @@ test("keeps measured laughter and clap comparison cards in the audio tab", async
   assert.match(source, /연속 양성 창 \/ 최소 판정 구간/);
   assert.match(source, /추론 정밀도/);
   assert.match(source, /latestAudioComparisonId/);
+  assert.match(source, /EfficientAT 섀도 기록/);
+  assert.match(source, /operationalAuthority/);
+  assert.match(source, /운영 이벤트 생성 권한/);
+  assert.match(source, /DISABLED/);
 });
 
 test("keeps local-only privacy and benchmark context visible", async () => {

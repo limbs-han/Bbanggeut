@@ -47,7 +47,24 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
         self.assertIn("restarting only YAMNet", supervisor)
         self.assertIn('write_yamnet_status "RESTARTING"', supervisor)
         self.assertIn("start_yamnet", supervisor)
-        self.assertIn('if [[ "$pid" == "$YAMNET_PID" ]]', supervisor)
+        self.assertIn(
+            'if [[ "$pid" == "$YAMNET_PID" || "$pid" == "$AUDIO_SHADOW_PID" ]]',
+            supervisor,
+        )
+
+    def test_audio_shadow_is_disabled_and_non_authoritative_by_default(self) -> None:
+        self.assertIn(': "${AUDIO_SHADOW_ENABLED:=false}"', self.script)
+        self.assertIn("authority=none", self.script)
+        self.assertIn("audio_shadow_runner.py", self.script)
+        self.assertNotIn("--event-dir \"$AUDIO_SHADOW", self.script)
+
+    def test_audio_shadow_failure_does_not_stop_production_workers(self) -> None:
+        supervisor_start = self.script.rindex("while true; do")
+        supervisor = self.script[supervisor_start:]
+
+        self.assertIn("production YAMNet remains authoritative", supervisor)
+        self.assertIn("Restarting EfficientAT shadow recorder", supervisor)
+        self.assertIn("start_audio_shadow", supervisor)
 
     def test_yamnet_status_records_do_not_satisfy_readiness(self) -> None:
         self.assertIn(

@@ -183,6 +183,52 @@ def summarize_audio(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def summarize_audio_shadow(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    predictions = [
+        row for row in rows if row.get("recordType") == "prediction"
+    ]
+    latest = predictions[-1] if predictions else {}
+    events = latest.get("events")
+    events = events if isinstance(events, dict) else {}
+    laughter = events.get("laughter")
+    laughter = laughter if isinstance(laughter, dict) else {}
+    clap = events.get("clap")
+    clap = clap if isinstance(clap, dict) else {}
+    inference_values = [
+        float(row["inferenceMs"])
+        for row in predictions
+        if isinstance(row.get("inferenceMs"), (int, float))
+    ]
+    mean_latency = (
+        sum(inference_values) / len(inference_values)
+        if inference_values
+        else None
+    )
+    p95_latency = percentile(inference_values, 0.95)
+    return {
+        "model": "EfficientAT MN10",
+        "mode": "shadow-only",
+        "operationalAuthority": False,
+        "laughterScore": laughter.get("score"),
+        "laughterClass": laughter.get("className"),
+        "laughterWouldTrigger": laughter.get("wouldTrigger"),
+        "clapScore": clap.get("score"),
+        "clapClass": clap.get("className"),
+        "clapWouldTrigger": clap.get("wouldTrigger"),
+        "topClass": latest.get("topClass"),
+        "latencyMeanMs": round(mean_latency, 3)
+        if mean_latency is not None
+        else None,
+        "latencyP95Ms": round(p95_latency, 3)
+        if p95_latency is not None
+        else None,
+        "sampleCount": len(inference_values),
+        "virtualEventCount": sum(
+            row.get("recordType") == "virtual-event" for row in rows
+        ),
+    }
+
+
 def load_recent_events(event_dir: Path | None, limit: int = 12) -> list[dict[str, Any]]:
     if event_dir is None or not event_dir.is_dir():
         return []
@@ -409,6 +455,7 @@ def latest_run_directory(logs_root: Path) -> Path:
                 file_mtime(path / "yamnet_diagnostics.jsonl"),
                 file_mtime(path / "yamnet.jsonl"),
                 file_mtime(path / "diagnostics.jsonl"),
+                file_mtime(path / "efficientat_shadow.jsonl"),
             )
             if value is not None
         ]
@@ -470,12 +517,14 @@ class BenchmarkCollector:
         resources: Path,
         yolo: Path,
         yamnet_diagnostics: Path,
+        shadow_diagnostics: Path,
     ) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         source_paths = {
             "resources": resources,
             "vision": yolo,
             "audio": yamnet_diagnostics,
+            "audioShadow": shadow_diagnostics,
         }
         sources: dict[str, dict[str, Any]] = {}
         available_times: list[float] = []
@@ -546,9 +595,11 @@ class BenchmarkCollector:
             (path for path in diagnostic_candidates if path.is_file()),
             diagnostic_candidates[0],
         )
+        shadow_diagnostics = run_dir / "efficientat_shadow.jsonl"
         resource_line = last_matching_line(resources, RAM_PATTERN)
         yolo_line = last_matching_line(yolo, YOLO_PATTERN)
         audio_rows = load_jsonl_tail(yamnet_diagnostics)
+        shadow_rows = load_jsonl_tail(shadow_diagnostics, limit=240)
 
         benchmark_progress = load_benchmark_progress(self.paths.results_dir)
         return {
@@ -564,10 +615,12 @@ class BenchmarkCollector:
                 resources=resources,
                 yolo=yolo,
                 yamnet_diagnostics=yamnet_diagnostics,
+                shadow_diagnostics=shadow_diagnostics,
             ),
             "system": parse_tegrastats_line(resource_line),
             "vision": parse_yolo_line(yolo_line),
             "audio": summarize_audio(audio_rows),
+            "audioShadow": summarize_audio_shadow(shadow_rows),
             "events": load_recent_events(self.paths.event_dir),
             "comparisons": load_benchmark_results(self.paths.results_dir),
             "benchmarkProgress": benchmark_progress,

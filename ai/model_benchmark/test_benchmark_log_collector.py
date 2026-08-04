@@ -26,6 +26,7 @@ from benchmark_log_collector import (
     parse_yolo_line,
     percentile,
     summarize_audio,
+    summarize_audio_shadow,
 )
 
 
@@ -115,6 +116,28 @@ class CollectorIntegrationTests(unittest.TestCase):
                 json.dumps(diagnostic) + "\n",
                 encoding="utf-8",
             )
+            shadow = {
+                "recordType": "prediction",
+                "observedAt": "2026-07-30T00:00:00.000Z",
+                "inferenceMs": 43.5,
+                "topClass": "Speech",
+                "events": {
+                    "laughter": {
+                        "score": 0.02,
+                        "className": "Laughter",
+                        "wouldTrigger": True,
+                    },
+                    "clap": {
+                        "score": 0.01,
+                        "className": "Clapping",
+                        "wouldTrigger": False,
+                    },
+                },
+            }
+            (root / "efficientat_shadow.jsonl").write_text(
+                json.dumps(shadow) + "\n",
+                encoding="utf-8",
+            )
 
             snapshot = BenchmarkCollector(CollectorPaths(root)).snapshot()
 
@@ -123,6 +146,11 @@ class CollectorIntegrationTests(unittest.TestCase):
             self.assertEqual(snapshot["system"]["gpuPercent"], 55)
             self.assertEqual(snapshot["vision"]["fps"], 27.5)
             self.assertEqual(snapshot["audio"]["selectedScore"], 0.3)
+            self.assertEqual(snapshot["audioShadow"]["laughterScore"], 0.02)
+            self.assertFalse(snapshot["audioShadow"]["operationalAuthority"])
+            self.assertTrue(
+                snapshot["freshness"]["sources"]["audioShadow"]["available"]
+            )
             self.assertTrue(snapshot["freshness"]["available"])
             self.assertFalse(snapshot["freshness"]["stale"])
 

@@ -150,6 +150,10 @@ pipeline {
                                 sh 'python3 -m unittest -v test_audio_event_detection.py test_audio_event_trigger.py'
                                 sh 'python3 -m py_compile audio_event_detection.py audio_event_trigger.py yamnet_laughter_detect_jetson.py'
                             }
+                            dir('ai/model_benchmark') {
+                                sh 'python3 -m unittest -v test_audio_shadow_runner.py test_audio_shadow_report.py test_benchmark_log_collector.py'
+                                sh 'python3 -m py_compile audio_shadow_runner.py audio_shadow_report.py benchmark_log_collector.py'
+                            }
                         }
                     }
                     post {

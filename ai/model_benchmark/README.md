@@ -197,6 +197,26 @@ bash ai/model_benchmark/audio_benchmark_services.sh restore
 - `threshold-sweep.jsonl`: validation의 모든 임계값·연속 창 조합
 - `failure-cases.jsonl`: 추천 섀도 후보의 test FN·FP 목록
 
+## EfficientAT 섀도 비교
+
+운영 서비스에서는 YAMNet만 trigger와 업로드 이벤트를 생성합니다. EfficientAT
+MN10은 `AUDIO_SHADOW_ENABLED=true`일 때 같은 RTSP 오디오를 읽고 점수와 가상
+이벤트만 `efficientat_shadow.jsonl`에 기록합니다. 기본값은 `false`입니다.
+
+```bash
+python3 ai/model_benchmark/audio_shadow_report.py \
+  --yamnet-diagnostics ~/ai_events/logs/<run>/yamnet_diagnostics.jsonl \
+  --shadow-diagnostics ~/ai_events/logs/<run>/efficientat_shadow.jsonl \
+  --output-dir ~/ai_benchmark_results/audio-shadow-review \
+  --match-tolerance-seconds 12
+```
+
+보고서는 두 모델의 일치 이벤트와 모델별 단독 이벤트를 구분합니다. 모델별 단독
+이벤트는 원음을 사람이 확인하기 전까지 FP나 FN으로 표시하지 않습니다. Jetson
+설정과 운영 안전 규칙은
+[`34_YAMNet_EfficientAT_섀도_검증.md`](../../자료/docs/34_YAMNet_EfficientAT_섀도_검증.md)에
+기록합니다.
+
 ESC-50는 CC BY-NC 3.0이므로 비상업적 평가에만 사용합니다. 공개 모델 세 개가
 모두 AudioSet 계열 사전학습 모델인 점을 고려해 AudioSet 자체는 최종 일반화
 평가 데이터로 사용하지 않습니다.

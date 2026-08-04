@@ -29,6 +29,7 @@ type Snapshot = {
       resources?: SourceFreshness;
       vision?: SourceFreshness;
       audio?: SourceFreshness;
+      audioShadow?: SourceFreshness;
     };
   };
   system: {
@@ -54,6 +55,22 @@ type Snapshot = {
     latencyMeanMs: number | null;
     latencyP95Ms: number | null;
     sampleCount: number;
+  };
+  audioShadow?: {
+    model: string;
+    mode: "shadow-only";
+    operationalAuthority: false;
+    laughterScore: number | null;
+    laughterClass: string | null;
+    laughterWouldTrigger: boolean | null;
+    clapScore: number | null;
+    clapClass: string | null;
+    clapWouldTrigger: boolean | null;
+    topClass: string | null;
+    latencyMeanMs: number | null;
+    latencyP95Ms: number | null;
+    sampleCount: number;
+    virtualEventCount: number;
   };
   events: Array<{
     eventId: string;
@@ -1043,6 +1060,59 @@ export function BenchmarkDashboard() {
                         ? ` · ${latestAudioComparisonId}`
                         : ""}
                     </span>
+                  </div>
+                  <div className="audio-grid">
+                    <article className="audio-model recommended">
+                      <h3>YAMNet 운영 판정</h3>
+                      <p>실제 이벤트 생성 권한을 유지하는 현재 운영 모델</p>
+                      <div className="audio-stat">
+                        <span>웃음 점수 / 클래스</span>
+                        <strong>
+                          {formatNumber(snapshot?.audio.selectedScore, 4)} /{" "}
+                          {snapshot?.audio.selectedClass ?? "N/A"}
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>가상 판정이 아닌 실제 운영 권한</span>
+                        <strong>ENABLED</strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>추론 평균 / P95</span>
+                        <strong>
+                          {formatNumber(snapshot?.audio.latencyMeanMs, 2)} /{" "}
+                          {formatNumber(snapshot?.audio.latencyP95Ms, 2)} ms
+                        </strong>
+                      </div>
+                    </article>
+                    <article className="audio-model">
+                      <h3>EfficientAT 섀도 기록</h3>
+                      <p>trigger·MQTT·영상 업로드 권한이 없는 비교 전용 모델</p>
+                      <div className="audio-stat">
+                        <span>웃음 점수 / 가상 이벤트</span>
+                        <strong>
+                          {formatNumber(snapshot?.audioShadow?.laughterScore, 6)} /{" "}
+                          {snapshot?.audioShadow?.laughterWouldTrigger ? "YES" : "NO"}
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>박수 점수 / 가상 이벤트</span>
+                        <strong>
+                          {formatNumber(snapshot?.audioShadow?.clapScore, 6)} /{" "}
+                          {snapshot?.audioShadow?.clapWouldTrigger ? "YES" : "NO"}
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>추론 평균 / P95</span>
+                        <strong>
+                          {formatNumber(snapshot?.audioShadow?.latencyMeanMs, 2)} /{" "}
+                          {formatNumber(snapshot?.audioShadow?.latencyP95Ms, 2)} ms
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>운영 이벤트 생성 권한</span>
+                        <strong>DISABLED</strong>
+                      </div>
+                    </article>
                   </div>
                   <div className="audio-grid">
                     {audioCandidates.map((model) => {

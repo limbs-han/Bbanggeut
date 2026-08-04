@@ -46,6 +46,9 @@ required_files=(
     "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py"
     "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py"
     "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_report.py"
 )
 
 for required_file in "${required_files[@]}"; do
@@ -75,6 +78,14 @@ grep -Fq ': "${YAMNET_READY_TIMEOUT_SECONDS:=90}"' \
 grep -Fq ': "${YAMNET_RESTART_DELAY_SECONDS:=5}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${YAMNET_CLAP_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_CONTEXT_SECONDS:=10}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_HOP_SECONDS:=2.5}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'authority=none' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${WAKE_NAME_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
@@ -118,7 +129,10 @@ PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py" \
     "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py" \
-    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
+    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_report.py"
 PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" -m py_compile \
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py" \
     "${YAMNET_DIR}/ffmpeg_audio_stream.py" \
@@ -169,6 +183,10 @@ echo "[5/5] Model benchmark tests"
         -m unittest discover \
         -s . \
         -p 'test_*benchmark*.py'
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        -m unittest \
+        test_audio_shadow_runner \
+        test_audio_shadow_report
 )
 
 echo "PASS: staged Jetson AI release validation completed."
