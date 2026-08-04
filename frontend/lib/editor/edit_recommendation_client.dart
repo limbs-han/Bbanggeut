@@ -154,7 +154,7 @@ class EditRecommendationClient {
 
   final Dio _dio;
 
-  /// video_player처럼 Dio를 거치지 않는 요청에 붙일 인증 헤더.
+  /// Dio를 거치지 않는 요청(분석 원본 업로드 등)에 붙일 인증 헤더.
   Map<String, String> get authHeaders {
     final token = sessionToken?.call();
     return token == null ? const {} : {'Authorization': 'Bearer $token'};
@@ -291,83 +291,5 @@ class EditRecommendationClient {
       for (final item in response.data?['items'] as List? ?? const [])
         Map<String, dynamic>.from(item as Map),
     ];
-  }
-
-  /// 완성본 업로드 주소(쿼리 포함). 백그라운드 업로더(WorkManager)가 앱
-  /// 밖에서 그대로 PUT한다 — Dart가 살아 있지 않아도 되도록 완성된 URL을
-  /// 넘긴다.
-  String editedVideoUploadUrl({
-    required String videoId,
-    String title = '',
-    int durationMs = 0,
-    DateTime? capturedAt,
-  }) => Uri.parse('${_dio.options.baseUrl}/v1/edited-videos/$videoId')
-      .replace(
-        queryParameters: {
-          'title': title,
-          'durationMs': '$durationMs',
-          // 원본이 감지된(촬영된) 시각 — 캘린더가 이 날짜에 표시한다.
-          if (capturedAt != null)
-            'capturedAt': capturedAt.toLocal().toIso8601String(),
-        },
-      )
-      .toString();
-
-  /// 편집 완료 영상 목록(메타).
-  Future<List<Map<String, dynamic>>> listEditedVideos() async {
-    final response = await _dio.get<Map<String, dynamic>>('/v1/edited-videos');
-    return [
-      for (final item in response.data?['items'] as List? ?? const [])
-        Map<String, dynamic>.from(item as Map),
-    ];
-  }
-
-  /// 편집 영상 재생 주소. video_player에 그대로 넘긴다.
-  /// 실서버에서는 [editedVideoPlayUrl]의 presigned URL을 먼저 시도한다.
-  String editedVideoUrl(String videoId) =>
-      '${_dio.options.baseUrl}/v1/edited-videos/$videoId/file';
-
-  /// 편집본 재생용 presigned URL(1시간). 서버에 공개 endpoint가 설정되지
-  /// 않았으면 null — 그때는 [editedVideoUrl] + [authHeaders]로 폴백한다.
-  Future<String?> editedVideoPlayUrl(String videoId) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '/v1/edited-videos/$videoId/play-url',
-    );
-    return response.data?['url'] as String?;
-  }
-
-  /// 편집 완료 영상을 파일로 내려받는다. 갤러리 저장이 쓴다.
-  Future<void> downloadEditedVideo(
-    String videoId,
-    String savePath, {
-    void Function(int received, int total)? onProgress,
-  }) async {
-    await _dio.download(
-      '/v1/edited-videos/$videoId/file',
-      savePath,
-      onReceiveProgress: onProgress,
-      options: Options(receiveTimeout: const Duration(minutes: 10)),
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> listComments(String videoId) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '/v1/edited-videos/$videoId/comments',
-    );
-    return [
-      for (final item in response.data?['items'] as List? ?? const [])
-        Map<String, dynamic>.from(item as Map),
-    ];
-  }
-
-  Future<void> addComment(
-    String videoId,
-    String text, {
-    String author = '가족',
-  }) async {
-    await _dio.post<void>(
-      '/v1/edited-videos/$videoId/comments',
-      data: {'author': author, 'text': text},
-    );
   }
 }

@@ -147,8 +147,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     final result = widget.controller.videos.where((video) {
       final matchesCategory = switch (category) {
         MemoryCategory.laughter => video.hasEventType('LAUGHTER'),
-        // 편집 중은 editor-api 초안 목록으로 따로 그린다. 편집 완료는
-        // 백엔드 EDIT 영상 + editor-api 완성본 목록을 함께 보여 준다.
+        // 편집 중(초안)은 editor-api 목록으로 따로 그린다 — 초안 레시피는
+        // 아직 그쪽에 있다(ADR-001의 남은 부채). 편집 완료본은 백엔드가
+        // 관리하므로 EDIT_OUTPUT 영상 행으로 판정한다.
         MemoryCategory.editing => false,
         MemoryCategory.edited =>
           video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
