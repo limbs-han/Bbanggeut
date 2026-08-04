@@ -29,13 +29,20 @@ YAMNET_CLAP_COOLDOWN=12
 ## 웃음과 박수 병합
 
 동일 유형의 반복 이벤트는 `EVENT_MERGE_GAP_SECONDS`의 기존 30초 범위에서
-병합한다. 웃음과 박수는 `EVENT_CROSS_TYPE_MERGE_GAP_SECONDS`의 5초 안에
-발생한 경우에만 하나의 영상으로 병합한다.
+병합한다. 웃음과 박수는 현장 검증 환경에서
+`EVENT_CROSS_TYPE_MERGE_GAP_SECONDS`의 12초 안에 발생한 경우 하나의 영상으로
+병합한다.
 
 ```bash
 EVENT_MERGE_GAP_SECONDS=30
-EVENT_CROSS_TYPE_MERGE_GAP_SECONDS=5
+EVENT_CROSS_TYPE_MERGE_GAP_SECONDS=12
 ```
+
+저장소의 안전한 기본값은 5초다. Jetson 종단 시험에서 웃음과 박수의 모델 감지
+시각이 실제 소리 순서보다 늦어질 수 있음을 확인한 뒤 검증 장치의 환경 파일에서
+12초로 명시해 사용했다. 12초는 모든 순서를 무조건 합치는 값이 아니다. 박수를
+먼저 치고 웃은 시험에서는 두 감지 시각이 17.735초까지 벌어져 별도 이벤트로
+처리됐다.
 
 혼합 이벤트의 로컬 상태와 업로드 영수증에는 다음처럼 두 유형을 보존한다.
 
@@ -101,15 +108,15 @@ WAKE_NAME_ASR_COMPUTE_TYPE=int8
 
 로컬 트리거는 `schemaVersion: 1.1`을 사용하고 `type`을 `LAUGHTER`,
 `CLAP`, `WAKE_WORD` 중 하나로 기록한다. 같은 유형은 30초 범위에서 병합하고,
-`LAUGHTER`와 `CLAP`만 5초 범위에서 교차 병합한다. `WAKE_WORD`는 다른 소리와
-교차 병합하지 않는다.
+검증 장치에서는 `LAUGHTER`와 `CLAP`만 12초 범위에서 교차 병합한다.
+`WAKE_WORD`는 다른 소리와 교차 병합하지 않는다.
 
 ## 혼합 평가 데이터
 
 웃으면서 박수치는 샘플은 `laughter-with-clap` 조건으로 등록한다. 웃음 모델
 평가에서는 `laughter`, 박수 평가에서는 `consecutive-clap` 양성인 다중 라벨
 샘플이다. 깨끗한 웃음과 박수 샘플을 대체하지 않고 validation과 test에 각각
-5개씩 추가한다.
+10개씩 포함한다.
 
 ## 로컬 검증
 
