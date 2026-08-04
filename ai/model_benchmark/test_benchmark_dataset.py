@@ -1,4 +1,5 @@
 import json
+import multiprocessing
 from pathlib import Path
 import tempfile
 import unittest
@@ -10,6 +11,22 @@ from benchmark_dataset import (
     review_sample,
     validate_dataset,
 )
+
+
+def add_sample_in_process(root_value: str, index: int) -> None:
+    root = Path(root_value)
+    sample_id = f"concurrent-sample-{index:03d}"
+    media = root / f"{sample_id}.wav"
+    media.write_bytes(f"audio-{index}".encode())
+    add_sample(
+        root=root,
+        sample_id=sample_id,
+        media_path=media,
+        split="test",
+        conditions=["laughter"],
+        labels=["laughter"],
+        notes=None,
+    )
 
 
 class BenchmarkDatasetTests(unittest.TestCase):
@@ -174,9 +191,36 @@ class BenchmarkDatasetTests(unittest.TestCase):
 
             errors = validate_dataset(root)
 
-            self.assertTrue(
-                any("appears in multiple splits" in error for error in errors)
+            self.assertIn(
+                "sessionId office-session-001 appears in multiple splits: "
+                "test, validation",
+                errors,
             )
+
+    def test_concurrent_adds_are_serialized_without_lost_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            create_dataset(root, "concurrent-audio-test")
+            context = multiprocessing.get_context("spawn")
+            processes = [
+                context.Process(
+                    target=add_sample_in_process,
+                    args=(str(root), index),
+                )
+                for index in range(6)
+            ]
+
+            for process in processes:
+                process.start()
+            for process in processes:
+                process.join(timeout=20)
+                self.assertFalse(process.is_alive())
+                self.assertEqual(process.exitcode, 0)
+
+            payload = load_dataset(root)
+            self.assertEqual(len(payload["samples"]), 6)
+            self.assertEqual(validate_dataset(root), [])
+            self.assertEqual(list(root.glob(".dataset.*.tmp")), [])
 
     def test_external_source_requires_dataset_and_license(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -151,8 +151,11 @@ pipeline {
                                 sh 'python3 -m py_compile audio_event_detection.py audio_event_trigger.py yamnet_laughter_detect_jetson.py'
                             }
                             dir('ai/model_benchmark') {
-                                sh 'python3 -m unittest -v test_audio_shadow_runner.py test_audio_shadow_report.py test_benchmark_log_collector.py'
-                                sh 'python3 -m py_compile audio_shadow_runner.py audio_shadow_report.py benchmark_log_collector.py'
+                                sh 'python3 -m unittest -v test_audio_shadow_runner.py test_audio_shadow_report.py test_audio_benchmark_services.py test_benchmark_dataset.py test_benchmark_log_collector.py'
+                                sh 'python3 -m py_compile audio_accuracy_runner.py audio_prediction_runner.py audio_shadow_runner.py audio_shadow_report.py benchmark_dataset.py benchmark_log_collector.py'
+                                sh 'python3 audio_accuracy_runner.py --help >/dev/null'
+                                sh 'python3 audio_prediction_runner.py --help >/dev/null'
+                                sh 'bash -n audio_benchmark_services.sh'
                             }
                         }
                     }

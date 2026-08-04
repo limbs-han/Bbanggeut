@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any
 
 
@@ -74,32 +77,92 @@ def load_dataset(root: Path) -> dict[str, Any]:
     return payload
 
 
-def write_dataset(root: Path, payload: dict[str, Any]) -> None:
+@contextmanager
+def dataset_manifest_lock(root: Path):
+    """Serialize manifest read-modify-write transactions across processes."""
+
     root.mkdir(parents=True, exist_ok=True)
-    temporary = dataset_path(root).with_suffix(".json.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    lock_path = dataset_path(root).with_suffix(".json.lock")
+    with lock_path.open("a+b") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _write_dataset_unlocked(root: Path, payload: dict[str, Any]) -> None:
+    """Durably replace the manifest while the caller holds its lock."""
+
+    root.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".dataset.",
+        suffix=".tmp",
+        dir=root,
     )
-    temporary.replace(dataset_path(root))
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(
+            descriptor,
+            "w",
+            encoding="utf-8",
+            newline="\n",
+        ) as output:
+            output.write(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+            )
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, dataset_path(root))
+        if os.name != "nt":
+            directory_descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def write_dataset(root: Path, payload: dict[str, Any]) -> None:
+    with dataset_manifest_lock(root):
+        _write_dataset_unlocked(root, payload)
 
 
 def create_dataset(root: Path, name: str) -> dict[str, Any]:
-    if dataset_path(root).exists():
-        raise ValueError(f"dataset already exists: {dataset_path(root)}")
-    payload = {
-        "schemaVersion": SCHEMA_VERSION,
-        "name": name,
-        "createdAt": utc_now(),
-        "updatedAt": utc_now(),
-        "privacy": {
-            "scope": "jetson-local",
-            "containsPersonalData": True,
-            "gitCommitAllowed": False,
-        },
-        "samples": [],
-    }
-    write_dataset(root, payload)
+    with dataset_manifest_lock(root):
+        if dataset_path(root).exists():
+            raise ValueError(f"dataset already exists: {dataset_path(root)}")
+        payload = {
+            "schemaVersion": SCHEMA_VERSION,
+            "name": name,
+            "createdAt": utc_now(),
+            "updatedAt": utc_now(),
+            "privacy": {
+                "scope": "jetson-local",
+                "containsPersonalData": True,
+                "gitCommitAllowed": False,
+            },
+            "samples": [],
+        }
+        _write_dataset_unlocked(root, payload)
     return payload
 
 
@@ -143,13 +206,6 @@ def add_sample(
     if not media_path.is_file():
         raise ValueError(f"media file does not exist: {media_path}")
 
-    payload = load_dataset(root)
-    samples = payload.setdefault("samples", [])
-    if not isinstance(samples, list):
-        raise ValueError("samples must be an array")
-    if any(row.get("sampleId") == sample_id for row in samples if isinstance(row, dict)):
-        raise ValueError(f"duplicate sample ID: {sample_id}")
-
     sample = {
         "sampleId": sample_id,
         "media": relative_media.as_posix(),
@@ -175,9 +231,20 @@ def add_sample(
             "license": source_license,
         }
 
-    samples.append(sample)
-    payload["updatedAt"] = utc_now()
-    write_dataset(root, payload)
+    with dataset_manifest_lock(root):
+        payload = load_dataset(root)
+        samples = payload.setdefault("samples", [])
+        if not isinstance(samples, list):
+            raise ValueError("samples must be an array")
+        if any(
+            row.get("sampleId") == sample_id
+            for row in samples
+            if isinstance(row, dict)
+        ):
+            raise ValueError(f"duplicate sample ID: {sample_id}")
+        samples.append(sample)
+        payload["updatedAt"] = utc_now()
+        _write_dataset_unlocked(root, payload)
     return sample
 
 
@@ -194,29 +261,30 @@ def review_sample(
         raise ValueError(f"unsupported review status: {status}")
     if duration_seconds is not None and duration_seconds <= 0:
         raise ValueError("duration seconds must be positive")
-    payload = load_dataset(root)
-    samples = payload.get("samples")
-    if not isinstance(samples, list):
-        raise ValueError("samples must be an array")
-    sample = next(
-        (
-            row
-            for row in samples
-            if isinstance(row, dict) and row.get("sampleId") == sample_id
-        ),
-        None,
-    )
-    if sample is None:
-        raise ValueError(f"unknown sample ID: {sample_id}")
-    sample["review"] = {
-        "status": status,
-        "manualReviewRequired": status != "verified",
-        "reviewedAt": utc_now(),
-    }
-    if duration_seconds is not None:
-        sample["durationSeconds"] = duration_seconds
-    payload["updatedAt"] = utc_now()
-    write_dataset(root, payload)
+    with dataset_manifest_lock(root):
+        payload = load_dataset(root)
+        samples = payload.get("samples")
+        if not isinstance(samples, list):
+            raise ValueError("samples must be an array")
+        sample = next(
+            (
+                row
+                for row in samples
+                if isinstance(row, dict) and row.get("sampleId") == sample_id
+            ),
+            None,
+        )
+        if sample is None:
+            raise ValueError(f"unknown sample ID: {sample_id}")
+        sample["review"] = {
+            "status": status,
+            "manualReviewRequired": status != "verified",
+            "reviewedAt": utc_now(),
+        }
+        if duration_seconds is not None:
+            sample["durationSeconds"] = duration_seconds
+        payload["updatedAt"] = utc_now()
+        _write_dataset_unlocked(root, payload)
     return sample
 
 

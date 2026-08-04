@@ -46,7 +46,9 @@ required_files=(
     "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py"
     "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py"
     "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_accuracy_runner.py"
     "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_benchmark_services.sh"
     "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py"
     "${MODEL_BENCHMARK_DIR}/audio_shadow_report.py"
 )
@@ -63,7 +65,8 @@ bash -n \
     "${SCRIPT_DIR}/run_ai_stack.sh" \
     "${SCRIPT_DIR}/run_edge_ai_mvp.sh" \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh" \
-    "${SCRIPT_DIR}/run_yolo_rtsp_validation.sh"
+    "${SCRIPT_DIR}/run_yolo_rtsp_validation.sh" \
+    "${MODEL_BENCHMARK_DIR}/audio_benchmark_services.sh"
 if [[ -f "${DEVICE_AGENT_DIR}/integration-soak-test.sh" ]]; then
     bash -n "${DEVICE_AGENT_DIR}/integration-soak-test.sh"
 fi
@@ -130,6 +133,7 @@ PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py" \
     "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py" \
     "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_accuracy_runner.py" \
     "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py" \
     "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py" \
     "${MODEL_BENCHMARK_DIR}/audio_shadow_report.py"
@@ -187,6 +191,10 @@ echo "[5/5] Model benchmark tests"
         -m unittest \
         test_audio_shadow_runner \
         test_audio_shadow_report
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        audio_accuracy_runner.py --help >/dev/null
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        audio_prediction_runner.py --help >/dev/null
 )
 
 echo "PASS: staged Jetson AI release validation completed."

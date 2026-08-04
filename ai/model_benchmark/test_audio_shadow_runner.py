@@ -1,6 +1,11 @@
+import json
+import math
 from pathlib import Path
+import sys
 import tempfile
+import types
 import unittest
+from unittest.mock import patch
 
 from audio_shadow_runner import (
     JsonlWriter,
@@ -8,6 +13,7 @@ from audio_shadow_runner import (
     VirtualEventGate,
     event_score,
     parse_args,
+    run,
 )
 
 
@@ -96,6 +102,179 @@ class AudioShadowRunnerTests(unittest.TestCase):
             writer.write({"recordType": "prediction", "score": 0.5})
             self.assertIn('"recordType":"prediction"', path.read_text())
             writer.close()
+
+    def test_shadow_run_records_predictions_without_operational_authority(self) -> None:
+        class FakeArray(list):
+            @property
+            def size(self) -> int:
+                return len(self)
+
+            def reshape(self, shape: int):
+                self.requested_shape = shape
+                return self
+
+        fake_numpy = types.ModuleType("numpy")
+        fake_numpy.float32 = float
+        fake_numpy.asarray = lambda values, dtype=None: FakeArray(values)
+
+        def frombuffer(values, dtype=None):
+            from array import array
+
+            del dtype
+            decoded = array("f")
+            decoded.frombytes(values)
+            return FakeArray(decoded)
+
+        fake_numpy.frombuffer = frombuffer
+        fake_numpy.isfinite = lambda values: [
+            math.isfinite(value) for value in values
+        ]
+        fake_numpy.all = all
+        fake_numpy.argmax = lambda values: max(
+            range(len(values)),
+            key=lambda index: values[index],
+        )
+        fake_numpy.square = lambda values: [value * value for value in values]
+        fake_numpy.mean = lambda values: sum(values) / len(values)
+        fake_numpy.sqrt = math.sqrt
+
+        class FakePredictor:
+            class_names = [
+                "Speech",
+                "Laughter",
+                "Baby laughter",
+                "Giggle",
+                "Snicker",
+                "Belly laugh",
+                "Chuckle, chortle",
+                "Clapping",
+                "Applause",
+            ]
+            precision = "fp16"
+
+            def __init__(self, *args, **kwargs) -> None:
+                del args, kwargs
+
+            def predict(self, waveform):
+                self.waveform = waveform
+                return FakeArray(
+                    [0.1, 0.9, 0.2, 0.2, 0.2, 0.2, 0.2, 0.8, 0.3]
+                ), 4.2
+
+        class FakeAudioStream:
+            def __init__(self, command, *, on_block, **kwargs) -> None:
+                del command, kwargs
+                self.on_block = on_block
+
+            def start(self) -> None:
+                from array import array
+
+                self.on_block(array("f", [1.0] * 320).tobytes())
+
+            def close(self) -> None:
+                pass
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model = root / "efficientat.pt"
+            model.write_bytes(b"shadow-model")
+            source = root / "source"
+            class_map = source / "metadata" / "class_labels_indices.csv"
+            class_map.parent.mkdir(parents=True)
+            class_map.write_text("index,mid,display_name\n", encoding="utf-8")
+            diagnostics = root / "efficientat_shadow.jsonl"
+            args = parse_args(
+                [
+                    "--stream-url",
+                    "rtsp://127.0.0.1/homecam/ai",
+                    "--model",
+                    str(model),
+                    "--source-repo",
+                    str(source),
+                    "--class-map",
+                    str(class_map),
+                    "--diagnostics-jsonl",
+                    str(diagnostics),
+                    "--context-seconds",
+                    "0.01",
+                    "--hop-seconds",
+                    "0.01",
+                    "--block-seconds",
+                    "0.01",
+                    "--laughter-threshold",
+                    "0.5",
+                    "--clap-threshold",
+                    "0.5",
+                    "--cooldown-seconds",
+                    "0",
+                    "--max-windows",
+                    "1",
+                ]
+            )
+
+            with (
+                patch.dict(sys.modules, {"numpy": fake_numpy}),
+                patch(
+                    "audio_shadow_runner.EfficientAtPredictor",
+                    FakePredictor,
+                ),
+                patch(
+                    "audio_shadow_runner.ReconnectingFfmpegAudio",
+                    FakeAudioStream,
+                ),
+                patch(
+                    "audio_shadow_runner.detect_rtsp_timeout_option",
+                    return_value="stimeout",
+                ),
+                patch(
+                    "audio_shadow_runner.build_audio_command",
+                    return_value=["fake-ffmpeg"],
+                ),
+            ):
+                self.assertEqual(run(args), 0)
+
+            records = [
+                json.loads(line)
+                for line in diagnostics.read_text(encoding="utf-8").splitlines()
+            ]
+            startup = next(
+                row for row in records if row["recordType"] == "startup"
+            )
+            self.assertFalse(startup["operationalAuthority"])
+            self.assertEqual(
+                startup["sideEffects"],
+                {
+                    "trigger": False,
+                    "mqtt": False,
+                    "upload": False,
+                    "api": False,
+                },
+            )
+            predictions = [
+                row for row in records if row["recordType"] == "prediction"
+            ]
+            self.assertEqual(len(predictions), 1)
+            self.assertTrue(
+                predictions[0]["events"]["laughter"]["wouldTrigger"]
+            )
+            virtual_events = [
+                row for row in records if row["recordType"] == "virtual-event"
+            ]
+            self.assertEqual(
+                {row["eventType"] for row in virtual_events},
+                {"LAUGHTER", "CLAP"},
+            )
+            self.assertTrue(
+                all(
+                    row["operationalAuthority"] is False
+                    and row["virtualEventId"].startswith("shadow-")
+                    for row in virtual_events
+                )
+            )
+            self.assertEqual(
+                sorted(path.name for path in root.glob("*.json*")),
+                ["efficientat_shadow.jsonl"],
+            )
 
 
 if __name__ == "__main__":
