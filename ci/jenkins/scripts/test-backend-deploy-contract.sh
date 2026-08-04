@@ -10,6 +10,26 @@ bash -n \
   "${repository_root}/ci/jenkins/scripts/package-backend-deploy.sh" \
   "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
 
+# Flyway 마이그레이션 버전 중복 검사.
+#
+# 두 브랜치가 같은 다음 번호를 집어 각각 CI를 통과한 뒤 순서대로 병합되면
+# develop에 같은 버전이 둘 생긴다. Flyway는 그때 마이그레이션 목록을 읽는
+# 단계에서 거부하므로, 그 버전을 적용하지 않는 호출까지 전부
+# FlywayException으로 실패한다 — V35와 V36에서 연달아 겪었다. gradle test까지
+# 2분을 기다려 다섯 개가 한꺼번에 터진 로그를 읽는 대신 여기서 1초에 잡는다.
+duplicate_migration_versions="$(
+  ls "${repository_root}/backend/server/src/main/resources/db/migration" |
+    sed -n 's/^V\([0-9][0-9]*\)__.*/\1/p' |
+    sort -n |
+    uniq -d
+)"
+if [[ -n "${duplicate_migration_versions}" ]]; then
+  echo "Flyway 마이그레이션 버전이 중복됩니다: ${duplicate_migration_versions}" >&2
+  echo "develop을 다시 받아 뒤 번호로 옮기고, FlywayMigrationIntegrationTest의" >&2
+  echo "최종 스키마 버전도 함께 올리세요." >&2
+  exit 1
+fi
+
 artifact="${test_root}/backend-deploy.tar.gz"
 bash "${repository_root}/ci/jenkins/scripts/package-backend-deploy.sh" \
   "${artifact}"
