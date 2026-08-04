@@ -607,20 +607,119 @@ Future<MemoryConnectionChoice?> showMemoryConnectionChoice(
 Future<bool> confirmVideoDeletion(BuildContext context) async =>
     await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('영상을 삭제할까요?'),
-        content: const Text('삭제한 영상은 다시 복구할 수 없습니다.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('취소'),
+      builder: (dialogContext) => Dialog(
+        key: const Key('video-delete-dialog'),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        backgroundColor: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(36),
+            child: ColoredBox(
+              color: AppColors.surface,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 22, 28, 20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/images/video_delete_mascot.png',
+                          key: const Key('video-delete-mascot'),
+                          width: 154,
+                          height: 132,
+                          fit: BoxFit.contain,
+                          cacheWidth: decodePixels(dialogContext, 154),
+                        ),
+                        const SizedBox(height: 8),
+                        Text.rich(
+                          const TextSpan(
+                            children: [
+                              TextSpan(text: '영상 '),
+                              TextSpan(
+                                text: '삭제',
+                                style: TextStyle(color: AppColors.coralDark),
+                              ),
+                              TextSpan(text: '할까요?'),
+                            ],
+                          ),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(dialogContext).textTheme.headlineSmall
+                              ?.copyWith(
+                                color: AppColors.ink,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          '삭제한 영상은 다시 복구할 수 없어요.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.inkSoft,
+                            fontSize: 15,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: AppColors.line),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 26),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            key: const Key('video-delete-cancel'),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(58),
+                              foregroundColor: AppColors.inkSoft,
+                              side: const BorderSide(
+                                color: AppColors.line,
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('취소'),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: FilledButton(
+                            key: const Key('video-delete-confirm'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(58),
+                              backgroundColor: AppColors.danger,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('삭제'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('삭제'),
-          ),
-        ],
+        ),
       ),
     ) ??
     false;
