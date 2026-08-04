@@ -117,7 +117,6 @@ sudo ufw status numbered
 
 ## 4. 남은 작업
 
-- **기념일·주간 리포트 푸시 발송기**: 알림 설정(API-78·79)은 저장·게이트까지 구현됐지만, `anniversaryAlerts`(일정 D-day 푸시)와 `weeklyReport`(주간 집계 푸시)를 실제로 보내는 스케줄러는 없다.
 - **실기기 상시 운영**: Jetson/Pi 계정·프로토콜은 준비됐으나 상시 접속 기기가 없다. 연결 시 heartbeat·업로드·라이브 end-to-end 재검증.
 - **UFW 정리**: 미사용 8554/tcp 허용 규칙 제거, 8080(Jenkins) 공개 범위 재검토.
 - **운영 보강**: off-instance 백업 복제, 외부 알림 채널(모니터 실패 시), 중앙 로그, 부하 테스트.

@@ -3081,7 +3081,14 @@ components:
           format: uuid
         type:
           type: string
-          enum: [INVITATION_RECEIVED, INVITATION_ACCEPTED, LAUGHTER_VIDEO_READY]
+          enum:
+            - INVITATION_RECEIVED
+            - INVITATION_ACCEPTED
+            - LAUGHTER_VIDEO_READY
+            - EDIT_ANALYSIS_READY
+            - EDIT_COMMENT_ADDED
+            - ANNIVERSARY
+            - WEEKLY_REPORT
         title:
           type: string
         body:
