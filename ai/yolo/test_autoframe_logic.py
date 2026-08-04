@@ -7,6 +7,7 @@ import unittest
 from yolov8_autoframe_jetson import (
     AutoFrameController,
     CameraCommand,
+    StableGroupSelector,
     TrackedObject,
     choose_best_group,
 )
@@ -62,6 +63,23 @@ class GroupSelectionTests(unittest.TestCase):
         self.assertIsNotNone(decision)
         assert decision is not None
         self.assertEqual(tuple(item.track_id for item in decision.objects), (2,))
+
+    def test_safe_frame_selector_keeps_all_stable_people(self) -> None:
+        selector = StableGroupSelector(switch_frames=1)
+        decision = selector.select(
+            (
+                tracked(1, (0, 20, 10, 80)),
+                tracked(2, (90, 20, 100, 80)),
+            ),
+            100,
+            100,
+            edge_margin=0.30,
+            include_all=True,
+        )
+
+        self.assertIsNotNone(decision)
+        assert decision is not None
+        self.assertEqual(tuple(item.track_id for item in decision.objects), (1, 2))
 
 
 class ControllerTests(unittest.TestCase):
@@ -197,6 +215,51 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.direction, "RIGHT_UP")
         self.assertGreater(command.error_x, 0.0)
         self.assertLess(command.error_y, 0.0)
+
+    def update_boxes(
+        self,
+        boxes: tuple[tuple[float, float, float, float], ...],
+    ) -> CameraCommand:
+        decision = choose_best_group(
+            tuple(tracked(index, box) for index, box in enumerate(boxes, 1)),
+            100,
+            100,
+            edge_margin=0.0,
+        )
+        return self.controller.update(decision, 100, 100, now=0.0)
+
+    def test_multiple_people_hold_only_when_every_point_is_inside(self) -> None:
+        command = self.update_boxes(
+            (
+                (20, 20, 30, 80),
+                (70, 20, 80, 80),
+            )
+        )
+
+        self.assertEqual(command.target_count, 2)
+        self.assertEqual(command.direction, "HOLD")
+
+    def test_moves_when_any_person_point_is_outside(self) -> None:
+        command = self.update_boxes(
+            (
+                (4.5, 20, 9.5, 80),
+                (40, 20, 50, 80),
+            )
+        )
+
+        self.assertEqual(command.target_count, 2)
+        self.assertEqual(command.command_x, "LEFT")
+
+    def test_opposite_points_too_far_apart_hold_safely(self) -> None:
+        command = self.update_boxes(
+            (
+                (4.5, 20, 9.5, 80),
+                (90.5, 20, 95.5, 80),
+            )
+        )
+
+        self.assertEqual(command.target_count, 2)
+        self.assertEqual(command.direction, "HOLD")
 
     def test_multiple_people_use_their_combined_group_box(self) -> None:
         decision = choose_best_group(

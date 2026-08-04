@@ -579,9 +579,14 @@ class StableGroupSelector:
         frame_width: int,
         frame_height: int,
         edge_margin: float,
+        include_all: bool = False,
     ) -> FramingDecision | None:
         items = tuple(objects)
-        candidate = choose_best_group(items, frame_width, frame_height, edge_margin)
+        candidate = (
+            make_decision(items, len(items))
+            if include_all and items
+            else choose_best_group(items, frame_width, frame_height, edge_margin)
+        )
         if candidate is None:
             self.current_ids = frozenset()
             self.pending_ids = frozenset()
@@ -671,6 +676,7 @@ class AutoFrameController:
         self.target_loss_follow_seconds = target_loss_follow_seconds
         self.smoothed_target: Point | None = None
         self.smoothed_group_box: Box | None = None
+        self.smoothed_tracking_points_box: Box | None = None
         self.last_target_seen_at: float | None = None
         self.last_error_x = 0.0
         self.last_error_y = 0.0
@@ -681,7 +687,8 @@ class AutoFrameController:
 
     def _safe_point_axis(
         self,
-        point: float,
+        point_low: float,
+        point_high: float,
         low: float,
         high: float,
         frame_size: int,
@@ -698,8 +705,8 @@ class AutoFrameController:
                 self.safe_frame_stop_margin - self.safe_frame_start_margin
             )
 
-        point_lower_error = point - frame_size * point_margin
-        point_upper_error = point - frame_size * (1.0 - point_margin)
+        point_lower_error = point_low - frame_size * point_margin
+        point_upper_error = point_high - frame_size * (1.0 - point_margin)
         box_lower_error = low - frame_size * guard_margin
         box_upper_error = high - frame_size * (1.0 - guard_margin)
         lower_error = min(point_lower_error, box_lower_error)
@@ -708,9 +715,11 @@ class AutoFrameController:
         upper_outside = upper_error > 0.0
 
         if lower_outside and upper_outside:
-            if point_lower_error < 0.0:
+            point_below = point_lower_error < 0.0
+            point_above = point_upper_error > 0.0
+            if point_below and not point_above:
                 upper_outside = False
-            elif point_upper_error > 0.0:
+            elif point_above and not point_below:
                 lower_outside = False
             else:
                 return 0, 0.0, False
@@ -720,6 +729,25 @@ class AutoFrameController:
         if lower_outside:
             return -1, clamp(lower_error / normalizer, -1.0, 1.0), True
         return 1, clamp(upper_error / normalizer, -1.0, 1.0), True
+
+    def tracking_points(self, decision: FramingDecision) -> tuple[Point, ...]:
+        return tuple(
+            (
+                item.center[0],
+                item.box[1]
+                + (item.box[3] - item.box[1]) * self.subject_y_ratio,
+            )
+            for item in decision.objects
+        )
+
+    def tracking_points_box(self, decision: FramingDecision) -> Box:
+        points = self.tracking_points(decision)
+        return (
+            min(point[0] for point in points),
+            min(point[1] for point in points),
+            max(point[0] for point in points),
+            max(point[1] for point in points),
+        )
 
     def _edge_exit_command(
         self,
@@ -798,6 +826,7 @@ class AutoFrameController:
 
             self.smoothed_target = None
             self.smoothed_group_box = None
+            self.smoothed_tracking_points_box = None
             self.last_error_x = 0.0
             self.last_error_y = 0.0
             return CameraCommand(
@@ -847,13 +876,30 @@ class AutoFrameController:
                 )
             )
 
+        tracking_points_box = self.tracking_points_box(decision)
+        if self.smoothed_tracking_points_box is None:
+            self.smoothed_tracking_points_box = tracking_points_box
+        else:
+            self.smoothed_tracking_points_box = tuple(
+                self.ema_alpha * raw_value
+                + (1.0 - self.ema_alpha) * smooth_value
+                for raw_value, smooth_value in zip(
+                    tracking_points_box,
+                    self.smoothed_tracking_points_box,
+                )
+            )
+
         if self.tracking_mode == "safe-frame":
             smooth_left, smooth_top, smooth_right, smooth_bottom = (
                 self.smoothed_group_box
             )
+            point_left, point_top, point_right, point_bottom = (
+                self.smoothed_tracking_points_box
+            )
             x_direction, normalized_error_x, self.safe_frame_x_active = (
                 self._safe_point_axis(
-                    smooth_x,
+                    point_left,
+                    point_right,
                     smooth_left,
                     smooth_right,
                     frame_width,
@@ -862,7 +908,8 @@ class AutoFrameController:
             )
             y_direction, normalized_error_y, self.safe_frame_y_active = (
                 self._safe_point_axis(
-                    smooth_y,
+                    point_top,
+                    point_bottom,
                     smooth_top,
                     smooth_bottom,
                     frame_height,
@@ -1191,27 +1238,29 @@ def draw_overlay(
         raw_center = (int(decision.raw_center[0]), int(decision.raw_center[1]))
         cv2.drawMarker(frame, raw_center, (0, 215, 255), cv2.MARKER_CROSS, 20, 2)
         if controller.tracking_mode == "safe-frame":
-            assert controller.smoothed_target is not None
-            track_x = int(controller.smoothed_target[0])
-            track_y = int(controller.smoothed_target[1])
-            cv2.drawMarker(
-                frame,
-                (track_x, track_y),
-                (255, 0, 255),
-                cv2.MARKER_CROSS,
-                20,
-                2,
-            )
-            cv2.putText(
-                frame,
-                f"SAFE POINT {controller.subject_y_ratio:.0%}",
-                (track_x, max(18, track_y - 8)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.52,
-                (255, 0, 255),
-                2,
-                cv2.LINE_AA,
-            )
+            for track_x_value, track_y_value in controller.tracking_points(
+                decision
+            ):
+                track_x = int(track_x_value)
+                track_y = int(track_y_value)
+                cv2.drawMarker(
+                    frame,
+                    (track_x, track_y),
+                    (255, 0, 255),
+                    cv2.MARKER_CROSS,
+                    20,
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    f"SAFE POINT {controller.subject_y_ratio:.0%}",
+                    (track_x, max(18, track_y - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.52,
+                    (255, 0, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
 
     if (
         controller.tracking_mode == "center"
@@ -1484,6 +1533,7 @@ def run(args: argparse.Namespace) -> None:
                 width,
                 height,
                 args.edge_margin,
+                include_all=args.tracking_mode == "safe-frame",
             )
             wall_now = time.monotonic()
             timeline_now = (
