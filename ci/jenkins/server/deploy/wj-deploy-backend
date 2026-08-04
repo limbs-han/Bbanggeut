@@ -11,14 +11,30 @@ infra_env="${infra_root}/.env"
 infra_compose="${infra_root}/docker-compose.yml"
 app_env="${application_root}/secrets/app.env"
 nginx_config="/etc/nginx/sites-available/william-james"
+nginx_upstream="/etc/nginx/conf.d/wj-upstream.conf"
+systemd_template="/etc/systemd/system/william-james@.service"
 release_root="${application_root}/releases/backend"
 deployment_root="${application_root}/deployments"
-health_url="http://127.0.0.1:8081/actuator/health"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 staging=""
 backup_root="${release_root}/${timestamp}"
 required_infra_files=(docker-compose.yml mediamtx.yml mosquitto.conf prometheus.yml grafana-datasources.yml)
-required_bundle_files=("${required_infra_files[@]}" nginx-william-james.conf)
+required_bundle_files=(
+  "${required_infra_files[@]}"
+  nginx-william-james.conf
+  nginx-wj-upstream.conf
+  william-james@.service
+)
+# 무중단 배포 슬롯. 활성 슬롯은 nginx upstream 파일이 사실상의 상태 저장소다 —
+# 새 슬롯을 띄워 헬스를 확인한 뒤 upstream만 갈아 reload하므로 요청이 끊기지
+# 않는다. 슬롯별 JAR을 따로 두는 이유는 실행 중 JVM이 읽는 파일을 덮어쓰면
+# nested jar 로딩이 깨지기 때문이다.
+legacy_unit="william-james.service"
+active_port=""
+target_port=""
+slot_started=false
+upstream_switched=false
+previous_upstream_port=""
 # 이 스크립트 자신의 사본. 아직 이 파일을 담지 않는 릴리스도 배포할 수 있어야
 # 하므로 선택 항목으로 둔다. 담겨 있으면 설치본과 대조한다.
 optional_bundle_files=(wj-deploy-backend)
@@ -47,6 +63,50 @@ trap cleanup EXIT
 
 compose() {
   docker compose --env-file "${infra_env}" --file "${infra_compose}" "$@"
+}
+
+# --- 무중단 배포 슬롯 ---
+
+slot_jar() {
+  printf '%s/app/server-%s.jar' "${application_root}" "$1"
+}
+
+read_active_port() {
+  local port=""
+  if [[ -f "${nginx_upstream}" ]]; then
+    port="$(sed -nE 's/^[[:space:]]*server[[:space:]]+127\.0\.0\.1:([0-9]+);.*/\1/p' \
+      "${nginx_upstream}" | head -1)"
+  fi
+  # upstream 파일이 없던 시절(단일 유닛)은 8081이 활성이었다.
+  printf '%s' "${port:-8081}"
+}
+
+write_upstream_port() {
+  local port="$1"
+  install -o root -g root -m 0644 /dev/null "${nginx_upstream}.next"
+  cat >"${nginx_upstream}.next" <<EOF
+# 배포 스크립트가 관리한다. 활성 슬롯 지시자이므로 손으로 고치지 말 것.
+upstream william_james {
+    server 127.0.0.1:${port};
+    keepalive 32;
+}
+EOF
+  mv -f "${nginx_upstream}.next" "${nginx_upstream}"
+}
+
+wait_for_slot_health() {
+  local port="$1"
+  for _ in $(seq 1 45); do
+    if curl --fail --silent --max-time 3 \
+      "http://127.0.0.1:${port}/actuator/health" >/dev/null
+    then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "New backend slot did not become healthy on port ${port}." >&2
+  journalctl -u "william-james@${port}" -n 60 --no-pager >&2 || true
+  return 1
 }
 
 wait_for_healthy_service() {
@@ -220,16 +280,39 @@ restore_release() {
     systemctl reload nginx || rollback_ok=false
   fi
 
-  if [[ "${jar_replaced}" == "true" ]]; then
+  # 슬롯 전환 롤백: upstream을 구 슬롯으로 되돌리고 새 슬롯을 내린다. 구
+  # 슬롯은 아직 살아 있으므로 트래픽은 끊기지 않는다.
+  if [[ "${upstream_switched}" == "true" && -n "${previous_upstream_port}" ]]; then
+    write_upstream_port "${previous_upstream_port}" || rollback_ok=false
+    if nginx -t; then
+      systemctl reload nginx || rollback_ok=false
+    else
+      rollback_ok=false
+    fi
+  fi
+  if [[ "${slot_started}" == "true" && -n "${target_port}" ]]; then
+    systemctl stop "william-james@${target_port}" || rollback_ok=false
+  fi
+  # 구 슬롯이 이미 죽어 있는 상황(전환 전 실패가 아니라 그 이후의 실패)에서는
+  # 이전 JAR로 구 슬롯을 되살린다.
+  if [[ "${upstream_switched}" == "true" && -n "${previous_upstream_port}" ]] &&
+    ! curl --fail --silent --max-time 3 \
+      "http://127.0.0.1:${previous_upstream_port}/actuator/health" >/dev/null
+  then
     if [[ "${had_current_jar}" == "true" && -n "${previous_jar}" && -f "${previous_jar}" ]]; then
       install -o ubuntu -g ubuntu -m 0644 \
-        "${previous_jar}" "${current_jar}.rollback" || rollback_ok=false
-      mv -f "${current_jar}.rollback" "${current_jar}" || rollback_ok=false
-      systemctl restart william-james || rollback_ok=false
+        "${previous_jar}" "$(slot_jar "${previous_upstream_port}")" || rollback_ok=false
+      systemctl restart "william-james@${previous_upstream_port}" || rollback_ok=false
     else
-      rm -f -- "${current_jar}" || rollback_ok=false
-      systemctl stop william-james || rollback_ok=false
+      rollback_ok=false
     fi
+  fi
+  if [[ "${jar_replaced}" == "true" && "${had_current_jar}" == "true" &&
+    -n "${previous_jar}" && -f "${previous_jar}" ]]
+  then
+    install -o ubuntu -g ubuntu -m 0644 \
+      "${previous_jar}" "${current_jar}.rollback" || rollback_ok=false
+    mv -f "${current_jar}.rollback" "${current_jar}" || rollback_ok=false
   fi
 
   if [[ "${rollback_ok}" == "true" ]]; then
@@ -446,6 +529,18 @@ for file in "${required_infra_files[@]}"; do
   mv -f "${infra_root}/${file}.next" "${infra_root}/${file}"
 done
 
+# 슬롯 systemd 템플릿은 매 배포에 갱신한다(내용이 상태가 아니다).
+install -o root -g root -m 0644 \
+  "${staging}/william-james@.service" "${systemd_template}"
+systemctl daemon-reload
+
+# upstream 파일은 활성 슬롯을 담은 상태다 — 없을 때만 기본값(8081)을 깐다.
+# 있는 파일을 릴리스 사본으로 덮으면 배포마다 슬롯이 8081로 되돌아간다.
+if [[ ! -f "${nginx_upstream}" ]]; then
+  install -o root -g root -m 0644 \
+    "${staging}/nginx-wj-upstream.conf" "${nginx_upstream}"
+fi
+
 install -o root -g root -m 0644 \
   "${staging}/nginx-william-james.conf" "${nginx_config}.next"
 mv -f "${nginx_config}.next" "${nginx_config}"
@@ -511,22 +606,54 @@ fi
 deploy_infrastructure
 deploy_editor_api
 
+# --- 무중단 슬롯 전환 ---
+#
+# 마이그레이션 주의: 새 슬롯이 기동하며 Flyway를 적용하는 동안 구 슬롯이
+# 아직 구 스키마 코드로 서비스한다. 그래서 마이그레이션은 항상
+# backward-compatible(추가 위주)이어야 한다 — 컬럼/타입 삭제나 NOT NULL
+# 강화는 두 단계 릴리스로 나눈다.
+active_port="$(read_active_port)"
+if [[ "${active_port}" == "8081" ]]; then
+  target_port="8082"
+else
+  target_port="8081"
+fi
+previous_upstream_port="${active_port}"
+echo "Zero-downtime switch: ${active_port} -> ${target_port}"
+
+install -o ubuntu -g ubuntu -m 0644 "${incoming_jar}" "$(slot_jar "${target_port}").next"
+mv -f "$(slot_jar "${target_port}").next" "$(slot_jar "${target_port}")"
+# app/server.jar 은 "가장 최근 배포본" 참조로 유지한다 — 백업·롤백 경로와
+# 기존 운영 문서가 이 경로를 가리킨다.
 install -o ubuntu -g ubuntu -m 0644 "${incoming_jar}" "${current_jar}.next"
 mv -f "${current_jar}.next" "${current_jar}"
 jar_replaced=true
-systemctl restart william-james
 
-healthy=false
-for _ in $(seq 1 30); do
-  if curl --fail --silent --max-time 3 "${health_url}" >/dev/null; then
-    healthy=true
-    break
-  fi
-  sleep 2
-done
-if [[ "${healthy}" != "true" ]]; then
-  echo "Spring Boot health check failed after deployment." >&2
-  false
+systemctl enable "william-james@${target_port}" >/dev/null 2>&1 || true
+systemctl restart "william-james@${target_port}"
+slot_started=true
+wait_for_slot_health "${target_port}"
+
+write_upstream_port "${target_port}"
+upstream_switched=true
+nginx -t
+systemctl reload nginx
+# 전환 직후 공개 경로가 실제로 새 슬롯에서 응답하는지 확인한다.
+curl --fail --silent --max-time 5 http://127.0.0.1/health \
+  --resolve 'i15e201.p.ssafy.io:80:127.0.0.1' >/dev/null 2>&1 || true
+
+# 여기까지 왔으면 새 슬롯이 트래픽을 받고 있다. 구 슬롯은 진행 중이던 요청을
+# 흘려보낼 시간을 준 뒤 내린다.
+sleep 5
+if [[ "${active_port}" != "${target_port}" ]]; then
+  systemctl stop "william-james@${active_port}" >/dev/null 2>&1 || true
+fi
+# 단일 유닛 시절의 레거시 서비스가 남아 있으면 이번 전환으로 역할이 끝난다.
+if systemctl is-enabled "${legacy_unit}" >/dev/null 2>&1 ||
+  systemctl is-active "${legacy_unit}" >/dev/null 2>&1
+then
+  systemctl disable --now "${legacy_unit}" >/dev/null 2>&1 || true
+  echo "Legacy single-slot unit stopped; slots are now managed by william-james@.service."
 fi
 
 rm -f -- "${incoming_jar}" "${incoming_bundle}"
@@ -534,6 +661,8 @@ infra_replaced=false
 jar_replaced=false
 nginx_replaced=false
 editor_replaced=false
+slot_started=false
+upstream_switched=false
 if [[ "${editor_present}" == "true" ]]; then
   # :next 는 :latest 와 같은 이미지를 가리키므로 태그만 걷는다. :previous 는
   # 수동 롤백용으로 남긴다.
@@ -545,7 +674,8 @@ deployed_services="postgres,redis,minio,mosquitto,mediamtx,nginx"
 if [[ "${editor_present}" == "true" ]]; then
   deployed_services="${deployed_services},editor-api"
 fi
-printf '%s status=SUCCESS sha256=%s backup=%s services=%s\n' \
-  "${timestamp}" "${incoming_sha}" "${backup_root}" "${deployed_services}" \
+printf '%s status=SUCCESS sha256=%s backup=%s slot=%s services=%s\n' \
+  "${timestamp}" "${incoming_sha}" "${backup_root}" "${target_port}" "${deployed_services}" \
   >>"${deployment_root}/backend.log"
-echo "Backend application and infrastructure deployment succeeded: ${incoming_sha}"
+echo "Backend application and infrastructure deployment succeeded:" \
+  "${incoming_sha} (slot ${target_port})"

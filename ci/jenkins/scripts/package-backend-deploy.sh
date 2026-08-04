@@ -11,6 +11,8 @@ required_files=(
   nginx-william-james.conf
   prometheus.yml
   grafana-datasources.yml
+  nginx-wj-upstream.conf
+  william-james@.service
 )
 
 for file in "${required_files[@]}"; do
