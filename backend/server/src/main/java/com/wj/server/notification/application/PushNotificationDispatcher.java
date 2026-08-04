@@ -77,6 +77,28 @@ public class PushNotificationDispatcher {
                     "resourceId", videoId.toString())));
     }
 
+    /** 기념일(일정 D-day) — 일정을 등록한 사용자에게 보낸다. */
+    public void anniversary(UUID userId, UUID scheduleId, String title, String body) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByUser(userId),
+            new PushMessage(
+                title,
+                body,
+                Map.of(
+                    "type", "ANNIVERSARY",
+                    "resourceId", scheduleId.toString())));
+    }
+
+    /** 주간 웃음 리포트 — 대상 사용자에게 보낸다. */
+    public void weeklyReport(UUID userId, String body) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByUser(userId),
+            new PushMessage(
+                "주간 웃음 리포트",
+                body,
+                Map.of("type", "WEEKLY_REPORT")));
+    }
+
     /** 편집 서버 분석 완료 — 분석을 요청한 사용자에게만 보낸다. */
     public void editAnalysisReady(UUID userId, UUID videoId) {
         dispatchAfterCommit(

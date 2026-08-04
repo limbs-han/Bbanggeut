@@ -1051,16 +1051,18 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 
 #### 알림 생성 시점 (API-58~61은 조회·읽음 전용)
 
-알림을 만드는 별도 API는 없다. 서버가 다음 두 시점에 자동으로 생성한다.
+알림을 만드는 별도 API는 없다. 서버가 다음 시점에 자동으로 생성한다.
 
 | 종류 | 생성 시점 | 대상 | dedupe_key |
 |---|---|---|---|
 | `LAUGHTER_VIDEO_READY` | 영상 업로드 완료(API-26)로 `READY` 확정 + `triggerType=LAUGHTER` | 해당 기기의 활성 구성원 **전원** | `laughter-video:{videoId}` |
 | `INVITATION_RECEIVED` | 초대 발송(API-14) | 초대받은 이메일의 사용자 1명 | `invitation:{invitationId}` |
+| `ANNIVERSARY` | 매일 09:00 KST 스케줄러 — 일정(API-74)의 날짜가 오늘이거나 매년 반복이 월·일로 일치 | 일정을 등록한 사용자(설정 `anniversaryAlerts` 존중) | `anniversary:{scheduleId}:{year}` |
+| `WEEKLY_REPORT` | 매주 월요일 09:00 KST 스케줄러 — 지난주(월~일) 금고 기기들의 LAUGHTER 이벤트 합계 | 활성 금고 멤버십 + 활성 기기 Binding이 있는 사용자(설정 `weeklyReport` 존중) | `weekly-report:{userId}:{ISO주차}` |
 
 `notifications` 테이블에 `UNIQUE (user_id, dedupe_key)`가 있고 INSERT에 `ON CONFLICT DO NOTHING`이 붙어 있어, 같은 업로드 완료가 여러 번 들어와도 사용자별 알림은 1건만 남는다.
 
-알림 설정(API-78·79)은 **FCM 푸시 발송만** 거른다. `newMemoryAlerts`를 끈 사용자는 `LAUGHTER_VIDEO_READY` 푸시 대상에서 빠지지만, 인앱 알림함에는 계속 쌓인다. 설정 행이 없는 사용자는 모두 켜진 것으로 본다(단말 저장 전용이던 시절 사용자가 푸시를 잃지 않게 하기 위함). `anniversaryAlerts`·`weeklyReport`는 저장만 하며, 해당 푸시 발송기(기념일 D-day·주간 리포트)는 아직 없다.
+알림 설정(API-78·79)의 동작: `newMemoryAlerts`를 끈 사용자는 `LAUGHTER_VIDEO_READY` **푸시** 대상에서 빠지지만 인앱 알림함에는 계속 쌓인다. `anniversaryAlerts`·`weeklyReport`를 끈 사용자는 해당 스케줄러의 대상 조회에서 제외되어 **인앱 알림도 만들지 않는다**(주기 리포트라 알림함에만 쌓이는 것도 소음이다). 설정 행이 없는 사용자는 모두 켜진 것으로 본다(단말 저장 전용이던 시절 사용자가 푸시를 잃지 않게 하기 위함).
 
 앱 알림함은 API-58(목록)·API-60(개별 읽음)·API-61(전체 읽음)을 사용하고, FCM payload의 알림 종류에 따라 해당 화면(영상 상세/받은 초대함)으로 이동한다. API-59(미읽음 개수)는 아직 앱에서 호출하지 않는다.
 
