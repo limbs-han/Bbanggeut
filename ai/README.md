@@ -178,6 +178,7 @@ idle timeout 이후 라이브 relay FFmpeg 하나만 종료되는지 확인한�
 sudo systemctl stop \
   wj-edge-ai-recording \
   wj-local-recording \
+  wj-event-prune.timer \
   wj-recording-prune.timer \
   wj-device-agent \
   wj-media-tunnel \
@@ -190,6 +191,7 @@ for service in \
   wj-media-tunnel \
   wj-mediamtx-local \
   wj-local-recording \
+  wj-event-prune.timer \
   wj-recording-prune.timer \
   wj-edge-ai-recording
 do
@@ -220,6 +222,7 @@ sleep 8
 sudo systemctl start \
   wj-mediamtx-local \
   wj-local-recording \
+  wj-event-prune.timer \
   wj-recording-prune.timer
 sleep 8
 
@@ -233,6 +236,7 @@ for service in \
   wj-media-source \
   wj-mediamtx-local \
   wj-local-recording \
+  wj-event-prune.timer \
   wj-recording-prune.timer \
   wj-edge-ai-recording
 do
@@ -554,6 +558,7 @@ chmod +x \
   run-local-mediamtx.sh \
   local-recording.sh \
   recording-prune.sh \
+  event_prune.py \
   check-local-media.sh
 sudo ./install-local-media.sh
 
@@ -576,8 +581,26 @@ RECORDING_DIR=/var/lib/william-james/recordings
 RECORDING_MAX_GIB=8
 ```
 
+이벤트 디렉터리도 `wj-event-prune.timer`가 10분마다 정리한다. 기본 정책은
+영구 업로드 실패 묶음 3일, 일반 이벤트 7일, 진단 로그 3일 보존이며 이벤트
+전체는 2GiB를 넘지 않는다. 파일시스템 여유 공간이 4GiB 아래로 내려가도
+정리를 시작한다. 저장 공간 압박 시 `upload-blocked` 묶음, 업로드 완료 묶음,
+로그, 미처리 이벤트 순서로 삭제하므로 영구 실패 클립이 순환 녹화보다 먼저
+공간을 양보한다. 최근 15분 이내에 변경된 파일은 처리 중인 것으로 보고 보호한다.
+
+```text
+EVENT_DIR=/home/ssafy/ai_events
+EVENT_BLOCKED_RETENTION_DAYS=3
+EVENT_RETENTION_DAYS=7
+EVENT_LOG_RETENTION_DAYS=3
+EVENT_MAX_GIB=2
+EVENT_MIN_FREE_GIB=4
+EVENT_ACTIVE_GRACE_MINUTES=15
+```
+
 ```bash
-sudo systemctl start wj-local-recording wj-recording-prune.timer
+sudo systemctl start wj-local-recording \
+  wj-event-prune.timer wj-recording-prune.timer
 sleep 70
 sudo -u williamjames \
   /opt/william-james/device-agent/check-local-media.sh
@@ -594,6 +617,7 @@ sudo systemctl disable wj-edge-ai-mvp
 sudo systemctl enable \
   wj-mediamtx-local \
   wj-local-recording \
+  wj-event-prune.timer \
   wj-recording-prune.timer \
   wj-edge-ai-recording
 ```
@@ -604,6 +628,7 @@ sudo systemctl enable \
 sudo systemctl disable --now \
   wj-edge-ai-recording \
   wj-local-recording \
+  wj-event-prune.timer \
   wj-recording-prune.timer \
   wj-mediamtx-local
 sudo systemctl enable wj-edge-ai-mvp
