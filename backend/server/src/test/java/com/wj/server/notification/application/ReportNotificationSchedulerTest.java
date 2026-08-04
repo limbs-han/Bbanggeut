@@ -96,6 +96,31 @@ class ReportNotificationSchedulerTest {
     }
 
     @Test
+    void startupCatchUpSkipsBeforeSendTime() {
+        // 2026-08-04 07:00 KST = 08-03 22:00 UTC — 발송 시각 전 재시작
+        Clock beforeNine = Clock.fixed(Instant.parse("2026-08-03T22:00:00Z"), ZoneOffset.UTC);
+
+        new ReportNotificationScheduler(mapper, pushDispatcher, beforeNine)
+            .catchUpAfterStartup();
+
+        verifyNoInteractions(mapper, pushDispatcher);
+    }
+
+    @Test
+    void startupCatchUpRunsBothSendsAfterSendTime() {
+        // 2026-08-04 화요일 10:00 KST = 01:00 UTC — 09:00을 지난 재시작
+        Clock afterNine = Clock.fixed(Instant.parse("2026-08-04T01:00:00Z"), ZoneOffset.UTC);
+        when(mapper.findAnniversariesOn(any(), eq(8), eq(4))).thenReturn(List.of());
+        when(mapper.findWeeklyReportTargets(any(), any())).thenReturn(List.of());
+
+        new ReportNotificationScheduler(mapper, pushDispatcher, afterNine)
+            .catchUpAfterStartup();
+
+        verify(mapper).findAnniversariesOn(any(), eq(8), eq(4));
+        verify(mapper).findWeeklyReportTargets(any(), any());
+    }
+
+    @Test
     void noTargetsMeansNoPush() {
         when(mapper.findAnniversariesOn(any(), eq(8), eq(4))).thenReturn(List.of());
 
