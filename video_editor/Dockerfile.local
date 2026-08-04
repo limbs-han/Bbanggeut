@@ -4,7 +4,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # libgl1·libglib2.0-0: opencv(mediapipe 의존)의 공유 라이브러리.
-# ffmpeg: 서버 렌더링(render_video.py)이 컷·줌 완성본을 만드는 데 쓴다.
+# ffmpeg·ffprobe: 서버 렌더링(render_video.py)의 컷·줌 완성본 생성과, 4컷
+# 만화가 원본에서 프레임을 뽑고 모델이 낸 그림을 정사각 PNG로 맞추는 데 쓴다.
+# slim 이미지에는 둘 다 없다.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 ffmpeg \
  && rm -rf /var/lib/apt/lists/*

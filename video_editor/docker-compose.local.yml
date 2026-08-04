@@ -12,6 +12,9 @@ services:
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: wj-videos
       EDITOR_FIXTURE_ROOT: /app/video_editor/fixtures/analysis
+      # 4컷 만화(API-71·72)가 GMS로 Gemini를 부를 때 쓴다. 값은 셸 환경에서
+      # 넘긴다 — 이 파일에 키를 적지 않는다.
+      GMS_KEY: ${GMS_KEY:-}
     ports:
       - "127.0.0.1:18080:18080"
     depends_on:

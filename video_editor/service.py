@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import os
@@ -21,6 +22,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import backend_access, backend_events
+from . import comic
 from .adaptive_cli import build_adaptive_recipe
 from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
 from .render_jobs import RenderJobManager
@@ -846,3 +848,105 @@ def add_comment(
         video_id, comment["authorUserId"], comment["id"], comment["text"]
     )
     return comment
+
+
+# ── 4컷 만화 (API-71·API-72의 내부 워커) ──────────────────────────────────
+#
+# 앱이 직접 부르지 않는다. Spring이 인증·금고 권한을 확인하고 원본 presigned
+# URL을 붙여 이 라우트로 넘긴다. 그래도 이 모듈의 다른 라우트와 같은 검사를
+# 붙여 둔다 — 게이트웨이를 우회해 직접 들어오면 로그인만으로 남의 영상을
+# 만화로 만들 수 있기 때문이다(미들웨어는 토큰 서명만 본다).
+
+
+class ComicScriptRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    video_url: str = Field(alias="videoUrl", min_length=1)
+    """원본 presigned URL. ffmpeg가 그대로 읽는다 — 우리가 내려받지 않는다."""
+
+    lines: list[dict[str, Any]] = Field(default_factory=list)
+    """앱이 ML Kit으로 만든 자막. `{startMs, text}` 목록. 무발화면 빈 목록."""
+
+    frame_count: int | None = Field(default=None, alias="frameCount", ge=1, le=comic.FRAME_LIMIT)
+
+
+class ComicImageRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cuts: list[dict[str, Any]]
+    """사용자가 대사를 고친 4컷. 그림 프롬프트에는 beat·scene만 쓴다."""
+
+    style: str = Field(default=comic.DEFAULT_STYLE)
+
+
+def _comic_sheet_key(video_id: str) -> str:
+    return f"comic/{video_id}/sheet.json"
+
+
+@app.post("/v1/comic/{video_id}/script")
+def comic_script(
+    video_id: str, request: ComicScriptRequest, http_request: Request = None
+) -> dict[str, Any]:
+    """1단계 — 프레임 4~6장 + 자막으로 4컷 구성을 짠다.
+
+    인물·배경 시트는 응답에 담지 않고 MinIO에 남긴다. 앱 계약은 `cuts`뿐이고,
+    시트는 2단계가 프롬프트를 조립할 재료다.
+    """
+    _require_video_access(http_request, video_id)
+    try:
+        script = comic.build_script(
+            request.video_url,
+            request.lines,
+            count=request.frame_count or comic.FRAME_COUNT,
+        )
+    except comic.ComicContractError as failure:
+        raise HTTPException(status_code=422, detail=str(failure)) from failure
+    except comic.ComicError as failure:
+        raise HTTPException(status_code=502, detail=str(failure)) from failure
+
+    try:
+        store.put(
+            _comic_sheet_key(video_id),
+            {
+                "characters": script["characters"],
+                "setting": script["setting"],
+                "savedAt": datetime.now().astimezone().isoformat(),
+            },
+        )
+    except (BotoCoreError, ClientError, OSError):
+        # 시트를 못 남겨도 구성은 돌려준다 — 2단계가 시트 없이 조립하면 품질만
+        # 떨어지고, 여기서 502를 주면 이미 쓴 구성 호출값을 버리게 된다.
+        pass
+
+    return {"cuts": script["cuts"]}
+
+
+@app.post("/v1/comic/{video_id}/image")
+def comic_image(
+    video_id: str, request: ComicImageRequest, http_request: Request = None
+) -> dict[str, Any]:
+    """2단계 — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 PNG다.
+
+    `data:image/png;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
+    """
+    _require_video_access(http_request, video_id)
+    # 시트는 있으면 좋고 없으면 없는 대로 간다. MinIO가 죽었다고 그림까지
+    # 못 만들 이유가 없다 — `get_json`은 ClientError만 잡아서 연결 오류
+    # (BotoCoreError)는 그대로 올라온다.
+    try:
+        sheet = store.get_json(_comic_sheet_key(video_id)) or {}
+    except (BotoCoreError, ClientError, OSError):
+        sheet = {}
+
+    try:
+        png = comic.render_comic(
+            request.cuts,
+            characters=sheet.get("characters") or [],
+            setting=str(sheet.get("setting") or ""),
+            style=request.style,
+        )
+    except comic.ComicContractError as failure:
+        raise HTTPException(status_code=422, detail=str(failure)) from failure
+    except comic.ComicError as failure:
+        raise HTTPException(status_code=502, detail=str(failure)) from failure
+    return {"image": base64.b64encode(png).decode()}
