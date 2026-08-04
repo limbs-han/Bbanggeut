@@ -96,6 +96,14 @@ class ApiClient {
   String? _memoryRefreshToken;
   bool _persistSession = true;
 
+  /// 편집 서버(editor-api)처럼 별도 Dio를 쓰는 클라이언트가 같은 세션으로
+  /// 인증하도록 현재 액세스 토큰을 내어 준다. 로그인 전이면 null.
+  String? get accessToken => _memoryAccessToken;
+
+  /// 액세스 토큰이 만료됐을 때 외부 클라이언트가 갱신을 부탁하는 통로.
+  /// 진행 중인 갱신이 있으면 그 결과를 같이 기다린다.
+  Future<bool> refreshAccessToken() => _tryRefresh();
+
   bool _isPublicAuthPath(String path) =>
       path.contains('/api/auth/login') ||
       path.contains('/api/auth/signup') ||
@@ -164,16 +172,19 @@ class ApiClient {
     return session;
   }
 
+  /// 서버는 사용자 열거를 막기 위해 이메일 존재 여부와 무관하게 202를
+  /// 반환한다. 재설정 토큰 유효 시간은 30분.
   Future<void> requestPasswordReset(String email) async {
-    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 실제 환경 응답을 검증한다.
     await _post('/api/auth/password/forgot', data: {'email': email.trim()});
   }
 
+  /// 성공하면 서버가 현재 세션만 남기고 다른 세션을 전부 무효화하므로
+  /// 이 기기는 로그인 상태가 유지된다. 새 비밀번호가 기존과 같으면
+  /// 422 PASSWORD_UNCHANGED.
   Future<void> changePassword(
     String currentPassword,
     String newPassword,
   ) async {
-    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 세션 유지 정책을 검증한다.
     await _post(
       '/api/auth/password/change',
       data: {'currentPassword': currentPassword, 'newPassword': newPassword},
