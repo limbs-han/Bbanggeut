@@ -607,7 +607,20 @@ class CalendarSchedule {
   );
 }
 
-const calendarScheduleEmojis = ['❤️', '🎂', '🍚', '☎️', '📷', '⭐', '🎁', '🌸'];
+const calendarScheduleEmojis = [
+  '❤️',
+  '🎂',
+  '🍚',
+  '☎️',
+  '📷',
+  '⭐',
+  '🎁',
+  '🌸',
+  '🎉',
+  '✈️',
+  '🏠',
+  '🐾',
+];
 
 class DeviceMember {
   const DeviceMember({
