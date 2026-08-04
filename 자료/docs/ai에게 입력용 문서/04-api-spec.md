@@ -438,6 +438,8 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - 성공·거절 모두 `access_logs`에 `COMIC_SCRIPT`·`COMIC_IMAGE`로 남는다(V35 마이그레이션이 감사 동작을 추가한다).
 - 백엔드는 이 두 경로에 **트랜잭션을 걸지 않는다** — 분 단위 호출이 커넥션 풀을 붙잡지 않게 한다.
 - 원본은 `app.storage.public-endpoint`로 서명한 5분 URL로 워커에 넘긴다. 워커의 ffmpeg가 그 주소를 직접 읽으므로 **워커에서도 닿는 주소여야 한다.**
+- 워커 주소 `app.comic.worker-base-url`의 기본값 `http://127.0.0.1:18080`은 **실서버에서 그대로 맞다** — Spring은 호스트의 systemd 서비스(`william-james`)이고 editor-api는 `127.0.0.1:18080`으로만 포트를 연다.
+- 모델 키 `GMS_KEY`는 워커 컨테이너 환경변수로만 넣는다(서버 `infra/.env` → `backend/deploy/docker-compose.yml`의 editor-api). **백엔드는 이 키를 모른다.**
 - **이 절의 적용 범위**: 이 절의 규칙은 **만화(API-71·API-72)에만 해당한다.** 자막(FN-A39)은 서버 API가 없으므로 여기 적용될 것이 없다(옛 API-73 계약은 회수됐다).
 - **호출 제한은 서버만 걸 수 있다.** 앱에는 제한이 없다.
 - **시간 예산은 안쪽부터 짧다: 워커 150초 → 백엔드 읽기 160초 → 앱 180초.** 워커의 한국어 실패 사유를 잃지 않으려고 이 순서로 잡았다. 앱은 API-71·API-72 두 호출에만 `Options(receiveTimeout: 180초)`를 붙였고(`ApiClient.aiReceiveTimeout`) 나머지는 전역 기본값 20초다. 앱이 먼저 끊으면(`DioExceptionType.receiveTimeout`) 사용자에게는 그냥 실패로 보이고 서버는 다 만든 응답을 버린다. 180초로도 모자란 작업이면 202+폴링으로 계약을 바꿔야 하며 그것은 별도 논의다.
