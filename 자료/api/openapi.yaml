@@ -708,6 +708,10 @@ paths:
         - name: timeZone
           in: query
           schema: {type: string, default: Asia/Seoul}
+        - name: type
+          in: query
+          description: 이벤트 타입 필터(예 LAUGHTER). detectedCount·dailyCounts만 거르고 byType은 전체 분포를 유지한다.
+          schema: {type: string, pattern: '^[A-Za-z_]{1,32}$'}
       responses:
         '200':
           description: 원시 감지 및 업로드 성공 집계

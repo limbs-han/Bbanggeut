@@ -845,7 +845,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-40 | `PUT /api/devices/{deviceId}/subscription` | 구독 활성화 |
 | API-41 | `DELETE /api/devices/{deviceId}/subscription` | 구독 해지 |
 | API-42 | `GET /api/devices/{deviceId}/home-summary` | 홈 요약 카드 집계 |
-| API-46 | `GET /api/devices/{deviceId}/event-stats` | 이벤트 전용 통계(서버 구현·클라이언트 미사용, 현재는 API-33만 사용) |
+| API-46 | `GET /api/devices/{deviceId}/event-stats` | 이벤트 전용 통계. `from`·`to`·`timeZone`에 더해 `type`(예 LAUGHTER) 필터 지원 — detectedCount·dailyCounts만 거르고 byType은 전체 분포 유지 |
 | API-47 | `POST /internal/admin/devices` | (내부 관리자 키) 기기 프로비저닝 |
 | API-48 | `POST /internal/admin/devices/{deviceId}/credentials/rotate` | (내부 관리자 키) 자격증명 강제 회전 |
 | API-49 | `DELETE /internal/admin/devices/{deviceId}/credentials` | (내부 관리자 키) 자격증명 폐기 |
