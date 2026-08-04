@@ -43,7 +43,9 @@ expected_entries="$(
     mediamtx.yml \
     mosquitto.conf \
     nginx-william-james.conf \
+    nginx-wj-upstream.conf \
     prometheus.yml \
+    'william-james@.service' \
     wj-deploy-backend |
     LC_ALL=C sort
 )"
@@ -138,6 +140,34 @@ then
   echo "editor-api가 MinIO root 자격증명을 사용합니다(docker-compose.yml)." >&2
   exit 1
 fi
+
+# 무중단 배포 계약: 슬롯 전환의 네 조각(upstream 참조, 슬롯별 JAR, 헬스
+# 확인 후 전환, 상태 파일 보존)이 하나라도 빠지면 배포가 다시 다운타임을
+# 만든다.
+grep -Fq 'proxy_pass http://william_james;'   "${repository_root}/backend/deploy/nginx-william-james.conf"
+if grep -q 'proxy_pass http://127.0.0.1:8081'   "${repository_root}/backend/deploy/nginx-william-james.conf"
+then
+  echo "nginx가 백엔드 포트를 직접 가리킵니다 — 무중단 전환이 불가능합니다." >&2
+  exit 1
+fi
+for contract in   'server-%s.jar'   'wait_for_slot_health "${target_port}"'   'write_upstream_port "${target_port}"'   'if [[ ! -f "${nginx_upstream}" ]]; then'
+do
+  if ! grep -Fq "${contract}"     "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
+  then
+    echo "배포 스크립트에서 무중단 계약을 찾지 못했습니다: ${contract}" >&2
+    exit 1
+  fi
+done
+
+# 업로드 한도 정합: 서버 선언(500 MiB)보다 nginx가 크게 열려 있으면 초과
+# 본문이 MinIO 디스크에 도달한 뒤에야 거절된다.
+if ! grep -A 8 'location \^~ /william-james-videos'   "${repository_root}/backend/deploy/nginx-william-james.conf" |
+  grep -Fq 'client_max_body_size 512m;'
+then
+  echo "nginx의 영상 업로드 본문 한도가 서버 선언(500 MiB)과 어긋납니다." >&2
+  exit 1
+fi
+grep -Fq 'MAX_UPLOAD_BYTES = 524_288_000L'   "${repository_root}/backend/server/src/main/java/com/wj/server/video/application/IotVideoService.java"
 
 # nginx location 중복 검사. 병합 사고로 /editor/ 블록이 두 벌 들어가
 # nginx -t가 배포 시점에야 실패했다(2026-08-04 배포 #71·#72). 수정자

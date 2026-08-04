@@ -1150,15 +1150,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       // (WorkManager)에 맡긴다. 셀룰러에서 몇 분씩 걸리는 업로드를 편집기가
       // 붙잡고 기다리게 했더니 사용자가 앱을 껐고 업로드도 함께 끊겼다 —
       // 이제 앱을 나가거나 꺼도 계속 올라가고, 진행률은 상단 알림에 보인다.
+      // 완성본 자리는 백엔드가 만들고(API-81) 서명된 URL만 워커에 넘긴다 —
+      // 서명이 URL에 들어 있어 백그라운드 PUT에 인증 헤더가 필요 없다.
+      final editUploadUrl = await widget.controller.api.createEditUpload(
+        widget.video.id,
+        title: widget.video.title,
+        durationMs: exportProject.durationMs,
+        capturedStartAt: widget.video.capturedStartAt,
+      );
       await _editorPlatform.enqueueEditedUpload(
         videoId: widget.video.id,
         filePath: outputPath,
-        uploadUrl: _recommendations.editedVideoUploadUrl(
-          videoId: widget.video.id,
-          title: widget.video.title,
-          durationMs: exportProject.durationMs,
-          capturedAt: widget.video.capturedStartAt,
-        ),
+        uploadUrl: editUploadUrl,
         title: widget.video.title,
         // 렌더링 산출물(임시 파일)만 지운다. 원본을 그대로 올릴 때는 캐시라
         // 지우면 다음 편집 진입이 도로 내려받는다.

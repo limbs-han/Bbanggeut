@@ -279,6 +279,8 @@ services:
       - --storage.tsdb.retention.time=15d
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # 활성 슬롯 타겟 파일. 배포 스크립트가 여기에 쓴다.
+      - ./prometheus-targets:/etc/prometheus/targets:ro
       - prometheus-data:/prometheus
 
   grafana:

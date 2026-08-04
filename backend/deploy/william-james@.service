@@ -1,0 +1,26 @@
+[Unit]
+# 무중단 배포용 슬롯 인스턴스. %i가 포트이며 JAR도 슬롯별로 따로 둔다 —
+# 실행 중인 JVM이 읽고 있는 파일을 덮어쓰면 nested jar 로딩이 깨진다.
+Description=William James Spring Boot API (port %i)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/william-james/app
+EnvironmentFile=/home/ubuntu/william-james/secrets/app.env
+ExecStart=/usr/bin/java -jar /home/ubuntu/william-james/app/server-%i.jar --server.address=127.0.0.1 --server.port=%i
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/william-james
+
+[Install]
+WantedBy=multi-user.target

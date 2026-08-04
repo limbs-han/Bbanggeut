@@ -462,6 +462,68 @@ class EventStats {
   );
 }
 
+/// 영상 댓글. 작성자 표시 이름은 서버가 users에서 조인해 준다 — 앱이 보낸
+/// 이름을 믿지 않으므로 위조할 수 없다.
+class VideoComment {
+  const VideoComment({
+    required this.id,
+    required this.authorId,
+    required this.body,
+    this.authorName,
+    this.createdAt,
+  });
+  final String id;
+  final String authorId;
+  final String body;
+  final String? authorName;
+  final DateTime? createdAt;
+  factory VideoComment.fromJson(Map<String, dynamic> json) => VideoComment(
+    id: json['id'] as String? ?? '',
+    authorId: json['authorId'] as String? ?? '',
+    body: json['body'] as String? ?? '',
+    authorName: json['authorName'] as String?,
+    createdAt: parseDate(json['createdAt']),
+  );
+}
+
+/// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
+class VaultEventStats {
+  const VaultEventStats({
+    required this.detectedCount,
+    this.dailyCounts = const [],
+    this.byDevice = const [],
+  });
+  final int detectedCount;
+  final List<DailyVideoCount> dailyCounts;
+  final List<VaultDeviceCount> byDevice;
+  factory VaultEventStats.fromJson(Map<String, dynamic> json) => VaultEventStats(
+    detectedCount: (json['detectedCount'] as num?)?.toInt() ?? 0,
+    dailyCounts: (json['dailyCounts'] as List? ?? const [])
+        .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+    byDevice: (json['byDevice'] as List? ?? const [])
+        .map((item) => VaultDeviceCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+class VaultDeviceCount {
+  const VaultDeviceCount({
+    required this.deviceId,
+    required this.name,
+    required this.count,
+  });
+  final String deviceId;
+  final String name;
+  final int count;
+  factory VaultDeviceCount.fromJson(Map<String, dynamic> json) =>
+      VaultDeviceCount(
+        deviceId: json['deviceId'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        count: (json['count'] as num?)?.toInt() ?? 0,
+      );
+}
+
 /// 알림 설정(API-78·79). 서버 행이 없으면 모두 켜진 것으로 취급된다.
 class NotificationPreferences {
   const NotificationPreferences({

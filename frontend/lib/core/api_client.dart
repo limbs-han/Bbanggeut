@@ -250,6 +250,60 @@ class ApiClient {
     await _put('/api/notifications/preferences', data: preferences.toJson()),
   );
 
+  /// 편집 완성본 업로드 예약(API-81). 응답의 서명 URL은 OS 백그라운드
+  /// 작업(WorkManager)이 헤더 없이 그대로 PUT한다 — 서명에 Content-Type만
+  /// 들어가고, 완료 통보 없이 서버가 도착을 감지해 READY로 올린다.
+  Future<String> createEditUpload(
+    String sourceVideoId, {
+    String title = '',
+    int durationMs = 0,
+    DateTime? capturedStartAt,
+    DateTime? capturedEndAt,
+  }) async {
+    final response = await _post(
+      '/api/videos/$sourceVideoId/edits',
+      data: {
+        if (title.isNotEmpty) 'title': title,
+        if (durationMs > 0) 'durationMs': durationMs,
+        if (capturedStartAt != null)
+          'capturedStartAt': capturedStartAt.toUtc().toIso8601String(),
+        if (capturedEndAt != null)
+          'capturedEndAt': capturedEndAt.toUtc().toIso8601String(),
+      },
+    );
+    final url = response['uploadUrl'] as String?;
+    if (url == null || url.isEmpty) {
+      throw const ApiFailure('업로드 주소를 받지 못했어요.');
+    }
+    return url;
+  }
+
+  /// 금고의 편집 완성본 목록(API-82). 화면들이 쓰던 editor-api meta.json과
+  /// 같은 키(`videoId`·`title`·`savedAt`)로 맞춰 준다.
+  Future<List<Map<String, dynamic>>> listVaultEdits(String vaultId) async =>
+      (await _getList('/api/vaults/$vaultId/edits'))
+          .map(
+            (item) => <String, dynamic>{
+              'videoId': item['id'],
+              'title': item['title'] ?? '',
+              'savedAt': item['createdAt'],
+              'capturedAt': item['capturedStartAt'],
+              'durationMs': item['durationMs'],
+              'sizeBytes': item['sizeBytes'],
+            },
+          )
+          .toList(growable: false);
+
+  Future<List<VideoComment>> listVideoComments(String videoId) async =>
+      (await _getList(
+        '/api/videos/$videoId/comments',
+      )).map(VideoComment.fromJson).toList(growable: false);
+
+  Future<VideoComment> addVideoComment(String videoId, String body) async =>
+      VideoComment.fromJson(
+        await _post('/api/videos/$videoId/comments', data: {'body': body}),
+      );
+
   Future<List<CalendarSchedule>> listSchedules() async => (await _getList(
     '/api/schedules',
   )).map(CalendarSchedule.fromJson).toList(growable: false);
@@ -275,6 +329,24 @@ class ApiClient {
   }) async => EventStats.fromJson(
     await _get(
       '/api/devices/$deviceId/event-stats',
+      query: {
+        if (from != null) 'from': _dateOnly(from),
+        if (to != null) 'to': _dateOnly(to),
+        'type': ?type,
+      },
+    ),
+  );
+
+  /// 금고(가족) 단위 집계(API-80). 기기 여러 대를 한 금고에 묶은 가족이
+  /// 합산 리포트를 볼 때 쓴다 — 응답의 byDevice로 기기별 분해도 함께 온다.
+  Future<VaultEventStats> getVaultEventStats(
+    String vaultId, {
+    DateTime? from,
+    DateTime? to,
+    String? type,
+  }) async => VaultEventStats.fromJson(
+    await _get(
+      '/api/vaults/$vaultId/event-stats',
       query: {
         if (from != null) 'from': _dateOnly(from),
         if (to != null) 'to': _dateOnly(to),
