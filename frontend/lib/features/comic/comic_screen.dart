@@ -272,18 +272,19 @@ class _ComicScreenState extends State<ComicScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const ValueKey('comic-save'),
-                onPressed: _saving ? null : _save,
-                icon: const Icon(Icons.download_rounded),
-                label: Text(_saving ? '잠시만요' : '갤러리에 저장하기'),
-              ),
-            ),
-            const SizedBox(height: 8),
+            // 한 줄에 둘씩. 셋을 한 줄에 두면 반폭보다 좁아져 "다시 만
+            // 들기"처럼 글자가 꺾인다 — 실제 기기에서 확인한 문제다.
             Row(
               children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    key: const ValueKey('comic-save'),
+                    onPressed: _saving ? null : _save,
+                    icon: const Icon(Icons.download_rounded),
+                    label: Text(_saving ? '잠시만요' : '저장하기'),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
                     key: const ValueKey('comic-share'),
@@ -292,7 +293,11 @@ class _ComicScreenState extends State<ComicScreen> {
                     label: const Text('공유하기'),
                   ),
                 ),
-                const SizedBox(width: 8),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
                 Expanded(
                   child: OutlinedButton.icon(
                     key: const ValueKey('comic-remake'),
