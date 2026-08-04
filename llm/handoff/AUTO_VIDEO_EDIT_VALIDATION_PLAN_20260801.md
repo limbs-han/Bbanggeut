@@ -1,8 +1,46 @@
 # 모바일 자동 영상 편집기 현행 구현·검증 계획
 
 최초 작성일: 2026-08-01  
-현행화: 2026-08-02  
+현행화: 2026-08-03  
 기준 시간대: Asia/Seoul (KST)
+
+### 2026-08-03 세션에서 해결한 것 (브랜치 `refactor/repo/move-video-editor`)
+
+1. **`ai/video_editor/` → 최상위 `video_editor/` 이동**: ai/는 AIOT 기기
+   전용으로 정리. 임포트는 `video_editor.*`, 도커 명령은
+   `-f video_editor/docker-compose.local.yml`로 바뀌었다.
+2. **임의 영상 서버 분석 파이프라인**: 편집 진입 시 fixture에 없는 영상이면
+   앱이 원본을 `PUT /v1/edit-analyses/<videoId>`로 올리고, 서버가
+   음량→YAMNet→영상→표정을 백그라운드로 분석(작업자 1명, 상태는
+   `GET /v1/edit-analyses/<videoId>` 폴링). 끝나면 앱이 스낵바
+   "AI 분석이 끝났어요"를 띄우고 자동 추천(컷+자동 줌)을 적용하며 AI 컷
+   칩이 열린다. 분석 중에는 칩이 `_recommendationLoading`으로 잠긴다.
+   실측: 2분 영상 15~19초, 5분 데모 영상 64초(개발 PC, Docker 밖).
+3. **모델 준비**: `video_editor/models/`(Git 미추적)에 yamnet.tflite,
+   blaze_face_full_range.tflite, face_landmarker.task를 둔다. 없으면
+   `/health`의 `analysis=false`, 분석 요청은 503, fixture 5개는 계속 동작.
+4. 프론트 낡은 TODO 정리(비밀번호 API 계약 주석화, 죽은 ContentNotification
+   삭제), 검증: flutter analyze 무결점, flutter test 155개, python unittest
+   31개 통과.
+5. **editor-api 실서버 승격 — 프로비저닝까지 완료**: 서버에서
+   `https://i15e201.p.ssafy.io/editor/health`가 `analysis:true`,
+   `authRequired:true`로 응답하고 무토큰 `/v1`은 401이다. 서버에 오늘
+   오후 누군가 수동으로 띄워 둔 구버전(무인증) editor-api 컨테이너가
+   있어서 새 이미지로 교체했다. 서버의 nginx·compose는 이 브랜치
+   내용으로 수동 반영됨 — **master 병합 전에 Jenkins 백엔드 배포가 나가면
+   editor-api 라우트·서비스가 되돌아가므로 병합을 먼저 할 것.**
+   - nginx `/editor/` 라우트와 deploy compose의 editor-api 서비스 정의 추가
+     (배포 wrapper는 건드리지 않아 기존 배포 흐름에 영향 없음)
+   - editor-api에 백엔드 JWT(HS256, `EDITOR_JWT_SECRET`=`JWT_SIGNING_KEY`)
+     검증 미들웨어 — 실서버 compose는 시크릿 없인 기동 거부, 로컬은 인증 꺼짐
+   - 분석 원본은 앱이 넘긴 백엔드 presigned URL로 서버가 직접 받는다
+     (sourceUrl, 허용 호스트 고정으로 SSRF 차단; 실패 시 폰 업로드 폴백)
+   - **앱 editor-api 기본 주소가 `https://i15e201.p.ssafy.io/editor`로 변경**
+     — 로컬 editor-api 데모는 이제
+     `flutter run --dart-define=EDITOR_API_BASE_URL=http://127.0.0.1:18080`
+     + adb reverse가 필요하다
+   - 서버 작업 순서는 `video_editor/DEPLOY.md`(소스·모델 scp → infra/.env에
+     EDITOR_JWT_SECRET → docker build → minio-init → up -d editor-api)
 
 ## 0. 세션 인수인계 요약
 

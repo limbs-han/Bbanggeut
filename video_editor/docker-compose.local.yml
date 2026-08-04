@@ -1,15 +1,17 @@
 services:
   editor-api:
     build:
-      context: ../ai
-      dockerfile: video_editor/Dockerfile.local
+      # 여러 -f 파일을 합치면 상대 경로는 첫 번째 compose 파일(backend/)
+      # 기준으로 풀린다 — README의 병합 실행 명령 전제.
+      context: ../video_editor
+      dockerfile: Dockerfile.local
     container_name: wj-editor-api
     environment:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: wj-videos
-      EDITOR_FIXTURE_ROOT: /app/ai/video_editor/fixtures/analysis
+      EDITOR_FIXTURE_ROOT: /app/video_editor/fixtures/analysis
       # 4컷 만화(API-71·72)가 GMS로 Gemini를 부를 때 쓴다. 값은 셸 환경에서
       # 넘긴다 — 이 파일에 키를 적지 않는다.
       GMS_KEY: ${GMS_KEY:-}

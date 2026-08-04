@@ -413,7 +413,7 @@ class EditorProjectController extends ChangeNotifier {
   /// 클립은 절대 지우지도, 건드리지도 않는다.
   ///
   /// 어느 구간으로 바꿀지는 점수가 정한다. 서버 recipe가 있으면 셀렉터
-  /// (ai/video_editor의 adaptive_selector + duration_presets)가 웃음·말소리·
+  /// (video_editor의 adaptive_selector + duration_presets)가 웃음·말소리·
   /// 음량 상승·모션·얼굴 특징의 `eventScore`로 이미 골라 준 cut 구간을
   /// 그대로 쓰고, scoreTimeline의 평균 점수를 그 클립에 실어 보여 준다.
   /// 서버가 없으면 원본 가운데에서 목표 길이만큼 잡는다(점수 표시 없음).

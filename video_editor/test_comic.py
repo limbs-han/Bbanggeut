@@ -14,7 +14,7 @@ from __future__ import annotations
 import base64
 import unittest
 
-from ai.video_editor import comic
+from video_editor import comic
 
 
 def _payload(text: str) -> dict:
