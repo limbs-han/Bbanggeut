@@ -29,6 +29,9 @@ void main() {
     VoidCallback? onAiCaption,
     ValueChanged<EditorZoomSegment>? onZoomChanged,
     ValueChanged<String>? onTextEdit,
+    VoidCallback? onText,
+    bool directCaptionAddMode = false,
+    VoidCallback? onDirectCaptionAddMode,
     VoidCallback? onPlayRange,
     ValueChanged<String>? onBlocked,
     List<String> thumbnails = const [],
@@ -64,7 +67,9 @@ void main() {
         presetRecommendations: presetRecommendations,
         recommendationLoading: false,
         onRecommendationSelected: onRecommendationSelected ?? (_) {},
-        onText: () {},
+        onText: onText ?? () {},
+        directCaptionAddMode: directCaptionAddMode,
+        onDirectCaptionAddMode: onDirectCaptionAddMode,
         onTextEdit: onTextEdit ?? (_) {},
         onTextRemove: (_) {},
         onVolumeChanged: (_) {},
@@ -121,15 +126,7 @@ void main() {
       await tester.pumpWidget(workspace(controller));
 
       expect(find.text('영상 편집'), findsOneWidget);
-      for (final label in const [
-        '컷 편집',
-        '비율',
-        '줌',
-        '자막',
-        '오디오',
-        '스티커',
-        '효과',
-      ]) {
+      for (final label in const ['컷 편집', '비율', '줌', '자막', '오디오', '스티커', '효과']) {
         expect(find.text(label), findsOneWidget, reason: '$label 탭이 없다');
       }
       expect(tester.takeException(), isNull);
@@ -303,9 +300,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('하단 네비는 클립 도구 다섯에 전체 도구 둘을 구분선 너머에 둔다', (
-    tester,
-  ) async {
+  testWidgets('하단 네비는 클립 도구 다섯에 전체 도구 둘을 구분선 너머에 둔다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -666,6 +661,8 @@ void main() {
       find.byKey(const Key('editor-open-text-sheet')).hitTestable(),
       findsOneWidget,
     );
+    expect(find.text('직접 자막').hitTestable(), findsOneWidget);
+    expect(find.text('자동 자막').hitTestable(), findsOneWidget);
 
     controller.selectTool(EditorTool.zoom);
     await tester.pumpAndSettle();
@@ -674,6 +671,171 @@ void main() {
       find.byKey(const Key('editor-add-zoom')).hitTestable(),
       findsOneWidget,
     );
+  });
+
+  testWidgets('직접 자막을 고르면 타임라인과 현재 위치 추가 카드가 먼저 열린다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()
+      ..selectTool(EditorTool.text)
+      ..setPlayhead(3800);
+    addTearDown(controller.dispose);
+    var modeRequested = false;
+    var sheetRequested = false;
+
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onText: () => sheetRequested = true,
+        onDirectCaptionAddMode: () => modeRequested = true,
+      ),
+    );
+    await tester.tap(
+      find.byKey(const Key('editor-open-text-sheet')).hitTestable(),
+    );
+    expect(modeRequested, isTrue);
+    expect(sheetRequested, isFalse);
+
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        directCaptionAddMode: true,
+        onText: () => sheetRequested = true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('editor-caption-track-timeline')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('editor-direct-caption-add-card')),
+      findsOneWidget,
+    );
+    expect(find.text('이 위치에 자막 추가'), findsOneWidget);
+    expect(find.byKey(const Key('editor-caption-start-handle')), findsNothing);
+
+    await tester.tap(
+      find
+          .byKey(const Key('editor-direct-caption-add-at-playhead'))
+          .hitTestable(),
+    );
+    expect(sheetRequested, isTrue);
+  });
+
+  testWidgets('자막 탭 영상 레인에도 클립 컷 구간 손잡이가 있다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 2000, text: '아니 이거 말고'),
+    ]);
+    int? changedStart;
+    bool? changedStartHandle;
+    var committed = 0;
+
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onTrimChanged: (startMs, _, startHandle) {
+          changedStart = startMs;
+          changedStartHandle = startHandle;
+        },
+        onTrimCommitted: () => committed++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final startHandle = find.byKey(
+      const Key('editor-caption-clip-start-handle'),
+    );
+    expect(startHandle, findsOneWidget);
+    expect(
+      find.byKey(const Key('editor-caption-clip-end-handle')),
+      findsOneWidget,
+    );
+    // 자막 손잡이와 겹치지 않는다 — 영상 레인과 자막 레인이 서로 다른 줄이다.
+    expect(
+      tester.getCenter(startHandle).dy,
+      isNot(
+        tester
+            .getCenter(find.byKey(const Key('editor-caption-start-handle')))
+            .dy,
+      ),
+    );
+
+    await tester.drag(startHandle, const Offset(40, 0));
+    await tester.pump();
+
+    expect(changedStartHandle, isTrue);
+    expect(changedStart, greaterThan(0));
+    expect(committed, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 자막 탭 → AI 자막 → 직접 추가 순서로 들어가면, 예전에는 추가 카드와
+  // 고른 자막의 '표시 시간' 줄이 함께 서서 패널이 60px 넘쳤다.
+  testWidgets('자막이 이미 있으면 직접 추가는 카드를 건너뛰고 입력 시트로 간다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 2000, text: '아니 이거 말고'),
+    ]);
+    expect(controller.project.selectedLayerId, isNotNull);
+    var modeRequested = false;
+    var sheetRequested = false;
+
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onText: () => sheetRequested = true,
+        onDirectCaptionAddMode: () => modeRequested = true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('editor-open-text-sheet')).hitTestable(),
+    );
+
+    expect(sheetRequested, isTrue);
+    expect(modeRequested, isFalse);
+    expect(
+      find.byKey(const Key('editor-direct-caption-add-card')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('추가 카드가 떠 있으면 고른 자막의 표시 시간 줄은 접힌다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 2000, text: '아니 이거 말고'),
+    ]);
+
+    await tester.pumpWidget(workspace(controller, directCaptionAddMode: true));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('editor-direct-caption-add-card')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('표시 시간'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('텍스트를 만진 뒤에도 컷 편집 버튼이 살아 있다', (tester) async {
@@ -931,26 +1093,26 @@ void main() {
     expect(selected, 'long');
   });
 
-  testWidgets('타임라인 버튼으로 30fps 기준 한 프레임씩 이동한다', (tester) async {
+  testWidgets('모든 편집 탭의 공통 위치에서 실행 취소와 다시 실행을 한다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final controller = newController();
     addTearDown(controller.dispose);
+    controller.addTextLayer(text: '되돌릴 자막');
 
-    await tester.pumpWidget(
-      workspace(controller, onSeek: controller.setPlayhead),
-    );
-    await tester.tap(find.byKey(const Key('editor-frame-forward')));
+    await tester.pumpWidget(workspace(controller));
+    expect(find.byKey(const Key('editor-undo')), findsOneWidget);
+    expect(find.byKey(const Key('editor-redo')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('editor-undo')));
     await tester.pump();
-    expect(controller.project.playheadMs, 33);
-    await tester.tap(find.byKey(const Key('editor-frame-forward')));
+    expect(controller.project.textLayers, isEmpty);
+
+    await tester.tap(find.byKey(const Key('editor-redo')));
     await tester.pump();
-    expect(controller.project.playheadMs, 67);
-    await tester.tap(find.byKey(const Key('editor-frame-back')));
-    await tester.pump();
-    expect(controller.project.playheadMs, 33);
+    expect(controller.project.textLayers.single.text, '되돌릴 자막');
   });
 
   testWidgets('컷 밖에서는 프로젝트 개요 바를 표시하지 않는다', (tester) async {
@@ -1048,10 +1210,80 @@ void main() {
     await tester.pumpWidget(
       workspace(controller, onTextEdit: (id) => editedId = id),
     );
-    // 칩 본문은 "그 자막으로 이동"이고, 내용 수정은 연필 아이콘이다.
+    // 자막 카드 전체를 누르면 기존과 같이 내용 수정으로 들어간다.
     final layerId = controller.project.textLayers.single.id;
-    await tester.tap(find.byKey(Key('editor-edit-text-$layerId')));
+    final editCard = find.byKey(Key('editor-edit-text-$layerId'));
+    expect(
+      find.descendant(of: editCard, matching: find.text('직접')),
+      findsOneWidget,
+    );
+    await tester.tap(editCard);
     expect(editedId, layerId);
+  });
+
+  testWidgets('자막 타임라인은 직접·AI를 나누고 손잡이로 길이를 바꾼다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+    addTearDown(controller.dispose);
+
+    controller.addTextLayer(text: '직접 넣은 자막', startMs: 1000, endMs: 4000);
+    final directId = controller.project.textLayers.single.id;
+    controller.applyTranscriptCaptions([
+      (startMs: 5000, endMs: 8000, text: '자동으로 만든 자막'),
+    ]);
+    final aiId = controller.project.textLayers
+        .firstWhere((layer) => layer.id.startsWith('ai-caption-'))
+        .id;
+    controller
+      ..selectTool(EditorTool.text)
+      ..selectLayer(directId);
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+
+    expect(
+      find.byKey(const Key('editor-caption-direct-track')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('editor-caption-ai-track')), findsOneWidget);
+    final directSegment = find.byKey(Key('editor-caption-segment-$directId'));
+    final aiSegment = find.byKey(Key('editor-caption-segment-$aiId'));
+    expect(directSegment, findsOneWidget);
+    expect(aiSegment, findsOneWidget);
+    expect(
+      tester.getCenter(directSegment).dy,
+      isNot(tester.getCenter(aiSegment).dy),
+    );
+
+    final playheadBefore = controller.project.playheadMs;
+    await tester.drag(
+      find.byKey(const Key('editor-caption-playhead-handle')),
+      const Offset(42, 0),
+    );
+    await tester.pump();
+    expect(controller.project.playheadMs, greaterThan(playheadBefore));
+
+    final before = controller.project.textLayers.firstWhere(
+      (layer) => layer.id == directId,
+    );
+    await tester.drag(
+      find.byKey(const Key('editor-caption-start-handle')),
+      const Offset(32, 0),
+    );
+    await tester.pump();
+    final after = controller.project.textLayers.firstWhere(
+      (layer) => layer.id == directId,
+    );
+    expect(after.startMs, greaterThan(before.startMs));
+    expect(after.endMs, before.endMs);
+
+    await tester.tap(aiSegment);
+    await tester.pump();
+    expect(controller.project.selectedLayerId, aiId);
   });
 }
 

@@ -25,7 +25,6 @@ from . import backend_access, backend_events
 from . import comic
 from .adaptive_cli import build_adaptive_recipe
 from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
-from .render_jobs import RenderJobManager
 
 
 FIXTURE_ROOT = Path(
@@ -303,12 +302,6 @@ class RecipeStore:
             ContentType="application/json",
         )
 
-    def put_bytes(self, key: str, data: bytes, content_type: str) -> None:
-        self.ensure_bucket()
-        self.client.put_object(
-            Bucket=self.bucket, Key=key, Body=data, ContentType=content_type
-        )
-
     def get_json(self, key: str) -> dict[str, Any] | None:
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
@@ -385,22 +378,6 @@ jobs = AnalysisJobManager(
         job.video_id, job.requested_by
     ),
 )
-
-
-# 서버 렌더 산출물. 앱은 아직 이 경로를 쓰지 않는다(잠든 기능) — 쓰기 시작할
-# 때는 완성본을 백엔드 업로드 예약(POST /api/videos/{id}/edits)에 실어 올려
-# videos 행으로 편입해야 한다. 여기 남은 저장은 그때까지의 임시 보관이다.
-def _publish_edited_video(
-    video_id: str, output_path: Path, meta: dict[str, Any]
-) -> None:
-    """렌더 완성본을 앱 업로드 경로와 같은 위치·형식으로 저장한다."""
-    data = output_path.read_bytes()
-    meta = {**meta, "sizeBytes": len(data)}
-    store.put_bytes(f"edited-videos/{video_id}/edited.mp4", data, "video/mp4")
-    store.put(f"edited-videos/{video_id}/meta.json", meta)
-
-
-renders = RenderJobManager(publish=_publish_edited_video)
 
 
 def _require_video_access(http_request: Request | None, video_id: str) -> None:
@@ -596,72 +573,6 @@ def analysis_status(video_id: str, http_request: Request = None) -> dict[str, An
         return job.snapshot()
     if _load_cached_analyses(video_id) is not None:
         return {"videoId": video_id, "status": "done", "progress": 1.0}
-    return {"videoId": video_id, "status": "none", "progress": 0.0}
-
-
-class RenderRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    source_url: str = Field(alias="sourceUrl", min_length=1)
-    # 컷·줌 recipe(render_video.render_recipe 계약): cut{startMs,endMs,
-    # durationMs}, zoomSegments[], zoomEnabled. 원본 시각(ms) 기준.
-    recipe: dict[str, Any]
-    title: str = Field(default="", max_length=200)
-    captured_at: str = Field(default="", alias="capturedAt")
-
-
-@app.post("/v1/edit-renders/{video_id}")
-def request_render(
-    video_id: str, request: RenderRequest, http_request: Request = None
-) -> JSONResponse:
-    """컷·줌만 있는 프로젝트의 완성본을 서버가 만든다.
-
-    앱은 레시피(몇 KB)만 보내고, 서버가 원본을 presigned URL로 받아
-    FFmpeg로 렌더링해 편집본 자리에 올린다 — 폰이 완성본을 업로드하는
-    시간이 사라진다. 자막·스티커가 있는 프로젝트는 앱이 만들어 올린다.
-    """
-    _require_video_access(http_request, video_id)
-    running = renders.get(video_id)
-    if running is not None and running.status == "running":
-        return JSONResponse(status_code=202, content=running.snapshot())
-    if not source_url_allowed(request.source_url):
-        raise HTTPException(
-            status_code=422,
-            detail="sourceUrl은 허용된 호스트의 https 주소여야 합니다",
-        )
-    cut = request.recipe.get("cut")
-    if not isinstance(cut, dict) or "startMs" not in cut or "endMs" not in cut:
-        raise HTTPException(status_code=422, detail="recipe.cut이 필요합니다")
-    cut.setdefault("durationMs", int(cut["endMs"]) - int(cut["startMs"]))
-    if int(cut["durationMs"]) <= 0:
-        raise HTTPException(status_code=422, detail="컷 길이가 0 이하입니다")
-    meta = {
-        "videoId": video_id,
-        "objectKey": f"edited-videos/{video_id}/edited.mp4",
-        "savedAt": datetime.now().astimezone().isoformat(),
-        "title": request.title,
-        "durationMs": int(cut["durationMs"]),
-        "capturedAt": request.captured_at,
-        "renderedBy": "server",
-    }
-    work_dir = Path(tempfile.gettempdir()) / "wj-edit-render"
-    job = renders.submit(
-        video_id,
-        work_dir,
-        source_url=request.source_url,
-        recipe=request.recipe,
-        meta=meta,
-        requested_by=_token_subject(http_request),
-    )
-    return JSONResponse(status_code=202, content=job.snapshot())
-
-
-@app.get("/v1/edit-renders/{video_id}")
-def render_status(video_id: str, http_request: Request = None) -> dict[str, Any]:
-    _require_video_access(http_request, video_id)
-    job = renders.get(video_id)
-    if job is not None:
-        return job.snapshot()
     return {"videoId": video_id, "status": "none", "progress": 0.0}
 
 

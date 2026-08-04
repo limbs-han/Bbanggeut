@@ -7,6 +7,7 @@ import unittest
 from yolov8_autoframe_jetson import (
     AutoFrameController,
     CameraCommand,
+    StableGroupSelector,
     TrackedObject,
     choose_best_group,
 )
@@ -62,6 +63,23 @@ class GroupSelectionTests(unittest.TestCase):
         self.assertIsNotNone(decision)
         assert decision is not None
         self.assertEqual(tuple(item.track_id for item in decision.objects), (2,))
+
+    def test_safe_frame_selector_keeps_all_stable_people(self) -> None:
+        selector = StableGroupSelector(switch_frames=1)
+        decision = selector.select(
+            (
+                tracked(1, (0, 20, 10, 80)),
+                tracked(2, (90, 20, 100, 80)),
+            ),
+            100,
+            100,
+            edge_margin=0.30,
+            include_all=True,
+        )
+
+        self.assertIsNotNone(decision)
+        assert decision is not None
+        self.assertEqual(tuple(item.track_id for item in decision.objects), (1, 2))
 
 
 class ControllerTests(unittest.TestCase):
@@ -158,6 +176,8 @@ class SafeFrameControllerTests(unittest.TestCase):
             tracking_mode="safe-frame",
             safe_frame_start_margin=0.08,
             safe_frame_stop_margin=0.12,
+            safe_frame_edge_guard=0.04,
+            target_loss_follow_seconds=0.5,
         )
 
     def update_box(self, box: tuple[float, float, float, float]) -> CameraCommand:
@@ -176,17 +196,75 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.command_x, "HOLD")
         self.assertEqual(command.command_y, "HOLD")
 
+    def test_box_edge_guard_prevents_lower_body_from_disappearing(self) -> None:
+        command = self.update_box((20, 20, 80, 100))
+
+        self.assertEqual(command.direction, "DOWN")
+        self.assertEqual(command.center_y, 0.48)
+
+    def test_uses_original_35_percent_tracking_point(self) -> None:
+        command = self.update_box((10, 0, 90, 100))
+
+        self.assertEqual(command.direction, "HOLD")
+        self.assertEqual(command.center_x, 0.5)
+        self.assertEqual(command.center_y, 0.35)
+
     def test_moves_only_on_axes_whose_box_nears_an_edge(self) -> None:
-        command = self.update_box((75, 5, 95, 30))
+        command = self.update_box((75, 2, 98, 30))
 
         self.assertEqual(command.direction, "RIGHT_UP")
         self.assertGreater(command.error_x, 0.0)
         self.assertLess(command.error_y, 0.0)
 
+    def update_boxes(
+        self,
+        boxes: tuple[tuple[float, float, float, float], ...],
+    ) -> CameraCommand:
+        decision = choose_best_group(
+            tuple(tracked(index, box) for index, box in enumerate(boxes, 1)),
+            100,
+            100,
+            edge_margin=0.0,
+        )
+        return self.controller.update(decision, 100, 100, now=0.0)
+
+    def test_multiple_people_hold_only_when_every_point_is_inside(self) -> None:
+        command = self.update_boxes(
+            (
+                (20, 20, 30, 80),
+                (70, 20, 80, 80),
+            )
+        )
+
+        self.assertEqual(command.target_count, 2)
+        self.assertEqual(command.direction, "HOLD")
+
+    def test_moves_when_any_person_point_is_outside(self) -> None:
+        command = self.update_boxes(
+            (
+                (4.5, 20, 9.5, 80),
+                (40, 20, 50, 80),
+            )
+        )
+
+        self.assertEqual(command.target_count, 2)
+        self.assertEqual(command.command_x, "LEFT")
+
+    def test_opposite_points_too_far_apart_hold_safely(self) -> None:
+        command = self.update_boxes(
+            (
+                (4.5, 20, 9.5, 80),
+                (90.5, 20, 95.5, 80),
+            )
+        )
+
+        self.assertEqual(command.target_count, 2)
+        self.assertEqual(command.direction, "HOLD")
+
     def test_multiple_people_use_their_combined_group_box(self) -> None:
         decision = choose_best_group(
             (
-                tracked(1, (5, 20, 25, 80)),
+                tracked(1, (2, 20, 25, 80)),
                 tracked(2, (40, 20, 60, 80)),
             ),
             100,
@@ -201,16 +279,36 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.command_y, "HOLD")
 
     def test_active_axis_moves_until_box_reaches_inner_stop_margin(self) -> None:
-        self.assertEqual(self.update_box((5, 20, 30, 80)).command_x, "LEFT")
-        self.assertEqual(self.update_box((10, 20, 35, 80)).command_x, "LEFT")
-        self.assertEqual(self.update_box((12, 20, 37, 80)).command_x, "HOLD")
+        self.assertEqual(self.update_box((3, 20, 30, 80)).command_x, "LEFT")
+        self.assertEqual(self.update_box((5, 20, 32, 80)).command_x, "LEFT")
+        self.assertEqual(self.update_box((8, 20, 35, 80)).command_x, "HOLD")
 
     def test_oversized_box_holds_instead_of_driving_into_a_limit(self) -> None:
-        command = self.update_box((0, 0, 100, 100))
+        command = self.update_box((0, 20, 100, 80))
 
         self.assertEqual(command.direction, "HOLD")
         self.assertEqual(command.error_x, 0.0)
         self.assertEqual(command.error_y, 0.0)
+
+    def test_briefly_follows_last_edge_exit_direction_after_target_loss(self) -> None:
+        tracking = self.update_box((2, 20, 30, 80))
+        following = self.controller.update(None, 100, 100, now=0.4)
+        holding = self.controller.update(None, 100, 100, now=0.6)
+
+        self.assertEqual(tracking.command_x, "LEFT")
+        self.assertEqual(following.state, "TARGET_LOSS_FOLLOW")
+        self.assertEqual(following.command_x, "LEFT")
+        self.assertEqual(following.command_y, "HOLD")
+        self.assertEqual(holding.state, "NO_TARGET_HOLD")
+        self.assertEqual(holding.direction, "HOLD")
+
+    def test_centered_confidence_dropout_holds_without_predictive_motion(self) -> None:
+        self.update_box((20, 20, 80, 80))
+
+        missing = self.controller.update(None, 100, 100, now=0.1)
+
+        self.assertEqual(missing.state, "NO_TARGET_HOLD")
+        self.assertEqual(missing.direction, "HOLD")
 
 
 if __name__ == "__main__":
