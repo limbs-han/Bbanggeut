@@ -232,6 +232,18 @@ def parse_args() -> argparse.Namespace:
         help="Inner margin that stops safe-frame movement (default: 0.12).",
     )
     parser.add_argument(
+        "--safe-frame-edge-guard",
+        type=float,
+        default=float(os.getenv("YOLO_SAFE_FRAME_EDGE_GUARD", "0.04")),
+        help="Person-box edge guard used to prevent target loss (default: 0.04).",
+    )
+    parser.add_argument(
+        "--target-loss-follow-seconds",
+        type=float,
+        default=float(os.getenv("YOLO_TARGET_LOSS_FOLLOW_SECONDS", "0.5")),
+        help="Briefly continue an edge-exit command after target loss.",
+    )
+    parser.add_argument(
         "--ema-alpha",
         type=float,
         default=0.25,
@@ -375,6 +387,23 @@ def parse_args() -> argparse.Namespace:
         parser.error(
             "--safe-frame-stop-margin must be greater than the start margin "
             "and less than 0.45"
+        )
+    if not 0.0 <= args.safe_frame_edge_guard < args.safe_frame_start_margin:
+        parser.error(
+            "--safe-frame-edge-guard must be at least 0 and less than "
+            "--safe-frame-start-margin"
+        )
+    invalid_loss_follow = args.target_loss_follow_seconds < 0.0 or (
+        args.home_after_seconds == 0.0
+        and args.target_loss_follow_seconds != 0.0
+    ) or (
+        args.home_after_seconds > 0.0
+        and args.target_loss_follow_seconds >= args.home_after_seconds
+    )
+    if invalid_loss_follow:
+        parser.error(
+            "--target-loss-follow-seconds must be at least 0 and less than "
+            "--home-after-seconds"
         )
     if not 0.0 < args.ema_alpha <= 1.0:
         parser.error("--ema-alpha must be greater than 0 and at most 1")
@@ -603,6 +632,8 @@ class AutoFrameController:
         tracking_mode: str = "center",
         safe_frame_start_margin: float = 0.08,
         safe_frame_stop_margin: float = 0.12,
+        safe_frame_edge_guard: float = 0.04,
+        target_loss_follow_seconds: float = 0.5,
     ) -> None:
         if not 0.0 <= subject_y_ratio <= 1.0:
             raise ValueError("subject_y_ratio must be between 0 and 1")
@@ -612,6 +643,22 @@ class AutoFrameController:
             raise ValueError(
                 "safe-frame margins must satisfy 0 <= start < stop < 0.45"
             )
+        if not 0.0 <= safe_frame_edge_guard < safe_frame_start_margin:
+            raise ValueError(
+                "safe_frame_edge_guard must be at least 0 and less than "
+                "safe_frame_start_margin"
+            )
+        invalid_loss_follow = target_loss_follow_seconds < 0.0 or (
+            home_after_seconds == 0.0 and target_loss_follow_seconds != 0.0
+        ) or (
+            home_after_seconds > 0.0
+            and target_loss_follow_seconds >= home_after_seconds
+        )
+        if invalid_loss_follow:
+            raise ValueError(
+                "target_loss_follow_seconds must be at least 0 and less than "
+                "home_after_seconds"
+            )
         self.ema_alpha = ema_alpha
         self.deadzone_width = deadzone_width
         self.deadzone_height = deadzone_height
@@ -620,6 +667,8 @@ class AutoFrameController:
         self.tracking_mode = tracking_mode
         self.safe_frame_start_margin = safe_frame_start_margin
         self.safe_frame_stop_margin = safe_frame_stop_margin
+        self.safe_frame_edge_guard = safe_frame_edge_guard
+        self.target_loss_follow_seconds = target_loss_follow_seconds
         self.smoothed_target: Point | None = None
         self.smoothed_group_box: Box | None = None
         self.last_target_seen_at: float | None = None
@@ -627,53 +676,65 @@ class AutoFrameController:
         self.last_error_y = 0.0
         self.safe_frame_x_active = False
         self.safe_frame_y_active = False
+        self.loss_command_x = "HOLD"
+        self.loss_command_y = "HOLD"
 
-    def _safe_frame_axis(
+    def _safe_point_axis(
         self,
+        point: float,
         low: float,
         high: float,
         frame_size: int,
         active: bool,
     ) -> tuple[int, float, bool]:
-        stop_span = frame_size * (1.0 - 2.0 * self.safe_frame_stop_margin)
-        if high - low > stop_span:
-            return 0, 0.0, False
-
-        margin = (
+        point_margin = (
             self.safe_frame_stop_margin
             if active
             else self.safe_frame_start_margin
         )
-        lower_boundary = frame_size * margin
-        upper_boundary = frame_size * (1.0 - margin)
-        lower_error = low - lower_boundary
-        upper_error = high - upper_boundary
-        if lower_error >= 0.0 and upper_error <= 0.0:
-            return 0, 0.0, False
-        if lower_error < 0.0:
-            return -1, lower_error / max(frame_size / 2.0, 1.0), True
-        return 1, upper_error / max(frame_size / 2.0, 1.0), True
-
-    def tracking_box(self, decision: FramingDecision) -> Box:
-        if self.tracking_mode != "safe-frame":
-            return decision.group_box
-
-        upper_body_boxes = tuple(
-            (
-                item.box[0],
-                item.box[1],
-                item.box[2],
-                item.box[1]
-                + (item.box[3] - item.box[1]) * self.subject_y_ratio,
+        guard_margin = self.safe_frame_edge_guard
+        if active:
+            guard_margin += (
+                self.safe_frame_stop_margin - self.safe_frame_start_margin
             )
-            for item in decision.objects
-        )
-        return (
-            min(box[0] for box in upper_body_boxes),
-            min(box[1] for box in upper_body_boxes),
-            max(box[2] for box in upper_body_boxes),
-            max(box[3] for box in upper_body_boxes),
-        )
+
+        point_lower_error = point - frame_size * point_margin
+        point_upper_error = point - frame_size * (1.0 - point_margin)
+        box_lower_error = low - frame_size * guard_margin
+        box_upper_error = high - frame_size * (1.0 - guard_margin)
+        lower_error = min(point_lower_error, box_lower_error)
+        upper_error = max(point_upper_error, box_upper_error)
+        lower_outside = lower_error < 0.0
+        upper_outside = upper_error > 0.0
+
+        if lower_outside and upper_outside:
+            if point_lower_error < 0.0:
+                upper_outside = False
+            elif point_upper_error > 0.0:
+                lower_outside = False
+            else:
+                return 0, 0.0, False
+        if not lower_outside and not upper_outside:
+            return 0, 0.0, False
+        normalizer = max(frame_size / 2.0, 1.0)
+        if lower_outside:
+            return -1, clamp(lower_error / normalizer, -1.0, 1.0), True
+        return 1, clamp(upper_error / normalizer, -1.0, 1.0), True
+
+    def _edge_exit_command(
+        self,
+        low: float,
+        high: float,
+        frame_size: int,
+        negative_command: str,
+        positive_command: str,
+    ) -> str:
+        boundary = frame_size * self.safe_frame_edge_guard
+        near_lower = low < boundary
+        near_upper = high > frame_size - boundary
+        if near_lower == near_upper:
+            return "HOLD"
+        return negative_command if near_lower else positive_command
 
     def update(
         self,
@@ -685,9 +746,39 @@ class AutoFrameController:
         if decision is None:
             self.safe_frame_x_active = False
             self.safe_frame_y_active = False
+            elapsed = (
+                now - self.last_target_seen_at
+                if self.last_target_seen_at is not None
+                else float("inf")
+            )
+            if elapsed < self.target_loss_follow_seconds and (
+                self.loss_command_x != "HOLD" or self.loss_command_y != "HOLD"
+            ):
+                direction = "_".join(
+                    command
+                    for command in (self.loss_command_x, self.loss_command_y)
+                    if command != "HOLD"
+                )
+                return CameraCommand(
+                    state="TARGET_LOSS_FOLLOW",
+                    direction=direction,
+                    command_x=self.loss_command_x,
+                    command_y=self.loss_command_y,
+                    target_ids=(),
+                    target_count=0,
+                    total_stable_objects=0,
+                    center_x=None,
+                    center_y=None,
+                    error_x=self.last_error_x,
+                    error_y=self.last_error_y,
+                    group_box=None,
+                    limited_group=False,
+                )
+            self.loss_command_x = "HOLD"
+            self.loss_command_y = "HOLD"
             if (
                 self.last_target_seen_at is not None
-                and now - self.last_target_seen_at < self.home_after_seconds
+                and elapsed < self.home_after_seconds
             ):
                 return CameraCommand(
                     state="NO_TARGET_HOLD",
@@ -744,15 +835,14 @@ class AutoFrameController:
         self.smoothed_target = (smooth_x, smooth_y)
         self.last_target_seen_at = now
 
-        tracking_box = self.tracking_box(decision)
         if self.smoothed_group_box is None:
-            self.smoothed_group_box = tracking_box
+            self.smoothed_group_box = decision.group_box
         else:
             self.smoothed_group_box = tuple(
                 self.ema_alpha * raw_value
                 + (1.0 - self.ema_alpha) * smooth_value
                 for raw_value, smooth_value in zip(
-                    tracking_box,
+                    decision.group_box,
                     self.smoothed_group_box,
                 )
             )
@@ -762,7 +852,8 @@ class AutoFrameController:
                 self.smoothed_group_box
             )
             x_direction, normalized_error_x, self.safe_frame_x_active = (
-                self._safe_frame_axis(
+                self._safe_point_axis(
+                    smooth_x,
                     smooth_left,
                     smooth_right,
                     frame_width,
@@ -770,7 +861,8 @@ class AutoFrameController:
                 )
             )
             y_direction, normalized_error_y, self.safe_frame_y_active = (
-                self._safe_frame_axis(
+                self._safe_point_axis(
+                    smooth_y,
                     smooth_top,
                     smooth_bottom,
                     frame_height,
@@ -779,10 +871,23 @@ class AutoFrameController:
             )
             horizontal = {-1: "LEFT", 0: "", 1: "RIGHT"}[x_direction]
             vertical = {-1: "UP", 0: "", 1: "DOWN"}[y_direction]
-            smooth_x = (smooth_left + smooth_right) / 2.0
-            smooth_y = (smooth_top + smooth_bottom) / 2.0
-            self.smoothed_target = (smooth_x, smooth_y)
+            self.loss_command_x = self._edge_exit_command(
+                smooth_left,
+                smooth_right,
+                frame_width,
+                "LEFT",
+                "RIGHT",
+            )
+            self.loss_command_y = self._edge_exit_command(
+                smooth_top,
+                smooth_bottom,
+                frame_height,
+                "UP",
+                "DOWN",
+            )
         else:
+            self.loss_command_x = "HOLD"
+            self.loss_command_y = "HOLD"
             frame_center_x = frame_width / 2.0
             frame_center_y = frame_height / 2.0
             pixel_error_x = smooth_x - frame_center_x
@@ -1023,6 +1128,17 @@ def draw_overlay(
     if controller.tracking_mode == "safe-frame":
         start_margin = controller.safe_frame_start_margin
         stop_margin = controller.safe_frame_stop_margin
+        edge_guard = controller.safe_frame_edge_guard
+        cv2.rectangle(
+            frame,
+            (int(width * edge_guard), int(height * edge_guard)),
+            (
+                int(width * (1.0 - edge_guard)),
+                int(height * (1.0 - edge_guard)),
+            ),
+            (0, 0, 255),
+            1,
+        )
         cv2.rectangle(
             frame,
             (int(width * start_margin), int(height * start_margin)),
@@ -1075,20 +1191,21 @@ def draw_overlay(
         raw_center = (int(decision.raw_center[0]), int(decision.raw_center[1]))
         cv2.drawMarker(frame, raw_center, (0, 215, 255), cv2.MARKER_CROSS, 20, 2)
         if controller.tracking_mode == "safe-frame":
-            track_x1, track_y1, track_x2, track_y2 = (
-                int(value) for value in controller.tracking_box(decision)
-            )
-            cv2.rectangle(
+            assert controller.smoothed_target is not None
+            track_x = int(controller.smoothed_target[0])
+            track_y = int(controller.smoothed_target[1])
+            cv2.drawMarker(
                 frame,
-                (track_x1, track_y1),
-                (track_x2, track_y2),
+                (track_x, track_y),
                 (255, 0, 255),
+                cv2.MARKER_CROSS,
+                20,
                 2,
             )
             cv2.putText(
                 frame,
-                f"SAFE TARGET top {controller.subject_y_ratio:.0%}",
-                (track_x1, max(18, track_y1 - 8)),
+                f"SAFE POINT {controller.subject_y_ratio:.0%}",
+                (track_x, max(18, track_y - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.52,
                 (255, 0, 255),
@@ -1242,6 +1359,8 @@ def run(args: argparse.Namespace) -> None:
         tracking_mode=args.tracking_mode,
         safe_frame_start_margin=args.safe_frame_start_margin,
         safe_frame_stop_margin=args.safe_frame_stop_margin,
+        safe_frame_edge_guard=args.safe_frame_edge_guard,
+        target_loss_follow_seconds=args.target_loss_follow_seconds,
     )
 
     frame_count = 0
