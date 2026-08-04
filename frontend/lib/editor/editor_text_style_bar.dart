@@ -182,14 +182,21 @@ class _EditorTextStyleBarState extends State<EditorTextStyleBar> {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: const Color(0xF21E1510),
+    color: EditorColorTokens.surface,
+    elevation: 12,
+    shadowColor: EditorColorTokens.shadow,
+    shape: const RoundedRectangleBorder(
+      side: BorderSide(color: EditorColorTokens.border),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+    ),
     child: SafeArea(
       top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(height: 46, child: _controlRow()),
-          SizedBox(height: 56, child: _panelContent()),
+          SizedBox(height: 50, child: _controlRow()),
+          const Divider(height: 1, color: EditorColorTokens.border),
+          SizedBox(height: 58, child: _panelContent()),
         ],
       ),
     ),
@@ -227,13 +234,19 @@ class _EditorTextStyleBarState extends State<EditorTextStyleBar> {
         onTap: _toggleBackground,
       ),
       const Spacer(),
-      TextButton(
+      FilledButton(
         key: const Key('editor-text-done'),
         onPressed: widget.onDone,
-        style: TextButton.styleFrom(foregroundColor: Colors.white),
+        style: FilledButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor: EditorColorTokens.coral,
+          minimumSize: const Size(66, 36),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         child: const Text(
           '완료',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
         ),
       ),
       const SizedBox(width: 6),
@@ -250,20 +263,26 @@ class _EditorTextStyleBarState extends State<EditorTextStyleBar> {
     padding: const EdgeInsets.symmetric(horizontal: 18),
     child: Row(
       children: [
-        const Text('작게', style: TextStyle(color: Colors.white70, fontSize: 12)),
+        const Text(
+          '작게',
+          style: TextStyle(color: EditorColorTokens.muted, fontSize: 12),
+        ),
         Expanded(
           child: Slider(
             key: const Key('editor-text-size-slider'),
             min: 24,
             max: 144,
             value: widget.draft.fontSize.clamp(24, 144),
-            activeColor: Colors.white,
-            inactiveColor: Colors.white24,
+            activeColor: EditorColorTokens.coral,
+            inactiveColor: EditorColorTokens.border,
             onChanged: (value) =>
                 _apply(widget.draft.copyWith(fontSize: value)),
           ),
         ),
-        const Text('크게', style: TextStyle(color: Colors.white70, fontSize: 12)),
+        const Text(
+          '크게',
+          style: TextStyle(color: EditorColorTokens.muted, fontSize: 12),
+        ),
       ],
     ),
   );
@@ -288,7 +307,7 @@ class _EditorTextStyleBarState extends State<EditorTextStyleBar> {
                   border: Border.all(
                     color: color == widget.draft.color
                         ? EditorColorTokens.coral
-                        : Colors.white54,
+                        : EditorColorTokens.border,
                     width: color == widget.draft.color ? 3 : 1.5,
                   ),
                 ),
@@ -318,19 +337,21 @@ class _EditorTextStyleBarState extends State<EditorTextStyleBar> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: preset.id == current
-                        ? Colors.white
-                        : Colors.transparent,
-                    shape: BoxShape.circle,
+                        ? EditorColorTokens.selected
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: preset.id == current
-                          ? Colors.white
-                          : Colors.white38,
+                          ? EditorColorTokens.coral
+                          : EditorColorTokens.border,
                     ),
                   ),
                   child: Text(
                     'Aa',
                     style: TextStyle(
-                      color: preset.id == current ? Colors.black : Colors.white,
+                      color: preset.id == current
+                          ? EditorColorTokens.coral
+                          : EditorColorTokens.ink,
                       fontSize: 18,
                       fontWeight: preset.bold
                           ? FontWeight.w900
@@ -341,7 +362,7 @@ class _EditorTextStyleBarState extends State<EditorTextStyleBar> {
                       backgroundColor: preset.boxed
                           ? (preset.id == current
                                 ? const Color(0x22000000)
-                                : const Color(0x33FFFFFF))
+                                : const Color(0x22000000))
                           : null,
                     ),
                   ),
@@ -379,15 +400,20 @@ class _BarButton extends StatelessWidget {
       height: 40,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: active ? const Color(0x33FFFFFF) : Colors.transparent,
+        color: active ? EditorColorTokens.selected : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
+        border: active ? Border.all(color: EditorColorTokens.coral) : null,
       ),
       child: icon != null
-          ? Icon(icon, color: Colors.white, size: 23)
+          ? Icon(
+              icon,
+              color: active ? EditorColorTokens.coral : EditorColorTokens.ink,
+              size: 23,
+            )
           : Text(
               label ?? '',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: active ? EditorColorTokens.coral : EditorColorTokens.ink,
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
               ),
@@ -424,7 +450,10 @@ class _SwatchButton extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white70, width: 2),
+            border: Border.all(
+              color: active ? EditorColorTokens.coral : EditorColorTokens.muted,
+              width: active ? 3 : 2,
+            ),
           ),
         ),
       ),

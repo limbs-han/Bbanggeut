@@ -18,6 +18,7 @@ import '../features/stt/caption_controller.dart';
 import '../features/stt/mlkit_transcriber.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
+import '../editor/editor_direct_text_sheet.dart';
 import '../editor/edit_recommendation_client.dart';
 import '../editor/editor_text_style_bar.dart';
 import '../editor/editor_platform.dart';
@@ -49,6 +50,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   /// AI 자막 시트가 떠 있는가. 탭과 패널 버튼이 겹쳐 두 장 쌓이는 걸 막는다.
   bool _captionSheetOpen = false;
+
+  /// 자막 탭에서 직접 자막을 고른 뒤, 재생 위치 기준 추가 카드를 보여 주는 단계.
+  bool _directCaptionAddMode = false;
 
   /// 정해 둔 구간만 돌려 보는 중인가. 이때는 구간 끝에서 다음 클립으로
   /// 넘어가지 않고 선다.
@@ -128,7 +132,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 전사가 끝나는 순간 자막 탭으로 합친다. 예전에는 시트를 닫을 때만
     // 합쳤는데, 전사 중에 닫아 버리면 끝나도 아무 일이 없어 "적용이 안
     // 된다"로 보였다.
-    _mergeTranscriptIntoTextLayers();
+    if (!_captionSheetOpen) _mergeTranscriptIntoTextLayers();
     setState(() {});
   }
 
@@ -785,6 +789,60 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     });
   }
 
+  Future<void> _showDirectTextAddSheet() async {
+    final projectController = _projectController;
+    if (projectController == null || _saving || _editingTextLayerId != null) {
+      return;
+    }
+
+    final preview = _preview;
+    if (preview != null && preview.value.isPlaying) {
+      await preview.pause();
+      projectController.setPlaying(false);
+    }
+    if (!mounted) return;
+
+    final project = projectController.project;
+    var clipStartMs = 0;
+    var clipEndMs = project.durationMs;
+    for (var index = 0; index < project.clips.length; index++) {
+      final clip = project.clips[index];
+      final endMs = clipStartMs + clip.durationMs;
+      if (project.playheadMs < endMs || index == project.clips.length - 1) {
+        clipEndMs = endMs;
+        break;
+      }
+      clipStartMs = endMs;
+    }
+    final startMs = project.playheadMs
+        .clamp(clipStartMs, math.max(clipStartMs, clipEndMs - 500))
+        .toInt();
+    final result = await showEditorDirectTextSheet(
+      context,
+      startMs: startMs,
+      maxEndMs: clipEndMs,
+      initialColor: _captionColor,
+    );
+    if (!mounted || result == null) return;
+
+    projectController.addTextLayer(
+      text: result.text,
+      startMs: result.startMs,
+      endMs: result.endMs,
+      position: result.position.point,
+      color: result.style.color,
+      backgroundColor: result.style.backgroundColor,
+      fontSize: result.style.fontSize,
+      bold: result.style.bold,
+      italic: result.style.italic,
+      align: result.style.align,
+    );
+    _captionColor = result.style.color;
+    _directCaptionAddMode = false;
+    _editState.markExternalEditApplied();
+    setState(() {});
+  }
+
   void _onEditingTextChanged(String value) {
     final id = _editingTextLayerId;
     if (id == null) return;
@@ -914,13 +972,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 전사는 이 버튼을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
     _startAutoCaptions();
     _captionSheetOpen = true;
+    var reviewed = false;
     try {
-      await _presentAiCaptionSheet();
+      reviewed = await _presentAiCaptionSheet();
     } finally {
       _captionSheetOpen = false;
     }
     if (!mounted) return;
-    final merged = _mergeTranscriptIntoTextLayers();
+    final merged = reviewed
+        ? _mergeTranscriptIntoTextLayers(force: true, focusApplied: true)
+        : false;
     // 전사가 아직 도는 중에 닫았다. 끝나면 리스너가 알아서 합친다 —
     // 그 말을 안 해 주면 "눌렀는데 아무 일도 없다"로 보인다.
     if (!merged && _autoCaptions.lines.isEmpty) {
@@ -933,7 +994,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   ///
   /// 전사 완료 알림과 시트 닫힘, 두 군데서 불리므로 내용 서명이 같으면
   /// 건너뛴다 — 자막 탭에서 고쳐 둔 AI 자막이 원문으로 되돌아가지 않는다.
-  bool _mergeTranscriptIntoTextLayers() {
+  bool _mergeTranscriptIntoTextLayers({
+    bool force = false,
+    bool focusApplied = false,
+  }) {
     final projectController = _projectController;
     if (projectController == null) return false;
     final lines = _autoCaptions.lines;
@@ -941,12 +1005,24 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     final signature = [
       for (final line in lines) '${line.startMs}:${line.endMs}:${line.text}',
     ].join('|');
-    if (signature == _mergedTranscriptSignature) return false;
-    _mergedTranscriptSignature = signature;
+    if (!force && signature == _mergedTranscriptSignature) return false;
     projectController.applyTranscriptCaptions([
       for (final line in lines)
         (startMs: line.startMs, endMs: line.endMs, text: line.text),
     ]);
+    final aiLayers = projectController.project.textLayers
+        .where((layer) => layer.id.startsWith('ai-caption-'))
+        .toList(growable: false);
+    if (aiLayers.isEmpty) return false;
+    _mergedTranscriptSignature = signature;
+    if (focusApplied) {
+      final first = aiLayers.first;
+      _directCaptionAddMode = false;
+      projectController
+        ..selectTool(EditorTool.text)
+        ..selectLayer(first.id);
+      unawaited(_seekToPosition(first.startMs));
+    }
     _editState.markExternalEditApplied();
     showAppSnack(
       context,
@@ -965,68 +1041,64 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     return true;
   }
 
-  Future<void> _presentAiCaptionSheet() async {
-    await showModalBottomSheet<void>(
+  Future<bool> _presentAiCaptionSheet() async {
+    final reviewed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFFFFFDFC),
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          16,
-          20,
-          MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'AI 자막',
-                  style: TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            22,
+            10,
+            22,
+            MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: AppColors.line,
+                  borderRadius: BorderRadius.circular(99),
                 ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '닫기',
-                  onPressed: () => Navigator.pop(sheetContext),
-                  color: AppColors.muted,
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            CaptionAutoSection(
-              controller: _autoCaptions,
-              // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
-              // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
-              estimateSeconds: _editState.durationMs > 0
-                  ? (_editState.durationMs / 1000 * 0.9).round()
-                  : null,
-              // 자막 수정도 저장 안 된 변경이다.
-              onChanged: () =>
-                  setState(() => _editState.markExternalEditApplied()),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              '만들어진 자막은 저장할 때 영상에 함께 구워져요. 줄을 눌러 고칠 수 있어요.',
-              style: TextStyle(
-                color: AppColors.muted,
-                fontSize: 12,
-                height: 1.35,
               ),
-            ),
-          ],
+              CaptionAutoSection(
+                controller: _autoCaptions,
+                // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
+                // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
+                estimateSeconds: _editState.durationMs > 0
+                    ? (_editState.durationMs / 1000 * 0.9).round()
+                    : null,
+                // 닫기 동작은 기존과 같다. 전사는 백그라운드에서 계속된다.
+                onCancel: () => Navigator.pop(sheetContext, false),
+                onDone: () => Navigator.pop(sheetContext, true),
+                // 자막 수정도 저장 안 된 변경이다.
+                onChanged: () =>
+                    setState(() => _editState.markExternalEditApplied()),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                '만들어진 자막은 저장할 때 영상에 함께 구워져요. 줄을 눌러 고칠 수 있어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+    return reviewed == true;
   }
 
   Future<void> _saveEdit() async {
@@ -1079,7 +1151,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           )
           .then((_) => debugPrint('editor draft saved before export'))
           .catchError(
-            (Object failure) => debugPrint('editor draft save failed: $failure'),
+            (Object failure) =>
+                debugPrint('editor draft save failed: $failure'),
           );
 
       // AI 자막은 이미 일반 자막 레이어로 합쳐져 textLayers에 들어 있다 —
@@ -1612,7 +1685,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         _editState.markExternalEditApplied();
         if (mounted) setState(() {});
       },
-      onText: _startTextEditing,
+      onText: _showDirectTextAddSheet,
+      directCaptionAddMode: _directCaptionAddMode,
+      onDirectCaptionAddMode: () {
+        if (_saving) return;
+        setState(() => _directCaptionAddMode = true);
+      },
       onTextEdit: (id) {
         // 자막 시작으로 옮겨 놓고 바로 그 위에서 고친다.
         final layer = projectController.project.textLayers
@@ -1645,7 +1723,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         setState(() {});
       },
       onLookSelected: _setLook,
-      onAiCaption: _showAiCaptionSheet,
+      onAiCaption: () {
+        if (_directCaptionAddMode) {
+          setState(() => _directCaptionAddMode = false);
+        }
+        _showAiCaptionSheet();
+      },
       onZoomAdd: () {
         if (!projectController.addZoomAtPlayhead()) {
           showAppSnack(context, '이 클립은 줌으로 가득 찼어요. 기존 줌을 지우거나 줄여 주세요.');
@@ -1670,6 +1753,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   void _selectEditorTool(EditorTool tool) {
     if (_saving) return;
+    if (tool != EditorTool.text) _directCaptionAddMode = false;
     _projectController?.selectTool(tool);
     if (mounted) setState(() {});
   }
