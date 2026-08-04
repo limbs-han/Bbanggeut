@@ -98,6 +98,12 @@ app:
     password: ${MQTT_PASSWORD:}
     environment: ${MQTT_ENV:local}
     tls-ca-path: ${MQTT_TLS_CA_PATH:}
+  mediamtx:
+    # 비어 있으면 유령 세션 대사(reconcile)가 꺼진다 — 로컬 개발·테스트용.
+    # 운영은 배포 스크립트가 http://127.0.0.1:9997 을 채운다.
+    api-base-url: ${MEDIAMTX_API_BASE_URL:}
+    path-prefix: live
+    misses-before-failure: 2
   stream:
     viewer-ttl: ${STREAM_VIEWER_TTL:45s}
     idle-timeout: ${STREAM_IDLE_TIMEOUT:60s}

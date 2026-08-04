@@ -215,6 +215,8 @@ services:
       - "8322:8322"
       - "127.0.0.1:8889:8889"
       - "8189:8189/udp"
+      # 관리 API — 백엔드 유령 세션 대사 전용, loopback만.
+      - "127.0.0.1:9997:9997"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - ${MEDIAMTX_TLS_CERT_DIR:?Set MEDIAMTX_TLS_CERT_DIR}:/certs:ro

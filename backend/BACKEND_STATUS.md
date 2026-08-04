@@ -36,7 +36,7 @@
 | `invitation` | 이메일 귀속 초대, 받은 초대함, 수락 알림 |
 | `iot` | 기기 credential(BOOTSTRAP→OPERATING), MQTT 수신/명령, `iot.event`의 원시 이벤트·통계(API-46, type 필터) |
 | `video`, `storage` | 업로드 URL·완료 확정·재생/다운로드·삭제 워커·보관 만료, 편집 부산물 청소 |
-| `stream` | 라이브 세션·WHEP 토큰·introspection·talkback(양방향 오디오, V32) |
+| `stream` | 라이브 세션·WHEP 토큰·introspection·talkback(양방향 오디오, V32)·**유령 세션 대사(MediaMTX 관리 API로 RUNNING 스트림의 실제 미디어 흐름 확인, 연속 2회 미확인 시 실패 처리)** |
 | `notification` | 인앱 알림·FCM 푸시(multicast, 무효 토큰 정리)·푸시 토큰·**알림 설정(API-78·79, 새 추억 푸시 게이트)** |
 | `schedule` | **캘린더 일정 CRUD(API-74~77, V36)** |
 | `editor` | editor-api 서비스 토큰 이벤트 수신(`/api/editor/events` — 분석 완료·댓글 알림 승격) |

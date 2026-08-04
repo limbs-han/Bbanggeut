@@ -118,6 +118,16 @@ then
   exit 1
 fi
 
+# 유령 세션 대사는 MediaMTX 관리 API 주소가 있어야 켜진다. 배포·프로비저닝이
+# 이 값을 채우지 않으면 워커가 조용히 꺼진 채 서비스된다.
+grep -Fq 'MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997' \
+  "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
+grep -Fq 'MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997' \
+  "${repository_root}/backend/deploy/provision-secrets.sh"
+grep -Fq '"127.0.0.1:9997:9997"' \
+  "${repository_root}/backend/deploy/docker-compose.yml"
+grep -Eq '^api: true' "${repository_root}/backend/deploy/mediamtx.yml"
+
 # editor-api 자동 배포 계약: 서버 빌드, 라이브 교체 전 시크릿 확인, 헬스체크,
 # 롤백용 previous 태그가 모두 스크립트에 남아 있어야 한다. 하나라도 빠지면
 # 편집 서버가 수동 배포 시절로 소리 없이 되돌아간다.
