@@ -3,6 +3,7 @@ package com.wj.server.notification.api;
 import java.util.List;
 import java.util.UUID;
 
+import com.wj.server.notification.application.NotificationPreferenceService;
 import com.wj.server.notification.application.NotificationService;
 import com.wj.server.notification.application.PushTokenService;
 import jakarta.validation.Valid;
@@ -24,13 +25,29 @@ import org.springframework.web.bind.annotation.RestController;
 public class NotificationController {
     private final NotificationService service;
     private final PushTokenService pushTokenService;
+    private final NotificationPreferenceService preferenceService;
 
     public NotificationController(
         NotificationService service,
-        PushTokenService pushTokenService
+        PushTokenService pushTokenService,
+        NotificationPreferenceService preferenceService
     ) {
         this.service = service;
         this.pushTokenService = pushTokenService;
+        this.preferenceService = preferenceService;
+    }
+
+    @GetMapping("/preferences")
+    public NotificationPreferencesResponse preferences(@AuthenticationPrincipal Jwt jwt) {
+        return preferenceService.get(userId(jwt));
+    }
+
+    @PutMapping("/preferences")
+    public NotificationPreferencesResponse updatePreferences(
+        @AuthenticationPrincipal Jwt jwt,
+        @Valid @RequestBody UpdateNotificationPreferencesRequest request
+    ) {
+        return preferenceService.update(userId(jwt), request);
     }
 
     @GetMapping

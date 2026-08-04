@@ -4,14 +4,59 @@ import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/api_client.dart';
 import 'widgets.dart';
 
-class LaughReportContentScreen extends StatelessWidget {
+class LaughReportContentScreen extends StatefulWidget {
   const LaughReportContentScreen({super.key, required this.controller});
 
   final AppController controller;
 
+  @override
+  State<LaughReportContentScreen> createState() =>
+      _LaughReportContentScreenState();
+}
+
+class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
+  AppController get controller => widget.controller;
+
+  /// 서버 집계(API-46, type=LAUGHTER)의 일별 웃음 감지 수. 기기가 없거나
+  /// 요청이 실패하면 null로 남아 단말 집계로 폴백한다.
+  Map<DateTime, int>? _serverCounts;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServerCounts();
+  }
+
+  Future<void> _loadServerCounts() async {
+    final device = controller.selectedDevice;
+    if (device == null) return;
+    final today = DateUtils.dateOnly(DateTime.now());
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+    try {
+      final stats = await controller.api.getEventStats(
+        device.id,
+        from: monday.subtract(const Duration(days: 7)),
+        to: today,
+        type: 'LAUGHTER',
+      );
+      if (!mounted) return;
+      setState(
+        () => _serverCounts = {
+          for (final daily in stats.dailyCounts)
+            if (daily.date != null) DateUtils.dateOnly(daily.date!): daily.count,
+        },
+      );
+    } on ApiFailure {
+      // 서버 집계를 못 받으면 이미 불러온 영상 목록으로 계속 그린다.
+    }
+  }
+
   Map<DateTime, int> get _countsByDay {
+    final server = _serverCounts;
+    if (server != null) return server;
     final result = <DateTime, int>{};
     for (final video in controller.videos.where(
       (item) => item.hasEventType('LAUGHTER'),

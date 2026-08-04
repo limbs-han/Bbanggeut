@@ -31,6 +31,9 @@ UNDOCUMENTED_ON_PURPOSE = {
         "위와 같은 기기 credential 전용 경로.",
     "/api/live/introspect":
         "미디어 서버가 호출하는 내부 검증 엔드포인트. 앱 계약이 아니다.",
+    "/api/editor/events":
+        "editor-api가 서비스 토큰(iss=wj-editor)으로 호출하는 서버 간 이벤트 승격"
+        " 엔드포인트. 앱 계약이 아니라 editor-api 연동 문서가 기준이다.",
 }
 
 MAPPING = re.compile(

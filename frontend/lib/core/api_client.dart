@@ -11,6 +11,17 @@ const defaultApiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://i15e201.p.ssafy.io',
 );
 
+/// 서버가 Gemini(전사·구성)나 이미지 생성을 부르는 동안 앱이 기다리는 시간.
+///
+/// 기본 `receiveTimeout` 20초로는 어림도 없다 — 서버는 한 번의 응답 안에서
+/// 원본을 객체 저장소에서 꺼내고, 오디오와 대표 프레임을 뽑고, 영상 전체를
+/// 멀티모달 모델에 넘긴다. 20초로 두면 서버가 정상으로 일하는 동안 앱이 먼저
+/// 끊고 "대사를 알아듣지 못했어요"를 띄운다.
+///
+/// 서버 예산 150초 + 여유 30초. 이 값을 늘리기 전에 202+폴링으로 계약을 바꾸는
+/// 편이 낫다(지금은 범위 밖).
+const aiReceiveTimeout = Duration(seconds: 180);
+
 class ApiFailure implements Exception {
   const ApiFailure(
     this.message, {
@@ -227,6 +238,55 @@ class ApiClient {
   Future<void> unregisterPushToken(String installationId) async => _delete(
     '/api/notifications/push-tokens/${Uri.encodeComponent(installationId)}',
   );
+
+  Future<NotificationPreferences> getNotificationPreferences() async =>
+      NotificationPreferences.fromJson(
+        await _get('/api/notifications/preferences'),
+      );
+
+  Future<NotificationPreferences> updateNotificationPreferences(
+    NotificationPreferences preferences,
+  ) async => NotificationPreferences.fromJson(
+    await _put('/api/notifications/preferences', data: preferences.toJson()),
+  );
+
+  Future<List<CalendarSchedule>> listSchedules() async => (await _getList(
+    '/api/schedules',
+  )).map(CalendarSchedule.fromJson).toList(growable: false);
+
+  Future<CalendarSchedule> createSchedule(CalendarSchedule schedule) async =>
+      CalendarSchedule.fromJson(
+        await _post('/api/schedules', data: schedule.toJson()),
+      );
+
+  Future<CalendarSchedule> updateSchedule(CalendarSchedule schedule) async =>
+      CalendarSchedule.fromJson(
+        await _put('/api/schedules/${schedule.id}', data: schedule.toJson()),
+      );
+
+  Future<void> deleteSchedule(String scheduleId) async =>
+      _delete('/api/schedules/$scheduleId');
+
+  Future<EventStats> getEventStats(
+    String deviceId, {
+    DateTime? from,
+    DateTime? to,
+    String? type,
+  }) async => EventStats.fromJson(
+    await _get(
+      '/api/devices/$deviceId/event-stats',
+      query: {
+        if (from != null) 'from': _dateOnly(from),
+        if (to != null) 'to': _dateOnly(to),
+        'type': ?type,
+      },
+    ),
+  );
+
+  static String _dateOnly(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 
   Future<UserProfile> updateProfile(String displayName) async {
     final updated = UserProfile.fromJson(
@@ -658,6 +718,33 @@ class ApiClient {
     }
   }
 
+  /// 전사문으로 4컷 구성을 받는다. 서버가 키를 들고 LLM을 대신 부른다.
+  ///
+  /// **글만 보낸다** — 영상·오디오·프레임은 보내지 않는다.
+  Future<Map<String, dynamic>> createComicScript(
+    String videoId,
+    List<Map<String, Object>> lines,
+  ) => _post(
+    '/api/videos/$videoId/comic/script',
+    data: {'lines': lines},
+    options: _aiOptions,
+  );
+
+  /// 4컷 구성으로 만화 그림 한 장(2x2 격자)을 받는다. 응답은 base64 PNG다.
+  Future<Map<String, dynamic>> createComicImage(
+    String videoId, {
+    required List<Map<String, Object?>> cuts,
+    required String style,
+  }) => _post(
+    '/api/videos/$videoId/comic/image',
+    data: {'cuts': cuts, 'style': style},
+    options: _aiOptions,
+  );
+
+  /// 만화 두 엔드포인트(API-71·72)에만 붙이는 긴 수신 대기. 나머지 호출은
+  /// 전역 기본값 20초 그대로다 — 평범한 요청까지 3분을 기다리면 안 된다.
+  static final _aiOptions = Options(receiveTimeout: aiReceiveTimeout);
+
   Future<Map<String, dynamic>> _get(
     String path, {
     Map<String, dynamic>? query,
@@ -688,9 +775,17 @@ class ApiClient {
     }
   }
 
-  Future<Map<String, dynamic>> _post(String path, {Object? data}) async {
+  Future<Map<String, dynamic>> _post(
+    String path, {
+    Object? data,
+    Options? options,
+  }) async {
     try {
-      final response = await _dio.post<dynamic>(path, data: data);
+      final response = await _dio.post<dynamic>(
+        path,
+        data: data,
+        options: options,
+      );
       return response.data is Map<String, dynamic>
           ? response.data as Map<String, dynamic>
           : <String, dynamic>{};

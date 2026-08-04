@@ -114,5 +114,19 @@ app:
     access-key: ${S3_ACCESS_KEY:minioadmin}
     secret-key: ${S3_SECRET_KEY:minioadmin}
     bucket: ${S3_BUCKET:wj-videos}
+    # 편집 서버(editor-api)의 부산물 버킷. 비워 두면 영상 삭제 시 편집
+    # 데이터 청소를 건너뛴다(편집 기능을 안 쓰는 환경).
+    edit-bucket: ${S3_EDIT_BUCKET:}
     upload-url-ttl: ${S3_UPLOAD_URL_TTL:15m}
     read-url-ttl: ${S3_READ_URL_TTL:5m}
+  comic:
+    # 파이썬 만화 워커. 외부에 열지 않고 서버 네트워크 안에서만 부른다.
+    # 워커는 app.storage.public-endpoint로 서명된 원본 URL을 ffmpeg로 읽는다.
+    # 그러므로 그 주소가 워커에서도 닿아야 한다 — 로컬에서 워커만 컨테이너로
+    # 띄웠다면 S3_PUBLIC_ENDPOINT를 http://host.docker.internal:9000으로 준다.
+    worker-base-url: ${COMIC_WORKER_BASE_URL:http://127.0.0.1:18080}
+    # 워커가 150초에 스스로 끊고 앱은 180초까지 기다린다. 그 사이에 둔다.
+    worker-timeout: ${COMIC_WORKER_TIMEOUT:160s}
+    # 그림 한 장이 실제 크레딧을 쓴다. 사용자별 예산을 두지 않으면 요금 구멍이 된다.
+    rate-window: ${COMIC_RATE_WINDOW:1h}
+    rate-limit: ${COMIC_RATE_LIMIT:20}

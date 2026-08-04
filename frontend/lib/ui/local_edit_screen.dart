@@ -1005,11 +1005,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             ),
             CaptionAutoSection(
               controller: _autoCaptions,
-              // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
-              // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
-              estimateSeconds: _editState.durationMs > 0
-                  ? (_editState.durationMs / 1000 * 0.9).round()
-                  : null,
+              // 예상 시간은 주지 않는다 — 0.9배는 온디바이스 whisper 실측이었고,
+              // 전사가 서버로 옮겨져 더는 맞는 숫자가 아니다.
               // 자막 수정도 저장 안 된 변경이다.
               onChanged: () =>
                   setState(() => _editState.markExternalEditApplied()),
@@ -1081,6 +1078,39 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           .catchError(
             (Object failure) => debugPrint('editor draft save failed: $failure'),
           );
+
+      // 컷·줌만 있는 프로젝트는 서버가 만든다 — 레시피(몇 KB)만 보내므로
+      // 렌더링과 완성본 업로드 시간이 통째로 사라진다. 서버가 안 받아 주면
+      // 기존 앱 렌더링·업로드로 그대로 이어 간다.
+      if (exportProject.requiresRendering() && exportProject.serverRenderable) {
+        final handedOff = await _tryServerRender(exportProject);
+        if (handedOff) {
+          await draftSaved;
+          if (!mounted) return;
+          _editState.markSaved();
+          projectController.setExportState(
+            const EditorExportState(
+              phase: EditorExportPhase.completed,
+              progress: 1,
+            ),
+          );
+          setState(() {
+            _saving = false;
+            _exportProgress = null;
+            _status = '서버가 편집본을 만들고 있어요';
+          });
+          showAppSnack(
+            context,
+            '서버가 편집본을 만들고 있어요 — 업로드 없이 잠시 뒤 '
+            '추억 > 편집 완료에 나타나요.',
+          );
+          Navigator.pop(
+            context,
+            SavedVideoEdit(videoPath: exportProject.sourceVideoPath),
+          );
+          return;
+        }
+      }
 
       // AI 자막은 이미 일반 자막 레이어로 합쳐져 textLayers에 들어 있다 —
       // 별도 자막 트랙을 넘기지 않는다.
@@ -1182,6 +1212,28 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       );
       // 편집을 이어가야 하므로 재생기를 되살린다.
       await _restorePreviewAfterExport();
+    }
+  }
+
+  /// 서버 렌더링을 요청한다. 성공하면 true — 이후는 서버 몫이라 편집기는
+  /// 바로 닫아도 된다. 어떤 이유로든 실패하면 false를 돌려 앱 렌더링으로
+  /// 폴백한다(오프라인·구버전 서버·presigned 발급 실패 전부 포함).
+  Future<bool> _tryServerRender(EditorProject exportProject) async {
+    try {
+      final signed = await widget.controller.api.createDownloadUrl(
+        widget.video.id,
+      );
+      final status = await _recommendations.requestServerRender(
+        videoId: widget.video.id,
+        sourceUrl: signed.url,
+        recipe: exportProject.toServerRenderRecipe(),
+        title: widget.video.title,
+        capturedAt: widget.video.capturedStartAt,
+      );
+      return status.isRunning || status.isDone;
+    } catch (failure) {
+      debugPrint('server render unavailable, falling back: $failure');
+      return false;
     }
   }
 

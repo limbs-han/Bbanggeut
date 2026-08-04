@@ -79,10 +79,9 @@ services:
         mc anonymous set none "local/$${MINIO_EDIT_BUCKET}"
 
   # 앱 편집 서버(video_editor). 자동 편집 추천·초안·편집본·댓글을 담당한다.
-  # 이미지는 배포 파이프라인 밖에서 서버가 직접 빌드한다 — video_editor/DEPLOY.md
-  # 참고. 배포 wrapper(wj-deploy-backend)는 이 서비스를 올리거나 내리지
-  # 않으므로 기존 배포 흐름에는 영향이 없다. 최초 기동과 갱신은
-  # `docker compose ... up -d editor-api`로 한다.
+  # 배포 wrapper(wj-deploy-backend)가 릴리스에 담긴 editor-api/ 소스로 서버에서
+  # 이미지를 빌드해 올린다 — video_editor/DEPLOY.md 참고. 모델은 Git 미추적이라
+  # 서버의 editor-models 디렉터리(아래 volume)를 계속 쓴다.
   editor-api:
     image: wj-editor-api:latest
     restart: unless-stopped
@@ -105,6 +104,10 @@ services:
       # 편집본 재생 presigned URL 서명 기준 호스트(백엔드 S3_PUBLIC_ENDPOINT와
       # 같은 방식). nginx의 /william-james-edit 경로가 MinIO로 프록시한다.
       EDITOR_PUBLIC_S3_ENDPOINT: ${EDITOR_PUBLIC_S3_ENDPOINT:-https://i15e201.p.ssafy.io}
+      # 4컷 만화(API-71·72)가 GMS로 Gemini를 부를 때 쓴다. 값은 infra/.env에
+      # 두고 여기서 읽는다 — 이 파일에 키를 적지 않는다. 비어 있어도 기동은
+      # 되고 만화 요청만 502가 된다(다른 편집 기능은 이 키를 쓰지 않는다).
+      GMS_KEY: ${GMS_KEY:-}
     volumes:
       - ${EDITOR_MODEL_DIR:-/home/ubuntu/william-james/editor-models}:/models:ro
     ports:

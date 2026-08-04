@@ -27,7 +27,8 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
     AuthProperties.class, DeviceClaimProperties.class, StorageProperties.class,
     InvitationProperties.class, MqttProperties.class, StreamProperties.class,
     SubscriptionProperties.class, ProvisioningProperties.class, DeviceCredentialProperties.class,
-    DemoProperties.class, PushProperties.class, DevicePresenceProperties.class
+    DemoProperties.class, PushProperties.class, DevicePresenceProperties.class,
+    ComicProperties.class
 })
 public class SecurityConfig {
 
@@ -86,6 +87,10 @@ public class SecurityConfig {
                     HttpMethod.GET, "/api/membership-request-links/*/open").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/api/live/introspect").permitAll()
+                // 편집 서버(editor-api)의 서비스 이벤트. 사용자 세션이 아니라
+                // iss=wj-editor 토큰이라 이 체인의 디코더로는 검증할 수 없다 —
+                // 라이브 introspect처럼 서비스가 직접 검증한다.
+                .requestMatchers("/api/editor/events").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.decoder(accessTokenJwtDecoder))
