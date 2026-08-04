@@ -2961,20 +2961,34 @@ curl -s http://127.0.0.1:8081/actuator/health
 문서를 쓰면서 실제로 확인한 값이다. 나중에 비교할 기준선으로 남긴다.
 
 ```
-git          master == develop (fbf543d), Flyway V39
-슬롯          william-james@8081 active / @8082 inactive
-활성 upstream  127.0.0.1:8081
-배포 시각      2026-08-04 06:57 UTC
+git          master == develop, Flyway V39
+슬롯          william-james@8082 active / @8081 inactive
+활성 upstream  127.0.0.1:8082
+배포 시각      2026-08-04 07:15 UTC (06:57 배포 후 35장 수정으로 재배포)
 컨테이너       8종 전부 Up (postgres·redis·minio·mosquitto·mediamtx·
               editor-api·prometheus·grafana)
-Prometheus    job=spring health=up (file_sd가 8081을 따라가고 있음)
+Prometheus    job=spring health=up (file_sd가 8082를 따라감 — 슬롯 전환을
+              실제로 추적하는 것을 이 배포로 확인했다)
 공개 헬스      https://i15e201.p.ssafy.io/health → 200 {"status":"UP"}
 DB            william_james / 사용자 william
 ```
 
-발견해서 고친 것 (배포 대기):
+**슬롯이 8081 → 8082로 바뀐 것이 무중단 배포가 실제로 돌아간 증거다.** 30장의 설명이
+추상적으로 느껴지면 이 두 줄을 다시 보면 된다.
 
-- `/api/editor/events`가 인증 필터 때문에 항상 401 → 전용 보안 체인으로 분리 (35장). 편집 분석 완료 알림이 그동안 발송되지 않았다
+발견해서 고치고 **배포·검증까지 마친 것**:
+
+- `/api/editor/events`가 인증 필터 때문에 항상 401 → 전용 보안 체인으로 분리 (35장).
+  편집 분석 완료 알림이 그동안 한 건도 발송되지 않았다.
+  배포 후 실측으로 확인했다:
+
+  | 요청 | 배포 전 | 배포 후 |
+  | --- | --- | --- |
+  | 유효한 서비스 토큰(`iss=wj-editor`) | 401 `"로그인이 필요합니다"` (인증 필터) | **컨트롤러 도달** |
+  | 잘못된 토큰 | 401 (인증 필터) | 401 `"편집 서버 토큰이 필요합니다"` (`EditorEventService`) |
+
+  오른쪽 열이 중요하다. **통과시켜야 할 것은 통과하고, 막아야 할 것은 여전히 막힌다** —
+  게다가 이제 401을 내는 주체가 의도한 그 코드다. 보안을 느슨하게 해서 고친 게 아니다.
 
 사소한 정리 대상:
 
