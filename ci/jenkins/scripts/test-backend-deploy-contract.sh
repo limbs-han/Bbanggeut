@@ -14,7 +14,8 @@ artifact="${test_root}/backend-deploy.tar.gz"
 bash "${repository_root}/ci/jenkins/scripts/package-backend-deploy.sh" \
   "${artifact}"
 
-actual_entries="$(tar --list --gzip --file "${artifact}" | LC_ALL=C sort)"
+all_entries="$(tar --list --gzip --file "${artifact}" | LC_ALL=C sort)"
+actual_entries="$(printf '%s\n' "${all_entries}" | grep -v '^editor-api/')"
 expected_entries="$(
   printf '%s\n' \
     docker-compose.yml \
@@ -29,6 +30,26 @@ if [[ "${actual_entries}" != "${expected_entries}" ]]; then
   echo "Backend deployment artifact contract is invalid." >&2
   printf 'Expected:\n%s\nActual:\n%s\n' \
     "${expected_entries}" "${actual_entries}" >&2
+  exit 1
+fi
+
+# editor-api 소스가 서버 이미지 빌드에 필요한 파일과 함께 담기는지, 그리고
+# 대용량 모델·캐시가 새어 들어오지 않는지 고정한다.
+for entry in \
+  editor-api/Dockerfile.local \
+  editor-api/service.py \
+  editor-api/requirements-service.txt \
+  editor-api/requirements-analysis.txt
+do
+  if ! printf '%s\n' "${all_entries}" | grep -Fxq "${entry}"; then
+    echo "배포 아티팩트에 editor-api 필수 파일이 없습니다: ${entry}" >&2
+    exit 1
+  fi
+done
+if printf '%s\n' "${all_entries}" |
+  grep -Eq '^editor-api/models/|__pycache__|\.pyc$'
+then
+  echo "배포 아티팩트에 editor-api 모델이나 파이썬 캐시가 들어 있습니다." >&2
   exit 1
 fi
 
@@ -76,5 +97,22 @@ then
   echo "배포 스크립트가 redis 를 다른 인프라 서비스와 함께 올리지 않습니다." >&2
   exit 1
 fi
+
+# editor-api 자동 배포 계약: 서버 빌드, 라이브 교체 전 시크릿 확인, 헬스체크,
+# 롤백용 previous 태그가 모두 스크립트에 남아 있어야 한다. 하나라도 빠지면
+# 편집 서버가 수동 배포 시절로 소리 없이 되돌아간다.
+for contract in \
+  'docker build --tag "${editor_image}:next"' \
+  'EDITOR_JWT_SECRET=' \
+  'editor_health_url="http://127.0.0.1:18080/health"' \
+  'docker tag "${editor_image}:latest" "${editor_image}:previous"'
+do
+  if ! grep -Fq "${contract}" \
+    "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
+  then
+    echo "배포 스크립트에서 editor-api 계약을 찾지 못했습니다: ${contract}" >&2
+    exit 1
+  fi
+done
 
 echo "Backend deployment artifact and WebRTC activation contract passed."

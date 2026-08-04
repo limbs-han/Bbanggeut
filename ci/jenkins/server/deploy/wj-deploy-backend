@@ -30,6 +30,13 @@ nginx_replaced=false
 had_nginx_config=false
 mediamtx_config_changed=false
 mosquitto_config_changed=false
+# editor-api: 릴리스에 editor-api/ 소스가 담겨 있으면 서버에서 이미지를
+# 빌드해 함께 배포한다. 소스가 없는 옛 릴리스는 editor-api를 건드리지 않는다.
+editor_image="wj-editor-api"
+editor_health_url="http://127.0.0.1:18080/health"
+editor_present=false
+editor_replaced=false
+editor_had_previous=false
 
 cleanup() {
   if [[ -n "${staging}" && "${staging}" == "${application_root}"/.backend-deploy.* ]]; then
@@ -121,6 +128,33 @@ deploy_infrastructure() {
   compose run --rm minio-init
 }
 
+wait_for_editor_api() {
+  for _ in $(seq 1 60); do
+    if curl --fail --silent --max-time 3 "${editor_health_url}" >/dev/null; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "editor-api did not answer its health check after deployment." >&2
+  compose logs --tail 100 editor-api >&2 || true
+  return 1
+}
+
+deploy_editor_api() {
+  if [[ "${editor_present}" != "true" ]]; then
+    return 0
+  fi
+  if docker image inspect "${editor_image}:latest" >/dev/null 2>&1; then
+    docker tag "${editor_image}:latest" "${editor_image}:previous"
+    editor_had_previous=true
+  fi
+  docker tag "${editor_image}:next" "${editor_image}:latest"
+  editor_replaced=true
+  compose up --detach editor-api
+  wait_for_editor_api
+}
+
 restore_release() {
   trap - ERR
   set +e
@@ -152,6 +186,19 @@ restore_release() {
     else
       rollback_ok=false
     fi
+  fi
+
+  if [[ "${editor_replaced}" == "true" ]]; then
+    if [[ "${editor_had_previous}" == "true" ]]; then
+      docker tag "${editor_image}:previous" "${editor_image}:latest" || rollback_ok=false
+      # 복원된 compose 백업본에 editor-api 정의가 없을 수 있다(구 릴리스).
+      # 그때 up 은 실패하므로 서비스가 정의된 경우에만 되살린다.
+      if compose config --services 2>/dev/null | grep -Fxq editor-api; then
+        compose up --detach --force-recreate editor-api || rollback_ok=false
+      fi
+    fi
+    # 이전 이미지가 없던 최초 배포 실패라면 새 컨테이너를 그대로 둔다 —
+    # 내리는 쪽이 더 파괴적이고, editor-api 는 백엔드와 독립적으로 동작한다.
   fi
 
   if [[ "${nginx_replaced}" == "true" ]]; then
@@ -258,15 +305,31 @@ if ! validate_spring_boot_jar "${incoming_jar}"; then
 fi
 
 bundle_entries="$(tar --list --gzip --file "${incoming_bundle}" | LC_ALL=C sort)"
+if printf '%s\n' "${bundle_entries}" | grep -Eq '(^|/)\.\.(/|$)|^/'; then
+  echo "Infrastructure artifact contains an unsafe path." >&2
+  exit 1
+fi
+# editor-api/ 아래는 소스 트리 전체가 오므로 파일 단위로 고정하지 않고,
+# 나머지 항목만 기존처럼 알려진 집합과 대조한다.
+non_editor_entries="$(printf '%s\n' "${bundle_entries}" | grep -v '^editor-api/' || true)"
 allowed_entries="$(
   printf '%s\n' "${required_bundle_files[@]}" "${optional_bundle_files[@]}" |
     LC_ALL=C sort
 )"
-if [[ -n "$(comm -23 <(printf '%s\n' "${bundle_entries}") \
+if [[ -n "$(comm -23 <(printf '%s\n' "${non_editor_entries}") \
   <(printf '%s\n' "${allowed_entries}"))" ]]; then
   echo "Infrastructure artifact contains an unexpected file set." >&2
-  printf 'Allowed:\n%s\nActual:\n%s\n' "${allowed_entries}" "${bundle_entries}" >&2
+  printf 'Allowed:\n%s\nActual:\n%s\n' "${allowed_entries}" "${non_editor_entries}" >&2
   exit 1
+fi
+if printf '%s\n' "${bundle_entries}" | grep -q '^editor-api/'; then
+  for file in Dockerfile.local service.py requirements-service.txt; do
+    if ! printf '%s\n' "${bundle_entries}" | grep -Fxq "editor-api/${file}"; then
+      echo "editor-api source in the artifact is missing a required file: ${file}" >&2
+      exit 1
+    fi
+  done
+  editor_present=true
 fi
 for file in "${required_bundle_files[@]}"; do
   if ! printf '%s\n' "${bundle_entries}" | grep -Fxq "${file}"; then
@@ -311,6 +374,26 @@ fi
 # replacing any live file. Relative bind mounts resolve inside staging.
 docker compose --env-file "${infra_env}" \
   --file "${staging}/docker-compose.yml" config --quiet
+
+# editor-api 이미지는 라이브 파일을 하나도 바꾸기 전에 빌드한다. 빌드가
+# 실패하면 배포 전체가 아무것도 건드리지 않은 채 중단된다.
+if [[ "${editor_present}" == "true" ]]; then
+  if ! grep -Eq '^EDITOR_JWT_SECRET=..+' "${infra_env}"; then
+    cat >&2 <<EOF
+infra/.env 에 EDITOR_JWT_SECRET 이 없습니다. editor-api 는 이 값(백엔드
+JWT_SIGNING_KEY와 같은 값)이 없으면 기동을 거부하므로 배포를 중단합니다.
+EOF
+    exit 1
+  fi
+  editor_model_dir="$(grep -E '^EDITOR_MODEL_DIR=' "${infra_env}" | tail -1 | cut -d= -f2-)"
+  editor_model_dir="${editor_model_dir:-/home/ubuntu/william-james/editor-models}"
+  if [[ ! -d "${editor_model_dir}" || -z "$(ls -A "${editor_model_dir}" 2>/dev/null)" ]]; then
+    echo "경고: ${editor_model_dir} 에 분석 모델이 없습니다. editor-api 는 뜨지만 분석은 503 입니다." >&2
+  fi
+  echo "Building editor-api image from the release source..."
+  docker build --tag "${editor_image}:next" \
+    --file "${staging}/editor-api/Dockerfile.local" "${staging}/editor-api"
+fi
 
 if [[ ! -f "${infra_root}/mediamtx.yml" ]] ||
   ! cmp --silent "${staging}/mediamtx.yml" "${infra_root}/mediamtx.yml"
@@ -400,6 +483,7 @@ if [[ -f "${current_jar}" ]]; then
 fi
 
 deploy_infrastructure
+deploy_editor_api
 
 install -o ubuntu -g ubuntu -m 0644 "${incoming_jar}" "${current_jar}.next"
 mv -f "${current_jar}.next" "${current_jar}"
@@ -423,9 +507,19 @@ rm -f -- "${incoming_jar}" "${incoming_bundle}"
 infra_replaced=false
 jar_replaced=false
 nginx_replaced=false
+editor_replaced=false
+if [[ "${editor_present}" == "true" ]]; then
+  # :next 는 :latest 와 같은 이미지를 가리키므로 태그만 걷는다. :previous 는
+  # 수동 롤백용으로 남긴다.
+  docker rmi "${editor_image}:next" >/dev/null 2>&1 || true
+fi
 trap - ERR
 
-printf '%s status=SUCCESS sha256=%s backup=%s services=postgres,minio,mosquitto,mediamtx,nginx\n' \
-  "${timestamp}" "${incoming_sha}" "${backup_root}" \
+deployed_services="postgres,redis,minio,mosquitto,mediamtx,nginx"
+if [[ "${editor_present}" == "true" ]]; then
+  deployed_services="${deployed_services},editor-api"
+fi
+printf '%s status=SUCCESS sha256=%s backup=%s services=%s\n' \
+  "${timestamp}" "${incoming_sha}" "${backup_root}" "${deployed_services}" \
   >>"${deployment_root}/backend.log"
 echo "Backend application and infrastructure deployment succeeded: ${incoming_sha}"
