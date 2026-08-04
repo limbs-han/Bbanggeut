@@ -1,10 +1,14 @@
 # ChanHyeong 백엔드 공부 가이드 — MVP 7개 흐름으로 코드 읽기
 
 > 대상: 백엔드를 처음 공부하는 팀원  
-> 기준일: 2026-07-31 (코드 재검증 반영)
+> 기준일: 2026-08-04 (26장에서 인프라·서버 전체를 현행화)
 > 기준 브랜치: `master` (`codex/chanhyeong-study`는 커밋 `d0ade0e`로 master에 병합 완료)  
 > 가장 중요한 기준 문서: `자료/docs/사람이 읽을 문서/01-서비스기획.md`의 **8. MVP 정의**  
 > 성격: 설계 희망사항이 아니라, 현재 저장소의 문서와 구현 코드를 함께 확인한 **공부용 as-built 가이드**
+>
+> **처음 읽는 사람은 26장부터 보는 것을 권한다.** 인프라·서버·백엔드 전체 그림과
+> 요청이 흐르는 다섯 갈래, 보안 경계, 백그라운드 워커, 서비스 경계(ADR-001)를
+> 한 장에 모아 두었다. 1~25장은 그 뒤에 도메인별로 깊이 파는 순서다.
 
 > **2026-07-31 전체 재검증 요약** — 백엔드 전 도메인을 코드와 대조해 다음을 정정했다. 예전 판을 이미 읽은 사람은 이 4개를 먼저 확인하면 된다.
 >
@@ -3402,3 +3406,211 @@ API별 상태 코드와 Backend 로그를 먼저 분리해서 봐야 한다.
 > 삭제 영상 복구에서 MinIO 객체를 먼저 검증하고 DB를 마지막에
 > `READY`로 바꿨으며, MyBatis 장애는 실제 PostgreSQL 통합 테스트로
 > JDBC 타입과 record 생성자 매핑까지 재현해 회귀를 막았습니다.
+
+---
+
+# 26. 2026-08-04 현행화 — 인프라·서버·백엔드 한 장 정리
+
+> 이 장은 앞의 장들이 쓰인 뒤(2026-07-31) 바뀐 것을 모아, **이 문서만 읽어도
+> 프로젝트의 인프라·서버·백엔드를 이해할 수 있게** 하기 위해 붙였다. 앞 장과
+> 충돌하면 **이 장이 최신**이다. 모든 항목은 코드·서버 실측으로 확인했다.
+
+## 26.1 전체 그림 다시 그리기
+
+```
+[Flutter 앱]                 [Jetson / Raspberry Pi]
+    │ REST(HTTPS 443)            │ MQTTS 8883 (상태·명령)
+    │ WHEP(WebRTC)               │ RTSPS 8322 (라이브 송출)
+    │ presigned PUT/GET          │ HTTPS presigned PUT (이벤트 영상)
+    ▼                            ▼
+┌──────────────────── EC2 1대 (Ubuntu 24.04, 4 vCPU / 16 GB) ────────────────┐
+│  nginx (443) ── upstream william_james ─→ Spring Boot 슬롯 8081 또는 8082   │
+│      ├─ /api/            → Spring                                         │
+│      ├─ /editor/         → editor-api(FastAPI 18080)  ← 계산 전용          │
+│      ├─ /william-james-videos, -edit → MinIO 9000 (서명 검증은 MinIO)      │
+│      ├─ /webrtc/live/{id}/whep → MediaMTX 8889 (auth_request로 토큰 검증)  │
+│      └─ /webrtc/talkback/{id}/whip → MediaMTX (양방향 오디오)              │
+│                                                                           │
+│  PostgreSQL 16 · Redis 7 · MinIO · Mosquitto(MQTTS) · MediaMTX            │
+│  Prometheus(9090) · Grafana(3000)  ← 전부 loopback 전용                    │
+│  Jenkins(8080) + 에이전트 컨테이너들                                       │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+**외부에 열린 포트는 다섯 갈래뿐이다**: 22(SSH), 80/443(HTTPS), 8883(MQTTS,
+기기 전용), 8322(RTSPS, 기기 전용), 8189/UDP(WebRTC 미디어). 그 밖의 모든 것
+(Spring·DB·Redis·MinIO·MediaMTX 신호·Prometheus·Grafana)은 **127.0.0.1에만
+바인딩**되어 nginx나 SSH 터널을 거쳐야 닿는다. 8080(Jenkins)과 8989는 서버에
+원래 있던 설치분이다.
+
+## 26.2 요청이 흐르는 다섯 갈래 (이것만 알면 절반은 이해한 것)
+
+| 무엇 | 어디로 | 인증 방식 |
+| --- | --- | --- |
+| 앱 → 서버 API | nginx `/api/` → Spring 8081(또는 8082) | 사용자 JWT. **요청마다** 세션·`token_version`을 DB에서 대조 |
+| 앱·기기 → 영상 파일 | nginx `/william-james-videos` → MinIO | **presigned URL**(서명이 URL 안에 있어 헤더 불필요) |
+| 앱 → 편집 계산 | nginx `/editor/` → editor-api | 같은 HS256 키로 서명된 사용자 토큰. 금고 권한은 백엔드에 되물음 |
+| 기기 ↔ 서버 상태·명령 | MQTTS 8883, 토픽 `prod/wj/v2/devices/{id}/…` | 기기별 Mosquitto 계정 + topic ACL |
+| 라이브 시청 | nginx `/webrtc/live/{streamId}/whep` → MediaMTX | nginx `auth_request` → Spring `/api/live/introspect`(30초 토큰) |
+
+**핵심 개념**: 백엔드는 큰 파일을 운반하지 않는다. "올려도 되는가"를 판단해
+**짧은 수명의 서명 URL**만 발급하고 바이트는 MinIO가 직접 받는다. 라이브도
+"볼 자격이 있는가"만 판단하고 미디어는 MediaMTX가 흘린다.
+
+## 26.3 인프라 — 배포가 어떻게 이뤄지나
+
+### 무중단 배포(blue-green)
+
+`systemctl restart`는 배포마다 수 초 다운타임을 만들고 **라이브 시청 중인
+사용자가 끊긴다.** 그래서 슬롯을 두 개 둔다.
+
+- systemd 템플릿 유닛 `william-james@8081`, `william-james@8082` — 한쪽만 활성
+- **활성 슬롯의 상태 저장소는 `/etc/nginx/conf.d/wj-upstream.conf`** 다. 배포
+  스크립트가 여기에 활성 포트를 쓰고, 릴리스에 담긴 같은 이름 파일은 **없을
+  때만** 설치한다(덮으면 배포마다 8081로 되돌아간다)
+- 순서: 대기 슬롯에 새 JAR 기동 → 헬스 확인 → upstream 교체 + nginx reload →
+  5초 뒤 구 슬롯 정지
+- 실패하면 upstream을 구 슬롯으로 되돌린다. 구 슬롯은 살아 있으므로 사용자
+  영향이 없다
+- **실측: 20 VU 부하 중 전환 — 94,042요청 실패 0건**(1,567 req/s, p95 24ms)
+
+슬롯마다 JAR을 따로 두는 이유(`app/server-8081.jar`)는 **실행 중 JVM이 읽는
+파일을 덮어쓰면 nested jar 로딩이 깨지기** 때문이다.
+
+> **마이그레이션 규칙(중요)**: 전환 중 새 슬롯이 Flyway를 적용하는 동안 **구
+> 슬롯이 구 코드로 서비스**한다. 따라서 마이그레이션은 항상
+> **backward-compatible**(추가 위주)이어야 한다. 컬럼·테이블 삭제, 타입 변경,
+> NOT NULL 강화는 **두 단계 릴리스**로 나눈다.
+> 상세: `backend/deploy/ZERO_DOWNTIME.md`
+
+### CI/CD 파이프라인
+
+```
+기능 브랜치 push → Jenkins가 브랜치 이름으로 스테이지 선택
+   feat/backend/**  → Backend + API Contract
+   feat/frontend/** → Frontend + API Contract
+   feat/device/**   → Device + API Contract
+   master, develop  → 네 개 전부
+        │
+        ├ Backend 스테이지: 배포 계약 테스트 → JAR 검증 → gradle test
+        │                  → 배포 아티팩트 패키징 → editor-api pytest
+        └ master CI 성공 → Production 잡 자동 트리거 → **사람이 승인** → 배포
+```
+
+**배포 계약 테스트**(`ci/jenkins/scripts/test-backend-deploy-contract.sh`)가
+이 프로젝트에서 배울 것이 가장 많은 파일이다. 과거에 실제로 겪은 사고를 전부
+문자열 단위로 고정해 둔다 — Flyway 버전 중복, nginx location 중복, Redis 누락,
+MediaMTX 포트 불일치, editor-api 자동 배포 4단계, 관측성 노출, MinIO root
+자격증명 회귀, 업로드 한도 정합, 무중단 전환 4요소. **"같은 사고를 두 번 겪지
+않으려면 계약으로 못 박는다"** 는 원칙의 구현체다.
+
+### 관측성
+
+- Spring Actuator + micrometer → `/actuator/prometheus`
+- Prometheus가 **파일 기반 서비스 디스커버리**로 활성 슬롯을 따라간다(고정
+  타겟이면 슬롯 전환 후 수집이 조용히 끊긴다 — 실제로 겪었다)
+- Grafana는 loopback 전용. 접속은 `ssh -L 3000:127.0.0.1:3000 …` 후
+  `http://localhost:3000`
+- 5분 주기 모니터가 슬롯·nginx·컨테이너 8종·인증서·디스크를 점검하고, 실패 시
+  `WJ_MONITOR_WEBHOOK_URL` 웹훅으로 알린다
+
+### 부하 특성 (실측)
+
+| 시나리오 | VU | 처리량 | p95 | 실패 |
+| --- | ---: | ---: | ---: | ---: |
+| 읽기 5종 | 50 | 112 req/s | 33 ms | 0% |
+| 인증 읽기 2종 | 350 | 335 req/s | 9 ms | 0% |
+
+DB 커넥션 풀은 최대 **4/10**만 썼다 — 읽기 경로는 병목이 아니다. 진짜 한계는
+**단일 인스턴스 가용성**과 아직 재지 않은 축(WHEP 동시 시청, 업로드 I/O)이다.
+스크립트: `ci/load/k6-read-path.js`.
+
+## 26.4 서버 보안 경계 — 무엇을 어떻게 지키나
+
+| 경계 | 방법 | 왜 |
+| --- | --- | --- |
+| 사용자 세션 | 액세스 15분 + refresh 14일 회전. 요청마다 세션·`token_version` DB 대조 | 세션 회수·비밀번호 변경을 **즉시** 반영. 만료를 기다리지 않는다 |
+| refresh 도난 | **이미 회전된 토큰이 다시 오면** 그 사용자 전 세션 회수 + 경고 로그 | 같은 토큰을 두 주체가 쥐고 있었다는 신호. 응답은 탐지를 노출하지 않는 일반 401 |
+| 로그인 폭주 | Redis 슬라이딩 윈도우(이메일·IP 5회/10분), 실패 해시는 PostgreSQL 감사 이력 | Redis 장애 시 **fail-open**(가용성 우선) — BCrypt가 2차 방어, 경고 로그가 남는다 |
+| 기기 인증 | 사용자 JWT와 분리된 credential. 서버는 secret의 **SHA-256 해시만** 저장 | DB가 새도 원문 토큰을 복원할 수 없다 |
+| 객체 저장소 | 백엔드 `wj-backend`(영상 버킷만) / editor-api `wj-editor`(편집 버킷만), root는 관리 전용 | 하나가 유출돼도 버킷·정책·계정 관리까지 넘어가지 않는다. **서버 실측으로 교차 접근 거부 확인** |
+| 업로드 무결성 | ① 크기 ② 서명된 `x-amz-meta-sha256` ③ **MinIO가 계산한 ETag vs 기기 보고 ETag** | ①②는 기기 자가 신고라 서명 URL 유출 시 내용 치환을 못 막는다. ③이 그걸 잡는다 |
+| 업로드 크기 | 서버 선언 500 MiB(`MAX_UPLOAD_BYTES`) = nginx `client_max_body_size 512m` | 한쪽만 크면 초과 본문이 디스크에 도달한 뒤에야 거절된다 |
+| 라이브 시청 | 30초 수명 토큰 + nginx `auth_request` introspection | 링크 공유로 남의 집을 볼 수 없다 |
+| 내부 API | `/internal/admin/*`은 loopback + 관리자 키, 불일치는 **404로 위장** | 존재 자체를 숨긴다 |
+
+## 26.5 백엔드 도메인 지도 (2026-08-04, Flyway V39)
+
+| 패키지 | 하는 일 | 최근 추가 |
+| --- | --- | --- |
+| `auth` | 회원가입·로그인·JWT/refresh 회전·비밀번호·탈퇴·시도 제한 | refresh 재사용 감지 |
+| `device` | 1회용 코드 claim·소유권 이전·해제, Redis presence | |
+| `vault` | Memory Vault — 기기·영상·구성원·구독의 귀속 단위 | **금고 단위 이벤트 통계(API-80)** |
+| `invitation` | 이메일 귀속 초대, 받은 초대함, 수락 알림 | |
+| `iot` | 기기 credential 수명주기, MQTT 수신·명령, 원시 이벤트·통계 | event-stats `type` 필터 |
+| `video`, `storage` | 업로드 URL·완료 확정·재생·다운로드·삭제·보관 만료 | **편집 완성본(EDIT_OUTPUT)·영상 댓글**, ETag 검증 |
+| `stream` | 라이브 세션·WHEP 토큰·introspection·talkback | **유령 세션 대사**(MediaMTX API로 미디어 흐름 확인) |
+| `notification` | 인앱 알림·FCM·푸시 토큰·알림 설정 | **기념일·주간 리포트 발송기**(기동 시 보정 포함) |
+| `schedule` | 캘린더 일정 CRUD | 신설 |
+| `editor` | editor-api 서비스 토큰 이벤트 수신 | |
+| `home`, `subscription`, `audit`, `common` | 홈 요약, 구독, 감사 로그, 공통 오류·rate limit | |
+
+### 백그라운드 워커들 (스케줄러를 이해하면 서버가 보인다)
+
+| 워커 | 주기 | 하는 일 |
+| --- | --- | --- |
+| `StreamLifecycleWorker` | 5초 | 만료 세션 정리, 시청자 없는 스트림 STOP 예약·발행, 발화 권한 회수 |
+| `StreamMediaReconcileWorker` | 15초 | MediaMTX API로 RUNNING 스트림의 **실제 미디어 흐름** 확인. 연속 2회 미확인이면 실패 처리 |
+| `EditUploadSweepWorker` | 15초 | 편집 완성본 객체 도착 감지 → READY 승격(백그라운드 업로더는 세션이 없어 `/complete`를 못 부른다) |
+| `UploadStateSweepWorker` | 60초 | 30분 넘게 UPLOADING인 영상 FAILED 처리 + 7일 보관 |
+| `RetentionSweepWorker` | 60초 | 보관 만료 영상 DELETING 전환 + 삭제 잡 등록 |
+| `VideoDeletionWorker` | 5초 | **MinIO 먼저, DB 나중** 삭제(역순이면 storageKey를 잃어 고아 객체). 백오프 재시도 |
+| `ReportNotificationScheduler` | 매일·매주 월 09:00 KST | 기념일 D-day, 주간 웃음 리포트. 기동 시 놓친 실행 보정 |
+| `SecurityAttemptRetentionWorker` | 매일 04:15 | 시도 이력 파티션 정리 |
+
+## 26.6 서비스 경계 — editor-api는 계산만 한다 (ADR-001)
+
+편집 서버가 사용자 콘텐츠(완성본·댓글)까지 들고 있다가 문제가 생겨
+2026-08-04에 백엔드로 옮겼다. **"마이크로서비스를 왜, 어디서 쪼개나"를 배우기에
+가장 좋은 교재다.**
+
+- 잘못됐다는 신호: **의존 화살표가 양방향**이었다(editor→백엔드 권한 조회·알림
+  역호출 / 백엔드→editor 버킷 키 직접 접근)
+- 증상 1: 보관 만료가 없어 편집본이 **영구 보존**
+- 증상 2: 댓글이 JSON read-modify-write라 **동시 작성 유실**
+- 증상 3: 작성자 이름이 앱 자가 신고라 **위조 가능**
+- 증상 4: 백그라운드 업로더는 세션이 없어 editor-api 인증을 통과 못 해
+  **운영에서 401** — 기능이 깨진 채 배포돼 있었다
+- 판단 기준 한 줄: **권한·보관·삭제·알림이 필요한 것은 시스템 오브 레코드에,
+  계산은 워커에.**
+
+상세와 남은 부채: `자료/docs/ADR-001-editor-api-경계.md`
+
+## 26.7 새로 익힐 API (V36~V39)
+
+| API | 무엇 | 배울 점 |
+| --- | --- | --- |
+| API-74~77 | 캘린더 일정 CRUD | 가장 평범한 CRUD — 컨트롤러·서비스·매퍼 3층을 익히기 좋다 |
+| API-78·79 | 알림 설정 | **행이 없으면 켜진 것으로 본다**(`COALESCE(p.new_memory_alerts, true)`) — 기존 사용자를 깨지 않는 기본값 설계 |
+| API-80 | 금고 단위 통계 | 이벤트에 `vault_id`가 없어 **device_bindings의 [bound_at, ended_at) 구간과 겹치는 것만** 센다. 기기를 양도해도 과거 금고 통계가 오염되지 않는다 |
+| API-81~84 | 편집 완성본·댓글 | presigned 업로드 + **완료 통보 없는 도착 감지**, 작성자 신원을 토큰에서만 가져오는 설계 |
+
+## 26.8 이 장을 읽고 답할 수 있어야 하는 질문
+
+1. 앱이 영상을 재생할 때 바이트는 어디서 오나? 백엔드는 무엇을 하나?
+2. 배포 중에 라이브 시청자가 끊기지 않는 이유는? 활성 슬롯은 어디에 기록되나?
+3. 무중단 배포를 하면 마이그레이션에 어떤 제약이 생기나? 왜?
+4. Redis가 죽으면 로그인은 어떻게 되나? 그게 왜 의도된 선택인가?
+5. presigned URL이 유출되면 무엇을 할 수 있고, 무엇을 막아 두었나?
+6. `/complete` 없이도 편집 완성본이 READY가 되는 이유는?
+7. editor-api에 있던 댓글이 왜 백엔드로 왔나? 두 서비스의 경계 기준은?
+8. 앱 heartbeat만으로는 알 수 없는 라이브 장애가 무엇이고, 어떻게 감지하나?
+9. 삭제할 때 MinIO를 먼저 지우는 이유는?
+10. 같은 사고를 반복하지 않기 위해 이 프로젝트가 쓰는 장치는 무엇인가?
+
+면접식 한 문장:
+
+> 단일 EC2에 nginx·Spring 두 슬롯·PostgreSQL·Redis·MinIO·Mosquitto·MediaMTX·
+> editor-api·관측성 스택을 올려 운영하면서, 배포는 upstream 전환으로 무중단화해
+> 부하 중 94,042요청 무실패를 실측했고, 반복된 사고는 배포 계약 테스트로 고정해
+> CI가 먼저 막게 만들었습니다.
