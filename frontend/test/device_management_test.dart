@@ -478,7 +478,17 @@ void main() {
 
     await tester.tap(find.text('휴지통'));
     await tester.pumpAndSettle();
-    expect(find.text('영상을 삭제할까요?'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is RichText && widget.text.toPlainText() == '영상 삭제할까요?',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('삭제한 영상은 다시 복구할 수 없어요.'), findsOneWidget);
+    expect(find.byKey(const Key('video-delete-mascot')), findsOneWidget);
+    expect(find.byKey(const Key('video-delete-cancel')), findsOneWidget);
+    expect(find.byKey(const Key('video-delete-confirm')), findsOneWidget);
     expect(find.text('취소'), findsOneWidget);
     expect(find.text('삭제'), findsOneWidget);
 

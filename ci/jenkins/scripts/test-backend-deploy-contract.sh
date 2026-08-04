@@ -39,9 +39,11 @@ actual_entries="$(printf '%s\n' "${all_entries}" | grep -v '^editor-api/')"
 expected_entries="$(
   printf '%s\n' \
     docker-compose.yml \
+    grafana-datasources.yml \
     mediamtx.yml \
     mosquitto.conf \
     nginx-william-james.conf \
+    prometheus.yml \
     wj-deploy-backend |
     LC_ALL=C sort
 )"
@@ -117,6 +119,28 @@ then
   echo "배포 스크립트가 redis 를 다른 인프라 서비스와 함께 올리지 않습니다." >&2
   exit 1
 fi
+
+# 관측성 계약: 메트릭 노출·수집·모니터 웹훅이 빠지면 장애가 다시
+# "journal에만 남는" 상태로 돌아간다.
+grep -Fq 'micrometer-registry-prometheus' \
+  "${repository_root}/backend/server/build.gradle"
+grep -Eq 'include: .*prometheus' \
+  "${repository_root}/backend/server/src/main/resources/application.yml"
+grep -Fq 'compose up --detach --pull missing --remove-orphans postgres redis minio prometheus grafana' \
+  "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
+grep -Fq 'WJ_MONITOR_WEBHOOK_URL' \
+  "${repository_root}/backend/deploy/check-william-james.sh"
+bash -n "${repository_root}/backend/deploy/check-william-james.sh"
+
+# 유령 세션 대사는 MediaMTX 관리 API 주소가 있어야 켜진다. 배포·프로비저닝이
+# 이 값을 채우지 않으면 워커가 조용히 꺼진 채 서비스된다.
+grep -Fq 'MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997' \
+  "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
+grep -Fq 'MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997' \
+  "${repository_root}/backend/deploy/provision-secrets.sh"
+grep -Fq '"127.0.0.1:9997:9997"' \
+  "${repository_root}/backend/deploy/docker-compose.yml"
+grep -Eq '^api: true' "${repository_root}/backend/deploy/mediamtx.yml"
 
 # editor-api 자동 배포 계약: 서버 빌드, 라이브 교체 전 시크릿 확인, 헬스체크,
 # 롤백용 previous 태그가 모두 스크립트에 남아 있어야 한다. 하나라도 빠지면

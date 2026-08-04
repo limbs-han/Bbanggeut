@@ -215,12 +215,47 @@ services:
       - "8322:8322"
       - "127.0.0.1:8889:8889"
       - "8189:8189/udp"
+      # 관리 API — 백엔드 유령 세션 대사 전용, loopback만.
+      - "127.0.0.1:9997:9997"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - ${MEDIAMTX_TLS_CERT_DIR:?Set MEDIAMTX_TLS_CERT_DIR}:/certs:ro
 
+  # 관측성. 둘 다 network_mode: host + 127.0.0.1 리슨이다 — loopback 전용
+  # Spring(8081)을 긁으려면 호스트 네트워크가 필요하고, 대신 리슨 주소를
+  # loopback으로 고정해 외부에 열리지 않는다. 조회는 SSH 터널:
+  #   ssh -L 3000:127.0.0.1:3000 ubuntu@i15e201.p.ssafy.io
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.listen-address=127.0.0.1:9090
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "3000"
+      # infra/.env에 GRAFANA_ADMIN_PASSWORD를 설정할 것. loopback 전용이라
+      # 기본값이어도 외부 노출은 없지만, SSH 접근자 전원이 admin이 된다.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+
 volumes:
   postgres-data:
   redis-data:
+  prometheus-data:
+  grafana-data:
   minio-data:
   mosquitto-data:

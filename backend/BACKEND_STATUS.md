@@ -21,7 +21,7 @@
 | FCM 푸시 | **운영 활성** | `secrets/app.env`에 `FCM_ENABLED=true` + 서비스 계정 JSON 배치됨. 배포 스크립트는 이 값을 되돌리지 않는다(없을 때만 기본 false 기입) |
 | 실제 Jetson/Raspberry Pi 연결 | 코드·프로토콜 준비 완료 | MQTTS·RTSPS 기기 계정 존재. 상시 접속 중인 실기기는 없음(행사·시연 시 연결) |
 | 프론트엔드 연동 | 완료 | 인증·기기·영상·라이브(WHEP)·talkback·알림·금고·일정·통계까지 앱이 실제 API 사용 |
-| 백업·모니터링 | 배포 완료 | 일일 백업 + 5분 상태 점검 systemd timer |
+| 백업·모니터링 | 배포 완료 | 일일 백업 + 5분 상태 점검 timer(실패 시 웹훅 알림, `WJ_MONITOR_WEBHOOK_URL`) + **Prometheus/Grafana**(host 네트워크·loopback 전용, `ssh -L 3000:127.0.0.1:3000`으로 조회, 비밀번호는 infra/.env `GRAFANA_ADMIN_PASSWORD`) |
 | CI/CD | 구성 완료 | Jenkins 4스테이지 CI + master CI 성공 시 수동 승인형 production 배포(`wj-deploy-backend`), **editor-api 이미지 빌드·기동 포함** |
 
 ## 2. 코드 구성 (도메인 패키지)
@@ -36,7 +36,7 @@
 | `invitation` | 이메일 귀속 초대, 받은 초대함, 수락 알림 |
 | `iot` | 기기 credential(BOOTSTRAP→OPERATING), MQTT 수신/명령, `iot.event`의 원시 이벤트·통계(API-46, type 필터) |
 | `video`, `storage` | 업로드 URL·완료 확정·재생/다운로드·삭제 워커·보관 만료, 편집 부산물 청소 |
-| `stream` | 라이브 세션·WHEP 토큰·introspection·talkback(양방향 오디오, V32) |
+| `stream` | 라이브 세션·WHEP 토큰·introspection·talkback(양방향 오디오, V32)·**유령 세션 대사(MediaMTX 관리 API로 RUNNING 스트림의 실제 미디어 흐름 확인, 연속 2회 미확인 시 실패 처리)** |
 | `notification` | 인앱 알림·FCM 푸시(multicast, 무효 토큰 정리)·푸시 토큰·**알림 설정(API-78·79, 새 추억 푸시 게이트)** |
 | `schedule` | **캘린더 일정 CRUD(API-74~77, V36)** |
 | `editor` | editor-api 서비스 토큰 이벤트 수신(`/api/editor/events` — 분석 완료·댓글 알림 승격) |
@@ -117,10 +117,9 @@ sudo ufw status numbered
 
 ## 4. 남은 작업
 
-- **기념일·주간 리포트 푸시 발송기**: 알림 설정(API-78·79)은 저장·게이트까지 구현됐지만, `anniversaryAlerts`(일정 D-day 푸시)와 `weeklyReport`(주간 집계 푸시)를 실제로 보내는 스케줄러는 없다.
 - **실기기 상시 운영**: Jetson/Pi 계정·프로토콜은 준비됐으나 상시 접속 기기가 없다. 연결 시 heartbeat·업로드·라이브 end-to-end 재검증.
 - **UFW 정리**: 미사용 8554/tcp 허용 규칙 제거, 8080(Jenkins) 공개 범위 재검토.
-- **운영 보강**: off-instance 백업 복제, 외부 알림 채널(모니터 실패 시), 중앙 로그, 부하 테스트.
+- **운영 보강**: off-instance 백업 복제, 중앙 로그, 부하 테스트(k6), 무중단 배포. 모니터 웹훅은 서버에서 `WJ_MONITOR_WEBHOOK_URL`을 유닛 환경에 넣어야 실제 발송된다(채널 URL은 팀 결정 필요).
 - **editor-api**: 분석 작업 상태의 프로세스 메모리 의존(재시작 시 진행 중 분석 소실), 작업자 1명 순차 처리, 댓글 표시 이름의 앱 자가 신고(백엔드 프로필 조회 API 필요).
 - **secret rotation**: JWT·DB·MinIO 키 정기 교체 절차.
 

@@ -1855,6 +1855,47 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/vaults/{vaultId}/event-stats:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultEventStats
+      summary: 금고(가족) 단위 이벤트 통계
+      description: |
+        금고의 활성 구성원이 조회한다. 기기 단위 통계(API-46)와 같은 계약에
+        기기별 분해(byDevice)를 더했다. 이벤트는 기기가 이 금고에 Binding돼
+        있던 기간(occurred_at이 bound_at~ended_at 사이)만 집계해, 기기가 다른
+        금고로 양도돼도 과거 금고의 통계가 오염되지 않는다. 기본 기간은 최근
+        30일, 최대 366일이다.
+      parameters:
+        - name: from
+          in: query
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          schema: {type: string, format: date}
+        - name: timeZone
+          in: query
+          schema: {type: string, default: Asia/Seoul}
+        - name: type
+          in: query
+          description: 이벤트 타입 필터(예 LAUGHTER). detectedCount·byDevice·dailyCounts를 거르고 byType은 전체 분포를 유지한다.
+          schema: {type: string, pattern: '^[A-Za-z_]{1,32}$'}
+      responses:
+        '200':
+          description: 금고 단위 집계
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultEventStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
 components:
   securitySchemes:
     UserBearerAuth:
@@ -3081,7 +3122,14 @@ components:
           format: uuid
         type:
           type: string
-          enum: [INVITATION_RECEIVED, INVITATION_ACCEPTED, LAUGHTER_VIDEO_READY]
+          enum:
+            - INVITATION_RECEIVED
+            - INVITATION_ACCEPTED
+            - LAUGHTER_VIDEO_READY
+            - EDIT_ANALYSIS_READY
+            - EDIT_COMMENT_ADDED
+            - ANNIVERSARY
+            - WEEKLY_REPORT
         title:
           type: string
         body:
@@ -3110,6 +3158,53 @@ components:
           type: integer
           format: int64
           minimum: 0
+
+    VaultEventStats:
+      type: object
+      required: [vaultId, from, to, timeZone, detectedCount, uploadedVideoCount, byType, byDevice, dailyCounts]
+      properties:
+        vaultId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timeZone:
+          type: string
+        detectedCount:
+          type: integer
+          format: int64
+        uploadedVideoCount:
+          type: integer
+          format: int64
+        byType:
+          type: array
+          items:
+            type: object
+            required: [name, count]
+            properties:
+              name: {type: string}
+              count: {type: integer, format: int64}
+        byDevice:
+          type: array
+          items:
+            type: object
+            required: [deviceId, name, count]
+            properties:
+              deviceId: {type: string, format: uuid}
+              name: {type: string}
+              count: {type: integer, format: int64}
+        dailyCounts:
+          type: array
+          items:
+            type: object
+            required: [date, count]
+            properties:
+              date: {type: string, format: date}
+              count: {type: integer, format: int64}
 
     NotificationPreferences:
       type: object
