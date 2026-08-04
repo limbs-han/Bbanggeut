@@ -92,12 +92,17 @@ SCRIPT_PROMPT = """당신은 가족 홈캠 영상을 4컷 만화로 각색하는
 
 # 이미지 모델에 넣는 금지 블록. 앞쪽 지시가 더 강하게 먹히므로 조립 순서상 맨 뒤에
 # 두되, 문장은 단정형으로 쓴다.
+# 금지 규칙에서 "자막"·"카메라 UI" 같은 단어를 쓰면 안 된다. 부정 지시도 그
+# 물건을 모델에게 떠올리게 한다 — "아래 1/4을 단순하게 두라(앱이 자막을 얹는다)"
+# 라고 적었더니 모델이 네 칸 아래에 자막 띠와 아이콘을 직접 그렸다(2026-08-04
+# 실측). 포괄 금지 한 줄 + 긍정 구도 지시로만 말한다.
 STRICT_RULES = """STRICT RULES:
-- No text, no letters, no numbers anywhere in the image.
-- No speech bubbles, no thought bubbles, no sound effects.
-- No captions, no watermarks, no camera UI, no timestamps.
-- Keep the lower quarter of each panel visually simple: the app overlays
-  subtitles there."""
+- Pure illustration only. The image must contain no writing of any kind:
+  no letters, no numbers, no logos, no icons, no symbols.
+- No speech bubbles, no thought bubbles. Show sound or impact with motion
+  lines and posture only.
+- Place people and action in the upper two thirds of each panel. The bottom
+  of each panel is plain scene background such as floor or furniture."""
 
 _SCRIPT_SCHEMA: dict[str, Any] = {
     "type": "object",
