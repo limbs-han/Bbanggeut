@@ -75,6 +75,21 @@ public interface AuthMapper {
     Optional<AuthSessionRow> findActiveSession(@Param("refreshTokenHash") String refreshTokenHash);
 
     /**
+     * 이미 회전(폐기)된 refresh 토큰이 다시 제시됐는지 판별한다. 회전된
+     * 토큰의 재사용은 탈취의 명백한 신호다 — 만료만 된 토큰(revoked_at
+     * IS NULL)은 오래 쉰 정상 사용자일 수 있으므로 여기에 걸리지 않는다.
+     */
+    @Select("""
+        SELECT id, user_id, refresh_token_hash, expires_at, revoked_at
+          FROM auth_sessions
+         WHERE refresh_token_hash = #{refreshTokenHash}
+           AND revoked_at IS NOT NULL
+         LIMIT 1
+        """)
+    Optional<AuthSessionRow> findRevokedSessionByHash(
+        @Param("refreshTokenHash") String refreshTokenHash);
+
+    /**
      * Looked up on every authenticated request so that a revoked session or a
      * bumped token version invalidates an access token immediately, instead of
      * only when it expires.
