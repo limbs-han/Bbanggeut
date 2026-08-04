@@ -283,10 +283,11 @@ class _ComicScreenState extends State<ComicScreen> {
   );
 }
 
-/// 서버 통로가 없을 때 화면에 붙는 알림.
+/// 견본으로 돌릴 때 화면에 붙는 알림.
 ///
 /// 가짜 통로는 고정된 대사와 색 블록 그림을 돌려준다. 알리지 않으면 사용자가 그것을
-/// 자기 가족의 말과 그림으로 오해한다. `COMIC_SERVER=true`로 켜면 사라진다.
+/// 자기 가족의 말과 그림으로 오해한다. 기본은 실서버라 보이지 않고,
+/// `--dart-define=COMIC_SERVER=false`로 견본을 켤 때만 나타난다.
 class _SampleNotice extends StatelessWidget {
   const _SampleNotice();
 
