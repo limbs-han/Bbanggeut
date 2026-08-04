@@ -12,6 +12,7 @@ infra_compose="${infra_root}/docker-compose.yml"
 app_env="${application_root}/secrets/app.env"
 nginx_config="/etc/nginx/sites-available/william-james"
 nginx_upstream="/etc/nginx/conf.d/wj-upstream.conf"
+prometheus_target_dir="${application_root}/infra/prometheus-targets"
 systemd_template="/etc/systemd/system/william-james@.service"
 release_root="${application_root}/releases/backend"
 deployment_root="${application_root}/deployments"
@@ -94,6 +95,18 @@ EOF
   mv -f "${nginx_upstream}.next" "${nginx_upstream}"
 }
 
+# Prometheus는 이 파일로 활성 슬롯을 따라간다(file_sd, 재시작 불필요).
+write_prometheus_target() {
+  local port="$1"
+  install -d -o ubuntu -g ubuntu -m 0755 "${prometheus_target_dir}"
+  cat >"${prometheus_target_dir}/spring.json.next" <<EOF
+[{"targets": ["127.0.0.1:${port}"], "labels": {"job": "spring", "slot": "${port}"}}]
+EOF
+  chown ubuntu:ubuntu "${prometheus_target_dir}/spring.json.next"
+  chmod 0644 "${prometheus_target_dir}/spring.json.next"
+  mv -f "${prometheus_target_dir}/spring.json.next"     "${prometheus_target_dir}/spring.json"
+}
+
 wait_for_slot_health() {
   local port="$1"
   for _ in $(seq 1 45); do
@@ -165,6 +178,9 @@ wait_for_mediamtx() {
 }
 
 deploy_infrastructure() {
+  # 마운트 대상이 없으면 도커가 root 소유로 만들어 버린다. 현재 활성 슬롯으로
+  # 먼저 채워 두고, 전환 뒤 다시 쓴다.
+  write_prometheus_target "$(read_active_port)"
   # 로그인 시도 제한이 Redis 로 판정한다. 응답이 없으면 애플리케이션은
   # 시도를 허용하도록 되어 있어, 빠뜨리면 기동과 헬스 점검은 모두 정상인데
   # 제한만 걸리지 않는 상태로 서비스된다. 눈에 띄지 않는 실패라 다른 의존
@@ -284,6 +300,7 @@ restore_release() {
   # 슬롯은 아직 살아 있으므로 트래픽은 끊기지 않는다.
   if [[ "${upstream_switched}" == "true" && -n "${previous_upstream_port}" ]]; then
     write_upstream_port "${previous_upstream_port}" || rollback_ok=false
+    write_prometheus_target "${previous_upstream_port}" || rollback_ok=false
     if nginx -t; then
       systemctl reload nginx || rollback_ok=false
     else
@@ -635,6 +652,7 @@ slot_started=true
 wait_for_slot_health "${target_port}"
 
 write_upstream_port "${target_port}"
+write_prometheus_target "${target_port}"
 upstream_switched=true
 nginx -t
 systemctl reload nginx
