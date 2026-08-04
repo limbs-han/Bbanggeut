@@ -883,7 +883,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-78 | `GET /api/notifications/preferences` | 알림 설정 조회(`{anniversaryAlerts, weeklyReport, newMemoryAlerts}`). 저장 행이 없으면 모두 true |
 | API-79 | `PUT /api/notifications/preferences` | 알림 설정 저장(세 토글 일괄 → 200에 저장값). `newMemoryAlerts=false`면 새 영상 푸시 발송 대상에서 제외(인앱 알림은 계속 쌓임) |
 | API-81 | `POST /api/videos/{videoId}/edits` | 편집 완성본 업로드 예약(EDIT_OUTPUT 행 + 서명 URL, Content-Type만 서명). 완료 통보 없이 서버가 도착 감지 |
-| API-82 | `GET /api/vaults/{vaultId}/edits` | 금고 편집 완성본 목록(READY, 최신 100) |
+| API-82 | `GET /api/vaults/{vaultId}/edits` | 금고 편집 완성본 목록(최신 100). READY·UPLOADING·FAILED를 함께 주고 앱이 `status`로 구분 |
 | API-83 | `GET /api/videos/{videoId}/comments` | 댓글 목록(작성자 이름은 users 조인) |
 | API-84 | `POST /api/videos/{videoId}/comments` | 댓글 작성(작성자=토큰 sub, 금고 구성원 알림) |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + `byDevice` 분해. Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계(기기 양도 후 과거 금고 통계 비오염). 앱 웃음 리포트의 "가족 전체" 토글이 사용 |

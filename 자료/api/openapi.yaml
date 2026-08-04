@@ -1901,7 +1901,10 @@ paths:
       tags: [Vaults]
       operationId: listVaultEdits
       summary: 금고의 편집 완성본 목록
-      description: READY 상태의 편집본만 최신순 최대 100건. 스키마는 영상 목록 항목과 같다.
+      description: >-
+        편집본을 최신순 최대 100건. 업로드가 끝난 READY뿐 아니라 올라가는 중인
+        UPLOADING과 끝내 실패한 FAILED도 포함하며, 앱이 `status`로 구분해
+        진행 상황을 보여 준다. 스키마는 영상 목록 항목과 같다.
       responses:
         '200':
           description: 편집 완성본 목록
