@@ -120,6 +120,21 @@ then
   exit 1
 fi
 
+# nginx location 중복 검사. 병합 사고로 /editor/ 블록이 두 벌 들어가
+# nginx -t가 배포 시점에야 실패했다(2026-08-04 배포 #71·#72). 수정자
+# (^~, =, ~)만 다른 같은 URI도 nginx는 중복으로 거부하므로 URI 기준으로
+# 잡는다.
+duplicate_nginx_locations="$(
+  grep -oE '^[[:space:]]*location[[:space:]]+[^{]+' \
+    "${repository_root}/backend/deploy/nginx-william-james.conf" |
+    sed -E 's/^[[:space:]]*location[[:space:]]+(\^~[[:space:]]+|=[[:space:]]+|~\*?[[:space:]]+)?//; s/[[:space:]]+$//' |
+    LC_ALL=C sort | uniq -d
+)"
+if [[ -n "${duplicate_nginx_locations}" ]]; then
+  echo "nginx 설정에 중복 location이 있습니다: ${duplicate_nginx_locations}" >&2
+  exit 1
+fi
+
 # 관측성 계약: 메트릭 노출·수집·모니터 웹훅이 빠지면 장애가 다시
 # "journal에만 남는" 상태로 돌아간다.
 grep -Fq 'micrometer-registry-prometheus' \
