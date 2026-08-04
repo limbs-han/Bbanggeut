@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../app/app_theme.dart';
 import '../core/api_client.dart';
 import 'content_state.dart';
+import 'schedule_emoji.dart';
 import 'widgets.dart';
 
 class ScheduleEditorScreen extends StatefulWidget {
@@ -137,10 +138,11 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
                       decoration: InputDecoration(
                         hintText: '일정 이름을 입력하세요',
                         suffixIcon: Padding(
-                          padding: const EdgeInsets.all(13),
-                          child: Text(
-                            _emoji,
-                            style: const TextStyle(fontSize: 23),
+                          padding: const EdgeInsets.all(10),
+                          child: ScheduleEmojiIcon(
+                            key: const Key('schedule-selected-emoji'),
+                            emoji: _emoji,
+                            size: 34,
                           ),
                         ),
                       ),
@@ -369,7 +371,7 @@ class _EmojiPicker extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Text(emoji, style: const TextStyle(fontSize: 34)),
+              child: ScheduleEmojiIcon(emoji: emoji, size: 48),
             ),
           ),
         ),
