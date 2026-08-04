@@ -53,12 +53,14 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             if (mounted) setState(() => _drafts = drafts);
           })
           .catchError((Object _) {}),
-      _editClient
-          .listEditedVideos()
-          .then((edited) {
-            if (mounted) setState(() => _edited = edited);
-          })
-          .catchError((Object _) {}),
+      // 편집본은 금고 단위로 백엔드에서 받는다(API-82).
+      if (widget.controller.selectedVault != null)
+        widget.controller.api
+            .listVaultEdits(widget.controller.selectedVault!.id)
+            .then((edited) {
+              if (mounted) setState(() => _edited = edited);
+            })
+            .catchError((Object _) {}),
     ]);
   }
 
@@ -95,6 +97,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => EditedVideoScreen(
+          api: widget.controller.api,
           videoId: videoId,
           title: (meta['title'] as String?)?.isNotEmpty == true
               ? meta['title'] as String
