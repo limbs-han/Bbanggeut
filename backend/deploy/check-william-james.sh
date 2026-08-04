@@ -12,9 +12,23 @@ check() {
   fi
 }
 
-check systemctl is-active --quiet william-james
+# 활성 슬롯은 nginx upstream 파일이 가리킨다(무중단 배포). 파일이 없던
+# 단일 유닛 시절은 8081이다.
+active_port="$(grep -oE '127\.0\.0\.1:[0-9]+' /etc/nginx/conf.d/wj-upstream.conf 2>/dev/null |
+  head -1 | cut -d: -f2 || true)"
+active_port="${active_port:-8081}"
+
+if ! systemctl is-active --quiet "william-james@${active_port}" &&
+  ! systemctl is-active --quiet william-james
+then
+  echo "FAILED: no backend slot is active (expected william-james@${active_port})" >&2
+  failures+=("backend slot ${active_port}")
+fi
 check systemctl is-active --quiet nginx
-check curl --fail --silent --max-time 10 http://127.0.0.1:8081/actuator/health
+check curl --fail --silent --max-time 10 "http://127.0.0.1:${active_port}/actuator/health"
+# 공개 경로도 같이 본다 — 슬롯은 살아 있는데 upstream이 엉뚱한 포트를
+# 가리키면 사용자에게는 장애다.
+check curl --fail --silent --max-time 10 https://i15e201.p.ssafy.io/health
 check curl --fail --silent --max-time 10 http://127.0.0.1:18080/health
 
 for container in \
