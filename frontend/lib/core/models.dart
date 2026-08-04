@@ -462,6 +462,44 @@ class EventStats {
   );
 }
 
+/// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
+class VaultEventStats {
+  const VaultEventStats({
+    required this.detectedCount,
+    this.dailyCounts = const [],
+    this.byDevice = const [],
+  });
+  final int detectedCount;
+  final List<DailyVideoCount> dailyCounts;
+  final List<VaultDeviceCount> byDevice;
+  factory VaultEventStats.fromJson(Map<String, dynamic> json) => VaultEventStats(
+    detectedCount: (json['detectedCount'] as num?)?.toInt() ?? 0,
+    dailyCounts: (json['dailyCounts'] as List? ?? const [])
+        .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+    byDevice: (json['byDevice'] as List? ?? const [])
+        .map((item) => VaultDeviceCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+class VaultDeviceCount {
+  const VaultDeviceCount({
+    required this.deviceId,
+    required this.name,
+    required this.count,
+  });
+  final String deviceId;
+  final String name;
+  final int count;
+  factory VaultDeviceCount.fromJson(Map<String, dynamic> json) =>
+      VaultDeviceCount(
+        deviceId: json['deviceId'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        count: (json['count'] as num?)?.toInt() ?? 0,
+      );
+}
+
 /// 알림 설정(API-78·79). 서버 행이 없으면 모두 켜진 것으로 취급된다.
 class NotificationPreferences {
   const NotificationPreferences({

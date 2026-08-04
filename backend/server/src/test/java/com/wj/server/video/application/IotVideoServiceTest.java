@@ -83,6 +83,39 @@ class IotVideoServiceTest {
     }
 
     @Test
+    void completionRejectsWhenStoredObjectIsNotWhatTheDeviceUploaded() {
+        // 서명 URL이 유출돼 같은 크기·같은 sha256 메타로 내용만 바뀐 경우 —
+        // MinIO가 계산한 ETag가 기기가 받은 것과 달라진다.
+        VideoRow video = video("UPLOADING");
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID)).thenReturn(Optional.of(video));
+        when(objectStorageService.stat(video.storageKey()))
+            .thenReturn(new ObjectStorageService.StoredObject(100, CHECKSUM, "substituted-etag"));
+
+        assertThatThrownBy(() -> service.complete(
+            DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, "\"device-etag\"")))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("UPLOAD_INTEGRITY_MISMATCH");
+        verify(videoMapper, never()).markReady(DEVICE_ID, VIDEO_ID, 365);
+    }
+
+    @Test
+    void completionAcceptsQuotedAndCasedEtagFromDevice() {
+        VideoRow video = video("UPLOADING");
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
+            .thenReturn(Optional.of(video))
+            .thenReturn(Optional.of(video("READY")));
+        when(objectStorageService.stat(video.storageKey()))
+            .thenReturn(new ObjectStorageService.StoredObject(100, CHECKSUM, "\"ABCDEF\""));
+        when(videoMapper.markReady(DEVICE_ID, VIDEO_ID, 365)).thenReturn(1);
+
+        var response = service.complete(
+            DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, "abcdef"));
+
+        assertThat(response.id()).isEqualTo(VIDEO_ID);
+    }
+
+    @Test
     void completedLaughterVideoNotifiesDeviceMembersIdempotently() {
         VideoRow laughterVideo = new VideoRow(
             VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", EVENT_ID, "웃음 영상", null,

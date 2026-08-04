@@ -435,10 +435,12 @@
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | videoId | UUID | 필수 | `@NotNull` |
-| objectETag | String | 옵션 | `@Size≤200` |
+| objectETag | String | 옵션 | `@Size≤200` — MinIO PUT 응답의 ETag. **보내면 서버가 검증한다** |
 
 - 응답: `200 VideoResponse` (API-27 목록의 개별 항목과 동일 스키마, 아래 참고)
 - 에러: 404 `RESOURCE_NOT_FOUND`, 409 `VIDEO_STATE_CONFLICT`(Vault 기반 READY 전환 실패 포함), 409 `IDEMPOTENCY_KEY_MISMATCH`, 409 `UPLOAD_INTEGRITY_MISMATCH`, 503 `OBJECT_STORAGE_UNAVAILABLE`
+- **무결성 검증 3단**: ① 객체 크기 = 예약 시 선언한 `sizeBytes`, ② `x-amz-meta-sha256`(서명된 헤더) = 예약 시 선언한 체크섬, ③ **MinIO가 계산한 ETag = 기기가 보고한 `objectETag`**. ①②는 기기 자가 신고값이라 서명 URL이 유출됐을 때 같은 크기·같은 메타로 내용만 바꿔치는 것을 막지 못한다 — ③이 그 치환을 잡는다(ETag는 실제 바이트에서 나온다). ETag를 보내지 않는 옛 에이전트는 ③을 건너뛴다.
+- 업로드 본문 상한은 서버 선언 **500 MiB**(`IotVideoService.MAX_UPLOAD_BYTES`)이며 nginx의 `/william-james-videos` 본문 한도(512m)와 같은 기준으로 맞춰 둔다 — 한쪽만 크면 초과 본문이 MinIO 디스크에 도달한 뒤에야 거절된다.
 
 ### API-27 `GET /api/videos`
 
@@ -696,7 +698,7 @@
 ### 사용자 흐름
 
 1. 캘린더에서 날짜별 저장 영상 개수를 확인한다(API-27 재사용).
-2. 웃음 리포트 화면에서 전체 감지 수·웃음이 있던 날 수·최근 감지 목록·연간 히트맵(웃음 잔디)을 확인한다. 주간 웃음 집계는 API-46(`type=LAUGHTER`) 서버 집계를 우선 사용하고, 기기가 없거나 요청이 실패하면 단말 집계로 폴백한다. API-33 통계는 홈 통계 카드에 쓰인다.
+2. 웃음 리포트 화면에서 전체 감지 수·웃음이 있던 날 수·최근 감지 목록·연간 히트맵(웃음 잔디)을 확인한다. 주간 웃음 집계는 기본이 **가족 전체 합산(API-80)**이고, 금고에 기기가 둘 이상이면 "가족 전체 / 이 기기만" 토글이 나타난다(기기만 볼 때는 API-46 `type=LAUGHTER`). 가족 합산에서는 기기별 분해 카드가 함께 표시되며, 서버 집계가 실패하면 단말 집계로 폴백한다. API-33 통계는 홈 통계 카드에 쓰인다.
 3. Flutter 리포트 화면은 기존 영상 목록에서 `LAUGHTER` 영상을 단말 집계해 전체 횟수, 최근 날짜별 횟수, 웃음 잔디와 날짜별 영상을 표시한다.
 4. 주간/월간·시간대 분포·베스트 클립을 서버에서 집계하는 기능은 **API-62 제안·미구현** 범위다.
 
@@ -1033,7 +1035,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-70 | `DELETE /api/notifications/push-tokens/{installationId}` | 푸시 토큰 해제(204) — 로그아웃·탈퇴 시 앱이 자동 호출 |
 | API-78 | `GET /api/notifications/preferences` | 알림 설정 조회(`{anniversaryAlerts, weeklyReport, newMemoryAlerts}`) — 저장 행이 없으면 모두 true |
 | API-79 | `PUT /api/notifications/preferences` | 알림 설정 저장(세 토글 일괄, 200에 저장값 반환) — `newMemoryAlerts=false`면 새 영상 푸시 발송 대상에서 제외 |
-| API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + 기기별 분해(`byDevice`). Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계해 기기 양도 후에도 과거 금고 통계가 오염되지 않음 |
+| API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + 기기별 분해(`byDevice`). Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계해 기기 양도 후에도 과거 금고 통계가 오염되지 않음. **앱 웃음 리포트의 "가족 전체" 토글이 사용** |
 
 #### 비밀번호 API 동작 규칙 (API-55~57)
 
