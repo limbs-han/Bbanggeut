@@ -13,7 +13,7 @@
 | Spring Boot API | 구현·배포 완료 | loopback 8081, systemd `william-james`. Flyway **V36**까지 |
 | PostgreSQL 16 | 배포 완료 | Docker, loopback 전용 |
 | Redis 7 | 배포 완료 | 로그인·claim 시도 제한, 기기 presence(90초 TTL) |
-| MinIO | 배포 완료 | 영상 버킷 + 편집 버킷(william-james-edit), loopback 전용 |
+| MinIO | 배포 완료 | 영상 버킷 + 편집 버킷(william-james-edit), loopback 전용. **최소 권한 계정 분리** — 백엔드는 `wj-backend`(영상 버킷만), editor-api는 `wj-editor`(편집 버킷만), root는 관리 전용. 서로의 버킷·admin API는 거부됨(실측 확인) |
 | Mosquitto MQTT | 배포 완료 | **MQTTS 8883 공개**, TLS + Dynamic Security(기기별 계정·ACL, 익명 차단) |
 | MediaMTX | 배포 완료 | **RTSPS 8322 공개**(기기별 계정, publish/read 권한 분리), WHEP 8889 loopback, WebRTC 8189/UDP |
 | editor-api (FastAPI) | 배포 완료 | `/editor` 라우트, JWT 검증·금고 권한·presigned 재생, 분석 모델 4개 탑재 |
