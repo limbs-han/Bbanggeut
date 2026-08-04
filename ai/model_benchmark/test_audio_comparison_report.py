@@ -43,6 +43,10 @@ class AudioComparisonReportTests(unittest.TestCase):
                             encoding="utf-8",
                         )
 
+            diagnostic = root / "diagnostics" / "failed-run" / "summary.json"
+            diagnostic.parent.mkdir(parents=True)
+            diagnostic.write_text("{not-a-final-result", encoding="utf-8")
+
             report_dir = root / "report-output"
             completed = subprocess.run(
                 [
@@ -85,6 +89,10 @@ class AudioComparisonReportTests(unittest.TestCase):
                 if row["model"] == "EfficientAT MN10"
             )
             self.assertEqual(efficientat["streaming"]["windowSeconds"], 10.0)
+            self.assertEqual(
+                efficientat["streaming"]["precision"],
+                "fp16-autocast",
+            )
             self.assertEqual(
                 efficientat["streaming"]["minimumPositiveSpanSeconds"],
                 10.0,
@@ -160,10 +168,19 @@ class AudioComparisonReportTests(unittest.TestCase):
         latency: float,
     ) -> dict:
         streaming = {
-            "YAMNet": (0.975, 0.4875, 2, 1.4625),
-            "EfficientAT MN10": (10.0, 2.5, 1, 10.0),
-            "PANNs CNN10": (2.0, 1.0, 2, 3.0),
+            "YAMNet": (0.975, 0.4875, 2, 1.4625, "float32"),
+            "EfficientAT MN10": (10.0, 2.5, 1, 10.0, "fp16-autocast"),
+            "PANNs CNN10": (2.0, 1.0, 2, 3.0, "fp32"),
         }[model]
+        configuration = {
+            "scoreAggregation": "max",
+            "windowSeconds": streaming[0],
+            "hopSeconds": streaming[1],
+            "requiredConsecutiveWindows": streaming[2],
+            "minimumPositiveSpanSeconds": streaming[3],
+        }
+        if trial > 1:
+            configuration["precision"] = streaming[4]
         return {
             "component": "audio",
             "runId": f"{model}-{event_type}-{trial}",
@@ -178,12 +195,11 @@ class AudioComparisonReportTests(unittest.TestCase):
                 "name": "audio-test-v1",
                 "manifestSha256": "dataset-sha",
             },
-            "configuration": {
-                "scoreAggregation": "max",
-                "windowSeconds": streaming[0],
-                "hopSeconds": streaming[1],
-                "requiredConsecutiveWindows": streaming[2],
-                "minimumPositiveSpanSeconds": streaming[3],
+            "configuration": configuration,
+            "predictionMetadata": {
+                "configuration": {
+                    "precision": streaming[4],
+                },
             },
             "metrics": {
                 "inferenceMeanMs": latency - 2,

@@ -23,6 +23,7 @@ from audio_prediction_runner import (
     load_module_file,
     load_manifest_samples,
     quantize_tensor,
+    resolve_torch_precision,
     repository_import_path,
     sha256_file,
     window_waveform,
@@ -30,6 +31,30 @@ from audio_prediction_runner import (
 
 
 class AudioPredictionRunnerTests(unittest.TestCase):
+    def test_selects_stable_precision_per_torch_model(self):
+        self.assertEqual(
+            resolve_torch_precision(
+                "auto",
+                device_type="cuda",
+                model_kind="efficientat-mn10",
+            ),
+            "fp16-autocast",
+        )
+        self.assertEqual(
+            resolve_torch_precision(
+                "auto",
+                device_type="cuda",
+                model_kind="panns-cnn10",
+            ),
+            "fp32",
+        )
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            resolve_torch_precision(
+                "fp16",
+                device_type="cuda",
+                model_kind="panns-cnn10",
+            )
+
     def test_loads_quoted_class_map_and_resolves_names(self):
         with tempfile.TemporaryDirectory() as directory:
             class_map = Path(directory) / "classes.csv"

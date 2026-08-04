@@ -378,6 +378,27 @@ class YamnetTflitePredictor(Predictor):
         return scores.max(axis=0), latency_ms
 
 
+def resolve_torch_precision(
+    requested: str,
+    *,
+    device_type: str,
+    model_kind: str,
+) -> str:
+    if device_type != "cuda":
+        if requested == "fp16":
+            raise ValueError("FP16 audio inference requires a CUDA device")
+        return "fp32"
+    if requested == "fp32":
+        return "fp32"
+    if requested == "fp16":
+        if model_kind == "panns-cnn10":
+            raise ValueError(
+                "PANNs CNN10 FP16 is disabled because it produced non-finite scores"
+            )
+        return "fp16-autocast"
+    return "fp32" if model_kind == "panns-cnn10" else "fp16-autocast"
+
+
 class EfficientAtPredictor(Predictor):
     sample_rate = 32000
 
@@ -387,12 +408,17 @@ class EfficientAtPredictor(Predictor):
         repository: Path,
         class_map: Path,
         device_name: str,
+        requested_precision: str,
     ) -> None:
         import torch
 
         self.torch = torch
         self.device = torch.device(device_name)
-        self.precision = "fp16-autocast" if self.device.type == "cuda" else "fp32"
+        self.precision = resolve_torch_precision(
+            requested_precision,
+            device_type=self.device.type,
+            model_kind="efficientat-mn10",
+        )
         self.class_names = load_class_names(class_map)
         with repository_import_path(repository):
             get_model = importlib.import_module("models.mn.model").get_model
@@ -421,7 +447,7 @@ class EfficientAtPredictor(Predictor):
         started = time.perf_counter()
         precision = (
             torch.autocast(device_type="cuda", dtype=torch.float16)
-            if self.device.type == "cuda"
+            if self.precision == "fp16-autocast"
             else nullcontext()
         )
         with torch.no_grad(), precision:
@@ -443,12 +469,17 @@ class PannsCnn10Predictor(Predictor):
         repository: Path,
         class_map: Path,
         device_name: str,
+        requested_precision: str,
     ) -> None:
         import torch
 
         self.torch = torch
         self.device = torch.device(device_name)
-        self.precision = "fp16-autocast" if self.device.type == "cuda" else "fp32"
+        self.precision = resolve_torch_precision(
+            requested_precision,
+            device_type=self.device.type,
+            model_kind="panns-cnn10",
+        )
         self.class_names = load_class_names(class_map)
         with repository_import_path(repository):
             model_module = load_module_file(
@@ -476,7 +507,7 @@ class PannsCnn10Predictor(Predictor):
         started = time.perf_counter()
         precision = (
             torch.autocast(device_type="cuda", dtype=torch.float16)
-            if self.device.type == "cuda"
+            if self.precision == "fp16-autocast"
             else nullcontext()
         )
         with torch.no_grad(), precision:
@@ -507,12 +538,14 @@ def build_predictor(args: argparse.Namespace, class_map: Path) -> Predictor:
             args.source_repo,
             class_map,
             args.device,
+            args.precision,
         )
     return PannsCnn10Predictor(
         args.model,
         args.source_repo,
         class_map,
         args.device,
+        args.precision,
     )
 
 
@@ -534,6 +567,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name")
     parser.add_argument("--split", action="append", choices=("train", "validation", "test"))
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--precision",
+        choices=("auto", "fp16", "fp32"),
+        default="auto",
+    )
     parser.add_argument("--threads", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     parser.add_argument("--window-seconds", type=float, default=0.975)
     parser.add_argument("--hop-seconds", type=float, default=0.4875)
@@ -670,6 +708,16 @@ def main() -> int:
                             raise ValueError(
                                 "model score count does not match the class map"
                             )
+                        if not np.all(np.isfinite(values)):
+                            raise ValueError(
+                                f"{model_name} returned non-finite scores for "
+                                f"sample {sample['sampleId']} window {window_index}"
+                            )
+                        if np.any((values < 0.0) | (values > 1.0)):
+                            raise ValueError(
+                                f"{model_name} returned scores outside [0, 1] for "
+                                f"sample {sample['sampleId']} window {window_index}"
+                            )
                         event_scores = {
                             event_type: float(
                                 max(values[index] for index in indices)
@@ -695,7 +743,12 @@ def main() -> int:
                             "topClass": predictor.class_names[top_index],
                         }
                         destination.write(
-                            json.dumps(row, ensure_ascii=False) + "\n"
+                            json.dumps(
+                                row,
+                                ensure_ascii=False,
+                                allow_nan=False,
+                            )
+                            + "\n"
                         )
                         row_count += 1
                     atomic_write_json(

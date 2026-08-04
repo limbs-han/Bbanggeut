@@ -153,6 +153,7 @@ type Snapshot = {
       hopSeconds?: number | null;
       requiredConsecutiveWindows?: number | null;
       minimumPositiveSpanSeconds?: number | null;
+      precision?: string | null;
     } | null;
     resources?: {
       status?: string;
@@ -1142,6 +1143,9 @@ export function BenchmarkDashboard() {
                             row.configuration?.minimumPositiveSpanSeconds,
                         ),
                       );
+                      const precision = measured.find(
+                        (row) => row.configuration?.precision,
+                      )?.configuration?.precision;
                       return (
                         <article className="audio-model" key={model.name}>
                           <h3>{model.name}</h3>
@@ -1191,6 +1195,10 @@ export function BenchmarkDashboard() {
                               {formatPercent(clapExternalF1)} /{" "}
                               {formatPercent(clapExternalRecall)}
                             </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>추론 정밀도</span>
+                            <strong>{precision ?? "N/A"}</strong>
                           </div>
                           <div className="audio-stat">
                             <span>입력 창 / 갱신 hop</span>

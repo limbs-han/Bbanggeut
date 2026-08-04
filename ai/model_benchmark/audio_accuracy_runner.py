@@ -706,6 +706,12 @@ def main() -> int:
             and not isinstance(metadata_hop_value, bool)
             else None
         )
+        prediction_precision_value = prediction_configuration.get("precision")
+        prediction_precision = (
+            str(prediction_precision_value)
+            if isinstance(prediction_precision_value, str)
+            else None
+        )
         if window_seconds is not None and window_seconds <= 0:
             raise ValueError("prediction metadata windowSeconds must be positive")
         if metadata_hop_seconds is not None and not math.isclose(
@@ -889,6 +895,7 @@ def main() -> int:
                 minimum_positive_span_seconds,
                 6,
             ),
+            "precision": prediction_precision,
         },
         "metrics": {
             "measuredSamples": len(evaluation_samples),

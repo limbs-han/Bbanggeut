@@ -182,9 +182,13 @@ class CollectorIntegrationTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            diagnostic = root / "diagnostics" / "failed" / "summary.json"
+            diagnostic.parent.mkdir(parents=True)
+            diagnostic.write_text("{invalid", encoding="utf-8")
 
             rows = load_benchmark_results(root)
 
+            self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["model"], "YOLO11n")
             self.assertEqual(rows[0]["metrics"]["fps"], 31.7)
             self.assertEqual(
@@ -224,6 +228,18 @@ class CollectorIntegrationTests(unittest.TestCase):
                         },
                         "current": {"sampleId": "office-one"},
                         "modelPath": "/private/model.engine",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            diagnostic = root / "diagnostics" / "failed" / "progress.json"
+            diagnostic.parent.mkdir(parents=True)
+            diagnostic.write_text(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "model": "discarded-run",
+                        "progress": {"percent": 100},
                     }
                 ),
                 encoding="utf-8",

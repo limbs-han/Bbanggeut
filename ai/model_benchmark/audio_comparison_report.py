@@ -57,6 +57,8 @@ def standard_deviation(values: Iterable[float | None]) -> float | None:
 def load_summaries(results_dir: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for path in sorted(results_dir.glob("**/summary.json")):
+        if "diagnostics" in path.relative_to(results_dir).parts:
+            continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or payload.get("component") != "audio":
             continue
@@ -220,6 +222,22 @@ def aggregate_model(
                 row,
                 "configuration",
                 "minimumPositiveSpanSeconds",
+            ),
+            "precision": (
+                row.get("configuration", {}).get("precision")
+                if isinstance(row.get("configuration"), dict)
+                and row.get("configuration", {}).get("precision") is not None
+                else (
+                    row.get("predictionMetadata", {})
+                    .get("configuration", {})
+                    .get("precision")
+                    if isinstance(row.get("predictionMetadata"), dict)
+                    and isinstance(
+                        row.get("predictionMetadata", {}).get("configuration"),
+                        dict,
+                    )
+                    else None
+                )
             ),
         },
         f"{name} streaming configuration",
@@ -395,14 +413,15 @@ def markdown_report(payload: dict[str, Any]) -> str:
             "",
             "## 모델별 입력 및 판정 정책",
             "",
-            "| 모델 | 입력 창 초 | 갱신 hop 초 | 연속 양성 창 | 최소 판정 구간 초 |",
-            "| --- | ---: | ---: | ---: | ---: |",
+            "| 모델 | 정밀도 | 입력 창 초 | 갱신 hop 초 | 연속 양성 창 | 최소 판정 구간 초 |",
+            "| --- | --- | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in payload["models"]:
         streaming = row["streaming"]
         lines.append(
-            f"| {row['model']} | {format_value(streaming['windowSeconds'])} | "
+            f"| {row['model']} | {streaming['precision'] or 'N/A'} | "
+            f"{format_value(streaming['windowSeconds'])} | "
             f"{format_value(streaming['hopSeconds'])} | "
             f"{format_value(streaming['requiredConsecutiveWindows'], 0)} | "
             f"{format_value(streaming['minimumPositiveSpanSeconds'])} |"
@@ -583,6 +602,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "hop_seconds",
                 "required_consecutive_windows",
                 "minimum_positive_span_seconds",
+                "precision",
                 "inference_p95_ms_mean",
                 "gpu_percent_max",
                 "ram_used_mb_max",
@@ -614,6 +634,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         row["streaming"]["hopSeconds"],
                         row["streaming"]["requiredConsecutiveWindows"],
                         row["streaming"]["minimumPositiveSpanSeconds"],
+                        row["streaming"]["precision"],
                         row["performance"]["inferenceP95MsMean"],
                         row["resources"]["gpuPercentMax"],
                         row["resources"]["ramUsedMbMax"],

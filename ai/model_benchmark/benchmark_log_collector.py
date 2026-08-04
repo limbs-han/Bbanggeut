@@ -223,7 +223,11 @@ def load_benchmark_results(
         return []
 
     candidates = sorted(
-        results_dir.glob("**/summary.json"),
+        (
+            path
+            for path in results_dir.glob("**/summary.json")
+            if "diagnostics" not in path.relative_to(results_dir).parts
+        ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -309,7 +313,11 @@ def load_benchmark_progress(
         return None
 
     candidates = sorted(
-        results_dir.glob("**/progress.json"),
+        (
+            path
+            for path in results_dir.glob("**/progress.json")
+            if "diagnostics" not in path.relative_to(results_dir).parts
+        ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -348,7 +356,11 @@ def active_benchmark_resources(results_dir: Path | None) -> Path | None:
     if results_dir is None or not results_dir.is_dir():
         return None
     candidates = sorted(
-        results_dir.glob("**/progress.json"),
+        (
+            path
+            for path in results_dir.glob("**/progress.json")
+            if "diagnostics" not in path.relative_to(results_dir).parts
+        ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )

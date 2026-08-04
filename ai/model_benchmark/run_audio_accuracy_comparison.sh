@@ -19,13 +19,14 @@ report_runner="$repo/ai/model_benchmark/audio_comparison_report.py"
 efficientat_source="$model_root/sources/EfficientAT"
 panns_source="$model_root/sources/audioset_tagging_cnn"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-comparison_id="audio-accuracy-comparison-$timestamp"
+comparison_id="${AUDIO_COMPARISON_ID:-audio-accuracy-comparison-$timestamp}"
+resume_existing="${AUDIO_RESUME_EXISTING:-false}"
 batch_dir="$results_root/$comparison_id"
 
 models=(
-  "YAMNet:yamnet-tflite:yamnet.tflite:yamnet_class_map.csv:-:tflite:yamnet:0.975:0.4875:2"
-  "EfficientAT MN10:efficientat-mn10:efficientat_mn10_as.pt:class_labels_indices.csv:EfficientAT:pytorch:efficientat-mn10:10:2.5:1"
-  "PANNs CNN10:panns-cnn10:Cnn10_mAP=0.380.pth:class_labels_indices.csv:audioset_tagging_cnn:pytorch:panns-cnn10:2:1:2"
+  "YAMNet:yamnet-tflite:yamnet.tflite:yamnet_class_map.csv:-:tflite:yamnet:0.975:0.4875:2:auto"
+  "EfficientAT MN10:efficientat-mn10:efficientat_mn10_as.pt:class_labels_indices.csv:EfficientAT:pytorch:efficientat-mn10:10:2.5:1:fp16"
+  "PANNs CNN10:panns-cnn10:Cnn10_mAP=0.380.pth:class_labels_indices.csv:audioset_tagging_cnn:pytorch:panns-cnn10:2:1:2:fp32"
 )
 
 echo "=== PRECHECK ==="
@@ -35,7 +36,22 @@ test -f "$accuracy_runner"
 test -f "$dataset_tool"
 test -f "$report_runner"
 test -f "$dataset_root/dataset.json"
-test ! -e "$batch_dir"
+
+case "$resume_existing" in
+  true)
+    test -d "$batch_dir" || {
+      echo "ERROR: resume batch does not exist: $batch_dir" >&2
+      exit 1
+    }
+    ;;
+  false)
+    test ! -e "$batch_dir"
+    ;;
+  *)
+    echo "ERROR: AUDIO_RESUME_EXISTING must be true or false" >&2
+    exit 1
+    ;;
+esac
 
 for value in "$repeat_count" "$cooldown_seconds"; do
   [[ "$value" =~ ^[0-9]+$ ]] || {
@@ -183,6 +199,7 @@ mkdir -p "$batch_dir"
 echo "COMPARISON_ID=$comparison_id"
 echo "RESULTS_DIR=$batch_dir"
 echo "REPEAT_COUNT=$repeat_count"
+echo "RESUME_EXISTING=$resume_existing"
 
 total_runs=$((repeat_count * ${#models[@]}))
 execution_order=0
@@ -198,13 +215,28 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
     model_index=$(((round_index + position) % ${#models[@]}))
     IFS=: read -r \
       model_name model_kind model_file class_map_file source_name runtime slug \
-      window_seconds hop_seconds required_consecutive_windows \
+      window_seconds hop_seconds required_consecutive_windows prediction_precision \
       <<<"${models[$model_index]}"
     run_dir="$batch_dir/round-$round_slug/$slug"
     prediction_file="$run_dir/predictions.jsonl"
     laughter_evaluation_dir="$run_dir/evaluation-laughter"
     clap_evaluation_dir="$run_dir/evaluation-clap"
     execution_order=$((execution_order + 1))
+
+    if test -f "$laughter_evaluation_dir/summary.json" &&
+       test -f "$clap_evaluation_dir/summary.json"; then
+      echo
+      echo "=== SKIP $execution_order/$total_runs: $model_name ==="
+      echo "PASS: both event summaries already exist"
+      continue
+    fi
+
+    if test -e "$run_dir"; then
+      archived_run="$batch_dir/diagnostics/round-${round_slug}-${slug}-${timestamp}"
+      mkdir -p "$(dirname "$archived_run")"
+      mv "$run_dir" "$archived_run"
+      echo "ARCHIVED_INCOMPLETE_RUN=$archived_run"
+    fi
 
     model_path="$model_root/$model_file"
     class_map="$model_root/$class_map_file"
@@ -225,6 +257,7 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
     echo "WINDOW_SECONDS=$window_seconds"
     echo "HOP_SECONDS=$hop_seconds"
     echo "REQUIRED_CONSECUTIVE_WINDOWS=$required_consecutive_windows"
+    echo "PREDICTION_PRECISION=$prediction_precision"
 
     prediction_command=(
       "$python_bin" -u "$prediction_runner"
@@ -237,6 +270,7 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
       --split validation
       --split test
       --device cuda
+      --precision "$prediction_precision"
       --window-seconds "$window_seconds"
       --hop-seconds "$hop_seconds"
       --warmup-windows 3
@@ -278,6 +312,13 @@ for ((round_index = 0; round_index < repeat_count; round_index++)); do
     fi
   done
 done
+
+if test -e "$batch_dir/report"; then
+  archived_report="$batch_dir/diagnostics/report-${timestamp}"
+  mkdir -p "$(dirname "$archived_report")"
+  mv "$batch_dir/report" "$archived_report"
+  echo "ARCHIVED_OLD_REPORT=$archived_report"
+fi
 
 "$evaluation_python" -u "$report_runner" \
   --results-dir "$batch_dir" \

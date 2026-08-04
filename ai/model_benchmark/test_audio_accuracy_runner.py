@@ -221,6 +221,7 @@ class AudioAccuracyRunnerTests(unittest.TestCase):
                 "configuration": {
                     "windowSeconds": 2.0,
                     "hopSeconds": 0.4875,
+                    "precision": "fp32",
                 },
                 "resources": {
                     "status": "computed",
@@ -269,6 +270,7 @@ class AudioAccuracyRunnerTests(unittest.TestCase):
             self.assertEqual(operating["falsePositivesPerHour"], 1800.0)
             self.assertEqual(summary["metrics"]["inferenceP95Ms"], 12.9)
             self.assertEqual(summary["configuration"]["windowSeconds"], 2.0)
+            self.assertEqual(summary["configuration"]["precision"], "fp32")
             self.assertEqual(
                 summary["configuration"]["minimumPositiveSpanSeconds"],
                 2.0,
