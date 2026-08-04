@@ -3,6 +3,8 @@ package com.wj.server.notification.application;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
 import java.time.temporal.WeekFields;
@@ -13,6 +15,8 @@ import com.wj.server.notification.persistence.ReportNotificationMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +53,29 @@ public class ReportNotificationScheduler {
         this.mapper = mapper;
         this.pushDispatcher = pushDispatcher;
         this.clock = clock;
+    }
+
+    /**
+     * 기동 시 보정 실행. cron은 다운 중 놓친 실행을 되돌려주지 않아서,
+     * 09:00에 서버가 재시작 중이었다면 그날 기념일 알림이 그냥 증발했다.
+     * dedupe_key 덕에 재실행이 안전하므로 발송 시각(09:00 KST)이 이미 지난
+     * 경우에만 기동 직후 한 번 더 돌린다 — 새벽 배포가 새벽 푸시가 되지
+     * 않게 시각 가드를 둔다.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void catchUpAfterStartup() {
+        LocalDateTime now = LocalDateTime.now(clock.withZone(ZONE));
+        LocalDateTime todaySendTime = now.toLocalDate().atTime(LocalTime.of(9, 0));
+        if (now.isBefore(todaySendTime)) {
+            return;
+        }
+        try {
+            sendAnniversaries();
+            sendWeeklyReports();
+        } catch (RuntimeException exception) {
+            // 보정은 부가 동작이다 — 실패해도 기동을 막지 않는다.
+            log.warn("Startup catch-up for report notifications failed", exception);
+        }
     }
 
     /** 매일 09:00 KST — 오늘이 기념일인 일정을 사용자에게 알린다. */
