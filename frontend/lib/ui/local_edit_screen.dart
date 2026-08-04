@@ -1076,7 +1076,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           )
           .then((_) => debugPrint('editor draft saved before export'))
           .catchError(
-            (Object failure) => debugPrint('editor draft save failed: $failure'),
+            (Object failure) =>
+                debugPrint('editor draft save failed: $failure'),
           );
 
       // 컷·줌만 있는 프로젝트는 서버가 만든다 — 레시피(몇 KB)만 보내므로
@@ -1327,6 +1328,169 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _prepare();
   }
 
+  Future<void> _showExitSaveDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        key: const Key('editor-exit-save-dialog'),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        backgroundColor: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(32),
+            child: ColoredBox(
+              color: AppColors.surface,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        key: const Key('editor-exit-close'),
+                        tooltip: '닫기',
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(Icons.close_rounded),
+                        color: AppColors.inkSoft,
+                      ),
+                    ),
+                    Image.asset(
+                      'assets/images/editor_exit_save_mascot.png',
+                      key: const Key('editor-exit-save-mascot'),
+                      width: 162,
+                      height: 128,
+                      fit: BoxFit.contain,
+                      cacheWidth: decodePixels(dialogContext, 162),
+                    ),
+                    const SizedBox(height: 8),
+                    Text.rich(
+                      const TextSpan(
+                        children: [
+                          TextSpan(text: '영상 편집한 거\n'),
+                          TextSpan(
+                            text: '저장',
+                            style: TextStyle(color: AppColors.coralDark),
+                          ),
+                          TextSpan(text: '할까요?'),
+                        ],
+                      ),
+                      key: const Key('editor-exit-save-title'),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(dialogContext).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '현재 편집 내용은 아직 저장되지 않았어요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.inkSoft,
+                        fontSize: 14,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      key: const Key('editor-exit-save-warning'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceWarm,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: AppColors.coralDark,
+                            size: 24,
+                          ),
+                          SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              '저장하지 않으면\n편집 내용을 이어서 볼 수 없어요!',
+                              style: TextStyle(
+                                color: AppColors.inkSoft,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            key: const Key('editor-exit-continue'),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(56),
+                              foregroundColor: AppColors.coralDark,
+                              side: const BorderSide(
+                                color: AppColors.coralSoft,
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: const Text('계속 편집'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            key: const Key('editor-exit-save'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(56),
+                              backgroundColor: AppColors.danger,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            onPressed: () async {
+                              final navigator = Navigator.of(context);
+                              Navigator.pop(dialogContext);
+                              await _saveDraft();
+                              if (mounted) navigator.pop();
+                            },
+                            child: const Text('저장하기'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _autoCaptions
@@ -1352,33 +1516,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     canPop: !_editState.hasUnsavedChanges || _saving,
     onPopInvokedWithResult: (didPop, _) {
       if (didPop) return;
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('편집본을 저장할까요?'),
-          content: const Text('저장하면 추억 > 편집 중 목록에서 이어서 편집할 수 있어요.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                Navigator.pop(context);
-              },
-              child: const Text('저장 안 함'),
-            ),
-            FilledButton(
-              key: const Key('editor-exit-save'),
-              onPressed: () async {
-                final navigator = Navigator.of(context);
-                Navigator.pop(dialogContext);
-                // 저장 결과는 스낵바가 알려 준다. 실패해도 붙잡지 않는다.
-                await _saveDraft();
-                if (mounted) navigator.pop();
-              },
-              child: const Text('저장하고 나가기'),
-            ),
-          ],
-        ),
-      );
+      _showExitSaveDialog();
     },
     child: AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
