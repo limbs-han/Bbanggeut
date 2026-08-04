@@ -41,16 +41,25 @@ TIMEOUT_SECONDS = float(os.environ.get("COMIC_TIMEOUT_SECONDS", "150"))
 
 CUT_COUNT = 4
 
-# **5장이 상한이다. 늘리지 마라.** GMS 프록시가 요청 본문 약 100KB에서 끊는다 —
-# 실측(2026-08-03, 139초 영상, 512폭 q5 JPEG): 5장 base64 86KB는 통과하고
-# 6장 103KB는 `contents is not specified`(400)로 거부된다. 프레임 자체가 아니라
-# **요청 크기** 문제라서, 더 넣고 싶으면 FRAME_WIDTH나 JPEG 품질을 먼저 낮춰야 한다.
+# GMS 프록시가 요청 본문 약 100KB에서 끊는다. 넘기면 `contents is not
+# specified`(400)로 거부된다 — 프레임 내용이 아니라 **크기** 문제다.
+#
+# 개수로 상한을 잡으면 안 된다. 장당 크기가 영상 내용에 따라 2배 이상 달라진다 —
+# 실측(2026-08-04, 320폭 q8 JPEG 기준으로 환산): 어떤 영상은 장당 base64 17KB,
+# 다른 영상은 40KB(512폭 q5)였다. 그래서 개수 대신 **바이트 예산**으로 자른다.
 FRAME_LIMIT = 5
 FRAME_COUNT = max(1, min(FRAME_LIMIT, int(os.environ.get("COMIC_FRAME_COUNT", "5"))))
 
+# 프레임 base64 합계 상한. 100KB 제한에서 프롬프트 글(지시문+자막)이 쓸 몫을
+# 남겨 둔다. 자막이 긴 영상도 있으니 넉넉히 비운다.
+FRAME_BASE64_BUDGET = 72_000
+
 # 프레임 해상도는 토큰 수와 무관하다(장당 약 1,100토큰 고정 — 1장 1,766 대 5장
-# 6,166으로 실측). 줄이는 것은 **요청 크기**뿐이고, 위 100KB 제한이 그래서 중요하다.
-FRAME_WIDTH = 512
+# 6,166으로 실측). 즉 **줄여도 모델이 보는 값은 그대로고 요청 크기만 준다.**
+# 실측(2026-08-04, 같은 영상): 512폭 q5는 장당 40KB로 5장이 203KB(거부),
+# 320폭 q8은 장당 14KB로 5장이 71KB(통과). 그래서 작게 보낸다.
+FRAME_WIDTH = 320
+FRAME_QUALITY = "8"
 
 DEFAULT_STYLE = "soft webtoon"
 
@@ -211,11 +220,31 @@ def frame_timestamps(duration: float, count: int = FRAME_COUNT) -> list[float]:
     return [duration * (index + 0.5) / count for index in range(count)]
 
 
+def fit_frame_budget(
+    frames: Sequence[bytes], budget: int = FRAME_BASE64_BUDGET
+) -> list[bytes]:
+    """base64 합계가 예산을 넘지 않도록 뒤 프레임을 버린다.
+
+    한 장은 예산을 넘겨도 남긴다 — 프레임이 하나도 없으면 인물표를 못 뽑아
+    칸마다 다른 사람이 그려진다. 크게 실패하는 대신 품질만 떨어뜨린다.
+    """
+    kept: list[bytes] = []
+    used = 0
+    for frame in frames:
+        encoded = (len(frame) + 2) // 3 * 4
+        if kept and used + encoded > budget:
+            break
+        kept.append(frame)
+        used += encoded
+    return kept
+
+
 def extract_frames(video_url: str, count: int = FRAME_COUNT) -> list[bytes]:
     """원본에서 JPEG 프레임 몇 장을 뽑는다. presigned URL을 그대로 먹인다.
 
-    [FRAME_LIMIT]을 넘겨 부르면 잘라 낸다 — 넘기면 GMS가 요청을 거부하므로,
-    많이 달라는 요청을 그대로 따르면 아예 실패한다.
+    개수는 [FRAME_LIMIT]으로, 크기는 [FRAME_BASE64_BUDGET]으로 자른다. 둘 다
+    필요한 이유는 GMS가 **요청 크기**에서 끊는데 장당 크기가 영상에 따라 배로
+    달라지기 때문이다 — 개수만 막으면 어떤 영상에서는 그대로 400이 된다.
     """
     frames: list[bytes] = []
     count = max(1, min(FRAME_LIMIT, count))
@@ -240,7 +269,7 @@ def extract_frames(video_url: str, count: int = FRAME_COUNT) -> list[bytes]:
                 "-vcodec",
                 "mjpeg",
                 "-q:v",
-                "5",
+                FRAME_QUALITY,
                 "pipe:1",
             ]
         )
@@ -248,7 +277,7 @@ def extract_frames(video_url: str, count: int = FRAME_COUNT) -> list[bytes]:
             frames.append(jpeg)
     if not frames:
         raise ComicError("영상에서 프레임을 뽑지 못했습니다.")
-    return frames
+    return fit_frame_budget(frames)
 
 
 # ── 1단계: 구성 ────────────────────────────────────────────────────────────

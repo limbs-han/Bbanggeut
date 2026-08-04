@@ -124,8 +124,10 @@ void main() {
     });
   });
 
-  test('COMIC_SERVER를 주지 않으면 가짜를 쓴다 — 서버 없이 화면을 만든다', () {
-    expect(comicServerReady, isFalse);
-    expect(defaultComicGateway(ApiClient()), isA<FakeComicGateway>());
+  /// 인자를 붙이는 걸 잊으면 오류가 아니라 가짜 만화가 그대로 출고된다. 그래서
+  /// 기본을 실서버로 두고, 견본은 `COMIC_SERVER=false`로 명시해서 켠다.
+  test('인자를 주지 않으면 실서버 통로를 쓴다', () {
+    expect(comicServerReady, isTrue);
+    expect(defaultComicGateway(ApiClient()), isA<HttpComicGateway>());
   });
 }

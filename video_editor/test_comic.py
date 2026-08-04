@@ -222,5 +222,37 @@ class UsageSummaryTest(unittest.TestCase):
         )
 
 
+class FrameBudgetTest(unittest.TestCase):
+    """GMS는 요청 **크기**에서 끊는다. 장당 크기가 영상에 따라 배로 달라지므로
+    개수가 아니라 바이트로 잘라야 한다 — 실서버에서 5장 203KB로 400을 받았다."""
+
+    def test_drops_frames_past_the_budget(self) -> None:
+        # base64는 3바이트를 4자로 만든다. 30,000바이트 → 40,000자.
+        frames = [b"x" * 30_000] * 5
+
+        kept = comic.fit_frame_budget(frames, budget=72_000)
+
+        self.assertEqual(1, len(kept))
+
+    def test_keeps_every_frame_that_fits(self) -> None:
+        frames = [b"x" * 10_000] * 5
+
+        self.assertEqual(5, len(comic.fit_frame_budget(frames, budget=72_000)))
+
+    def test_keeps_one_frame_even_when_it_alone_exceeds(self) -> None:
+        """한 장도 못 남기면 인물표를 못 뽑아 칸마다 다른 사람이 그려진다."""
+        kept = comic.fit_frame_budget([b"x" * 200_000], budget=72_000)
+
+        self.assertEqual(1, len(kept))
+
+    def test_default_frame_count_fits_the_budget_at_measured_size(self) -> None:
+        """실측 장당 14KB(320폭 q8) 기준으로 기본 장수가 예산 안에 들어온다."""
+        frames = [b"x" * 10_500] * comic.FRAME_COUNT
+
+        self.assertEqual(
+            comic.FRAME_COUNT, len(comic.fit_frame_budget(frames))
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
