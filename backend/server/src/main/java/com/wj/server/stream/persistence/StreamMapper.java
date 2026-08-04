@@ -45,6 +45,14 @@ public interface StreamMapper {
         """)
     Optional<DeviceStreamRow> findReusableStream(@Param("deviceId") UUID deviceId);
 
+    @Select("""
+        SELECT id, device_id, status::text, edge_hard_expires_at, stop_deadline_at, failure_code
+          FROM device_streams
+         WHERE status = 'RUNNING'
+         ORDER BY id
+        """)
+    List<DeviceStreamRow> findRunningStreams();
+
     @Insert("""
         INSERT INTO device_streams (id, device_id, status, edge_hard_expires_at)
         VALUES (#{streamId}, #{deviceId}, 'STARTING', #{edgeHardExpiresAt})

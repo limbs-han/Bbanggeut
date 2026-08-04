@@ -68,6 +68,7 @@ MQTT_PASSWORD=$MQTT_PASSWORD
 MQTT_ENV=prod
 WEBRTC_BASE_URL=https://i15e201.p.ssafy.io/webrtc/live
 TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback
+MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997
 FFMPEG_PATH=/usr/bin/ffmpeg
 EOF
 fi
@@ -79,6 +80,10 @@ fi
 if ! grep -q '^TALKBACK_WHIP_BASE_URL=' "$APP_ENV"; then
   printf '%s\n' \
     'TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback' >>"$APP_ENV"
+fi
+
+if ! grep -q '^MEDIAMTX_API_BASE_URL=' "$APP_ENV"; then
+  printf '%s\n' 'MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997' >>"$APP_ENV"
 fi
 
 chmod 600 "$INFRA_ENV" "$APP_ENV"

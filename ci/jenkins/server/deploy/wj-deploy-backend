@@ -458,6 +458,16 @@ else
     'TALKBACK_WHIP_BASE_URL=https://i15e201.p.ssafy.io/webrtc/talkback' >>"${app_env}"
 fi
 
+# MediaMTX 관리 API 주소. 비어 있으면 백엔드의 유령 세션 대사가 꺼진 채
+# 돌아가므로, 배포가 loopback 주소를 채워 준다. 공개 주소가 아니다.
+if grep -q '^MEDIAMTX_API_BASE_URL=' "${app_env}"; then
+  sed -i \
+    's|^MEDIAMTX_API_BASE_URL=.*$|MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997|' \
+    "${app_env}"
+else
+  printf '%s\n' 'MEDIAMTX_API_BASE_URL=http://127.0.0.1:9997' >>"${app_env}"
+fi
+
 # FCM 푸시 설정. 서비스 계정 JSON을 아래 경로에 두고 FCM_ENABLED=true 로
 # 바꾸면 다음 재시작부터 푸시가 나간다. 배포는 **없을 때 기본값만 채운다**
 # — 운영자가 켜 둔 값을 배포가 도로 끄면 푸시가 소리 없이 죽는다.
