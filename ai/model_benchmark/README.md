@@ -216,6 +216,24 @@ python3 ai/model_benchmark/audio_shadow_report.py \
   --match-tolerance-seconds 12
 ```
 
+실시간 수동 검수는 새 감지만 따라가며 별도의 종료 시간을 두지 않습니다.
+
+```bash
+run_dir="$HOME/ai_events/logs/<run>"
+
+python3 ai/model_benchmark/audio_shadow_live_review.py \
+  --yamnet-diagnostics "$run_dir/yamnet_diagnostics.jsonl" \
+  --shadow-diagnostics "$run_dir/efficientat_shadow.jsonl" \
+  --output-jsonl "$run_dir/audio_shadow_manual_review.jsonl" \
+  --match-tolerance-seconds 12
+```
+
+감지된 이벤트는 두 모델의 결과를 묶은 뒤 `YES`, `NO`, `SKIP`으로 검수합니다.
+
+두 모델이 모두 놓친 실제 상황은 `MISS LAUGHTER`, `MISS CLAP`, `MISS BOTH`로 기록합니다.
+
+검수는 `Ctrl+C`로 안전하게 끝내며 종료 요약도 같은 JSONL에 기록합니다.
+
 보고서는 두 모델의 일치 이벤트와 모델별 단독 이벤트를 구분합니다. 모델별 단독
 이벤트는 원음을 사람이 확인하기 전까지 FP나 FN으로 표시하지 않습니다. Jetson
 설정과 운영 안전 규칙은

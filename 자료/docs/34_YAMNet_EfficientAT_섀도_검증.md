@@ -149,6 +149,82 @@ EfficientAT 단독 이벤트는 정답 확인 전까지 EfficientAT 오탐으로
 
 사람이 원음을 확인한 뒤에만 FP와 FN을 확정한다.
 
+### 7.1 실시간 수동 검수
+
+실시간 검수 도구는 새 YAMNet 진단 판정과 EfficientAT 가상 이벤트를 계속 기다린다.
+
+실시간 검수 도구에는 자동 종료 시간이 없다.
+
+사용자는 `Ctrl+C`로 검수를 종료한다.
+
+첫 감지가 발생하면 모델 이름, 이벤트 종류, 점수, 클래스, 감지 시각을 즉시 출력한다.
+
+도구는 기본 12초 동안 같은 이벤트 종류의 다른 모델 감지를 기다린다.
+
+같은 상황을 두 모델이 감지하면 하나의 검수 대상으로 묶는다.
+
+검수 질문의 `YES`는 표시된 이벤트 종류가 실제로 발생했다는 뜻이다.
+
+검수 질문의 `NO`는 표시된 이벤트 종류가 실제로 발생하지 않았다는 뜻이다.
+
+판단이 불확실하면 `SKIP`으로 보류한다.
+
+입력 대기 중 발생한 추가 감지는 로그 추적 스레드와 큐에 보존한다.
+
+감지 기반 질문만으로는 두 모델의 동시 미탐을 찾을 수 없다.
+
+실제 웃음이 있었지만 두 모델 모두 반응하지 않았으면 `MISS LAUGHTER`를 입력한다.
+
+실제 박수가 있었지만 두 모델 모두 반응하지 않았으면 `MISS CLAP`을 입력한다.
+
+웃음과 박수가 모두 있었지만 두 모델 모두 반응하지 않았으면 `MISS BOTH`를 입력한다.
+
+`MISS` 기록은 두 모델 모두의 FN으로 저장한다.
+
+각 검수 결과에는 모델별 `TP`, `FP`, `FN`, `TN`을 기록한다.
+
+수동 검수 JSONL은 각 답변마다 `flush`와 `fsync`를 수행한다.
+
+`Ctrl+C` 종료 시 답변 수, 모델별 결과 수, 미검수 후보 수를 JSONL과 터미널에 기록한다.
+
+```bash
+run_dir="$(
+  find "$HOME/ai_events/logs" \
+    -mindepth 1 \
+    -maxdepth 1 \
+    -type d \
+    -printf '%T@ %p\n' |
+  sort -n |
+  tail -n 1 |
+  cut -d' ' -f2-
+)"
+
+test -n "$run_dir"
+test -f "$run_dir/yamnet_diagnostics.jsonl"
+test -f "$run_dir/efficientat_shadow.jsonl"
+
+"$HOME/venvs/yolo/bin/python" \
+  "$HOME/ai/model_benchmark/audio_shadow_live_review.py" \
+  --yamnet-diagnostics "$run_dir/yamnet_diagnostics.jsonl" \
+  --shadow-diagnostics "$run_dir/efficientat_shadow.jsonl" \
+  --output-jsonl "$run_dir/audio_shadow_manual_review.jsonl" \
+  --match-tolerance-seconds 12
+```
+
+실시간 검수 도구는 trigger JSON을 생성하지 않는다.
+
+실시간 검수 도구는 MQTT를 발행하지 않는다.
+
+실시간 검수 도구는 API를 호출하지 않는다.
+
+실시간 검수 도구는 영상을 업로드하지 않는다.
+
+실시간 검수 도구는 기존 YAMNet 운영 권한과 업로더 상태를 변경하지 않는다.
+
+기존 운영 업로더가 켜져 있으면 YAMNet 운영 이벤트의 서버 업로드는 그대로 발생한다.
+
+서버 업로드가 없는 검증이 필요하면 운영 업로더 격리를 별도 작업으로 먼저 확정한다.
+
 ## 8. 1차 판정 기준 초안
 
 웃음 Recall 목표는 `0.90` 이상이다.
