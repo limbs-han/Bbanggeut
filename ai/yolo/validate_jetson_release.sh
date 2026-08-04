@@ -46,6 +46,12 @@ required_files=(
     "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py"
     "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py"
     "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_accuracy_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_benchmark_services.sh"
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py"
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_report.py"
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_live_review.py"
 )
 
 for required_file in "${required_files[@]}"; do
@@ -60,7 +66,8 @@ bash -n \
     "${SCRIPT_DIR}/run_ai_stack.sh" \
     "${SCRIPT_DIR}/run_edge_ai_mvp.sh" \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh" \
-    "${SCRIPT_DIR}/run_yolo_rtsp_validation.sh"
+    "${SCRIPT_DIR}/run_yolo_rtsp_validation.sh" \
+    "${MODEL_BENCHMARK_DIR}/audio_benchmark_services.sh"
 if [[ -f "${DEVICE_AGENT_DIR}/integration-soak-test.sh" ]]; then
     bash -n "${DEVICE_AGENT_DIR}/integration-soak-test.sh"
 fi
@@ -75,6 +82,14 @@ grep -Fq ': "${YAMNET_READY_TIMEOUT_SECONDS:=90}"' \
 grep -Fq ': "${YAMNET_RESTART_DELAY_SECONDS:=5}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${YAMNET_CLAP_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_CONTEXT_SECONDS:=10}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_HOP_SECONDS:=2.5}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'authority=none' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${WAKE_NAME_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
@@ -118,7 +133,12 @@ PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
 PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" -m py_compile \
     "${MODEL_BENCHMARK_DIR}/benchmark_dataset.py" \
     "${MODEL_BENCHMARK_DIR}/benchmark_log_collector.py" \
-    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py"
+    "${MODEL_BENCHMARK_DIR}/vision_benchmark_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_accuracy_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_report.py" \
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_live_review.py"
 PYTHONDONTWRITEBYTECODE=1 "$YAMNET_PYTHON" -m py_compile \
     "${YAMNET_DIR}/yamnet_laughter_detect_jetson.py" \
     "${YAMNET_DIR}/ffmpeg_audio_stream.py" \
@@ -169,6 +189,17 @@ echo "[5/5] Model benchmark tests"
         -m unittest discover \
         -s . \
         -p 'test_*benchmark*.py'
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        -m unittest \
+        test_audio_shadow_runner \
+        test_audio_shadow_report \
+        test_audio_shadow_live_review
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        audio_accuracy_runner.py --help >/dev/null
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        audio_prediction_runner.py --help >/dev/null
+    PYTHONDONTWRITEBYTECODE=1 "$YOLO_PYTHON" \
+        audio_shadow_live_review.py --help >/dev/null
 )
 
 echo "PASS: staged Jetson AI release validation completed."

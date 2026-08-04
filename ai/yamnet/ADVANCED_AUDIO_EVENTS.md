@@ -117,7 +117,7 @@ WAKE_NAME_ASR_COMPUTE_TYPE=int8
 웃으면서 박수치는 샘플은 `laughter-with-clap` 조건으로 등록한다. 웃음 모델
 평가에서는 `laughter`, 박수 평가에서는 `consecutive-clap` 양성인 다중 라벨
 샘플이다. 깨끗한 웃음과 박수 샘플을 대체하지 않고 validation과 test에 각각
-5개씩 추가한다.
+10개씩 포함한다.
 
 ## 로컬 검증
 

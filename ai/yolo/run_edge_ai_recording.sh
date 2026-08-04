@@ -13,8 +13,10 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 YAMNET_DIR="${YAMNET_DIR:-${SCRIPT_DIR}/../yamnet}"
+MODEL_BENCHMARK_DIR="${MODEL_BENCHMARK_DIR:-${SCRIPT_DIR}/../model_benchmark}"
 YOLO_PYTHON="${YOLO_PYTHON:-${HOME}/venvs/yolo/bin/python}"
 YAMNET_PYTHON="${YAMNET_PYTHON:-${HOME}/venvs/yamnet/bin/python}"
+AUDIO_SHADOW_PYTHON="${AUDIO_SHADOW_PYTHON:-${YOLO_PYTHON}}"
 WAKE_NAME_PYTHON="${WAKE_NAME_PYTHON:-${HOME}/venvs/wake-name/bin/python}"
 EVENT_DIR="${EVENT_DIR:-${HOME}/ai_events}"
 ENV_FILE="${DEVICE_AGENT_ENV_FILE:-/etc/william-james/device-agent.env}"
@@ -72,6 +74,21 @@ fi
 : "${YAMNET_CLAP_MIN_ACTIVE_SECONDS:=0.4}"
 : "${YAMNET_CLAP_MAX_GAP_SECONDS:=0.75}"
 : "${YAMNET_CLAP_COOLDOWN:=12}"
+: "${AUDIO_SHADOW_ENABLED:=false}"
+: "${AUDIO_SHADOW_MODEL_PATH:=${HOME}/ai_models/audio-benchmark/efficientat_mn10_as.pt}"
+: "${AUDIO_SHADOW_MODEL_SHA256:=0bd7dc2443af498c289a2e739f02ebb515d6aa3fd3ab9db539c86123ae368a4e}"
+: "${AUDIO_SHADOW_SOURCE_REPO:=${HOME}/ai_models/audio-benchmark/sources/EfficientAT}"
+: "${AUDIO_SHADOW_SOURCE_COMMIT:=a425fdce92572e602a1d5634799bd9f1f2efa806}"
+: "${AUDIO_SHADOW_DEVICE:=cuda}"
+: "${AUDIO_SHADOW_PRECISION:=fp16}"
+: "${AUDIO_SHADOW_CONTEXT_SECONDS:=10}"
+: "${AUDIO_SHADOW_HOP_SECONDS:=2.5}"
+: "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=0.01691491}"
+: "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"
+: "${AUDIO_SHADOW_CLAP_THRESHOLD:=0.08725224}"
+: "${AUDIO_SHADOW_CLAP_CONSECUTIVE:=1}"
+: "${AUDIO_SHADOW_COOLDOWN_SECONDS:=12}"
+: "${AUDIO_SHADOW_RESTART_DELAY_SECONDS:=10}"
 : "${WAKE_NAME_ENABLED:=false}"
 : "${WAKE_NAME_PROFILE_DIR:=${HOME}/.local/share/william-james/wake-name}"
 : "${WAKE_NAME_MODEL_DIR:=${HOME}/ai_models/faster-whisper-small}"
@@ -142,10 +159,34 @@ case "${WAKE_NAME_ENABLED,,}" in
         ;;
 esac
 
+case "${AUDIO_SHADOW_ENABLED,,}" in
+    true|1|yes)
+        for required in \
+            "$AUDIO_SHADOW_PYTHON" \
+            "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py" \
+            "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py" \
+            "$AUDIO_SHADOW_MODEL_PATH" \
+            "$AUDIO_SHADOW_SOURCE_REPO" \
+            "${AUDIO_SHADOW_SOURCE_REPO}/metadata/class_labels_indices.csv"; do
+            if [[ ! -e "$required" ]]; then
+                echo "Audio shadow requirement not found: $required" >&2
+                exit 1
+            fi
+        done
+        ;;
+    false|0|no)
+        ;;
+    *)
+        echo "AUDIO_SHADOW_ENABLED must be true or false" >&2
+        exit 2
+        ;;
+esac
+
 mkdir -p "$EVENT_DIR"
 RUN_DIR="${EVENT_DIR}/logs/$(date '+%Y%m%d_%H%M%S')"
 mkdir -p "$RUN_DIR"
 YAMNET_DIAGNOSTICS_PATH="${RUN_DIR}/yamnet_diagnostics.jsonl"
+AUDIO_SHADOW_DIAGNOSTICS_PATH="${RUN_DIR}/efficientat_shadow.jsonl"
 YOLO_SELECTION_FILE="${RUN_DIR}/yolo_runtime_selection.tsv"
 
 YOLO_SELECTOR_COMMAND=(
@@ -195,6 +236,8 @@ fi
 declare -a PIDS=()
 YAMNET_PID=""
 YAMNET_RESTART_AT=0
+AUDIO_SHADOW_PID=""
+AUDIO_SHADOW_RESTART_AT=0
 
 child_is_running() {
     local pid="$1"
@@ -284,6 +327,14 @@ echo \
     "onsets=${YAMNET_CLAP_REQUIRED_ONSETS} " \
     "minimumActive=${YAMNET_CLAP_MIN_ACTIVE_SECONDS}s"
 echo \
+    "Audio shadow: enabled=${AUDIO_SHADOW_ENABLED} model=EfficientAT-MN10 " \
+    "context=${AUDIO_SHADOW_CONTEXT_SECONDS}s hop=${AUDIO_SHADOW_HOP_SECONDS}s " \
+    "laughter=${AUDIO_SHADOW_LAUGHTER_THRESHOLD}/" \
+    "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE} " \
+    "clap=${AUDIO_SHADOW_CLAP_THRESHOLD}/" \
+    "${AUDIO_SHADOW_CLAP_CONSECUTIVE} " \
+    "authority=none"
+echo \
     "Wake-name detector: enabled=${WAKE_NAME_ENABLED} " \
     "threshold=${WAKE_NAME_THRESHOLD} cooldown=${WAKE_NAME_COOLDOWN}s"
 echo \
@@ -347,6 +398,34 @@ start_yamnet() {
             tee -a "${RUN_DIR}/yamnet.log") 2>&1 &
     YAMNET_PID="$!"
     PIDS+=("$YAMNET_PID")
+}
+
+AUDIO_SHADOW_COMMAND=(
+    "$AUDIO_SHADOW_PYTHON" -u
+    "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py"
+    --stream-url "$LOCAL_RTSP_AI_URL"
+    --model "$AUDIO_SHADOW_MODEL_PATH"
+    --model-sha256 "$AUDIO_SHADOW_MODEL_SHA256"
+    --source-repo "$AUDIO_SHADOW_SOURCE_REPO"
+    --source-commit "$AUDIO_SHADOW_SOURCE_COMMIT"
+    --diagnostics-jsonl "$AUDIO_SHADOW_DIAGNOSTICS_PATH"
+    --device "$AUDIO_SHADOW_DEVICE"
+    --precision "$AUDIO_SHADOW_PRECISION"
+    --context-seconds "$AUDIO_SHADOW_CONTEXT_SECONDS"
+    --hop-seconds "$AUDIO_SHADOW_HOP_SECONDS"
+    --laughter-threshold "$AUDIO_SHADOW_LAUGHTER_THRESHOLD"
+    --laughter-consecutive "$AUDIO_SHADOW_LAUGHTER_CONSECUTIVE"
+    --clap-threshold "$AUDIO_SHADOW_CLAP_THRESHOLD"
+    --clap-consecutive "$AUDIO_SHADOW_CLAP_CONSECUTIVE"
+    --cooldown-seconds "$AUDIO_SHADOW_COOLDOWN_SECONDS"
+)
+
+start_audio_shadow() {
+    "${AUDIO_SHADOW_COMMAND[@]}" \
+        > >(sed -u 's/^/[AUDIO_SHADOW] /' |
+            tee -a "${RUN_DIR}/efficientat_shadow.log") 2>&1 &
+    AUDIO_SHADOW_PID="$!"
+    PIDS+=("$AUDIO_SHADOW_PID")
 }
 
 write_yamnet_status "STARTING" "Waiting for first inference"
@@ -501,6 +580,12 @@ MQTT_HOST= "${YOLO_COMMAND[@]}" \
     > >(sed -u 's/^/[YOLO] /' | tee -a "${RUN_DIR}/yolo.log") 2>&1 &
 PIDS+=("$!")
 
+case "${AUDIO_SHADOW_ENABLED,,}" in
+    true|1|yes)
+        start_audio_shadow
+        ;;
+esac
+
 while true; do
     now="$(date +%s)"
     if [[ -n "$YAMNET_PID" ]] &&
@@ -526,8 +611,32 @@ while true; do
         write_yamnet_status "RESTARTING" "Launching detector"
         start_yamnet
     fi
+    if [[ -n "$AUDIO_SHADOW_PID" ]] &&
+        ! child_is_running "$AUDIO_SHADOW_PID"; then
+        if wait "$AUDIO_SHADOW_PID"; then
+            audio_shadow_status=0
+        else
+            audio_shadow_status="$?"
+        fi
+        remove_managed_pid "$AUDIO_SHADOW_PID"
+        AUDIO_SHADOW_PID=""
+        AUDIO_SHADOW_RESTART_AT=$((
+            now + AUDIO_SHADOW_RESTART_DELAY_SECONDS
+        ))
+        echo \
+            "EfficientAT shadow exited (status=${audio_shadow_status}); " \
+            "production YAMNet remains authoritative; restarting shadow in " \
+            "${AUDIO_SHADOW_RESTART_DELAY_SECONDS}s" \
+            >&2
+    fi
+    if [[ "${AUDIO_SHADOW_ENABLED,,}" =~ ^(true|1|yes)$ ]] &&
+        [[ -z "$AUDIO_SHADOW_PID" ]] &&
+        (( now >= AUDIO_SHADOW_RESTART_AT )); then
+        echo "Restarting EfficientAT shadow recorder" >&2
+        start_audio_shadow
+    fi
     for pid in "${PIDS[@]}"; do
-        if [[ "$pid" == "$YAMNET_PID" ]]; then
+        if [[ "$pid" == "$YAMNET_PID" || "$pid" == "$AUDIO_SHADOW_PID" ]]; then
             continue
         fi
         if ! kill -0 "$pid" 2>/dev/null; then
