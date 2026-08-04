@@ -176,6 +176,12 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.command_x, "HOLD")
         self.assertEqual(command.command_y, "HOLD")
 
+    def test_lower_body_may_leave_safe_area_when_upper_35_percent_fits(self) -> None:
+        command = self.update_box((20, 20, 80, 100))
+
+        self.assertEqual(command.direction, "HOLD")
+        self.assertEqual(command.center_y, 0.34)
+
     def test_moves_only_on_axes_whose_box_nears_an_edge(self) -> None:
         command = self.update_box((75, 5, 95, 30))
 
@@ -206,7 +212,7 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(self.update_box((12, 20, 37, 80)).command_x, "HOLD")
 
     def test_oversized_box_holds_instead_of_driving_into_a_limit(self) -> None:
-        command = self.update_box((0, 0, 100, 100))
+        command = self.update_box((0, 20, 100, 80))
 
         self.assertEqual(command.direction, "HOLD")
         self.assertEqual(command.error_x, 0.0)

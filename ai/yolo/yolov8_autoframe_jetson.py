@@ -654,6 +654,27 @@ class AutoFrameController:
             return -1, lower_error / max(frame_size / 2.0, 1.0), True
         return 1, upper_error / max(frame_size / 2.0, 1.0), True
 
+    def tracking_box(self, decision: FramingDecision) -> Box:
+        if self.tracking_mode != "safe-frame":
+            return decision.group_box
+
+        upper_body_boxes = tuple(
+            (
+                item.box[0],
+                item.box[1],
+                item.box[2],
+                item.box[1]
+                + (item.box[3] - item.box[1]) * self.subject_y_ratio,
+            )
+            for item in decision.objects
+        )
+        return (
+            min(box[0] for box in upper_body_boxes),
+            min(box[1] for box in upper_body_boxes),
+            max(box[2] for box in upper_body_boxes),
+            max(box[3] for box in upper_body_boxes),
+        )
+
     def update(
         self,
         decision: FramingDecision | None,
@@ -723,14 +744,15 @@ class AutoFrameController:
         self.smoothed_target = (smooth_x, smooth_y)
         self.last_target_seen_at = now
 
+        tracking_box = self.tracking_box(decision)
         if self.smoothed_group_box is None:
-            self.smoothed_group_box = decision.group_box
+            self.smoothed_group_box = tracking_box
         else:
             self.smoothed_group_box = tuple(
                 self.ema_alpha * raw_value
                 + (1.0 - self.ema_alpha) * smooth_value
                 for raw_value, smooth_value in zip(
-                    decision.group_box,
+                    tracking_box,
                     self.smoothed_group_box,
                 )
             )
@@ -1052,6 +1074,27 @@ def draw_overlay(
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 215, 255), 3)
         raw_center = (int(decision.raw_center[0]), int(decision.raw_center[1]))
         cv2.drawMarker(frame, raw_center, (0, 215, 255), cv2.MARKER_CROSS, 20, 2)
+        if controller.tracking_mode == "safe-frame":
+            track_x1, track_y1, track_x2, track_y2 = (
+                int(value) for value in controller.tracking_box(decision)
+            )
+            cv2.rectangle(
+                frame,
+                (track_x1, track_y1),
+                (track_x2, track_y2),
+                (255, 0, 255),
+                2,
+            )
+            cv2.putText(
+                frame,
+                f"SAFE TARGET top {controller.subject_y_ratio:.0%}",
+                (track_x1, max(18, track_y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (255, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
 
     if (
         controller.tracking_mode == "center"
