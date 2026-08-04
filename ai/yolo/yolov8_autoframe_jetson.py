@@ -211,6 +211,27 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--tracking-mode",
+        choices=("center", "safe-frame"),
+        default=os.getenv("YOLO_TRACKING_MODE", "center"),
+        help=(
+            "Track a center point or move only when the selected box "
+            "nears an edge."
+        ),
+    )
+    parser.add_argument(
+        "--safe-frame-start-margin",
+        type=float,
+        default=float(os.getenv("YOLO_SAFE_FRAME_START_MARGIN", "0.08")),
+        help="Edge margin that starts safe-frame movement (default: 0.08).",
+    )
+    parser.add_argument(
+        "--safe-frame-stop-margin",
+        type=float,
+        default=float(os.getenv("YOLO_SAFE_FRAME_STOP_MARGIN", "0.12")),
+        help="Inner margin that stops safe-frame movement (default: 0.12).",
+    )
+    parser.add_argument(
         "--ema-alpha",
         type=float,
         default=0.25,
@@ -346,6 +367,15 @@ def parse_args() -> argparse.Namespace:
         parser.error("--deadzone-height must be between 0 and 1")
     if not 0.0 <= args.subject_y_ratio <= 1.0:
         parser.error("--subject-y-ratio must be between 0 and 1")
+    if not 0.0 <= args.safe_frame_start_margin < 0.45:
+        parser.error(
+            "--safe-frame-start-margin must be at least 0 and less than 0.45"
+        )
+    if not args.safe_frame_start_margin < args.safe_frame_stop_margin < 0.45:
+        parser.error(
+            "--safe-frame-stop-margin must be greater than the start margin "
+            "and less than 0.45"
+        )
     if not 0.0 < args.ema_alpha <= 1.0:
         parser.error("--ema-alpha must be greater than 0 and at most 1")
     if args.home_after_seconds < 0:
@@ -570,18 +600,59 @@ class AutoFrameController:
         deadzone_height: float,
         subject_y_ratio: float,
         home_after_seconds: float,
+        tracking_mode: str = "center",
+        safe_frame_start_margin: float = 0.08,
+        safe_frame_stop_margin: float = 0.12,
     ) -> None:
         if not 0.0 <= subject_y_ratio <= 1.0:
             raise ValueError("subject_y_ratio must be between 0 and 1")
+        if tracking_mode not in {"center", "safe-frame"}:
+            raise ValueError("tracking_mode must be center or safe-frame")
+        if not 0.0 <= safe_frame_start_margin < safe_frame_stop_margin < 0.45:
+            raise ValueError(
+                "safe-frame margins must satisfy 0 <= start < stop < 0.45"
+            )
         self.ema_alpha = ema_alpha
         self.deadzone_width = deadzone_width
         self.deadzone_height = deadzone_height
         self.subject_y_ratio = subject_y_ratio
         self.home_after_seconds = home_after_seconds
+        self.tracking_mode = tracking_mode
+        self.safe_frame_start_margin = safe_frame_start_margin
+        self.safe_frame_stop_margin = safe_frame_stop_margin
         self.smoothed_target: Point | None = None
+        self.smoothed_group_box: Box | None = None
         self.last_target_seen_at: float | None = None
         self.last_error_x = 0.0
         self.last_error_y = 0.0
+        self.safe_frame_x_active = False
+        self.safe_frame_y_active = False
+
+    def _safe_frame_axis(
+        self,
+        low: float,
+        high: float,
+        frame_size: int,
+        active: bool,
+    ) -> tuple[int, float, bool]:
+        stop_span = frame_size * (1.0 - 2.0 * self.safe_frame_stop_margin)
+        if high - low > stop_span:
+            return 0, 0.0, False
+
+        margin = (
+            self.safe_frame_stop_margin
+            if active
+            else self.safe_frame_start_margin
+        )
+        lower_boundary = frame_size * margin
+        upper_boundary = frame_size * (1.0 - margin)
+        lower_error = low - lower_boundary
+        upper_error = high - upper_boundary
+        if lower_error >= 0.0 and upper_error <= 0.0:
+            return 0, 0.0, False
+        if lower_error < 0.0:
+            return -1, lower_error / max(frame_size / 2.0, 1.0), True
+        return 1, upper_error / max(frame_size / 2.0, 1.0), True
 
     def update(
         self,
@@ -591,6 +662,8 @@ class AutoFrameController:
         now: float,
     ) -> CameraCommand:
         if decision is None:
+            self.safe_frame_x_active = False
+            self.safe_frame_y_active = False
             if (
                 self.last_target_seen_at is not None
                 and now - self.last_target_seen_at < self.home_after_seconds
@@ -612,6 +685,7 @@ class AutoFrameController:
                 )
 
             self.smoothed_target = None
+            self.smoothed_group_box = None
             self.last_error_x = 0.0
             self.last_error_y = 0.0
             return CameraCommand(
@@ -649,21 +723,59 @@ class AutoFrameController:
         self.smoothed_target = (smooth_x, smooth_y)
         self.last_target_seen_at = now
 
-        frame_center_x = frame_width / 2.0
-        frame_center_y = frame_height / 2.0
-        pixel_error_x = smooth_x - frame_center_x
-        pixel_error_y = smooth_y - frame_center_y
-        normalized_error_x = pixel_error_x / max(frame_center_x, 1.0)
-        normalized_error_y = pixel_error_y / max(frame_center_y, 1.0)
-        move_x = abs(pixel_error_x) > frame_width * self.deadzone_width / 2.0
-        move_y = abs(pixel_error_y) > frame_height * self.deadzone_height / 2.0
+        if self.smoothed_group_box is None:
+            self.smoothed_group_box = decision.group_box
+        else:
+            self.smoothed_group_box = tuple(
+                self.ema_alpha * raw_value
+                + (1.0 - self.ema_alpha) * smooth_value
+                for raw_value, smooth_value in zip(
+                    decision.group_box,
+                    self.smoothed_group_box,
+                )
+            )
 
-        horizontal = ""
-        vertical = ""
-        if move_x:
-            horizontal = "RIGHT" if pixel_error_x > 0 else "LEFT"
-        if move_y:
-            vertical = "DOWN" if pixel_error_y > 0 else "UP"
+        if self.tracking_mode == "safe-frame":
+            smooth_left, smooth_top, smooth_right, smooth_bottom = (
+                self.smoothed_group_box
+            )
+            x_direction, normalized_error_x, self.safe_frame_x_active = (
+                self._safe_frame_axis(
+                    smooth_left,
+                    smooth_right,
+                    frame_width,
+                    self.safe_frame_x_active,
+                )
+            )
+            y_direction, normalized_error_y, self.safe_frame_y_active = (
+                self._safe_frame_axis(
+                    smooth_top,
+                    smooth_bottom,
+                    frame_height,
+                    self.safe_frame_y_active,
+                )
+            )
+            horizontal = {-1: "LEFT", 0: "", 1: "RIGHT"}[x_direction]
+            vertical = {-1: "UP", 0: "", 1: "DOWN"}[y_direction]
+            smooth_x = (smooth_left + smooth_right) / 2.0
+            smooth_y = (smooth_top + smooth_bottom) / 2.0
+            self.smoothed_target = (smooth_x, smooth_y)
+        else:
+            frame_center_x = frame_width / 2.0
+            frame_center_y = frame_height / 2.0
+            pixel_error_x = smooth_x - frame_center_x
+            pixel_error_y = smooth_y - frame_center_y
+            normalized_error_x = pixel_error_x / max(frame_center_x, 1.0)
+            normalized_error_y = pixel_error_y / max(frame_center_y, 1.0)
+            move_x = abs(pixel_error_x) > frame_width * self.deadzone_width / 2.0
+            move_y = abs(pixel_error_y) > frame_height * self.deadzone_height / 2.0
+            horizontal = "RIGHT" if move_x and pixel_error_x > 0 else ""
+            if move_x and pixel_error_x < 0:
+                horizontal = "LEFT"
+            vertical = "DOWN" if move_y and pixel_error_y > 0 else ""
+            if move_y and pixel_error_y < 0:
+                vertical = "UP"
+
         direction = "_".join(part for part in (horizontal, vertical) if part) or "HOLD"
         command_x = horizontal or "HOLD"
         command_y = vertical or "HOLD"
@@ -886,16 +998,40 @@ def draw_overlay(
         1,
     )
 
-    deadzone_half_width = int(width * controller.deadzone_width / 2.0)
-    deadzone_half_height = int(height * controller.deadzone_height / 2.0)
-    cv2.rectangle(
-        frame,
-        (center[0] - deadzone_half_width, center[1] - deadzone_half_height),
-        (center[0] + deadzone_half_width, center[1] + deadzone_half_height),
-        (255, 255, 0),
-        2,
-    )
-    cv2.drawMarker(frame, center, (255, 255, 0), cv2.MARKER_CROSS, 18, 2)
+    if controller.tracking_mode == "safe-frame":
+        start_margin = controller.safe_frame_start_margin
+        stop_margin = controller.safe_frame_stop_margin
+        cv2.rectangle(
+            frame,
+            (int(width * start_margin), int(height * start_margin)),
+            (
+                int(width * (1.0 - start_margin)),
+                int(height * (1.0 - start_margin)),
+            ),
+            (0, 165, 255),
+            1,
+        )
+        cv2.rectangle(
+            frame,
+            (int(width * stop_margin), int(height * stop_margin)),
+            (
+                int(width * (1.0 - stop_margin)),
+                int(height * (1.0 - stop_margin)),
+            ),
+            (255, 255, 0),
+            2,
+        )
+    else:
+        deadzone_half_width = int(width * controller.deadzone_width / 2.0)
+        deadzone_half_height = int(height * controller.deadzone_height / 2.0)
+        cv2.rectangle(
+            frame,
+            (center[0] - deadzone_half_width, center[1] - deadzone_half_height),
+            (center[0] + deadzone_half_width, center[1] + deadzone_half_height),
+            (255, 255, 0),
+            2,
+        )
+        cv2.drawMarker(frame, center, (255, 255, 0), cv2.MARKER_CROSS, 18, 2)
 
     if decision is not None:
         for item in decision.objects:
@@ -917,7 +1053,11 @@ def draw_overlay(
         raw_center = (int(decision.raw_center[0]), int(decision.raw_center[1]))
         cv2.drawMarker(frame, raw_center, (0, 215, 255), cv2.MARKER_CROSS, 20, 2)
 
-    if controller.smoothed_target is not None and command.state == "TRACKING":
+    if (
+        controller.tracking_mode == "center"
+        and controller.smoothed_target is not None
+        and command.state == "TRACKING"
+    ):
         smooth_center = (
             int(controller.smoothed_target[0]),
             int(controller.smoothed_target[1]),
@@ -927,7 +1067,10 @@ def draw_overlay(
 
     mode = "LIMITED" if command.limited_group else "ALL"
     lines = (
-        f"state={command.state}  command={command.direction}",
+        (
+            f"state={command.state} command={command.direction} "
+            f"tracking={controller.tracking_mode}"
+        ),
         (
             f"selected={command.target_count}/{command.total_stable_objects} "
             f"mode={mode} ids={list(command.target_ids)}"
@@ -1053,6 +1196,9 @@ def run(args: argparse.Namespace) -> None:
         deadzone_height=args.deadzone_height,
         subject_y_ratio=args.subject_y_ratio,
         home_after_seconds=args.home_after_seconds,
+        tracking_mode=args.tracking_mode,
+        safe_frame_start_margin=args.safe_frame_start_margin,
+        safe_frame_stop_margin=args.safe_frame_stop_margin,
     )
 
     frame_count = 0
