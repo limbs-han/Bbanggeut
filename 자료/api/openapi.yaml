@@ -1181,6 +1181,90 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/videos/{videoId}/comic/script:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    post:
+      tags: [Videos]
+      operationId: createComicScript
+      summary: 4컷 만화 구성 만들기
+      description: |
+        기기에서 만든 전사문을 보내 4컷 구성(흐름·장면·대사)을 글로 받는다. 서버가 원본에서
+        프레임 4~6장을 뽑아 함께 모델에 넣는다. 사용자가 대사를 고친 뒤 `comic/image`를 부른다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComicScriptRequest'
+      responses:
+        '200':
+          description: 정확히 4개의 컷
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicScriptResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: 전사문 형식 오류(`VALIDATION_FAILED`) 또는 만화 재료 부족(`COMIC_UNPROCESSABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: 사용자·영상 기준 호출 예산 초과(`COMIC_RATE_LIMITED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/videos/{videoId}/comic/image:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    post:
+      tags: [Videos]
+      operationId: createComicImage
+      summary: 4컷 만화 그림 받기
+      description: |
+        사용자가 고친 4컷으로 2×2 격자 만화 한 장을 받는다. 대사는 그림에 그리지 않는다 —
+        앱이 각 칸 아래 자막 띠로 얹는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComicImageRequest'
+      responses:
+        '200':
+          description: 정사각 PNG 한 장
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicImageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: 컷이 4개가 아님·`beat`/`scene` 누락·지원하지 않는 `style`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: 사용자·영상 기준 호출 예산 초과(`COMIC_RATE_LIMITED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/iot/registration-codes:
     post:
       tags: [IoT]
@@ -2602,6 +2686,79 @@ components:
           nullable: true
         isFavorite:
           type: boolean
+
+    ComicCut:
+      type: object
+      required: [beat, scene]
+      properties:
+        beat:
+          type: string
+          description: 이야기 단계. 비어 있을 수 없다.
+        scene:
+          type: string
+          description: 눈에 보이는 한 순간. 소리를 언급하지 않는다 — 모델이 의성어를 그린다.
+        dialogue:
+          type: string
+          nullable: true
+          description: 대사. 그림 모델에는 넘기지 않는다 — 앱이 칸 아래 자막 띠로 얹는다.
+
+    ComicScriptRequest:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 400
+          description: 기기의 ML Kit 자막. 서버는 전사하지 않는다.
+          items:
+            type: object
+            required: [startMs, text]
+            properties:
+              startMs:
+                type: integer
+                format: int64
+                minimum: 0
+              text:
+                type: string
+                maxLength: 200
+
+    ComicScriptResponse:
+      type: object
+      required: [cuts]
+      properties:
+        cuts:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: 항상 4개. 그림이 2×2 격자 한 장이라 칸 수가 고정이다.
+          items:
+            $ref: '#/components/schemas/ComicCut'
+
+    ComicImageRequest:
+      type: object
+      required: [cuts]
+      properties:
+        cuts:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/ComicCut'
+        style:
+          type: string
+          enum: [webtoon, watercolor, crayon]
+          default: webtoon
+          description: 화풍. 자유 문자열이 아니다 — 이 값이 이미지 프롬프트 문장에 그대로 들어간다.
+
+    ComicImageResponse:
+      type: object
+      required: [image]
+      properties:
+        image:
+          type: string
+          format: byte
+          description: 정사각 PNG의 순수 base64. `data:image/png;base64,` 접두어를 붙이지 않는다.
 
     SignedUrlResponse:
       type: object

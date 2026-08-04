@@ -30,7 +30,8 @@ public class ComicController {
         @PathVariable UUID videoId,
         @RequestBody ComicScriptRequest request
     ) {
-        return comicGatewayService.createScript(userId(jwt), videoId, request);
+        return comicGatewayService.createScript(
+            userId(jwt), jwt.getTokenValue(), videoId, request);
     }
 
     @PostMapping("/{videoId}/comic/image")
@@ -39,7 +40,8 @@ public class ComicController {
         @PathVariable UUID videoId,
         @RequestBody ComicImageRequest request
     ) {
-        return comicGatewayService.createImage(userId(jwt), videoId, request);
+        return comicGatewayService.createImage(
+            userId(jwt), jwt.getTokenValue(), videoId, request);
     }
 
     private UUID userId(Jwt jwt) {

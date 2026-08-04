@@ -4,6 +4,7 @@ import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.wj.server.audit.application.AuditService;
@@ -20,6 +21,7 @@ import com.wj.server.video.domain.VideoRow;
 import com.wj.server.video.persistence.VideoMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -28,13 +30,16 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * Fronts the Python comic worker, which has no authentication of its own and is
- * never exposed outside the server network.
+ * Fronts the Python comic worker, which holds the generative model key. The key
+ * cannot live in the app: an APK can be unpacked and the key spent by anyone.
  *
- * <p>The gateway carries the four things the worker deliberately does not: the
- * caller's identity, vault membership on the video, a short-lived read URL for
- * the original, and a per-user call budget. A generative image call costs real
- * credits, so an unbounded endpoint is a billing hole, not just a load problem.
+ * <p>The gateway adds a short-lived read URL for the original and a per-user
+ * call budget. A generative image call costs real credits, so an unbounded
+ * endpoint is a billing hole, not just a load problem.
+ *
+ * <p>The caller's token is forwarded verbatim. The worker verifies the same
+ * backend JWT and re-checks vault membership on every {@code /v1} route, so
+ * dropping the header here turns every comic request into a 401.
  *
  * <p>Deliberately not {@code @Transactional}: the worker call takes minutes and
  * a transaction would pin a pooled connection for its whole duration. Both
@@ -47,8 +52,10 @@ public class ComicGatewayService {
     private static final int CUT_COUNT = 4;
     private static final int MAX_LINES = 400;
     private static final int MAX_TEXT_LENGTH = 200;
-    private static final int MAX_STYLE_LENGTH = 40;
     private static final String DEFAULT_STYLE = "webtoon";
+    // 화이트리스트인 이유: style은 워커에서 이미지 프롬프트 문장에 그대로 끼워
+    // 넣는다. 임의 문자열을 허용하면 사용자가 프롬프트를 덧쓸 수 있다.
+    private static final Set<String> STYLES = Set.of(DEFAULT_STYLE, "watercolor", "crayon");
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
 
     private final VideoMapper videoMapper;
@@ -82,7 +89,8 @@ public class ComicGatewayService {
             .build();
     }
 
-    public ComicScriptResponse createScript(UUID userId, UUID videoId, ComicScriptRequest request) {
+    public ComicScriptResponse createScript(
+        UUID userId, String token, UUID videoId, ComicScriptRequest request) {
         VideoRow video = readyVideo(userId, videoId, "COMIC_SCRIPT");
         List<ComicScriptRequest.TranscriptLine> lines = validLines(request);
         requireBudget(userId, videoId, video, "COMIC_SCRIPT");
@@ -90,6 +98,7 @@ public class ComicGatewayService {
         var signed = objectStorageService.createReadUrl(video.storageKey(), false);
         ComicScriptResponse response = callWorker(
             "/v1/comic/" + videoId + "/script",
+            token,
             Map.of("videoUrl", signed.url(), "lines", lines),
             ComicScriptResponse.class);
 
@@ -100,14 +109,17 @@ public class ComicGatewayService {
         return response;
     }
 
-    public ComicImageResponse createImage(UUID userId, UUID videoId, ComicImageRequest request) {
+    public ComicImageResponse createImage(
+        UUID userId, String token, UUID videoId, ComicImageRequest request) {
         VideoRow video = readyVideo(userId, videoId, "COMIC_IMAGE");
         List<ComicCutPayload> cuts = validCuts(request);
+        String style = style(request.style());
         requireBudget(userId, videoId, video, "COMIC_IMAGE");
 
         ComicImageResponse response = callWorker(
             "/v1/comic/" + videoId + "/image",
-            Map.of("cuts", cuts, "style", style(request.style())),
+            token,
+            Map.of("cuts", cuts, "style", style),
             ComicImageResponse.class);
 
         if (response == null || response.image() == null || response.image().isBlank()) {
@@ -175,8 +187,9 @@ public class ComicGatewayService {
             throw validation("cuts는 " + CUT_COUNT + "개여야 합니다.");
         }
         for (ComicCutPayload cut : cuts) {
-            if (cut == null || cut.scene() == null || cut.scene().isBlank()) {
-                throw validation("각 컷에는 scene이 있어야 합니다.");
+            if (cut == null || cut.scene() == null || cut.scene().isBlank()
+                || cut.beat() == null || cut.beat().isBlank()) {
+                throw validation("각 컷에는 beat와 scene이 있어야 합니다.");
             }
             if (cut.dialogue() != null && cut.dialogue().length() > MAX_TEXT_LENGTH) {
                 throw validation("대사는 " + MAX_TEXT_LENGTH + "자 이하여야 합니다.");
@@ -189,15 +202,22 @@ public class ComicGatewayService {
         if (requested == null || requested.isBlank()) {
             return DEFAULT_STYLE;
         }
-        if (requested.length() > MAX_STYLE_LENGTH) {
-            throw validation("style은 " + MAX_STYLE_LENGTH + "자 이하여야 합니다.");
+        if (!STYLES.contains(requested)) {
+            throw validation("지원하지 않는 style입니다.");
         }
         return requested;
     }
 
-    private <T> T callWorker(String path, Object body, Class<T> responseType) {
+    private <T> T callWorker(String path, String token, Object body, Class<T> responseType) {
         try {
-            return workerClient.post().uri(path).body(body).retrieve().body(responseType);
+            return workerClient.post()
+                .uri(path)
+                // 워커가 같은 백엔드 토큰을 스스로 검증하고 금고 범위를 다시 본다.
+                // 이 헤더를 빼면 모든 만화 요청이 401이 된다.
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .body(body)
+                .retrieve()
+                .body(responseType);
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode().value() == HttpStatus.UNPROCESSABLE_ENTITY.value()) {
                 // 워커가 재료 부족으로 거절한 경우다. 다시 눌러도 같은 결과이므로
