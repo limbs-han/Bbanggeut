@@ -223,4 +223,23 @@ do
   fi
 done
 
+# editor-api 서비스 이벤트는 전용 보안 체인이어야 한다.
+#
+# 사용자 체인에 permitAll만 걸면 통과하지 못한다 — permitAll은 인가 규칙이고,
+# Bearer 헤더가 실려 오면 그 앞의 인증 필터가 iss=wj-editor 토큰을 액세스
+# 토큰으로 검증하려다 실패해 컨트롤러 도달 전에 401을 낸다. 운영에서 편집
+# 분석 완료 알림이 이 때문에 한 건도 발송되지 않았다. 두 번 겪지 않도록
+# 체인 분리를 계약으로 고정한다.
+security_config="${repository_root}/backend/server/src/main/java/com/wj/server/config/SecurityConfig.java"
+if ! grep -Fq '.securityMatcher("/api/editor/**")' "${security_config}"
+then
+  echo "/api/editor/** 전용 보안 체인이 없습니다 — permitAll만으로는 Bearer 헤더가 인증 필터에서 401이 됩니다." >&2
+  exit 1
+fi
+if grep -Fq '.requestMatchers("/api/editor/events").permitAll()' "${security_config}"
+then
+  echo "사용자 체인에 /api/editor/events permitAll이 되살아났습니다 — 전용 체인으로 처리해야 합니다." >&2
+  exit 1
+fi
+
 echo "Backend deployment artifact and WebRTC activation contract passed."

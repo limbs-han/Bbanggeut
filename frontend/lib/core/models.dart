@@ -462,6 +462,30 @@ class EventStats {
   );
 }
 
+/// 영상 댓글. 작성자 표시 이름은 서버가 users에서 조인해 준다 — 앱이 보낸
+/// 이름을 믿지 않으므로 위조할 수 없다.
+class VideoComment {
+  const VideoComment({
+    required this.id,
+    required this.authorId,
+    required this.body,
+    this.authorName,
+    this.createdAt,
+  });
+  final String id;
+  final String authorId;
+  final String body;
+  final String? authorName;
+  final DateTime? createdAt;
+  factory VideoComment.fromJson(Map<String, dynamic> json) => VideoComment(
+    id: json['id'] as String? ?? '',
+    authorId: json['authorId'] as String? ?? '',
+    body: json['body'] as String? ?? '',
+    authorName: json['authorName'] as String?,
+    createdAt: parseDate(json['createdAt']),
+  );
+}
+
 /// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
 class VaultEventStats {
   const VaultEventStats({
