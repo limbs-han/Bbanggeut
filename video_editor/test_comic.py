@@ -154,9 +154,20 @@ class ImagePromptTest(unittest.TestCase):
     def test_forbids_text_and_bubbles(self) -> None:
         prompt = comic.build_image_prompt(CUTS)
 
-        self.assertIn("No text", prompt)
+        self.assertIn("no writing of any kind", prompt)
         self.assertIn("No speech bubbles", prompt)
-        self.assertIn("lower quarter", prompt)
+
+    def test_never_names_the_artifacts_it_fears(self) -> None:
+        """부정 지시도 그 물건을 모델에게 떠올리게 한다.
+
+        "아래 1/4을 단순하게 두라(앱이 자막을 얹는다)"라고 적었더니 모델이 네 칸
+        아래에 자막 띠와 아이콘을 그렸다(2026-08-04 실측). 자막·워터마크·카메라
+        UI라는 단어 자체가 프롬프트에 나타나면 안 된다.
+        """
+        prompt = comic.build_image_prompt(CUTS).lower()
+
+        for word in ("subtitle", "caption", "watermark", "camera ui", "timestamp"):
+            self.assertNotIn(word, prompt)
 
     def test_works_without_sheet(self) -> None:
         # 시트 캐시를 잃어도 실패시키지 않는다 — 품질만 떨어진다.
