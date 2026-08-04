@@ -3,8 +3,8 @@
 /// **왜 서버를 경유하나**: 이미지 생성 API 키를 앱에 넣으면 APK를 뜯어 가져갈 수
 /// 있다. 그러면 남의 계정으로 아무나 이미지를 생성한다. 키는 서버에만 둔다.
 ///
-/// 서버 통로는 별도 브랜치(feat/backend/*)에서 만든다. 그때까지 기본값은
-/// [FakeComicGateway]다 — 서버 없이 화면 전부를 만들고 검증할 수 있다.
+/// 서버 통로는 구현됐다(API-71·72 + 파이썬 만화 워커). [FakeComicGateway]는
+/// 서버 없이 화면을 걸어 볼 때만 쓴다 — `--dart-define=COMIC_SERVER=false`.
 library;
 
 import 'dart:convert';
@@ -17,8 +17,12 @@ import '../../core/api_client.dart';
 import '../stt/caption_line.dart';
 import 'comic_script.dart';
 
-/// 서버 통로가 준비되면 `--dart-define=COMIC_SERVER=true`로 켠다.
-const comicServerReady = bool.fromEnvironment('COMIC_SERVER');
+/// 기본은 **실서버**다. 견본으로 돌리려면 `--dart-define=COMIC_SERVER=false`.
+///
+/// 서버가 없던 동안에는 기본이 견본이었다. 이제 백엔드 게이트웨이(API-71·72)와
+/// 만화 워커가 있으므로 뒤집었다 — 빌드할 때마다 인자를 붙여야 하는 쪽이
+/// 위험하다. 붙이는 걸 잊으면 오류가 아니라 **가짜 만화가 그대로 출고된다.**
+const comicServerReady = bool.fromEnvironment('COMIC_SERVER', defaultValue: true);
 
 /// 기본 화풍. 화면에 고르는 UI를 두지 않는다(설계의 "하지 않는 것").
 const comicDefaultStyle = 'webtoon';
