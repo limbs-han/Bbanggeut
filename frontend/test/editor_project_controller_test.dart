@@ -202,6 +202,21 @@ void main() {
     expect(dto['outputPath'], '/tmp/out.mp4');
   });
 
+  test('직접 자막을 선택한 화면 위치와 표시 시간으로 추가한다', () {
+    final subject = controller();
+    subject.addTextLayer(
+      text: '상단 자막',
+      position: NormalizedPoint(0.5, 0.22),
+      startMs: 1000,
+      endMs: 6000,
+    );
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.position, NormalizedPoint(0.5, 0.22));
+    expect(layer.startMs, 1000);
+    expect(layer.endMs, 6000);
+  });
+
   test('텍스트 굵기와 크기를 바꾸고 영상 위에서 이동·확대할 수 있다', () {
     final subject = controller();
     subject.addTextLayer(text: '우리 가족', startMs: 0, fontSize: 48, bold: false);
@@ -238,6 +253,41 @@ void main() {
     subject.addTextLayer(text: '배경 없는 글자');
 
     expect(subject.project.textLayers.single.backgroundColor.a, 0);
+  });
+
+  test('자동 자막은 기존 기본 스타일로 만들고 사용자가 다시 바꿀 수 있다', () {
+    final subject = controller();
+    subject.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 3000, text: '오늘도 많이 웃었네'),
+    ]);
+
+    final initial = subject.project.textLayers.single;
+    expect(initial.id, startsWith('ai-caption-'));
+    expect(subject.project.selectedLayerId, initial.id);
+    expect(initial.position, NormalizedPoint(0.5, 0.78));
+    expect(initial.color, const Color(0xFFFFFFFF));
+    expect(initial.backgroundColor.a, 0);
+    expect(initial.fontSize, 28);
+    expect(initial.bold, isTrue);
+    expect(initial.align, EditorTextAlign.center);
+
+    subject.selectLayer(initial.id);
+    expect(
+      subject.updateSelectedTextLayer(
+        text: initial.text,
+        color: const Color(0xFFFF725B),
+        backgroundColor: const Color(0x00000000),
+        fontSize: 42,
+        bold: false,
+      ),
+      isTrue,
+    );
+
+    final changed = subject.project.textLayers.single;
+    expect(changed.color, const Color(0xFFFF725B));
+    expect(changed.backgroundColor.a, 0);
+    expect(changed.fontSize, 42);
+    expect(changed.bold, isFalse);
   });
 
   test('모서리 손잡이로 크기만 바꾸면 위치와 회전은 그대로다', () {
@@ -632,15 +682,11 @@ void main() {
 
   test('얼굴 스티커는 사람마다 하나씩 붙는다', () {
     final subject = controller();
-    List<Map<String, Object>> line(
-      int fromMs,
-      int toMs,
-      double x,
-      double h,
-    ) => [
-      for (var ms = fromMs; ms <= toMs; ms += 250)
-        {'ms': ms, 'x': x, 'y': 0.5, 'h': h},
-    ];
+    List<Map<String, Object>> line(int fromMs, int toMs, double x, double h) =>
+        [
+          for (var ms = fromMs; ms <= toMs; ms += 250)
+            {'ms': ms, 'x': x, 'y': 0.5, 'h': h},
+        ];
     subject.loadDraftRecipe({
       'type': 'draft-v1',
       'clips': [
@@ -724,11 +770,10 @@ void main() {
     // 내보내기 키프레임: 줌 경계(2000ms) 직전·직후가 함께 실려 영상이
     // 확대를 푸는 순간 스티커도 그 프레임에 맞춰 돌아온다.
     final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
-    final track = ((dto['stickerLayers']! as List).single as Map)['track']!
-        as List;
+    final track =
+        ((dto['stickerLayers']! as List).single as Map)['track']! as List;
     final byMs = {
-      for (final sample in track)
-        (sample as Map)['ms'] as int: sample,
+      for (final sample in track) (sample as Map)['ms'] as int: sample,
     };
     expect(byMs.keys, containsAll([0, 1000, 1999, 2000]));
     expect(byMs[1999]!['s'] as double, closeTo(2.0, 1e-9));
