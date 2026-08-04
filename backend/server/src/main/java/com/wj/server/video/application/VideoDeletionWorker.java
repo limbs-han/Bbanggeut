@@ -26,6 +26,9 @@ public class VideoDeletionWorker {
                 if (job.thumbnailStorageKey() != null) {
                     objectStorageService.remove(job.thumbnailStorageKey());
                 }
+                // 편집 부산물(분석 캐시·초안·편집본·댓글)도 함께 정리한다.
+                // 멱등하므로 실패해 재시도돼도 앞의 삭제가 문제되지 않는다.
+                objectStorageService.removeEditData(job.videoId().toString());
                 jobs.complete(job);
             } catch (RuntimeException exception) {
                 jobs.retry(job.id(), "OBJECT_STORAGE_DELETE_FAILED");

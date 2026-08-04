@@ -61,6 +61,8 @@ class AnalysisJob:
     stage: str = "audio"
     progress: float = 0.0
     error: str | None = None
+    # 분석을 요청한 사용자(앱 토큰의 sub). 완료 알림의 수신자다.
+    requested_by: str | None = None
     started_at: str = field(
         default_factory=lambda: datetime.now().astimezone().isoformat()
     )
@@ -83,18 +85,28 @@ class AnalysisJobManager:
     결과 저장은 호출자가 준 save 콜백(MinIO 등)에 맡긴다.
     """
 
-    def __init__(self, save: Callable[[str, str, dict[str, Any]], None]) -> None:
+    def __init__(
+        self,
+        save: Callable[[str, str, dict[str, Any]], None],
+        on_done: Callable[[AnalysisJob], None] | None = None,
+    ) -> None:
         self._jobs: dict[str, AnalysisJob] = {}
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._save = save
+        self._on_done = on_done
 
     def get(self, video_id: str) -> AnalysisJob | None:
         with self._lock:
             return self._jobs.get(video_id)
 
     def submit(
-        self, video_id: str, video_path: Path, *, source_url: str | None = None
+        self,
+        video_id: str,
+        video_path: Path,
+        *,
+        source_url: str | None = None,
+        requested_by: str | None = None,
     ) -> AnalysisJob:
         """분석 작업 등록. source_url이 있으면 작업자가 그 주소에서 원본을
         video_path로 먼저 내려받는다(실서버 — 원본이 이미 MinIO에 있어서
@@ -105,7 +117,9 @@ class AnalysisJobManager:
             if existing is not None and existing.status == "running":
                 return existing
             job = AnalysisJob(
-                video_id=video_id, stage="download" if source_url else "audio"
+                video_id=video_id,
+                stage="download" if source_url else "audio",
+                requested_by=requested_by,
             )
             self._jobs[video_id] = job
         self._executor.submit(self._run, job, video_path, source_url)
@@ -121,6 +135,11 @@ class AnalysisJobManager:
                 try:
                     self._run_once(job, video_path, source_url)
                     job.status = "done"
+                    if self._on_done is not None:
+                        try:
+                            self._on_done(job)
+                        except Exception:  # noqa: BLE001 — 알림 실패는 무시
+                            pass
                     return
                 except Exception as failure:  # noqa: BLE001 — 상태로 보고한다
                     if attempt == 2:

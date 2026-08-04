@@ -25,13 +25,16 @@ class VideoDeletionWorkerTest {
 
     @Test
     void deletesOriginalAndThumbnailThenCompletesJob() {
-        VideoDeletionJob job = new VideoDeletionJob(1, UUID.randomUUID(), "video.mp4", "thumb.jpg", 1);
+        UUID videoId = UUID.randomUUID();
+        VideoDeletionJob job = new VideoDeletionJob(1, videoId, "video.mp4", "thumb.jpg", 1);
         when(jobs.claim(20)).thenReturn(List.of(job));
 
         new VideoDeletionWorker(jobs, storage).process();
 
         verify(storage).remove("video.mp4");
         verify(storage).remove("thumb.jpg");
+        // 편집 부산물(분석 캐시·초안·편집본)도 같은 잡에서 정리된다.
+        verify(storage).removeEditData(videoId.toString());
         verify(jobs).complete(job);
     }
 
@@ -45,5 +48,20 @@ class VideoDeletionWorkerTest {
         new VideoDeletionWorker(jobs, storage).process();
 
         verify(jobs).retry(2, "OBJECT_STORAGE_DELETE_FAILED");
+    }
+
+    @Test
+    void editDataFailureLeavesRetryableJob() {
+        UUID videoId = UUID.randomUUID();
+        VideoDeletionJob job = new VideoDeletionJob(3, videoId, "video.mp4", null, 1);
+        when(jobs.claim(20)).thenReturn(List.of(job));
+        doThrow(new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "OBJECT_STORAGE_UNAVAILABLE", "failed"))
+            .when(storage).removeEditData(videoId.toString());
+
+        new VideoDeletionWorker(jobs, storage).process();
+
+        // 원본은 지워졌어도 편집 데이터가 남았으면 잡을 끝내지 않는다 —
+        // remove는 멱등하므로 재시도가 안전하다.
+        verify(jobs).retry(3, "OBJECT_STORAGE_DELETE_FAILED");
     }
 }
