@@ -249,6 +249,7 @@ class _PushBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final emoji = switch (message.type) {
       'INVITATION_RECEIVED' => '❤️',
+      'INVITATION_ACCEPTED' => '🤝',
       'LAUGHTER_VIDEO_READY' => '📷',
       _ => '🔔',
     };

@@ -46,6 +46,21 @@ public class NotificationService {
         }
     }
 
+    /** 초대를 보낸 사람에게 수락 소식을 알린다. 초대자가 없으면 조용히 넘어간다. */
+    @Transactional
+    public void invitationAccepted(
+        UUID inviterId, String memberName, UUID deviceId, UUID vaultId, UUID invitationId
+    ) {
+        if (inviterId == null) {
+            return;
+        }
+        int inserted = mapper.insertInvitationAcceptedNotification(
+            UUID.randomUUID(), inviterId, memberName, deviceId, vaultId, invitationId);
+        if (inserted > 0) {
+            pushDispatcher.invitationAccepted(inviterId, memberName, invitationId);
+        }
+    }
+
     @Transactional
     public void laughterVideoReady(UUID deviceId, UUID videoId, String title) {
         int inserted = mapper.insertLaughterVideoNotifications(deviceId, videoId, title);

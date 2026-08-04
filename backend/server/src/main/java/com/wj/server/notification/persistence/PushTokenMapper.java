@@ -84,4 +84,14 @@ public interface PushTokenMapper {
          ORDER BY pt.token
         """)
     List<String> findActiveTokensByDevice(@Param("deviceId") UUID deviceId);
+
+    @Select("""
+        SELECT pt.token
+          FROM notification_push_tokens pt
+          JOIN users u ON u.id = pt.user_id
+         WHERE pt.user_id = #{userId}
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+         ORDER BY pt.created_at, pt.id
+        """)
+    List<String> findActiveTokensByUser(@Param("userId") UUID userId);
 }

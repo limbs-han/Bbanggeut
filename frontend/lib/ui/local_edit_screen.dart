@@ -74,6 +74,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   final Map<String, EditRecommendation> _presetRecommendations = {};
   bool _recommendationLoading = false;
 
+  /// 서버가 이 영상을 분석하는 동안 true. AI 컷 칩은 그동안 흐리게 잠긴다.
+  bool _analysisRunning = false;
+  Timer? _analysisPollTimer;
+  bool _analysisPollBusy = false;
+
   /// 렌더링 진행률(0~1). 네이티브에서 주기적으로 읽어 온다. null이면 아직 모른다.
   double? _exportProgress;
   Timer? _exportProgressTimer;
@@ -287,8 +292,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         '줌 ${projectController.project.zoomSegments.length}개',
         cutChanged: true,
       );
-    } catch (_) {
-      await finish('자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요');
+    } catch (failure) {
+      if (EditRecommendationClient.isAnalysisRequired(failure)) {
+        // 서버는 있는데 이 영상은 처음 본다 — 원본을 분석시키고, 끝나면
+        // 스낵바로 알린 뒤 AI 컷과 자동 줌을 연다. 편집은 그동안 계속된다.
+        final sourcePath = _sourcePath;
+        if (mounted && sourcePath != null) {
+          unawaited(_beginServerAnalysis(sourcePath));
+          if (mounted) setState(() => _status = 'AI가 영상을 분석하고 있어요');
+        }
+      } else {
+        await finish('자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요');
+      }
     }
   }
 
@@ -329,6 +344,123 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     } finally {
       if (mounted) setState(() => _recommendationLoading = false);
     }
+  }
+
+  /// 원본을 편집 서버에 올려 분석을 시작하고 2초마다 상태를 확인한다.
+  /// 그동안 AI 컷 칩은 잠기고, 끝나면 자동 추천(컷+자동 줌)을 적용한 뒤
+  /// 스낵바로 알린다. 실패해도 수동 편집은 그대로 계속된다.
+  Future<void> _beginServerAnalysis(String sourcePath) async {
+    if (_analysisRunning) return;
+    _analysisRunning = true;
+    _recommendationLoading = true;
+    try {
+      // 원본이 이미 서버(MinIO)에 있으므로 presigned URL을 넘겨 서버가
+      // 직접 받게 한다. URL 발급이 안 되면 로컬 원본을 통째로 올린다.
+      String? sourceUrl;
+      try {
+        sourceUrl = (await widget.controller.api.createDownloadUrl(
+          widget.video.id,
+        )).url;
+      } catch (_) {
+        sourceUrl = null;
+      }
+      final status = await _recommendations.requestAnalysis(
+        videoId: widget.video.id,
+        filePath: sourcePath,
+        sourceUrl: sourceUrl,
+      );
+      if (!mounted) return;
+      if (status.isDone) {
+        await _finishServerAnalysis();
+        return;
+      }
+      if (status.isFailed) {
+        _failServerAnalysis(status.error);
+        return;
+      }
+      showAppSnack(context, 'AI가 영상을 분석하고 있어요 — 끝나면 알려드릴게요');
+      _analysisPollTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _pollServerAnalysis(),
+      );
+    } catch (_) {
+      _failServerAnalysis(null);
+    }
+  }
+
+  Future<void> _pollServerAnalysis() async {
+    if (_analysisPollBusy) return;
+    _analysisPollBusy = true;
+    try {
+      final status = await _recommendations.analysisStatus(widget.video.id);
+      if (!mounted) return;
+      if (status.isDone) {
+        await _finishServerAnalysis();
+      } else if (status.isFailed || status.status == 'none') {
+        // none은 분석 도중 서버가 재시작해 작업이 사라진 경우다.
+        _failServerAnalysis(status.error);
+      }
+      // running이면 다음 폴링까지 기다린다.
+    } catch (_) {
+      // 일시적 오류는 다음 폴링에서 다시 확인한다.
+    } finally {
+      _analysisPollBusy = false;
+    }
+  }
+
+  Future<void> _finishServerAnalysis() async {
+    _stopServerAnalysis();
+    try {
+      final recommendation = await _recommendations.recommend(
+        videoId: widget.video.id,
+        capturedAt: widget.video.capturedStartAt,
+      );
+      final controller = _projectController;
+      if (!mounted || controller == null) return;
+      if (const {
+        'short',
+        'medium',
+        'long',
+      }.contains(recommendation.durationPreset)) {
+        _presetRecommendations[recommendation.durationPreset] = recommendation;
+      }
+      // 분석을 기다리는 동안 사용자가 이미 편집을 시작했다면 컷·줌을
+      // 덮지 않는다 — 프리셋 칩만 열어 주고, 원하면 직접 누르게 한다.
+      final untouched =
+          !controller.canUndo && !_editState.hasUnsavedChanges && !_saving;
+      if (untouched) {
+        controller.applyRecommendation(recommendation);
+        _editState.markExternalEditApplied();
+      }
+      setState(() => _recommendationLoading = false);
+      showAppSnack(context, 'AI 분석이 끝났어요 — AI 컷과 자동 줌을 쓸 수 있어요');
+      if (untouched) await _seekToPosition(controller.project.playheadMs);
+      unawaited(_loadPresetRecommendations());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _recommendationLoading = false);
+      showAppSnack(context, 'AI 추천을 불러오지 못했어요', error: true);
+    }
+  }
+
+  void _failServerAnalysis(String? error) {
+    _stopServerAnalysis();
+    if (!mounted) return;
+    setState(() => _recommendationLoading = false);
+    showAppSnack(
+      context,
+      error == null || error.isEmpty
+          ? 'AI 분석에 실패했어요 — 수동 편집은 계속할 수 있어요'
+          : 'AI 분석 실패: $error',
+      error: true,
+    );
+  }
+
+  void _stopServerAnalysis() {
+    _analysisPollTimer?.cancel();
+    _analysisPollTimer = null;
+    _analysisRunning = false;
+    _analysisPollBusy = false;
   }
 
   Future<void> _selectRecommendationPreset(String preset) async {
@@ -820,6 +952,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       context,
       'AI 자막 ${lines.length}줄을 자막 탭에 넣었어요. 자막 탭에서 고칠 수 있어요.',
     );
+    // 전사는 긴 영상에서 한참 걸려 그동안 다른 앱을 보는 사람이 많다 —
+    // 앱이 뒤로 가 있으면 스낵이 안 보이니 시스템 알림으로도 알린다.
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      unawaited(
+        _editorPlatform.showLocalNotification(
+          title: 'AI 자막이 준비됐어요',
+          body: '자막 ${lines.length}줄을 넣었어요. 편집기에서 다듬어 보세요.',
+        ),
+      );
+    }
     return true;
   }
 
@@ -973,27 +1115,23 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       if (!await file.exists() || (await file.length()) == 0) {
         throw const VideoExportException('만들어진 영상 파일이 비어 있어요.');
       }
-      // 완성 영상은 **서버에만** 올린다. 갤러리 저장은 여기서 하지 않는다 —
-      // 추억 > 편집 완료에서 영상을 열고 원할 때 내려받는다.
-      if (mounted) {
-        setState(() {
-          _exportProgress = null;
-          _status = '편집 영상을 서버에 올리고 있어요';
-        });
-      }
-      await _recommendations.uploadEditedVideo(
+      // 완성 영상은 **서버에만** 올리되, 올리는 일은 OS 백그라운드 작업
+      // (WorkManager)에 맡긴다. 셀룰러에서 몇 분씩 걸리는 업로드를 편집기가
+      // 붙잡고 기다리게 했더니 사용자가 앱을 껐고 업로드도 함께 끊겼다 —
+      // 이제 앱을 나가거나 꺼도 계속 올라가고, 진행률은 상단 알림에 보인다.
+      await _editorPlatform.enqueueEditedUpload(
         videoId: widget.video.id,
         filePath: outputPath,
+        uploadUrl: _recommendations.editedVideoUploadUrl(
+          videoId: widget.video.id,
+          title: widget.video.title,
+          durationMs: exportProject.durationMs,
+          capturedAt: widget.video.capturedStartAt,
+        ),
         title: widget.video.title,
-        durationMs: exportProject.durationMs,
-        capturedAt: widget.video.capturedStartAt,
-        // 진행률이 안 보이면 느린 회선에서 "멈췄다"로 보여 앱을 꺼 버린다
-        // — 실제로 그렇게 업로드가 끊긴 일이 있었다.
-        // 퍼센트는 덮개 제목이 보여 준다.
-        onProgress: (sent, total) {
-          if (!mounted || total <= 0) return;
-          setState(() => _exportProgress = sent / total);
-        },
+        // 렌더링 산출물(임시 파일)만 지운다. 원본을 그대로 올릴 때는 캐시라
+        // 지우면 다음 편집 진입이 도로 내려받는다.
+        deleteAfter: requiresRendering,
       );
       // 초안 저장은 렌더링 내내 돌고 있었다. 여기서 결과만 거둔다.
       await draftSaved;
@@ -1008,9 +1146,13 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       setState(() {
         _saving = false;
         _exportProgress = null;
-        _status = '서버에 저장되었습니다';
+        _status = '업로드를 시작했어요';
       });
-      showAppSnack(context, '서버에 저장했어요. 추억 > 편집 완료에서 볼 수 있어요.');
+      showAppSnack(
+        context,
+        '영상을 서버에 올리는 중이에요. 앱을 닫아도 계속 올라가요 — '
+        '끝나면 알림이 오고, 추억 > 편집 완료에서 볼 수 있어요.',
+      );
       Navigator.pop(context, SavedVideoEdit(videoPath: outputPath));
     } catch (failure) {
       debugPrint('editor save failed: $failure');
@@ -1141,6 +1283,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _textInput.dispose();
     _textFocus.dispose();
     _stopExportProgressPolling();
+    _stopServerAnalysis();
     final preview = _preview;
     if (preview != null) {
       preview.removeListener(_onPreviewChanged);
@@ -1488,7 +1631,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       onMutedChanged: _setMuted,
       onStickerSelected: _addSticker,
       onFaceStickerSelected: (value) {
-        projectController.setFaceSticker(value);
+        // 재생 위치에 얼굴이 없으면 붙일 수 없다 — 얼굴이 잡힌 장면으로
+        // 옮겨 달라고 안내한다.
+        if (!projectController.setFaceSticker(value)) {
+          showAppSnack(
+            context,
+            '이 장면에서는 얼굴을 찾지 못했어요. 얼굴이 나오는 장면으로 이동한 뒤 붙여 주세요.',
+            error: true,
+          );
+          return;
+        }
         _editState.markExternalEditApplied();
         setState(() {});
       },
@@ -2021,22 +2173,22 @@ class _PreviewSurface extends StatelessWidget {
     return auto != null && auto.isNotEmpty ? auto : null;
   }
 
-  /// 얼굴 추적 스티커의 이 순간 화면 위치. 일반 스티커는 그대로 돌려준다.
+  /// 얼굴 추적 스티커의 이 순간 화면 위치·배율. 일반 스티커는 그대로
+  /// 돌려준다.
   ///
   /// 저장된 [EditorStickerLayer.position]은 얼굴 중심 기준 **오프셋**이라
-  /// (0.5, 0.5)면 얼굴 정중앙이다. 얼굴 궤적이 없으면 오프셋을 그대로 화면
-  /// 좌표로 쓴다 — 안 보이는 것보다 가운데라도 보이는 쪽이 덜 놀란다.
+  /// (0.5, 0.5)면 얼굴 정중앙이다. 배치 계산은 모델과 공유한다 — 앵커한
+  /// 얼굴의 경로만 따르고, 얼굴 크기·구간 줌에 맞춰 위치와 크기가 함께
+  /// 움직인다. 얼굴 궤적이 없으면 오프셋을 그대로 화면 좌표로 쓴다 —
+  /// 안 보이는 것보다 가운데라도 보이는 쪽이 덜 놀란다.
   EditorStickerLayer _resolveFaceSticker(EditorStickerLayer layer) {
     if (!layer.tracksFace) return layer;
     final project = projectController.project;
-    final sourceMs = project.sourcePositionForTimeline(project.playheadMs);
-    final face = sourceMs == null ? null : project.faceSampleAt(sourceMs);
-    if (face == null) return layer;
+    final placed = project.faceStickerPlacementAt(layer, project.playheadMs);
+    if (placed == null) return layer;
     return layer.copyWith(
-      position: NormalizedPoint(
-        face.x + layer.position.x - 0.5,
-        face.y + layer.position.y - 0.5,
-      ),
+      position: placed.position,
+      scale: layer.scale * placed.scale,
     );
   }
 
