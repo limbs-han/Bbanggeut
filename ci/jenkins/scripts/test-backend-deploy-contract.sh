@@ -120,6 +120,25 @@ then
   exit 1
 fi
 
+# 객체 저장소 최소 권한 계약: 백엔드·편집 서버가 MinIO root 자격증명으로
+# 되돌아가면 유출 시 버킷·정책·계정 관리까지 넘어간다.
+if grep -Eq '^S3_ACCESS_KEY=\$MINIO_ROOT_USER' \
+  "${repository_root}/backend/deploy/provision-secrets.sh"
+then
+  echo "백엔드가 MinIO root 자격증명을 사용합니다(provision-secrets.sh)." >&2
+  exit 1
+fi
+grep -Fq 'WJ_BACKEND_ACCESS_KEY' \
+  "${repository_root}/backend/deploy/provision-secrets.sh"
+grep -Fq 'mc admin policy attach' \
+  "${repository_root}/backend/deploy/docker-compose.yml"
+if grep -Eq '^ *MINIO_ACCESS_KEY: \$\{MINIO_ROOT_USER\}' \
+  "${repository_root}/backend/deploy/docker-compose.yml"
+then
+  echo "editor-api가 MinIO root 자격증명을 사용합니다(docker-compose.yml)." >&2
+  exit 1
+fi
+
 # nginx location 중복 검사. 병합 사고로 /editor/ 블록이 두 벌 들어가
 # nginx -t가 배포 시점에야 실패했다(2026-08-04 배포 #71·#72). 수정자
 # (^~, =, ~)만 다른 같은 URI도 nginx는 중복으로 거부하므로 URI 기준으로
