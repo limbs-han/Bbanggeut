@@ -27,8 +27,9 @@ public class EventStatsController {
         @PathVariable UUID deviceId,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-        @RequestParam(required = false) String timeZone
+        @RequestParam(required = false) String timeZone,
+        @RequestParam(required = false) String type
     ) {
-        return service.get(UUID.fromString(jwt.getSubject()), deviceId, from, to, timeZone);
+        return service.get(UUID.fromString(jwt.getSubject()), deviceId, from, to, timeZone, type);
     }
 }
