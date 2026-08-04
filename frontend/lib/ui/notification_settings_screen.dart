@@ -2,55 +2,70 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../app/app_theme.dart';
+import '../core/api_client.dart';
+import '../core/models.dart';
 import 'widgets.dart';
-
-class NotificationPreferenceValues {
-  const NotificationPreferenceValues({
-    required this.anniversaryAlerts,
-    required this.weeklyReport,
-    required this.newMemoryAlerts,
-  });
-
-  const NotificationPreferenceValues.defaults()
-    : anniversaryAlerts = true,
-      weeklyReport = true,
-      newMemoryAlerts = false;
-
-  final bool anniversaryAlerts;
-  final bool weeklyReport;
-  final bool newMemoryAlerts;
-}
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({
     super.key,
     this.compact = false,
     this.initialValues,
+    this.api,
   });
 
   final bool compact;
-  final NotificationPreferenceValues? initialValues;
+  final NotificationPreferences? initialValues;
+
+  /// 서버 알림 설정(API-78·79)에 쓰는 클라이언트. null이면(테스트 등) 단말
+  /// 캐시만 사용한다.
+  final ApiClient? api;
 
   static const _storage = FlutterSecureStorage();
   static const _anniversaryKey = 'wj_pref_anniversary_alerts';
   static const _weeklyKey = 'wj_pref_weekly_report';
   static const _memoryKey = 'wj_pref_new_memory_alerts';
 
-  static Future<NotificationPreferenceValues> loadPreferences() async {
+  /// 서버 값을 우선하고, 실패하면 마지막으로 캐시된 단말 값으로 폴백한다.
+  static Future<NotificationPreferences> loadPreferences({
+    ApiClient? api,
+  }) async {
+    if (api != null) {
+      try {
+        final values = await api.getNotificationPreferences();
+        await _cache(values);
+        return values;
+      } on ApiFailure {
+        // 오프라인 폴백으로 진행한다.
+      }
+    }
     try {
       final values = await Future.wait([
         _storage.read(key: _anniversaryKey),
         _storage.read(key: _weeklyKey),
         _storage.read(key: _memoryKey),
       ]);
-      return NotificationPreferenceValues(
+      return NotificationPreferences(
         anniversaryAlerts: values[0] != 'false',
         weeklyReport: values[1] != 'false',
-        newMemoryAlerts: values[2] == 'true',
+        newMemoryAlerts: values[2] != 'false',
       );
     } catch (_) {
-      return const NotificationPreferenceValues.defaults();
+      return const NotificationPreferences.defaults();
     }
+  }
+
+  static Future<void> _cache(NotificationPreferences values) async {
+    try {
+      await Future.wait([
+        _storage.write(
+          key: _anniversaryKey,
+          value: '${values.anniversaryAlerts}',
+        ),
+        _storage.write(key: _weeklyKey, value: '${values.weeklyReport}'),
+        _storage.write(key: _memoryKey, value: '${values.newMemoryAlerts}'),
+      ]);
+    } catch (_) {}
   }
 
   @override
@@ -60,11 +75,6 @@ class NotificationSettingsScreen extends StatefulWidget {
 
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
-  static const _storage = NotificationSettingsScreen._storage;
-  static const _anniversaryKey = NotificationSettingsScreen._anniversaryKey;
-  static const _weeklyKey = NotificationSettingsScreen._weeklyKey;
-  static const _memoryKey = NotificationSettingsScreen._memoryKey;
-
   late bool anniversaryAlerts;
   late bool weeklyReport;
   late bool newMemoryAlerts;
@@ -73,7 +83,7 @@ class _NotificationSettingsScreenState
   void initState() {
     super.initState();
     final initialValues =
-        widget.initialValues ?? const NotificationPreferenceValues.defaults();
+        widget.initialValues ?? const NotificationPreferences.defaults();
     anniversaryAlerts = initialValues.anniversaryAlerts;
     weeklyReport = initialValues.weeklyReport;
     newMemoryAlerts = initialValues.newMemoryAlerts;
@@ -81,7 +91,9 @@ class _NotificationSettingsScreenState
   }
 
   Future<void> _load() async {
-    final values = await NotificationSettingsScreen.loadPreferences();
+    final values = await NotificationSettingsScreen.loadPreferences(
+      api: widget.api,
+    );
     if (!mounted) return;
     setState(() {
       anniversaryAlerts = values.anniversaryAlerts;
@@ -90,10 +102,24 @@ class _NotificationSettingsScreenState
     });
   }
 
-  Future<void> _save(String key, bool value) async {
+  /// 토글 하나가 바뀔 때마다 세 값을 통째로 저장한다(서버 계약이 일괄 PUT).
+  /// 서버 반영에 실패하면 토글을 되돌리고 알린다.
+  Future<void> _persist() async {
+    final values = NotificationPreferences(
+      anniversaryAlerts: anniversaryAlerts,
+      weeklyReport: weeklyReport,
+      newMemoryAlerts: newMemoryAlerts,
+    );
+    await NotificationSettingsScreen._cache(values);
+    final api = widget.api;
+    if (api == null) return;
     try {
-      await _storage.write(key: key, value: '$value');
-    } catch (_) {}
+      await api.updateNotificationPreferences(values);
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      await _load();
+      if (mounted) showAppSnack(context, '$failure', error: true);
+    }
   }
 
   @override
@@ -234,7 +260,7 @@ class _NotificationSettingsScreenState
         value: anniversaryAlerts,
         onChanged: (value) {
           setState(() => anniversaryAlerts = value);
-          _save(_anniversaryKey, value);
+          _persist();
         },
       ),
       const Divider(height: 1, indent: 18, endIndent: 18),
@@ -246,7 +272,7 @@ class _NotificationSettingsScreenState
         value: weeklyReport,
         onChanged: (value) {
           setState(() => weeklyReport = value);
-          _save(_weeklyKey, value);
+          _persist();
         },
       ),
       const Divider(height: 1, indent: 18, endIndent: 18),
@@ -258,7 +284,7 @@ class _NotificationSettingsScreenState
         value: newMemoryAlerts,
         onChanged: (value) {
           setState(() => newMemoryAlerts = value);
-          _save(_memoryKey, value);
+          _persist();
         },
       ),
     ],

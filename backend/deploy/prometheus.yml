@@ -1,0 +1,19 @@
+# 빵긋 백엔드 메트릭 수집. Prometheus 컨테이너는 network_mode: host +
+# 127.0.0.1:9090 리슨이라 loopback 전용 Spring(8081)을 직접 긁을 수 있고
+# 외부에는 열리지 않는다. 조회는 SSH 터널로 Grafana(127.0.0.1:3000)를 연다.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # 활성 슬롯은 무중단 배포로 8081↔8082를 오간다. 고정 타겟을 쓰면 전환할
+  # 때마다 수집이 끊기므로 파일 기반 서비스 디스커버리를 쓴다 — 배포
+  # 스크립트가 이 파일을 갈아 쓰면 Prometheus가 재시작 없이 따라간다.
+  - job_name: spring
+    metrics_path: /actuator/prometheus
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/spring.json"]
+        refresh_interval: 15s
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]

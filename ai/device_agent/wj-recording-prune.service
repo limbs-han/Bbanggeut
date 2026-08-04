@@ -1,5 +1,7 @@
 [Unit]
 Description=Prune expired William James homecam recordings
+Wants=wj-event-prune.service
+After=wj-event-prune.service
 
 [Service]
 Type=oneshot

@@ -264,6 +264,15 @@ segments, and the timer deletes only `homecam-*.ts` files older than seven
 days. Both deletion and event extraction require the
 `.homecam-recordings` safety marker.
 
+`wj-event-prune.timer` separately bounds `/home/ssafy/ai_events`. Permanent
+upload failures are retained for three days, other event bundles for seven
+days, and diagnostic runs for three days. The event directory is capped at
+2GiB and pruning also starts when filesystem free space falls below 4GiB.
+Storage-pressure deletion order is blocked bundles, completed bundles, logs,
+then pending events; files modified within the last 15 minutes are protected.
+The event pruner requires the `.william-james-events` safety marker created by
+`install-local-media.sh`.
+
 During tests on the Jetson's current 64GB root disk,
 `RECORDING_MAX_GIB=8` is a hard recording limit. When that limit is exceeded,
 the pruning timer removes the oldest completed segments even if they are less
@@ -286,6 +295,7 @@ a completed segment exists:
 ```bash
 sudo -u williamjames \
   /opt/william-james/device-agent/check-local-media.sh
+sudo systemctl status wj-event-prune.timer --no-pager
 ```
 
 After a one-hour run, forced MediaMTX interruption, automatic recovery, and

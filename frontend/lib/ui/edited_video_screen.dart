@@ -7,36 +7,37 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_theme.dart';
-import '../editor/edit_recommendation_client.dart';
+import '../core/api_client.dart';
+import '../core/models.dart';
 import 'widgets.dart';
 
-/// 편집 완료 영상 하나를 서버(editor-api)에서 받아 재생하고, 가족 댓글을
-/// 달 수 있는 화면. 댓글은 영상별 JSON으로 서버에 저장된다.
+/// 편집 완료 영상 하나를 재생하고 가족 댓글을 다는 화면. 영상과 댓글 모두
+/// 백엔드가 원본 영상과 같은 경로로 관리한다(EDIT_OUTPUT 행 + video_comments)
+/// — 재생은 원본과 같은 presigned URL, 작성자 이름은 서버가 채운다.
 class EditedVideoScreen extends StatefulWidget {
   const EditedVideoScreen({
     super.key,
     required this.videoId,
     required this.title,
+    required this.api,
     this.savedAt,
-    this.authorName = '가족',
   });
 
   final String videoId;
   final String title;
   final DateTime? savedAt;
 
-  /// 댓글에 남길 이름. 로그인 프로필 이름을 넘긴다.
-  final String authorName;
+  /// 편집본·댓글을 다루는 백엔드 클라이언트.
+  final ApiClient api;
 
   @override
   State<EditedVideoScreen> createState() => _EditedVideoScreenState();
 }
 
 class _EditedVideoScreenState extends State<EditedVideoScreen> {
-  final _client = EditRecommendationClient();
   final _commentInput = TextEditingController();
   VideoPlayerController? _player;
-  List<Map<String, dynamic>> _comments = const [];
+  List<VideoComment> _comments = const [];
   bool _sending = false;
 
   /// 갤러리 저장 진행률(0~1). null이면 저장 중이 아니다.
@@ -54,10 +55,10 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
         '${directory.path}${Platform.pathSeparator}'
         'edited-${widget.videoId}.mp4';
     try {
-      await _client.downloadEditedVideo(
+      await widget.api.downloadVideoToFile(
         widget.videoId,
         savePath,
-        onProgress: (received, total) {
+        onReceiveProgress: (received, total) {
           if (!mounted || total <= 0) return;
           setState(() => _downloadProgress = received / total);
         },
@@ -87,9 +88,10 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
 
   Future<void> _preparePlayer() async {
     try {
-      final player = VideoPlayerController.networkUrl(
-        Uri.parse(_client.editedVideoUrl(widget.videoId)),
-      );
+      // 원본 영상과 같은 경로다 — MinIO presigned URL로 직접 스트리밍한다
+      // (서명이 URL에 있어 헤더가 필요 없다).
+      final signed = await widget.api.createPlayUrl(widget.videoId);
+      final player = VideoPlayerController.networkUrl(Uri.parse(signed.url));
       await player.initialize();
       await player.setLooping(true);
       if (!mounted) {
@@ -105,7 +107,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
 
   Future<void> _loadComments() async {
     try {
-      final comments = await _client.listComments(widget.videoId);
+      final comments = await widget.api.listVideoComments(widget.videoId);
       if (mounted) setState(() => _comments = comments);
     } catch (_) {
       // 댓글을 못 불러와도 재생은 계속한다.
@@ -117,11 +119,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      await _client.addComment(
-        widget.videoId,
-        text,
-        author: widget.authorName,
-      );
+      await widget.api.addVideoComment(widget.videoId, text);
       _commentInput.clear();
       await _loadComments();
     } catch (_) {
@@ -255,9 +253,10 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final comment = _comments[index];
-                        final createdAt = DateTime.tryParse(
-                          comment['createdAt'] as String? ?? '',
-                        )?.toLocal();
+                        final createdAt = comment.createdAt?.toLocal();
+                        final author = comment.authorName?.isNotEmpty == true
+                            ? comment.authorName!
+                            : '가족';
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -267,9 +266,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                                 alpha: 0.35,
                               ),
                               child: Text(
-                                (comment['author'] as String? ?? '가')
-                                    .characters
-                                    .first,
+                                author.characters.first,
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w800,
@@ -284,7 +281,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                                   Row(
                                     children: [
                                       Text(
-                                        comment['author'] as String? ?? '가족',
+                                        author,
                                         style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w800,
@@ -304,7 +301,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                                     ],
                                   ),
                                   Text(
-                                    comment['text'] as String? ?? '',
+                                    comment.body,
                                     style: const TextStyle(fontSize: 13),
                                   ),
                                 ],

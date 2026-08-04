@@ -69,6 +69,33 @@ public class NotificationService {
         }
     }
 
+    /** 편집 서버 분석 완료 — 분석을 요청한 사용자에게만 알린다. */
+    @Transactional
+    public void editAnalysisReady(UUID userId, UUID videoId) {
+        if (userId == null) {
+            return;
+        }
+        int inserted = mapper.insertEditAnalysisReadyNotification(userId, videoId);
+        if (inserted > 0) {
+            pushDispatcher.editAnalysisReady(userId, videoId);
+        }
+    }
+
+    /** 편집 영상 새 댓글 — 작성자를 뺀 금고 구성원 전체에게 알린다. */
+    @Transactional
+    public void editCommentAdded(
+        UUID actorUserId, UUID videoId, String commentId, String body
+    ) {
+        if (actorUserId == null || commentId == null || commentId.isBlank()) {
+            return;
+        }
+        int inserted = mapper.insertEditCommentNotifications(
+            videoId, actorUserId, body, commentId);
+        if (inserted > 0) {
+            pushDispatcher.editCommentAdded(actorUserId, videoId, body);
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<NotificationResponse> list(UUID userId, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));

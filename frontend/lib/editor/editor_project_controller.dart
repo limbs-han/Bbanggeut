@@ -413,7 +413,7 @@ class EditorProjectController extends ChangeNotifier {
   /// 클립은 절대 지우지도, 건드리지도 않는다.
   ///
   /// 어느 구간으로 바꿀지는 점수가 정한다. 서버 recipe가 있으면 셀렉터
-  /// (ai/video_editor의 adaptive_selector + duration_presets)가 웃음·말소리·
+  /// (video_editor의 adaptive_selector + duration_presets)가 웃음·말소리·
   /// 음량 상승·모션·얼굴 특징의 `eventScore`로 이미 골라 준 cut 구간을
   /// 그대로 쓰고, scoreTimeline의 평균 점수를 그 클립에 실어 보여 준다.
   /// 서버가 없으면 원본 가운데에서 목표 길이만큼 잡는다(점수 표시 없음).
@@ -1203,6 +1203,7 @@ class EditorProjectController extends ChangeNotifier {
     required String text,
     int? startMs,
     int? endMs,
+    NormalizedPoint? position,
     Color color = const Color(0xFFFFFFFF),
     Color backgroundColor = const Color(0x00000000),
     double fontSize = 42,
@@ -1215,7 +1216,7 @@ class EditorProjectController extends ChangeNotifier {
     final layer = EditorTextLayer(
       id: _nextId('text'),
       text: cleanText,
-      position: NormalizedPoint(0.5, 0.78),
+      position: position ?? NormalizedPoint(0.5, 0.78),
       startMs: startMs ?? _project.playheadMs,
       endMs: endMs ?? _project.durationMs,
       clipId: _locateTimelinePosition(startMs ?? _project.playheadMs)?.clip.id,
@@ -1284,7 +1285,16 @@ class EditorProjectController extends ChangeNotifier {
       timelineStartMs += clip.durationMs;
     }
     if (added.isEmpty && kept.length == _project.textLayers.length) return;
-    _commit(_project.copyWith(textLayers: [...kept, ...added]));
+    final previousSelectionStillExists = kept.any(
+      (layer) => layer.id == _project.selectedLayerId,
+    );
+    _commit(
+      _project.copyWith(
+        textLayers: [...kept, ...added],
+        selectedLayerId: added.isEmpty ? null : added.first.id,
+        clearSelectedLayer: added.isEmpty && !previousSelectionStillExists,
+      ),
+    );
   }
 
   /// 아직 글이 없는 글자 레이어를 만들고 그 id를 준다.
@@ -1464,8 +1474,7 @@ class EditorProjectController extends ChangeNotifier {
   bool setFaceSticker(String? value) {
     final scope = _faceStickerScope;
     bool inScope(EditorStickerLayer layer) =>
-        layer.tracksFace &&
-        (layer.clipId == null || layer.clipId == scope?.id);
+        layer.tracksFace && (layer.clipId == null || layer.clipId == scope?.id);
     if (value == null || value.isEmpty) {
       // 벗기기 — 이 클립의 얼굴 스티커를 전부 걷어낸다.
       final others = _project.stickerLayers
@@ -1515,9 +1524,7 @@ class EditorProjectController extends ChangeNotifier {
     // 같은 사람의 기존 스티커만 갈아 끼운다. 옛 데이터(사람 구분 없음)는
     // 클립당 하나로 본다.
     final others = _project.stickerLayers
-        .where(
-          (layer) => !(inScope(layer) && layer.faceTrackId == trackId),
-        )
+        .where((layer) => !(inScope(layer) && layer.faceTrackId == trackId))
         .toList(growable: false);
     final clipStart = scope == null ? 0 : _project.timelineStartFor(scope.id);
     var layer = EditorStickerLayer(
@@ -1526,9 +1533,7 @@ class EditorProjectController extends ChangeNotifier {
       // 얼굴 정중앙. 끌면 얼굴 기준 오프셋으로 저장된다.
       position: NormalizedPoint.center,
       startMs: clipStart,
-      endMs: scope == null
-          ? _project.durationMs
-          : clipStart + scope.durationMs,
+      endMs: scope == null ? _project.durationMs : clipStart + scope.durationMs,
       scale: 1.6,
       clipId: scope?.id,
       tracksFace: true,
@@ -1613,10 +1618,7 @@ class EditorProjectController extends ChangeNotifier {
               coverage.startMs,
               coverage.endMs - 200,
             ),
-            endMs: switched.endMs.clamp(
-              coverage.startMs + 200,
-              coverage.endMs,
-            ),
+            endMs: switched.endMs.clamp(coverage.startMs + 200, coverage.endMs),
           );
         }
       }

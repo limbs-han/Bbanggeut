@@ -53,12 +53,14 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             if (mounted) setState(() => _drafts = drafts);
           })
           .catchError((Object _) {}),
-      _editClient
-          .listEditedVideos()
-          .then((edited) {
-            if (mounted) setState(() => _edited = edited);
-          })
-          .catchError((Object _) {}),
+      // 편집본은 금고 단위로 백엔드에서 받는다(API-82).
+      if (widget.controller.selectedVault != null)
+        widget.controller.api
+            .listVaultEdits(widget.controller.selectedVault!.id)
+            .then((edited) {
+              if (mounted) setState(() => _edited = edited);
+            })
+            .catchError((Object _) {}),
     ]);
   }
 
@@ -95,6 +97,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => EditedVideoScreen(
+          api: widget.controller.api,
           videoId: videoId,
           title: (meta['title'] as String?)?.isNotEmpty == true
               ? meta['title'] as String
@@ -144,8 +147,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     final result = widget.controller.videos.where((video) {
       final matchesCategory = switch (category) {
         MemoryCategory.laughter => video.hasEventType('LAUGHTER'),
-        // 편집 중은 editor-api 초안 목록으로 따로 그린다. 편집 완료는
-        // 백엔드 EDIT 영상 + editor-api 완성본 목록을 함께 보여 준다.
+        // 편집 중(초안)은 editor-api 목록으로 따로 그린다 — 초안 레시피는
+        // 아직 그쪽에 있다(ADR-001의 남은 부채). 편집 완료본은 백엔드가
+        // 관리하므로 EDIT_OUTPUT 영상 행으로 판정한다.
         MemoryCategory.editing => false,
         MemoryCategory.edited =>
           video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',

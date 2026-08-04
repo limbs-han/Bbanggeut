@@ -4,7 +4,10 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import 'content_calendar_screen.dart';
+import 'edited_video_screen.dart';
 import 'invitation_inbox_screen.dart';
+import 'laugh_report_content_screen.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
 
@@ -86,7 +89,24 @@ class _ContentNotificationsScreenState
     }
 
     if (!mounted) return;
-    if (item.type == 'LAUGHTER_VIDEO_READY' && item.resourceId != null) {
+    if (item.type == 'EDIT_COMMENT_ADDED' && item.resourceId != null) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EditedVideoScreen(
+            api: widget.controller.api,
+            videoId: item.resourceId!,
+            title: '',
+          ),
+        ),
+      );
+      return;
+    }
+    // 분석 완료는 웃음 영상 도착과 같은 목적지다 — 영상 상세에서 편집하기를
+    // 누르면 이미 분석돼 있어 AI 컷이 바로 열린다.
+    if ((item.type == 'LAUGHTER_VIDEO_READY' ||
+            item.type == 'EDIT_ANALYSIS_READY') &&
+        item.resourceId != null) {
       try {
         final matches = widget.controller.videos.where(
           (candidate) => candidate.id == item.resourceId,
@@ -105,6 +125,20 @@ class _ContentNotificationsScreenState
       } catch (failure) {
         if (mounted) showAppSnack(context, '$failure', error: true);
       }
+      return;
+    }
+
+    // 주기 리포트 알림은 각자의 화면으로 — 기념일은 캘린더, 주간 리포트는
+    // 웃음 리포트다.
+    if (item.type == 'ANNIVERSARY' || item.type == 'WEEKLY_REPORT') {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => item.type == 'ANNIVERSARY'
+              ? ContentCalendarScreen(controller: widget.controller)
+              : LaughReportContentScreen(controller: widget.controller),
+        ),
+      );
       return;
     }
 
@@ -315,5 +349,7 @@ class _ContentNotificationsScreenState
   'INVITATION_RECEIVED' => (emoji: '❤️', background: const Color(0xFFFFEAE6)),
   'INVITATION_ACCEPTED' => (emoji: '🤝', background: const Color(0xFFFFEAE6)),
   'LAUGHTER_VIDEO_READY' => (emoji: '📷', background: AppColors.sageSoft),
+  'EDIT_ANALYSIS_READY' => (emoji: '✨', background: AppColors.sageSoft),
+  'EDIT_COMMENT_ADDED' => (emoji: '💬', background: AppColors.yellowSoft),
   _ => (emoji: '🔔', background: AppColors.yellowSoft),
 };

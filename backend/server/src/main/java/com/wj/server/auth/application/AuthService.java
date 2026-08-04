@@ -22,6 +22,8 @@ import com.wj.server.auth.persistence.AuthMapper;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.common.ratelimit.SlidingWindowRateLimiter;
 import com.wj.server.config.AuthProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -31,6 +33,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final AuthMapper authMapper;
@@ -104,8 +108,9 @@ public class AuthService {
 
     @Transactional
     public AuthTokenResponse refresh(RefreshTokenRequest request, ClientContext context) {
-        AuthSessionRow oldSession = authMapper.findActiveSession(hash(request.refreshToken()))
-            .orElseThrow(this::invalidRefreshToken);
+        String tokenHash = hash(request.refreshToken());
+        AuthSessionRow oldSession = authMapper.findActiveSession(tokenHash)
+            .orElseThrow(() -> reuseSuspectedOrInvalid(tokenHash));
         UserRow user = authMapper.findUserById(oldSession.userId())
             .filter(this::isActive)
             .orElseThrow(this::invalidRefreshToken);
@@ -248,6 +253,24 @@ public class AuthService {
 
     private ApiException invalidRefreshToken() {
         return new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "갱신 토큰이 유효하지 않습니다.");
+    }
+
+    /**
+     * 활성 세션에 없는 refresh 토큰이 "이미 회전된" 토큰이면 탈취 신호로
+     * 보고 그 사용자의 모든 세션을 회수한다 — 도둑이 먼저 회전시켰든
+     * 정상 사용자가 늦게 도착했든, 같은 토큰을 두 주체가 쥐고 있었다는
+     * 뜻이므로 양쪽 다 끊고 재로그인시키는 것이 안전하다. 응답은 탐지
+     * 여부를 노출하지 않도록 일반 401 그대로다. 만료만 된 토큰(회전 안 됨)
+     * 은 오래 쉰 정상 사용자일 수 있어 회수하지 않는다.
+     */
+    private ApiException reuseSuspectedOrInvalid(String tokenHash) {
+        authMapper.findRevokedSessionByHash(tokenHash).ifPresent(stolen -> {
+            int revoked = authMapper.revokeAllSessionsForUser(stolen.userId());
+            log.warn(
+                "Refresh token reuse detected — revoked all sessions userId={} sessions={}",
+                stolen.userId(), revoked);
+        });
+        return invalidRefreshToken();
     }
 
     private ApiException invalidPasswordResetToken() {

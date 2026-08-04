@@ -11,6 +11,17 @@ const defaultApiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://i15e201.p.ssafy.io',
 );
 
+/// 서버가 Gemini(전사·구성)나 이미지 생성을 부르는 동안 앱이 기다리는 시간.
+///
+/// 기본 `receiveTimeout` 20초로는 어림도 없다 — 서버는 한 번의 응답 안에서
+/// 원본을 객체 저장소에서 꺼내고, 오디오와 대표 프레임을 뽑고, 영상 전체를
+/// 멀티모달 모델에 넘긴다. 20초로 두면 서버가 정상으로 일하는 동안 앱이 먼저
+/// 끊고 "대사를 알아듣지 못했어요"를 띄운다.
+///
+/// 서버 예산 150초 + 여유 30초. 이 값을 늘리기 전에 202+폴링으로 계약을 바꾸는
+/// 편이 낫다(지금은 범위 밖).
+const aiReceiveTimeout = Duration(seconds: 180);
+
 class ApiFailure implements Exception {
   const ApiFailure(
     this.message, {
@@ -85,6 +96,14 @@ class ApiClient {
   String? _memoryRefreshToken;
   bool _persistSession = true;
 
+  /// 편집 서버(editor-api)처럼 별도 Dio를 쓰는 클라이언트가 같은 세션으로
+  /// 인증하도록 현재 액세스 토큰을 내어 준다. 로그인 전이면 null.
+  String? get accessToken => _memoryAccessToken;
+
+  /// 액세스 토큰이 만료됐을 때 외부 클라이언트가 갱신을 부탁하는 통로.
+  /// 진행 중인 갱신이 있으면 그 결과를 같이 기다린다.
+  Future<bool> refreshAccessToken() => _tryRefresh();
+
   bool _isPublicAuthPath(String path) =>
       path.contains('/api/auth/login') ||
       path.contains('/api/auth/signup') ||
@@ -153,16 +172,19 @@ class ApiClient {
     return session;
   }
 
+  /// 서버는 사용자 열거를 막기 위해 이메일 존재 여부와 무관하게 202를
+  /// 반환한다. 재설정 토큰 유효 시간은 30분.
   Future<void> requestPasswordReset(String email) async {
-    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 실제 환경 응답을 검증한다.
     await _post('/api/auth/password/forgot', data: {'email': email.trim()});
   }
 
+  /// 성공하면 서버가 현재 세션만 남기고 다른 세션을 전부 무효화하므로
+  /// 이 기기는 로그인 상태가 유지된다. 새 비밀번호가 기존과 같으면
+  /// 422 PASSWORD_UNCHANGED.
   Future<void> changePassword(
     String currentPassword,
     String newPassword,
   ) async {
-    // TODO(api-password): 백엔드 비밀번호 API 브랜치 통합 후 세션 유지 정책을 검증한다.
     await _post(
       '/api/auth/password/change',
       data: {'currentPassword': currentPassword, 'newPassword': newPassword},
@@ -216,6 +238,127 @@ class ApiClient {
   Future<void> unregisterPushToken(String installationId) async => _delete(
     '/api/notifications/push-tokens/${Uri.encodeComponent(installationId)}',
   );
+
+  Future<NotificationPreferences> getNotificationPreferences() async =>
+      NotificationPreferences.fromJson(
+        await _get('/api/notifications/preferences'),
+      );
+
+  Future<NotificationPreferences> updateNotificationPreferences(
+    NotificationPreferences preferences,
+  ) async => NotificationPreferences.fromJson(
+    await _put('/api/notifications/preferences', data: preferences.toJson()),
+  );
+
+  /// 편집 완성본 업로드 예약(API-81). 응답의 서명 URL은 OS 백그라운드
+  /// 작업(WorkManager)이 헤더 없이 그대로 PUT한다 — 서명에 Content-Type만
+  /// 들어가고, 완료 통보 없이 서버가 도착을 감지해 READY로 올린다.
+  Future<String> createEditUpload(
+    String sourceVideoId, {
+    String title = '',
+    int durationMs = 0,
+    DateTime? capturedStartAt,
+    DateTime? capturedEndAt,
+  }) async {
+    final response = await _post(
+      '/api/videos/$sourceVideoId/edits',
+      data: {
+        if (title.isNotEmpty) 'title': title,
+        if (durationMs > 0) 'durationMs': durationMs,
+        if (capturedStartAt != null)
+          'capturedStartAt': capturedStartAt.toUtc().toIso8601String(),
+        if (capturedEndAt != null)
+          'capturedEndAt': capturedEndAt.toUtc().toIso8601String(),
+      },
+    );
+    final url = response['uploadUrl'] as String?;
+    if (url == null || url.isEmpty) {
+      throw const ApiFailure('업로드 주소를 받지 못했어요.');
+    }
+    return url;
+  }
+
+  /// 금고의 편집 완성본 목록(API-82). 화면들이 쓰던 editor-api meta.json과
+  /// 같은 키(`videoId`·`title`·`savedAt`)로 맞춰 준다.
+  Future<List<Map<String, dynamic>>> listVaultEdits(String vaultId) async =>
+      (await _getList('/api/vaults/$vaultId/edits'))
+          .map(
+            (item) => <String, dynamic>{
+              'videoId': item['id'],
+              'title': item['title'] ?? '',
+              'savedAt': item['createdAt'],
+              'capturedAt': item['capturedStartAt'],
+              'durationMs': item['durationMs'],
+              'sizeBytes': item['sizeBytes'],
+            },
+          )
+          .toList(growable: false);
+
+  Future<List<VideoComment>> listVideoComments(String videoId) async =>
+      (await _getList(
+        '/api/videos/$videoId/comments',
+      )).map(VideoComment.fromJson).toList(growable: false);
+
+  Future<VideoComment> addVideoComment(String videoId, String body) async =>
+      VideoComment.fromJson(
+        await _post('/api/videos/$videoId/comments', data: {'body': body}),
+      );
+
+  Future<List<CalendarSchedule>> listSchedules() async => (await _getList(
+    '/api/schedules',
+  )).map(CalendarSchedule.fromJson).toList(growable: false);
+
+  Future<CalendarSchedule> createSchedule(CalendarSchedule schedule) async =>
+      CalendarSchedule.fromJson(
+        await _post('/api/schedules', data: schedule.toJson()),
+      );
+
+  Future<CalendarSchedule> updateSchedule(CalendarSchedule schedule) async =>
+      CalendarSchedule.fromJson(
+        await _put('/api/schedules/${schedule.id}', data: schedule.toJson()),
+      );
+
+  Future<void> deleteSchedule(String scheduleId) async =>
+      _delete('/api/schedules/$scheduleId');
+
+  Future<EventStats> getEventStats(
+    String deviceId, {
+    DateTime? from,
+    DateTime? to,
+    String? type,
+  }) async => EventStats.fromJson(
+    await _get(
+      '/api/devices/$deviceId/event-stats',
+      query: {
+        if (from != null) 'from': _dateOnly(from),
+        if (to != null) 'to': _dateOnly(to),
+        'type': ?type,
+      },
+    ),
+  );
+
+  /// 금고(가족) 단위 집계(API-80). 기기 여러 대를 한 금고에 묶은 가족이
+  /// 합산 리포트를 볼 때 쓴다 — 응답의 byDevice로 기기별 분해도 함께 온다.
+  Future<VaultEventStats> getVaultEventStats(
+    String vaultId, {
+    DateTime? from,
+    DateTime? to,
+    String? type,
+  }) async => VaultEventStats.fromJson(
+    await _get(
+      '/api/vaults/$vaultId/event-stats',
+      query: {
+        if (from != null) 'from': _dateOnly(from),
+        if (to != null) 'to': _dateOnly(to),
+        'type': ?type,
+      },
+    ),
+  );
+
+  static String _dateOnly(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 
   Future<UserProfile> updateProfile(String displayName) async {
     final updated = UserProfile.fromJson(
@@ -647,6 +790,33 @@ class ApiClient {
     }
   }
 
+  /// 전사문으로 4컷 구성을 받는다. 서버가 키를 들고 LLM을 대신 부른다.
+  ///
+  /// **글만 보낸다** — 영상·오디오·프레임은 보내지 않는다.
+  Future<Map<String, dynamic>> createComicScript(
+    String videoId,
+    List<Map<String, Object>> lines,
+  ) => _post(
+    '/api/videos/$videoId/comic/script',
+    data: {'lines': lines},
+    options: _aiOptions,
+  );
+
+  /// 4컷 구성으로 만화 그림 한 장(2x2 격자)을 받는다. 응답은 base64 PNG다.
+  Future<Map<String, dynamic>> createComicImage(
+    String videoId, {
+    required List<Map<String, Object?>> cuts,
+    required String style,
+  }) => _post(
+    '/api/videos/$videoId/comic/image',
+    data: {'cuts': cuts, 'style': style},
+    options: _aiOptions,
+  );
+
+  /// 만화 두 엔드포인트(API-71·72)에만 붙이는 긴 수신 대기. 나머지 호출은
+  /// 전역 기본값 20초 그대로다 — 평범한 요청까지 3분을 기다리면 안 된다.
+  static final _aiOptions = Options(receiveTimeout: aiReceiveTimeout);
+
   Future<Map<String, dynamic>> _get(
     String path, {
     Map<String, dynamic>? query,
@@ -677,9 +847,17 @@ class ApiClient {
     }
   }
 
-  Future<Map<String, dynamic>> _post(String path, {Object? data}) async {
+  Future<Map<String, dynamic>> _post(
+    String path, {
+    Object? data,
+    Options? options,
+  }) async {
     try {
-      final response = await _dio.post<dynamic>(path, data: data);
+      final response = await _dio.post<dynamic>(
+        path,
+        data: data,
+        options: options,
+      );
       return response.data is Map<String, dynamic>
           ? response.data as Map<String, dynamic>
           : <String, dynamic>{};

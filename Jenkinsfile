@@ -42,6 +42,10 @@ pipeline {
                             sh 'bash ci/jenkins/scripts/test-backend-deploy-contract.sh'
                             sh 'bash ci/jenkins/scripts/test-deploy-jar-validation.sh'
                             sh 'bash ci/jenkins/scripts/run-backend-ci.sh'
+                            // editor-api는 이 스테이지가 아티팩트에 담아 배포하는
+                            // 서비스다 — 패키징만 하고 테스트를 안 돌리면 깨진
+                            // 편집 서버가 그대로 실려 나간다.
+                            sh 'bash ci/jenkins/scripts/run-editor-api-ci.sh'
                             sh 'bash ci/jenkins/scripts/package-backend-deploy.sh backend-deploy.tar.gz'
                             sh 'bash ci/jenkins/server/deploy/wj-deploy-backend --validate-only backend/server/build/libs/server-*.jar'
                             junit allowEmptyResults: false,

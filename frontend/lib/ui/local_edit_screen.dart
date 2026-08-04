@@ -18,6 +18,7 @@ import '../features/stt/caption_controller.dart';
 import '../features/stt/mlkit_transcriber.dart';
 import '../editor/editor_project.dart';
 import '../editor/editor_project_controller.dart';
+import '../editor/editor_direct_text_sheet.dart';
 import '../editor/edit_recommendation_client.dart';
 import '../editor/editor_text_style_bar.dart';
 import '../editor/editor_platform.dart';
@@ -50,6 +51,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   /// AI 자막 시트가 떠 있는가. 탭과 패널 버튼이 겹쳐 두 장 쌓이는 걸 막는다.
   bool _captionSheetOpen = false;
 
+  /// 자막 탭에서 직접 자막을 고른 뒤, 재생 위치 기준 추가 카드를 보여 주는 단계.
+  bool _directCaptionAddMode = false;
+
   /// 정해 둔 구간만 돌려 보는 중인가. 이때는 구간 끝에서 다음 클립으로
   /// 넘어가지 않고 선다.
   bool _rangePreview = false;
@@ -73,6 +77,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   String? _error;
   final Map<String, EditRecommendation> _presetRecommendations = {};
   bool _recommendationLoading = false;
+
+  /// 서버가 이 영상을 분석하는 동안 true. AI 컷 칩은 그동안 흐리게 잠긴다.
+  bool _analysisRunning = false;
+  Timer? _analysisPollTimer;
+  bool _analysisPollBusy = false;
 
   /// 렌더링 진행률(0~1). 네이티브에서 주기적으로 읽어 온다. null이면 아직 모른다.
   double? _exportProgress;
@@ -123,7 +132,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 전사가 끝나는 순간 자막 탭으로 합친다. 예전에는 시트를 닫을 때만
     // 합쳤는데, 전사 중에 닫아 버리면 끝나도 아무 일이 없어 "적용이 안
     // 된다"로 보였다.
-    _mergeTranscriptIntoTextLayers();
+    if (!_captionSheetOpen) _mergeTranscriptIntoTextLayers();
     setState(() {});
   }
 
@@ -287,8 +296,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         '줌 ${projectController.project.zoomSegments.length}개',
         cutChanged: true,
       );
-    } catch (_) {
-      await finish('자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요');
+    } catch (failure) {
+      if (EditRecommendationClient.isAnalysisRequired(failure)) {
+        // 서버는 있는데 이 영상은 처음 본다 — 원본을 분석시키고, 끝나면
+        // 스낵바로 알린 뒤 AI 컷과 자동 줌을 연다. 편집은 그동안 계속된다.
+        final sourcePath = _sourcePath;
+        if (mounted && sourcePath != null) {
+          unawaited(_beginServerAnalysis(sourcePath));
+          if (mounted) setState(() => _status = 'AI가 영상을 분석하고 있어요');
+        }
+      } else {
+        await finish('자동 추천 서버에 연결하지 못해 원본 구간으로 열었어요');
+      }
     }
   }
 
@@ -329,6 +348,123 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     } finally {
       if (mounted) setState(() => _recommendationLoading = false);
     }
+  }
+
+  /// 원본을 편집 서버에 올려 분석을 시작하고 2초마다 상태를 확인한다.
+  /// 그동안 AI 컷 칩은 잠기고, 끝나면 자동 추천(컷+자동 줌)을 적용한 뒤
+  /// 스낵바로 알린다. 실패해도 수동 편집은 그대로 계속된다.
+  Future<void> _beginServerAnalysis(String sourcePath) async {
+    if (_analysisRunning) return;
+    _analysisRunning = true;
+    _recommendationLoading = true;
+    try {
+      // 원본이 이미 서버(MinIO)에 있으므로 presigned URL을 넘겨 서버가
+      // 직접 받게 한다. URL 발급이 안 되면 로컬 원본을 통째로 올린다.
+      String? sourceUrl;
+      try {
+        sourceUrl = (await widget.controller.api.createDownloadUrl(
+          widget.video.id,
+        )).url;
+      } catch (_) {
+        sourceUrl = null;
+      }
+      final status = await _recommendations.requestAnalysis(
+        videoId: widget.video.id,
+        filePath: sourcePath,
+        sourceUrl: sourceUrl,
+      );
+      if (!mounted) return;
+      if (status.isDone) {
+        await _finishServerAnalysis();
+        return;
+      }
+      if (status.isFailed) {
+        _failServerAnalysis(status.error);
+        return;
+      }
+      showAppSnack(context, 'AI가 영상을 분석하고 있어요 — 끝나면 알려드릴게요');
+      _analysisPollTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _pollServerAnalysis(),
+      );
+    } catch (_) {
+      _failServerAnalysis(null);
+    }
+  }
+
+  Future<void> _pollServerAnalysis() async {
+    if (_analysisPollBusy) return;
+    _analysisPollBusy = true;
+    try {
+      final status = await _recommendations.analysisStatus(widget.video.id);
+      if (!mounted) return;
+      if (status.isDone) {
+        await _finishServerAnalysis();
+      } else if (status.isFailed || status.status == 'none') {
+        // none은 분석 도중 서버가 재시작해 작업이 사라진 경우다.
+        _failServerAnalysis(status.error);
+      }
+      // running이면 다음 폴링까지 기다린다.
+    } catch (_) {
+      // 일시적 오류는 다음 폴링에서 다시 확인한다.
+    } finally {
+      _analysisPollBusy = false;
+    }
+  }
+
+  Future<void> _finishServerAnalysis() async {
+    _stopServerAnalysis();
+    try {
+      final recommendation = await _recommendations.recommend(
+        videoId: widget.video.id,
+        capturedAt: widget.video.capturedStartAt,
+      );
+      final controller = _projectController;
+      if (!mounted || controller == null) return;
+      if (const {
+        'short',
+        'medium',
+        'long',
+      }.contains(recommendation.durationPreset)) {
+        _presetRecommendations[recommendation.durationPreset] = recommendation;
+      }
+      // 분석을 기다리는 동안 사용자가 이미 편집을 시작했다면 컷·줌을
+      // 덮지 않는다 — 프리셋 칩만 열어 주고, 원하면 직접 누르게 한다.
+      final untouched =
+          !controller.canUndo && !_editState.hasUnsavedChanges && !_saving;
+      if (untouched) {
+        controller.applyRecommendation(recommendation);
+        _editState.markExternalEditApplied();
+      }
+      setState(() => _recommendationLoading = false);
+      showAppSnack(context, 'AI 분석이 끝났어요 — AI 컷과 자동 줌을 쓸 수 있어요');
+      if (untouched) await _seekToPosition(controller.project.playheadMs);
+      unawaited(_loadPresetRecommendations());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _recommendationLoading = false);
+      showAppSnack(context, 'AI 추천을 불러오지 못했어요', error: true);
+    }
+  }
+
+  void _failServerAnalysis(String? error) {
+    _stopServerAnalysis();
+    if (!mounted) return;
+    setState(() => _recommendationLoading = false);
+    showAppSnack(
+      context,
+      error == null || error.isEmpty
+          ? 'AI 분석에 실패했어요 — 수동 편집은 계속할 수 있어요'
+          : 'AI 분석 실패: $error',
+      error: true,
+    );
+  }
+
+  void _stopServerAnalysis() {
+    _analysisPollTimer?.cancel();
+    _analysisPollTimer = null;
+    _analysisRunning = false;
+    _analysisPollBusy = false;
   }
 
   Future<void> _selectRecommendationPreset(String preset) async {
@@ -653,6 +789,60 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     });
   }
 
+  Future<void> _showDirectTextAddSheet() async {
+    final projectController = _projectController;
+    if (projectController == null || _saving || _editingTextLayerId != null) {
+      return;
+    }
+
+    final preview = _preview;
+    if (preview != null && preview.value.isPlaying) {
+      await preview.pause();
+      projectController.setPlaying(false);
+    }
+    if (!mounted) return;
+
+    final project = projectController.project;
+    var clipStartMs = 0;
+    var clipEndMs = project.durationMs;
+    for (var index = 0; index < project.clips.length; index++) {
+      final clip = project.clips[index];
+      final endMs = clipStartMs + clip.durationMs;
+      if (project.playheadMs < endMs || index == project.clips.length - 1) {
+        clipEndMs = endMs;
+        break;
+      }
+      clipStartMs = endMs;
+    }
+    final startMs = project.playheadMs
+        .clamp(clipStartMs, math.max(clipStartMs, clipEndMs - 500))
+        .toInt();
+    final result = await showEditorDirectTextSheet(
+      context,
+      startMs: startMs,
+      maxEndMs: clipEndMs,
+      initialColor: _captionColor,
+    );
+    if (!mounted || result == null) return;
+
+    projectController.addTextLayer(
+      text: result.text,
+      startMs: result.startMs,
+      endMs: result.endMs,
+      position: result.position.point,
+      color: result.style.color,
+      backgroundColor: result.style.backgroundColor,
+      fontSize: result.style.fontSize,
+      bold: result.style.bold,
+      italic: result.style.italic,
+      align: result.style.align,
+    );
+    _captionColor = result.style.color;
+    _directCaptionAddMode = false;
+    _editState.markExternalEditApplied();
+    setState(() {});
+  }
+
   void _onEditingTextChanged(String value) {
     final id = _editingTextLayerId;
     if (id == null) return;
@@ -782,13 +972,16 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 전사는 이 버튼을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
     _startAutoCaptions();
     _captionSheetOpen = true;
+    var reviewed = false;
     try {
-      await _presentAiCaptionSheet();
+      reviewed = await _presentAiCaptionSheet();
     } finally {
       _captionSheetOpen = false;
     }
     if (!mounted) return;
-    final merged = _mergeTranscriptIntoTextLayers();
+    final merged = reviewed
+        ? _mergeTranscriptIntoTextLayers(force: true, focusApplied: true)
+        : false;
     // 전사가 아직 도는 중에 닫았다. 끝나면 리스너가 알아서 합친다 —
     // 그 말을 안 해 주면 "눌렀는데 아무 일도 없다"로 보인다.
     if (!merged && _autoCaptions.lines.isEmpty) {
@@ -801,7 +994,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   ///
   /// 전사 완료 알림과 시트 닫힘, 두 군데서 불리므로 내용 서명이 같으면
   /// 건너뛴다 — 자막 탭에서 고쳐 둔 AI 자막이 원문으로 되돌아가지 않는다.
-  bool _mergeTranscriptIntoTextLayers() {
+  bool _mergeTranscriptIntoTextLayers({
+    bool force = false,
+    bool focusApplied = false,
+  }) {
     final projectController = _projectController;
     if (projectController == null) return false;
     final lines = _autoCaptions.lines;
@@ -809,12 +1005,24 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     final signature = [
       for (final line in lines) '${line.startMs}:${line.endMs}:${line.text}',
     ].join('|');
-    if (signature == _mergedTranscriptSignature) return false;
-    _mergedTranscriptSignature = signature;
+    if (!force && signature == _mergedTranscriptSignature) return false;
     projectController.applyTranscriptCaptions([
       for (final line in lines)
         (startMs: line.startMs, endMs: line.endMs, text: line.text),
     ]);
+    final aiLayers = projectController.project.textLayers
+        .where((layer) => layer.id.startsWith('ai-caption-'))
+        .toList(growable: false);
+    if (aiLayers.isEmpty) return false;
+    _mergedTranscriptSignature = signature;
+    if (focusApplied) {
+      final first = aiLayers.first;
+      _directCaptionAddMode = false;
+      projectController
+        ..selectTool(EditorTool.text)
+        ..selectLayer(first.id);
+      unawaited(_seekToPosition(first.startMs));
+    }
     _editState.markExternalEditApplied();
     showAppSnack(
       context,
@@ -833,68 +1041,61 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     return true;
   }
 
-  Future<void> _presentAiCaptionSheet() async {
-    await showModalBottomSheet<void>(
+  Future<bool> _presentAiCaptionSheet() async {
+    final reviewed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFFFFFDFC),
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
       ),
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          16,
-          20,
-          MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'AI 자막',
-                  style: TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            22,
+            10,
+            22,
+            MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: AppColors.line,
+                  borderRadius: BorderRadius.circular(99),
                 ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '닫기',
-                  onPressed: () => Navigator.pop(sheetContext),
-                  color: AppColors.muted,
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            CaptionAutoSection(
-              controller: _autoCaptions,
-              // whisper는 진행률을 주지 않는다. 영상 길이에 실측 비율을 곱해
-              // 대략만 알려준다 (갤럭시 S24에서 약 0.9배).
-              estimateSeconds: _editState.durationMs > 0
-                  ? (_editState.durationMs / 1000 * 0.9).round()
-                  : null,
-              // 자막 수정도 저장 안 된 변경이다.
-              onChanged: () =>
-                  setState(() => _editState.markExternalEditApplied()),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              '만들어진 자막은 저장할 때 영상에 함께 구워져요. 줄을 눌러 고칠 수 있어요.',
-              style: TextStyle(
-                color: AppColors.muted,
-                fontSize: 12,
-                height: 1.35,
               ),
-            ),
-          ],
+              CaptionAutoSection(
+                controller: _autoCaptions,
+                // 예상 시간은 주지 않는다 — 0.9배는 온디바이스 whisper 실측이었고,
+                // 전사가 서버로 옮겨져 더는 맞는 숫자가 아니다.
+                // 닫기 동작은 기존과 같다. 전사는 백그라운드에서 계속된다.
+                onCancel: () => Navigator.pop(sheetContext, false),
+                onDone: () => Navigator.pop(sheetContext, true),
+                // 자막 수정도 저장 안 된 변경이다.
+                onChanged: () =>
+                    setState(() => _editState.markExternalEditApplied()),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                '만들어진 자막은 저장할 때 영상에 함께 구워져요. 줄을 눌러 고칠 수 있어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+    return reviewed == true;
   }
 
   Future<void> _saveEdit() async {
@@ -947,7 +1148,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           )
           .then((_) => debugPrint('editor draft saved before export'))
           .catchError(
-            (Object failure) => debugPrint('editor draft save failed: $failure'),
+            (Object failure) =>
+                debugPrint('editor draft save failed: $failure'),
           );
 
       // AI 자막은 이미 일반 자막 레이어로 합쳐져 textLayers에 들어 있다 —
@@ -987,15 +1189,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       // (WorkManager)에 맡긴다. 셀룰러에서 몇 분씩 걸리는 업로드를 편집기가
       // 붙잡고 기다리게 했더니 사용자가 앱을 껐고 업로드도 함께 끊겼다 —
       // 이제 앱을 나가거나 꺼도 계속 올라가고, 진행률은 상단 알림에 보인다.
+      // 완성본 자리는 백엔드가 만들고(API-81) 서명된 URL만 워커에 넘긴다 —
+      // 서명이 URL에 들어 있어 백그라운드 PUT에 인증 헤더가 필요 없다.
+      final editUploadUrl = await widget.controller.api.createEditUpload(
+        widget.video.id,
+        title: widget.video.title,
+        durationMs: exportProject.durationMs,
+        capturedStartAt: widget.video.capturedStartAt,
+      );
       await _editorPlatform.enqueueEditedUpload(
         videoId: widget.video.id,
         filePath: outputPath,
-        uploadUrl: _recommendations.editedVideoUploadUrl(
-          videoId: widget.video.id,
-          title: widget.video.title,
-          durationMs: exportProject.durationMs,
-          capturedAt: widget.video.capturedStartAt,
-        ),
+        uploadUrl: editUploadUrl,
         title: widget.video.title,
         // 렌더링 산출물(임시 파일)만 지운다. 원본을 그대로 올릴 때는 캐시라
         // 지우면 다음 편집 진입이 도로 내려받는다.
@@ -1143,6 +1348,169 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _prepare();
   }
 
+  Future<void> _showExitSaveDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        key: const Key('editor-exit-save-dialog'),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        backgroundColor: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(32),
+            child: ColoredBox(
+              color: AppColors.surface,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        key: const Key('editor-exit-close'),
+                        tooltip: '닫기',
+                        onPressed: () => Navigator.pop(dialogContext),
+                        icon: const Icon(Icons.close_rounded),
+                        color: AppColors.inkSoft,
+                      ),
+                    ),
+                    Image.asset(
+                      'assets/images/editor_exit_save_mascot.png',
+                      key: const Key('editor-exit-save-mascot'),
+                      width: 162,
+                      height: 128,
+                      fit: BoxFit.contain,
+                      cacheWidth: decodePixels(dialogContext, 162),
+                    ),
+                    const SizedBox(height: 8),
+                    Text.rich(
+                      const TextSpan(
+                        children: [
+                          TextSpan(text: '영상 편집한 거\n'),
+                          TextSpan(
+                            text: '저장',
+                            style: TextStyle(color: AppColors.coralDark),
+                          ),
+                          TextSpan(text: '할까요?'),
+                        ],
+                      ),
+                      key: const Key('editor-exit-save-title'),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(dialogContext).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: AppColors.ink,
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '현재 편집 내용은 아직 저장되지 않았어요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.inkSoft,
+                        fontSize: 14,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      key: const Key('editor-exit-save-warning'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceWarm,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: AppColors.coralDark,
+                            size: 24,
+                          ),
+                          SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              '저장하지 않으면\n편집 내용을 이어서 볼 수 없어요!',
+                              style: TextStyle(
+                                color: AppColors.inkSoft,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            key: const Key('editor-exit-continue'),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(56),
+                              foregroundColor: AppColors.coralDark,
+                              side: const BorderSide(
+                                color: AppColors.coralSoft,
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: const Text('계속 편집'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            key: const Key('editor-exit-save'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(56),
+                              backgroundColor: AppColors.danger,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            onPressed: () async {
+                              final navigator = Navigator.of(context);
+                              Navigator.pop(dialogContext);
+                              await _saveDraft();
+                              if (mounted) navigator.pop();
+                            },
+                            child: const Text('저장하기'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _autoCaptions
@@ -1151,6 +1519,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _textInput.dispose();
     _textFocus.dispose();
     _stopExportProgressPolling();
+    _stopServerAnalysis();
     final preview = _preview;
     if (preview != null) {
       preview.removeListener(_onPreviewChanged);
@@ -1167,33 +1536,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     canPop: !_editState.hasUnsavedChanges || _saving,
     onPopInvokedWithResult: (didPop, _) {
       if (didPop) return;
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('편집본을 저장할까요?'),
-          content: const Text('저장하면 추억 > 편집 중 목록에서 이어서 편집할 수 있어요.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                Navigator.pop(context);
-              },
-              child: const Text('저장 안 함'),
-            ),
-            FilledButton(
-              key: const Key('editor-exit-save'),
-              onPressed: () async {
-                final navigator = Navigator.of(context);
-                Navigator.pop(dialogContext);
-                // 저장 결과는 스낵바가 알려 준다. 실패해도 붙잡지 않는다.
-                await _saveDraft();
-                if (mounted) navigator.pop();
-              },
-              child: const Text('저장하고 나가기'),
-            ),
-          ],
-        ),
-      );
+      _showExitSaveDialog();
     },
     child: AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
@@ -1479,7 +1822,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         _editState.markExternalEditApplied();
         if (mounted) setState(() {});
       },
-      onText: _startTextEditing,
+      onText: _showDirectTextAddSheet,
+      directCaptionAddMode: _directCaptionAddMode,
+      onDirectCaptionAddMode: () {
+        if (_saving) return;
+        setState(() => _directCaptionAddMode = true);
+      },
       onTextEdit: (id) {
         // 자막 시작으로 옮겨 놓고 바로 그 위에서 고친다.
         final layer = projectController.project.textLayers
@@ -1512,7 +1860,12 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         setState(() {});
       },
       onLookSelected: _setLook,
-      onAiCaption: _showAiCaptionSheet,
+      onAiCaption: () {
+        if (_directCaptionAddMode) {
+          setState(() => _directCaptionAddMode = false);
+        }
+        _showAiCaptionSheet();
+      },
       onZoomAdd: () {
         if (!projectController.addZoomAtPlayhead()) {
           showAppSnack(context, '이 클립은 줌으로 가득 찼어요. 기존 줌을 지우거나 줄여 주세요.');
@@ -1537,6 +1890,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
   void _selectEditorTool(EditorTool tool) {
     if (_saving) return;
+    if (tool != EditorTool.text) _directCaptionAddMode = false;
     _projectController?.selectTool(tool);
     if (mounted) setState(() {});
   }

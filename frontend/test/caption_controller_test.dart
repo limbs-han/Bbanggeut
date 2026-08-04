@@ -114,6 +114,22 @@ void main() {
     expect(notified, 1);
   });
 
+  test('고친 자막은 캐시 파일에도 저장된다 — 만화 구성이 그 파일을 읽는다', () async {
+    final store = storeWith((_) async => _lines());
+    final subject = CaptionController(store: store);
+    subject.start('v1', '/video/v1.mp4');
+    await store.pending;
+
+    subject.edit(0, '그거 만지면 안 돼');
+    await subject.pendingWrite;
+
+    // 메모리가 아니라 파일을 다시 읽는다 — ComicController가 읽는 그 경로다.
+    final persisted = await store.read('v1');
+    expect(persisted, isNotNull);
+    expect(persisted!.first.text, '그거 만지면 안 돼');
+    expect(persisted[1].text, '안 만졌는데요', reason: '고치지 않은 줄은 그대로');
+  });
+
   test('없는 번호를 고치라고 해도 죽지 않고 수정으로 세지 않는다', () async {
     final store = storeWith((_) async => _lines());
     final subject = CaptionController(store: store);
