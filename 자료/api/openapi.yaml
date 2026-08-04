@@ -311,6 +311,141 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/notifications/preferences:
+    get:
+      tags: [Notifications]
+      operationId: getNotificationPreferences
+      summary: 알림 설정 조회
+      description: |
+        기념일·주간 리포트·새로운 추억 푸시 토글. 저장된 행이 없으면 모두
+        켜진 기본값을 반환한다.
+      responses:
+        '200':
+          description: 현재 알림 설정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Notifications]
+      operationId: updateNotificationPreferences
+      summary: 알림 설정 저장
+      description: |
+        세 토글을 한 번에 저장한다. `newMemoryAlerts`를 끄면 새 영상
+        푸시(LAUGHTER_VIDEO_READY)가 발송 대상에서 제외된다. 인앱 알림
+        목록에는 계속 쌓인다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferences'
+      responses:
+        '200':
+          description: 저장된 알림 설정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/schedules:
+    get:
+      tags: [Schedules]
+      operationId: listSchedules
+      summary: 캘린더 일정 목록
+      description: 로그인 사용자의 일정(기념일)을 날짜 오름차순으로 반환한다.
+      responses:
+        '200':
+          description: 일정 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Schedules]
+      operationId: createSchedule
+      summary: 캘린더 일정 등록
+      description: 사용자당 최대 200개까지 등록할 수 있다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+      responses:
+        '201':
+          description: 생성된 일정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/schedules/{scheduleId}:
+    put:
+      tags: [Schedules]
+      operationId: updateSchedule
+      summary: 캘린더 일정 수정
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+      responses:
+        '200':
+          description: 수정된 일정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    delete:
+      tags: [Schedules]
+      operationId: deleteSchedule
+      summary: 캘린더 일정 삭제
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 삭제 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
   /api/devices:
     get:
       tags: [Devices]
@@ -2814,6 +2949,63 @@ components:
           type: integer
           format: int64
           minimum: 0
+
+    NotificationPreferences:
+      type: object
+      required: [anniversaryAlerts, weeklyReport, newMemoryAlerts]
+      properties:
+        anniversaryAlerts:
+          type: boolean
+          description: 기념일 알림
+        weeklyReport:
+          type: boolean
+          description: 주간 리포트 알림
+        newMemoryAlerts:
+          type: boolean
+          description: 새 영상(추억) 저장 푸시
+
+    ScheduleRequest:
+      type: object
+      required: [title, date]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        date:
+          type: string
+          format: date
+        memo:
+          type: string
+          maxLength: 500
+          default: ''
+        yearly:
+          type: boolean
+          default: false
+          description: 매년 반복 여부
+        emoji:
+          type: string
+          maxLength: 16
+          default: '❤️'
+
+    Schedule:
+      type: object
+      required: [id, title, date, memo, yearly, emoji]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        date:
+          type: string
+          format: date
+        memo:
+          type: string
+        yearly:
+          type: boolean
+        emoji:
+          type: string
 
     RegisterPushTokenRequest:
       type: object
