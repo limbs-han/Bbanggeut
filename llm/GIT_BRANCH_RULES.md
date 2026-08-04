@@ -86,6 +86,7 @@ Backend CI:
 - Backend 빌드
 - 단위 테스트
 - PostgreSQL 통합 테스트
+- editor-api(video_editor) Python 테스트
 
 Device CI:
 
