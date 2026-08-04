@@ -148,6 +148,24 @@ class FramingTargetValidationTests(unittest.TestCase):
         self.assertEqual(target.command_x, "LEFT")
         self.assertEqual(target.command_y, "UP")
 
+    def test_accepts_brief_target_loss_follow_as_tracking(self) -> None:
+        message = payload(
+            state="TARGET_LOSS_FOLLOW",
+            command_x="LEFT",
+            command_y="HOLD",
+            error_x=-0.2,
+            error_y=0.0,
+        )
+
+        target = parse_framing_target(
+            message,
+            expected_device_id=DEVICE_ID,
+            received_epoch=100.2,
+        )
+
+        self.assertEqual(target.mode, "TRACKING")
+        self.assertEqual(target.command_x, "LEFT")
+
     def test_rejects_expired_message(self) -> None:
         with self.assertRaisesRegex(ValueError, "expired"):
             parse_framing_target(

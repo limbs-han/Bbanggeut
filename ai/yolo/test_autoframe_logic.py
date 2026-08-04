@@ -158,6 +158,8 @@ class SafeFrameControllerTests(unittest.TestCase):
             tracking_mode="safe-frame",
             safe_frame_start_margin=0.08,
             safe_frame_stop_margin=0.12,
+            safe_frame_edge_guard=0.04,
+            target_loss_follow_seconds=0.5,
         )
 
     def update_box(self, box: tuple[float, float, float, float]) -> CameraCommand:
@@ -176,14 +178,21 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.command_x, "HOLD")
         self.assertEqual(command.command_y, "HOLD")
 
-    def test_lower_body_may_leave_safe_area_when_upper_35_percent_fits(self) -> None:
+    def test_box_edge_guard_prevents_lower_body_from_disappearing(self) -> None:
         command = self.update_box((20, 20, 80, 100))
 
+        self.assertEqual(command.direction, "DOWN")
+        self.assertEqual(command.center_y, 0.48)
+
+    def test_uses_original_35_percent_tracking_point(self) -> None:
+        command = self.update_box((10, 0, 90, 100))
+
         self.assertEqual(command.direction, "HOLD")
-        self.assertEqual(command.center_y, 0.34)
+        self.assertEqual(command.center_x, 0.5)
+        self.assertEqual(command.center_y, 0.35)
 
     def test_moves_only_on_axes_whose_box_nears_an_edge(self) -> None:
-        command = self.update_box((75, 5, 95, 30))
+        command = self.update_box((75, 2, 98, 30))
 
         self.assertEqual(command.direction, "RIGHT_UP")
         self.assertGreater(command.error_x, 0.0)
@@ -192,7 +201,7 @@ class SafeFrameControllerTests(unittest.TestCase):
     def test_multiple_people_use_their_combined_group_box(self) -> None:
         decision = choose_best_group(
             (
-                tracked(1, (5, 20, 25, 80)),
+                tracked(1, (2, 20, 25, 80)),
                 tracked(2, (40, 20, 60, 80)),
             ),
             100,
@@ -207,9 +216,9 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.command_y, "HOLD")
 
     def test_active_axis_moves_until_box_reaches_inner_stop_margin(self) -> None:
-        self.assertEqual(self.update_box((5, 20, 30, 80)).command_x, "LEFT")
-        self.assertEqual(self.update_box((10, 20, 35, 80)).command_x, "LEFT")
-        self.assertEqual(self.update_box((12, 20, 37, 80)).command_x, "HOLD")
+        self.assertEqual(self.update_box((3, 20, 30, 80)).command_x, "LEFT")
+        self.assertEqual(self.update_box((5, 20, 32, 80)).command_x, "LEFT")
+        self.assertEqual(self.update_box((8, 20, 35, 80)).command_x, "HOLD")
 
     def test_oversized_box_holds_instead_of_driving_into_a_limit(self) -> None:
         command = self.update_box((0, 20, 100, 80))
@@ -217,6 +226,26 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.direction, "HOLD")
         self.assertEqual(command.error_x, 0.0)
         self.assertEqual(command.error_y, 0.0)
+
+    def test_briefly_follows_last_edge_exit_direction_after_target_loss(self) -> None:
+        tracking = self.update_box((2, 20, 30, 80))
+        following = self.controller.update(None, 100, 100, now=0.4)
+        holding = self.controller.update(None, 100, 100, now=0.6)
+
+        self.assertEqual(tracking.command_x, "LEFT")
+        self.assertEqual(following.state, "TARGET_LOSS_FOLLOW")
+        self.assertEqual(following.command_x, "LEFT")
+        self.assertEqual(following.command_y, "HOLD")
+        self.assertEqual(holding.state, "NO_TARGET_HOLD")
+        self.assertEqual(holding.direction, "HOLD")
+
+    def test_centered_confidence_dropout_holds_without_predictive_motion(self) -> None:
+        self.update_box((20, 20, 80, 80))
+
+        missing = self.controller.update(None, 100, 100, now=0.1)
+
+        self.assertEqual(missing.state, "NO_TARGET_HOLD")
+        self.assertEqual(missing.direction, "HOLD")
 
 
 if __name__ == "__main__":
