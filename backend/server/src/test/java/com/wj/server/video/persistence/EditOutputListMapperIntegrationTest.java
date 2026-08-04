@@ -148,11 +148,15 @@ class EditOutputListMapperIntegrationTest {
         String createdAtClock,
         String deletedAt
     ) throws Exception {
+        // event_types is NOT NULL and the list query reads it back through
+        // array_to_string, so the fixture has to carry the array — an edit
+        // output inherits it from its source recording in production.
         statement.executeUpdate(
             "insert into videos (id, device_id, vault_id, source_type, trigger_type, "
-                + "title, storage_key, status, created_at, deleted_at) values ("
+                + "event_types, title, storage_key, status, created_at, deleted_at) values ("
                 + "'" + id + "', '" + DEVICE_ID + "', '" + vaultId + "', "
-                + "'" + sourceType + "', 'EDIT', '" + title + "', "
+                + "'" + sourceType + "', 'EDIT', array['EDIT']::video_trigger_type[], "
+                + "'" + title + "', "
                 + "'private/device/" + id + ".mp4', '" + status + "', "
                 + "timestamptz '2026-08-04 " + createdAtClock + ":00+09', "
                 + (deletedAt == null ? "null" : deletedAt) + ")");
