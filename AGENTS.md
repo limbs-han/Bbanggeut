@@ -135,7 +135,8 @@ Before pushing:
 
 - Frontend: `flutter pub get`, `flutter analyze`, and `flutter test`. Do not
   build APK or AAB artifacts. There is no Frontend CD.
-- Backend: build, unit tests, and PostgreSQL integration tests.
+- Backend: build, unit tests, PostgreSQL integration tests, and editor-api
+  (video_editor) Python tests.
 - Device and AI: Device Agent tests, AI Python tests, and Python/Shell syntax
   checks.
 - API Contract: `자료/api/openapi.yaml` contract checks.
