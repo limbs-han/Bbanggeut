@@ -435,7 +435,7 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 - **설계 단계의 `COMIC_RATE_LIMIT_EXCEEDED`·`COMIC_GENERATION_FAILED`는 쓰지 않는다.** 워커가 꺼진 것과 오래 걸리는 것을 한 코드로 뭉개면 사용자가 영원히 다시 누르므로 나눴다. 앱은 코드로 분기하지 않고 `message`만 띄우므로 앱 변경은 없었다.
 - 호출 예산은 **사용자별·영상별 슬라이딩 윈도**다(기본 1시간 20회, `app.comic.rate-window`·`rate-limit`).
 - **형식이 틀린 요청(422)은 호출 예산을 깎지 않는다.** 자기 실수로 만화를 못 만들게 되면 안 된다.
-- 성공·거절 모두 `access_logs`에 `COMIC_SCRIPT`·`COMIC_IMAGE`로 남는다(V35 마이그레이션이 감사 동작을 추가한다).
+- 성공·거절 모두 `access_logs`에 `COMIC_SCRIPT`·`COMIC_IMAGE`로 남는다(V36 마이그레이션이 감사 동작을 추가한다).
 - 백엔드는 이 두 경로에 **트랜잭션을 걸지 않는다** — 분 단위 호출이 커넥션 풀을 붙잡지 않게 한다.
 - 원본은 `app.storage.public-endpoint`로 서명한 5분 URL로 워커에 넘긴다. 워커의 ffmpeg가 그 주소를 직접 읽으므로 **워커에서도 닿는 주소여야 한다.**
 - 워커 주소 `app.comic.worker-base-url`의 기본값 `http://127.0.0.1:18080`은 **실서버에서 그대로 맞다** — Spring은 호스트의 systemd 서비스(`william-james`)이고 editor-api는 `127.0.0.1:18080`으로만 포트를 연다.
