@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import 'content_calendar_screen.dart';
 import 'edited_video_screen.dart';
 import 'invitation_inbox_screen.dart';
+import 'laugh_report_content_screen.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
 
@@ -126,6 +128,20 @@ class _ContentNotificationsScreenState
       } catch (failure) {
         if (mounted) showAppSnack(context, '$failure', error: true);
       }
+      return;
+    }
+
+    // 주기 리포트 알림은 각자의 화면으로 — 기념일은 캘린더, 주간 리포트는
+    // 웃음 리포트다.
+    if (item.type == 'ANNIVERSARY' || item.type == 'WEEKLY_REPORT') {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => item.type == 'ANNIVERSARY'
+              ? ContentCalendarScreen(controller: widget.controller)
+              : LaughReportContentScreen(controller: widget.controller),
+        ),
+      );
       return;
     }
 

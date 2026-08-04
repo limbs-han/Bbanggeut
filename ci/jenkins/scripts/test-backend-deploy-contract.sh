@@ -159,6 +159,16 @@ do
   fi
 done
 
+# 업로드 한도 정합: 서버 선언(500 MiB)보다 nginx가 크게 열려 있으면 초과
+# 본문이 MinIO 디스크에 도달한 뒤에야 거절된다.
+if ! grep -A 8 'location \^~ /william-james-videos'   "${repository_root}/backend/deploy/nginx-william-james.conf" |
+  grep -Fq 'client_max_body_size 512m;'
+then
+  echo "nginx의 영상 업로드 본문 한도가 서버 선언(500 MiB)과 어긋납니다." >&2
+  exit 1
+fi
+grep -Fq 'MAX_UPLOAD_BYTES = 524_288_000L'   "${repository_root}/backend/server/src/main/java/com/wj/server/video/application/IotVideoService.java"
+
 # nginx location 중복 검사. 병합 사고로 /editor/ 블록이 두 벌 들어가
 # nginx -t가 배포 시점에야 실패했다(2026-08-04 배포 #71·#72). 수정자
 # (^~, =, ~)만 다른 같은 URI도 nginx는 중복으로 거부하므로 URI 기준으로

@@ -283,6 +283,24 @@ class ApiClient {
     ),
   );
 
+  /// 금고(가족) 단위 집계(API-80). 기기 여러 대를 한 금고에 묶은 가족이
+  /// 합산 리포트를 볼 때 쓴다 — 응답의 byDevice로 기기별 분해도 함께 온다.
+  Future<VaultEventStats> getVaultEventStats(
+    String vaultId, {
+    DateTime? from,
+    DateTime? to,
+    String? type,
+  }) async => VaultEventStats.fromJson(
+    await _get(
+      '/api/vaults/$vaultId/event-stats',
+      query: {
+        if (from != null) 'from': _dateOnly(from),
+        if (to != null) 'to': _dateOnly(to),
+        'type': ?type,
+      },
+    ),
+  );
+
   static String _dateOnly(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-'
       '${value.month.toString().padLeft(2, '0')}-'
