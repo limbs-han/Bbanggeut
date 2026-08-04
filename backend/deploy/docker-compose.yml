@@ -104,6 +104,10 @@ services:
       # 편집본 재생 presigned URL 서명 기준 호스트(백엔드 S3_PUBLIC_ENDPOINT와
       # 같은 방식). nginx의 /william-james-edit 경로가 MinIO로 프록시한다.
       EDITOR_PUBLIC_S3_ENDPOINT: ${EDITOR_PUBLIC_S3_ENDPOINT:-https://i15e201.p.ssafy.io}
+      # 4컷 만화(API-71·72)가 GMS로 Gemini를 부를 때 쓴다. 값은 infra/.env에
+      # 두고 여기서 읽는다 — 이 파일에 키를 적지 않는다. 비어 있어도 기동은
+      # 되고 만화 요청만 502가 된다(다른 편집 기능은 이 키를 쓰지 않는다).
+      GMS_KEY: ${GMS_KEY:-}
     volumes:
       - ${EDITOR_MODEL_DIR:-/home/ubuntu/william-james/editor-models}:/models:ro
     ports:

@@ -28,12 +28,19 @@ editor-api는 백엔드 배포 파이프라인에 **자동으로 포함**된다.
 
    ```
    EDITOR_JWT_SECRET=<secrets/app.env의 JWT_SIGNING_KEY와 같은 값>
+   GMS_KEY=<GMS에서 받은 Gemini API 키>
    ```
 
-   editor-api가 이 값으로 앱의 백엔드 액세스 토큰(HS256, iss=wj-server)을
-   직접 검증한다. 값이 비면 컨테이너가 기동을 거부하므로
+   `EDITOR_JWT_SECRET`으로 editor-api가 앱의 백엔드 액세스 토큰(HS256,
+   iss=wj-server)을 직접 검증한다. 값이 비면 컨테이너가 기동을 거부하므로
    (`EDITOR_REQUIRE_AUTH=true`) 배포 wrapper는 이 값이 없으면 배포를
    시작하지 않는다.
+
+   `GMS_KEY`는 4컷 만화(API-71·72)가 Gemini를 부를 때만 쓴다. **여기 두는
+   이유**: 키를 컨테이너 환경변수로만 전달하고 이미지·Git·앱에는 넣지 않는다
+   (APK를 뜯으면 앱에 심은 키는 가져갈 수 있다). 비어 있어도 editor-api는
+   뜨고 다른 편집 기능은 정상이며 만화 요청만 502가 된다. 키만 바꿀 때는
+   재배포 없이 `docker compose --env-file .env up -d editor-api`로 갈아탄다.
 
 3. 확인:
 
