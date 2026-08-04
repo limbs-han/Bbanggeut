@@ -14,6 +14,30 @@ enum MemoryCategory { laughter, editing, edited }
 
 enum MemorySort { newest, oldest }
 
+/// 편집 목록 한 줄의 상태 설명.
+///
+/// 완성본은 업로드가 끝나기 전에도 목록에 나온다 — 알림을 껐거나 권한을 주지
+/// 않은 기기에서는 상단 알림이 오지 않으므로, 이 줄이 진행 상황을 아는 유일한
+/// 단서다. 끝내 실패한 것도 조용히 사라지지 않고 여기 남는다.
+String editorEntrySubtitle({
+  required bool isDraft,
+  required bool uploading,
+  required bool failed,
+  required DateTime? savedAt,
+}) {
+  final state = isDraft
+      ? '저장한 초안'
+      : uploading
+      ? '서버에 올리는 중'
+      : failed
+      ? '업로드 실패 — 다시 저장해 주세요'
+      : '편집 완료';
+  if (savedAt == null) {
+    return isDraft ? '이어서 편집할 수 있어요' : state;
+  }
+  return '${DateFormat('M월 d일 HH:mm').format(savedAt)} $state';
+}
+
 class AllMemoriesScreen extends StatefulWidget {
   const AllMemoriesScreen({super.key, required this.controller});
 
@@ -208,16 +232,33 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               : (entry['title'] as String?)?.isNotEmpty == true
               ? entry['title'] as String
               : original?.title ?? videoId;
+          // 완성본은 업로드가 끝나기 전에도 목록에 나온다. 상태를 모르는
+          // 응답(구버전 서버)은 예전처럼 완료로 본다.
+          final status = isDraft
+              ? 'READY'
+              : (entry['status'] as String? ?? 'READY');
+          final uploading = status == 'UPLOADING';
+          final failed = status == 'FAILED';
+          final playable = !isDraft && !uploading && !failed;
           return Card(
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: AppColors.sage.withValues(alpha: 0.3),
-                child: Icon(
-                  isDraft
-                      ? Icons.edit_note_rounded
-                      : Icons.play_arrow_rounded,
-                  color: AppColors.sageDark,
-                ),
+                backgroundColor: failed
+                    ? AppColors.danger.withValues(alpha: 0.15)
+                    : AppColors.sage.withValues(alpha: 0.3),
+                child: uploading
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        isDraft
+                            ? Icons.edit_note_rounded
+                            : failed
+                            ? Icons.error_outline_rounded
+                            : Icons.play_arrow_rounded,
+                        color: failed ? AppColors.danger : AppColors.sageDark,
+                      ),
               ),
               title: Text(
                 title,
@@ -226,20 +267,40 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               subtitle: Text(
-                savedAt == null
-                    ? (isDraft ? '이어서 편집할 수 있어요' : '편집 완료')
-                    : '${DateFormat('M월 d일 HH:mm').format(savedAt)} '
-                          '${isDraft ? "저장한 초안" : "편집 완료"}',
-                style: const TextStyle(fontSize: 12),
+                editorEntrySubtitle(
+                  isDraft: isDraft,
+                  uploading: uploading,
+                  failed: failed,
+                  savedAt: savedAt,
+                ),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: failed ? AppColors.danger : null,
+                ),
               ),
-              trailing: Icon(
-                isDraft
-                    ? Icons.chevron_right_rounded
-                    : Icons.mode_comment_outlined,
-                color: AppColors.muted,
-              ),
-              onTap: () =>
-                  isDraft ? _openDraft(entry) : _openEdited(entry),
+              trailing: uploading || failed
+                  ? null
+                  : Icon(
+                      isDraft
+                          ? Icons.chevron_right_rounded
+                          : Icons.mode_comment_outlined,
+                      color: AppColors.muted,
+                    ),
+              onTap: () {
+                if (isDraft) {
+                  _openDraft(entry);
+                } else if (playable) {
+                  _openEdited(entry);
+                } else if (uploading) {
+                  showAppSnack(context, '아직 올라가는 중이에요. 끝나면 바로 볼 수 있어요.');
+                } else {
+                  showAppSnack(
+                    context,
+                    '업로드가 끝나지 못했어요. 편집기에서 다시 저장해 주세요.',
+                    error: true,
+                  );
+                }
+              },
             ),
           );
         },

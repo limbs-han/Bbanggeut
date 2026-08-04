@@ -280,6 +280,9 @@ class ApiClient {
 
   /// 금고의 편집 완성본 목록(API-82). 화면들이 쓰던 editor-api meta.json과
   /// 같은 키(`videoId`·`title`·`savedAt`)로 맞춰 준다.
+  ///
+  /// `status`는 업로드가 끝나기 전(`UPLOADING`)과 끝내 실패한 것(`FAILED`)도
+  /// 목록에 나오기 때문에 함께 넘긴다. 값이 없으면 화면은 완료로 본다.
   Future<List<Map<String, dynamic>>> listVaultEdits(String vaultId) async =>
       (await _getList('/api/vaults/$vaultId/edits'))
           .map(
@@ -290,6 +293,7 @@ class ApiClient {
               'capturedAt': item['capturedStartAt'],
               'durationMs': item['durationMs'],
               'sizeBytes': item['sizeBytes'],
+              'status': item['status'],
             },
           )
           .toList(growable: false);
