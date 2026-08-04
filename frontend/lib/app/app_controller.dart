@@ -51,6 +51,7 @@ class AppController extends ChangeNotifier {
   final List<String> _placeNames = ['집'];
   String _selectedPlaceName = '집';
   final Map<String, String> _devicePlaces = {};
+  final Map<String, List<String>> _deviceOrders = {};
   Future<void> _placePreferenceSave = Future.value();
   String? pendingMembershipRequestToken;
   MembershipRequestPreview? pendingMembershipRequestPreview;
@@ -62,13 +63,92 @@ class AppController extends ChangeNotifier {
   bool get canRegisterDevice => selectedVault == null || isOwner;
   List<String> get placeNames => List.unmodifiable(_placeNames);
   String get selectedPlaceName => _selectedPlaceName;
-  List<DeviceSummary> get devicesForSelectedPlace => devices
-      .where(
-        (device) =>
-            (_devicePlaces[device.id] ?? _placeNames.first) ==
-            _selectedPlaceName,
-      )
-      .toList(growable: false);
+  List<DeviceSummary> get devicesForSelectedPlace {
+    final placeDevices = _userOrderedDevices(devices).where(
+      (device) =>
+          (_devicePlaces[device.id] ?? _placeNames.first) == _selectedPlaceName,
+    );
+    return _onlineFirst(placeDevices);
+  }
+
+  String get _deviceOrderScope => selectedVault?.id ?? 'user';
+
+  List<DeviceSummary> _userOrderedDevices(Iterable<DeviceSummary> source) {
+    final snapshot = source.toList(growable: false);
+    final savedOrder = _deviceOrders[_deviceOrderScope];
+    if (savedOrder == null) return snapshot;
+    final remaining = {for (final device in snapshot) device.id: device};
+    return List.unmodifiable([
+      for (final id in savedOrder) ?remaining.remove(id),
+      ...snapshot.where((device) => remaining.containsKey(device.id)),
+    ]);
+  }
+
+  /// ONLINE과 OFFLINE 내부에서는 서버가 준 등록 순서를 그대로 유지한다.
+  List<DeviceSummary> _onlineFirst(Iterable<DeviceSummary> source) {
+    final snapshot = source.toList(growable: false);
+    return List.unmodifiable([
+      ...snapshot.where((device) => device.isOnline),
+      ...snapshot.where((device) => !device.isOnline),
+    ]);
+  }
+
+  DeviceSummary? _preferredDevice(
+    List<DeviceSummary> candidates, {
+    String? preserveId,
+  }) {
+    if (candidates.isEmpty) return null;
+    if (preserveId != null) {
+      for (final device in candidates) {
+        if (device.id == preserveId) return device;
+      }
+    }
+    for (final device in candidates) {
+      if (device.isOnline) return device;
+    }
+    return candidates.first;
+  }
+
+  List<DeviceSummary> get _selectionCandidates {
+    final placeDevices = devicesForSelectedPlace;
+    return placeDevices.isEmpty
+        ? _onlineFirst(_userOrderedDevices(devices))
+        : placeDevices;
+  }
+
+  void _reconcileDeviceOrder() {
+    final scope = _deviceOrderScope;
+    final savedOrder = _deviceOrders[scope];
+    if (savedOrder == null) return;
+    final currentIds = devices.map((device) => device.id).toSet();
+    final nextOrder = <String>[
+      ...savedOrder.where(currentIds.contains),
+      ...devices
+          .map((device) => device.id)
+          .where((id) => !savedOrder.contains(id)),
+    ];
+    if (listEquals(savedOrder, nextOrder)) return;
+    _deviceOrders[scope] = nextOrder;
+    unawaited(_savePlacePreferences());
+  }
+
+  void _syncPresenceStatus(
+    DeviceSummary? device, {
+    required bool preserveDetails,
+  }) {
+    if (device == null) {
+      deviceStatus = null;
+      return;
+    }
+    final previous = preserveDetails ? deviceStatus : null;
+    deviceStatus = DeviceStatus(
+      status: device.status,
+      recording: previous?.recording ?? false,
+      uploadQueueDepth: previous?.uploadQueueDepth ?? 0,
+      bufferSeconds: previous?.bufferSeconds,
+      personCount: previous?.personCount,
+    );
+  }
 
   String? get _placeStorageKey {
     final userId = user?.id;
@@ -98,6 +178,18 @@ class AppController extends ChangeNotifier {
             (deviceId, place) => MapEntry(deviceId, place.toString()),
           ),
         );
+      _deviceOrders.clear();
+      final savedOrders = decoded['deviceOrders'];
+      if (savedOrders is Map<String, dynamic>) {
+        for (final entry in savedOrders.entries) {
+          final ids = (entry.value as List? ?? const [])
+              .whereType<String>()
+              .where((id) => id.isNotEmpty)
+              .toSet()
+              .toList();
+          _deviceOrders[entry.key] = ids;
+        }
+      }
       final selected = decoded['selectedPlace'] as String?;
       _selectedPlaceName = _placeNames.contains(selected)
           ? selected!
@@ -114,6 +206,10 @@ class AppController extends ChangeNotifier {
       'places': List<String>.of(_placeNames),
       'selectedPlace': _selectedPlaceName,
       'devicePlaces': Map<String, String>.of(_devicePlaces),
+      'deviceOrders': {
+        for (final entry in _deviceOrders.entries)
+          entry.key: List<String>.of(entry.value),
+      },
     });
     _placePreferenceSave = _placePreferenceSave.then((_) async {
       try {
@@ -128,6 +224,9 @@ class AppController extends ChangeNotifier {
   @visibleForTesting
   Future<void> waitForPlacePreferencesSaved() => _placePreferenceSave;
 
+  @visibleForTesting
+  Future<void> loadPlacePreferencesForTesting() => _loadPlacePreferences();
+
   void selectPlace(String placeName) {
     final normalized = placeName.trim();
     if (!_placeNames.contains(normalized)) return;
@@ -135,7 +234,7 @@ class AppController extends ChangeNotifier {
     final placeDevices = devicesForSelectedPlace;
     if (placeDevices.isNotEmpty &&
         !placeDevices.any((device) => device.id == selectedDevice?.id)) {
-      selectedDevice = placeDevices.first;
+      selectedDevice = _preferredDevice(placeDevices);
       deviceStatus = null;
       videoStats = null;
       homeSummary = null;
@@ -152,6 +251,34 @@ class AppController extends ChangeNotifier {
       return;
     }
     _devicePlaces[deviceId] = normalized;
+    unawaited(_savePlacePreferences());
+    notifyListeners();
+  }
+
+  void reorderDeviceForSelectedPlace({
+    required String deviceId,
+    String? beforeDeviceId,
+  }) {
+    final visibleDevices = devicesForSelectedPlace;
+    final visibleIds = visibleDevices.map((device) => device.id).toList();
+    if (!visibleIds.remove(deviceId) || beforeDeviceId == deviceId) return;
+    if (beforeDeviceId == null) {
+      visibleIds.add(deviceId);
+    } else {
+      final targetIndex = visibleIds.indexOf(beforeDeviceId);
+      if (targetIndex < 0) return;
+      visibleIds.insert(targetIndex, deviceId);
+    }
+
+    final placeIds = visibleIds.toSet();
+    final reordered = visibleIds.iterator;
+    final baseOrder = _userOrderedDevices(
+      devices,
+    ).map((device) => device.id).toList();
+    _deviceOrders[_deviceOrderScope] = [
+      for (final id in baseOrder)
+        if (placeIds.contains(id)) (reordered..moveNext()).current else id,
+    ];
     unawaited(_savePlacePreferences());
     notifyListeners();
   }
@@ -228,9 +355,10 @@ class AppController extends ChangeNotifier {
     if (authenticated) {
       user = await api.cachedUser;
       try {
-        // 장소 설정은 기기에 저장된 값이라 서버 응답과 아무 관계가 없다.
-        // 나란히 읽으면 보안 저장소를 거치는 시간이 네트워크 시간에 숨는다.
-        await Future.wait([_loadPlacePreferences(), refreshAll()]);
+        // 저장한 장소와 기기 순서를 먼저 복원해야 서버 목록의 기본 선택도
+        // 사용자가 정한 순서를 따른다.
+        await _loadPlacePreferences();
+        await refreshAll();
         await resolvePendingMembershipRequest();
       } on ApiFailure catch (error) {
         if (error.statusCode == 401) {
@@ -271,7 +399,8 @@ class AppController extends ChangeNotifier {
         persistSession: persistSession,
       );
       user = session.user;
-      await Future.wait([_loadPlacePreferences(), refreshAll()]);
+      await _loadPlacePreferences();
+      await refreshAll();
       await resolvePendingMembershipRequest();
       requiresInitialDeviceRegistration = false;
       authenticated = true;
@@ -296,7 +425,8 @@ class AppController extends ChangeNotifier {
       persistSession: persistSession,
     );
     user = session.user;
-    await Future.wait([_loadPlacePreferences(), refreshAll()]);
+    await _loadPlacePreferences();
+    await refreshAll();
     await resolvePendingMembershipRequest();
     requiresInitialDeviceRegistration = selectedDevice == null;
     authenticated = true;
@@ -396,12 +526,11 @@ class AppController extends ChangeNotifier {
     devices = selectedVault!.devices
         .map((binding) => binding.device)
         .toList(growable: false);
-    selectedDevice = devices.isEmpty
-        ? null
-        : devices.firstWhere(
-            (item) => item.id == previousDeviceId,
-            orElse: () => devices.first,
-          );
+    _reconcileDeviceOrder();
+    selectedDevice = _preferredDevice(
+      _selectionCandidates,
+      preserveId: previousDeviceId,
+    );
     if (selectedDevice == null) {
       await refreshVaultData();
     } else {
@@ -443,13 +572,18 @@ class AppController extends ChangeNotifier {
     devices = current.devices
         .map((binding) => binding.device)
         .toList(growable: false);
+    _reconcileDeviceOrder();
     final deviceId = selectedDevice?.id;
-    selectedDevice = devices.isEmpty
-        ? null
-        : devices.firstWhere(
-            (item) => item.id == deviceId,
-            orElse: () => devices.first,
-          );
+    selectedDevice = _preferredDevice(
+      _selectionCandidates,
+      preserveId: deviceId,
+    );
+    final selectionChanged = selectedDevice?.id != deviceId;
+    _syncPresenceStatus(selectedDevice, preserveDetails: !selectionChanged);
+    if (selectionChanged) {
+      videoStats = null;
+      homeSummary = null;
+    }
     notifyListeners();
   }
 
@@ -519,7 +653,8 @@ class AppController extends ChangeNotifier {
     devices = vault.devices
         .map((binding) => binding.device)
         .toList(growable: false);
-    selectedDevice = devices.isEmpty ? null : devices.first;
+    _reconcileDeviceOrder();
+    selectedDevice = _preferredDevice(_selectionCandidates);
     deviceStatus = null;
     videoStats = null;
     homeSummary = null;
@@ -638,6 +773,7 @@ class AppController extends ChangeNotifier {
     devices = claimedVault.devices
         .map((binding) => binding.device)
         .toList(growable: false);
+    _reconcileDeviceOrder();
     selectedDevice = devices.firstWhere(
       (device) => device.id == claimedDevice.id,
     );
@@ -778,7 +914,8 @@ class AppController extends ChangeNotifier {
         devices = ownerVault.devices
             .map((binding) => binding.device)
             .toList(growable: false);
-        selectedDevice = devices.isEmpty ? null : devices.first;
+        _reconcileDeviceOrder();
+        selectedDevice = _preferredDevice(_selectionCandidates);
         await (selectedDevice == null
             ? refreshVaultData()
             : refreshDeviceData());
@@ -926,6 +1063,7 @@ class AppController extends ChangeNotifier {
     pendingMembershipRequestToken = null;
     pendingMembershipRequestPreview = null;
     _devicePlaces.clear();
+    _deviceOrders.clear();
     openHomeAfterDeviceClaim = false;
     deviceStatus = null;
     videoStats = null;

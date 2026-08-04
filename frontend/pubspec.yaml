@@ -73,6 +73,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/calendar_emojis/
     # STT 모델 에셋(181MiB)은 없앴다. 자막은 ML Kit 온디바이스 인식이 만들고
     # 모델은 시스템(AICore)이 들고 있어서 앱이 실을 것이 없다.
     # 근거는 자료/docs/사람이 읽을 문서/06-STT모델가이드.md 참조.

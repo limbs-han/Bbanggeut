@@ -9,6 +9,7 @@ import '../core/api_client.dart';
 import '../core/models.dart';
 import 'content_state.dart';
 import 'edited_video_screen.dart';
+import 'schedule_emoji.dart';
 import 'schedule_editor_screen.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
@@ -575,9 +576,9 @@ class _CalendarDayCell extends StatelessWidget {
                 else if (schedules.isNotEmpty)
                   Positioned(
                     bottom: 0,
-                    child: Text(
-                      schedules.first.emoji,
-                      style: const TextStyle(fontSize: 13, height: 1),
+                    child: ScheduleEmojiIcon(
+                      emoji: schedules.first.emoji,
+                      size: 25,
                     ),
                   )
                 else if (selected)
@@ -635,15 +636,23 @@ class _SelectedScheduleCard extends StatelessWidget {
                   onTap: () => onEdit(schedule),
                   child: Padding(
                     padding: const EdgeInsets.only(top: 3),
-                    child: Text(
-                      '${schedule.emoji}  ${schedule.title} · '
-                      '${dDayLabel(schedule.yearly ? nextYearlyOccurrence(schedule.date) : schedule.date)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF72523D),
-                        fontWeight: FontWeight.w700,
-                      ),
+                    child: Row(
+                      children: [
+                        ScheduleEmojiIcon(emoji: schedule.emoji, size: 28),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${schedule.title} · '
+                            '${dDayLabel(schedule.yearly ? nextYearlyOccurrence(schedule.date) : schedule.date)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF72523D),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
