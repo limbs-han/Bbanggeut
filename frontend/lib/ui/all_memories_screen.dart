@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -59,6 +61,11 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
   List<Map<String, dynamic>> _drafts = const [];
   List<Map<String, dynamic>> _edited = const [];
 
+  /// 올라가는 중인 편집본을 뒤따라가는 재조회. 5초 간격으로 최대 5분.
+  Timer? _uploadFollowUp;
+  int _uploadFollowUpCount = 0;
+  static const _maxUploadFollowUps = 60;
+
   @override
   void initState() {
     super.initState();
@@ -86,6 +93,34 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             })
             .catchError((Object _) {}),
     ]);
+    _scheduleUploadFollowUp();
+  }
+
+  /// 올라가는 중인 편집본이 있으면 잠시 뒤 목록을 스스로 다시 받아온다.
+  ///
+  /// 업로드는 앱 밖(WorkManager)에서 끝나고 서버가 도착을 훑어 승격하므로,
+  /// 앱에는 "끝났다"고 알려 줄 통로가 없다. 그래서 목록을 한 번 받은 뒤로는
+  /// 진행 표시가 영원히 돌았다 — 사용자가 당겨서 새로 고쳐야 완료로 바뀌었다.
+  ///
+  /// 무한히 물어보지는 않는다. 업로드가 끝내 실패하면 서버가 30분 뒤 FAILED로
+  /// 내리는데 그때까지 5초마다 두드릴 이유가 없다. 한도를 넘기면 멈추고,
+  /// 그 뒤에는 당겨서 새로 고치는 쪽에 맡긴다.
+  void _scheduleUploadFollowUp() {
+    _uploadFollowUp?.cancel();
+    _uploadFollowUp = null;
+    final uploading = _edited.any((entry) => entry['status'] == 'UPLOADING');
+    if (!uploading || !mounted) {
+      _uploadFollowUpCount = 0;
+      return;
+    }
+    if (_uploadFollowUpCount >= _maxUploadFollowUps) return;
+    _uploadFollowUpCount++;
+    _uploadFollowUp = Timer(
+      const Duration(seconds: 5),
+      () {
+        if (mounted) _loadEditorLists();
+      },
+    );
   }
 
   VideoMemory? _videoById(String id) {
@@ -134,6 +169,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
 
   @override
   void dispose() {
+    _uploadFollowUp?.cancel();
     widget.controller.removeListener(_refresh);
     _searchController.dispose();
     super.dispose();
