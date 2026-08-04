@@ -197,6 +197,9 @@ services:
       MTX_AUTHINTERNALUSERS_2_IPS: "127.0.0.1/32,::1/128,172.16.0.0/12"
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      # 백엔드 유령 세션 대사가 loopback에서 관리 API를 읽는다. 이 권한이
+      # 없으면 API가 401을 내고 워커는 UNKNOWN(안전 모드)으로만 돈다.
+      MTX_AUTHINTERNALUSERS_2_PERMISSIONS_1_ACTION: api
 
       # WHIP 발화 송출도 Nginx loopback으로만 들어온다. 발화 권한 검사는
       # Nginx auth_request(scope=TALK)가 이미 끝낸 뒤다.
