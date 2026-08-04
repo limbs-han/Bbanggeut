@@ -35,7 +35,7 @@
 | `vault` | Memory Vault(금고) — 기기·영상·구성원·구독의 귀속 단위 (V29~V31) |
 | `invitation` | 이메일 귀속 초대, 받은 초대함, 수락 알림 |
 | `iot` | 기기 credential(BOOTSTRAP→OPERATING), MQTT 수신/명령, `iot.event`의 원시 이벤트·통계(API-46, type 필터) |
-| `video`, `storage` | 업로드 URL·완료 확정·재생/다운로드·삭제 워커·보관 만료, 편집 부산물 청소 |
+| `video`, `storage` | 업로드 URL·완료 확정(크기·sha256·**ETag** 3단 검증)·재생/다운로드·삭제 워커·보관 만료, **편집 완성본(EDIT_OUTPUT 행)과 영상 댓글**(ADR-001로 editor-api에서 이전) |
 | `stream` | 라이브 세션·WHEP 토큰·introspection·talkback(양방향 오디오, V32)·**유령 세션 대사(MediaMTX 관리 API로 RUNNING 스트림의 실제 미디어 흐름 확인, 연속 2회 미확인 시 실패 처리)** |
 | `notification` | 인앱 알림·FCM 푸시(multicast, 무효 토큰 정리)·푸시 토큰·**알림 설정(API-78·79, 새 추억 푸시 게이트)** |
 | `schedule` | **캘린더 일정 CRUD(API-74~77, V36)** |
@@ -62,8 +62,11 @@ V1~V14는 이전 판 문서와 동일(사용자·기기·영상·라이브·구�
 | V34 | 초대 수락 알림 타입 |
 | V35 | 편집 알림(분석 완료·댓글) |
 | V36 | **일정(user_schedules) + 알림 설정(user_notification_preferences)** |
+| V37 | 만화 감사 동작 |
+| V38 | 기념일·주간 리포트 알림 타입 |
+| V39 | **편집 완성본(videos.source_video_id) + 영상 댓글(video_comments)** — ADR-001 |
 
-테스트: `server/src/test/java` 48개+ 클래스. PostgreSQL 통합 테스트는 Docker(Testcontainers) 또는 Jenkins `TEST_POSTGRES_*` 환경에서 실행되고, 없으면 건너뛴다. 최신 스키마 버전은 `FlywayMigrationIntegrationTest`가 고정값으로 검증한다(현재 38). 무중단 배포는 두 슬롯이 겹치는 동안 구 코드가 새 스키마 위에서 돌므로, 마이그레이션은 항상 backward-compatible이어야 한다(`deploy/ZERO_DOWNTIME.md`).
+테스트: `server/src/test/java` 48개+ 클래스. PostgreSQL 통합 테스트는 Docker(Testcontainers) 또는 Jenkins `TEST_POSTGRES_*` 환경에서 실행되고, 없으면 건너뛴다. 최신 스키마 버전은 `FlywayMigrationIntegrationTest`가 고정값으로 검증한다(현재 39). 무중단 배포는 두 슬롯이 겹치는 동안 구 코드가 새 스키마 위에서 돌므로, 마이그레이션은 항상 backward-compatible이어야 한다(`deploy/ZERO_DOWNTIME.md`).
 
 ## 3. EC2 배포 상태
 
@@ -121,7 +124,7 @@ sudo ufw status numbered
 - **실기기 상시 운영**: Jetson/Pi 계정·프로토콜은 준비됐으나 상시 접속 기기가 없다. 연결 시 heartbeat·업로드·라이브 end-to-end 재검증.
 - **UFW 정리**: 미사용 8554/tcp 허용 규칙 제거, 8080(Jenkins) 공개 범위 재검토.
 - **운영 보강**: off-instance 백업 복제, 중앙 로그. (부하 테스트·무중단 배포는 2026-08-04 완료 — `ci/load/README.md`, `deploy/ZERO_DOWNTIME.md`) 모니터 웹훅은 서버에서 `WJ_MONITOR_WEBHOOK_URL`을 유닛 환경에 넣어야 실제 발송된다(채널 URL은 팀 결정 필요).
-- **editor-api**: 분석 작업 상태의 프로세스 메모리 의존(재시작 시 진행 중 분석 소실), 작업자 1명 순차 처리, 댓글 표시 이름의 앱 자가 신고(백엔드 프로필 조회 API 필요).
+- **editor-api**: 분석 작업 상태의 프로세스 메모리 의존(단, 결과는 단계마다 MinIO에 저장되고 상태 조회가 그것으로 `done`을 복원해 자가복구한다), 작업자 1명 순차 처리. 편집 초안 레시피는 아직 editor-api에 남아 있다(ADR-001의 남은 부채).
 - **secret rotation**: JWT·DB·MinIO 키 정기 교체 절차.
 
 ## 5. 절대 저장소에 올리면 안 되는 파일

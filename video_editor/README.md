@@ -1,4 +1,14 @@
-# Server video editor
+# editor-api — 미디어·AI 워커
+
+> **경계 (ADR-001)**: 이 서비스는 **무거운 미디어·AI 계산만** 한다 — 분석,
+> 자동 편집 추천, 서버 렌더링, 4컷 만화. 사용자 콘텐츠(완성본 MP4·메타·댓글)는
+> 2026-08-04에 백엔드로 옮겼다. 권한·보관 만료·삭제 연쇄·알림이 필요한 것은
+> 시스템 오브 레코드(백엔드)에 둔다. 자세한 근거는
+> `자료/docs/ADR-001-editor-api-경계.md`.
+>
+> 이전된 API: 완성본 업로드 `POST /api/videos/{id}/edits`, 목록
+> `GET /api/vaults/{id}/edits`, 재생 `POST /api/videos/{id}/play-url`,
+> 댓글 `GET·POST /api/videos/{id}/comments`.
 
 STT 없이 오디오 이벤트, 음향 변화, 영상 정보, 얼굴 표정을 결합해 자동 컷과 줌 recipe를 생성한다.
 

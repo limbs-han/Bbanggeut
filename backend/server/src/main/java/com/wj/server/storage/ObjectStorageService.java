@@ -52,6 +52,29 @@ public class ObjectStorageService {
         this.clock = clock;
     }
 
+    /**
+     * 편집 완성본 업로드용 서명 URL. 기기 업로드와 달리 Content-Type만
+     * 서명한다 — 올리는 주체가 OS 백그라운드 작업(WorkManager)이라 세션도
+     * 없고 추가 헤더를 붙일 수도 없다. 무결성은 도착 후 크기로 확인한다.
+     */
+    public PresignedUpload createEditUploadUrl(String storageKey, String contentType) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Content-Type", contentType);
+        try {
+            String url = presignClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                .method(Http.Method.PUT)
+                .bucket(properties.bucket())
+                .object(storageKey)
+                .expiry(Math.toIntExact(properties.uploadUrlTtl().toSeconds()), TimeUnit.SECONDS)
+                .extraHeaders(headers)
+                .build());
+            return new PresignedUpload(
+                url, headers, Instant.now().plus(properties.uploadUrlTtl()));
+        } catch (Exception exception) {
+            throw unavailable();
+        }
+    }
+
     public PresignedUpload createUploadUrl(String storageKey, String contentType, String checksumSha256) {
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Content-Type", contentType);

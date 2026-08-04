@@ -261,6 +261,23 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.target_count, 2)
         self.assertEqual(command.direction, "HOLD")
 
+    def test_multiple_people_use_their_combined_group_box(self) -> None:
+        decision = choose_best_group(
+            (
+                tracked(1, (2, 20, 25, 80)),
+                tracked(2, (40, 20, 60, 80)),
+            ),
+            100,
+            100,
+            edge_margin=0.10,
+        )
+
+        command = self.controller.update(decision, 100, 100, now=0.0)
+
+        self.assertEqual(command.target_count, 2)
+        self.assertEqual(command.command_x, "LEFT")
+        self.assertEqual(command.command_y, "HOLD")
+
     def test_active_axis_moves_until_box_reaches_inner_stop_margin(self) -> None:
         self.assertEqual(self.update_box((3, 20, 30, 80)).command_x, "LEFT")
         self.assertEqual(self.update_box((5, 20, 32, 80)).command_x, "LEFT")

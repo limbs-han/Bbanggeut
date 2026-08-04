@@ -18,7 +18,7 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import backend_access, backend_events
@@ -387,6 +387,9 @@ jobs = AnalysisJobManager(
 )
 
 
+# 서버 렌더 산출물. 앱은 아직 이 경로를 쓰지 않는다(잠든 기능) — 쓰기 시작할
+# 때는 완성본을 백엔드 업로드 예약(POST /api/videos/{id}/edits)에 실어 올려
+# videos 행으로 편입해야 한다. 여기 남은 저장은 그때까지의 임시 보관이다.
 def _publish_edited_video(
     video_id: str, output_path: Path, meta: dict[str, Any]
 ) -> None:
@@ -722,132 +725,20 @@ def load_project(video_id: str, http_request: Request = None) -> dict[str, Any]:
     return payload
 
 
-@app.put("/v1/edited-videos/{video_id}")
-async def upload_edited_video(video_id: str, request: Request) -> dict[str, Any]:
-    """렌더링된 편집 영상을 통째로 받아 MinIO에 저장한다.
-
-    데모 규모(숏폼 수십 MB)를 넘는 대용량은 다루지 않는다 — 그건 백엔드의
-    presigned 업로드 몫이다.
-    """
-    _require_video_access(request, video_id)
-    data = await request.body()
-    if not data:
-        raise HTTPException(status_code=422, detail="empty body")
-    saved_at = datetime.now().astimezone().isoformat()
-    object_key = f"edited-videos/{video_id}/edited.mp4"
-    meta = {
-        "videoId": video_id,
-        "objectKey": object_key,
-        "sizeBytes": len(data),
-        "savedAt": saved_at,
-        "title": request.query_params.get("title", ""),
-        "durationMs": int(request.query_params.get("durationMs", "0") or 0),
-        # 원본이 감지된(촬영된) 시각. 캘린더는 편집한 날이 아니라 이 날짜에
-        # 편집본을 표시한다.
-        "capturedAt": request.query_params.get("capturedAt", ""),
-    }
-    try:
-        store.put_bytes(object_key, data, "video/mp4")
-        store.put(f"edited-videos/{video_id}/meta.json", meta)
-    except (BotoCoreError, ClientError, OSError) as failure:
-        raise HTTPException(status_code=503, detail=f"MinIO 저장 실패: {failure}") from failure
-    return meta
-
-
-@app.get("/v1/edited-videos")
-def list_edited_videos(http_request: Request = None) -> dict[str, Any]:
-    """편집 완료 영상 목록 — 캘린더와 추억 화면이 쓴다."""
-    try:
-        keys = store.list_keys("edited-videos/")
-    except (BotoCoreError, ClientError, OSError) as failure:
-        raise HTTPException(status_code=503, detail=f"MinIO 조회 실패: {failure}") from failure
-    items = []
-    for entry in keys:
-        if not entry["key"].endswith("/meta.json"):
-            continue
-        payload = store.get_json(entry["key"])
-        if not payload:
-            continue
-        video_id = str(payload.get("videoId", ""))
-        if http_request is not None and not _accessible(http_request, video_id):
-            continue
-        items.append(payload)
-    items.sort(key=lambda item: str(item.get("savedAt", "")), reverse=True)
-    return {"items": items}
-
-
-@app.get("/v1/edited-videos/{video_id}/play-url")
-def edited_video_play_url(
-    video_id: str, http_request: Request = None
-) -> dict[str, Any]:
-    """편집본 재생용 presigned URL(1시간).
-
-    재생 스트리밍을 editor-api가 물고 있지 않도록 MinIO가 직접 낸다.
-    공개 endpoint가 설정돼 있지 않으면 url이 null — 앱은 /file로 폴백한다.
-    """
-    _require_video_access(http_request, video_id)
-    if store.get_json(f"edited-videos/{video_id}/meta.json") is None:
-        raise HTTPException(status_code=404, detail="no edited video")
-    try:
-        url = store.presign_get(f"edited-videos/{video_id}/edited.mp4")
-    except (BotoCoreError, ClientError) as failure:
-        raise HTTPException(status_code=503, detail=f"서명 실패: {failure}") from failure
-    return {"url": url}
-
-
-@app.get("/v1/edited-videos/{video_id}/file")
-def edited_video_file(video_id: str, http_request: Request = None) -> StreamingResponse:
-    _require_video_access(http_request, video_id)
-    stream = store.open_stream(f"edited-videos/{video_id}/edited.mp4")
-    if stream is None:
-        raise HTTPException(status_code=404, detail="no edited video")
-    body, length = stream
-    return StreamingResponse(
-        body.iter_chunks(chunk_size=1 << 20),
-        media_type="video/mp4",
-        headers={"Content-Length": str(length)},
-    )
-
-
-class CommentRequest(BaseModel):
-    author: str = Field(default="가족", max_length=40)
-    text: str = Field(min_length=1, max_length=500)
-
-
-@app.get("/v1/edited-videos/{video_id}/comments")
-def list_comments(video_id: str, http_request: Request = None) -> dict[str, Any]:
-    _require_video_access(http_request, video_id)
-    payload = store.get_json(f"edited-videos/{video_id}/comments.json")
-    return payload or {"items": []}
-
-
-@app.post("/v1/edited-videos/{video_id}/comments")
-def add_comment(
-    video_id: str, request: CommentRequest, http_request: Request = None
-) -> dict[str, Any]:
-    _require_video_access(http_request, video_id)
-    key = f"edited-videos/{video_id}/comments.json"
-    payload = store.get_json(key) or {"items": []}
-    comment = {
-        "id": len(payload["items"]) + 1,
-        "author": request.author.strip() or "가족",
-        # 표시 이름은 앱 자가 신고지만, 토큰의 사용자 UUID를 함께 기록해
-        # 누가 썼는지는 검증 가능하게 남긴다. 이름까지 서버가 박으려면
-        # 백엔드에 프로필 조회 API(GET /api/auth/me)가 생겨야 한다.
-        "authorUserId": _token_subject(http_request),
-        "text": request.text.strip(),
-        "createdAt": datetime.now().astimezone().isoformat(),
-    }
-    payload["items"].append(comment)
-    try:
-        store.put(key, payload)
-    except (BotoCoreError, ClientError, OSError) as failure:
-        raise HTTPException(status_code=503, detail=f"MinIO 저장 실패: {failure}") from failure
-    # 가족에게 알림센터+FCM으로 새 댓글을 알린다(최선 노력).
-    backend_events.comment_added(
-        video_id, comment["authorUserId"], comment["id"], comment["text"]
-    )
-    return comment
+# ── 편집 완성본과 댓글은 백엔드로 이전됐다 ─────────────────────────────
+#
+# 완성본 MP4·메타·댓글을 이 서비스가 MinIO JSON으로 들고 있었더니, 권한을 매
+# 요청 백엔드에 되묻고(왕복+60초 캐시), 보관 만료가 없어 편집본이 영구
+# 보존되고, 댓글이 read-modify-write라 동시 작성이 유실되고, 작성자 이름이 앱
+# 자가 신고라 위조 가능했다. 게다가 백그라운드 업로더는 세션이 없어 이 서비스의
+# /v1 인증을 통과할 수 없었다(운영에서 401).
+#
+# 이제 백엔드가 원본 영상과 같은 videos 행(EDIT_OUTPUT) + video_comments로
+# 관리한다: 업로드 예약 POST /api/videos/{id}/edits, 목록 GET
+# /api/vaults/{id}/edits, 댓글 GET·POST /api/videos/{id}/comments, 재생은
+# 원본과 같은 POST /api/videos/{id}/play-url.
+#
+# 이 서비스는 "무거운 미디어·AI 계산"만 한다 — 분석·추천·렌더·만화.
 
 
 # ── 4컷 만화 (API-71·API-72의 내부 워커) ──────────────────────────────────
