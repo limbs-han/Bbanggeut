@@ -434,7 +434,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _notificationSettings(BuildContext context) async {
-    final initialValues = await NotificationSettingsScreen.loadPreferences();
+    final api = widget.controller.api;
+    final initialValues = await NotificationSettingsScreen.loadPreferences(
+      api: api,
+    );
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
@@ -446,6 +449,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: NotificationSettingsScreen(
           compact: true,
           initialValues: initialValues,
+          api: api,
         ),
       ),
     );

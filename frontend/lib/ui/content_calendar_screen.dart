@@ -63,6 +63,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
   }
 
   Future<void> _load() async {
+    // 일정은 서버가 원본이다(API-74). 실패해도 캘린더는 뜬다.
+    unawaited(_state.ensureLoaded(widget.controller.api));
     final device = widget.controller.selectedDevice;
     if (device == null) {
       // 기기가 없으면(테스트 포함) 네트워크를 타지 않는다.

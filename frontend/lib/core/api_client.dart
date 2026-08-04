@@ -239,6 +239,55 @@ class ApiClient {
     '/api/notifications/push-tokens/${Uri.encodeComponent(installationId)}',
   );
 
+  Future<NotificationPreferences> getNotificationPreferences() async =>
+      NotificationPreferences.fromJson(
+        await _get('/api/notifications/preferences'),
+      );
+
+  Future<NotificationPreferences> updateNotificationPreferences(
+    NotificationPreferences preferences,
+  ) async => NotificationPreferences.fromJson(
+    await _put('/api/notifications/preferences', data: preferences.toJson()),
+  );
+
+  Future<List<CalendarSchedule>> listSchedules() async => (await _getList(
+    '/api/schedules',
+  )).map(CalendarSchedule.fromJson).toList(growable: false);
+
+  Future<CalendarSchedule> createSchedule(CalendarSchedule schedule) async =>
+      CalendarSchedule.fromJson(
+        await _post('/api/schedules', data: schedule.toJson()),
+      );
+
+  Future<CalendarSchedule> updateSchedule(CalendarSchedule schedule) async =>
+      CalendarSchedule.fromJson(
+        await _put('/api/schedules/${schedule.id}', data: schedule.toJson()),
+      );
+
+  Future<void> deleteSchedule(String scheduleId) async =>
+      _delete('/api/schedules/$scheduleId');
+
+  Future<EventStats> getEventStats(
+    String deviceId, {
+    DateTime? from,
+    DateTime? to,
+    String? type,
+  }) async => EventStats.fromJson(
+    await _get(
+      '/api/devices/$deviceId/event-stats',
+      query: {
+        if (from != null) 'from': _dateOnly(from),
+        if (to != null) 'to': _dateOnly(to),
+        'type': ?type,
+      },
+    ),
+  );
+
+  static String _dateOnly(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+
   Future<UserProfile> updateProfile(String displayName) async {
     final updated = UserProfile.fromJson(
       await _patchMap(
