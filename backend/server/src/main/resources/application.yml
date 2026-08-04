@@ -51,7 +51,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        # prometheus는 8081이 외부에 공개되지 않는 전제의 노출이다(nginx는
+        # /api·/health만 프록시한다). 8081을 공개로 바꾸면 함께 재검토할 것.
+        include: health,info,metrics,prometheus
 
 app:
   demo:

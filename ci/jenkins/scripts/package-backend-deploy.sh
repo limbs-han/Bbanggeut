@@ -9,6 +9,8 @@ required_files=(
   mediamtx.yml
   mosquitto.conf
   nginx-william-james.conf
+  prometheus.yml
+  grafana-datasources.yml
 )
 
 for file in "${required_files[@]}"; do
