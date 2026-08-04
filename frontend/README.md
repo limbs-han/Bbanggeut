@@ -11,18 +11,35 @@ flutter run --dart-define=API_BASE_URL=https://i15e201.p.ssafy.io
 
 `API_BASE_URL`을 생략하면 위 운영 HTTPS 주소를 기본값으로 사용합니다. 로컬 Android 에뮬레이터에서 백엔드를 실행할 때는 `http://10.0.2.2:8080`처럼 호스트 주소를 지정하세요.
 
+### 실행 인자 (`--dart-define`)
+
+| 이름 | 형태 | 생략하면 |
+|---|---|---|
+| `API_BASE_URL` | `--dart-define=API_BASE_URL=https://i15e201.p.ssafy.io` | 위 운영 HTTPS 주소 |
+| `COMIC_SERVER` | `--dart-define=COMIC_SERVER=false` | 4컷 만화가 **실서버**를 호출(기본값) |
+
+4컷 만화(FN-A40)는 기본으로 우리 서버의 `POST /api/videos/{videoId}/comic/script`·`/comic/image`를 호출합니다. `COMIC_SERVER=false`를 주면 `FakeComicGateway`가 붙어 고정된 견본 대사와 색 블록 그림을 돌려주고, 만화 화면 위쪽에 견본이라는 알림이 뜹니다 — 서버 없이 기기에서 흐름만 걸어 볼 때 씁니다.
+
+**기본을 실서버로 둔 이유**: 인자를 붙이는 걸 잊으면 오류가 아니라 **가짜 만화가 그대로 출고됩니다.** 잊었을 때 실패하는 쪽이 조용히 가짜를 내보내는 쪽보다 낫습니다.
+
+**`bool.fromEnvironment`는 문자열 `true`와 `false`만 알아봅니다.** `1`, `no`, `FALSE`는 오류 없이 조용히 무시되어 기본값(실서버)이 됩니다 — 견본을 켤 때 값을 정확히 `false`로 적으세요.
+
 ## 구현된 연동
 
-- 회원가입, 로그인, refresh token rotation, 로그아웃, 회원 탈퇴
-- 기기 목록, 8자리 일회용 등록 코드 claim, 상태·통계, 이름·보관 기간
-- 영상 목록, 트리거 필터, 재생·다운로드 단기 URL, 기기 내 구간 편집·공유, 즐겨찾기, 삭제
-- 초대 링크 생성·공유, 가입 요청 조회·승인·거절, 구성원 권한 회수
-- 라이브 세션 생성, PENDING polling, 15초 heartbeat, HLS 재생, 종료
-- 구독 상태 조회·활성화·해지, 접근 로그 조회
+- 회원가입, 로그인, refresh token rotation, 로그아웃, 회원 탈퇴, 비밀번호 변경·재설정, 프로필 수정
+- 기기 목록, 8자리 일회용 등록 코드(QR 포함) claim, 상태·통계, 이름·보관 기간
+- 영상 목록, 트리거·이벤트 타입 필터, 재생·다운로드 단기 URL, 즐겨찾기, 삭제
+- 로컬 영상 편집기(프레임 타임라인·비율 5종·필터 5종·자막·이모지 스티커·구간 줌·Media3 내보내기), AR 얼굴 추적 스티커, ML Kit 자동 자막 — `VIDEO_EDITOR.md` 참고
+- 서버 자동 편집 추천(editor-api) 연동 — 업로드→분석 폴링→추천 컷·줌, 완성본 업로드·가족 댓글
+- 이메일 귀속 초대(받은 초대함 수락·거절), 멤버 요청 링크 딥링크, 구성원 권한 회수, 소유권 이전, 추억 금고(Vault)
+- 라이브 세션 생성, PENDING polling, 15초 heartbeat, WHEP(WebRTC) 재생, 양방향 오디오(talkback WHIP), 종료
+- 캘린더 일정 CRUD(API-74~77), 알림 설정 서버 저장(API-78·79), 웃음 리포트 서버 집계(API-46)
+- FCM 푸시 토큰 등록·해제와 인앱 알림함, 구독 상태 조회·활성화·해지, 접근 로그 조회
+- 4컷 만화(`COMIC_SERVER=true`일 때 서버 호출, 기본은 견본 응답)
 
 ## 아직 실제 기기가 필요한 검증
 
 - 카메라가 생성한 등록 코드 claim
 - 실제 업로드 영상의 썸네일·재생·다운로드
-- MediaMTX HLS 라이브 READY 전환과 장시간 heartbeat
-- 실제 기기별 미디어 앱으로 로컬 편집본 저장·공유 확인
+- WHEP 라이브 READY 전환과 장시간 heartbeat(Wi-Fi·LTE 각각)
+- 실제 기기별 미디어 앱으로 로컬 편집본 저장 확인

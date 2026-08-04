@@ -311,6 +311,141 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/notifications/preferences:
+    get:
+      tags: [Notifications]
+      operationId: getNotificationPreferences
+      summary: 알림 설정 조회
+      description: |
+        기념일·주간 리포트·새로운 추억 푸시 토글. 저장된 행이 없으면 모두
+        켜진 기본값을 반환한다.
+      responses:
+        '200':
+          description: 현재 알림 설정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Notifications]
+      operationId: updateNotificationPreferences
+      summary: 알림 설정 저장
+      description: |
+        세 토글을 한 번에 저장한다. `newMemoryAlerts`를 끄면 새 영상
+        푸시(LAUGHTER_VIDEO_READY)가 발송 대상에서 제외된다. 인앱 알림
+        목록에는 계속 쌓인다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationPreferences'
+      responses:
+        '200':
+          description: 저장된 알림 설정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/schedules:
+    get:
+      tags: [Schedules]
+      operationId: listSchedules
+      summary: 캘린더 일정 목록
+      description: 로그인 사용자의 일정(기념일)을 날짜 오름차순으로 반환한다.
+      responses:
+        '200':
+          description: 일정 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Schedules]
+      operationId: createSchedule
+      summary: 캘린더 일정 등록
+      description: 사용자당 최대 200개까지 등록할 수 있다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+      responses:
+        '201':
+          description: 생성된 일정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/schedules/{scheduleId}:
+    put:
+      tags: [Schedules]
+      operationId: updateSchedule
+      summary: 캘린더 일정 수정
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleRequest'
+      responses:
+        '200':
+          description: 수정된 일정
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    delete:
+      tags: [Schedules]
+      operationId: deleteSchedule
+      summary: 캘린더 일정 삭제
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 삭제 완료
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
   /api/devices:
     get:
       tags: [Devices]
@@ -573,6 +708,10 @@ paths:
         - name: timeZone
           in: query
           schema: {type: string, default: Asia/Seoul}
+        - name: type
+          in: query
+          description: 이벤트 타입 필터(예 LAUGHTER). detectedCount·dailyCounts만 거르고 byType은 전체 분포를 유지한다.
+          schema: {type: string, pattern: '^[A-Za-z_]{1,32}$'}
       responses:
         '200':
           description: 원시 감지 및 업로드 성공 집계
@@ -1181,6 +1320,90 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/videos/{videoId}/comic/script:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    post:
+      tags: [Videos]
+      operationId: createComicScript
+      summary: 4컷 만화 구성 만들기
+      description: |
+        기기에서 만든 전사문을 보내 4컷 구성(흐름·장면·대사)을 글로 받는다. 서버가 원본에서
+        프레임 4~6장을 뽑아 함께 모델에 넣는다. 사용자가 대사를 고친 뒤 `comic/image`를 부른다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComicScriptRequest'
+      responses:
+        '200':
+          description: 정확히 4개의 컷
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicScriptResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: 전사문 형식 오류(`VALIDATION_FAILED`) 또는 만화 재료 부족(`COMIC_UNPROCESSABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: 사용자·영상 기준 호출 예산 초과(`COMIC_RATE_LIMITED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/videos/{videoId}/comic/image:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    post:
+      tags: [Videos]
+      operationId: createComicImage
+      summary: 4컷 만화 그림 받기
+      description: |
+        사용자가 고친 4컷으로 2×2 격자 만화 한 장을 받는다. 대사는 그림에 그리지 않는다 —
+        앱이 각 칸 아래 자막 띠로 얹는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComicImageRequest'
+      responses:
+        '200':
+          description: 정사각 PNG 한 장
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicImageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: 컷이 4개가 아님·`beat`/`scene` 누락·지원하지 않는 `style`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: 사용자·영상 기준 호출 예산 초과(`COMIC_RATE_LIMITED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/iot/registration-codes:
     post:
       tags: [IoT]
@@ -1631,6 +1854,164 @@ paths:
           $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}/edits:
+    post:
+      tags: [Videos]
+      operationId: createEditUpload
+      summary: 편집 완성본 업로드 예약
+      description: |
+        원본 영상에 접근할 수 있는 구성원이 편집 완성본 자리를 만들고 서명된
+        업로드 URL을 받는다. 완성본은 원본과 같은 `videos` 테이블의
+        `EDIT_OUTPUT` 행이므로 금고·기기·보관 기준을 원본에서 물려받는다.
+
+        업로드는 앱이 아니라 OS 백그라운드 작업이 수행한다 — 세션이 없어
+        헤더를 붙일 수 없으므로 서명에는 `Content-Type`만 들어간다. 완료
+        통보(API-26 같은 /complete)가 없고, 서버가 객체 도착을 훑어 READY로
+        승격한다.
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEditUploadRequest'
+      responses:
+        '201':
+          description: 업로드 예약
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditUpload'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/vaults/{vaultId}/edits:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: listVaultEdits
+      summary: 금고의 편집 완성본 목록
+      description: READY 상태의 편집본만 최신순 최대 100건. 스키마는 영상 목록 항목과 같다.
+      responses:
+        '200':
+          description: 편집 완성본 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}/comments:
+    parameters:
+      - in: path
+        name: videoId
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Videos]
+      operationId: listVideoComments
+      summary: 영상 댓글 목록
+      description: 금고 구성원만 조회한다. 작성자 표시 이름은 서버가 `users`에서 조인해 준다.
+      responses:
+        '200':
+          description: 댓글 목록(오래된 순)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VideoComment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    post:
+      tags: [Videos]
+      operationId: addVideoComment
+      summary: 영상 댓글 작성
+      description: |
+        작성자는 토큰의 사용자 UUID로 기록한다 — 앱이 보낸 표시 이름을 믿지
+        않는다. 작성자를 뺀 금고 구성원에게 알림과 FCM이 나간다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '201':
+          description: 작성된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/vaults/{vaultId}/event-stats:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultEventStats
+      summary: 금고(가족) 단위 이벤트 통계
+      description: |
+        금고의 활성 구성원이 조회한다. 기기 단위 통계(API-46)와 같은 계약에
+        기기별 분해(byDevice)를 더했다. 이벤트는 기기가 이 금고에 Binding돼
+        있던 기간(occurred_at이 bound_at~ended_at 사이)만 집계해, 기기가 다른
+        금고로 양도돼도 과거 금고의 통계가 오염되지 않는다. 기본 기간은 최근
+        30일, 최대 366일이다.
+      parameters:
+        - name: from
+          in: query
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          schema: {type: string, format: date}
+        - name: timeZone
+          in: query
+          schema: {type: string, default: Asia/Seoul}
+        - name: type
+          in: query
+          description: 이벤트 타입 필터(예 LAUGHTER). detectedCount·byDevice·dailyCounts를 거르고 byType은 전체 분포를 유지한다.
+          schema: {type: string, pattern: '^[A-Za-z_]{1,32}$'}
+      responses:
+        '200':
+          description: 금고 단위 집계
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultEventStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
 components:
   securitySchemes:
@@ -2603,6 +2984,79 @@ components:
         isFavorite:
           type: boolean
 
+    ComicCut:
+      type: object
+      required: [beat, scene]
+      properties:
+        beat:
+          type: string
+          description: 이야기 단계. 비어 있을 수 없다.
+        scene:
+          type: string
+          description: 눈에 보이는 한 순간. 소리를 언급하지 않는다 — 모델이 의성어를 그린다.
+        dialogue:
+          type: string
+          nullable: true
+          description: 대사. 그림 모델에는 넘기지 않는다 — 앱이 칸 아래 자막 띠로 얹는다.
+
+    ComicScriptRequest:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 400
+          description: 기기의 ML Kit 자막. 서버는 전사하지 않는다.
+          items:
+            type: object
+            required: [startMs, text]
+            properties:
+              startMs:
+                type: integer
+                format: int64
+                minimum: 0
+              text:
+                type: string
+                maxLength: 200
+
+    ComicScriptResponse:
+      type: object
+      required: [cuts]
+      properties:
+        cuts:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: 항상 4개. 그림이 2×2 격자 한 장이라 칸 수가 고정이다.
+          items:
+            $ref: '#/components/schemas/ComicCut'
+
+    ComicImageRequest:
+      type: object
+      required: [cuts]
+      properties:
+        cuts:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/ComicCut'
+        style:
+          type: string
+          enum: [webtoon, watercolor, crayon]
+          default: webtoon
+          description: 화풍. 자유 문자열이 아니다 — 이 값이 이미지 프롬프트 문장에 그대로 들어간다.
+
+    ComicImageResponse:
+      type: object
+      required: [image]
+      properties:
+        image:
+          type: string
+          format: byte
+          description: 정사각 PNG의 순수 base64. `data:image/png;base64,` 접두어를 붙이지 않는다.
+
     SignedUrlResponse:
       type: object
       required: [url, expiresAt]
@@ -2785,7 +3239,14 @@ components:
           format: uuid
         type:
           type: string
-          enum: [INVITATION_RECEIVED, INVITATION_ACCEPTED, LAUGHTER_VIDEO_READY]
+          enum:
+            - INVITATION_RECEIVED
+            - INVITATION_ACCEPTED
+            - LAUGHTER_VIDEO_READY
+            - EDIT_ANALYSIS_READY
+            - EDIT_COMMENT_ADDED
+            - ANNIVERSARY
+            - WEEKLY_REPORT
         title:
           type: string
         body:
@@ -2814,6 +3275,144 @@ components:
           type: integer
           format: int64
           minimum: 0
+
+    CreateEditUploadRequest:
+      type: object
+      properties:
+        title: {type: string, maxLength: 120, description: 비우면 원본 제목을 쓴다}
+        durationMs: {type: integer, format: int64, minimum: 1}
+        capturedStartAt: {type: string, format: date-time, description: 비우면 원본 값을 물려받는다}
+        capturedEndAt: {type: string, format: date-time}
+
+    EditUpload:
+      type: object
+      required: [editVideoId, uploadUrl, uploadMethod, requiredHeaders, expiresAt]
+      properties:
+        editVideoId: {type: string, format: uuid}
+        uploadUrl: {type: string}
+        uploadMethod: {type: string, enum: [PUT]}
+        requiredHeaders:
+          type: object
+          additionalProperties: {type: string}
+          description: 서명에 포함된 헤더. 그대로 보내야 서명이 맞는다(Content-Type만).
+        expiresAt: {type: string, format: date-time}
+
+    VideoComment:
+      type: object
+      required: [id, authorId, body, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        authorId: {type: string, format: uuid}
+        authorName:
+          type: string
+          nullable: true
+          description: 작성 직후 응답에서는 null이고, 목록 조회에서는 서버가 채운다.
+        body: {type: string}
+        createdAt: {type: string, format: date-time}
+
+    VaultEventStats:
+      type: object
+      required: [vaultId, from, to, timeZone, detectedCount, uploadedVideoCount, byType, byDevice, dailyCounts]
+      properties:
+        vaultId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timeZone:
+          type: string
+        detectedCount:
+          type: integer
+          format: int64
+        uploadedVideoCount:
+          type: integer
+          format: int64
+        byType:
+          type: array
+          items:
+            type: object
+            required: [name, count]
+            properties:
+              name: {type: string}
+              count: {type: integer, format: int64}
+        byDevice:
+          type: array
+          items:
+            type: object
+            required: [deviceId, name, count]
+            properties:
+              deviceId: {type: string, format: uuid}
+              name: {type: string}
+              count: {type: integer, format: int64}
+        dailyCounts:
+          type: array
+          items:
+            type: object
+            required: [date, count]
+            properties:
+              date: {type: string, format: date}
+              count: {type: integer, format: int64}
+
+    NotificationPreferences:
+      type: object
+      required: [anniversaryAlerts, weeklyReport, newMemoryAlerts]
+      properties:
+        anniversaryAlerts:
+          type: boolean
+          description: 기념일 알림
+        weeklyReport:
+          type: boolean
+          description: 주간 리포트 알림
+        newMemoryAlerts:
+          type: boolean
+          description: 새 영상(추억) 저장 푸시
+
+    ScheduleRequest:
+      type: object
+      required: [title, date]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        date:
+          type: string
+          format: date
+        memo:
+          type: string
+          maxLength: 500
+          default: ''
+        yearly:
+          type: boolean
+          default: false
+          description: 매년 반복 여부
+        emoji:
+          type: string
+          maxLength: 16
+          default: '❤️'
+
+    Schedule:
+      type: object
+      required: [id, title, date, memo, yearly, emoji]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        date:
+          type: string
+          format: date
+        memo:
+          type: string
+        yearly:
+          type: boolean
+        emoji:
+          type: string
 
     RegisterPushTokenRequest:
       type: object

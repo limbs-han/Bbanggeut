@@ -437,6 +437,178 @@ class DailyVideoCount {
       );
 }
 
+/// API-46 이벤트 전용 통계. 웃음 리포트가 `type=LAUGHTER`로 일별 추이를 얻는다.
+class EventStats {
+  const EventStats({
+    required this.detectedCount,
+    required this.uploadedVideoCount,
+    this.byType = const {},
+    this.dailyCounts = const [],
+  });
+  final int detectedCount;
+  final int uploadedVideoCount;
+  final Map<String, int> byType;
+  final List<DailyVideoCount> dailyCounts;
+  factory EventStats.fromJson(Map<String, dynamic> json) => EventStats(
+    detectedCount: (json['detectedCount'] as num?)?.toInt() ?? 0,
+    uploadedVideoCount: (json['uploadedVideoCount'] as num?)?.toInt() ?? 0,
+    byType: {
+      for (final item in (json['byType'] as List? ?? const []))
+        item['name'] as String: (item['count'] as num).toInt(),
+    },
+    dailyCounts: (json['dailyCounts'] as List? ?? const [])
+        .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+/// 영상 댓글. 작성자 표시 이름은 서버가 users에서 조인해 준다 — 앱이 보낸
+/// 이름을 믿지 않으므로 위조할 수 없다.
+class VideoComment {
+  const VideoComment({
+    required this.id,
+    required this.authorId,
+    required this.body,
+    this.authorName,
+    this.createdAt,
+  });
+  final String id;
+  final String authorId;
+  final String body;
+  final String? authorName;
+  final DateTime? createdAt;
+  factory VideoComment.fromJson(Map<String, dynamic> json) => VideoComment(
+    id: json['id'] as String? ?? '',
+    authorId: json['authorId'] as String? ?? '',
+    body: json['body'] as String? ?? '',
+    authorName: json['authorName'] as String?,
+    createdAt: parseDate(json['createdAt']),
+  );
+}
+
+/// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
+class VaultEventStats {
+  const VaultEventStats({
+    required this.detectedCount,
+    this.dailyCounts = const [],
+    this.byDevice = const [],
+  });
+  final int detectedCount;
+  final List<DailyVideoCount> dailyCounts;
+  final List<VaultDeviceCount> byDevice;
+  factory VaultEventStats.fromJson(Map<String, dynamic> json) => VaultEventStats(
+    detectedCount: (json['detectedCount'] as num?)?.toInt() ?? 0,
+    dailyCounts: (json['dailyCounts'] as List? ?? const [])
+        .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+    byDevice: (json['byDevice'] as List? ?? const [])
+        .map((item) => VaultDeviceCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+class VaultDeviceCount {
+  const VaultDeviceCount({
+    required this.deviceId,
+    required this.name,
+    required this.count,
+  });
+  final String deviceId;
+  final String name;
+  final int count;
+  factory VaultDeviceCount.fromJson(Map<String, dynamic> json) =>
+      VaultDeviceCount(
+        deviceId: json['deviceId'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        count: (json['count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// 알림 설정(API-78·79). 서버 행이 없으면 모두 켜진 것으로 취급된다.
+class NotificationPreferences {
+  const NotificationPreferences({
+    required this.anniversaryAlerts,
+    required this.weeklyReport,
+    required this.newMemoryAlerts,
+  });
+  const NotificationPreferences.defaults()
+    : anniversaryAlerts = true,
+      weeklyReport = true,
+      newMemoryAlerts = true;
+  final bool anniversaryAlerts;
+  final bool weeklyReport;
+  final bool newMemoryAlerts;
+  factory NotificationPreferences.fromJson(Map<String, dynamic> json) =>
+      NotificationPreferences(
+        anniversaryAlerts: json['anniversaryAlerts'] as bool? ?? true,
+        weeklyReport: json['weeklyReport'] as bool? ?? true,
+        newMemoryAlerts: json['newMemoryAlerts'] as bool? ?? true,
+      );
+  Map<String, dynamic> toJson() => {
+    'anniversaryAlerts': anniversaryAlerts,
+    'weeklyReport': weeklyReport,
+    'newMemoryAlerts': newMemoryAlerts,
+  };
+}
+
+/// 캘린더 일정(기념일). 서버 일정 CRUD(API-74~77)와 같은 스키마다.
+class CalendarSchedule {
+  const CalendarSchedule({
+    required this.id,
+    required this.title,
+    required this.date,
+    this.memo = '',
+    this.yearly = false,
+    this.emoji = '❤️',
+  });
+
+  final String id;
+  final String title;
+  final DateTime date;
+  final String memo;
+  final bool yearly;
+  final String emoji;
+
+  factory CalendarSchedule.fromJson(Map<String, dynamic> json) =>
+      CalendarSchedule(
+        id: json['id'] as String? ?? '',
+        title: json['title'] as String? ?? '',
+        date: parseDate(json['date']) ?? DateTime.now(),
+        memo: json['memo'] as String? ?? '',
+        yearly: json['yearly'] as bool? ?? false,
+        emoji: json['emoji'] as String? ?? '❤️',
+      );
+
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    'date':
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}',
+    'memo': memo,
+    'yearly': yearly,
+    'emoji': emoji,
+  };
+
+  CalendarSchedule copyWith({
+    String? id,
+    String? title,
+    DateTime? date,
+    String? memo,
+    bool? yearly,
+    String? emoji,
+  }) => CalendarSchedule(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    date: date ?? this.date,
+    memo: memo ?? this.memo,
+    yearly: yearly ?? this.yearly,
+    emoji: emoji ?? this.emoji,
+  );
+}
+
+const calendarScheduleEmojis = ['❤️', '🎂', '🍚', '☎️', '📷', '⭐', '🎁', '🌸'];
+
 class DeviceMember {
   const DeviceMember({
     required this.id,

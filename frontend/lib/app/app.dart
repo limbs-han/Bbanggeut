@@ -6,9 +6,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../core/push_notification_service.dart';
 import '../ui/auth_screen.dart';
+import '../ui/content_calendar_screen.dart';
 import '../ui/content_notifications_screen.dart';
 import '../ui/device_registration_screen.dart';
 import '../ui/invitation_inbox_screen.dart';
+import '../ui/laugh_report_content_screen.dart';
 import '../ui/main_shell.dart';
 import '../ui/onboarding_screen.dart';
 import '../ui/video_detail_screen.dart';
@@ -92,6 +94,19 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
           MaterialPageRoute(
             builder: (_) =>
                 VideoDetailScreen(controller: controller, video: video),
+          ),
+        );
+      } else if (message.type == 'ANNIVERSARY') {
+        // 기념일 푸시는 그 일정이 있는 캘린더로 보낸다.
+        await navigator.push<void>(
+          MaterialPageRoute(
+            builder: (_) => ContentCalendarScreen(controller: controller),
+          ),
+        );
+      } else if (message.type == 'WEEKLY_REPORT') {
+        await navigator.push<void>(
+          MaterialPageRoute(
+            builder: (_) => LaughReportContentScreen(controller: controller),
           ),
         );
       } else if (message.type == 'INVITATION_RECEIVED') {

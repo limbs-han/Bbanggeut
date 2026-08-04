@@ -67,15 +67,21 @@ public interface DeviceEventMapper {
     );
 
     @Select("""
+        <script>
         SELECT count(*)
           FROM device_events
          WHERE device_id = #{deviceId}
-           AND occurred_at >= #{from} AND occurred_at < #{to}
+           AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+        <if test="type != null">
+           AND event_type = #{type}
+        </if>
+        </script>
         """)
     long countEvents(
         @Param("deviceId") UUID deviceId,
         @Param("from") Instant from,
-        @Param("to") Instant to
+        @Param("to") Instant to,
+        @Param("type") String type
     );
 
     @Select("""
@@ -105,18 +111,24 @@ public interface DeviceEventMapper {
     );
 
     @Select("""
+        <script>
         SELECT (occurred_at AT TIME ZONE #{zoneId})::date AS date, count(*) AS count
           FROM device_events
          WHERE device_id = #{deviceId}
-           AND occurred_at >= #{from} AND occurred_at < #{to}
+           AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+        <if test="type != null">
+           AND event_type = #{type}
+        </if>
          GROUP BY date
          ORDER BY date
+        </script>
         """)
     List<DailyVideoCountRow> countByDay(
         @Param("deviceId") UUID deviceId,
         @Param("from") Instant from,
         @Param("to") Instant to,
-        @Param("zoneId") String zoneId
+        @Param("zoneId") String zoneId,
+        @Param("type") String type
     );
 
 }

@@ -160,6 +160,35 @@ class AuthServiceTest {
     }
 
     @Test
+    void reuseOfRotatedTokenRevokesAllUserSessions() {
+        UUID userId = UUID.randomUUID();
+        when(authMapper.findActiveSession(anyString())).thenReturn(Optional.empty());
+        when(authMapper.findRevokedSessionByHash(anyString())).thenReturn(Optional.of(
+            new AuthSessionRow(UUID.randomUUID(), userId, "hash", NOW.plusSeconds(60), NOW)));
+        when(authMapper.revokeAllSessionsForUser(userId)).thenReturn(3);
+
+        assertThatThrownBy(() -> authService.refresh(new RefreshTokenRequest("a".repeat(32)), CLIENT))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("INVALID_REFRESH_TOKEN");
+
+        verify(authMapper).revokeAllSessionsForUser(userId);
+    }
+
+    @Test
+    void unknownRefreshTokenDoesNotRevokeAnything() {
+        when(authMapper.findActiveSession(anyString())).thenReturn(Optional.empty());
+        when(authMapper.findRevokedSessionByHash(anyString())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.refresh(new RefreshTokenRequest("a".repeat(32)), CLIENT))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("INVALID_REFRESH_TOKEN");
+
+        verify(authMapper, never()).revokeAllSessionsForUser(any());
+    }
+
+    @Test
     void withdrawalIsBlockedWhileUserOwnsADevice() {
         UUID userId = UUID.randomUUID();
         when(authMapper.hasActiveOwnerMembership(userId)).thenReturn(true);

@@ -68,6 +68,12 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_VIDEO_BUCKET: ${MINIO_VIDEO_BUCKET}
       MINIO_EDIT_BUCKET: ${MINIO_EDIT_BUCKET:-william-james-edit}
+      # 최소 권한 서비스 계정. 값이 비면 계정 생성을 건너뛰고 버킷만 만든다
+      # — 옛 .env로도 기동은 되게 두되, 운영은 provision-secrets.sh가 채운다.
+      WJ_BACKEND_ACCESS_KEY: ${WJ_BACKEND_ACCESS_KEY:-}
+      WJ_BACKEND_SECRET_KEY: ${WJ_BACKEND_SECRET_KEY:-}
+      WJ_EDITOR_ACCESS_KEY: ${WJ_EDITOR_ACCESS_KEY:-}
+      WJ_EDITOR_SECRET_KEY: ${WJ_EDITOR_SECRET_KEY:-}
     entrypoint:
       - /bin/sh
       - -ec
@@ -78,18 +84,52 @@ services:
         mc mb --ignore-existing "local/$${MINIO_EDIT_BUCKET}"
         mc anonymous set none "local/$${MINIO_EDIT_BUCKET}"
 
+        # 백엔드·편집 서버가 root 자격증명을 쓰면 유출 시 버킷·정책·계정
+        # 관리까지 넘어간다. 각자 자기 버킷만 만지는 계정으로 분리한다.
+        # mc admin user add/policy attach는 멱등이 아니라 재실행 시 이미
+        # 있다는 오류를 내므로 실패를 무시한다(설정 자체는 매번 덮어쓴다).
+        make_scoped_user() {
+          user="$$1"; secret="$$2"; bucket="$$3"; policy="$$4"
+          [ -n "$$user" ] && [ -n "$$secret" ] || return 0
+          mc admin user add local "$$user" "$$secret" || true
+          cat >/tmp/$$policy.json <<POLICY
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+              "Resource": ["arn:aws:s3:::$$bucket/*"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+              "Resource": ["arn:aws:s3:::$$bucket"]
+            }
+          ]
+        }
+        POLICY
+          mc admin policy create local "$$policy" /tmp/$$policy.json || true
+          mc admin policy attach local "$$policy" --user "$$user" || true
+        }
+        make_scoped_user "$${WJ_BACKEND_ACCESS_KEY}" "$${WJ_BACKEND_SECRET_KEY}" \
+          "$${MINIO_VIDEO_BUCKET}" wj-backend-videos
+        make_scoped_user "$${WJ_EDITOR_ACCESS_KEY}" "$${WJ_EDITOR_SECRET_KEY}" \
+          "$${MINIO_EDIT_BUCKET}" wj-editor-edit
+
   # 앱 편집 서버(video_editor). 자동 편집 추천·초안·편집본·댓글을 담당한다.
-  # 이미지는 배포 파이프라인 밖에서 서버가 직접 빌드한다 — video_editor/DEPLOY.md
-  # 참고. 배포 wrapper(wj-deploy-backend)는 이 서비스를 올리거나 내리지
-  # 않으므로 기존 배포 흐름에는 영향이 없다. 최초 기동과 갱신은
-  # `docker compose ... up -d editor-api`로 한다.
+  # 배포 wrapper(wj-deploy-backend)가 릴리스에 담긴 editor-api/ 소스로 서버에서
+  # 이미지를 빌드해 올린다 — video_editor/DEPLOY.md 참고. 모델은 Git 미추적이라
+  # 서버의 editor-models 디렉터리(아래 volume)를 계속 쓴다.
   editor-api:
     image: wj-editor-api:latest
     restart: unless-stopped
     environment:
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      # 편집 버킷만 접근하는 서비스 계정. 값이 없으면(옛 .env) root로
+      # 폴백해 기동은 되지만, 운영은 provision-secrets.sh가 채운다.
+      MINIO_ACCESS_KEY: ${WJ_EDITOR_ACCESS_KEY:-${MINIO_ROOT_USER}}
+      MINIO_SECRET_KEY: ${WJ_EDITOR_SECRET_KEY:-${MINIO_ROOT_PASSWORD}}
       MINIO_BUCKET: ${MINIO_EDIT_BUCKET:-william-james-edit}
       # 백엔드 JWT_SIGNING_KEY와 같은 값. 앱 액세스 토큰을 직접 검증한다.
       EDITOR_JWT_SECRET: ${EDITOR_JWT_SECRET:-}
@@ -105,6 +145,10 @@ services:
       # 편집본 재생 presigned URL 서명 기준 호스트(백엔드 S3_PUBLIC_ENDPOINT와
       # 같은 방식). nginx의 /william-james-edit 경로가 MinIO로 프록시한다.
       EDITOR_PUBLIC_S3_ENDPOINT: ${EDITOR_PUBLIC_S3_ENDPOINT:-https://i15e201.p.ssafy.io}
+      # 4컷 만화(API-71·72)가 GMS로 Gemini를 부를 때 쓴다. 값은 infra/.env에
+      # 두고 여기서 읽는다 — 이 파일에 키를 적지 않는다. 비어 있어도 기동은
+      # 되고 만화 요청만 502가 된다(다른 편집 기능은 이 키를 쓰지 않는다).
+      GMS_KEY: ${GMS_KEY:-}
     volumes:
       - ${EDITOR_MODEL_DIR:-/home/ubuntu/william-james/editor-models}:/models:ro
     ports:
@@ -194,6 +238,9 @@ services:
       MTX_AUTHINTERNALUSERS_2_IPS: "127.0.0.1/32,::1/128,172.16.0.0/12"
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_ACTION: read
       MTX_AUTHINTERNALUSERS_2_PERMISSIONS_0_PATH: "~^live/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      # 백엔드 유령 세션 대사가 loopback에서 관리 API를 읽는다. 이 권한이
+      # 없으면 API가 401을 내고 워커는 UNKNOWN(안전 모드)으로만 돈다.
+      MTX_AUTHINTERNALUSERS_2_PERMISSIONS_1_ACTION: api
 
       # WHIP 발화 송출도 Nginx loopback으로만 들어온다. 발화 권한 검사는
       # Nginx auth_request(scope=TALK)가 이미 끝낸 뒤다.
@@ -212,12 +259,49 @@ services:
       - "8322:8322"
       - "127.0.0.1:8889:8889"
       - "8189:8189/udp"
+      # 관리 API — 백엔드 유령 세션 대사 전용, loopback만.
+      - "127.0.0.1:9997:9997"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - ${MEDIAMTX_TLS_CERT_DIR:?Set MEDIAMTX_TLS_CERT_DIR}:/certs:ro
 
+  # 관측성. 둘 다 network_mode: host + 127.0.0.1 리슨이다 — loopback 전용
+  # Spring(8081)을 긁으려면 호스트 네트워크가 필요하고, 대신 리슨 주소를
+  # loopback으로 고정해 외부에 열리지 않는다. 조회는 SSH 터널:
+  #   ssh -L 3000:127.0.0.1:3000 ubuntu@i15e201.p.ssafy.io
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.listen-address=127.0.0.1:9090
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # 활성 슬롯 타겟 파일. 배포 스크립트가 여기에 쓴다.
+      - ./prometheus-targets:/etc/prometheus/targets:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "3000"
+      # infra/.env에 GRAFANA_ADMIN_PASSWORD를 설정할 것. loopback 전용이라
+      # 기본값이어도 외부 노출은 없지만, SSH 접근자 전원이 admin이 된다.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+
 volumes:
   postgres-data:
   redis-data:
+  prometheus-data:
+  grafana-data:
   minio-data:
   mosquitto-data:

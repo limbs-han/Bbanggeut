@@ -1,66 +1,81 @@
 import 'package:flutter/foundation.dart';
 
-class CalendarSchedule {
-  const CalendarSchedule({
-    required this.id,
-    required this.title,
-    required this.date,
-    this.memo = '',
-    this.yearly = false,
-    this.emoji = '❤️',
-  });
+import '../core/api_client.dart';
+import '../core/models.dart';
 
-  final String id;
-  final String title;
-  final DateTime date;
-  final String memo;
-  final bool yearly;
-  final String emoji;
+export '../core/models.dart' show CalendarSchedule, calendarScheduleEmojis;
 
-  CalendarSchedule copyWith({
-    String? title,
-    DateTime? date,
-    String? memo,
-    bool? yearly,
-    String? emoji,
-  }) => CalendarSchedule(
-    id: id,
-    title: title ?? this.title,
-    date: date ?? this.date,
-    memo: memo ?? this.memo,
-    yearly: yearly ?? this.yearly,
-    emoji: emoji ?? this.emoji,
-  );
-}
-
-const calendarScheduleEmojis = ['❤️', '🎂', '🍚', '☎️', '📷', '⭐', '🎁', '🌸'];
-
-/// 일정 API가 준비되기 전 화면 간 상태를 공유하는 임시 저장소입니다.
-/// 앱을 다시 시작하면 사라집니다. 알림 목록/읽음 처리는 이미
-/// `/api/notifications`로 옮겨 갔고, 여기 남은 것은 일정뿐입니다.
-///
-/// TODO(content-api): 백엔드에 일정 CRUD API가 생기면 교체합니다(2026-08-03
-/// 기준 서버에 일정/캘린더 엔드포인트 없음).
+/// 캘린더 일정 저장소. 서버 일정 CRUD(API-74~77)를 원본으로 쓰고,
+/// 클라이언트가 연결되지 않은 상태(테스트·오프라인 폴백)에서는 메모리
+/// 목록만 갱신한다. 서버 반영에 실패하면 예외를 그대로 올려 화면이
+/// 사용자에게 알리게 한다.
 class ContentState extends ChangeNotifier {
-  ContentState._();
+  ContentState([this._client]);
 
-  static final ContentState instance = ContentState._();
+  static final ContentState instance = ContentState();
 
+  ApiClient? _client;
   final List<CalendarSchedule> _schedules = [];
+  bool _loaded = false;
+  Future<void>? _loading;
 
   List<CalendarSchedule> get schedules => List.unmodifiable(_schedules);
 
-  void saveSchedule(CalendarSchedule schedule) {
-    final index = _schedules.indexWhere((item) => item.id == schedule.id);
-    if (index < 0) {
-      _schedules.add(schedule);
-    } else {
-      _schedules[index] = schedule;
-    }
-    notifyListeners();
+  /// 서버 목록을 최초 1회 불러온다. 캘린더 진입 시 호출되며, 이미 불러왔거나
+  /// 불러오는 중이면 그 결과를 같이 기다린다. 실패는 조용히 넘겨 다음 진입에서
+  /// 다시 시도한다(캘린더 자체는 로컬 상태로도 뜬다).
+  Future<void> ensureLoaded(ApiClient client) {
+    _client = client;
+    if (_loaded) return Future.value();
+    return _loading ??= _load(client);
   }
 
-  void removeSchedule(String id) {
+  Future<void> _load(ApiClient client) async {
+    try {
+      final items = await client.listSchedules();
+      _schedules
+        ..clear()
+        ..addAll(items);
+      _loaded = true;
+      notifyListeners();
+    } on ApiFailure {
+      // 오프라인이어도 화면은 뜬다.
+    } finally {
+      _loading = null;
+    }
+  }
+
+  /// 생성 또는 수정. 서버가 준(또는 로컬 폴백의) 최종 일정을 반환한다.
+  Future<CalendarSchedule> saveSchedule(
+    CalendarSchedule schedule, {
+    bool? isNew,
+  }) async {
+    final client = _client;
+    final creating =
+        isNew ?? _schedules.indexWhere((item) => item.id == schedule.id) < 0;
+    var saved = schedule;
+    if (client != null) {
+      saved = creating
+          ? await client.createSchedule(schedule)
+          : await client.updateSchedule(schedule);
+    }
+    final index = _schedules.indexWhere(
+      (item) => item.id == schedule.id || item.id == saved.id,
+    );
+    if (index < 0) {
+      _schedules.add(saved);
+    } else {
+      _schedules[index] = saved;
+    }
+    notifyListeners();
+    return saved;
+  }
+
+  Future<void> removeSchedule(String id) async {
+    final client = _client;
+    if (client != null) {
+      await client.deleteSchedule(id);
+    }
     _schedules.removeWhere((item) => item.id == id);
     notifyListeners();
   }

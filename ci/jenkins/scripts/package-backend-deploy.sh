@@ -9,6 +9,10 @@ required_files=(
   mediamtx.yml
   mosquitto.conf
   nginx-william-james.conf
+  prometheus.yml
+  grafana-datasources.yml
+  nginx-wj-upstream.conf
+  william-james@.service
 )
 
 for file in "${required_files[@]}"; do
@@ -27,11 +31,28 @@ if [[ ! -s "${wrapper}" ]]; then
   exit 1
 fi
 
+# editor-api 소스도 함께 담는다. 배포 wrapper 가 서버에서 이미지를 빌드해
+# 올리므로 별도 scp 절차가 사라진다. models/ 는 Git 미추적 대용량이라 서버의
+# editor-models 디렉터리를 그대로 쓰고, __pycache__ 는 재현성을 해쳐 뺀다.
+editor_root="${repo_root}/video_editor"
+for file in Dockerfile.local service.py requirements-service.txt requirements-analysis.txt; do
+  if [[ ! -s "${editor_root}/${file}" ]]; then
+    echo "Required editor-api source file is missing or empty: video_editor/${file}" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$(dirname "${output}")"
 tar --create --gzip --file "${output}" \
+  --exclude='video_editor/models' \
+  --exclude='video_editor/__pycache__' \
+  --exclude='*.pyc' \
+  --transform 's|^video_editor|editor-api|' \
   --directory "${deploy_root}" \
   "${required_files[@]}" \
   --directory "$(dirname "${wrapper}")" \
-  "$(basename "${wrapper}")"
+  "$(basename "${wrapper}")" \
+  --directory "${repo_root}" \
+  video_editor
 
 echo "Created backend infrastructure artifact: ${output}"

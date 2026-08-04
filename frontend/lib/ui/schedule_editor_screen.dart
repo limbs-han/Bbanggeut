@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../app/app_theme.dart';
+import '../core/api_client.dart';
 import 'content_state.dart';
 import 'widgets.dart';
 
@@ -84,6 +85,7 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
     if (_saving || !_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final schedule = CalendarSchedule(
+      // 새 일정의 id는 서버가 발급한다. 서버 미연결 폴백에서만 임시 id를 쓴다.
       id:
           widget.schedule?.id ??
           DateTime.now().microsecondsSinceEpoch.toString(),
@@ -93,8 +95,18 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
       yearly: _yearly,
       emoji: _emoji,
     );
-    _state.saveSchedule(schedule);
-    if (mounted) Navigator.pop(context, schedule);
+    try {
+      final saved = await _state.saveSchedule(
+        schedule,
+        isNew: !widget.isEditing,
+      );
+      if (mounted) Navigator.pop(context, saved);
+    } on ApiFailure catch (failure) {
+      if (mounted) {
+        setState(() => _saving = false);
+        showAppSnack(context, '$failure', error: true);
+      }
+    }
   }
 
   @override

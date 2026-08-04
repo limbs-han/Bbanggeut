@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import os
@@ -17,12 +18,14 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import backend_access
+from . import backend_access, backend_events
+from . import comic
 from .adaptive_cli import build_adaptive_recipe
 from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
+from .render_jobs import RenderJobManager
 
 
 FIXTURE_ROOT = Path(
@@ -377,8 +380,27 @@ store = RecipeStore()
 jobs = AnalysisJobManager(
     save=lambda video_id, kind, payload: store.put(
         f"edit-analyses/{video_id}/{kind}.json", payload
-    )
+    ),
+    on_done=lambda job: backend_events.analysis_ready(
+        job.video_id, job.requested_by
+    ),
 )
+
+
+# 서버 렌더 산출물. 앱은 아직 이 경로를 쓰지 않는다(잠든 기능) — 쓰기 시작할
+# 때는 완성본을 백엔드 업로드 예약(POST /api/videos/{id}/edits)에 실어 올려
+# videos 행으로 편입해야 한다. 여기 남은 저장은 그때까지의 임시 보관이다.
+def _publish_edited_video(
+    video_id: str, output_path: Path, meta: dict[str, Any]
+) -> None:
+    """렌더 완성본을 앱 업로드 경로와 같은 위치·형식으로 저장한다."""
+    data = output_path.read_bytes()
+    meta = {**meta, "sizeBytes": len(data)}
+    store.put_bytes(f"edited-videos/{video_id}/edited.mp4", data, "video/mp4")
+    store.put(f"edited-videos/{video_id}/meta.json", meta)
+
+
+renders = RenderJobManager(publish=_publish_edited_video)
 
 
 def _require_video_access(http_request: Request | None, video_id: str) -> None:
@@ -551,13 +573,18 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
                 status_code=422,
                 detail="sourceUrl은 허용된 호스트의 https 주소여야 합니다",
             )
-        job = jobs.submit(video_id, video_path, source_url=source_url)
+        job = jobs.submit(
+            video_id,
+            video_path,
+            source_url=source_url,
+            requested_by=_token_subject(request),
+        )
     else:
         data = await request.body()
         if not data:
             raise HTTPException(status_code=422, detail="empty body")
         video_path.write_bytes(data)
-        job = jobs.submit(video_id, video_path)
+        job = jobs.submit(video_id, video_path, requested_by=_token_subject(request))
     return JSONResponse(status_code=202, content=job.snapshot())
 
 
@@ -569,6 +596,72 @@ def analysis_status(video_id: str, http_request: Request = None) -> dict[str, An
         return job.snapshot()
     if _load_cached_analyses(video_id) is not None:
         return {"videoId": video_id, "status": "done", "progress": 1.0}
+    return {"videoId": video_id, "status": "none", "progress": 0.0}
+
+
+class RenderRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    source_url: str = Field(alias="sourceUrl", min_length=1)
+    # 컷·줌 recipe(render_video.render_recipe 계약): cut{startMs,endMs,
+    # durationMs}, zoomSegments[], zoomEnabled. 원본 시각(ms) 기준.
+    recipe: dict[str, Any]
+    title: str = Field(default="", max_length=200)
+    captured_at: str = Field(default="", alias="capturedAt")
+
+
+@app.post("/v1/edit-renders/{video_id}")
+def request_render(
+    video_id: str, request: RenderRequest, http_request: Request = None
+) -> JSONResponse:
+    """컷·줌만 있는 프로젝트의 완성본을 서버가 만든다.
+
+    앱은 레시피(몇 KB)만 보내고, 서버가 원본을 presigned URL로 받아
+    FFmpeg로 렌더링해 편집본 자리에 올린다 — 폰이 완성본을 업로드하는
+    시간이 사라진다. 자막·스티커가 있는 프로젝트는 앱이 만들어 올린다.
+    """
+    _require_video_access(http_request, video_id)
+    running = renders.get(video_id)
+    if running is not None and running.status == "running":
+        return JSONResponse(status_code=202, content=running.snapshot())
+    if not source_url_allowed(request.source_url):
+        raise HTTPException(
+            status_code=422,
+            detail="sourceUrl은 허용된 호스트의 https 주소여야 합니다",
+        )
+    cut = request.recipe.get("cut")
+    if not isinstance(cut, dict) or "startMs" not in cut or "endMs" not in cut:
+        raise HTTPException(status_code=422, detail="recipe.cut이 필요합니다")
+    cut.setdefault("durationMs", int(cut["endMs"]) - int(cut["startMs"]))
+    if int(cut["durationMs"]) <= 0:
+        raise HTTPException(status_code=422, detail="컷 길이가 0 이하입니다")
+    meta = {
+        "videoId": video_id,
+        "objectKey": f"edited-videos/{video_id}/edited.mp4",
+        "savedAt": datetime.now().astimezone().isoformat(),
+        "title": request.title,
+        "durationMs": int(cut["durationMs"]),
+        "capturedAt": request.captured_at,
+        "renderedBy": "server",
+    }
+    work_dir = Path(tempfile.gettempdir()) / "wj-edit-render"
+    job = renders.submit(
+        video_id,
+        work_dir,
+        source_url=request.source_url,
+        recipe=request.recipe,
+        meta=meta,
+        requested_by=_token_subject(http_request),
+    )
+    return JSONResponse(status_code=202, content=job.snapshot())
+
+
+@app.get("/v1/edit-renders/{video_id}")
+def render_status(video_id: str, http_request: Request = None) -> dict[str, Any]:
+    _require_video_access(http_request, video_id)
+    job = renders.get(video_id)
+    if job is not None:
+        return job.snapshot()
     return {"videoId": video_id, "status": "none", "progress": 0.0}
 
 
@@ -632,125 +725,119 @@ def load_project(video_id: str, http_request: Request = None) -> dict[str, Any]:
     return payload
 
 
-@app.put("/v1/edited-videos/{video_id}")
-async def upload_edited_video(video_id: str, request: Request) -> dict[str, Any]:
-    """렌더링된 편집 영상을 통째로 받아 MinIO에 저장한다.
-
-    데모 규모(숏폼 수십 MB)를 넘는 대용량은 다루지 않는다 — 그건 백엔드의
-    presigned 업로드 몫이다.
-    """
-    _require_video_access(request, video_id)
-    data = await request.body()
-    if not data:
-        raise HTTPException(status_code=422, detail="empty body")
-    saved_at = datetime.now().astimezone().isoformat()
-    object_key = f"edited-videos/{video_id}/edited.mp4"
-    meta = {
-        "videoId": video_id,
-        "objectKey": object_key,
-        "sizeBytes": len(data),
-        "savedAt": saved_at,
-        "title": request.query_params.get("title", ""),
-        "durationMs": int(request.query_params.get("durationMs", "0") or 0),
-        # 원본이 감지된(촬영된) 시각. 캘린더는 편집한 날이 아니라 이 날짜에
-        # 편집본을 표시한다.
-        "capturedAt": request.query_params.get("capturedAt", ""),
-    }
-    try:
-        store.put_bytes(object_key, data, "video/mp4")
-        store.put(f"edited-videos/{video_id}/meta.json", meta)
-    except (BotoCoreError, ClientError, OSError) as failure:
-        raise HTTPException(status_code=503, detail=f"MinIO 저장 실패: {failure}") from failure
-    return meta
+# ── 편집 완성본과 댓글은 백엔드로 이전됐다 ─────────────────────────────
+#
+# 완성본 MP4·메타·댓글을 이 서비스가 MinIO JSON으로 들고 있었더니, 권한을 매
+# 요청 백엔드에 되묻고(왕복+60초 캐시), 보관 만료가 없어 편집본이 영구
+# 보존되고, 댓글이 read-modify-write라 동시 작성이 유실되고, 작성자 이름이 앱
+# 자가 신고라 위조 가능했다. 게다가 백그라운드 업로더는 세션이 없어 이 서비스의
+# /v1 인증을 통과할 수 없었다(운영에서 401).
+#
+# 이제 백엔드가 원본 영상과 같은 videos 행(EDIT_OUTPUT) + video_comments로
+# 관리한다: 업로드 예약 POST /api/videos/{id}/edits, 목록 GET
+# /api/vaults/{id}/edits, 댓글 GET·POST /api/videos/{id}/comments, 재생은
+# 원본과 같은 POST /api/videos/{id}/play-url.
+#
+# 이 서비스는 "무거운 미디어·AI 계산"만 한다 — 분석·추천·렌더·만화.
 
 
-@app.get("/v1/edited-videos")
-def list_edited_videos(http_request: Request = None) -> dict[str, Any]:
-    """편집 완료 영상 목록 — 캘린더와 추억 화면이 쓴다."""
-    try:
-        keys = store.list_keys("edited-videos/")
-    except (BotoCoreError, ClientError, OSError) as failure:
-        raise HTTPException(status_code=503, detail=f"MinIO 조회 실패: {failure}") from failure
-    items = []
-    for entry in keys:
-        if not entry["key"].endswith("/meta.json"):
-            continue
-        payload = store.get_json(entry["key"])
-        if not payload:
-            continue
-        video_id = str(payload.get("videoId", ""))
-        if http_request is not None and not _accessible(http_request, video_id):
-            continue
-        items.append(payload)
-    items.sort(key=lambda item: str(item.get("savedAt", "")), reverse=True)
-    return {"items": items}
+# ── 4컷 만화 (API-71·API-72의 내부 워커) ──────────────────────────────────
+#
+# 앱이 직접 부르지 않는다. Spring이 인증·금고 권한을 확인하고 원본 presigned
+# URL을 붙여 이 라우트로 넘긴다. 그래도 이 모듈의 다른 라우트와 같은 검사를
+# 붙여 둔다 — 게이트웨이를 우회해 직접 들어오면 로그인만으로 남의 영상을
+# 만화로 만들 수 있기 때문이다(미들웨어는 토큰 서명만 본다).
 
 
-@app.get("/v1/edited-videos/{video_id}/play-url")
-def edited_video_play_url(
-    video_id: str, http_request: Request = None
+class ComicScriptRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    video_url: str = Field(alias="videoUrl", min_length=1)
+    """원본 presigned URL. ffmpeg가 그대로 읽는다 — 우리가 내려받지 않는다."""
+
+    lines: list[dict[str, Any]] = Field(default_factory=list)
+    """앱이 ML Kit으로 만든 자막. `{startMs, text}` 목록. 무발화면 빈 목록."""
+
+    frame_count: int | None = Field(default=None, alias="frameCount", ge=1, le=comic.FRAME_LIMIT)
+
+
+class ComicImageRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cuts: list[dict[str, Any]]
+    """사용자가 대사를 고친 4컷. 그림 프롬프트에는 beat·scene만 쓴다."""
+
+    style: str = Field(default=comic.DEFAULT_STYLE)
+
+
+def _comic_sheet_key(video_id: str) -> str:
+    return f"comic/{video_id}/sheet.json"
+
+
+@app.post("/v1/comic/{video_id}/script")
+def comic_script(
+    video_id: str, request: ComicScriptRequest, http_request: Request = None
 ) -> dict[str, Any]:
-    """편집본 재생용 presigned URL(1시간).
+    """1단계 — 프레임 4~6장 + 자막으로 4컷 구성을 짠다.
 
-    재생 스트리밍을 editor-api가 물고 있지 않도록 MinIO가 직접 낸다.
-    공개 endpoint가 설정돼 있지 않으면 url이 null — 앱은 /file로 폴백한다.
+    인물·배경 시트는 응답에 담지 않고 MinIO에 남긴다. 앱 계약은 `cuts`뿐이고,
+    시트는 2단계가 프롬프트를 조립할 재료다.
     """
     _require_video_access(http_request, video_id)
-    if store.get_json(f"edited-videos/{video_id}/meta.json") is None:
-        raise HTTPException(status_code=404, detail="no edited video")
     try:
-        url = store.presign_get(f"edited-videos/{video_id}/edited.mp4")
-    except (BotoCoreError, ClientError) as failure:
-        raise HTTPException(status_code=503, detail=f"서명 실패: {failure}") from failure
-    return {"url": url}
+        script = comic.build_script(
+            request.video_url,
+            request.lines,
+            count=request.frame_count or comic.FRAME_COUNT,
+        )
+    except comic.ComicContractError as failure:
+        raise HTTPException(status_code=422, detail=str(failure)) from failure
+    except comic.ComicError as failure:
+        raise HTTPException(status_code=502, detail=str(failure)) from failure
+
+    try:
+        store.put(
+            _comic_sheet_key(video_id),
+            {
+                "characters": script["characters"],
+                "setting": script["setting"],
+                "savedAt": datetime.now().astimezone().isoformat(),
+            },
+        )
+    except (BotoCoreError, ClientError, OSError):
+        # 시트를 못 남겨도 구성은 돌려준다 — 2단계가 시트 없이 조립하면 품질만
+        # 떨어지고, 여기서 502를 주면 이미 쓴 구성 호출값을 버리게 된다.
+        pass
+
+    return {"cuts": script["cuts"]}
 
 
-@app.get("/v1/edited-videos/{video_id}/file")
-def edited_video_file(video_id: str, http_request: Request = None) -> StreamingResponse:
-    _require_video_access(http_request, video_id)
-    stream = store.open_stream(f"edited-videos/{video_id}/edited.mp4")
-    if stream is None:
-        raise HTTPException(status_code=404, detail="no edited video")
-    body, length = stream
-    return StreamingResponse(
-        body.iter_chunks(chunk_size=1 << 20),
-        media_type="video/mp4",
-        headers={"Content-Length": str(length)},
-    )
-
-
-class CommentRequest(BaseModel):
-    author: str = Field(default="가족", max_length=40)
-    text: str = Field(min_length=1, max_length=500)
-
-
-@app.get("/v1/edited-videos/{video_id}/comments")
-def list_comments(video_id: str, http_request: Request = None) -> dict[str, Any]:
-    _require_video_access(http_request, video_id)
-    payload = store.get_json(f"edited-videos/{video_id}/comments.json")
-    return payload or {"items": []}
-
-
-@app.post("/v1/edited-videos/{video_id}/comments")
-def add_comment(
-    video_id: str, request: CommentRequest, http_request: Request = None
+@app.post("/v1/comic/{video_id}/image")
+def comic_image(
+    video_id: str, request: ComicImageRequest, http_request: Request = None
 ) -> dict[str, Any]:
+    """2단계 — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 PNG다.
+
+    `data:image/png;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
+    """
     _require_video_access(http_request, video_id)
-    key = f"edited-videos/{video_id}/comments.json"
-    payload = store.get_json(key) or {"items": []}
-    comment = {
-        "id": len(payload["items"]) + 1,
-        "author": request.author.strip() or "가족",
-        # 표시 이름은 앱 자가 신고지만, 토큰의 사용자 UUID를 함께 기록해
-        # 누가 썼는지는 검증 가능하게 남긴다. 이름까지 서버가 박으려면
-        # 백엔드에 프로필 조회 API(GET /api/auth/me)가 생겨야 한다.
-        "authorUserId": _token_subject(http_request),
-        "text": request.text.strip(),
-        "createdAt": datetime.now().astimezone().isoformat(),
-    }
-    payload["items"].append(comment)
+    # 시트는 있으면 좋고 없으면 없는 대로 간다. MinIO가 죽었다고 그림까지
+    # 못 만들 이유가 없다 — `get_json`은 ClientError만 잡아서 연결 오류
+    # (BotoCoreError)는 그대로 올라온다.
     try:
-        store.put(key, payload)
-    except (BotoCoreError, ClientError, OSError) as failure:
-        raise HTTPException(status_code=503, detail=f"MinIO 저장 실패: {failure}") from failure
-    return comment
+        sheet = store.get_json(_comic_sheet_key(video_id)) or {}
+    except (BotoCoreError, ClientError, OSError):
+        sheet = {}
+
+    try:
+        png = comic.render_comic(
+            request.cuts,
+            characters=sheet.get("characters") or [],
+            setting=str(sheet.get("setting") or ""),
+            style=request.style,
+        )
+    except comic.ComicContractError as failure:
+        raise HTTPException(status_code=422, detail=str(failure)) from failure
+    except comic.ComicError as failure:
+        raise HTTPException(status_code=502, detail=str(failure)) from failure
+    return {"image": base64.b64encode(png).decode()}

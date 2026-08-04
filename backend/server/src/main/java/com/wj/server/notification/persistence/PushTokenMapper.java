@@ -72,6 +72,10 @@ public interface PushTokenMapper {
         """)
     List<String> findActiveTokensByEmail(@Param("email") String email);
 
+    /**
+     * 새 영상(추억) 푸시 수신자. "새로운 추억 알림"을 끈 사용자는 제외하며,
+     * 설정 행이 없으면 켜진 것으로 본다. 인앱 알림 목록에는 영향이 없다.
+     */
     @Select("""
         SELECT DISTINCT pt.token
           FROM notification_push_tokens pt
@@ -79,8 +83,10 @@ public interface PushTokenMapper {
           JOIN vault_memberships m ON m.user_id = pt.user_id
           JOIN device_bindings b
             ON b.vault_id = m.vault_id AND b.status = 'ACTIVE'
+          LEFT JOIN user_notification_preferences p ON p.user_id = pt.user_id
          WHERE b.device_id = #{deviceId} AND m.status = 'ACTIVE'
            AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+           AND COALESCE(p.new_memory_alerts, true)
          ORDER BY pt.token
         """)
     List<String> findActiveTokensByDevice(@Param("deviceId") UUID deviceId);
@@ -94,4 +100,20 @@ public interface PushTokenMapper {
          ORDER BY pt.created_at, pt.id
         """)
     List<String> findActiveTokensByUser(@Param("userId") UUID userId);
+
+    @Select("""
+        SELECT DISTINCT pt.token
+          FROM notification_push_tokens pt
+          JOIN users u ON u.id = pt.user_id
+          JOIN vault_memberships m ON m.user_id = pt.user_id
+          JOIN videos v ON v.vault_id = m.vault_id
+         WHERE v.id = #{videoId} AND m.status = 'ACTIVE'
+           AND pt.user_id <> #{excludeUserId}
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+         ORDER BY pt.token
+        """)
+    List<String> findActiveTokensByVideoExcluding(
+        @Param("videoId") UUID videoId,
+        @Param("excludeUserId") UUID excludeUserId
+    );
 }
