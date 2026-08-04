@@ -18,4 +18,16 @@ python3 -m venv "${venv}"
   -r video_editor/requirements-analysis.txt \
   pytest
 
+# mediapipe가 끌고 오는 opencv-contrib-python은 GUI용 빌드라 libxcb·libGL 같은
+# X11 공유 라이브러리를 링크한다. Agent 이미지에는 그것이 없어 `import cv2`가
+# `ImportError: libxcb.so.1`로 죽고, test_cut_selector 수집 단계에서 빌드가
+# 멈춘다. 헤드리스 빌드로 갈아끼우면 그 라이브러리를 아예 요구하지 않는다.
+#
+# Agent 이미지에 libxcb1 등을 넣는 방법도 있지만, 그러면 opencv가 새 라이브러리를
+# 요구할 때마다 이미지를 다시 빌드해야 한다. CI는 화면을 쓰지 않으므로 헤드리스가
+# 맞다. 컨테이너 이미지(Dockerfile.local)는 운영에서 그대로 쓰므로 건드리지 않는다.
+"${venv}/bin/python" -m pip uninstall --quiet --yes \
+  opencv-contrib-python opencv-python >/dev/null 2>&1 || true
+"${venv}/bin/python" -m pip install --quiet opencv-python-headless
+
 "${venv}/bin/python" -m pytest video_editor -q
