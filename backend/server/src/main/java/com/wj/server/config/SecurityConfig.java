@@ -86,6 +86,9 @@ public class SecurityConfig {
                 .requestMatchers(
                     HttpMethod.GET, "/api/membership-request-links/*/open").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
+                // Prometheus 수집용. 8081은 loopback 전용이고 nginx는 이 경로를
+                // 프록시하지 않는다 — 8081 공개로 바꾸면 함께 재검토할 것.
+                .requestMatchers("/actuator/prometheus").permitAll()
                 .requestMatchers("/api/live/introspect").permitAll()
                 // 편집 서버(editor-api)의 서비스 이벤트. 사용자 세션이 아니라
                 // iss=wj-editor 토큰이라 이 체인의 디코더로는 검증할 수 없다 —
