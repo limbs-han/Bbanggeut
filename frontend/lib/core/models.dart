@@ -356,6 +356,14 @@ class VideoMemory {
   bool hasEventType(String eventType) =>
       effectiveEventTypes.contains(normalizeVideoTrigger(eventType));
 
+  /// 편집 완성본인가.
+  ///
+  /// `triggerType`이나 `eventTypes`로는 판정할 수 없다 — 서버가 편집본 행을
+  /// 만들 때 원본의 trigger_type과 event_types를 그대로 물려주기 때문이다
+  /// (`VideoMapper.insertEditOutput`). 웃음 클립을 편집하면 편집본도
+  /// `LAUGHTER`를 들고 있다. 구분은 `sourceType`으로만 한다.
+  bool get isEditOutput => sourceType == 'EDIT_OUTPUT';
+
   factory VideoMemory.fromJson(Map<String, dynamic> json) {
     final triggerType = normalizeVideoTrigger(
       json['triggerType'] ?? json['eventType'] ?? json['category'],

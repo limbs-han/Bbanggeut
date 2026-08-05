@@ -40,6 +40,26 @@ String editorEntrySubtitle({
   return '${DateFormat('M월 d일 HH:mm').format(savedAt)} $state';
 }
 
+/// 영상 한 건이 이 카테고리에 속하는가.
+///
+/// 편집본을 걸러내는 기준은 `sourceType`뿐이다. 서버가 편집본 행을 만들 때
+/// 원본의 `trigger_type`과 `event_types`를 그대로 물려주므로
+/// (`VideoMapper.insertEditOutput`) 웃음 클립의 편집본도 `LAUGHTER`를 들고
+/// 있다. 예전 조건은 이벤트 종류로 판정해서, 편집본이 '웃음 감지'와
+/// '편집 완료' 두 탭에 동시에 나왔다.
+///
+/// '웃음 감지'에서 이벤트 종류를 더 좁히지 않는 이유: 기기는 웃음 트리거로만
+/// 녹화하므로 실제로 원본 = 웃음 감지다. 반대로 종류를 걸면 박수만 잡힌
+/// 클립이 세 탭 어디에도 없어 사라진다.
+bool matchesMemoryCategory(VideoMemory video, MemoryCategory category) =>
+    switch (category) {
+      MemoryCategory.laughter => !video.isEditOutput,
+      // 편집 중(초안)은 editor-api 목록으로 따로 그린다 — 초안 레시피는 아직
+      // 그쪽에 있다(ADR-001의 남은 부채). 영상 행으로는 판정하지 않는다.
+      MemoryCategory.editing => false,
+      MemoryCategory.edited => video.isEditOutput,
+    };
+
 class AllMemoriesScreen extends StatefulWidget {
   const AllMemoriesScreen({super.key, required this.controller});
 
@@ -198,24 +218,22 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
         error == _seenError) {
       return;
     }
+    // 당겨서 새로 고치기는 MainShell이 화면 전체를 감싸며 한 번만 제공한다.
+    // 그 새로고침은 백엔드 영상만 다시 받으므로, 여기서 한 번 더 편집 목록을
+    // 받아 주지 않으면 '편집 중'·'편집 완료' 탭에서 당겨도 아무것도 바뀌지
+    // 않는다. 영상 로딩이 끝나는 순간을 새로고침 완료 신호로 쓴다.
+    final refreshFinished = _seenLoading == true && loading == false;
     _seenVideos = videos;
     _seenLoading = loading;
     _seenError = error;
     setState(() {});
+    if (refreshFinished) _loadEditorLists();
   }
 
   List<VideoMemory> get _items {
     final keyword = _searchController.text.trim().toLowerCase();
     final result = widget.controller.videos.where((video) {
-      final matchesCategory = switch (category) {
-        MemoryCategory.laughter => video.hasEventType('LAUGHTER'),
-        // 편집 중(초안)은 editor-api 목록으로 따로 그린다 — 초안 레시피는
-        // 아직 그쪽에 있다(ADR-001의 남은 부채). 편집 완료본은 백엔드가
-        // 관리하므로 EDIT_OUTPUT 영상 행으로 판정한다.
-        MemoryCategory.editing => false,
-        MemoryCategory.edited =>
-          video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
-      };
+      final matchesCategory = matchesMemoryCategory(video, category);
       // 화면에 보이는 제목으로도 찾을 수 있어야 한다. 기기 기본 제목은 날짜·
       // 시각·종류를 담은 제목으로 바꿔 그리므로, 저장된 제목만 보면 사용자가
       // 읽은 글자로 검색해도 걸리지 않는다.
@@ -255,97 +273,137 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             : '편집기에서 저장하면 완성본이 여기 올라와요.',
       );
     }
-    return RefreshIndicator(
-      onRefresh: _loadEditorLists,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-        itemCount: entries.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          final entry = entries[index];
-          final videoId = entry['videoId'] as String? ?? '';
-          final original = _videoById(videoId);
-          final savedAt = DateTime.tryParse(
-            entry['savedAt'] as String? ?? '',
-          )?.toLocal();
-          final title = isDraft
-              ? original?.title ?? videoId
-              : (entry['title'] as String?)?.isNotEmpty == true
-              ? entry['title'] as String
-              : original?.title ?? videoId;
-          // 완성본은 업로드가 끝나기 전에도 목록에 나온다. 상태를 모르는
-          // 응답(구버전 서버)은 예전처럼 완료로 본다.
-          final status = isDraft
-              ? 'READY'
-              : (entry['status'] as String? ?? 'READY');
-          final uploading = status == 'UPLOADING';
-          final failed = status == 'FAILED';
-          final playable = !isDraft && !uploading && !failed;
-          return Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: failed
-                    ? AppColors.danger.withValues(alpha: 0.15)
-                    : AppColors.sage.withValues(alpha: 0.3),
-                child: uploading
-                    ? const SizedBox.square(
+    // RefreshIndicator를 여기 두지 않는다 — MainShell이 이미 화면 전체를
+    // 감싸고 있어서 겹치면 당길 때 새로고침 표시가 두 개 뜬다. 대신 바깥
+    // 새로고침이 끝나면 _refresh가 이 목록도 다시 받는다.
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+      itemCount: entries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final videoId = entry['videoId'] as String? ?? '';
+        final original = _videoById(videoId);
+        final savedAt = DateTime.tryParse(
+          entry['savedAt'] as String? ?? '',
+        )?.toLocal();
+        // 원본을 아직 못 받았을 때 videoId(UUID)를 그대로 띄우면 사용자에게는
+        // 아무 뜻이 없는 글자다. 편집본은 자기 제목이 있으니 그것을 쓰고,
+        // 초안은 원본 제목을 쓰되 없으면 사람이 읽을 수 있는 문구로 대신한다.
+        final originalTitle = original == null
+            ? null
+            : videoDisplayTitle(original);
+        final title = isDraft
+            ? originalTitle ?? '원본을 불러오는 중'
+            : (entry['title'] as String?)?.isNotEmpty == true
+            ? entry['title'] as String
+            : originalTitle ?? '편집한 영상';
+        // 완성본은 업로드가 끝나기 전에도 목록에 나온다. 상태를 모르는
+        // 응답(구버전 서버)은 예전처럼 완료로 본다.
+        final status = isDraft
+            ? 'READY'
+            : (entry['status'] as String? ?? 'READY');
+        final uploading = status == 'UPLOADING';
+        final failed = status == 'FAILED';
+        final playable = !isDraft && !uploading && !failed;
+        return Card(
+          child: ListTile(
+            // 원본을 아는 항목은 그 썸네일을 보여 준다 — 편집 목록에서 아이콘만
+            // 보이면 어떤 영상을 편집하던 것인지 알 수 없었다.
+            leading: uploading
+                ? const SizedBox.square(
+                    dimension: 40,
+                    child: Center(
+                      child: SizedBox.square(
                         dimension: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        isDraft
-                            ? Icons.edit_note_rounded
-                            : failed
-                            ? Icons.error_outline_rounded
-                            : Icons.play_arrow_rounded,
-                        color: failed ? AppColors.danger : AppColors.sageDark,
                       ),
-              ),
-              title: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              subtitle: Text(
-                editorEntrySubtitle(
-                  isDraft: isDraft,
-                  uploading: uploading,
-                  failed: failed,
-                  savedAt: savedAt,
-                ),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: failed ? AppColors.danger : null,
-                ),
-              ),
-              trailing: uploading || failed
-                  ? null
-                  : Icon(
+                    ),
+                  )
+                : original != null && !failed
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: MemoryThumbnail(
+                      api: widget.controller.api,
+                      video: original,
+                      width: 56,
+                      height: 40,
+                    ),
+                  )
+                : CircleAvatar(
+                    backgroundColor: failed
+                        ? AppColors.danger.withValues(alpha: 0.15)
+                        : AppColors.sage.withValues(alpha: 0.3),
+                    child: Icon(
                       isDraft
-                          ? Icons.chevron_right_rounded
-                          : Icons.mode_comment_outlined,
+                          ? Icons.edit_note_rounded
+                          : failed
+                          ? Icons.error_outline_rounded
+                          : Icons.play_arrow_rounded,
+                      color: failed ? AppColors.danger : AppColors.sageDark,
+                    ),
+                  ),
+            title: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  editorEntrySubtitle(
+                    isDraft: isDraft,
+                    uploading: uploading,
+                    failed: failed,
+                    savedAt: savedAt,
+                  ),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: failed ? AppColors.danger : null,
+                  ),
+                ),
+                // 편집본은 제목이 원본과 달라서 제목만으로는 무엇을 편집한
+                // 것인지 알 수 없다. 원본을 아는 항목에만 한 줄 덧붙인다.
+                if (!isDraft && originalTitle != null)
+                  Text(
+                    '원본 · $originalTitle',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
                       color: AppColors.muted,
                     ),
-              onTap: () {
-                if (isDraft) {
-                  _openDraft(entry);
-                } else if (playable) {
-                  _openEdited(entry);
-                } else if (uploading) {
-                  showAppSnack(context, '아직 올라가는 중이에요. 끝나면 바로 볼 수 있어요.');
-                } else {
-                  showAppSnack(
-                    context,
-                    '업로드가 끝나지 못했어요. 편집기에서 다시 저장해 주세요.',
-                    error: true,
-                  );
-                }
-              },
+                  ),
+              ],
             ),
-          );
-        },
-      ),
+            trailing: uploading || failed
+                ? null
+                : Icon(
+                    isDraft
+                        ? Icons.chevron_right_rounded
+                        : Icons.mode_comment_outlined,
+                    color: AppColors.muted,
+                  ),
+            onTap: () {
+              if (isDraft) {
+                _openDraft(entry);
+              } else if (playable) {
+                _openEdited(entry);
+              } else if (uploading) {
+                showAppSnack(context, '아직 올라가는 중이에요. 끝나면 바로 볼 수 있어요.');
+              } else {
+                showAppSnack(
+                  context,
+                  '업로드가 끝나지 못했어요. 편집기에서 다시 저장해 주세요.',
+                  error: true,
+                );
+              }
+            },
+          ),
+        );
+      },
     );
   }
 
