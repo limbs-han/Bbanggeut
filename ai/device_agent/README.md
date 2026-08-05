@@ -75,6 +75,13 @@ Start with the PAM8403 hardware knob near minimum. Never connect either output
 minus terminal to power or signal ground because the module uses bridge-tied
 speaker outputs.
 
+Jetson Ubuntu 22.04 ships FFmpeg 4.4, whose TLS protocol options are not
+consumed by its RTSP demuxer after a successful RTSPS connection. If journal
+logs repeat `Option tls_verify not found`, keep the RTSPS URL and use the
+GStreamer `TALKBACK_COMMAND` from `device-agent.jetson.env.example`. GStreamer's
+`rtspsrc` validates the server certificate through the system TLS database and
+decodes the Opus track to the configured ALSA device.
+
 ### Standing in for the device with a laptop
 
 The talkback player is the only speaker-dependent part, so a laptop can take the
