@@ -220,8 +220,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
       final matchesKeyword =
           keyword.isEmpty ||
           video.title.toLowerCase().contains(keyword) ||
-          videoDisplayTitle(video).toLowerCase().contains(keyword) ||
-          (video.description?.toLowerCase().contains(keyword) ?? false);
+          videoDisplayTitle(video).toLowerCase().contains(keyword);
       final startedAt = video.capturedStartAt ?? video.createdAt;
       final matchesDate =
           dateRange == null ||
@@ -380,7 +379,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                         autofocus: true,
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
-                          hintText: '영상 제목과 메모 검색',
+                          hintText: '영상 제목 검색',
                           prefixIcon: const Icon(Icons.search_rounded),
                           suffixIcon: IconButton(
                             tooltip: '검색어 초기화',

@@ -133,29 +133,22 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _editMetadata() async {
-    final draft = await showDialog<_VideoMetadataDraft>(
+    final title = await showDialog<String>(
       context: context,
-      builder: (_) => _MetadataEditorDialog(
-        initialTitle: _video.title,
-        initialMemo: _video.description ?? '',
-      ),
+      builder: (_) => _TitleEditorDialog(initialTitle: _video.title),
     );
-    if (draft != null) {
-      try {
-        await widget.controller.api.updateVideo(
-          _video.id,
-          title: draft.title,
-          description: draft.memo,
-        );
-        final refreshed = await widget.controller.api.getVideo(_video.id);
-        await widget.controller.refreshDeviceData();
-        if (mounted) {
-          setState(() => _video = refreshed);
-          showAppSnack(context, '제목과 메모를 저장했습니다.');
-        }
-      } catch (failure) {
-        if (mounted) showAppSnack(context, '$failure', error: true);
-      }
+    if (title == null) return;
+    final ok = await widget.controller.renameVideo(_video, title);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _video = _video.copyWith(title: title));
+      showAppSnack(context, '제목을 저장했습니다.');
+    } else {
+      showAppSnack(
+        context,
+        widget.controller.errorMessage ?? '제목을 저장하지 못했어요.',
+        error: true,
+      );
     }
   }
 
@@ -392,8 +385,6 @@ class _MemoryDetailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final memo = video.description?.trim();
-    final hasMemo = memo?.isNotEmpty == true;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       decoration: BoxDecoration(
@@ -440,7 +431,7 @@ class _MemoryDetailCard extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               IconButton.outlined(
-                tooltip: '제목과 메모 수정',
+                tooltip: '제목 수정',
                 onPressed: onEdit,
                 style: IconButton.styleFrom(
                   foregroundColor: AppColors.coralDark,
@@ -466,102 +457,29 @@ class _MemoryDetailCard extends StatelessWidget {
               VideoEventTypePills(video: video),
             ],
           ),
-          const Divider(height: 30),
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(minHeight: 156),
-            padding: const EdgeInsets.fromLTRB(22, 20, 118, 20),
-            decoration: BoxDecoration(
-              color: const Color(0xA6FFFDF8),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFF0D9C8)),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hasMemo ? memo! : '등록된 메모가 없습니다',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.ink,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (!hasMemo) ...[
-                      const SizedBox(height: 18),
-                      InkWell(
-                        key: const Key('empty-memory-memo-action'),
-                        onTap: onEdit,
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '메모를 남겨보세요!',
-                              style: TextStyle(
-                                color: AppColors.coral,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                Positioned(
-                  right: -106,
-                  bottom: -20,
-                  child: IgnorePointer(
-                    child: Image.asset(
-                      'assets/images/memory_peek_mascot.png',
-                      width: 140,
-                      height: 104,
-                      fit: BoxFit.contain,
-                      cacheWidth: decodePixels(context, 140),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _VideoMetadataDraft {
-  const _VideoMetadataDraft({required this.title, required this.memo});
-
-  final String title;
-  final String memo;
-}
-
-class _MetadataEditorDialog extends StatefulWidget {
-  const _MetadataEditorDialog({
-    required this.initialTitle,
-    required this.initialMemo,
-  });
+class _TitleEditorDialog extends StatefulWidget {
+  const _TitleEditorDialog({required this.initialTitle});
 
   final String initialTitle;
-  final String initialMemo;
 
   @override
-  State<_MetadataEditorDialog> createState() => _MetadataEditorDialogState();
+  State<_TitleEditorDialog> createState() => _TitleEditorDialogState();
 }
 
-class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
+class _TitleEditorDialogState extends State<_TitleEditorDialog> {
   late final TextEditingController _title;
-  late final TextEditingController _memo;
 
   @override
   void initState() {
     super.initState();
     _title = TextEditingController(text: widget.initialTitle)
       ..addListener(_refresh);
-    _memo = TextEditingController(text: widget.initialMemo);
   }
 
   void _refresh() => setState(() {});
@@ -571,17 +489,13 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
     _title
       ..removeListener(_refresh)
       ..dispose();
-    _memo.dispose();
     super.dispose();
   }
 
   void _save() {
     final title = _title.text.trim();
     if (title.isEmpty) return;
-    Navigator.pop(
-      context,
-      _VideoMetadataDraft(title: title, memo: _memo.text.trim()),
-    );
+    Navigator.pop(context, title);
   }
 
   @override
@@ -627,7 +541,7 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '추억 기록하기',
+                        '추억 제목 바꾸기',
                         style: TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.w900,
@@ -636,7 +550,7 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        '오늘의 순간을 따뜻한 글로 남겨보세요.',
+                        '이 순간을 부를 이름을 정해 보세요.',
                         style: TextStyle(fontSize: 12, color: AppColors.muted),
                       ),
                     ],
@@ -662,39 +576,20 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
               ),
             ),
             const SizedBox(height: 4),
-            Stack(
-              children: [
-                TextField(
-                  key: const Key('memory-memo-input'),
-                  controller: _memo,
-                  minLines: 6,
-                  maxLines: 8,
-                  maxLength: 500,
-                  textAlignVertical: TextAlignVertical.top,
-                  decoration: const InputDecoration(
-                    labelText: '메모',
-                    hintText: '그때의 표정, 대화, 기분을 자유롭게 적어보세요.',
-                    alignLabelWithHint: true,
-                    contentPadding: EdgeInsets.fromLTRB(18, 22, 18, 72),
+            Align(
+              alignment: Alignment.centerRight,
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: .92,
+                  child: Image.asset(
+                    'assets/images/memory_peek_mascot.png',
+                    width: 104,
+                    height: 78,
+                    fit: BoxFit.contain,
+                    cacheWidth: decodePixels(context, 104),
                   ),
                 ),
-                Positioned(
-                  right: 8,
-                  bottom: 10,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: .92,
-                      child: Image.asset(
-                        'assets/images/memory_peek_mascot.png',
-                        width: 104,
-                        height: 78,
-                        fit: BoxFit.contain,
-                        cacheWidth: decodePixels(context, 104),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -712,7 +607,7 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
                     key: const Key('memory-metadata-save'),
                     onPressed: _title.text.trim().isEmpty ? null : _save,
                     icon: const Icon(Icons.favorite_rounded, size: 19),
-                    label: const Text('추억 저장하기'),
+                    label: const Text('제목 저장하기'),
                   ),
                 ),
               ],
