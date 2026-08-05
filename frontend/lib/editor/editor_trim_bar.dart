@@ -45,7 +45,10 @@ abstract final class TrimBarTokens {
   static const minimumWindow = 8.0;
 
   /// 이만큼 가까우면 손잡이가 그 자리에 달라붙는다.
-  static const snapDistance = 12.0;
+  ///
+  /// 손끝 접촉면이 대략 이 두 배다. 12dp였을 때는 "붙는 것 같기도 하고
+  /// 아닌 것 같기도 한" 폭이라 스냅이 없는 것처럼 느껴졌다.
+  static const snapDistance = 18.0;
 }
 
 class TrimRangeBar extends StatefulWidget {

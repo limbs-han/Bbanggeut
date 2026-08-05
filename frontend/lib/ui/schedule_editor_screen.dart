@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../app/app_theme.dart';
 import '../core/api_client.dart';
 import 'content_state.dart';
+import 'schedule_emoji.dart';
 import 'widgets.dart';
 
 class ScheduleEditorScreen extends StatefulWidget {
@@ -13,11 +14,16 @@ class ScheduleEditorScreen extends StatefulWidget {
     this.initialDate,
     this.schedule,
     this.state,
+    this.vaultId,
   });
 
   final DateTime? initialDate;
   final CalendarSchedule? schedule;
   final ContentState? state;
+
+  /// 새 일정을 넣을 금고. 일정은 금고 구성원이 함께 보므로 어느 가족의
+  /// 캘린더인지 서버에 알려야 한다. 수정할 때는 이미 정해져 있어 쓰지 않는다.
+  final String? vaultId;
 
   bool get isEditing => schedule != null;
 
@@ -94,6 +100,9 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
       date: _parseDate(_date.text)!,
       yearly: _yearly,
       emoji: _emoji,
+      authorId: widget.schedule?.authorId,
+      authorName: widget.schedule?.authorName,
+      vaultId: widget.schedule?.vaultId ?? widget.vaultId,
     );
     try {
       final saved = await _state.saveSchedule(
@@ -137,10 +146,11 @@ class _ScheduleEditorScreenState extends State<ScheduleEditorScreen> {
                       decoration: InputDecoration(
                         hintText: '일정 이름을 입력하세요',
                         suffixIcon: Padding(
-                          padding: const EdgeInsets.all(13),
-                          child: Text(
-                            _emoji,
-                            style: const TextStyle(fontSize: 23),
+                          padding: const EdgeInsets.all(10),
+                          child: ScheduleEmojiIcon(
+                            key: const Key('schedule-selected-emoji'),
+                            emoji: _emoji,
+                            size: 34,
                           ),
                         ),
                       ),
@@ -369,7 +379,7 @@ class _EmojiPicker extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Text(emoji, style: const TextStyle(fontSize: 34)),
+              child: ScheduleEmojiIcon(emoji: emoji, size: 48),
             ),
           ),
         ),

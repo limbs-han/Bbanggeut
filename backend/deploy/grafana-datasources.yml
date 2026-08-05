@@ -1,0 +1,11 @@
+# Grafana가 부팅 시 자동 등록하는 데이터소스. 대시보드는 UI에서 만들고
+# Grafana 볼륨(grafana-data)에 저장된다.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:9090
+    isDefault: true
+    editable: false

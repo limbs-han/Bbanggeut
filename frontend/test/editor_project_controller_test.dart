@@ -202,6 +202,21 @@ void main() {
     expect(dto['outputPath'], '/tmp/out.mp4');
   });
 
+  test('직접 자막을 선택한 화면 위치와 표시 시간으로 추가한다', () {
+    final subject = controller();
+    subject.addTextLayer(
+      text: '상단 자막',
+      position: NormalizedPoint(0.5, 0.22),
+      startMs: 1000,
+      endMs: 6000,
+    );
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.position, NormalizedPoint(0.5, 0.22));
+    expect(layer.startMs, 1000);
+    expect(layer.endMs, 6000);
+  });
+
   test('텍스트 굵기와 크기를 바꾸고 영상 위에서 이동·확대할 수 있다', () {
     final subject = controller();
     subject.addTextLayer(text: '우리 가족', startMs: 0, fontSize: 48, bold: false);
@@ -238,6 +253,125 @@ void main() {
     subject.addTextLayer(text: '배경 없는 글자');
 
     expect(subject.project.textLayers.single.backgroundColor.a, 0);
+  });
+
+  // "AI 자막 적용이 아예 안 된다"의 정체. 편집기는 열리자마자 추천 컷을
+  // 얹어 2분짜리를 십몇 초로 줄이는데, 전사는 원본 전체를 훑는다. 컷 밖
+  // 대사를 넣지 않는 것 자체는 맞다 — 그 장면은 영상에 없다. 화면이 그것을
+  // 말해 주지 않는 것이 문제였다(local_edit_screen의 빈 결과 안내 참조).
+  test('컷 구간 밖 대사는 자막으로 들어가지 않는다', () {
+    // 원본 10초짜리를 3~7초만 남기고 자른다.
+    final subject = controller();
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 3000, sourceEndMs: 7000),
+      isTrue,
+    );
+
+    subject.applyTranscriptCaptions([
+      (startMs: 500, endMs: 1500, text: '컷 앞'),
+      (startMs: 8000, endMs: 9000, text: '컷 뒤'),
+    ]);
+
+    expect(subject.project.textLayers, isEmpty);
+  });
+
+  // 컷 안에 있는데도 "컷 밖"이라며 안 들어가던 것. 전사 시각은 낱말이 처음
+  // 인식된 시점으로 역산한 근사치라 0.1초짜리 조각이 흔한데, 그걸 최소 길이
+  // 미달로 버리고 있었다.
+  test('컷 안이면 아주 짧은 대사도 버리지 않고 읽을 길이로 늘린다', () {
+    final subject = controller();
+
+    subject.applyTranscriptCaptions([
+      (startMs: 3000, endMs: 3080, text: '음'),
+      (startMs: 5000, endMs: 5120, text: '아니'),
+    ]);
+
+    final layers = subject.project.textLayers;
+    expect(layers, hasLength(2));
+    for (final layer in layers) {
+      expect(
+        layer.endMs - layer.startMs,
+        greaterThanOrEqualTo(
+          EditorProjectController.minimumCaptionDurationMs,
+        ),
+      );
+    }
+    // 시작은 들린 자리 그대로다 — 늘리는 것은 뒤쪽이다.
+    expect(layers.first.startMs, 3000);
+  });
+
+  test('클립 끝에 붙은 짧은 대사는 앞으로 당겨서 넣는다', () {
+    final subject = controller();
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 0, sourceEndMs: 5000),
+      isTrue,
+    );
+
+    // 클립 끝(5000)에서 50ms 앞. 뒤로는 늘릴 자리가 없다.
+    subject.applyTranscriptCaptions([
+      (startMs: 4950, endMs: 4990, text: '끝말'),
+    ]);
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.endMs, 5000);
+    expect(
+      layer.endMs - layer.startMs,
+      EditorProjectController.minimumCaptionDurationMs,
+    );
+  });
+
+  test('컷 안에 걸치는 대사만 클립 기준 시각으로 들어간다', () {
+    final subject = controller();
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 3000, sourceEndMs: 7000),
+      isTrue,
+    );
+
+    subject.applyTranscriptCaptions([
+      (startMs: 500, endMs: 1500, text: '컷 앞'),
+      (startMs: 4000, endMs: 5000, text: '컷 안'),
+    ]);
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.text, '컷 안');
+    // 원본 4초 = 컷이 3초에서 시작하니 클립 안에서는 1초다.
+    expect(layer.startMs, 1000);
+    expect(layer.endMs, 2000);
+  });
+
+  test('자동 자막은 기존 기본 스타일로 만들고 사용자가 다시 바꿀 수 있다', () {
+    final subject = controller();
+    subject.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 3000, text: '오늘도 많이 웃었네'),
+    ]);
+
+    final initial = subject.project.textLayers.single;
+    expect(initial.id, startsWith('ai-caption-'));
+    expect(subject.project.selectedLayerId, initial.id);
+    expect(initial.position, NormalizedPoint(0.5, 0.78));
+    expect(initial.color, const Color(0xFFFFFFFF));
+    expect(initial.backgroundColor.a, 0);
+    expect(initial.fontSize, 28);
+    expect(initial.bold, isTrue);
+    expect(initial.align, EditorTextAlign.center);
+
+    subject.selectLayer(initial.id);
+    expect(
+      subject.updateSelectedTextLayer(
+        text: initial.text,
+        color: const Color(0xFFFF725B),
+        backgroundColor: const Color(0x00000000),
+        fontSize: 42,
+        bold: false,
+      ),
+      isTrue,
+    );
+
+    final changed = subject.project.textLayers.single;
+    expect(changed.color, const Color(0xFFFF725B));
+    expect(changed.backgroundColor.a, 0);
+    expect(changed.fontSize, 42);
+    expect(changed.bold, isFalse);
   });
 
   test('모서리 손잡이로 크기만 바꾸면 위치와 회전은 그대로다', () {
@@ -632,15 +766,11 @@ void main() {
 
   test('얼굴 스티커는 사람마다 하나씩 붙는다', () {
     final subject = controller();
-    List<Map<String, Object>> line(
-      int fromMs,
-      int toMs,
-      double x,
-      double h,
-    ) => [
-      for (var ms = fromMs; ms <= toMs; ms += 250)
-        {'ms': ms, 'x': x, 'y': 0.5, 'h': h},
-    ];
+    List<Map<String, Object>> line(int fromMs, int toMs, double x, double h) =>
+        [
+          for (var ms = fromMs; ms <= toMs; ms += 250)
+            {'ms': ms, 'x': x, 'y': 0.5, 'h': h},
+        ];
     subject.loadDraftRecipe({
       'type': 'draft-v1',
       'clips': [
@@ -724,11 +854,10 @@ void main() {
     // 내보내기 키프레임: 줌 경계(2000ms) 직전·직후가 함께 실려 영상이
     // 확대를 푸는 순간 스티커도 그 프레임에 맞춰 돌아온다.
     final dto = subject.project.toPlatformMap(outputPath: '/tmp/out.mp4');
-    final track = ((dto['stickerLayers']! as List).single as Map)['track']!
-        as List;
+    final track =
+        ((dto['stickerLayers']! as List).single as Map)['track']! as List;
     final byMs = {
-      for (final sample in track)
-        (sample as Map)['ms'] as int: sample,
+      for (final sample in track) (sample as Map)['ms'] as int: sample,
     };
     expect(byMs.keys, containsAll([0, 1000, 1999, 2000]));
     expect(byMs[1999]!['s'] as double, closeTo(2.0, 1e-9));

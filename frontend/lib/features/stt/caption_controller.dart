@@ -33,9 +33,28 @@ class CaptionController extends ChangeNotifier {
   /// 전사를 시작한다. 캐시가 있으면 즉시 끝난다. 두 번 불러도 한 번만 돈다.
   void start(String videoId, String videoPath) {
     if (_job != null) return;
+    _videoId = videoId;
     _job = _store.ensure(videoId, videoPath)..addListener(_onJobChanged);
     _onJobChanged();
   }
+
+  /// 캐시를 버리고 처음부터 다시 전사한다. 사용자가 "다시 만들기"를 고른
+  /// 때만 부른다.
+  ///
+  /// [start]로는 안 된다 — 한 번 잡은 작업이 있으면 그대로 돌아 나가기
+  /// 때문이다. 여기서는 듣던 작업을 놓고, 손으로 고친 줄도 함께 버린다.
+  /// 버리는 것이 곧 사용자가 고른 것이다(대화상자가 그렇게 알린다).
+  void restart(String videoId, String videoPath) {
+    _job?.removeListener(_onJobChanged);
+    _videoId = videoId;
+    _lines = <CaptionLine>[];
+    _hasUserEdits = false;
+    _job = _store.restart(videoId, videoPath)..addListener(_onJobChanged);
+    _onJobChanged();
+  }
+
+  /// [edit]가 캐시 파일에 저장할 때 쓴다. [start]가 채운다.
+  String? _videoId;
 
   void _onJobChanged() {
     final state = _job?.value;
@@ -43,12 +62,32 @@ class CaptionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 자막 한 줄을 고치고 **캐시 파일에도 바로 저장한다.**
+  ///
+  /// 파일이 이 영상의 자막 원천이다 — 만화 구성(ComicController)이 이 파일을
+  /// 읽고, 다음에 자막을 열 때도 이 파일이 나온다. 메모리에만 두면 사용자가
+  /// 자막 탭에서 고친 문장이 만화에는 옛 문장으로 나간다(실사용 지적).
+  /// 그래서 편집 화면의 "폐기"를 골라도 자막 수정만은 남는다 — 잘못 고쳤다면
+  /// 같은 자리에서 다시 고치면 된다.
   void edit(int index, String text) {
     if (index < 0 || index >= _lines.length) return;
     _lines[index].text = text;
     _hasUserEdits = true;
+    final videoId = _videoId;
+    if (videoId != null) {
+      // 기다리지도, 실패로 죽지도 않는다 — 저장이 안 돼도 메모리 수정은
+      // 유지되고 내보내기에는 그대로 반영된다. 잡지 않으면 fire-and-forget
+      // Future의 예외가 잡히지 않은 비동기 오류로 터진다.
+      pendingWrite = _store.write(videoId, _lines).catchError((Object error) {
+        debugPrint('[stt] 자막 수정을 저장하지 못했습니다($videoId): $error');
+      });
+    }
     notifyListeners();
   }
+
+  /// 테스트가 저장 완료를 기다릴 수 있게 마지막 쓰기 Future를 남긴다.
+  @visibleForTesting
+  Future<void>? pendingWrite;
 
   String? textAt(int positionMs) => captionAt(_lines, positionMs);
 

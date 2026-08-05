@@ -1,4 +1,17 @@
-# Server video editor
+# editor-api — 미디어·AI 워커
+
+> **경계 (ADR-001)**: 이 서비스는 **무거운 미디어·AI 계산만** 한다 — 분석,
+> 자동 편집 추천, 4컷 만화. 사용자 콘텐츠(완성본 MP4·메타·댓글)는
+> 2026-08-04에 백엔드로 옮겼다. 권한·보관 만료·삭제 연쇄·알림이 필요한 것은
+> 시스템 오브 레코드(백엔드)에 둔다. 자세한 근거는
+> `자료/docs/ADR-001-editor-api-경계.md`.
+>
+> **완성본 MP4 생성은 이 서비스가 하지 않는다.** 2026-08-04에 서버 렌더링
+> 경로(`/v1/edit-renders`)를 제거하고 앱(Media3) 하나로 통일했다.
+>
+> 이전된 API: 완성본 업로드 `POST /api/videos/{id}/edits`, 목록
+> `GET /api/vaults/{id}/edits`, 재생 `POST /api/videos/{id}/play-url`,
+> 댓글 `GET·POST /api/videos/{id}/comments`.
 
 STT 없이 오디오 이벤트, 음향 변화, 영상 정보, 얼굴 표정을 결합해 자동 컷과 줌 recipe를 생성한다.
 
@@ -50,14 +63,9 @@ fixture에 없는 영상은 앱이 원본을 올려 분석시킨다:
 3. `POST /v1/edit-recommendations` — fixture가 없으면 이 분석 결과로
    레시피를 만든다. 분석 전이면 404(detail `analysis-required`).
 
-컷·줌만 있는 프로젝트는 완성본도 서버가 만든다(앱 렌더링·업로드 생략):
-
-- `POST /v1/edit-renders/<videoId>` — `{sourceUrl, recipe, title, capturedAt}`.
-  서버가 원본을 받아 FFmpeg(render_video.py)로 렌더링해 편집본 자리
-  (`edited-videos/<videoId>/`)에 올린다. 자막·스티커·필터·캔버스 변형·
-  다중 클립이 있으면 앱이 지금처럼 Media3로 만들어 올린다.
-- `GET /v1/edit-renders/<videoId>` — 상태 폴링(내부용; 앱은 요청만 하고
-  목록 갱신으로 확인한다).
+완성본 MP4는 **앱(Media3)만** 만든다. 앱이 백엔드에 업로드 자리를 예약
+(`POST /api/videos/{id}/edits`)하고 서명된 URL로 직접 올린다 — editor-api는
+이 경로에 끼지 않는다.
 
 분석 완료와 편집 영상 새 댓글은 백엔드 `/api/editor/events`로 승격돼
 알림센터·FCM 푸시로 이어진다(editor-api가 같은 서명 키로 iss=wj-editor
@@ -127,7 +135,7 @@ STT 문맥을 사용하지 않으므로 프리셋은 이야기의 의미적 완�
 
 줌은 MediaPipe blendshape 표정 점수 65%와 같은 시점의 웃음·반응음·음량 상승·음악 점수 35%를 결합한다. 얼굴 목표 높이는 화면의 28~33.3%, 배율은 1.20~2.80배, 길이는 1.2~4초다. 줌 전환 램프는 사용하지 않는다.
 
-렌더링:
+렌더링(레시피 눈으로 확인하는 오프라인 도구 — 서비스 경로가 아니다):
 
 ```bash
 python -m video_editor.render_video \
@@ -189,6 +197,6 @@ python -m unittest video_editor.test_comic -v
 - 작업 상태는 프로세스 메모리에만 있어서 서버를 재시작하면 진행 중이던
   분석은 사라진다(완료된 결과는 MinIO에 남는다).
 - 댓글 표시 이름은 앱 자가 신고다(사용자 UUID는 함께 기록).
-- 서버 렌더링은 컷 하나+줌까지만 안다. 자막·스티커·필터·캔버스 변형·
-  다중 클립·오디오 변경은 앱(Media3) 렌더링 몫이다.
+- 완성본 MP4 생성은 앱(Media3) 몫이다 — 이 서비스에 렌더링 경로가 없다.
+  `render_video.py`는 레시피를 눈으로 확인하는 오프라인 CLI로만 남았다.
 - Jenkins 자동 배포는 아직 없다(이미지는 서버에서 직접 빌드).

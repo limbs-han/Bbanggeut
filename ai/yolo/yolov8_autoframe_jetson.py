@@ -211,6 +211,39 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--tracking-mode",
+        choices=("center", "safe-frame"),
+        default=os.getenv("YOLO_TRACKING_MODE", "center"),
+        help=(
+            "Track a center point or move only when the selected box "
+            "nears an edge."
+        ),
+    )
+    parser.add_argument(
+        "--safe-frame-start-margin",
+        type=float,
+        default=float(os.getenv("YOLO_SAFE_FRAME_START_MARGIN", "0.08")),
+        help="Edge margin that starts safe-frame movement (default: 0.08).",
+    )
+    parser.add_argument(
+        "--safe-frame-stop-margin",
+        type=float,
+        default=float(os.getenv("YOLO_SAFE_FRAME_STOP_MARGIN", "0.12")),
+        help="Inner margin that stops safe-frame movement (default: 0.12).",
+    )
+    parser.add_argument(
+        "--safe-frame-edge-guard",
+        type=float,
+        default=float(os.getenv("YOLO_SAFE_FRAME_EDGE_GUARD", "0.04")),
+        help="Person-box edge guard used to prevent target loss (default: 0.04).",
+    )
+    parser.add_argument(
+        "--target-loss-follow-seconds",
+        type=float,
+        default=float(os.getenv("YOLO_TARGET_LOSS_FOLLOW_SECONDS", "0.5")),
+        help="Briefly continue an edge-exit command after target loss.",
+    )
+    parser.add_argument(
         "--ema-alpha",
         type=float,
         default=0.25,
@@ -346,6 +379,32 @@ def parse_args() -> argparse.Namespace:
         parser.error("--deadzone-height must be between 0 and 1")
     if not 0.0 <= args.subject_y_ratio <= 1.0:
         parser.error("--subject-y-ratio must be between 0 and 1")
+    if not 0.0 <= args.safe_frame_start_margin < 0.45:
+        parser.error(
+            "--safe-frame-start-margin must be at least 0 and less than 0.45"
+        )
+    if not args.safe_frame_start_margin < args.safe_frame_stop_margin < 0.45:
+        parser.error(
+            "--safe-frame-stop-margin must be greater than the start margin "
+            "and less than 0.45"
+        )
+    if not 0.0 <= args.safe_frame_edge_guard < args.safe_frame_start_margin:
+        parser.error(
+            "--safe-frame-edge-guard must be at least 0 and less than "
+            "--safe-frame-start-margin"
+        )
+    invalid_loss_follow = args.target_loss_follow_seconds < 0.0 or (
+        args.home_after_seconds == 0.0
+        and args.target_loss_follow_seconds != 0.0
+    ) or (
+        args.home_after_seconds > 0.0
+        and args.target_loss_follow_seconds >= args.home_after_seconds
+    )
+    if invalid_loss_follow:
+        parser.error(
+            "--target-loss-follow-seconds must be at least 0 and less than "
+            "--home-after-seconds"
+        )
     if not 0.0 < args.ema_alpha <= 1.0:
         parser.error("--ema-alpha must be greater than 0 and at most 1")
     if args.home_after_seconds < 0:
@@ -520,9 +579,14 @@ class StableGroupSelector:
         frame_width: int,
         frame_height: int,
         edge_margin: float,
+        include_all: bool = False,
     ) -> FramingDecision | None:
         items = tuple(objects)
-        candidate = choose_best_group(items, frame_width, frame_height, edge_margin)
+        candidate = (
+            make_decision(items, len(items))
+            if include_all and items
+            else choose_best_group(items, frame_width, frame_height, edge_margin)
+        )
         if candidate is None:
             self.current_ids = frozenset()
             self.pending_ids = frozenset()
@@ -570,18 +634,135 @@ class AutoFrameController:
         deadzone_height: float,
         subject_y_ratio: float,
         home_after_seconds: float,
+        tracking_mode: str = "center",
+        safe_frame_start_margin: float = 0.08,
+        safe_frame_stop_margin: float = 0.12,
+        safe_frame_edge_guard: float = 0.04,
+        target_loss_follow_seconds: float = 0.5,
     ) -> None:
         if not 0.0 <= subject_y_ratio <= 1.0:
             raise ValueError("subject_y_ratio must be between 0 and 1")
+        if tracking_mode not in {"center", "safe-frame"}:
+            raise ValueError("tracking_mode must be center or safe-frame")
+        if not 0.0 <= safe_frame_start_margin < safe_frame_stop_margin < 0.45:
+            raise ValueError(
+                "safe-frame margins must satisfy 0 <= start < stop < 0.45"
+            )
+        if not 0.0 <= safe_frame_edge_guard < safe_frame_start_margin:
+            raise ValueError(
+                "safe_frame_edge_guard must be at least 0 and less than "
+                "safe_frame_start_margin"
+            )
+        invalid_loss_follow = target_loss_follow_seconds < 0.0 or (
+            home_after_seconds == 0.0 and target_loss_follow_seconds != 0.0
+        ) or (
+            home_after_seconds > 0.0
+            and target_loss_follow_seconds >= home_after_seconds
+        )
+        if invalid_loss_follow:
+            raise ValueError(
+                "target_loss_follow_seconds must be at least 0 and less than "
+                "home_after_seconds"
+            )
         self.ema_alpha = ema_alpha
         self.deadzone_width = deadzone_width
         self.deadzone_height = deadzone_height
         self.subject_y_ratio = subject_y_ratio
         self.home_after_seconds = home_after_seconds
+        self.tracking_mode = tracking_mode
+        self.safe_frame_start_margin = safe_frame_start_margin
+        self.safe_frame_stop_margin = safe_frame_stop_margin
+        self.safe_frame_edge_guard = safe_frame_edge_guard
+        self.target_loss_follow_seconds = target_loss_follow_seconds
         self.smoothed_target: Point | None = None
+        self.smoothed_group_box: Box | None = None
+        self.smoothed_tracking_points_box: Box | None = None
         self.last_target_seen_at: float | None = None
         self.last_error_x = 0.0
         self.last_error_y = 0.0
+        self.safe_frame_x_active = False
+        self.safe_frame_y_active = False
+        self.loss_command_x = "HOLD"
+        self.loss_command_y = "HOLD"
+
+    def _safe_point_axis(
+        self,
+        point_low: float,
+        point_high: float,
+        low: float,
+        high: float,
+        frame_size: int,
+        active: bool,
+    ) -> tuple[int, float, bool]:
+        point_margin = (
+            self.safe_frame_stop_margin
+            if active
+            else self.safe_frame_start_margin
+        )
+        guard_margin = self.safe_frame_edge_guard
+        if active:
+            guard_margin += (
+                self.safe_frame_stop_margin - self.safe_frame_start_margin
+            )
+
+        point_lower_error = point_low - frame_size * point_margin
+        point_upper_error = point_high - frame_size * (1.0 - point_margin)
+        box_lower_error = low - frame_size * guard_margin
+        box_upper_error = high - frame_size * (1.0 - guard_margin)
+        lower_error = min(point_lower_error, box_lower_error)
+        upper_error = max(point_upper_error, box_upper_error)
+        lower_outside = lower_error < 0.0
+        upper_outside = upper_error > 0.0
+
+        if lower_outside and upper_outside:
+            point_below = point_lower_error < 0.0
+            point_above = point_upper_error > 0.0
+            if point_below and not point_above:
+                upper_outside = False
+            elif point_above and not point_below:
+                lower_outside = False
+            else:
+                return 0, 0.0, False
+        if not lower_outside and not upper_outside:
+            return 0, 0.0, False
+        normalizer = max(frame_size / 2.0, 1.0)
+        if lower_outside:
+            return -1, clamp(lower_error / normalizer, -1.0, 1.0), True
+        return 1, clamp(upper_error / normalizer, -1.0, 1.0), True
+
+    def tracking_points(self, decision: FramingDecision) -> tuple[Point, ...]:
+        return tuple(
+            (
+                item.center[0],
+                item.box[1]
+                + (item.box[3] - item.box[1]) * self.subject_y_ratio,
+            )
+            for item in decision.objects
+        )
+
+    def tracking_points_box(self, decision: FramingDecision) -> Box:
+        points = self.tracking_points(decision)
+        return (
+            min(point[0] for point in points),
+            min(point[1] for point in points),
+            max(point[0] for point in points),
+            max(point[1] for point in points),
+        )
+
+    def _edge_exit_command(
+        self,
+        low: float,
+        high: float,
+        frame_size: int,
+        negative_command: str,
+        positive_command: str,
+    ) -> str:
+        boundary = frame_size * self.safe_frame_edge_guard
+        near_lower = low < boundary
+        near_upper = high > frame_size - boundary
+        if near_lower == near_upper:
+            return "HOLD"
+        return negative_command if near_lower else positive_command
 
     def update(
         self,
@@ -591,9 +772,41 @@ class AutoFrameController:
         now: float,
     ) -> CameraCommand:
         if decision is None:
+            self.safe_frame_x_active = False
+            self.safe_frame_y_active = False
+            elapsed = (
+                now - self.last_target_seen_at
+                if self.last_target_seen_at is not None
+                else float("inf")
+            )
+            if elapsed < self.target_loss_follow_seconds and (
+                self.loss_command_x != "HOLD" or self.loss_command_y != "HOLD"
+            ):
+                direction = "_".join(
+                    command
+                    for command in (self.loss_command_x, self.loss_command_y)
+                    if command != "HOLD"
+                )
+                return CameraCommand(
+                    state="TARGET_LOSS_FOLLOW",
+                    direction=direction,
+                    command_x=self.loss_command_x,
+                    command_y=self.loss_command_y,
+                    target_ids=(),
+                    target_count=0,
+                    total_stable_objects=0,
+                    center_x=None,
+                    center_y=None,
+                    error_x=self.last_error_x,
+                    error_y=self.last_error_y,
+                    group_box=None,
+                    limited_group=False,
+                )
+            self.loss_command_x = "HOLD"
+            self.loss_command_y = "HOLD"
             if (
                 self.last_target_seen_at is not None
-                and now - self.last_target_seen_at < self.home_after_seconds
+                and elapsed < self.home_after_seconds
             ):
                 return CameraCommand(
                     state="NO_TARGET_HOLD",
@@ -612,6 +825,8 @@ class AutoFrameController:
                 )
 
             self.smoothed_target = None
+            self.smoothed_group_box = None
+            self.smoothed_tracking_points_box = None
             self.last_error_x = 0.0
             self.last_error_y = 0.0
             return CameraCommand(
@@ -649,21 +864,92 @@ class AutoFrameController:
         self.smoothed_target = (smooth_x, smooth_y)
         self.last_target_seen_at = now
 
-        frame_center_x = frame_width / 2.0
-        frame_center_y = frame_height / 2.0
-        pixel_error_x = smooth_x - frame_center_x
-        pixel_error_y = smooth_y - frame_center_y
-        normalized_error_x = pixel_error_x / max(frame_center_x, 1.0)
-        normalized_error_y = pixel_error_y / max(frame_center_y, 1.0)
-        move_x = abs(pixel_error_x) > frame_width * self.deadzone_width / 2.0
-        move_y = abs(pixel_error_y) > frame_height * self.deadzone_height / 2.0
+        if self.smoothed_group_box is None:
+            self.smoothed_group_box = decision.group_box
+        else:
+            self.smoothed_group_box = tuple(
+                self.ema_alpha * raw_value
+                + (1.0 - self.ema_alpha) * smooth_value
+                for raw_value, smooth_value in zip(
+                    decision.group_box,
+                    self.smoothed_group_box,
+                )
+            )
 
-        horizontal = ""
-        vertical = ""
-        if move_x:
-            horizontal = "RIGHT" if pixel_error_x > 0 else "LEFT"
-        if move_y:
-            vertical = "DOWN" if pixel_error_y > 0 else "UP"
+        tracking_points_box = self.tracking_points_box(decision)
+        if self.smoothed_tracking_points_box is None:
+            self.smoothed_tracking_points_box = tracking_points_box
+        else:
+            self.smoothed_tracking_points_box = tuple(
+                self.ema_alpha * raw_value
+                + (1.0 - self.ema_alpha) * smooth_value
+                for raw_value, smooth_value in zip(
+                    tracking_points_box,
+                    self.smoothed_tracking_points_box,
+                )
+            )
+
+        if self.tracking_mode == "safe-frame":
+            smooth_left, smooth_top, smooth_right, smooth_bottom = (
+                self.smoothed_group_box
+            )
+            point_left, point_top, point_right, point_bottom = (
+                self.smoothed_tracking_points_box
+            )
+            x_direction, normalized_error_x, self.safe_frame_x_active = (
+                self._safe_point_axis(
+                    point_left,
+                    point_right,
+                    smooth_left,
+                    smooth_right,
+                    frame_width,
+                    self.safe_frame_x_active,
+                )
+            )
+            y_direction, normalized_error_y, self.safe_frame_y_active = (
+                self._safe_point_axis(
+                    point_top,
+                    point_bottom,
+                    smooth_top,
+                    smooth_bottom,
+                    frame_height,
+                    self.safe_frame_y_active,
+                )
+            )
+            horizontal = {-1: "LEFT", 0: "", 1: "RIGHT"}[x_direction]
+            vertical = {-1: "UP", 0: "", 1: "DOWN"}[y_direction]
+            self.loss_command_x = self._edge_exit_command(
+                smooth_left,
+                smooth_right,
+                frame_width,
+                "LEFT",
+                "RIGHT",
+            )
+            self.loss_command_y = self._edge_exit_command(
+                smooth_top,
+                smooth_bottom,
+                frame_height,
+                "UP",
+                "DOWN",
+            )
+        else:
+            self.loss_command_x = "HOLD"
+            self.loss_command_y = "HOLD"
+            frame_center_x = frame_width / 2.0
+            frame_center_y = frame_height / 2.0
+            pixel_error_x = smooth_x - frame_center_x
+            pixel_error_y = smooth_y - frame_center_y
+            normalized_error_x = pixel_error_x / max(frame_center_x, 1.0)
+            normalized_error_y = pixel_error_y / max(frame_center_y, 1.0)
+            move_x = abs(pixel_error_x) > frame_width * self.deadzone_width / 2.0
+            move_y = abs(pixel_error_y) > frame_height * self.deadzone_height / 2.0
+            horizontal = "RIGHT" if move_x and pixel_error_x > 0 else ""
+            if move_x and pixel_error_x < 0:
+                horizontal = "LEFT"
+            vertical = "DOWN" if move_y and pixel_error_y > 0 else ""
+            if move_y and pixel_error_y < 0:
+                vertical = "UP"
+
         direction = "_".join(part for part in (horizontal, vertical) if part) or "HOLD"
         command_x = horizontal or "HOLD"
         command_y = vertical or "HOLD"
@@ -886,16 +1172,51 @@ def draw_overlay(
         1,
     )
 
-    deadzone_half_width = int(width * controller.deadzone_width / 2.0)
-    deadzone_half_height = int(height * controller.deadzone_height / 2.0)
-    cv2.rectangle(
-        frame,
-        (center[0] - deadzone_half_width, center[1] - deadzone_half_height),
-        (center[0] + deadzone_half_width, center[1] + deadzone_half_height),
-        (255, 255, 0),
-        2,
-    )
-    cv2.drawMarker(frame, center, (255, 255, 0), cv2.MARKER_CROSS, 18, 2)
+    if controller.tracking_mode == "safe-frame":
+        start_margin = controller.safe_frame_start_margin
+        stop_margin = controller.safe_frame_stop_margin
+        edge_guard = controller.safe_frame_edge_guard
+        cv2.rectangle(
+            frame,
+            (int(width * edge_guard), int(height * edge_guard)),
+            (
+                int(width * (1.0 - edge_guard)),
+                int(height * (1.0 - edge_guard)),
+            ),
+            (0, 0, 255),
+            1,
+        )
+        cv2.rectangle(
+            frame,
+            (int(width * start_margin), int(height * start_margin)),
+            (
+                int(width * (1.0 - start_margin)),
+                int(height * (1.0 - start_margin)),
+            ),
+            (0, 165, 255),
+            1,
+        )
+        cv2.rectangle(
+            frame,
+            (int(width * stop_margin), int(height * stop_margin)),
+            (
+                int(width * (1.0 - stop_margin)),
+                int(height * (1.0 - stop_margin)),
+            ),
+            (255, 255, 0),
+            2,
+        )
+    else:
+        deadzone_half_width = int(width * controller.deadzone_width / 2.0)
+        deadzone_half_height = int(height * controller.deadzone_height / 2.0)
+        cv2.rectangle(
+            frame,
+            (center[0] - deadzone_half_width, center[1] - deadzone_half_height),
+            (center[0] + deadzone_half_width, center[1] + deadzone_half_height),
+            (255, 255, 0),
+            2,
+        )
+        cv2.drawMarker(frame, center, (255, 255, 0), cv2.MARKER_CROSS, 18, 2)
 
     if decision is not None:
         for item in decision.objects:
@@ -916,8 +1237,36 @@ def draw_overlay(
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 215, 255), 3)
         raw_center = (int(decision.raw_center[0]), int(decision.raw_center[1]))
         cv2.drawMarker(frame, raw_center, (0, 215, 255), cv2.MARKER_CROSS, 20, 2)
+        if controller.tracking_mode == "safe-frame":
+            for track_x_value, track_y_value in controller.tracking_points(
+                decision
+            ):
+                track_x = int(track_x_value)
+                track_y = int(track_y_value)
+                cv2.drawMarker(
+                    frame,
+                    (track_x, track_y),
+                    (255, 0, 255),
+                    cv2.MARKER_CROSS,
+                    20,
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    f"SAFE POINT {controller.subject_y_ratio:.0%}",
+                    (track_x, max(18, track_y - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.52,
+                    (255, 0, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
 
-    if controller.smoothed_target is not None and command.state == "TRACKING":
+    if (
+        controller.tracking_mode == "center"
+        and controller.smoothed_target is not None
+        and command.state == "TRACKING"
+    ):
         smooth_center = (
             int(controller.smoothed_target[0]),
             int(controller.smoothed_target[1]),
@@ -927,7 +1276,10 @@ def draw_overlay(
 
     mode = "LIMITED" if command.limited_group else "ALL"
     lines = (
-        f"state={command.state}  command={command.direction}",
+        (
+            f"state={command.state} command={command.direction} "
+            f"tracking={controller.tracking_mode}"
+        ),
         (
             f"selected={command.target_count}/{command.total_stable_objects} "
             f"mode={mode} ids={list(command.target_ids)}"
@@ -1053,6 +1405,11 @@ def run(args: argparse.Namespace) -> None:
         deadzone_height=args.deadzone_height,
         subject_y_ratio=args.subject_y_ratio,
         home_after_seconds=args.home_after_seconds,
+        tracking_mode=args.tracking_mode,
+        safe_frame_start_margin=args.safe_frame_start_margin,
+        safe_frame_stop_margin=args.safe_frame_stop_margin,
+        safe_frame_edge_guard=args.safe_frame_edge_guard,
+        target_loss_follow_seconds=args.target_loss_follow_seconds,
     )
 
     frame_count = 0
@@ -1176,6 +1533,7 @@ def run(args: argparse.Namespace) -> None:
                 width,
                 height,
                 args.edge_margin,
+                include_all=args.tracking_mode == "safe-frame",
             )
             wall_now = time.monotonic()
             timeline_now = (

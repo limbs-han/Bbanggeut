@@ -30,9 +30,17 @@ class MemoryVideoCard extends StatelessWidget {
   DateTime get _start =>
       video.capturedStartAt ?? video.createdAt ?? DateTime.now();
 
+  /// **왜 길이를 다시 재는가**: 끝 시각을 시작 + 2분으로 박아 두었더니 30초
+  /// 클립도 "09:27 - 09:29"로 보였다. 길이를 아는 영상은 그 길이로 끝을 잡고,
+  /// 모르는 영상은 끝을 아예 적지 않는다 — 틀린 범위보다 없는 편이 낫다.
   String get _timeRange {
     final start = _start;
-    final end = start.add(const Duration(minutes: 2));
+    final durationMs = video.durationMs;
+    if (durationMs == null || durationMs <= 0) return _dayTime.format(start);
+    final end = start.add(Duration(milliseconds: durationMs));
+    // 30초 클립은 시작과 끝이 같은 분에 든다. "09:27 - 09:27"은 범위가 아니라
+    // 잡음이므로 그때는 시작만 적는다.
+    if (_time.format(end) == _time.format(start)) return _dayTime.format(start);
     return '${_dayTime.format(start)} - ${_time.format(end)}';
   }
 
@@ -137,7 +145,7 @@ class MemoryVideoCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          video.title,
+                          videoDisplayTitle(video),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -165,15 +173,6 @@ class MemoryVideoCard extends StatelessWidget {
                     _timeRange,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    video.description?.trim().isNotEmpty == true
-                        ? video.description!.trim()
-                        : '등록된 메모가 없습니다',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
                   const SizedBox(height: 5),
                   VideoEventTypePills(video: video, compact: true),
                   const SizedBox(height: 5),
@@ -185,14 +184,17 @@ class MemoryVideoCard extends StatelessWidget {
                         onPressed: () => _edit(context),
                         icon: const Icon(Icons.content_cut_rounded),
                       ),
-                      IconButton(
-                        tooltip: '삭제하기',
-                        onPressed: () => _delete(context),
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          color: Colors.red,
+                      // 원본 삭제는 OWNER만 한다. 편집본은 서버가 "만든 사람
+                      // 또는 OWNER"로 한 번 더 거른다.
+                      if (canManageVideo(video, isOwner: controller.isOwner))
+                        IconButton(
+                          tooltip: '삭제하기',
+                          onPressed: () => _delete(context),
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Colors.red,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ],

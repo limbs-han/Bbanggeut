@@ -19,7 +19,6 @@ import java.util.UUID;
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.StreamProperties;
-import com.wj.server.config.DemoProperties;
 import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.stream.domain.DeviceStreamRow;
 import com.wj.server.stream.domain.StreamSessionRow;
@@ -50,8 +49,7 @@ class StreamServiceTest {
         lenient().when(presenceStore.find(any()))
             .thenReturn(new DevicePresenceStore.Lookup(false, null));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
-            new DemoProperties(false, null), presenceStore,
-            Clock.fixed(NOW, ZoneOffset.UTC));
+            presenceStore, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -124,7 +122,7 @@ class StreamServiceTest {
             Duration.ofSeconds(15), "https://media.example/webrtc/live/", Duration.ofSeconds(30),
             "https://media.example/webrtc/talkback", Duration.ofSeconds(30));
         service = new StreamService(mapper, publisher, liveTokenService, properties, auditService,
-            new DemoProperties(true, ""), presenceStore, Clock.fixed(NOW, ZoneOffset.UTC));
+            presenceStore, Clock.fixed(NOW, ZoneOffset.UTC));
         UUID userId = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
         UUID streamId = UUID.randomUUID();

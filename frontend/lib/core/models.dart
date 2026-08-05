@@ -316,7 +316,6 @@ class VideoMemory {
     required this.favorite,
     this.eventTypes = const [],
     this.sourceType = 'IOT_CAPTURE',
-    this.description,
     this.durationMs,
     this.thumbnailUrl,
     this.capturedStartAt,
@@ -327,7 +326,6 @@ class VideoMemory {
   final String triggerType;
   final List<String> eventTypes;
   final String title;
-  final String? description;
   final String status;
   final bool favorite;
   final String sourceType;
@@ -335,6 +333,23 @@ class VideoMemory {
   final String? thumbnailUrl;
   final DateTime? capturedStartAt;
   final DateTime? createdAt;
+
+  /// 서버 응답을 다시 받지 않고 방금 바꾼 값만 갈아 끼울 때 쓴다. 목록을
+  /// 통째로 다시 조회하면 사용자는 자기가 누른 결과를 몇 초 뒤에 본다.
+  VideoMemory copyWith({String? title, bool? favorite}) => VideoMemory(
+    id: id,
+    deviceId: deviceId,
+    triggerType: triggerType,
+    eventTypes: eventTypes,
+    sourceType: sourceType,
+    title: title ?? this.title,
+    status: status,
+    favorite: favorite ?? this.favorite,
+    durationMs: durationMs,
+    thumbnailUrl: thumbnailUrl,
+    capturedStartAt: capturedStartAt,
+    createdAt: createdAt,
+  );
   List<String> get effectiveEventTypes => eventTypes.isEmpty
       ? List.unmodifiable([triggerType])
       : eventTypes;
@@ -354,7 +369,6 @@ class VideoMemory {
         triggerType: triggerType,
       ),
       title: json['title'] as String? ?? '이름 없는 추억',
-      description: json['description'] as String?,
       status: json['status'] as String? ?? 'PROCESSING',
       favorite: json['isFavorite'] as bool? ?? false,
       sourceType: json['sourceType'] as String? ?? 'IOT_CAPTURE',
@@ -462,6 +476,68 @@ class EventStats {
   );
 }
 
+/// 영상 댓글. 작성자 표시 이름은 서버가 users에서 조인해 준다 — 앱이 보낸
+/// 이름을 믿지 않으므로 위조할 수 없다.
+class VideoComment {
+  const VideoComment({
+    required this.id,
+    required this.authorId,
+    required this.body,
+    this.authorName,
+    this.createdAt,
+  });
+  final String id;
+  final String authorId;
+  final String body;
+  final String? authorName;
+  final DateTime? createdAt;
+  factory VideoComment.fromJson(Map<String, dynamic> json) => VideoComment(
+    id: json['id'] as String? ?? '',
+    authorId: json['authorId'] as String? ?? '',
+    body: json['body'] as String? ?? '',
+    authorName: json['authorName'] as String?,
+    createdAt: parseDate(json['createdAt']),
+  );
+}
+
+/// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
+class VaultEventStats {
+  const VaultEventStats({
+    required this.detectedCount,
+    this.dailyCounts = const [],
+    this.byDevice = const [],
+  });
+  final int detectedCount;
+  final List<DailyVideoCount> dailyCounts;
+  final List<VaultDeviceCount> byDevice;
+  factory VaultEventStats.fromJson(Map<String, dynamic> json) => VaultEventStats(
+    detectedCount: (json['detectedCount'] as num?)?.toInt() ?? 0,
+    dailyCounts: (json['dailyCounts'] as List? ?? const [])
+        .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+    byDevice: (json['byDevice'] as List? ?? const [])
+        .map((item) => VaultDeviceCount.fromJson(item as Map<String, dynamic>))
+        .toList(),
+  );
+}
+
+class VaultDeviceCount {
+  const VaultDeviceCount({
+    required this.deviceId,
+    required this.name,
+    required this.count,
+  });
+  final String deviceId;
+  final String name;
+  final int count;
+  factory VaultDeviceCount.fromJson(Map<String, dynamic> json) =>
+      VaultDeviceCount(
+        deviceId: json['deviceId'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        count: (json['count'] as num?)?.toInt() ?? 0,
+      );
+}
+
 /// 알림 설정(API-78·79). 서버 행이 없으면 모두 켜진 것으로 취급된다.
 class NotificationPreferences {
   const NotificationPreferences({
@@ -490,6 +566,44 @@ class NotificationPreferences {
 }
 
 /// 캘린더 일정(기념일). 서버 일정 CRUD(API-74~77)와 같은 스키마다.
+/// 금고 구성원이 함께 보는 일정.
+///
+/// [authorId]는 이 일정을 적은 사람이다. 수정·삭제는 적은 사람과 금고 OWNER만
+/// 할 수 있어서, 버튼을 가리려면 앱도 누가 적었는지 알아야 한다.
+/// 금고의 장소 배치와 내 기기 순서.
+///
+/// [places]와 [devicePlaces]는 금고 공통이다 — 장소 이름과 기기가 어느 장소에
+/// 있는지는 집의 사실이라 가족이 함께 본다. [deviceOrder]는 이 사람만의
+/// 순서다 — 기기를 어떤 순서로 볼지는 보기 취향이다.
+class PlaceLayout {
+  const PlaceLayout({
+    this.places = const [],
+    this.devicePlaces = const {},
+    this.deviceOrder = const [],
+  });
+
+  final List<String> places;
+  final Map<String, String> devicePlaces;
+  final List<String> deviceOrder;
+
+  /// 서버에 아직 아무 배치도 없는가. 이 폰의 로컬 배치를 한 번 올려야 하는지
+  /// 판단하는 기준이다.
+  bool get isEmpty => places.isEmpty;
+
+  factory PlaceLayout.fromJson(Map<String, dynamic> json) => PlaceLayout(
+    places: (json['places'] as List? ?? const [])
+        .whereType<String>()
+        .toList(growable: false),
+    devicePlaces: {
+      for (final entry in (json['devicePlaces'] as Map? ?? const {}).entries)
+        '${entry.key}': '${entry.value}',
+    },
+    deviceOrder: (json['deviceOrder'] as List? ?? const [])
+        .whereType<String>()
+        .toList(growable: false),
+  );
+}
+
 class CalendarSchedule {
   const CalendarSchedule({
     required this.id,
@@ -498,6 +612,9 @@ class CalendarSchedule {
     this.memo = '',
     this.yearly = false,
     this.emoji = '❤️',
+    this.authorId,
+    this.authorName,
+    this.vaultId,
   });
 
   final String id;
@@ -506,6 +623,16 @@ class CalendarSchedule {
   final String memo;
   final bool yearly;
   final String emoji;
+  final String? authorId;
+  final String? authorName;
+
+  /// 어느 금고에 넣을지. 보내지 않으면 서버가 사용자의 금고가 하나일 때만
+  /// 알아서 정한다.
+  final String? vaultId;
+
+  /// 이 일정을 내가 고치고 지울 수 있는가.
+  bool canManage({required String? myUserId, required bool isOwner}) =>
+      isOwner || (authorId != null && authorId == myUserId);
 
   factory CalendarSchedule.fromJson(Map<String, dynamic> json) =>
       CalendarSchedule(
@@ -515,6 +642,8 @@ class CalendarSchedule {
         memo: json['memo'] as String? ?? '',
         yearly: json['yearly'] as bool? ?? false,
         emoji: json['emoji'] as String? ?? '❤️',
+        authorId: json['authorId'] as String?,
+        authorName: json['authorName'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -526,6 +655,7 @@ class CalendarSchedule {
     'memo': memo,
     'yearly': yearly,
     'emoji': emoji,
+    'vaultId': ?vaultId,
   };
 
   CalendarSchedule copyWith({
@@ -535,6 +665,7 @@ class CalendarSchedule {
     String? memo,
     bool? yearly,
     String? emoji,
+    String? vaultId,
   }) => CalendarSchedule(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -542,10 +673,26 @@ class CalendarSchedule {
     memo: memo ?? this.memo,
     yearly: yearly ?? this.yearly,
     emoji: emoji ?? this.emoji,
+    authorId: authorId,
+    authorName: authorName,
+    vaultId: vaultId ?? this.vaultId,
   );
 }
 
-const calendarScheduleEmojis = ['❤️', '🎂', '🍚', '☎️', '📷', '⭐', '🎁', '🌸'];
+const calendarScheduleEmojis = [
+  '❤️',
+  '🎂',
+  '🍚',
+  '☎️',
+  '📷',
+  '⭐',
+  '🎁',
+  '🌸',
+  '🎉',
+  '✈️',
+  '🏠',
+  '🐾',
+];
 
 class DeviceMember {
   const DeviceMember({

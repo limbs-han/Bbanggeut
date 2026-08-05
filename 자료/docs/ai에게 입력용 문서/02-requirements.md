@@ -109,7 +109,9 @@ MVP 7단계·가족공유 밖이지만 문서·기능 자체는 유지하는 항
 | REQ-F-16 | (운영자) 신규 기기 등록, 자격증명 회전/폐기 | FN-S23 | 확장/운영 프로비저닝 — API-47~49, 내부 관리자 키+loopback(`ProvisioningController`) |
 | REQ-F-17 | 홈 화면 오늘의 통계·최근 하이라이트 | FN-A09, FN-S19 | 확장 — 구현됨: 홈 통계 카드·최근 추억 카드가 home-summary API 사용(API-42, `HomeSummaryService`) |
 | REQ-F-20 | 기념일 등록·수정·반복/알림시간 설정 | FN-A14 | 향후 확장 — 일정 추가·수정·매년 반복은 동작하나 앱 메모리 전용(재실행 시 소실, 서버 미연동), 알림시간 설정 없음 |
-| REQ-F-23 | (OWNER/MEMBER) 제목·메모 수정 | FN-A18, FN-S13 | 확장 — API-29 |
+| REQ-F-23 | (OWNER) 원본 제목 수정 | FN-A18, FN-S13 | 확장 — API-29 |
+| REQ-F-23a | (OWNER/MEMBER) 편집본 제목 수정 | FN-A18 | 확장 — API-29 |
+| REQ-F-23b | (OWNER/MEMBER) 즐겨찾기 토글 | FN-A18 | 확장 — API-29 |
 | REQ-F-24 | (OWNER/MEMBER) 즐겨찾기 토글 | FN-A19, FN-S13 | 확장 — API-29(`isFavorite`) |
 | REQ-F-25 | (OWNER) 영상 삭제(비동기) | FN-A16, FN-S13 | 확장 — API-30, `video_deletion_jobs` 큐 워커 |
 | REQ-F-32 | 알림 수신 여부 설정 변경 | FN-A28 | 확장 — 설정 화면에 기념일·주간 리포트·새로운 추억 3개 로컬 Secure Storage 토글 신설(서버 발송 영향 없음). 푸시 토큰 등록·해제(API-69, 70)는 서버 연동 |
@@ -141,7 +143,7 @@ MVP 7단계 관련 REQ만 간추린 구현 현황이다.
 | REQ-F-37 | 구현됨 | YAMNet 임계값 판정 → presigned 업로드, systemd 상시 구동 |
 | REQ-F-21 | 구현됨 | API-27 커서 페이지네이션 |
 | REQ-F-22 | 구현됨 | API-31, 재생 URL TTL 5분 |
-| REQ-F-27 | 부분 구현 | 앱 자체 편집 화면·MediaStore 갤러리 저장 동작(서버 API 불요). FN-A39 자동 자막과 FN-A40 4컷 만화는 앱만 구현이고 **서버 통로(API-71·72·73) 미구현** — `COMIC_SERVER` 없이는 둘 다 가짜 응답으로 동작(`fakeTranscriber`, `FakeComicGateway`) |
+| REQ-F-27 | 구현됨 | 앱 자체 편집 화면·MediaStore 갤러리 저장 동작(서버 API 불요). FN-A39 자동 자막은 온디바이스 ML Kit으로 완결(서버 없음, API-73 회수). FN-A40 4컷 만화는 API-71·72로 서버까지 구현 — 기본으로 실서버를 부르고, `--dart-define=COMIC_SERVER=false`를 주면 견본(`FakeComicGateway`)으로 동작 |
 | REQ-F-26 | 구현됨 | API-32(다운로드 URL) |
 | REQ-F-19 | 구현됨 | API-27(월 범위 조회) |
 | REQ-F-36 | 구현됨 | API-33. 별도 이벤트 전용 통계 API(API-46)는 구현돼 있으나 클라이언트 미사용 |

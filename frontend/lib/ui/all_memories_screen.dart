@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -13,6 +15,30 @@ import 'widgets.dart';
 enum MemoryCategory { laughter, editing, edited }
 
 enum MemorySort { newest, oldest }
+
+/// 편집 목록 한 줄의 상태 설명.
+///
+/// 완성본은 업로드가 끝나기 전에도 목록에 나온다 — 알림을 껐거나 권한을 주지
+/// 않은 기기에서는 상단 알림이 오지 않으므로, 이 줄이 진행 상황을 아는 유일한
+/// 단서다. 끝내 실패한 것도 조용히 사라지지 않고 여기 남는다.
+String editorEntrySubtitle({
+  required bool isDraft,
+  required bool uploading,
+  required bool failed,
+  required DateTime? savedAt,
+}) {
+  final state = isDraft
+      ? '저장한 초안'
+      : uploading
+      ? '서버에 올리는 중'
+      : failed
+      ? '업로드 실패 — 다시 저장해 주세요'
+      : '편집 완료';
+  if (savedAt == null) {
+    return isDraft ? '이어서 편집할 수 있어요' : state;
+  }
+  return '${DateFormat('M월 d일 HH:mm').format(savedAt)} $state';
+}
 
 class AllMemoriesScreen extends StatefulWidget {
   const AllMemoriesScreen({super.key, required this.controller});
@@ -35,6 +61,11 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
   List<Map<String, dynamic>> _drafts = const [];
   List<Map<String, dynamic>> _edited = const [];
 
+  /// 올라가는 중인 편집본을 뒤따라가는 재조회. 5초 간격으로 최대 5분.
+  Timer? _uploadFollowUp;
+  int _uploadFollowUpCount = 0;
+  static const _maxUploadFollowUps = 60;
+
   @override
   void initState() {
     super.initState();
@@ -53,13 +84,43 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             if (mounted) setState(() => _drafts = drafts);
           })
           .catchError((Object _) {}),
-      _editClient
-          .listEditedVideos()
-          .then((edited) {
-            if (mounted) setState(() => _edited = edited);
-          })
-          .catchError((Object _) {}),
+      // 편집본은 금고 단위로 백엔드에서 받는다(API-82).
+      if (widget.controller.selectedVault != null)
+        widget.controller.api
+            .listVaultEdits(widget.controller.selectedVault!.id)
+            .then((edited) {
+              if (mounted) setState(() => _edited = edited);
+            })
+            .catchError((Object _) {}),
     ]);
+    _scheduleUploadFollowUp();
+  }
+
+  /// 올라가는 중인 편집본이 있으면 잠시 뒤 목록을 스스로 다시 받아온다.
+  ///
+  /// 업로드는 앱 밖(WorkManager)에서 끝나고 서버가 도착을 훑어 승격하므로,
+  /// 앱에는 "끝났다"고 알려 줄 통로가 없다. 그래서 목록을 한 번 받은 뒤로는
+  /// 진행 표시가 영원히 돌았다 — 사용자가 당겨서 새로 고쳐야 완료로 바뀌었다.
+  ///
+  /// 무한히 물어보지는 않는다. 업로드가 끝내 실패하면 서버가 30분 뒤 FAILED로
+  /// 내리는데 그때까지 5초마다 두드릴 이유가 없다. 한도를 넘기면 멈추고,
+  /// 그 뒤에는 당겨서 새로 고치는 쪽에 맡긴다.
+  void _scheduleUploadFollowUp() {
+    _uploadFollowUp?.cancel();
+    _uploadFollowUp = null;
+    final uploading = _edited.any((entry) => entry['status'] == 'UPLOADING');
+    if (!uploading || !mounted) {
+      _uploadFollowUpCount = 0;
+      return;
+    }
+    if (_uploadFollowUpCount >= _maxUploadFollowUps) return;
+    _uploadFollowUpCount++;
+    _uploadFollowUp = Timer(
+      const Duration(seconds: 5),
+      () {
+        if (mounted) _loadEditorLists();
+      },
+    );
   }
 
   VideoMemory? _videoById(String id) {
@@ -95,11 +156,14 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => EditedVideoScreen(
+          api: widget.controller.api,
           videoId: videoId,
           title: (meta['title'] as String?)?.isNotEmpty == true
               ? meta['title'] as String
               : original?.title ?? '편집한 영상',
           savedAt: DateTime.tryParse(meta['savedAt'] as String? ?? ''),
+          myUserId: widget.controller.user?.id,
+          isOwner: widget.controller.isOwner,
         ),
       ),
     );
@@ -107,6 +171,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
 
   @override
   void dispose() {
+    _uploadFollowUp?.cancel();
     widget.controller.removeListener(_refresh);
     _searchController.dispose();
     super.dispose();
@@ -144,16 +209,20 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     final result = widget.controller.videos.where((video) {
       final matchesCategory = switch (category) {
         MemoryCategory.laughter => video.hasEventType('LAUGHTER'),
-        // 편집 중은 editor-api 초안 목록으로 따로 그린다. 편집 완료는
-        // 백엔드 EDIT 영상 + editor-api 완성본 목록을 함께 보여 준다.
+        // 편집 중(초안)은 editor-api 목록으로 따로 그린다 — 초안 레시피는
+        // 아직 그쪽에 있다(ADR-001의 남은 부채). 편집 완료본은 백엔드가
+        // 관리하므로 EDIT_OUTPUT 영상 행으로 판정한다.
         MemoryCategory.editing => false,
         MemoryCategory.edited =>
           video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
       };
+      // 화면에 보이는 제목으로도 찾을 수 있어야 한다. 기기 기본 제목은 날짜·
+      // 시각·종류를 담은 제목으로 바꿔 그리므로, 저장된 제목만 보면 사용자가
+      // 읽은 글자로 검색해도 걸리지 않는다.
       final matchesKeyword =
           keyword.isEmpty ||
           video.title.toLowerCase().contains(keyword) ||
-          (video.description?.toLowerCase().contains(keyword) ?? false);
+          videoDisplayTitle(video).toLowerCase().contains(keyword);
       final startedAt = video.capturedStartAt ?? video.createdAt;
       final matchesDate =
           dateRange == null ||
@@ -204,16 +273,33 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               : (entry['title'] as String?)?.isNotEmpty == true
               ? entry['title'] as String
               : original?.title ?? videoId;
+          // 완성본은 업로드가 끝나기 전에도 목록에 나온다. 상태를 모르는
+          // 응답(구버전 서버)은 예전처럼 완료로 본다.
+          final status = isDraft
+              ? 'READY'
+              : (entry['status'] as String? ?? 'READY');
+          final uploading = status == 'UPLOADING';
+          final failed = status == 'FAILED';
+          final playable = !isDraft && !uploading && !failed;
           return Card(
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: AppColors.sage.withValues(alpha: 0.3),
-                child: Icon(
-                  isDraft
-                      ? Icons.edit_note_rounded
-                      : Icons.play_arrow_rounded,
-                  color: AppColors.sageDark,
-                ),
+                backgroundColor: failed
+                    ? AppColors.danger.withValues(alpha: 0.15)
+                    : AppColors.sage.withValues(alpha: 0.3),
+                child: uploading
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        isDraft
+                            ? Icons.edit_note_rounded
+                            : failed
+                            ? Icons.error_outline_rounded
+                            : Icons.play_arrow_rounded,
+                        color: failed ? AppColors.danger : AppColors.sageDark,
+                      ),
               ),
               title: Text(
                 title,
@@ -222,20 +308,40 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               subtitle: Text(
-                savedAt == null
-                    ? (isDraft ? '이어서 편집할 수 있어요' : '편집 완료')
-                    : '${DateFormat('M월 d일 HH:mm').format(savedAt)} '
-                          '${isDraft ? "저장한 초안" : "편집 완료"}',
-                style: const TextStyle(fontSize: 12),
+                editorEntrySubtitle(
+                  isDraft: isDraft,
+                  uploading: uploading,
+                  failed: failed,
+                  savedAt: savedAt,
+                ),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: failed ? AppColors.danger : null,
+                ),
               ),
-              trailing: Icon(
-                isDraft
-                    ? Icons.chevron_right_rounded
-                    : Icons.mode_comment_outlined,
-                color: AppColors.muted,
-              ),
-              onTap: () =>
-                  isDraft ? _openDraft(entry) : _openEdited(entry),
+              trailing: uploading || failed
+                  ? null
+                  : Icon(
+                      isDraft
+                          ? Icons.chevron_right_rounded
+                          : Icons.mode_comment_outlined,
+                      color: AppColors.muted,
+                    ),
+              onTap: () {
+                if (isDraft) {
+                  _openDraft(entry);
+                } else if (playable) {
+                  _openEdited(entry);
+                } else if (uploading) {
+                  showAppSnack(context, '아직 올라가는 중이에요. 끝나면 바로 볼 수 있어요.');
+                } else {
+                  showAppSnack(
+                    context,
+                    '업로드가 끝나지 못했어요. 편집기에서 다시 저장해 주세요.',
+                    error: true,
+                  );
+                }
+              },
             ),
           );
         },
@@ -275,7 +381,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                         autofocus: true,
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
-                          hintText: '영상 제목과 메모 검색',
+                          hintText: '영상 제목 검색',
                           prefixIcon: const Icon(Icons.search_rounded),
                           suffixIcon: IconButton(
                             tooltip: '검색어 초기화',

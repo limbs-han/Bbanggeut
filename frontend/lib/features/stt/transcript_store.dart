@@ -111,6 +111,40 @@ class TranscriptStore {
     return job;
   }
 
+  /// 캐시를 버리고 **처음부터 다시** 전사한다.
+  ///
+  /// [ensure]로는 다시 돌릴 수 없다 — 돌던 작업이 남아 있으면 그것을 그대로
+  /// 돌려주고, 없어도 [_run]이 파일 캐시를 먼저 읽어 옛 결과가 나온다. 둘 다
+  /// 캐시가 제 일을 한 것이지만, 사용자가 "다시 만들기"를 고른 순간에는
+  /// 정확히 그 두 가지가 새로 만들기를 막는다.
+  ///
+  /// 새 [ValueNotifier]를 돌려주므로 **부르는 쪽은 듣던 것을 갈아 끼워야
+  /// 한다** ([CaptionController.restart] 참조).
+  ValueListenable<TranscriptJobState> restart(
+    String videoId,
+    String videoPath,
+  ) {
+    _jobs.remove(videoId);
+    final job = ValueNotifier<TranscriptJobState>(const TranscriptRunning());
+    _jobs[videoId] = job;
+    // 파일 캐시를 지우는 것까지가 한 묶음이다. 지우기가 실패해도 전사는
+    // 이어 가되, `_run`이 옛 파일을 읽지 않도록 지운 뒤에 시작한다.
+    pending = clear(videoId).then((_) => _run(videoId, videoPath, job));
+    return job;
+  }
+
+  /// 캐시된 자막을 버린다. [read]·[write]와 같은 층이라, 저장 방식을 바꾼
+  /// 테스트 대역은 이것도 함께 갈아 끼워야 한다.
+  Future<void> clear(String videoId) async {
+    try {
+      final file = await _file(videoId);
+      if (file.existsSync()) await file.delete();
+    } catch (error) {
+      // 못 지워도 전사는 돈다. 새 결과가 같은 파일을 덮어쓴다.
+      debugPrint('[stt] 자막 캐시를 지우지 못했습니다($videoId): $error');
+    }
+  }
+
   Future<void> _run(
     String videoId,
     String videoPath,

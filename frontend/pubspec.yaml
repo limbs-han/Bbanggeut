@@ -74,6 +74,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/calendar_emojis/
     # 웃음 뽑기 효과음. 저작권이 불분명한 외부 음원을 쓰지 않고
     # tool/generate_laugh_draw_sfx.dart로 직접 합성해 구운 파일이다.
     - assets/audio/

@@ -359,7 +359,11 @@ paths:
       tags: [Schedules]
       operationId: listSchedules
       summary: 캘린더 일정 목록
-      description: 로그인 사용자의 일정(기념일)을 날짜 오름차순으로 반환한다.
+      description: |
+        일정은 금고 구성원이 함께 본다. 사용자가 활성 구성원인 모든 금고의
+        일정을 날짜 오름차순으로 반환한다.
+
+        금고가 없던 시절에 적은 일정(`vaultId` 없음)은 적은 사람에게만 보인다.
       responses:
         '200':
           description: 일정 목록
@@ -375,7 +379,12 @@ paths:
       tags: [Schedules]
       operationId: createSchedule
       summary: 캘린더 일정 등록
-      description: 사용자당 최대 200개까지 등록할 수 있다.
+      description: |
+        금고 구성원 누구나 등록한다. 금고당 최대 200개다.
+
+        `vaultId`를 보내면 그 금고의 활성 구성원인지 확인한다. 생략하면 사용자가
+        속한 금고가 하나일 때만 그것으로 정하고, 여러 곳에 속해 있으면 422로
+        되묻는다. 금고가 하나도 없으면 예전처럼 개인 일정이 된다.
       requestBody:
         required: true
         content:
@@ -393,6 +402,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -401,6 +412,7 @@ paths:
       tags: [Schedules]
       operationId: updateSchedule
       summary: 캘린더 일정 수정
+      description: 일정을 적은 사람 또는 금고 OWNER만 수정한다.
       parameters:
         - in: path
           name: scheduleId
@@ -425,12 +437,15 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
     delete:
       tags: [Schedules]
       operationId: deleteSchedule
       summary: 캘린더 일정 삭제
+      description: 일정을 적은 사람 또는 금고 OWNER만 삭제한다.
       parameters:
         - in: path
           name: scheduleId
@@ -1240,8 +1255,16 @@ paths:
     patch:
       tags: [Videos]
       operationId: updateVideo
-      summary: 영상 제목·설명·즐겨찾기 수정
-      description: 해당 기기의 활성 OWNER 또는 MEMBER만 수행할 수 있다.
+      summary: 영상 제목·즐겨찾기 수정
+      description: |
+        필드마다 권한이 다르다.
+
+        - 제목: 기기가 담아 온 원본은 OWNER만 바꾼다(가족 공동의 기록이다).
+          `sourceType=EDIT_OUTPUT`인 편집본은 OWNER와 MEMBER가 바꾼다.
+        - 즐겨찾기: OWNER와 MEMBER 모두 토글한다.
+
+        메모(`description`)는 2026-08-05에 제거했다. DB 칼럼은 무중단 배포 규칙상
+        다음 릴리스에서 지운다.
       requestBody:
         required: true
         content:
@@ -1267,7 +1290,12 @@ paths:
       tags: [Videos]
       operationId: deleteVideo
       summary: 영상 삭제 요청
-      description: 기본 정책에서는 해당 기기의 활성 OWNER만 수행한다.
+      description: |
+        기기가 담아 온 원본은 OWNER만 지운다 — 지우면 가족 모두가 그 기록을 잃는다.
+
+        `sourceType=EDIT_OUTPUT`인 편집본은 만든 사람 또는 OWNER가 지운다.
+        구성원이 만든 편집본을 스스로 치울 수 있어야 하고, 남의 편집본은
+        건드리지 못한다.
       responses:
         '202':
           description: 비동기 삭제 요청 수락
@@ -1855,6 +1883,317 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/videos/{videoId}/edits:
+    post:
+      tags: [Videos]
+      operationId: createEditUpload
+      summary: 편집 완성본 업로드 예약
+      description: |
+        원본 영상에 접근할 수 있는 구성원이 편집 완성본 자리를 만들고 서명된
+        업로드 URL을 받는다. 완성본은 원본과 같은 `videos` 테이블의
+        `EDIT_OUTPUT` 행이므로 금고·기기·보관 기준을 원본에서 물려받는다.
+
+        업로드는 앱이 아니라 OS 백그라운드 작업이 수행한다 — 세션이 없어
+        헤더를 붙일 수 없으므로 서명에는 `Content-Type`만 들어간다. 완료
+        통보(API-26 같은 /complete)가 없고, 서버가 객체 도착을 훑어 READY로
+        승격한다.
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEditUploadRequest'
+      responses:
+        '201':
+          description: 업로드 예약
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditUpload'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/vaults/{vaultId}/edits:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: listVaultEdits
+      summary: 금고의 편집 완성본 목록
+      description: >-
+        편집본을 최신순 최대 100건. 업로드가 끝난 READY뿐 아니라 올라가는 중인
+        UPLOADING과 끝내 실패한 FAILED도 포함하며, 앱이 `status`로 구분해
+        진행 상황을 보여 준다. 스키마는 영상 목록 항목과 같다.
+      responses:
+        '200':
+          description: 편집 완성본 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}/comments:
+    parameters:
+      - in: path
+        name: videoId
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Videos]
+      operationId: listVideoComments
+      summary: 영상 댓글 목록
+      description: 금고 구성원만 조회한다. 작성자 표시 이름은 서버가 `users`에서 조인해 준다.
+      responses:
+        '200':
+          description: 댓글 목록(오래된 순)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VideoComment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    post:
+      tags: [Videos]
+      operationId: addVideoComment
+      summary: 영상 댓글 작성
+      description: |
+        작성자는 토큰의 사용자 UUID로 기록한다 — 앱이 보낸 표시 이름을 믿지
+        않는다. 작성자를 뺀 금고 구성원에게 알림과 FCM이 나간다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '201':
+          description: 작성된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/videos/{videoId}/comments/{commentId}:
+    parameters:
+      - in: path
+        name: videoId
+        required: true
+        schema: {type: string, format: uuid}
+      - in: path
+        name: commentId
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Videos]
+      operationId: updateVideoComment
+      summary: 영상 댓글 수정
+      description: |
+        쓴 사람만 고칠 수 있다. OWNER에게도 열지 않는다 — 남의 말을 고쳐 쓰는
+        것과 지우는 것은 다른 일이다. 부적절한 댓글은 삭제로 처리한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: 수정된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteVideoComment
+      summary: 영상 댓글 삭제
+      description: 쓴 사람 또는 금고 OWNER가 삭제한다.
+      responses:
+        '204':
+          description: 삭제됨
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/vaults/{vaultId}/places:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultPlaceLayout
+      summary: 금고 장소 배치와 내 기기 순서
+      description: |
+        `places`와 `devicePlaces`는 금고 공통이다 — 장소 이름과 기기가 어느 장소에
+        있는지는 집의 사실이라 가족이 함께 본다.
+
+        `deviceOrder`는 부른 사람의 것이다 — 기기를 어떤 순서로 볼지는 보기
+        취향이라 사람마다 둔다.
+
+        지금 어느 장소를 보고 있는지는 화면 상태라 서버에 두지 않는다.
+      responses:
+        '200':
+          description: 배치와 순서
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    put:
+      tags: [Vaults]
+      operationId: replaceVaultPlaceLayout
+      summary: 금고 장소 배치 저장
+      description: |
+        장소 이름과 기기 배정을 통째로 갈아 끼운다. 금고 구성원 누구나 할 수 있다 —
+        홈캠을 안방으로 옮긴 사람이 그 사실을 적을 수 있어야 하고, 잘못 적어도
+        되돌리기 쉬운 데이터다.
+
+        앱이 한 화면에서 장소 추가와 기기 이동을 함께 하므로 항목별로 나누지 않는다.
+        목록에 없는 장소로 보낸 배정과 금고에 없는 기기는 조용히 버린다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlaceLayoutRequest'
+      responses:
+        '200':
+          description: 저장된 배치
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/vaults/{vaultId}/device-order:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    put:
+      tags: [Vaults]
+      operationId: replaceDeviceOrder
+      summary: 내 기기 순서 저장
+      description: 부른 사람에게만 적용된다. 다른 구성원 화면의 순서는 그대로다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceIds]
+              properties:
+                deviceIds:
+                  type: array
+                  items: {type: string, format: uuid}
+      responses:
+        '200':
+          description: 저장된 배치와 순서
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/vaults/{vaultId}/event-stats:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultEventStats
+      summary: 금고(가족) 단위 이벤트 통계
+      description: |
+        금고의 활성 구성원이 조회한다. 기기 단위 통계(API-46)와 같은 계약에
+        기기별 분해(byDevice)를 더했다. 이벤트는 기기가 이 금고에 Binding돼
+        있던 기간(occurred_at이 bound_at~ended_at 사이)만 집계해, 기기가 다른
+        금고로 양도돼도 과거 금고의 통계가 오염되지 않는다. 기본 기간은 최근
+        30일, 최대 366일이다.
+      parameters:
+        - name: from
+          in: query
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          schema: {type: string, format: date}
+        - name: timeZone
+          in: query
+          schema: {type: string, default: Asia/Seoul}
+        - name: type
+          in: query
+          description: 이벤트 타입 필터(예 LAUGHTER). detectedCount·byDevice·dailyCounts를 거르고 byType은 전체 분포를 유지한다.
+          schema: {type: string, pattern: '^[A-Za-z_]{1,32}$'}
+      responses:
+        '200':
+          description: 금고 단위 집계
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultEventStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
 components:
   securitySchemes:
     UserBearerAuth:
@@ -2283,7 +2622,7 @@ components:
 
     HomeSummary:
       type: object
-      required: [deviceId, date, timeZone, captureCount, savedCount, memoCount]
+      required: [deviceId, date, timeZone, captureCount, savedCount]
       description: 홈 대시보드용 오늘 요약 집계. 현재 데이터 모델에서는 captureCount와 savedCount가 같은 값이며, edge가 원시 이벤트 수를 별도로 보고하면 분리된다.
       properties:
         deviceId:
@@ -2304,10 +2643,6 @@ components:
           type: integer
           minimum: 0
           description: 오늘 저장된 영상 수
-        memoCount:
-          type: integer
-          minimum: 0
-          description: 오늘 저장된 영상 중 메모(설명)가 작성된 수
         latestHighlight:
           type: object
           allOf:
@@ -2660,10 +2995,6 @@ components:
         title:
           type: string
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         contentType:
           type: string
           example: video/mp4
@@ -2819,10 +3150,6 @@ components:
           type: string
           minLength: 1
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         isFavorite:
           type: boolean
 
@@ -3081,7 +3408,14 @@ components:
           format: uuid
         type:
           type: string
-          enum: [INVITATION_RECEIVED, INVITATION_ACCEPTED, LAUGHTER_VIDEO_READY]
+          enum:
+            - INVITATION_RECEIVED
+            - INVITATION_ACCEPTED
+            - LAUGHTER_VIDEO_READY
+            - EDIT_ANALYSIS_READY
+            - EDIT_COMMENT_ADDED
+            - ANNIVERSARY
+            - WEEKLY_REPORT
         title:
           type: string
         body:
@@ -3110,6 +3444,87 @@ components:
           type: integer
           format: int64
           minimum: 0
+
+    CreateEditUploadRequest:
+      type: object
+      properties:
+        title: {type: string, maxLength: 120, description: 비우면 원본 제목을 쓴다}
+        durationMs: {type: integer, format: int64, minimum: 1}
+        capturedStartAt: {type: string, format: date-time, description: 비우면 원본 값을 물려받는다}
+        capturedEndAt: {type: string, format: date-time}
+
+    EditUpload:
+      type: object
+      required: [editVideoId, uploadUrl, uploadMethod, requiredHeaders, expiresAt]
+      properties:
+        editVideoId: {type: string, format: uuid}
+        uploadUrl: {type: string}
+        uploadMethod: {type: string, enum: [PUT]}
+        requiredHeaders:
+          type: object
+          additionalProperties: {type: string}
+          description: 서명에 포함된 헤더. 그대로 보내야 서명이 맞는다(Content-Type만).
+        expiresAt: {type: string, format: date-time}
+
+    VideoComment:
+      type: object
+      required: [id, authorId, body, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        authorId: {type: string, format: uuid}
+        authorName:
+          type: string
+          nullable: true
+          description: 작성 직후 응답에서는 null이고, 목록 조회에서는 서버가 채운다.
+        body: {type: string}
+        createdAt: {type: string, format: date-time}
+
+    VaultEventStats:
+      type: object
+      required: [vaultId, from, to, timeZone, detectedCount, uploadedVideoCount, byType, byDevice, dailyCounts]
+      properties:
+        vaultId:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timeZone:
+          type: string
+        detectedCount:
+          type: integer
+          format: int64
+        uploadedVideoCount:
+          type: integer
+          format: int64
+        byType:
+          type: array
+          items:
+            type: object
+            required: [name, count]
+            properties:
+              name: {type: string}
+              count: {type: integer, format: int64}
+        byDevice:
+          type: array
+          items:
+            type: object
+            required: [deviceId, name, count]
+            properties:
+              deviceId: {type: string, format: uuid}
+              name: {type: string}
+              count: {type: integer, format: int64}
+        dailyCounts:
+          type: array
+          items:
+            type: object
+            required: [date, count]
+            properties:
+              date: {type: string, format: date}
+              count: {type: integer, format: int64}
 
     NotificationPreferences:
       type: object
@@ -3148,14 +3563,60 @@ components:
           type: string
           maxLength: 16
           default: '❤️'
+        vaultId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            일정을 넣을 금고. 생략하면 사용자가 속한 금고가 하나일 때만 그것으로
+            정하고, 여러 곳에 속해 있으면 422로 되묻는다.
+
+    PlaceLayout:
+      type: object
+      required: [places, devicePlaces, deviceOrder]
+      properties:
+        places:
+          type: array
+          description: 금고 공통 장소 이름(정렬 순서 그대로)
+          items: {type: string, maxLength: 15}
+        devicePlaces:
+          type: object
+          description: 금고 공통 — 기기 id를 장소 이름에 매핑
+          additionalProperties: {type: string, maxLength: 15}
+        deviceOrder:
+          type: array
+          description: 부른 사람만의 기기 순서. 비어 있으면 서버 기본 순서를 쓴다
+          items: {type: string, format: uuid}
+
+    UpdatePlaceLayoutRequest:
+      type: object
+      required: [places, devicePlaces]
+      properties:
+        places:
+          type: array
+          maxItems: 20
+          items: {type: string, minLength: 1, maxLength: 15}
+        devicePlaces:
+          type: object
+          additionalProperties: {type: string, maxLength: 15}
 
     Schedule:
       type: object
-      required: [id, title, date, memo, yearly, emoji]
+      required: [id, authorId, title, date, memo, yearly, emoji]
       properties:
         id:
           type: string
           format: uuid
+        authorId:
+          type: string
+          format: uuid
+          description: |
+            이 일정을 적은 사람. 앱이 "내가 적은 일정인가"를 보고 수정·삭제
+            버튼을 가리는 데 쓴다. 서버도 같은 규칙으로 거른다.
+        authorName:
+          type: string
+          nullable: true
+          description: 적은 사람의 표시 이름. 서버가 `users`에서 조인해 준다.
         title:
           type: string
         date:

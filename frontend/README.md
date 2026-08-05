@@ -16,11 +16,13 @@ flutter run --dart-define=API_BASE_URL=https://i15e201.p.ssafy.io
 | 이름 | 형태 | 생략하면 |
 |---|---|---|
 | `API_BASE_URL` | `--dart-define=API_BASE_URL=https://i15e201.p.ssafy.io` | 위 운영 HTTPS 주소 |
-| `COMIC_SERVER` | `--dart-define=COMIC_SERVER=true` | 4컷 만화가 **가짜 응답**으로 동작 |
+| `COMIC_SERVER` | `--dart-define=COMIC_SERVER=false` | 4컷 만화가 **실서버**를 호출(기본값) |
 
-`COMIC_SERVER=true`를 주면 4컷 만화(FN-A40)가 우리 서버의 `POST /api/videos/{videoId}/comic/script`·`/comic/image`를 호출합니다. 생략하면 `FakeComicGateway`가 붙어 고정된 견본 대사와 색 블록 그림을 돌려주고, 만화 화면 위쪽에 견본이라는 알림이 뜹니다. 서버 통로가 아직 없는 동안 기기에서 흐름 전체를 걸어 보기 위한 기본값입니다.
+4컷 만화(FN-A40)는 기본으로 우리 서버의 `POST /api/videos/{videoId}/comic/script`·`/comic/image`를 호출합니다. `COMIC_SERVER=false`를 주면 `FakeComicGateway`가 붙어 고정된 견본 대사와 색 블록 그림을 돌려주고, 만화 화면 위쪽에 견본이라는 알림이 뜹니다 — 서버 없이 기기에서 흐름만 걸어 볼 때 씁니다.
 
-**`bool.fromEnvironment`는 문자열 `true`와 `false`만 알아봅니다.** `1`, `yes`, `TRUE`는 오류 없이 조용히 false가 됩니다 — 켠 줄 알고 가짜 응답을 그대로 출고하게 되므로 값을 정확히 `true`로 적으세요.
+**기본을 실서버로 둔 이유**: 인자를 붙이는 걸 잊으면 오류가 아니라 **가짜 만화가 그대로 출고됩니다.** 잊었을 때 실패하는 쪽이 조용히 가짜를 내보내는 쪽보다 낫습니다.
+
+**`bool.fromEnvironment`는 문자열 `true`와 `false`만 알아봅니다.** `1`, `no`, `FALSE`는 오류 없이 조용히 무시되어 기본값(실서버)이 됩니다 — 견본을 켤 때 값을 정확히 `false`로 적으세요.
 
 ## 구현된 연동
 

@@ -165,7 +165,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('- 대사0'), findsOneWidget);
+    // 저장은 갤러리 직행, 공유는 별도 버튼이다 — "저장하기"를 눌렀는데
+    // 공유 시트가 열리던 혼란을 두 버튼으로 갈랐다.
     expect(find.byKey(const ValueKey('comic-save')), findsOneWidget);
+    expect(find.byKey(const ValueKey('comic-share')), findsOneWidget);
   });
 
   testWidgets('그림이 실패해도 고친 대사가 남고 다시 만들 수 있다', (tester) async {

@@ -147,7 +147,7 @@ class HomeScreen extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      latest.title,
+                                      videoDisplayTitle(latest),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: Theme.of(
@@ -156,10 +156,10 @@ class HomeScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 5),
                                     Text(
-                                      memoryDate(
-                                        latest.capturedStartAt ??
-                                            latest.createdAt,
-                                      ),
+                                      // 제목이 날짜·시각·종류를 이미 담으므로
+                                      // 여기서는 길이를 적는다. 같은 시각을 두
+                                      // 형식으로 두 번 쓰던 자리다.
+                                      '길이 ${durationLabel(latest.durationMs)}',
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodyMedium,
@@ -205,58 +205,173 @@ class HomeScreen extends StatelessWidget {
       context: context,
       showDragHandle: true,
       backgroundColor: AppColors.surface,
-      builder: (sheetContext) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-          children: [
-            Text('장소와 기기 선택', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            const Text('장소', style: TextStyle(fontWeight: FontWeight.w900)),
-            ...controller.placeNames.map(
-              (place) => ListTile(
-                leading: Icon(
-                  place == controller.selectedPlaceName
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_off_rounded,
-                  color: place == controller.selectedPlaceName
-                      ? AppColors.coral
-                      : AppColors.muted,
-                ),
-                title: Text(place),
-                onTap: () {
-                  controller.selectPlace(place);
-                  Navigator.pop(sheetContext);
-                },
-              ),
-            ),
-            if (controller.devicesForSelectedPlace.isNotEmpty) ...[
-              const Divider(height: 24),
-              const Text('기기', style: TextStyle(fontWeight: FontWeight.w900)),
-              ...controller.devicesForSelectedPlace.map(
-                (device) => ListTile(
-                  leading: Icon(
-                    device.id == controller.selectedDevice?.id
-                        ? Icons.radio_button_checked_rounded
-                        : Icons.radio_button_off_rounded,
-                    color: device.id == controller.selectedDevice?.id
-                        ? AppColors.coral
-                        : AppColors.muted,
-                  ),
-                  title: Text(device.name),
-                  subtitle: Text(device.isOnline ? '온라인' : '오프라인'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    controller.selectDevice(device);
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
+      builder: (sheetContext) => _HomeSelectorSheet(
+        controller: controller,
+        sheetContext: sheetContext,
       ),
     );
   }
+}
+
+class _HomeSelectorSheet extends StatelessWidget {
+  const _HomeSelectorSheet({
+    required this.controller,
+    required this.sheetContext,
+  });
+
+  final AppController controller;
+  final BuildContext sheetContext;
+
+  void _reorder(List<DeviceSummary> devices, int oldIndex, int newIndex) {
+    final remaining = List<DeviceSummary>.of(devices)..removeAt(oldIndex);
+    final movedDeviceId = devices[oldIndex].id;
+    final beforeDeviceId = newIndex < remaining.length
+        ? remaining[newIndex].id
+        : null;
+    controller.reorderDeviceForSelectedPlace(
+      deviceId: movedDeviceId,
+      beforeDeviceId: beforeDeviceId,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final devices = controller.devicesForSelectedPlace;
+        return ReorderableListView.builder(
+          key: const Key('home-device-reorder-list'),
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          buildDefaultDragHandles: false,
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('장소와 기기 선택', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              const Text('장소', style: TextStyle(fontWeight: FontWeight.w900)),
+              ...controller.placeNames.map(
+                (place) => ListTile(
+                  leading: Icon(
+                    place == controller.selectedPlaceName
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_off_rounded,
+                    color: place == controller.selectedPlaceName
+                        ? AppColors.coral
+                        : AppColors.muted,
+                  ),
+                  title: Text(place),
+                  onTap: () {
+                    controller.selectPlace(place);
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+              ),
+              if (devices.isNotEmpty) ...[
+                const Divider(height: 24),
+                const Text('기기', style: TextStyle(fontWeight: FontWeight.w900)),
+              ],
+            ],
+          ),
+          itemCount: devices.length,
+          onReorderItem: (oldIndex, newIndex) =>
+              _reorder(devices, oldIndex, newIndex),
+          proxyDecorator: (child, _, animation) => AnimatedBuilder(
+            animation: animation,
+            child: child,
+            builder: (_, child) => Material(
+              color: AppColors.surfaceWarm,
+              elevation: 4 * animation.value,
+              shadowColor: const Color(0x335A4635),
+              borderRadius: BorderRadius.circular(18),
+              child: child,
+            ),
+          ),
+          itemBuilder: (context, index) {
+            final device = devices[index];
+            final selected = device.id == controller.selectedDevice?.id;
+            return Material(
+              key: ValueKey('home-device-order-${device.id}'),
+              color: Colors.transparent,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      key: Key('home-device-select-${device.id}'),
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        controller.selectDevice(device);
+                      },
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 68),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              Icon(
+                                selected
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_off_rounded,
+                                color: selected
+                                    ? AppColors.coral
+                                    : AppColors.muted,
+                              ),
+                              const SizedBox(width: 28),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      device.name,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                    Text(
+                                      device.isOnline ? '온라인' : '오프라인',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Semantics(
+                    button: true,
+                    label: '${device.name} 순서 변경',
+                    child: ReorderableDragStartListener(
+                      key: Key('home-device-drag-${device.id}'),
+                      index: index,
+                      child: const Tooltip(
+                        message: '순서 변경',
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Icon(
+                            Icons.drag_handle_rounded,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ),
+  );
 }
 
 String placeHomeQuestion(String placeName) {
@@ -491,6 +606,7 @@ class _LiveDevicePager extends StatefulWidget {
 
 class _LiveDevicePagerState extends State<_LiveDevicePager> {
   late final PageController _pageController;
+  bool _pageSyncScheduled = false;
 
   AppController get controller => widget.controller;
 
@@ -510,6 +626,27 @@ class _LiveDevicePagerState extends State<_LiveDevicePager> {
     super.dispose();
   }
 
+  void _syncPageToSelectedDevice(int selectedIndex) {
+    if (selectedIndex < 0 || _pageSyncScheduled) return;
+    final currentPage = _pageController.hasClients
+        ? _pageController.page?.round()
+        : null;
+    if (currentPage == selectedIndex) return;
+    _pageSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageSyncScheduled = false;
+      if (!mounted || !_pageController.hasClients) return;
+      final latestDevices = controller.devicesForSelectedPlace;
+      final selectedId = controller.selectedDevice?.id;
+      final latestIndex = latestDevices.indexWhere(
+        (device) => device.id == selectedId,
+      );
+      if (latestIndex >= 0 && _pageController.page?.round() != latestIndex) {
+        _pageController.jumpToPage(latestIndex);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final devices = controller.devicesForSelectedPlace;
@@ -517,6 +654,7 @@ class _LiveDevicePagerState extends State<_LiveDevicePager> {
     final selectedIndex = devices.indexWhere(
       (device) => device.id == controller.selectedDevice?.id,
     );
+    _syncPageToSelectedDevice(selectedIndex);
     return LayoutBuilder(
       builder: (context, _) {
         return Column(
@@ -525,6 +663,7 @@ class _LiveDevicePagerState extends State<_LiveDevicePager> {
             AspectRatio(
               aspectRatio: 4 / 3,
               child: PageView.builder(
+                key: const Key('home-live-device-pager'),
                 controller: _pageController,
                 physics: devices.length > 1
                     ? const PageScrollPhysics()

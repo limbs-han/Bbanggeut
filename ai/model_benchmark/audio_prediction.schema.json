@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://william-james.local/schemas/audio-benchmark-prediction-0.1.json",
+  "title": "Audio benchmark inference window",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sampleId",
+    "score",
+    "scores",
+    "offsetSeconds",
+    "latencyMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "0.1"
+    },
+    "sampleId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "windowIndex": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["laughter", "clap"],
+      "properties": {
+        "laughter": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "clap": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "latencyMs": {
+      "type": "number",
+      "minimum": 0
+    },
+    "durationSeconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "offsetSeconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "topClass": {
+      "type": "string"
+    }
+  }
+}

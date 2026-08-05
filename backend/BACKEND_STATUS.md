@@ -10,10 +10,10 @@
 
 | 구분 | 상태 | 비고 |
 | --- | --- | --- |
-| Spring Boot API | 구현·배포 완료 | loopback 8081, systemd `william-james`. Flyway **V36**까지 |
+| Spring Boot API | 구현·배포 완료 | **무중단 배포 슬롯** — systemd `william-james@8081`/`@8082` 중 하나가 활성(nginx upstream이 지시), loopback 전용. Flyway **V40**까지. 운영 프로파일은 `application-prod.yml`(활성 프로파일 `prod`) — 2026-08-05까지 이름이 `application-demo.yml`이었다. 상세: `deploy/ZERO_DOWNTIME.md` |
 | PostgreSQL 16 | 배포 완료 | Docker, loopback 전용 |
 | Redis 7 | 배포 완료 | 로그인·claim 시도 제한, 기기 presence(90초 TTL) |
-| MinIO | 배포 완료 | 영상 버킷 + 편집 버킷(william-james-edit), loopback 전용 |
+| MinIO | 배포 완료 | 영상 버킷 + 편집 버킷(william-james-edit), loopback 전용. **최소 권한 계정 분리** — 백엔드는 `wj-backend`(영상 버킷만), editor-api는 `wj-editor`(편집 버킷만), root는 관리 전용. 서로의 버킷·admin API는 거부됨(실측 확인) |
 | Mosquitto MQTT | 배포 완료 | **MQTTS 8883 공개**, TLS + Dynamic Security(기기별 계정·ACL, 익명 차단) |
 | MediaMTX | 배포 완료 | **RTSPS 8322 공개**(기기별 계정, publish/read 권한 분리), WHEP 8889 loopback, WebRTC 8189/UDP |
 | editor-api (FastAPI) | 배포 완료 | `/editor` 라우트, JWT 검증·금고 권한·presigned 재생, 분석 모델 4개 탑재 |
@@ -21,7 +21,7 @@
 | FCM 푸시 | **운영 활성** | `secrets/app.env`에 `FCM_ENABLED=true` + 서비스 계정 JSON 배치됨. 배포 스크립트는 이 값을 되돌리지 않는다(없을 때만 기본 false 기입) |
 | 실제 Jetson/Raspberry Pi 연결 | 코드·프로토콜 준비 완료 | MQTTS·RTSPS 기기 계정 존재. 상시 접속 중인 실기기는 없음(행사·시연 시 연결) |
 | 프론트엔드 연동 | 완료 | 인증·기기·영상·라이브(WHEP)·talkback·알림·금고·일정·통계까지 앱이 실제 API 사용 |
-| 백업·모니터링 | 배포 완료 | 일일 백업 + 5분 상태 점검 systemd timer |
+| 백업·모니터링 | 배포 완료 | 일일 백업 + 5분 상태 점검 timer(실패 시 웹훅 알림, `WJ_MONITOR_WEBHOOK_URL`) + **Prometheus/Grafana**(host 네트워크·loopback 전용, `ssh -L 3000:127.0.0.1:3000`으로 조회, 비밀번호는 infra/.env `GRAFANA_ADMIN_PASSWORD`) |
 | CI/CD | 구성 완료 | Jenkins 4스테이지 CI + master CI 성공 시 수동 승인형 production 배포(`wj-deploy-backend`), **editor-api 이미지 빌드·기동 포함** |
 
 ## 2. 코드 구성 (도메인 패키지)
@@ -35,8 +35,8 @@
 | `vault` | Memory Vault(금고) — 기기·영상·구성원·구독의 귀속 단위 (V29~V31) |
 | `invitation` | 이메일 귀속 초대, 받은 초대함, 수락 알림 |
 | `iot` | 기기 credential(BOOTSTRAP→OPERATING), MQTT 수신/명령, `iot.event`의 원시 이벤트·통계(API-46, type 필터) |
-| `video`, `storage` | 업로드 URL·완료 확정·재생/다운로드·삭제 워커·보관 만료, 편집 부산물 청소 |
-| `stream` | 라이브 세션·WHEP 토큰·introspection·talkback(양방향 오디오, V32) |
+| `video`, `storage` | 업로드 URL·완료 확정(크기·sha256·**ETag** 3단 검증)·재생/다운로드·삭제 워커·보관 만료, **편집 완성본(EDIT_OUTPUT 행)과 영상 댓글**(ADR-001로 editor-api에서 이전) |
+| `stream` | 라이브 세션·WHEP 토큰·introspection·talkback(양방향 오디오, V32)·**유령 세션 대사(MediaMTX 관리 API로 RUNNING 스트림의 실제 미디어 흐름 확인, 연속 2회 미확인 시 실패 처리)** |
 | `notification` | 인앱 알림·FCM 푸시(multicast, 무효 토큰 정리)·푸시 토큰·**알림 설정(API-78·79, 새 추억 푸시 게이트)** |
 | `schedule` | **캘린더 일정 CRUD(API-74~77, V36)** |
 | `editor` | editor-api 서비스 토큰 이벤트 수신(`/api/editor/events` — 분석 완료·댓글 알림 승격) |
@@ -62,8 +62,11 @@ V1~V14는 이전 판 문서와 동일(사용자·기기·영상·라이브·구�
 | V34 | 초대 수락 알림 타입 |
 | V35 | 편집 알림(분석 완료·댓글) |
 | V36 | **일정(user_schedules) + 알림 설정(user_notification_preferences)** |
+| V37 | 만화 감사 동작 |
+| V38 | 기념일·주간 리포트 알림 타입 |
+| V39 | **편집 완성본(videos.source_video_id) + 영상 댓글(video_comments)** — ADR-001 |
 
-테스트: `server/src/test/java` 48개+ 클래스. PostgreSQL 통합 테스트는 Docker(Testcontainers) 또는 Jenkins `TEST_POSTGRES_*` 환경에서 실행되고, 없으면 건너뛴다. 최신 스키마 버전은 `FlywayMigrationIntegrationTest`가 고정값으로 검증한다(현재 36).
+테스트: `server/src/test/java` 48개+ 클래스. PostgreSQL 통합 테스트는 Docker(Testcontainers) 또는 Jenkins `TEST_POSTGRES_*` 환경에서 실행되고, 없으면 건너뛴다. 최신 스키마 버전은 `FlywayMigrationIntegrationTest`가 고정값으로 검증한다(현재 39). 무중단 배포는 두 슬롯이 겹치는 동안 구 코드가 새 스키마 위에서 돌므로, 마이그레이션은 항상 backward-compatible이어야 한다(`deploy/ZERO_DOWNTIME.md`).
 
 ## 3. EC2 배포 상태
 
@@ -100,7 +103,8 @@ Spring(8081)·PostgreSQL·Redis·MinIO·MQTT 1883·RTSP 8554·WHEP 8889는 loopb
 3. 승인 시 JAR + `backend-deploy.tar.gz`(compose·mediamtx·mosquitto·nginx 설정 + **editor-api 소스**)를 서버로 보내고 `sudo /usr/local/sbin/wj-deploy-backend`가:
    - editor-api 이미지를 먼저 빌드(실패 시 아무것도 안 바꾸고 중단),
    - 인프라 설정·nginx 교체, 컨테이너 up, editor-api `:previous` 태그 후 교체·헬스체크,
-   - JAR 교체·재시작·헬스체크, 실패 시 전체 롤백(이미지 포함).
+   - **대기 슬롯에 새 JAR 기동 → 헬스 확인 → nginx upstream 전환 → 구 슬롯 정지**(다운타임 0, 실측 94,042요청 무실패),
+   - 실패 시 upstream을 구 슬롯으로 되돌리고 전체 롤백(이미지 포함).
 
 주의: 배포 wrapper 설치본(`/usr/local/sbin/wj-deploy-backend`)이 릴리스 사본과 다르면 배포가 거부된다. wrapper를 고친 릴리스를 처음 배포할 때는 서버에서 `sudo install -o root -g root -m 0755 ci/jenkins/server/deploy/wj-deploy-backend /usr/local/sbin/wj-deploy-backend`로 설치본을 먼저 갱신한다.
 
@@ -117,11 +121,10 @@ sudo ufw status numbered
 
 ## 4. 남은 작업
 
-- **기념일·주간 리포트 푸시 발송기**: 알림 설정(API-78·79)은 저장·게이트까지 구현됐지만, `anniversaryAlerts`(일정 D-day 푸시)와 `weeklyReport`(주간 집계 푸시)를 실제로 보내는 스케줄러는 없다.
 - **실기기 상시 운영**: Jetson/Pi 계정·프로토콜은 준비됐으나 상시 접속 기기가 없다. 연결 시 heartbeat·업로드·라이브 end-to-end 재검증.
 - **UFW 정리**: 미사용 8554/tcp 허용 규칙 제거, 8080(Jenkins) 공개 범위 재검토.
-- **운영 보강**: off-instance 백업 복제, 외부 알림 채널(모니터 실패 시), 중앙 로그, 부하 테스트.
-- **editor-api**: 분석 작업 상태의 프로세스 메모리 의존(재시작 시 진행 중 분석 소실), 작업자 1명 순차 처리, 댓글 표시 이름의 앱 자가 신고(백엔드 프로필 조회 API 필요).
+- **운영 보강**: off-instance 백업 복제, 중앙 로그. (부하 테스트·무중단 배포는 2026-08-04 완료 — `ci/load/README.md`, `deploy/ZERO_DOWNTIME.md`) 모니터 웹훅은 서버에서 `WJ_MONITOR_WEBHOOK_URL`을 유닛 환경에 넣어야 실제 발송된다(채널 URL은 팀 결정 필요).
+- **editor-api**: 분석 작업 상태의 프로세스 메모리 의존(단, 결과는 단계마다 MinIO에 저장되고 상태 조회가 그것으로 `done`을 복원해 자가복구한다), 작업자 1명 순차 처리. 편집 초안 레시피는 아직 editor-api에 남아 있다(ADR-001의 남은 부채).
 - **secret rotation**: JWT·DB·MinIO 키 정기 교체 절차.
 
 ## 5. 절대 저장소에 올리면 안 되는 파일

@@ -5,10 +5,11 @@ import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/api_client.dart';
 import '../core/models.dart';
-import '../editor/edit_recommendation_client.dart';
 import 'content_state.dart';
 import 'edited_video_screen.dart';
+import 'schedule_emoji.dart';
 import 'schedule_editor_screen.dart';
 import 'video_detail_screen.dart';
 import 'widgets.dart';
@@ -34,9 +35,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
   late DateTime _selected;
   List<VideoMemory> _videos = const [];
 
-  /// 편집 완료 영상(editor-api). 편집한 날짜 기준으로 달력에 표시한다.
+  /// 편집 완료 영상(API-82). 원본이 감지된 날짜 기준으로 달력에 표시한다.
   List<Map<String, dynamic>> _edited = const [];
-  final _editClient = EditRecommendationClient();
   bool _loading = false;
   String? _error;
 
@@ -72,14 +72,15 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
       return;
     }
     // 편집 완료 영상은 감지 영상과 별개로 불러온다. 실패해도 달력은 뜬다.
-    if (EditRecommendationClient.networkAllowed) {
+    final vaultId = widget.controller.selectedVault?.id;
+    if (vaultId != null) {
       unawaited(
-        _editClient
-            .listEditedVideos()
+        widget.controller.api
+            .listVaultEdits(vaultId)
             .then((edited) {
               if (mounted) setState(() => _edited = edited);
             })
-            .catchError((_) {}),
+            .catchError((Object _) {}),
       );
     }
     setState(() {
@@ -155,6 +156,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
           initialDate: schedule == null ? _selected : null,
           schedule: schedule,
           state: _state,
+          // 일정은 금고 구성원이 함께 본다 — 지금 보고 있는 가족의 캘린더에 넣는다.
+          vaultId: widget.controller.selectedVault?.id,
         ),
       ),
     );
@@ -206,6 +209,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
                     schedules: selectedSchedules,
                     onAdd: _openEditor,
                     onEdit: (schedule) => _openEditor(schedule: schedule),
+                    myUserId: widget.controller.user?.id,
+                    isOwner: widget.controller.isOwner,
                   ),
                   const SizedBox(height: 10),
                   _SelectedMemoryCard(
@@ -220,6 +225,9 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
                     _SelectedEditedCard(
                       date: _selected,
                       edited: selectedEdited,
+                      api: widget.controller.api,
+                      myUserId: widget.controller.user?.id,
+                      isOwner: widget.controller.isOwner,
                     ),
                   ],
                 ],
@@ -574,9 +582,9 @@ class _CalendarDayCell extends StatelessWidget {
                 else if (schedules.isNotEmpty)
                   Positioned(
                     bottom: 0,
-                    child: Text(
-                      schedules.first.emoji,
-                      style: const TextStyle(fontSize: 13, height: 1),
+                    child: ScheduleEmojiIcon(
+                      emoji: schedules.first.emoji,
+                      size: 25,
                     ),
                   )
                 else if (selected)
@@ -606,12 +614,19 @@ class _SelectedScheduleCard extends StatelessWidget {
     required this.schedules,
     required this.onAdd,
     required this.onEdit,
+    required this.myUserId,
+    required this.isOwner,
   });
 
   final DateTime date;
   final List<CalendarSchedule> schedules;
   final VoidCallback onAdd;
   final ValueChanged<CalendarSchedule> onEdit;
+
+  /// 일정은 적은 사람과 금고 OWNER만 고칠 수 있다. 못 고치는 일정은 눌러도
+  /// 편집기를 열지 않고, 대신 누가 적었는지 보여 준다.
+  final String? myUserId;
+  final bool isOwner;
 
   @override
   Widget build(BuildContext context) => _DaySummaryCard(
@@ -630,21 +645,13 @@ class _SelectedScheduleCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (final schedule in schedules)
-                InkWell(
-                  onTap: () => onEdit(schedule),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: Text(
-                      '${schedule.emoji}  ${schedule.title} · '
-                      '${dDayLabel(schedule.yearly ? nextYearlyOccurrence(schedule.date) : schedule.date)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF72523D),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                _ScheduleLine(
+                  schedule: schedule,
+                  canManage: schedule.canManage(
+                    myUserId: myUserId,
+                    isOwner: isOwner,
                   ),
+                  onEdit: onEdit,
                 ),
             ],
           ),
@@ -710,7 +717,8 @@ class _SelectedMemoryCard extends StatelessWidget {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    videos.first.title,
+                    // 날짜는 고른 날이 이미 말해 준다 — 시각과 종류만 적는다.
+                    videoDisplayTitle(videos.first, includeDate: false),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -853,10 +861,19 @@ class _DaySummaryCard extends StatelessWidget {
 
 /// 선택한 날짜의 편집 완료 영상. 누르면 재생·댓글 화면으로 간다.
 class _SelectedEditedCard extends StatelessWidget {
-  const _SelectedEditedCard({required this.date, required this.edited});
+  const _SelectedEditedCard({
+    required this.date,
+    required this.edited,
+    required this.api,
+    this.myUserId,
+    this.isOwner = false,
+  });
 
   final DateTime date;
   final List<Map<String, dynamic>> edited;
+  final ApiClient api;
+  final String? myUserId;
+  final bool isOwner;
 
   @override
   Widget build(BuildContext context) => _DaySummaryCard(
@@ -894,6 +911,7 @@ class _SelectedEditedCard extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (_) => EditedVideoScreen(
+                    api: api,
                     videoId: meta['videoId'] as String? ?? '',
                     title: (meta['title'] as String?)?.isNotEmpty == true
                         ? meta['title'] as String
@@ -901,6 +919,8 @@ class _SelectedEditedCard extends StatelessWidget {
                     savedAt: DateTime.tryParse(
                       meta['savedAt'] as String? ?? '',
                     ),
+                    myUserId: myUserId,
+                    isOwner: isOwner,
                   ),
                 ),
               ),
@@ -909,4 +929,53 @@ class _SelectedEditedCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// 일정 한 줄. 내가 적었거나 OWNER면 눌러서 고칠 수 있고, 아니면 누가 적은
+/// 일정인지 알려 준다.
+class _ScheduleLine extends StatelessWidget {
+  const _ScheduleLine({
+    required this.schedule,
+    required this.canManage,
+    required this.onEdit,
+  });
+
+  final CalendarSchedule schedule;
+  final bool canManage;
+  final ValueChanged<CalendarSchedule> onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final author = schedule.authorName;
+    final label =
+        '${schedule.title} · '
+        '${dDayLabel(schedule.yearly ? nextYearlyOccurrence(schedule.date) : schedule.date)}';
+    final line = Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Row(
+        children: [
+          ScheduleEmojiIcon(emoji: schedule.emoji, size: 28),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF72523D),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (!canManage && author != null && author.isNotEmpty)
+            Text(
+              author,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF9C8574)),
+            ),
+        ],
+      ),
+    );
+    if (!canManage) return line;
+    return InkWell(onTap: () => onEdit(schedule), child: line);
+  }
 }
