@@ -254,5 +254,57 @@ class SourceUrlTest(unittest.TestCase):
         self.assertFalse(service.source_url_allowed(""))
 
 
+class TranscriptStoreTest(unittest.TestCase):
+    """전사문 보관. 폰마다 다시 돌리던 것을 영상에 한 번만 붙여 둔다."""
+
+    def test_saves_lines_and_reads_them_back(self) -> None:
+        request = service.TranscriptSaveRequest(
+            lines=[{"startMs": 0, "endMs": 1200, "text": "그거 만지지 마"}]
+        )
+        with mock.patch.object(service.store, "put") as stored:
+            saved = service.save_transcript("v1", request)
+        self.assertEqual(1, saved["lines"])
+        key, payload = stored.call_args.args
+        self.assertEqual("transcripts/v1.json", key)
+        self.assertEqual("그거 만지지 마", payload["lines"][0]["text"])
+
+    def test_empty_transcript_is_refused(self) -> None:
+        # 빈 것을 저장하면 다음에 "캐시 적중(내용 없음)"으로 읽혀 재시도가
+        # 영구히 막힌다. 앱 로컬 캐시에서 겪은 함정이라 여기서도 막는다.
+        for lines in ([], [{"startMs": 0, "endMs": 1, "text": "   "}]):
+            with self.subTest(lines=lines):
+                request = service.TranscriptSaveRequest(lines=lines)
+                with mock.patch.object(service.store, "put") as stored:
+                    with self.assertRaises(HTTPException) as caught:
+                        service.save_transcript("v1", request)
+                self.assertEqual(422, caught.exception.status_code)
+                stored.assert_not_called()
+
+    def test_missing_transcript_is_404(self) -> None:
+        with mock.patch.object(service.store, "get_json", return_value=None):
+            with self.assertRaises(HTTPException) as caught:
+                service.load_transcript("v1")
+        self.assertEqual(404, caught.exception.status_code)
+
+    def test_load_returns_saved_payload(self) -> None:
+        payload = {"videoId": "v1", "lines": [{"startMs": 0, "endMs": 1, "text": "하하"}]}
+        with mock.patch.object(service.store, "get_json", return_value=payload):
+            self.assertEqual(payload, service.load_transcript("v1"))
+
+
+class DeleteDraftTest(unittest.TestCase):
+    def test_deletes_latest_draft_only(self) -> None:
+        with mock.patch.object(service.store, "delete") as removed:
+            response = service.delete_project("v1")
+        self.assertEqual(204, response.status_code)
+        removed.assert_called_once_with("edit-projects/v1/latest.json")
+
+    def test_deleting_a_missing_draft_still_succeeds(self) -> None:
+        # 목록을 보고 눌렀는데 그 사이 다른 가족이 지웠을 수 있다. 사용자가 원한
+        # 상태(초안 없음)가 이뤄졌으므로 오류로 돌려주지 않는다.
+        with mock.patch.object(service.store, "delete", return_value=None):
+            self.assertEqual(204, service.delete_project("gone").status_code)
+
+
 if __name__ == "__main__":
     unittest.main()

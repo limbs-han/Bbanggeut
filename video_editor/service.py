@@ -18,6 +18,7 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -326,6 +327,10 @@ class RecipeStore:
         except ClientError:
             return None
         return response["Body"], int(response["ContentLength"])
+
+    def delete(self, key: str) -> None:
+        """없는 키를 지워도 조용히 넘어간다 — S3의 DELETE는 멱등이다."""
+        self.client.delete_object(Bucket=self.bucket, Key=key)
 
     def list_keys(self, prefix: str) -> list[dict[str, Any]]:
         self.ensure_bucket()
@@ -644,6 +649,80 @@ def load_project(video_id: str, http_request: Request = None) -> dict[str, Any]:
     payload = store.get_json(f"edit-projects/{video_id}/latest.json")
     if payload is None:
         raise HTTPException(status_code=404, detail="no saved draft")
+    return payload
+
+
+@app.delete("/v1/edit-projects/{video_id}", status_code=204)
+def delete_project(video_id: str, http_request: Request = None) -> Response:
+    """저장한 초안을 버린다. 사용자가 "편집 초안 삭제"를 고른 때만 부른다.
+
+    **최신 초안(latest.json)만 지운다.** 개정본(user-v3.json 등)은 남긴다 —
+    되돌릴 길을 통째로 없애면 잘못 누른 삭제를 복구할 수 없고, 보관 만료가
+    원본과 함께 정리한다.
+
+    없는 초안을 지우라고 해도 204다. 목록을 보고 눌렀는데 그 사이 다른 가족이
+    지웠다면 사용자가 원한 상태(초안 없음)가 이미 이뤄진 것이라, 오류로
+    돌려주면 화면이 지워지지 않은 것처럼 보인다.
+    """
+    _require_video_access(http_request, video_id)
+    try:
+        store.delete(f"edit-projects/{video_id}/latest.json")
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(status_code=503, detail=f"MinIO 삭제 실패: {failure}") from failure
+    return Response(status_code=204)
+
+
+# ── AI 자막(전사문) 보관 ────────────────────────────────────────────────
+#
+# **왜 서버에 두는가**: 전사는 폰에만 캐시됐다. 그래서 같은 영상을 가족 각자가
+# 자기 폰에서 다시 돌렸고(같은 결과에 같은 시간), 앱을 다시 깔면 전부 날아갔다.
+# 결과는 영상에만 달린 값이라 한 번 만들면 모두가 쓸 수 있다.
+#
+# 한 사람이 고친 대사도 함께 남는다 — 자막을 고치는 일은 "이 영상에서 무슨 말이
+# 나왔는지"를 바로잡는 일이므로 가족 모두에게 바로잡힌 것이 맞다.
+
+
+class TranscriptSaveRequest(BaseModel):
+    lines: list[dict[str, Any]] = Field(default_factory=list)
+    """`{startMs, endMs, text}` 목록. 앱의 CaptionLine과 같은 모양이다."""
+
+
+def _transcript_key(video_id: str) -> str:
+    return f"transcripts/{video_id}.json"
+
+
+@app.put("/v1/transcripts/{video_id}")
+def save_transcript(
+    video_id: str, request: TranscriptSaveRequest, http_request: Request = None
+) -> dict[str, Any]:
+    """전사문을 남긴다. 빈 목록은 저장하지 않는다.
+
+    빈 것을 저장하면 다음에 "캐시 적중(내용 없음)"으로 읽혀 재시도가 영구히
+    막힌다 — 앱의 로컬 캐시에서 이미 겪은 함정이다(`TranscriptStore._run`).
+    """
+    _require_video_access(http_request, video_id)
+    lines = [line for line in request.lines if str(line.get("text") or "").strip()]
+    if not lines:
+        raise HTTPException(status_code=422, detail="빈 전사문은 저장하지 않습니다.")
+    payload = {
+        "videoId": video_id,
+        "lines": lines,
+        "savedAt": datetime.now().astimezone().isoformat(),
+    }
+    try:
+        store.put(_transcript_key(video_id), payload)
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(status_code=503, detail=f"MinIO 저장 실패: {failure}") from failure
+    return {"videoId": video_id, "lines": len(lines), "savedAt": payload["savedAt"]}
+
+
+@app.get("/v1/transcripts/{video_id}")
+def load_transcript(video_id: str, http_request: Request = None) -> dict[str, Any]:
+    """저장된 전사문. 없으면 404 — 앱이 그때 자기 기기에서 만든다."""
+    _require_video_access(http_request, video_id)
+    payload = store.get_json(_transcript_key(video_id))
+    if payload is None:
+        raise HTTPException(status_code=404, detail="no saved transcript")
     return payload
 
 

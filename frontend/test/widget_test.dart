@@ -260,7 +260,11 @@ void main() {
     expect(find.text('전체 추억'), findsOneWidget);
     expect(find.text('웃음 감지'), findsOneWidget);
     expect(find.text('편집 완료'), findsOneWidget);
-    expect(find.text('최신순'), findsOneWidget);
+    expect(find.text('만화'), findsOneWidget);
+    // 정렬은 버튼 하나로 접혔다 — '최신순'·'오래된 순' 글자 버튼 둘이 좁은
+    // 화면에서 카테고리 칩을 밀어냈다. 지금 값은 계속 보인다.
+    expect(find.byKey(const ValueKey('memory-sort-button')), findsOneWidget);
+    expect(find.text('최신'), findsOneWidget);
 
     // 한 번 펼친 탭은 다른 탭으로 옮겨도 남아 있다 — 스크롤 위치와 상태를
     // 지키려고 IndexedStack을 쓰는 것이므로 그 성질은 그대로여야 한다.

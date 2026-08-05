@@ -654,6 +654,51 @@ Future<MemoryConnectionChoice?> showMemoryConnectionChoice(
   return confirmed == true ? choice : null;
 }
 
+/// 제목을 고치는 작은 입력 창. 만화와 편집본이 같은 것을 쓴다.
+///
+/// **빈 값으로 확인해도 취소가 아니다.** 만화는 빈 제목을 "붙인 제목을 지우고
+/// 영상 제목으로 되돌린다"로 쓰므로, 지울 길을 없애면 한번 잘못 붙인 이름을
+/// 되돌릴 수 없다. 취소는 null이고, 빈 문자열은 지우기다.
+Future<String?> promptForTitle(
+  BuildContext context, {
+  required String title,
+  String initial = '',
+  String? hint,
+}) async {
+  final field = TextEditingController(text: initial);
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('title-prompt-dialog'),
+        title: Text(title),
+        content: TextField(
+          key: const Key('title-prompt-field'),
+          controller: field,
+          autofocus: true,
+          maxLength: 60,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (value) => Navigator.pop(dialogContext, value),
+          decoration: InputDecoration(hintText: hint ?? '새 제목'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            key: const Key('title-prompt-save'),
+            onPressed: () => Navigator.pop(dialogContext, field.text),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+  } finally {
+    field.dispose();
+  }
+}
+
 Future<bool> confirmVideoDeletion(BuildContext context) async =>
     await showDialog<bool>(
       context: context,

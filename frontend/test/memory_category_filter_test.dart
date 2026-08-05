@@ -49,21 +49,25 @@ void main() {
     expect(matchesMemoryCategory(clap, MemoryCategory.laughter), isTrue);
   });
 
-  test('편집 중은 영상 행으로 판정하지 않는다', () {
-    // 초안은 editor-api 목록에서 온다.
-    expect(matchesMemoryCategory(captured, MemoryCategory.editing), isFalse);
-    expect(matchesMemoryCategory(edited, MemoryCategory.editing), isFalse);
-  });
-
-  test('만화도 영상 행으로 판정하지 않는다', () {
+  test('만화는 영상 행으로 판정하지 않는다', () {
     // 금고 만화 목록(GET /api/vaults/{id}/comics)으로 따로 그린다. 영상 행에는
     // 만화 여부가 없으므로 여기서 참을 돌려주면 원본이 만화 탭에 다 나온다.
     expect(matchesMemoryCategory(captured, MemoryCategory.comic), isFalse);
     expect(matchesMemoryCategory(edited, MemoryCategory.comic), isFalse);
   });
 
-  test('네 카테고리가 모두 있다 — 원본·편집 중·편집 완료·만화', () {
-    expect(MemoryCategory.values, hasLength(4));
-    expect(MemoryCategory.values, contains(MemoryCategory.comic));
+  // '편집 중' 탭을 없앴다. 초안이 있는 영상은 결국 '웃음 감지'에 있는 그
+  // 영상이라, 탭을 따로 두면 같은 영상이 두 군데 나오고 사용자가 어느 쪽으로
+  // 들어갈지 골라야 했다. 이제 카드에 배지로 알린다.
+  test('카테고리는 셋이다 — 웃음 감지·편집 완료·만화', () {
+    expect(MemoryCategory.values, hasLength(3));
+    expect(
+      MemoryCategory.values,
+      containsAll(<MemoryCategory>[
+        MemoryCategory.laughter,
+        MemoryCategory.edited,
+        MemoryCategory.comic,
+      ]),
+    );
   });
 }

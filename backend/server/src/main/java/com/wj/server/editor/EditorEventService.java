@@ -2,6 +2,7 @@ package com.wj.server.editor;
 
 import com.wj.server.common.api.ApiException;
 import com.wj.server.notification.application.NotificationService;
+import com.wj.server.video.application.ComicFeedService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -19,10 +20,16 @@ import org.springframework.stereotype.Service;
 public class EditorEventService {
     private final JwtDecoder decoder;
     private final NotificationService notifications;
+    private final ComicFeedService comics;
 
-    public EditorEventService(JwtDecoder decoder, NotificationService notifications) {
+    public EditorEventService(
+        JwtDecoder decoder,
+        NotificationService notifications,
+        ComicFeedService comics
+    ) {
         this.decoder = decoder;
         this.notifications = notifications;
+        this.comics = comics;
     }
 
     public void handle(String authorization, EditorEventRequest request) {
@@ -33,8 +40,13 @@ public class EditorEventService {
         switch (request.type()) {
             case "ANALYSIS_READY" ->
                 notifications.editAnalysisReady(request.userId(), request.videoId());
-            case "COMIC_READY" ->
+            // 만화 행을 먼저 세운다 — 제목·좋아요·댓글이 이 행을 참조하므로,
+            // 알림만 보내고 행이 없으면 피드에 나오지도 않는다. 알림을 못 보내도
+            // (받는 사람이 탈퇴했다든지) 만화 자체는 남아야 한다.
+            case "COMIC_READY" -> {
+                comics.register(request.videoId());
                 notifications.comicReady(request.userId(), request.videoId());
+            }
             case "COMMENT_ADDED" ->
                 notifications.editCommentAdded(
                     request.userId(), request.videoId(), request.commentId(), request.body());

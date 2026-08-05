@@ -7,13 +7,17 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../editor/edit_recommendation_client.dart';
-import '../features/comic/comic_screen.dart';
+import '../features/comic/comic_feed.dart';
 import 'edited_video_screen.dart';
-import 'local_edit_screen.dart';
 import 'memory_video_card.dart';
 import 'widgets.dart';
 
-enum MemoryCategory { laughter, editing, edited, comic }
+/// 추억 탭의 카테고리.
+///
+/// **'편집 중'이 없다.** 초안이 있는 영상은 결국 '웃음 감지'에도 있는 그 영상이라,
+/// 탭을 따로 두면 같은 영상이 두 군데 나오고 사용자가 어느 쪽으로 들어갈지
+/// 골라야 했다. 목록은 하나로 두고 카드에 '✏️ 편집 중' 배지를 붙인다.
+enum MemoryCategory { laughter, edited, comic }
 
 enum MemorySort { newest, oldest }
 
@@ -55,11 +59,8 @@ String editorEntrySubtitle({
 bool matchesMemoryCategory(VideoMemory video, MemoryCategory category) =>
     switch (category) {
       MemoryCategory.laughter => !video.isEditOutput,
-      // 편집 중(초안)은 editor-api 목록으로 따로 그린다 — 초안 레시피는 아직
-      // 그쪽에 있다(ADR-001의 남은 부채). 영상 행으로는 판정하지 않는다.
-      MemoryCategory.editing => false,
       MemoryCategory.edited => video.isEditOutput,
-      // 만화도 영상 행에 없다. 금고 만화 목록(GET /api/vaults/{id}/comics)으로
+      // 만화는 영상 행에 없다. 금고 만화 목록(GET /api/vaults/{id}/comics)으로
       // 따로 그린다.
       MemoryCategory.comic => false,
     };
@@ -81,12 +82,15 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
   DateTimeRange? dateRange;
   bool searchExpanded = false;
 
-  /// 편집 중(초안)·편집 완료 목록. 로컬 편집 서버(editor-api)에서 온다.
-  List<Map<String, dynamic>> _drafts = const [];
+  /// 편집 완료 목록. 백엔드에서 온다(API-82).
   List<Map<String, dynamic>> _edited = const [];
 
-  /// 만들어 둔 만화 목록(videoId·madeAt). '만화' 탭이 그린다.
-  List<Map<String, dynamic>> _comics = const [];
+  /// 초안이 저장된 영상 id. 카드에 '편집 중' 배지를 붙이는 데만 쓴다 —
+  /// 목록은 editor-api에서 오고 그 내용(레시피)은 편집 화면이 따로 읽는다.
+  Set<String> _draftVideoIds = const {};
+
+  /// 만들어 둔 만화 목록. '만화' 탭의 피드가 그린다.
+  List<VaultComic> _comics = const [];
 
   /// 같은 응답에서 뽑아 둔 id 집합. 카드 배지가 목록의 매 줄마다 확인하므로
   /// 그릴 때마다 다시 만들지 않는다.
@@ -112,7 +116,14 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
       _editClient
           .listDrafts()
           .then((drafts) {
-            if (mounted) setState(() => _drafts = drafts);
+            if (!mounted) return;
+            setState(
+              () => _draftVideoIds = {
+                for (final draft in drafts)
+                  if ((draft['videoId'] as String?)?.isNotEmpty == true)
+                    draft['videoId'] as String,
+              },
+            );
           })
           .catchError((Object _) {}),
       // 편집본은 금고 단위로 백엔드에서 받는다(API-82).
@@ -133,7 +144,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               setState(() {
                 _comics = comics;
                 _comicVideoIds = {
-                  for (final comic in comics) comic['videoId'] as String,
+                  for (final comic in comics) comic.videoId,
                 };
               });
             })
@@ -176,23 +187,37 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     return null;
   }
 
-  Future<void> _openDraft(Map<String, dynamic> draft) async {
-    final video = _videoById(draft['videoId'] as String? ?? '');
-    if (video == null) {
-      showAppSnack(context, '원본 영상을 찾지 못했어요.');
+  /// 편집본 제목을 바꾼다. 편집본도 자기 영상 행이라 원본과 같은 경로를 쓴다.
+  Future<void> _renameEdited(Map<String, dynamic> meta) async {
+    final videoId = meta['videoId'] as String? ?? '';
+    final title = await promptForTitle(
+      context,
+      title: '편집 영상 제목',
+      initial: meta['title'] as String? ?? '',
+    );
+    if (title == null || !mounted) return;
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) {
+      showAppSnack(context, '제목을 입력해 주세요.');
       return;
     }
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LocalEditScreen(
-          controller: widget.controller,
-          video: video,
-          openDrafts: true,
-        ),
-      ),
-    );
-    await _loadEditorLists();
+    try {
+      await widget.controller.api.updateVideo(videoId, title: trimmed);
+      if (!mounted) return;
+      setState(
+        () => _edited = [
+          for (final entry in _edited)
+            if (entry['videoId'] == videoId)
+              {...entry, 'title': trimmed}
+            else
+              entry,
+        ],
+      );
+      // 영상 목록에도 같은 행이 있다. 다시 받아 두면 다른 화면에서도 새 제목이다.
+      await widget.controller.refreshVaultData();
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
+    }
   }
 
   Future<void> _openEdited(Map<String, dynamic> meta) async {
@@ -286,17 +311,16 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     return result;
   }
 
-  /// 편집 중(초안)·편집 완료 목록. editor-api에 저장된 것을 그린다.
-  Widget _editorList() {
-    final isDraft = category == MemoryCategory.editing;
-    final entries = isDraft ? _drafts : _edited;
-    if (entries.isEmpty) {
-      return EmptyState(
-        icon: isDraft ? Icons.edit_note_rounded : Icons.movie_filter_outlined,
-        title: isDraft ? '편집 중인 영상이 없어요' : '편집 완료한 영상이 없어요',
-        message: isDraft
-            ? '편집기에서 나오면 자동으로 초안이 저장돼 여기 나타나요.'
-            : '편집기에서 저장하면 완성본이 여기 올라와요.',
+  /// 편집 완료 목록. 백엔드가 관리하는 편집본 영상 행이다(API-82).
+  ///
+  /// 초안 목록은 더 이상 여기서 그리지 않는다 — 초안이 있는 영상은 '웃음 감지'에
+  /// 있는 그 영상이라, 목록을 둘로 나누면 같은 영상이 두 군데 나온다.
+  Widget _editedList() {
+    if (_edited.isEmpty) {
+      return const EmptyState(
+        icon: Icons.movie_filter_outlined,
+        title: '편집 완료한 영상이 없어요',
+        message: '편집기에서 저장하면 완성본이 여기 올라와요.',
       );
     }
     // RefreshIndicator를 여기 두지 않는다 — MainShell이 이미 화면 전체를
@@ -304,34 +328,29 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     // 새로고침이 끝나면 _refresh가 이 목록도 다시 받는다.
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-      itemCount: entries.length,
+      itemCount: _edited.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final entry = entries[index];
+        final entry = _edited[index];
         final videoId = entry['videoId'] as String? ?? '';
         final original = _videoById(videoId);
         final savedAt = DateTime.tryParse(
           entry['savedAt'] as String? ?? '',
         )?.toLocal();
         // 원본을 아직 못 받았을 때 videoId(UUID)를 그대로 띄우면 사용자에게는
-        // 아무 뜻이 없는 글자다. 편집본은 자기 제목이 있으니 그것을 쓰고,
-        // 초안은 원본 제목을 쓰되 없으면 사람이 읽을 수 있는 문구로 대신한다.
+        // 아무 뜻이 없는 글자다. 편집본은 자기 제목이 있으니 그것을 쓴다.
         final originalTitle = original == null
             ? null
             : videoDisplayTitle(original);
-        final title = isDraft
-            ? originalTitle ?? '원본을 불러오는 중'
-            : (entry['title'] as String?)?.isNotEmpty == true
+        final title = (entry['title'] as String?)?.isNotEmpty == true
             ? entry['title'] as String
             : originalTitle ?? '편집한 영상';
         // 완성본은 업로드가 끝나기 전에도 목록에 나온다. 상태를 모르는
         // 응답(구버전 서버)은 예전처럼 완료로 본다.
-        final status = isDraft
-            ? 'READY'
-            : (entry['status'] as String? ?? 'READY');
+        final status = entry['status'] as String? ?? 'READY';
         final uploading = status == 'UPLOADING';
         final failed = status == 'FAILED';
-        final playable = !isDraft && !uploading && !failed;
+        final playable = !uploading && !failed;
         return Card(
           child: ListTile(
             // 원본을 아는 항목은 그 썸네일을 보여 준다 — 편집 목록에서 아이콘만
@@ -361,9 +380,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                         ? AppColors.danger.withValues(alpha: 0.15)
                         : AppColors.sage.withValues(alpha: 0.3),
                     child: Icon(
-                      isDraft
-                          ? Icons.edit_note_rounded
-                          : failed
+                      failed
                           ? Icons.error_outline_rounded
                           : Icons.play_arrow_rounded,
                       color: failed ? AppColors.danger : AppColors.sageDark,
@@ -380,7 +397,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               children: [
                 Text(
                   editorEntrySubtitle(
-                    isDraft: isDraft,
+                    isDraft: false,
                     uploading: uploading,
                     failed: failed,
                     savedAt: savedAt,
@@ -392,7 +409,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                 ),
                 // 편집본은 제목이 원본과 달라서 제목만으로는 무엇을 편집한
                 // 것인지 알 수 없다. 원본을 아는 항목에만 한 줄 덧붙인다.
-                if (!isDraft && originalTitle != null)
+                if (originalTitle != null)
                   Text(
                     '원본 · $originalTitle',
                     maxLines: 1,
@@ -406,16 +423,18 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             ),
             trailing: uploading || failed
                 ? null
-                : Icon(
-                    isDraft
-                        ? Icons.chevron_right_rounded
-                        : Icons.mode_comment_outlined,
-                    color: AppColors.muted,
+                : IconButton(
+                    key: ValueKey('edited-rename-$videoId'),
+                    tooltip: '제목 바꾸기',
+                    onPressed: () => _renameEdited(entry),
+                    icon: const Icon(
+                      Icons.drive_file_rename_outline_rounded,
+                      size: 20,
+                      color: AppColors.muted,
+                    ),
                   ),
             onTap: () {
-              if (isDraft) {
-                _openDraft(entry);
-              } else if (playable) {
+              if (playable) {
                 _openEdited(entry);
               } else if (uploading) {
                 showAppSnack(context, '아직 올라가는 중이에요. 끝나면 바로 볼 수 있어요.');
@@ -433,93 +452,21 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     );
   }
 
-  /// 만들어 둔 4컷 만화 목록. 누르면 그 만화를 다시 본다.
-  ///
-  /// 영상 목록에서 배지만 보여 주던 동안에는, 만화를 보려면 그 원본을 목록에서
-  /// 찾아 상세로 들어가야 했다. 만화가 어느 영상에서 나왔는지 기억해야 하는
-  /// 일이라 사실상 다시 열 길이 없었다.
-  Widget _comicList() {
-    if (_comics.isEmpty) {
-      return const EmptyState(
-        icon: Icons.auto_stories_outlined,
-        title: '만든 만화가 없어요',
-        message: '영상 상세 화면에서 4컷 만화를 만들면 여기 모여요.',
-      );
-    }
+  /// 만화 피드. 만든 만화를 화면 폭으로 크게 놓고 아래로 넘긴다.
+  Widget _comicFeed() {
     final entries = [..._comics];
     entries.sort((left, right) {
-      final leftAt =
-          DateTime.tryParse(left['madeAt'] as String? ?? '') ?? DateTime(1970);
-      final rightAt =
-          DateTime.tryParse(right['madeAt'] as String? ?? '') ?? DateTime(1970);
+      final leftAt = left.madeAt ?? DateTime(1970);
+      final rightAt = right.madeAt ?? DateTime(1970);
       return sort == MemorySort.newest
           ? rightAt.compareTo(leftAt)
           : leftAt.compareTo(rightAt);
     });
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-      itemCount: entries.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        final videoId = entry['videoId'] as String;
-        final original = _videoById(videoId);
-        final madeAt = DateTime.tryParse(
-          entry['madeAt'] as String? ?? '',
-        )?.toLocal();
-        return Card(
-          child: ListTile(
-            leading: original != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: MemoryThumbnail(
-                      api: widget.controller.api,
-                      video: original,
-                      width: 56,
-                      height: 40,
-                    ),
-                  )
-                : CircleAvatar(
-                    backgroundColor: AppColors.sage.withValues(alpha: 0.3),
-                    child: const Icon(
-                      Icons.auto_stories_rounded,
-                      color: AppColors.sageDark,
-                    ),
-                  ),
-            title: Text(
-              original == null ? '원본을 불러오는 중' : videoDisplayTitle(original),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            subtitle: Text(
-              madeAt == null
-                  ? '4컷 만화'
-                  : '${DateFormat('M월 d일 HH:mm').format(madeAt)}에 만든 4컷 만화',
-              style: const TextStyle(fontSize: 12),
-            ),
-            trailing: const Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.muted,
-            ),
-            onTap: () {
-              if (original == null) {
-                showAppSnack(context, '원본 영상을 찾지 못했어요.');
-                return;
-              }
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ComicScreen(
-                    api: widget.controller.api,
-                    video: original,
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+    return ComicFeed(
+      api: widget.controller.api,
+      comics: entries,
+      videoById: _videoById,
+      onChanged: _loadEditorLists,
     );
   }
 
@@ -614,7 +561,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  // 카테고리가 넷이라 좁은 화면에서는 다 안 들어간다.
+                  // 카테고리가 셋이라 좁은 화면에서는 다 안 들어갈 수 있다.
                   // 카테고리 묶음만 옆으로 밀어 보게 한다.
                   Expanded(
                     child: SingleChildScrollView(
@@ -627,17 +574,6 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                             onPressed: () => setState(
                               () => category = MemoryCategory.laughter,
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          _CategoryButton(
-                            label: '편집 중',
-                            selected: category == MemoryCategory.editing,
-                            onPressed: () {
-                              setState(
-                                () => category = MemoryCategory.editing,
-                              );
-                              _loadEditorLists();
-                            },
                           ),
                           const SizedBox(width: 8),
                           _CategoryButton(
@@ -661,15 +597,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                       ),
                     ),
                   ),
-                  _SortButton(
-                    label: '최신순',
-                    selected: sort == MemorySort.newest,
-                    onPressed: () => setState(() => sort = MemorySort.newest),
-                  ),
-                  _SortButton(
-                    label: '오래된 순',
-                    selected: sort == MemorySort.oldest,
-                    onPressed: () => setState(() => sort = MemorySort.oldest),
+                  _SortMenuButton(
+                    sort: sort,
+                    onChanged: (next) => setState(() => sort = next),
                   ),
                 ],
               ),
@@ -677,9 +607,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             const SizedBox(height: 10),
             Expanded(
               child: category == MemoryCategory.comic
-                  ? _comicList()
-                  : category != MemoryCategory.laughter
-                  ? _editorList()
+                  ? _comicFeed()
+                  : category == MemoryCategory.edited
+                  ? _editedList()
                   : widget.controller.videosLoading &&
                         widget.controller.videos.isEmpty
                   ? const Center(child: CircularProgressIndicator())
@@ -716,6 +646,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                         video: items[index],
                         onChanged: _refresh,
                         hasComic: _comicVideoIds.contains(items[index].id),
+                        isEditing: _draftVideoIds.contains(items[index].id),
                       ),
                     ),
             ),
@@ -745,29 +676,43 @@ class _CategoryButton extends StatelessWidget {
   );
 }
 
-class _SortButton extends StatelessWidget {
-  const _SortButton({
-    required this.label,
-    required this.selected,
-    required this.onPressed,
-  });
+/// 정렬 버튼 하나.
+///
+/// 예전에는 '최신순'·'오래된 순' 글자 버튼 둘이 나란히 있어서, 좁은 화면에서
+/// 카테고리 칩이 밀려날 만큼 자리를 먹었다. 지금 정렬을 아이콘 옆 한 단어로만
+/// 보여 주고 누르면 고르게 한다 — 고른 값은 계속 보이므로 잃는 정보가 없다.
+class _SortMenuButton extends StatelessWidget {
+  const _SortMenuButton({required this.sort, required this.onChanged});
 
-  final String label;
-  final bool selected;
-  final VoidCallback onPressed;
+  final MemorySort sort;
+  final ValueChanged<MemorySort> onChanged;
 
   @override
-  Widget build(BuildContext context) => TextButton(
-    onPressed: onPressed,
-    style: TextButton.styleFrom(
-      foregroundColor: selected ? AppColors.sageDark : AppColors.muted,
-      textStyle: TextStyle(
-        fontSize: 11,
-        fontWeight: selected ? FontWeight.w900 : FontWeight.w500,
+  Widget build(BuildContext context) => PopupMenuButton<MemorySort>(
+    key: const ValueKey('memory-sort-button'),
+    tooltip: '정렬',
+    initialValue: sort,
+    onSelected: onChanged,
+    itemBuilder: (_) => const [
+      PopupMenuItem(value: MemorySort.newest, child: Text('최신순')),
+      PopupMenuItem(value: MemorySort.oldest, child: Text('오래된 순')),
+    ],
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.swap_vert_rounded, size: 18, color: AppColors.muted),
+          const SizedBox(width: 2),
+          Text(
+            sort == MemorySort.newest ? '최신' : '오래된',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: AppColors.sageDark,
+            ),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      minimumSize: const Size(0, 36),
     ),
-    child: Text(label),
   );
 }
