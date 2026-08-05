@@ -38,8 +38,8 @@ with `SPEAKER_UNAVAILABLE` rather than accepted by a device with no speaker.
 After wiring the USB audio adapter, PAM8403, and passive speaker, list the ALSA
 playback devices and run a three-second tone before enabling talkback. FFmpeg's
 `sine` source is one-eighth of full scale by default, so the script compensates
-it by 8x and then applies `SPEAKER_TEST_LEVEL`. The default level is `0.25`,
-approximately -12 dBFS; `1.0` produces an approximately 0 dBFS full-scale
+it by 8x and then applies `SPEAKER_TEST_LEVEL`. The default level is `0.5`,
+approximately -6 dBFS; `1.0` produces an approximately 0 dBFS full-scale
 signal. Keep earphones out of your ears and the PAM8403 knob near minimum for
 the first run:
 

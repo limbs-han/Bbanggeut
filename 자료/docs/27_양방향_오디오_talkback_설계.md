@@ -109,7 +109,7 @@ MediaMTX 계정 권한은 다음과 같이 나뉜다.
 
 - 기기 스피커 구성은 USB 오디오 어댑터, PAM8403 앰프와 수동 스피커를 기준으로 검증한다.
 - `bash ai/device_agent/test-speaker-output.sh --list`로 Jetson의 ALSA 출력 장치 이름을 확인한다.
-- `bash ai/device_agent/test-speaker-output.sh plughw:CARD=<카드명>,DEV=0 3`으로 기본 약 -12dBFS(`SPEAKER_TEST_LEVEL=0.25`)의 3초 테스트음을 재생한 뒤 `TALKBACK_OUTPUT_DEVICE`에 같은 장치명을 설정한다. `1.0`은 약 0dBFS 풀스케일이며, 이어폰은 귀에서 빼고 PAM8403 노브는 최소 근처에서 시작한다.
+- `bash ai/device_agent/test-speaker-output.sh plughw:CARD=<카드명>,DEV=0 3`으로 기본 약 -6dBFS(`SPEAKER_TEST_LEVEL=0.5`)의 3초 테스트음을 재생한 뒤 `TALKBACK_OUTPUT_DEVICE`에 같은 장치명을 설정한다. `1.0`은 약 0dBFS 풀스케일이며, 이어폰은 귀에서 빼고 PAM8403 노브는 최소 근처에서 시작한다.
 - 테스트 스크립트는 `CARD=<카드명>`을 인식하면 해당 USB 카드의 `Speaker` 믹서도 음소거 해제하고 100%로 올린다.
 - 스피커 한 개는 PAM8403의 한 채널 `OUT+`와 `OUT-` 사이에 연결하며, BTL 출력의 `OUT-`를 GND에 연결하지 않는다.
 - 실제 장비 시험으로 PAM8403 볼륨 기본 위치와 소프트웨어 음량을 확정한다.
