@@ -432,7 +432,7 @@ class _MemoryDetailCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  video.title,
+                  videoDisplayTitle(video),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.headlineMedium,

@@ -214,9 +214,13 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
         MemoryCategory.edited =>
           video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
       };
+      // 화면에 보이는 제목으로도 찾을 수 있어야 한다. 기기 기본 제목은 날짜·
+      // 시각·종류를 담은 제목으로 바꿔 그리므로, 저장된 제목만 보면 사용자가
+      // 읽은 글자로 검색해도 걸리지 않는다.
       final matchesKeyword =
           keyword.isEmpty ||
           video.title.toLowerCase().contains(keyword) ||
+          videoDisplayTitle(video).toLowerCase().contains(keyword) ||
           (video.description?.toLowerCase().contains(keyword) ?? false);
       final startedAt = video.capturedStartAt ?? video.createdAt;
       final matchesDate =

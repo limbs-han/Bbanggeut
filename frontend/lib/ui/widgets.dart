@@ -363,6 +363,44 @@ String durationLabel(int? durationMs) {
 final _koreanClock = DateFormat('a h:mm', 'ko');
 final _clock = DateFormat('HH:mm');
 final _dayClock = DateFormat('M월 d일 HH:mm');
+final _titleClock = DateFormat('M월 d일(E) a h:mm', 'ko');
+
+/// 기기가 이벤트 종류만 보고 붙이는 기본 제목들.
+///
+/// 웃음 클립 스무 개의 제목이 스무 번 같은 문구라 목록에서 영상을 구분할 수
+/// 없었다. 이 목록에 있는 제목은 화면에서 날짜·시각·종류를 담은 제목으로
+/// 바꿔 그린다.
+///
+/// 사용자가 직접 붙인 이름은 이 목록에 없으므로 그대로 나간다 — 제목은 상세
+/// 화면에서 편집할 수 있고, 자동 생성이 그걸 덮으면 사용자가 지은 이름이
+/// 사라진다.
+///
+/// 기기 쪽 원본은 `ai/yolo/segment_clip_uploader.py`의 `EVENT_TITLES`와
+/// `MIXED_EVENT_TITLES`다. 거기서 새 문구가 생기면 여기에도 더해야 한다.
+/// 빠뜨려도 고장은 아니고 그 종류만 예전처럼 고정 제목으로 보인다.
+const deviceDefaultVideoTitles = <String>{
+  '웃음이 담긴 순간',
+  '박수가 시작된 순간',
+  '카메라를 부른 순간',
+  '웃음과 박수가 함께 포착됐어요',
+  '이름 없는 추억',
+};
+
+/// 목록·상세에 보여줄 제목. 저장된 제목은 건드리지 않는다.
+///
+/// [includeDate]를 끄면 시각과 종류만 남는다. 날짜가 이미 화면 맥락인 자리
+/// (달력에서 고른 날의 목록)에서 날짜를 한 번 더 적으면 좁은 한 줄을 낭비한다.
+String videoDisplayTitle(VideoMemory video, {bool includeDate = true}) {
+  final stored = video.title.trim();
+  if (stored.isNotEmpty && !deviceDefaultVideoTitles.contains(stored)) {
+    return stored;
+  }
+  final kinds = video.effectiveEventTypes.map(triggerLabel).join('·');
+  final at = video.capturedStartAt ?? video.createdAt;
+  if (at == null) return kinds.isEmpty ? stored : kinds;
+  final when = includeDate ? _titleClock.format(at) : _koreanClock.format(at);
+  return kinds.isEmpty ? when : '$when · $kinds';
+}
 
 String memoryDate(DateTime? date) {
   if (date == null) return '시간 정보 없음';
@@ -487,7 +525,7 @@ class MemoryTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  video.title,
+                  videoDisplayTitle(video),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
