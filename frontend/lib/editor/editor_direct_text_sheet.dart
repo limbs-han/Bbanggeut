@@ -131,6 +131,11 @@ class _EditorDirectTextSheetState extends State<EditorDirectTextSheet> {
   @override
   Widget build(BuildContext context) {
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    // 제스처바만큼 더 띄운다. `showModalBottomSheet(useSafeArea: true)`는
+    // **위쪽만** 막아 주므로(`SafeArea(bottom: false)`), 이걸 빼면 맨 아래
+    // [취소]·[텍스트 추가]가 제스처바에 깔려 눌리지 않는다. 키보드가 올라오면
+    // 그 자리를 키보드가 대신 차지하므로 `padding`이 알아서 0이 된다.
+    final gestureBar = MediaQuery.paddingOf(context).bottom;
     return Container(
       constraints: const BoxConstraints(maxWidth: 560),
       decoration: const BoxDecoration(
@@ -138,7 +143,7 @@ class _EditorDirectTextSheetState extends State<EditorDirectTextSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(22, 10, 22, 18 + keyboard),
+        padding: EdgeInsets.fromLTRB(22, 10, 22, 18 + keyboard + gestureBar),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
