@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/app/app_theme.dart';
 import 'package:william_james_app/ui/content_state.dart';
 import 'package:william_james_app/ui/schedule_editor_screen.dart';
+import 'package:william_james_app/ui/schedule_emoji.dart';
 
 void main() {
   testWidgets('선택한 이모지를 일정 데이터에 저장한다', (tester) async {
@@ -30,6 +31,14 @@ void main() {
       '가족 생일',
     );
     await tester.tap(find.byKey(const ValueKey('schedule-emoji-🎂')));
+    await tester.pump();
+
+    final selectedIcon = tester.widget<ScheduleEmojiIcon>(
+      find.byKey(const Key('schedule-selected-emoji')),
+    );
+    expect(selectedIcon.emoji, '🎂');
+    expect(find.byKey(const ValueKey('schedule-emoji-image-🎂')), findsWidgets);
+
     await tester.tap(find.text('저장'));
     await tester.pump();
 

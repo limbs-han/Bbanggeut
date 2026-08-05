@@ -29,6 +29,7 @@ type Snapshot = {
       resources?: SourceFreshness;
       vision?: SourceFreshness;
       audio?: SourceFreshness;
+      audioShadow?: SourceFreshness;
     };
   };
   system: {
@@ -54,6 +55,22 @@ type Snapshot = {
     latencyMeanMs: number | null;
     latencyP95Ms: number | null;
     sampleCount: number;
+  };
+  audioShadow?: {
+    model: string;
+    mode: "shadow-only";
+    operationalAuthority: false;
+    laughterScore: number | null;
+    laughterClass: string | null;
+    laughterWouldTrigger: boolean | null;
+    clapScore: number | null;
+    clapClass: string | null;
+    clapWouldTrigger: boolean | null;
+    topClass: string | null;
+    latencyMeanMs: number | null;
+    latencyP95Ms: number | null;
+    sampleCount: number;
+    virtualEventCount: number;
   };
   events: Array<{
     eventId: string;
@@ -91,6 +108,7 @@ type Snapshot = {
     accuracy?: {
       status?: string;
       reason?: string;
+      eventType?: "laughter" | "clap" | string;
       standard?: {
         confidenceFloor?: number | null;
         precision?: number | null;
@@ -99,15 +117,31 @@ type Snapshot = {
         mAP50_95?: number | null;
       };
       operatingPoint?: {
+        threshold?: number | null;
         confidence?: number | null;
         matchIou?: number | null;
         truePositive?: number | null;
         falsePositive?: number | null;
         falseNegative?: number | null;
+        trueNegative?: number | null;
         precision?: number | null;
         recall?: number | null;
         f1?: number | null;
+        falsePositivesPerHour?: number | null;
+        falseEventCount?: number | null;
       };
+      byCohort?: Record<
+        "localDirect" | "continuousNegative" | "externalGeneralization" | string,
+        {
+          sampleCount?: number | null;
+          precision?: number | null;
+          recall?: number | null;
+          f1?: number | null;
+          falseEventsPerHour?: number | null;
+          falseEventCount?: number | null;
+          negativeDurationSeconds?: number | null;
+        }
+      >;
       byScenario?: Array<{
         scenario: string;
         imageCount: number;
@@ -132,6 +166,11 @@ type Snapshot = {
       operatingConfidence?: number | null;
       nmsIou?: number | null;
       matchIou?: number | null;
+      windowSeconds?: number | null;
+      hopSeconds?: number | null;
+      requiredConsecutiveWindows?: number | null;
+      minimumPositiveSpanSeconds?: number | null;
+      precision?: string | null;
     } | null;
     resources?: {
       status?: string;
@@ -154,6 +193,8 @@ type Snapshot = {
       maximumWallP95Ms?: number | null;
       minimumRecall?: number | null;
       maximumMap50_95Gap?: number | null;
+      maximumFalsePositivesPerHour?: number | null;
+      priority?: string | null;
       rule?: string;
     } | null;
   }>;
@@ -169,6 +210,8 @@ type Snapshot = {
     progress: {
       completedFrames?: number | null;
       totalFrames?: number | null;
+      completedSamples?: number | null;
+      totalSamples?: number | null;
       completedTasks?: number | null;
       totalTasks?: number | null;
       percent?: number | null;
@@ -190,15 +233,15 @@ type HistoryPoint = {
 const audioCandidates = [
   {
     name: "YAMNet",
-    note: "현재 운영 기준선입니다. 연결된 진단 JSONL이 있을 때만 지연시간과 표본 수를 표시합니다.",
+    note: "TFLite CPU 기준선 모델입니다. 웃음·박수별 Recall과 시간당 오탐을 함께 확인합니다.",
   },
   {
     name: "EfficientAT MN10",
-    note: "동일 평가 데이터셋에서 실행 결과가 생성되기 전까지 수치를 표시하지 않습니다.",
+    note: "Jetson CUDA에서 실행하는 경량 AudioSet 모델입니다.",
   },
   {
     name: "PANNs CNN10",
-    note: "정답 라벨 기반 평가와 Jetson 성능 측정을 완료한 뒤 비교 결과에 포함합니다.",
+    note: "AudioSet CNN10 기준 모델입니다. 정확도와 자원 사용량을 함께 비교합니다.",
   },
 ];
 
@@ -214,6 +257,15 @@ function formatPercent(
   digits = 1,
 ): string {
   return value == null ? "N/A" : `${(value * 100).toFixed(digits)}%`;
+}
+
+function average(values: Array<number | null | undefined>): number | null {
+  const measured = values.filter(
+    (value): value is number => value != null && Number.isFinite(value),
+  );
+  return measured.length
+    ? measured.reduce((sum, value) => sum + value, 0) / measured.length
+    : null;
 }
 
 const defaultSelectionPolicy = {
@@ -374,6 +426,30 @@ export function BenchmarkDashboard() {
       snapshot?.comparisons.filter((row) => row.component === "vision") ?? [],
     [snapshot?.comparisons],
   );
+  const audioComparisonRows = useMemo(
+    () =>
+      snapshot?.comparisons.filter((row) => row.component === "audio") ?? [],
+    [snapshot?.comparisons],
+  );
+  const latestAudioComparisonId = useMemo(() => {
+    const latest = audioComparisonRows
+      .filter((row) => row.comparison?.id)
+      .sort(
+        (first, second) =>
+          Date.parse(second.createdAt ?? "") -
+          Date.parse(first.createdAt ?? ""),
+      )[0];
+    return latest?.comparison?.id ?? null;
+  }, [audioComparisonRows]);
+  const audioComparisons = useMemo(
+    () =>
+      latestAudioComparisonId
+        ? audioComparisonRows.filter(
+            (row) => row.comparison?.id === latestAudioComparisonId,
+          )
+        : audioComparisonRows,
+    [audioComparisonRows, latestAudioComparisonId],
+  );
   const comparisonDecisions = useMemo(() => {
     const computed = comparisons.filter(
       (row) =>
@@ -480,7 +556,7 @@ export function BenchmarkDashboard() {
     {
       id: "audio",
       label: "오디오 비교",
-      count: String(snapshot?.audio.sampleCount ?? 0),
+      count: String(audioComparisons.length),
     },
     { id: "timeline", label: "이벤트 타임라인", count: String(events.length) },
   ];
@@ -975,39 +1051,247 @@ export function BenchmarkDashboard() {
                 <section className="panel">
                   <div className="panel-header">
                     <div className="panel-title">
-                      <h2>오디오 모델 비교 준비 상태</h2>
-                      <span>측정되지 않은 성능 수치는 N/A</span>
+                      <h2>오디오 이벤트 모델 비교</h2>
+                      <span>웃음과 연속 박수를 동일 데이터·임계값 정책으로 비교</span>
                     </div>
                     <span className="mono result-count">
-                      {snapshot?.audio.sampleCount ?? 0} SAMPLES
+                      {audioComparisons.length} RUNS
+                      {latestAudioComparisonId
+                        ? ` · ${latestAudioComparisonId}`
+                        : ""}
                     </span>
                   </div>
                   <div className="audio-grid">
+                    <article className="audio-model recommended">
+                      <h3>YAMNet 운영 판정</h3>
+                      <p>실제 이벤트 생성 권한을 유지하는 현재 운영 모델</p>
+                      <div className="audio-stat">
+                        <span>웃음 점수 / 클래스</span>
+                        <strong>
+                          {formatNumber(snapshot?.audio.selectedScore, 4)} /{" "}
+                          {snapshot?.audio.selectedClass ?? "N/A"}
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>가상 판정이 아닌 실제 운영 권한</span>
+                        <strong>ENABLED</strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>추론 평균 / P95</span>
+                        <strong>
+                          {formatNumber(snapshot?.audio.latencyMeanMs, 2)} /{" "}
+                          {formatNumber(snapshot?.audio.latencyP95Ms, 2)} ms
+                        </strong>
+                      </div>
+                    </article>
+                    <article className="audio-model">
+                      <h3>EfficientAT 섀도 기록</h3>
+                      <p>trigger·MQTT·영상 업로드 권한이 없는 비교 전용 모델</p>
+                      <div className="audio-stat">
+                        <span>웃음 점수 / 가상 이벤트</span>
+                        <strong>
+                          {formatNumber(snapshot?.audioShadow?.laughterScore, 6)} /{" "}
+                          {snapshot?.audioShadow?.laughterWouldTrigger ? "YES" : "NO"}
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>박수 점수 / 가상 이벤트</span>
+                        <strong>
+                          {formatNumber(snapshot?.audioShadow?.clapScore, 6)} /{" "}
+                          {snapshot?.audioShadow?.clapWouldTrigger ? "YES" : "NO"}
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>추론 평균 / P95</span>
+                        <strong>
+                          {formatNumber(snapshot?.audioShadow?.latencyMeanMs, 2)} /{" "}
+                          {formatNumber(snapshot?.audioShadow?.latencyP95Ms, 2)} ms
+                        </strong>
+                      </div>
+                      <div className="audio-stat">
+                        <span>운영 이벤트 생성 권한</span>
+                        <strong>DISABLED</strong>
+                      </div>
+                    </article>
+                  </div>
+                  <div className="audio-grid">
                     {audioCandidates.map((model) => {
-                      const isMeasuredYamnet =
-                        model.name === snapshot?.audio.model &&
-                        (snapshot?.audio.sampleCount ?? 0) > 0;
+                      const measured = audioComparisons.filter(
+                        (row) => row.model === model.name,
+                      );
+                      const laughter = measured.filter(
+                        (row) => row.accuracy?.eventType === "laughter",
+                      );
+                      const clap = measured.filter(
+                        (row) => row.accuracy?.eventType === "clap",
+                      );
+                      const laughterF1 = average(
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.localDirect?.f1,
+                        ),
+                      );
+                      const laughterRecall = average(
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.localDirect?.recall,
+                        ),
+                      );
+                      const laughterFalseRate = average(
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.continuousNegative
+                              ?.falseEventsPerHour,
+                        ),
+                      );
+                      const laughterExternalF1 = average(
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization?.f1,
+                        ),
+                      );
+                      const laughterExternalRecall = average(
+                        laughter.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization
+                              ?.recall,
+                        ),
+                      );
+                      const clapF1 = average(
+                        clap.map(
+                          (row) => row.accuracy?.byCohort?.localDirect?.f1,
+                        ),
+                      );
+                      const clapRecall = average(
+                        clap.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.localDirect?.recall,
+                        ),
+                      );
+                      const clapFalseRate = average(
+                        clap.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.continuousNegative
+                              ?.falseEventsPerHour,
+                        ),
+                      );
+                      const clapExternalF1 = average(
+                        clap.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization?.f1,
+                        ),
+                      );
+                      const clapExternalRecall = average(
+                        clap.map(
+                          (row) =>
+                            row.accuracy?.byCohort?.externalGeneralization
+                              ?.recall,
+                        ),
+                      );
+                      const latency = average(
+                        measured.map((row) => row.metrics.inferenceP95Ms),
+                      );
+                      const windowSeconds = average(
+                        measured.map(
+                          (row) => row.configuration?.windowSeconds,
+                        ),
+                      );
+                      const hopSeconds = average(
+                        measured.map(
+                          (row) => row.configuration?.hopSeconds,
+                        ),
+                      );
+                      const requiredConsecutiveWindows = average(
+                        measured.map(
+                          (row) =>
+                            row.configuration?.requiredConsecutiveWindows,
+                        ),
+                      );
+                      const minimumPositiveSpanSeconds = average(
+                        measured.map(
+                          (row) =>
+                            row.configuration?.minimumPositiveSpanSeconds,
+                        ),
+                      );
+                      const precision = measured.find(
+                        (row) => row.configuration?.precision,
+                      )?.configuration?.precision;
                       return (
                         <article className="audio-model" key={model.name}>
                           <h3>{model.name}</h3>
                           <p>{model.note}</p>
                           <div className="audio-stat">
-                            <span>macro F1</span>
-                            <strong>N/A</strong>
+                            <span>직접 수집 웃음 F1 / Recall</span>
+                            <strong>
+                              {formatPercent(laughterF1)} /{" "}
+                              {formatPercent(laughterRecall)}
+                            </strong>
                           </div>
                           <div className="audio-stat">
-                            <span>mean latency</span>
+                            <span>1시간 음성 웃음 FP/hour</span>
                             <strong>
-                              {isMeasuredYamnet
-                                ? `${formatNumber(snapshot.audio.latencyMeanMs)} ms`
+                              {formatNumber(
+                                laughterFalseRate,
+                                2,
+                              )}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>직접 수집 박수 F1 / Recall</span>
+                            <strong>
+                              {formatPercent(clapF1)} /{" "}
+                              {formatPercent(clapRecall)}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>1시간 음성 박수 FP/hour</span>
+                            <strong>
+                              {formatNumber(
+                                clapFalseRate,
+                                2,
+                              )}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>ESC-50 웃음 F1 / Recall</span>
+                            <strong>
+                              {formatPercent(laughterExternalF1)} /{" "}
+                              {formatPercent(laughterExternalRecall)}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>ESC-50 박수 F1 / Recall</span>
+                            <strong>
+                              {formatPercent(clapExternalF1)} /{" "}
+                              {formatPercent(clapExternalRecall)}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>추론 정밀도</span>
+                            <strong>{precision ?? "N/A"}</strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>입력 창 / 갱신 hop</span>
+                            <strong>
+                              {windowSeconds != null && hopSeconds != null
+                                ? `${formatNumber(windowSeconds, 4)} s / ${formatNumber(hopSeconds, 4)} s`
                                 : "N/A"}
                             </strong>
                           </div>
                           <div className="audio-stat">
-                            <span>measured samples</span>
+                            <span>연속 양성 창 / 최소 판정 구간</span>
                             <strong>
-                              {isMeasuredYamnet
-                                ? snapshot.audio.sampleCount
+                              {requiredConsecutiveWindows != null &&
+                              minimumPositiveSpanSeconds != null
+                                ? `${formatNumber(requiredConsecutiveWindows, 0)}회 / ${formatNumber(minimumPositiveSpanSeconds, 4)} s`
+                                : "N/A"}
+                            </strong>
+                          </div>
+                          <div className="audio-stat">
+                            <span>추론 P95</span>
+                            <strong>
+                              {latency != null
+                                ? `${formatNumber(latency, 2)} ms`
                                 : "N/A"}
                             </strong>
                           </div>
@@ -1017,6 +1301,7 @@ export function BenchmarkDashboard() {
                   </div>
                 </section>
               )}
+
 
               {activeTab === "timeline" && (
                 <section className="panel">
@@ -1049,7 +1334,11 @@ export function BenchmarkDashboard() {
                   <div className="experiment-card">
                     <div className="experiment-top">
                       <div>
-                        <p className="eyebrow">Vision benchmark</p>
+                        <p className="eyebrow">
+                          {benchmarkProgress.component === "audio"
+                            ? "Audio benchmark"
+                            : "Vision benchmark"}
+                        </p>
                         <p className="experiment-model">
                           {benchmarkProgress.model ?? "N/A"}
                         </p>
@@ -1068,12 +1357,18 @@ export function BenchmarkDashboard() {
                     </div>
                     <div className="progress-meta mono">
                       <span>
-                        {benchmarkProgress.progress.completedFrames?.toLocaleString() ??
-                          "N/A"}{" "}
+                        {(benchmarkProgress.component === "audio"
+                          ? benchmarkProgress.progress.completedSamples
+                          : benchmarkProgress.progress.completedFrames
+                        )?.toLocaleString() ?? "N/A"}{" "}
                         /{" "}
-                        {benchmarkProgress.progress.totalFrames?.toLocaleString() ??
-                          "N/A"}{" "}
-                        frames
+                        {(benchmarkProgress.component === "audio"
+                          ? benchmarkProgress.progress.totalSamples
+                          : benchmarkProgress.progress.totalFrames
+                        )?.toLocaleString() ?? "N/A"}{" "}
+                        {benchmarkProgress.component === "audio"
+                          ? "samples"
+                          : "frames"}
                       </span>
                       <span>
                         {progressPercent != null

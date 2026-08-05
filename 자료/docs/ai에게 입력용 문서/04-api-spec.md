@@ -7,7 +7,7 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 **API-62는 `[제안]` — 구현된 FN-A38 Flutter 화면의 단말 집계를 FN-S26 서버 집계로 확장하기 위한 초안이며 미구현이다. 존재하는 API로 가정하고 연동 코드를 작성하지 말 것.**
 
-**API-71·API-72(FN-A40 4컷 만화)는 앱·백엔드 게이트웨이·파이썬 워커 모두 구현됐다(6절).** 다만 앱은 `--dart-define=COMIC_SERVER=true` 없이 빌드하면 여전히 가짜 응답으로 동작한다 — 실제 서버를 쓰려면 이 인자가 필요하다(만화 전용 스위치다. 자막은 서버를 쓰지 않아 이 스위치와 무관하다).
+**API-71·API-72(FN-A40 4컷 만화)는 앱·백엔드 게이트웨이·파이썬 워커 모두 구현됐다(6절).** 앱은 인자 없이 빌드하면 **실서버를 부른다**. 견본 응답으로 돌리려면 `--dart-define=COMIC_SERVER=false`를 준다(만화 전용 스위치다. 자막은 서버를 쓰지 않아 이 스위치와 무관하다).
 
 > **번호 이동 주의**: 이 엔드포인트들은 처음에 API-52·53·54를 받았으나, 그 번호는 이미 금고 구독(API-51~53)·금고 접근 기록(API-54)이 쓰고 있다(4절). 구현·병합된 금고 API가 우선이므로 만화·자막 제안을 현재 max(API-70) 다음인 **API-71·72·73**으로 옮겼다. 리포트 제안이 API-51→API-62로 옮겨 간 것과 같은 처리다(13절 ID 검증 참고). 옛 문서·커밋 메시지의 "API-52·53·54"는 이 세 개를 가리킬 수 있으니 문맥으로 구분할 것. 그중 **API-73(자막 전사)은 그 뒤 구현 전에 회수됐다**(6절 API-73 참고).
 
@@ -388,7 +388,7 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "sourceType": "IOT_CAPTURE|USER_UPLOAD|EDIT_OUTPUT",
   "triggerType": "LAUGHTER|CLAP|WAKE_WORD|TOUCH|MANUAL|USER_UPLOAD|EDIT",
   "eventTypes": ["LAUGHTER", "CLAP"],
-  "sourceEventId": null, "title": "string", "description": null,
+  "sourceEventId": null, "title": "string",
   "contentType": "video/mp4", "sizeBytes": 1048576, "checksumSha256": "string",
   "durationMs": 60000, "capturedStartAt": "2026-07-27T00:00:00Z", "capturedEndAt": "2026-07-27T00:01:00Z",
   "status": "UPLOADING|PROCESSING|READY|FAILED|DELETING|DELETED",
@@ -427,7 +427,7 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 
 **두 계층인 이유**: 모델 키를 앱에 심으면 APK를 풀어 꺼낼 수 있으므로 키는 워커에만 둔다. 백엔드는 그 앞에서 원본 서명 URL 발급과 호출 예산을 담당한다. 워커도 스스로 백엔드 토큰을 검증하고 금고 범위를 다시 보므로, **백엔드는 사용자의 `Authorization` 헤더를 워커로 그대로 넘긴다** — 빼면 워커가 401을 준다.
 
-- 앱은 `--dart-define=COMIC_SERVER=true`가 없으면 `FakeComicGateway`(고정 응답)를 쓴다. 서버가 뜨면 이 인자로 전환한다. `bool.fromEnvironment`는 `true`/`false` 문자열만 알아본다 — `1`·`yes`·`TRUE`는 조용히 false다.
+- 앱은 인자 없이 빌드하면 **실서버를 부른다**(기본값 true). `--dart-define=COMIC_SERVER=false`를 주면 `FakeComicGateway`(고정 응답)로 동작한다 — 서버 없이 화면 흐름만 걸어 볼 때 쓴다. 기본을 실서버로 둔 이유: 인자를 잊으면 오류가 아니라 **가짜 만화가 그대로 출고**되기 때문이다. `bool.fromEnvironment`는 `true`/`false` 문자열만 알아본다 — `1`·`no`·`FALSE`는 조용히 무시되어 기본값(실서버)이 된다.
 - **폰이 올리는 것은 전사문(글)뿐이다.** 영상·오디오·프레임은 기기를 떠나지 않는다(REQ-F-27). 서버는 미디어를 요구하는 파라미터를 추가하지 말 것 — 프레임은 **서버가 자기 저장소의 원본에서 직접 뽑는다**(API-71).
 - **이미지 생성 API 키는 서버에만 둔다.** 응답에 키를 담지 않는다 — APK를 뜯으면 앱에 넣은 키는 가져갈 수 있다.
 - **에러 `message`는 사용자에게 그대로 보인다.** `ApiClient._failure`가 응답 본문의 `message`를 꺼내고 만화 화면이 그 문자열을 그대로 띄운다. 영문·스택·모델 이름·상위 API 문구를 넣지 말고 한국어 사용자 문구로 쓴다.
@@ -557,13 +557,14 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
 | ④ | 컷 1~4 묘사 | 각 컷의 `scene`. 사람은 **인물표의 label로만** 가리킨다 |
 | ⑤ | 금지 규칙 | 아래 목록 |
 
-**⑤ 금지 규칙(그대로 넣을 것)**
+**⑤ 금지 규칙(그대로 넣을 것 — `comic.py`의 `STRICT_RULES`가 원천)**
 
-1. **글자·문자·숫자 금지** — 대사·효과음·의성어·간판·시계 숫자 모두.
-2. **말풍선·생각풍선 금지** — 빈 말풍선도 안 된다. 자리가 있으면 모델이 거기에 글자를 넣는다(글자 금지를 명시했는데도 3컷에 "CRASH"가 박혔다). **앱이 대사를 직접 얹으므로 그림의 글자는 앱 자막과 겹쳐 둘 다 못 읽게 된다.**
-3. **효과음 금지.** 소리나 충격은 집중선·움직임선·먼지처럼 **선과 형태로만** 나타내라.
-4. **자막·워터마크·카메라 UI 금지** — 녹화 표시, 렌즈 테두리, 타임스탬프.
-5. **각 칸의 아래 1/4은 시각적으로 단순하게 유지하라** — 앱이 그 자리에 자막을 얹는다.
+1. **순수 일러스트만. 어떤 종류의 글씨도 금지** — 글자·숫자·로고·아이콘·기호. 포괄 금지 한 줄로 말한다.
+2. **말풍선·생각풍선 금지.** 빈 말풍선도 안 된다 — 자리가 있으면 모델이 거기에 글자를 넣는다(글자 금지를 명시했는데도 3컷에 "CRASH"가 박혔다). **앱이 대사를 직접 얹으므로 그림의 글자는 앱 자막과 겹쳐 둘 다 못 읽게 된다.**
+3. 소리나 충격은 **움직임선과 자세로만** 나타내라.
+4. **사람과 동작은 각 칸의 위 2/3에 두고, 아래는 바닥·가구 같은 평범한 배경으로 둔다** — 긍정 지시로만 말한다.
+
+**금지할 물건의 이름을 프롬프트에 쓰지 마라.** 부정 지시도 그 물건을 모델에게 떠올리게 한다 — "각 칸의 아래 1/4은 단순하게 유지하라(앱이 자막을 얹는다)"라고 적었더니 모델이 네 칸 아래에 **자막 띠와 자물쇠·플레이어 아이콘을 직접 그렸다**(2026-08-04 실측). "자막·워터마크·카메라 UI 금지"라는 나열도 같은 이유로 걷어냈다 — 1번의 포괄 금지가 그것들을 전부 덮는다. 이 원칙은 `test_comic.py`의 `test_never_names_the_artifacts_it_fears`가 고정한다.
 
 **꼭 지킬 것 세 가지**
 
@@ -855,7 +856,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-12 | `POST /api/devices/{deviceId}/transfer-ownership` | 기기 소유권 이전 |
 | API-13 | `DELETE /api/devices/{deviceId}` | 기기 해제 |
 | API-28 | `GET /api/videos/{videoId}` | 영상 단건 상세 조회 |
-| API-29 | `PATCH /api/videos/{videoId}` | 영상 메타데이터(제목/메모/즐겨찾기) 수정 |
+| API-29 | `PATCH /api/videos/{videoId}` | 영상 제목·즐겨찾기 수정. 원본 제목은 OWNER만, 편집본 제목과 즐겨찾기는 OWNER/MEMBER |
 | API-30 | `DELETE /api/videos/{videoId}` | 영상 삭제(OWNER, 비동기 202) |
 | API-39 | `GET /api/devices/{deviceId}/subscription` | 구독 상태 조회 |
 | API-40 | `PUT /api/devices/{deviceId}/subscription` | 구독 활성화 |
@@ -875,14 +876,22 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-61 | `PATCH /api/notifications/read-all` | 전체 읽음(`ContentNotificationsScreen` 연동) |
 | API-69 | `PUT /api/notifications/push-tokens` | FCM 푸시 토큰 등록(`{installationId, token, platform}`, 204, `push_notification_service.dart` 연동) |
 | API-70 | `DELETE /api/notifications/push-tokens/{installationId}` | 푸시 토큰 해제(204, `push_notification_service.dart` 연동) |
-| API-74 | `GET /api/schedules` | 캘린더 일정 목록(사용자 귀속, 날짜 오름차순). 응답 `{id, title, date, memo, yearly, emoji}` 배열 |
-| API-75 | `POST /api/schedules` | 일정 등록(`{title(1~80), date, memo?(≤500), yearly?(기본 false), emoji?(기본 ❤️)}` → 201). 사용자당 200개 상한 초과 시 422 |
-| API-76 | `PUT /api/schedules/{scheduleId}` | 일정 수정(API-75와 같은 본문 → 200). 남의 일정·없는 id는 404 |
-| API-77 | `DELETE /api/schedules/{scheduleId}` | 일정 삭제(204). 남의 일정·없는 id는 404 |
+| API-74 | `GET /api/schedules` | 캘린더 일정 목록(금고 공유, 사용자가 속한 모든 금고, 날짜 오름차순). 응답 `{id, authorId, authorName?, title, date, memo, yearly, emoji}` 배열 |
+| API-75 | `POST /api/schedules` | 일정 등록(`{title(1~80), date, memo?(≤500), yearly?(기본 false), emoji?(기본 ❤️), vaultId?}` → 201). 구성원 누구나. 금고당 200개 초과·다중 금고에서 vaultId 생략 시 422, 남의 금고는 403 |
+| API-76 | `PUT /api/schedules/{scheduleId}` | 일정 수정(API-75와 같은 본문 → 200). 적은 사람 또는 금고 OWNER만. 권한 없으면 403, 볼 수 없는 일정은 404 |
+| API-77 | `DELETE /api/schedules/{scheduleId}` | 일정 삭제(204). 적은 사람 또는 금고 OWNER만. 권한 없으면 403, 볼 수 없는 일정은 404 |
+| API-87 | `GET /api/vaults/{vaultId}/places` | 금고 장소 배치(공통)와 내 기기 순서(개인). 응답 `{places, devicePlaces, deviceOrder}` |
+| API-88 | `PUT /api/vaults/{vaultId}/places` | 장소 이름·기기 배정을 통째로 저장. 구성원 누구나. 없는 장소·금고 밖 기기는 버림. 장소 20개·이름 15자 초과 시 422 |
+| API-89 | `PUT /api/vaults/{vaultId}/device-order` | 내 기기 순서 저장(`{deviceIds}`). 부른 사람에게만 적용 |
 | API-78 | `GET /api/notifications/preferences` | 알림 설정 조회(`{anniversaryAlerts, weeklyReport, newMemoryAlerts}`). 저장 행이 없으면 모두 true |
 | API-79 | `PUT /api/notifications/preferences` | 알림 설정 저장(세 토글 일괄 → 200에 저장값). `newMemoryAlerts=false`면 새 영상 푸시 발송 대상에서 제외(인앱 알림은 계속 쌓임) |
+| API-81 | `POST /api/videos/{videoId}/edits` | 편집 완성본 업로드 예약(EDIT_OUTPUT 행 + 서명 URL, Content-Type만 서명). 완료 통보 없이 서버가 도착 감지 |
+| API-82 | `GET /api/vaults/{vaultId}/edits` | 금고 편집 완성본 목록(최신 100). READY·UPLOADING·FAILED를 함께 주고 앱이 `status`로 구분 |
+| API-83 | `GET /api/videos/{videoId}/comments` | 댓글 목록(작성자 이름은 users 조인) |
+| API-84 | `POST /api/videos/{videoId}/comments` | 댓글 작성(작성자=토큰 sub, 금고 구성원 알림) |
+| API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + `byDevice` 분해. Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계(기기 양도 후 과거 금고 통계 비오염). 앱 웃음 리포트의 "가족 전체" 토글이 사용 |
 
-**알림 생성 및 FCM 연동**: 알림 생성 API는 없다. 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 READY 확정 + triggerType=LAUGHTER → LAUGHTER_VIDEO_READY를 그 기기 활성 구성원 전원에게, ② 초대 발송(API-14) → INVITATION_RECEIVED를 초대받은 1명에게. UNIQUE (user_id, dedupe_key) + ON CONFLICT DO NOTHING으로 재시도해도 사용자당 1건만 남는다. 클라이언트는 알림함 화면(`ui/content_notifications_screen.dart`)에서 목록(API-58), 개별 읽음(API-60), 전체 읽음(API-61)을 사용하며, FCM(`core/push_notification_service.dart`)으로 푸시 토큰을 등록(API-69)/해제(API-70)하고 푸시 수신 시 해당 화면으로 이동한다. 알림 설정(API-78·79)은 FCM 발송만 거른다 — `newMemoryAlerts`를 끈 사용자는 LAUGHTER_VIDEO_READY 푸시 대상에서 빠지지만 인앱 알림함에는 계속 쌓이고, 설정 행이 없으면 모두 켜진 것으로 본다. `anniversaryAlerts`·`weeklyReport`는 저장만 하며 해당 푸시 발송기는 아직 없다.
+**알림 생성 및 FCM 연동**: 알림 생성 API는 없다. 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 READY 확정 + triggerType=LAUGHTER → LAUGHTER_VIDEO_READY를 그 기기 활성 구성원 전원에게, ② 초대 발송(API-14) → INVITATION_RECEIVED를 초대받은 1명에게. UNIQUE (user_id, dedupe_key) + ON CONFLICT DO NOTHING으로 재시도해도 사용자당 1건만 남는다. 클라이언트는 알림함 화면(`ui/content_notifications_screen.dart`)에서 목록(API-58), 개별 읽음(API-60), 전체 읽음(API-61)을 사용하며, FCM(`core/push_notification_service.dart`)으로 푸시 토큰을 등록(API-69)/해제(API-70)하고 푸시 수신 시 해당 화면으로 이동한다. 알림 설정(API-78·79)의 동작 — `newMemoryAlerts`를 끈 사용자는 LAUGHTER_VIDEO_READY 푸시 대상에서 빠지지만 인앱 알림함에는 계속 쌓이고, 설정 행이 없으면 모두 켜진 것으로 본다. `anniversaryAlerts`(매일 09:00 KST, dedupe `anniversary:{scheduleId}:{year}`)·`weeklyReport`(매주 월 09:00 KST, 지난주 금고 기기 LAUGHTER 합계, dedupe `weekly-report:{userId}:{ISO주차}`)는 스케줄러가 발송하며, 끈 사용자는 대상 조회에서 제외되어 인앱 알림도 만들지 않는다.
 
 ---
 
@@ -914,7 +923,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | 7 | 통계 / 리포트 | 부분 구현 | API-27·33 구현, 주간 웃음 리포트는 API-46(`type=LAUGHTER`) 서버 집계 사용(실패 시 단말 폴백), 캘린더 일정은 API-74~77. **API-62(시간대 분포·베스트 클립)는 미구현** |
 | 가족 공유 | API-14~24, 63~68 | 구현됨 | 초대/수락/거절/구성원 관리 전체 동작(앱은 금고 경로 API-63~68을 기본 사용) |
 
-MVP 7단계의 신규 API 중 **미구현은 API-62 서버 집계 하나뿐**이다. FN-A38 Flutter 리포트 화면 자체는 기존 영상 목록으로 동작한다. **API-71·API-72 만화는 구현됐다** — 다만 앱이 `--dart-define=COMIC_SERVER=true` 없이 빌드되면 가짜 응답을 쓰고, 워커에 `GMS_KEY`가 없으면 실제 호출이 실패한다. **FN-A39 자동 자막은 서버 없이 완결됐다** — 옛 전사 엔드포인트 API-73은 구현 전에 회수됐다(6절).
+MVP 7단계의 신규 API 중 **미구현은 API-62 서버 집계 하나뿐**이다. FN-A38 Flutter 리포트 화면 자체는 기존 영상 목록으로 동작한다. **API-71·API-72 만화는 구현됐고 앱은 기본으로 실서버를 부른다**(`--dart-define=COMIC_SERVER=false`를 주면 견본) — 워커에 `GMS_KEY`가 없으면 실제 호출이 502로 실패한다. **FN-A39 자동 자막은 서버 없이 완결됐다** — 옛 전사 엔드포인트 API-73은 구현 전에 회수됐다(6절).
 
 ### API-06 제외 사유
 
@@ -923,10 +932,10 @@ MVP 7단계의 신규 API 중 **미구현은 API-62 서버 집계 하나뿐**이
 ### ID 검증
 
 - 본문(2~9절)에 배치된 API ID: 01, 02, 03, 07, 08, 11, 14~24, 25~27, 31~38, 43~45, 51~54, 63~68, (신규)62, (신규)71, 72 — 41개 + 신규 3개. **API-73은 스키마 없이 회수 사유만 남았으므로 세지 않는다.**
-- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50, 55~61, 69, 70, 74~79 — 33개.
-- 합계 41 + 33 = 74개 + 신규 3개(62, 71, 72) = **77개.** ID 폭은 API-01~79(79개)이고 그 안에 **스키마 없는 항목이 둘**이다 — **API-06(결번, 서버 부재)과 API-73(회수, 구현 전 폐기)**. 79 − 2 = **77개로 맞는다. max ID는 API-79이고, 회수된 API-73은 재사용하지 않는다.** 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
+- 부록A에 배치된 API ID: 04, 05, 09, 10, 12, 13, 28~30, 39~42, 46~50, 55~61, 69, 70, 74~80 — 34개.
+- 합계 41 + 34 = 75개 + 신규 3개(62, 71, 72) = **78개.** ID 폭은 API-01~80(80개)이고 그 안에 **스키마 없는 항목이 둘**이다 — **API-06(결번, 서버 부재)과 API-73(회수, 구현 전 폐기)**. 80 − 2 = **78개로 맞는다. max ID는 API-80이고, 회수된 API-73은 재사용하지 않는다.** 중복 배치 없음(API-27은 5·8절, API-32는 6·7절에서 의도적으로 재사용 표기 — 동일 ID를 다른 단계에서 참조만 할 뿐 스키마는 한 곳에만 정의).
 - MQTT ID: 4절(01, 04) + 10절(02, 03, 05~09) + 12절(10~15) = 2 + 7 + 6 = 15개, MQTT-01~15 전수 반영, 중복 없음.
 - 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 금고 가족 공유(API-63~68)·푸시 토큰(API-69, 70)을 문서화해 max는 **API-70**이 되었다.
 - **만화·자막 제안도 같은 이유로 옮겼다.** FN-A40 만화(comic/script, comic/image)와 FN-A39 서버 전사(transcript)는 처음에 옛 max(API-51) 다음 번호인 **API-52·53·54**를 받았으나, 그 번호 역시 금고 구독(API-51~53)·금고 접근 기록(API-54)과 겹쳤다. 리포트 제안과 같은 원칙(구현·병합된 API 우선)으로 세 개를 max(API-70) 다음인 **API-71(만화 구성)·API-72(만화 그림)·API-73(자막 전사)**로 옮겼다. 이로써 max는 **API-73**이 되었다.
 - **그 뒤 API-73은 구현 전에 회수됐다.** ML Kit 온디바이스 인식이 자막을 폰에서 완결시켜 서버 전사가 필요 없어졌다(6절 API-73). **번호는 재사용하지 않는다** — API-06을 결번으로 비워 둔 것과 같은 처리이며, 그래서 ID 폭(01~73)은 줄지 않고 비어 있는 항목만 하나 늘었다. 다음 신규 API는 **API-74**부터다.
-- **API-74~79는 그 규칙대로 붙였다.** 캘린더 일정 CRUD(API-74~77)와 알림 설정(API-78·79)이 2026-08-04에 구현·문서화됐다. 이로써 max는 **API-79**다.
+- **API-74~80은 그 규칙대로 붙였다.** 캘린더 일정 CRUD(API-74~77), 알림 설정(API-78·79), 금고 단위 통계(API-80)가 2026-08-04에 구현·문서화됐다. 이로써 max는 **API-80**이다.

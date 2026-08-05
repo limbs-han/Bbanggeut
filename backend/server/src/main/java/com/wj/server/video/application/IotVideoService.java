@@ -24,6 +24,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class IotVideoService {
+    /**
+     * 기기 이벤트 영상의 최대 크기. nginx의 /william-james-videos 본문 한도와
+     * 같은 기준이어야 한다 — 한쪽만 크면 초과 본문이 MinIO 디스크에 도달한
+     * 뒤에야 거절되어 그때까지 용량을 점유한다.
+     */
+    static final long MAX_UPLOAD_BYTES = 524_288_000L;
+
     private final VideoMapper videoMapper;
     private final ObjectStorageService objectStorageService;
     private final SubscriptionProperties subscriptionProperties;
@@ -53,7 +60,7 @@ public class IotVideoService {
         validateIdempotencyKey(idempotencyKey, request.sourceEventId());
         List<String> eventTypes = validatedEventTypes(request);
         UUID eventId = parseEventId(request.sourceEventId());
-        if (request.sizeBytes() > 524_288_000L) {
+        if (request.sizeBytes() > MAX_UPLOAD_BYTES) {
             throw new ApiException(
                 HttpStatus.PAYLOAD_TOO_LARGE, "VIDEO_TOO_LARGE", "영상은 500 MiB 이하여야 합니다.");
         }
@@ -125,6 +132,16 @@ public class IotVideoService {
                 HttpStatus.CONFLICT,
                 "UPLOAD_INTEGRITY_MISMATCH",
                 "업로드된 객체의 크기 또는 체크섬이 일치하지 않습니다.");
+        }
+        // 위의 sha256은 기기가 스스로 붙인 메타데이터라(MinIO는 본문을 검산하지
+        // 않는다) 서명된 URL이 유출됐을 때 같은 크기·같은 메타로 내용만 바꿔치는
+        // 것을 막지 못한다. ETag는 MinIO가 실제 바이트로 계산한 값이므로,
+        // 기기가 PUT 응답에서 받은 ETag와 대조하면 그 치환을 잡아낸다.
+        if (!etagMatches(storedObject.etag(), request.objectETag())) {
+            throw new ApiException(
+                HttpStatus.CONFLICT,
+                "UPLOAD_INTEGRITY_MISMATCH",
+                "업로드된 객체가 기기가 올린 것과 다릅니다.");
         }
 
         int updated = videoMapper.markReady(
@@ -242,6 +259,29 @@ public class IotVideoService {
             expected.getBytes(StandardCharsets.US_ASCII));
     }
 
+    /**
+     * MinIO가 계산한 ETag와 기기가 보고한 ETag를 견준다. 따옴표·대소문자는
+     * 구현마다 달라 정규화한다.
+     *
+     * <p>기기가 ETag를 보내지 않은 옛 에이전트는 통과시킨다 — 이 검사는
+     * 유출된 서명 URL로 내용을 바꿔치는 것을 막는 것이고, 그 공격자는
+     * /complete를 부르는 주체가 아니다(기기 자격증명이 없다). 보고를 생략한
+     * 기기까지 막으면 얻는 것 없이 업로드만 끊긴다.
+     */
+    private boolean etagMatches(String storedEtag, String reportedEtag) {
+        if (reportedEtag == null || reportedEtag.isBlank()) {
+            return true;
+        }
+        if (storedEtag == null || storedEtag.isBlank()) {
+            return false;
+        }
+        return normalizeEtag(storedEtag).equals(normalizeEtag(reportedEtag));
+    }
+
+    private String normalizeEtag(String value) {
+        return value.strip().replace("\"", "").toLowerCase(java.util.Locale.ROOT);
+    }
+
     private ApiException validation(String message) {
         return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED", message);
     }
@@ -249,7 +289,7 @@ public class IotVideoService {
     private VideoResponse toResponse(VideoRow video) {
         return new VideoResponse(
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
-            video.sourceEventId(), video.title(), null, video.contentType(), video.sizeBytes(),
+            video.sourceEventId(), video.title(), video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
             video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
             VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));

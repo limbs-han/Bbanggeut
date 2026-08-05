@@ -23,7 +23,11 @@ webrtcLocalUDPAddress: :8189
 srt: false
 moq: false
 playback: false
-api: false
+# 관리 API는 백엔드의 유령 세션 대사(StreamMediaReconcileWorker) 전용이다.
+# 컨테이너 안에서만 열고 compose가 호스트 loopback으로만 매핑한다 —
+# 외부에 공개되지 않는다.
+api: true
+apiAddress: :9997
 metrics: false
 pprof: false
 

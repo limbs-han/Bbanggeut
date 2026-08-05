@@ -10,6 +10,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:gal/gal.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -108,26 +109,52 @@ class _ComicScreenState extends State<ComicScreen> {
     _controller.editDialogue(index, text);
   }
 
-  /// 화면을 PNG로 떠서 공유 시트로 넘긴다. 거기서 '이미지 저장'으로 갤러리에
-  /// 들어간다 — 갤러리 전용 플러그인을 새로 넣지 않는다.
+  /// 자막이 얹힌 화면 그대로를 PNG 파일로 뜬다.
+  Future<File> _renderPng() async {
+    final boundary =
+        _canvasKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) throw StateError('만화 영역을 찾지 못했어요.');
+    final image = await boundary.toImage(pixelRatio: 3);
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    if (data == null) throw StateError('이미지로 바꾸지 못했어요.');
+
+    final directory = await getTemporaryDirectory();
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}comic_${widget.video.id}.png',
+    );
+    await file.writeAsBytes(data.buffer.asUint8List());
+    return file;
+  }
+
+  /// 갤러리(빵긋 앨범)에 바로 저장한다. 영상 저장(VideoGallerySaver)과 같은
+  /// gal 경로다 — 처음엔 공유 시트로 대신했더니 "저장하기"를 눌렀는데 공유가
+  /// 열린다는 혼란만 남았다.
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final boundary =
-          _canvasKey.currentContext?.findRenderObject()
-              as RenderRepaintBoundary?;
-      if (boundary == null) throw StateError('만화 영역을 찾지 못했어요.');
-      final image = await boundary.toImage(pixelRatio: 3);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      if (data == null) throw StateError('이미지로 바꾸지 못했어요.');
+      final file = await _renderPng();
+      // 안드로이드 10부터는 내 앱이 만든 그림을 넣는 데 권한이 필요 없다.
+      // 권한 확인이 실패해도 저장은 그대로 시도한다(영상 저장과 같은 판단).
+      try {
+        if (!await Gal.hasAccess()) await Gal.requestAccess();
+      } catch (_) {}
+      await Gal.putImage(file.path, album: '빵긋');
+      if (mounted) showAppSnack(context, '갤러리의 빵긋 앨범에 저장했어요.');
+    } on GalException catch (failure) {
+      if (mounted) showAppSnack(context, failure.type.message, error: true);
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
-      final directory = await getTemporaryDirectory();
-      final file = File(
-        '${directory.path}${Platform.pathSeparator}comic_${widget.video.id}.png',
-      );
-      await file.writeAsBytes(data.buffer.asUint8List());
-
+  /// 공유 시트를 연다. 저장과 별개 동작이다.
+  Future<void> _share() async {
+    setState(() => _saving = true);
+    try {
+      final file = await _renderPng();
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path)],
@@ -245,14 +272,28 @@ class _ComicScreenState extends State<ComicScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const ValueKey('comic-save'),
-                onPressed: _saving ? null : _save,
-                icon: const Icon(Icons.ios_share_rounded),
-                label: Text(_saving ? '저장하는 중이에요' : '만화 저장하기'),
-              ),
+            // 한 줄에 둘씩. 셋을 한 줄에 두면 반폭보다 좁아져 "다시 만
+            // 들기"처럼 글자가 꺾인다 — 실제 기기에서 확인한 문제다.
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    key: const ValueKey('comic-save'),
+                    onPressed: _saving ? null : _save,
+                    icon: const Icon(Icons.download_rounded),
+                    label: Text(_saving ? '잠시만요' : '저장하기'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('comic-share'),
+                    onPressed: _saving ? null : _share,
+                    icon: const Icon(Icons.ios_share_rounded),
+                    label: const Text('공유하기'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
@@ -283,10 +324,11 @@ class _ComicScreenState extends State<ComicScreen> {
   );
 }
 
-/// 서버 통로가 없을 때 화면에 붙는 알림.
+/// 견본으로 돌릴 때 화면에 붙는 알림.
 ///
 /// 가짜 통로는 고정된 대사와 색 블록 그림을 돌려준다. 알리지 않으면 사용자가 그것을
-/// 자기 가족의 말과 그림으로 오해한다. `COMIC_SERVER=true`로 켜면 사라진다.
+/// 자기 가족의 말과 그림으로 오해한다. 기본은 실서버라 보이지 않고,
+/// `--dart-define=COMIC_SERVER=false`로 견본을 켤 때만 나타난다.
 class _SampleNotice extends StatelessWidget {
   const _SampleNotice();
 

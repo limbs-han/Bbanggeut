@@ -20,6 +20,98 @@ public interface VideoMapper {
     @Select("SELECT status IN ('ONLINE', 'OFFLINE') FROM devices WHERE id = #{deviceId}")
     boolean isClaimedDevice(@Param("deviceId") UUID deviceId);
 
+    // --- 편집 완성본(EDIT_OUTPUT) ---
+    //
+    // 원본 영상 행에서 금고·기기·보관 기준을 물려받는다. 그래서 권한 검사·
+    // 보관 만료·삭제 연쇄·목록이 원본과 같은 경로를 탄다.
+    @Insert("""
+        INSERT INTO videos (
+            id, device_id, vault_id, device_binding_id, created_by,
+            source_type, trigger_type, event_types, source_video_id,
+            title, storage_key, content_type, duration_ms,
+            captured_start_at, captured_end_at, status, retention_until
+        )
+        SELECT
+            #{id}, o.device_id, o.vault_id, o.device_binding_id, #{userId},
+            'EDIT_OUTPUT', o.trigger_type, o.event_types, o.id,
+            #{title}, #{storageKey}, 'video/mp4', #{durationMs},
+            #{capturedStartAt}, #{capturedEndAt}, 'UPLOADING',
+            now() + make_interval(days =>
+                CASE WHEN mv.subscription_active THEN #{premiumRetentionDays}
+                     ELSE mv.retention_days END)
+          FROM videos o
+          JOIN memory_vaults mv ON mv.id = o.vault_id
+         WHERE o.id = #{sourceVideoId}
+        """)
+    int insertEditOutput(
+        @Param("id") UUID id,
+        @Param("sourceVideoId") UUID sourceVideoId,
+        @Param("userId") UUID userId,
+        @Param("title") String title,
+        @Param("storageKey") String storageKey,
+        @Param("durationMs") Long durationMs,
+        @Param("capturedStartAt") Instant capturedStartAt,
+        @Param("capturedEndAt") Instant capturedEndAt,
+        @Param("premiumRetentionDays") int premiumRetentionDays
+    );
+
+    /**
+     * 금고의 편집 완성본. 도착을 기다리는 것({@code UPLOADING})과 끝내 오지
+     * 못한 것({@code FAILED})도 함께 준다 — 업로드는 세션 없는 OS 백그라운드
+     * 작업이 하고 진행 상황이 상단 알림으로만 나가서, 알림을 껐거나 권한을
+     * 주지 않은 기기에서는 목록이 유일한 단서다. {@code READY}만 주면 올라가는
+     * 중에는 아무것도 안 보이고 실패한 줄은 조용히 사라진다.
+     */
+    @Select("""
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id,
+               v.title, v.content_type, v.size_bytes, v.checksum_sha256,
+               v.duration_ms, v.captured_start_at, v.captured_end_at, v.storage_key,
+               v.status, v.is_favorite AS favorite, v.created_at,
+               array_to_string(v.event_types, ',') AS event_types_csv
+          FROM videos v
+          JOIN vault_memberships m ON m.vault_id = v.vault_id
+         WHERE v.vault_id = #{vaultId} AND m.user_id = #{userId} AND m.status = 'ACTIVE'
+           AND v.source_type = 'EDIT_OUTPUT'
+           AND v.status IN ('READY', 'UPLOADING', 'FAILED')
+           AND v.deleted_at IS NULL
+         ORDER BY v.created_at DESC, v.id DESC
+         LIMIT #{limit}
+        """)
+    List<VideoRow> findEditOutputsByVault(
+        @Param("userId") UUID userId,
+        @Param("vaultId") UUID vaultId,
+        @Param("limit") int limit
+    );
+
+    /**
+     * 도착을 기다리는 편집본. 백그라운드 업로더는 세션이 없어 /complete를
+     * 부를 수 없으므로 서버가 객체가 왔는지 훑어 승격한다.
+     */
+    @Select("""
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
+               content_type, size_bytes, checksum_sha256, duration_ms,
+               captured_start_at, captured_end_at, storage_key, status,
+               is_favorite AS favorite, created_at,
+               array_to_string(event_types, ',') AS event_types_csv
+          FROM videos
+         WHERE status = 'UPLOADING' AND source_type = 'EDIT_OUTPUT'
+           AND deleted_at IS NULL
+         ORDER BY updated_at, id
+         LIMIT #{limit}
+        """)
+    List<VideoRow> findPendingEditUploads(@Param("limit") int limit);
+
+    @Update("""
+        UPDATE videos
+           SET status = 'READY', size_bytes = #{sizeBytes}, uploaded_at = now(),
+               updated_at = now()
+         WHERE id = #{videoId} AND status = 'UPLOADING' AND source_type = 'EDIT_OUTPUT'
+        """)
+    int markEditOutputReady(
+        @Param("videoId") UUID videoId,
+        @Param("sizeBytes") long sizeBytes
+    );
+
     @Insert("""
         INSERT INTO videos (
             id, device_id, vault_id, device_binding_id,
@@ -55,7 +147,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -69,7 +161,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -81,6 +173,16 @@ public interface VideoMapper {
         @Param("deviceId") UUID deviceId,
         @Param("videoId") UUID videoId
     );
+
+    /**
+     * 이 영상을 만든 사람. 편집본 삭제 권한을 가리는 데 쓴다.
+     *
+     * {@link VideoRow}에 얹지 않은 이유는 이 값을 쓰는 곳이 삭제 한 군데뿐인데
+     * record에 넣으면 영상을 읽는 모든 select를 함께 넓혀야 하기 때문이다.
+     * 기기가 올린 원본은 이 값이 비어 있다(사람이 만든 것이 아니다).
+     */
+    @Select("SELECT created_by FROM videos WHERE id = #{videoId}")
+    Optional<UUID> findCreatorId(@Param("videoId") UUID videoId);
 
     @Update("""
         UPDATE videos v
@@ -189,7 +291,7 @@ public interface VideoMapper {
 
     @Select("""
         <script>
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -229,7 +331,7 @@ public interface VideoMapper {
 
     @Select("""
         <script>
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -278,21 +380,9 @@ public interface VideoMapper {
         @Param("to") Instant to
     );
 
-    @Select("""
-        SELECT count(*)
-          FROM videos
-         WHERE device_id = #{deviceId} AND status = 'READY'
-           AND description IS NOT NULL AND btrim(description) <> ''
-           AND captured_start_at >= #{from} AND captured_start_at < #{to}
-        """)
-    long countReadyVideosWithMemo(
-        @Param("deviceId") UUID deviceId,
-        @Param("from") Instant from,
-        @Param("to") Instant to
-    );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -374,7 +464,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -392,7 +482,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -424,7 +514,6 @@ public interface VideoMapper {
     @Update("""
         UPDATE videos
            SET title = CASE WHEN #{titlePresent} THEN #{title} ELSE title END,
-               description = CASE WHEN #{descriptionPresent} THEN #{description} ELSE description END,
                is_favorite = CASE WHEN #{favoritePresent} THEN #{favorite} ELSE is_favorite END,
                updated_at = now()
          WHERE id = #{videoId}
@@ -433,8 +522,6 @@ public interface VideoMapper {
         @Param("videoId") UUID videoId,
         @Param("titlePresent") boolean titlePresent,
         @Param("title") String title,
-        @Param("descriptionPresent") boolean descriptionPresent,
-        @Param("description") String description,
         @Param("favoritePresent") boolean favoritePresent,
         @Param("favorite") Boolean favorite
     );

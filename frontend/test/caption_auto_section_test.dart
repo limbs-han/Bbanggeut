@@ -35,6 +35,13 @@ class _MemoryStore extends TranscriptStore {
   Future<void> write(String videoId, List<CaptionLine> lines) async {
     _saved = lines;
   }
+
+  // read·write와 같은 층이다. 이것을 안 덮으면 다시 만들기가 진짜 파일을
+  // 만지러 가서, 가짜 시계에 걸린 위젯 테스트가 끝나지 않는다.
+  @override
+  Future<void> clear(String videoId) async {
+    _saved = null;
+  }
 }
 
 void main() {
@@ -56,8 +63,17 @@ void main() {
     CaptionController controller, {
     VoidCallback? onChanged,
     int? estimateSeconds,
+    VoidCallback? onCancel,
+    VoidCallback? onDone,
+    bool disableAnimations = false,
   }) => tester.pumpWidget(
     MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(disableAnimations: disableAnimations),
+        child: child!,
+      ),
       home: Scaffold(
         body: SingleChildScrollView(
           child: Column(
@@ -66,6 +82,8 @@ void main() {
                 controller: controller,
                 onChanged: onChanged,
                 estimateSeconds: estimateSeconds,
+                onCancel: onCancel,
+                onDone: onDone,
               ),
             ],
           ),
@@ -93,7 +111,10 @@ void main() {
       find.byKey(const ValueKey('auto-caption-field')),
       '그거 만지면 안 돼',
     );
-    await tester.tap(find.text('넣기'));
+    await tester.pump();
+    final submit = find.byKey(const ValueKey('auto-caption-edit-submit'));
+    await tester.ensureVisible(submit);
+    tester.widget<FilledButton>(submit).onPressed!();
     await tester.pumpAndSettle();
 
     expect(find.text('그거 만지면 안 돼'), findsOneWidget);
@@ -108,11 +129,59 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('auto-caption-row-0')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('취소'));
+    final cancel = find.text('취소');
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
     await tester.pumpAndSettle();
 
     expect(find.text('그거 만지지 마'), findsOneWidget);
     expect(changed, 0);
+  });
+
+  testWidgets('자막 수정 카드는 키보드 위에 모두 보이고 원문 듣기가 없다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1
+      ..viewInsets = const FakeViewPadding(bottom: 320);
+    addTearDown(tester.view.reset);
+
+    await pumpSection(tester, await ready());
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('auto-caption-row-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('1번째 자막 수정'), findsOneWidget);
+    expect(find.text('원문 듣기'), findsNothing);
+    final dialog = find.byKey(const ValueKey('auto-caption-edit-dialog'));
+    expect(dialog, findsOneWidget);
+    expect(
+      tester
+          .getBottomRight(
+            find.byKey(const ValueKey('auto-caption-edit-submit')),
+          )
+          .dy,
+      lessThanOrEqualTo(570),
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.byType(SingleChildScrollView)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('자막 검토 완료는 닫기와 별도의 적용 콜백을 호출한다', (tester) async {
+    var cancelled = 0;
+    var applied = 0;
+    await pumpSection(
+      tester,
+      await ready(),
+      onCancel: () => cancelled++,
+      onDone: () => applied++,
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('auto-caption-done')));
+    expect(applied, 1);
+    expect(cancelled, 0);
   });
 
   testWidgets('줄이 없으면 목록 없이 안내만 보여준다', (tester) async {
@@ -123,21 +192,198 @@ void main() {
     expect(find.byKey(const ValueKey('auto-caption-row-0')), findsNothing);
   });
 
-  testWidgets('도는 중이면 예상 시간을 보여준다', (tester) async {
+  testWidgets('도는 중이면 고정 위치의 여덟 반짝이와 반복 파형을 보여준다', (tester) async {
+    // 기준 기기인 갤럭시 S24+의 세로 논리 크기에서 진행 화면을 검증한다.
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
     // Completer로 붙잡는다 — 타이머를 쓰면 가짜 시계에 걸려 진행되지 않는다.
     final gate = Completer<List<CaptionLine>>();
     final store = _MemoryStore((_) => gate.future);
     final controller = CaptionController(store: store);
+    addTearDown(controller.dispose);
     controller.start('v1', '/video/v1.mp4');
 
     await pumpSection(tester, controller, estimateSeconds: 108);
     await tester.pump();
 
     expect(find.textContaining('108초'), findsOneWidget);
+    expect(find.byType(AnimatedCaptionWaveform), findsOneWidget);
+    final wave = find.byKey(const ValueKey('auto-caption-wave'));
+    expect(wave, findsOneWidget);
+    expect(
+      find.descendant(of: wave, matching: find.byType(DecoratedBox)),
+      findsNothing,
+    );
 
-    // 붙잡은 것을 풀어 준다 — 안 그러면 미완 작업을 남기고 끝난다.
+    // 자리는 고정이다 — 반짝이는 것은 밝기·크기·기울기뿐이라, 여덟 개가
+    // 매 프레임 자리를 옮기며 화면을 어지럽히지 않는다.
+    const sparkleIds = [
+      'coral-top-left',
+      'olive-top-right',
+      'olive-bottom-left',
+      'coral-bottom-right',
+      'coral-mid-left',
+      'olive-mid-right',
+      'olive-top-center',
+      'coral-bottom-center',
+    ];
+    final beforePositions = [
+      for (final id in sparkleIds)
+        tester.getTopLeft(find.byKey(ValueKey('auto-caption-sparkle-$id'))),
+    ];
+    final paintFinder = find.byKey(const ValueKey('auto-caption-wave-paint'));
+    final beforePainter = tester.widget<CustomPaint>(paintFinder).painter;
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    await tester.pump(const Duration(milliseconds: 300));
+    final afterPainter = tester.widget<CustomPaint>(paintFinder).painter;
+    final afterPositions = [
+      for (final id in sparkleIds)
+        tester.getTopLeft(find.byKey(ValueKey('auto-caption-sparkle-$id'))),
+    ];
+    expect(find.byKey(const ValueKey('auto-caption-loading')), findsOneWidget);
+    expect(afterPositions, beforePositions);
+    expect(identical(afterPainter, beforePainter), isFalse);
+
+    // 완료되면 로딩 파형이 사라지고 내부 컨트롤러도 함께 dispose된다.
     gate.complete(const []);
     await store.pending;
+    await tester.pumpAndSettle();
+    expect(find.byType(AnimatedCaptionWaveform), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 예전에는 이 설정에서 파형을 세웠다. 개발자 옵션으로 애니메이터 배율을
+  // 꺼 둔 기기에서 로딩 화면이 통째로 굳어 "앱이 멎었다"로 보였다 — 진행
+  // 표시는 기다리라는 말을 하는 그림이라 이 설정에서 뺀다.
+  testWidgets('애니메이션 감소 설정에서도 파형은 계속 움직인다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final gate = Completer<List<CaptionLine>>();
+    final store = _MemoryStore((_) => gate.future);
+    final controller = CaptionController(store: store);
+    addTearDown(controller.dispose);
+    controller.start('v1', '/video/v1.mp4');
+
+    await pumpSection(
+      tester,
+      controller,
+      estimateSeconds: 108,
+      disableAnimations: true,
+    );
+    await tester.pump();
+    final sparkle = find.byKey(
+      const ValueKey('auto-caption-sparkle-coral-top-left'),
+    );
+    final before = tester.getTopLeft(sparkle);
+    final paintFinder = find.byKey(const ValueKey('auto-caption-wave-paint'));
+    final beforePainter = tester.widget<CustomPaint>(paintFinder).painter;
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 반짝이의 자리는 고정이다. 움직이는 것은 그리는 내용뿐이다.
+    expect(tester.getTopLeft(sparkle), before);
+    expect(
+      identical(tester.widget<CustomPaint>(paintFinder).painter, beforePainter),
+      isFalse,
+    );
+    expect(tester.binding.hasScheduledFrame, isTrue);
+
+    gate.complete(const []);
+    await store.pending;
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('animate:false로 세워 두면 프레임을 잡아먹지 않는다', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: AnimatedCaptionWaveform(animate: false)),
+      ),
+    );
+    final paintFinder = find.byKey(const ValueKey('auto-caption-wave-paint'));
+    final before = tester.widget<CustomPaint>(paintFinder).painter;
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(
+      identical(tester.widget<CustomPaint>(paintFinder).painter, before),
+      isTrue,
+    );
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  testWidgets('자동 자막 취소 버튼은 기존 취소 콜백을 그대로 호출한다', (tester) async {
+    final gate = Completer<List<CaptionLine>>();
+    final store = _MemoryStore((_) => gate.future);
+    final controller = CaptionController(store: store);
+    addTearDown(controller.dispose);
+    controller.start('v1', '/video/v1.mp4');
+    var cancelled = 0;
+
+    await pumpSection(tester, controller, onCancel: () => cancelled++);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('auto-caption-cancel')));
+    expect(cancelled, 1);
+
+    // 실제 화면 종료처럼 위젯을 제거해 애니메이션 컨트롤러를 dispose한다.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    gate.complete(const []);
+    await store.pending;
+  });
+
+  testWidgets('생성 중에는 항상 퍼센트를 표시하고 기존 다운로드 진행률을 갱신한다', (tester) async {
+    final gate = Completer<List<CaptionLine>>();
+    final store = _MemoryStore((_) => gate.future);
+    final controller = CaptionController(store: store);
+    addTearDown(controller.dispose);
+    addTearDown(() => mlkitDownloadPercent.value = null);
+    controller.start('v1', '/video/v1.mp4');
+    await pumpSection(tester, controller, estimateSeconds: 48);
+    await tester.pump();
+    expect(find.text('자동 자막 생성 중 · 1%'), findsOneWidget);
+
+    mlkitDownloadPercent.value = 62;
+    await tester.pump();
+    expect(find.text('자동 자막 생성 중 · 62%'), findsOneWidget);
+
+    mlkitDownloadPercent.value = 67;
+    await tester.pump();
+    expect(find.text('자동 자막 생성 중 · 67%'), findsOneWidget);
+    expect(find.byType(AnimatedCaptionWaveform), findsOneWidget);
+
+    mlkitDownloadPercent.value = null;
+    gate.complete(const []);
+    await store.pending;
+    await tester.pumpAndSettle();
+  });
+
+  test('24개 막대는 8~48dp 안에서 서로 다른 위상으로 움직인다', () {
+    final first = [
+      for (var index = 0; index < 24; index++)
+        AnimatedCaptionWaveform.debugBarHeight(index, 0),
+    ];
+    final later = [
+      for (var index = 0; index < 24; index++)
+        AnimatedCaptionWaveform.debugBarHeight(index, 0.25),
+    ];
+
+    expect(first.every((height) => height >= 8 && height <= 48), isTrue);
+    expect(later.every((height) => height >= 8 && height <= 48), isTrue);
+    expect(
+      List.generate(
+        24,
+        (index) => (first[index] - later[index]).abs(),
+      ).where((difference) => difference > 1).length,
+      greaterThan(12),
+    );
+    final centerAverage = (first[11] + first[12]) / 2;
+    final edgeAverage = (first.first + first.last) / 2;
+    expect(centerAverage, greaterThan(edgeAverage));
   });
 
   test('autoCaptionAt은 그 시각의 줄만 돌려준다', () async {

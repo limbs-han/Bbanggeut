@@ -7,36 +7,45 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../app/app_theme.dart';
-import '../editor/edit_recommendation_client.dart';
+import '../core/api_client.dart';
+import '../core/models.dart';
 import 'widgets.dart';
 
-/// 편집 완료 영상 하나를 서버(editor-api)에서 받아 재생하고, 가족 댓글을
-/// 달 수 있는 화면. 댓글은 영상별 JSON으로 서버에 저장된다.
+/// 편집 완료 영상 하나를 재생하고 가족 댓글을 다는 화면. 영상과 댓글 모두
+/// 백엔드가 원본 영상과 같은 경로로 관리한다(EDIT_OUTPUT 행 + video_comments)
+/// — 재생은 원본과 같은 presigned URL, 작성자 이름은 서버가 채운다.
 class EditedVideoScreen extends StatefulWidget {
   const EditedVideoScreen({
     super.key,
     required this.videoId,
     required this.title,
+    required this.api,
     this.savedAt,
-    this.authorName = '가족',
+    this.myUserId,
+    this.isOwner = false,
   });
 
   final String videoId;
   final String title;
   final DateTime? savedAt;
 
-  /// 댓글에 남길 이름. 로그인 프로필 이름을 넘긴다.
-  final String authorName;
+  /// 편집본·댓글을 다루는 백엔드 클라이언트.
+  final ApiClient api;
+
+  /// 지금 로그인한 사용자. 자기 댓글에만 수정·삭제를 띄우기 위해 받는다.
+  final String? myUserId;
+
+  /// 금고 OWNER인가. OWNER는 남의 댓글도 지울 수 있다(수정은 못 한다).
+  final bool isOwner;
 
   @override
   State<EditedVideoScreen> createState() => _EditedVideoScreenState();
 }
 
 class _EditedVideoScreenState extends State<EditedVideoScreen> {
-  final _client = EditRecommendationClient();
   final _commentInput = TextEditingController();
   VideoPlayerController? _player;
-  List<Map<String, dynamic>> _comments = const [];
+  List<VideoComment> _comments = const [];
   bool _sending = false;
 
   /// 갤러리 저장 진행률(0~1). null이면 저장 중이 아니다.
@@ -54,10 +63,10 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
         '${directory.path}${Platform.pathSeparator}'
         'edited-${widget.videoId}.mp4';
     try {
-      await _client.downloadEditedVideo(
+      await widget.api.downloadVideoToFile(
         widget.videoId,
         savePath,
-        onProgress: (received, total) {
+        onReceiveProgress: (received, total) {
           if (!mounted || total <= 0) return;
           setState(() => _downloadProgress = received / total);
         },
@@ -87,22 +96,10 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
 
   Future<void> _preparePlayer() async {
     try {
-      // 실서버에서는 MinIO presigned URL로 직접 스트리밍한다(서명이 URL에
-      // 있어 헤더 불필요). 로컬 등 presigned 미지원이면 editor-api 경유
-      // /file + 인증 헤더로 폴백한다.
-      String? playUrl;
-      try {
-        playUrl = await _client.editedVideoPlayUrl(widget.videoId);
-      } catch (_) {
-        playUrl = null;
-      }
-      final player = playUrl != null
-          ? VideoPlayerController.networkUrl(Uri.parse(playUrl))
-          : VideoPlayerController.networkUrl(
-              Uri.parse(_client.editedVideoUrl(widget.videoId)),
-              // video_player는 Dio 인터셉터를 거치지 않으므로 헤더를 직접 붙인다.
-              httpHeaders: _client.authHeaders,
-            );
+      // 원본 영상과 같은 경로다 — MinIO presigned URL로 직접 스트리밍한다
+      // (서명이 URL에 있어 헤더가 필요 없다).
+      final signed = await widget.api.createPlayUrl(widget.videoId);
+      final player = VideoPlayerController.networkUrl(Uri.parse(signed.url));
       await player.initialize();
       await player.setLooping(true);
       if (!mounted) {
@@ -118,7 +115,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
 
   Future<void> _loadComments() async {
     try {
-      final comments = await _client.listComments(widget.videoId);
+      final comments = await widget.api.listVideoComments(widget.videoId);
       if (mounted) setState(() => _comments = comments);
     } catch (_) {
       // 댓글을 못 불러와도 재생은 계속한다.
@@ -130,17 +127,60 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      await _client.addComment(
-        widget.videoId,
-        text,
-        author: widget.authorName,
-      );
+      await widget.api.addVideoComment(widget.videoId, text);
       _commentInput.clear();
       await _loadComments();
     } catch (_) {
       if (mounted) showAppSnack(context, '댓글을 남기지 못했어요.', error: true);
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// 내가 쓴 댓글인가. 수정은 쓴 사람만 할 수 있다.
+  bool _isMine(VideoComment comment) =>
+      widget.myUserId != null && widget.myUserId == comment.authorId;
+
+  Future<void> _editComment(VideoComment comment) async {
+    final edited = await showDialog<String>(
+      context: context,
+      builder: (_) => _CommentEditorDialog(initialBody: comment.body),
+    );
+    if (edited == null || edited == comment.body) return;
+    try {
+      await widget.api.updateVideoComment(widget.videoId, comment.id, edited);
+      await _loadComments();
+      if (mounted) showAppSnack(context, '댓글을 고쳤어요.');
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
+    }
+  }
+
+  Future<void> _deleteComment(VideoComment comment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('댓글을 지울까요?'),
+        content: const Text('지운 댓글은 되돌릴 수 없어요.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.deleteVideoComment(widget.videoId, comment.id);
+      await _loadComments();
+      if (mounted) showAppSnack(context, '댓글을 지웠어요.');
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
     }
   }
 
@@ -268,9 +308,10 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final comment = _comments[index];
-                        final createdAt = DateTime.tryParse(
-                          comment['createdAt'] as String? ?? '',
-                        )?.toLocal();
+                        final createdAt = comment.createdAt?.toLocal();
+                        final author = comment.authorName?.isNotEmpty == true
+                            ? comment.authorName!
+                            : '가족';
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -280,9 +321,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                                 alpha: 0.35,
                               ),
                               child: Text(
-                                (comment['author'] as String? ?? '가')
-                                    .characters
-                                    .first,
+                                author.characters.first,
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w800,
@@ -297,7 +336,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                                   Row(
                                     children: [
                                       Text(
-                                        comment['author'] as String? ?? '가족',
+                                        author,
                                         style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w800,
@@ -317,12 +356,38 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                                     ],
                                   ),
                                   Text(
-                                    comment['text'] as String? ?? '',
+                                    comment.body,
                                     style: const TextStyle(fontSize: 13),
                                   ),
                                 ],
                               ),
                             ),
+                            // 내 댓글은 고치고 지운다. OWNER는 남의 댓글도
+                            // 지울 수 있지만 고치지는 못한다 — 남의 말을
+                            // 고쳐 쓰는 것과 지우는 것은 다른 일이다.
+                            if (_isMine(comment) || widget.isOwner)
+                              PopupMenuButton<String>(
+                                key: Key('comment-menu-${comment.id}'),
+                                icon: const Icon(
+                                  Icons.more_horiz_rounded,
+                                  size: 18,
+                                  color: AppColors.muted,
+                                ),
+                                onSelected: (value) => value == 'edit'
+                                    ? _editComment(comment)
+                                    : _deleteComment(comment),
+                                itemBuilder: (_) => [
+                                  if (_isMine(comment))
+                                    const PopupMenuItem(
+                                      value: 'edit',
+                                      child: Text('수정'),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('삭제'),
+                                  ),
+                                ],
+                              ),
                           ],
                         );
                       },
@@ -366,4 +431,58 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
       ),
     );
   }
+}
+
+/// 댓글 한 줄을 고치는 작은 입력창.
+class _CommentEditorDialog extends StatefulWidget {
+  const _CommentEditorDialog({required this.initialBody});
+
+  final String initialBody;
+
+  @override
+  State<_CommentEditorDialog> createState() => _CommentEditorDialogState();
+}
+
+class _CommentEditorDialogState extends State<_CommentEditorDialog> {
+  late final TextEditingController _body;
+
+  @override
+  void initState() {
+    super.initState();
+    _body = TextEditingController(text: widget.initialBody)
+      ..addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('댓글 고치기'),
+    content: TextField(
+      key: const Key('comment-edit-input'),
+      controller: _body,
+      autofocus: true,
+      maxLength: 500,
+      minLines: 1,
+      maxLines: 4,
+      decoration: const InputDecoration(hintText: '댓글을 입력해 주세요'),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        key: const Key('comment-edit-save'),
+        onPressed: _body.text.trim().isEmpty
+            ? null
+            : () => Navigator.pop(context, _body.text.trim()),
+        child: const Text('저장'),
+      ),
+    ],
+  );
 }

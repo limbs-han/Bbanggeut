@@ -139,14 +139,15 @@ flowchart TD
 | FN-A13 | 월별 캘린더 영상조회 | API-27 | `ui/content_calendar_screen.dart` | - |
 | FN-A14 | 일정(기념일) 추가/수정(부분 구현) | 없음 ❌ | `ui/content_calendar_screen.dart`, `ui/schedule_editor_screen.dart` | 앱 메모리 전용(재실행 시 소실, 서버 미연동) |
 | FN-A15 | 영상 목록/필터 | API-27(간접, 로컬필터) | `ui/all_memories_screen.dart` | 웃음 감지/편집 완료 분류 + 기간(날짜 범위) 필터. 참여 중인 모든 금고 병렬 조회 후 합침 |
+| FN-A15a | 편집본 업로드 상태 표시 | API-82 | `ui/all_memories_screen.dart` | UPLOADING·FAILED 편집본도 상태와 함께 표시. UPLOADING이 있으면 5초 간격 최대 60회 자동 재조회 |
 | FN-A16 | 영상 삭제 | API-30 | `ui/all_memories_screen.dart` | 403 FORBIDDEN_ROLE, 404 |
 | FN-A17 | 영상 상세/재생 | API-31 | `ui/content_video_detail_screen.dart` | 409 VIDEO_NOT_READY, 503 |
-| FN-A18 | 메타데이터(제목/메모) 편집 | API-29, API-28 | `ui/content_video_detail_screen.dart` | 403, 422 VALIDATION_FAILED |
+| FN-A18 | 제목 편집(원본은 OWNER, 편집본은 OWNER/MEMBER) | API-29, API-28 | `ui/content_video_detail_screen.dart` | 403 FORBIDDEN_ROLE, 422 VALIDATION_FAILED |
 | FN-A19 | 즐겨찾기 토글 | API-29 | `ui/content_video_detail_screen.dart`, `ui/favorite_videos_screen.dart`, `app/app_controller.dart` | - |
 | FN-A20 | 영상 다운로드 | API-32 | `ui/content_video_detail_screen.dart` | 409, 503 |
 | FN-A21 | 로컬 영상 편집 | API-32 | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt`(exportWithTrim) | 구간 자르기(트림)·화면 비율 6종·음량·자막·필터 3종·이모지 스티커 편집(애니메이션·음악 스텁 제외). MediaStore 갤러리 저장 단독(앱 내 공유 없음) |
-| FN-A39 | 온디바이스 자동 자막(ML Kit) | **서버 API 없음** | `features/stt/mlkit_transcriber.dart`, `transcript_store.dart`, `caption_controller.dart`, `caption_auto_section.dart`, `caption_line.dart`, `android_audio.dart`, `pcm_wav.dart`, `speech_analysis.dart`, `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `MlKitTranscriber.kt`, `SttChannel.kt`, `AudioDecoder.kt`, `MicPermission.kt`, `SubtitleOverlay.kt` | **자막은 폰에서 만든다.** ML Kit GenAI 온디바이스 음성 인식이 전사하고 오디오·전사문은 기기를 떠나지 않는다 — 서버 API가 없다. 2분 영상 약 18초(재생 시간의 약 1/8, 오디오를 8배속으로 먹인다). 결과는 `videoId`별로 캐시해 다시 열 때 재사용한다(빈 결과·실패는 캐시하지 않음). **마이크 권한은 자막 탭 진입 시점에 묻는다** — 파일 입력인데도 ML Kit이 요구한다(`local_edit_screen.dart`가 `MlKitTranscriber().requestMicrophone()`을 먼저 부른다). `SttChannel.kt`(채널 `stt/media`)와 `AudioDecoder.kt`는 **이 기능의 코드 경로다** — ML Kit에 넣을 16kHz 모노 WAV를 만든다(`android_audio.dart`가 리샘플). **폴백이 없다** — ML Kit이 준비되지 않으면 자막이 없고 `CaptionController.message`가 사유를 알린다(모델 내려받기 진행률 / 마이크 권한 / 기기 미지원). whisper 모델 에셋과 코드는 삭제됐다(커밋 `3bb0a47`). `SubtitleOverlay.kt`는 굽기에 계속 쓰인다. 자르기·자막·효과는 인코딩 1회에 함께 처리 |
-| FN-A40 | 4컷 만화 만들기 | API-71, API-72 **[제안·미구현]** | `features/comic/*`, `ui/content_video_detail_screen.dart`, `core/api_client.dart` | 폰이 올리는 것은 전사문(글)뿐. **서버가 자기 저장소의 원본에서 프레임 4~6장을 뽑아 전사문과 함께 Gemini로 보낸다**(외부 AI 고지 대상). 키는 서버 보관. **앱만 구현, 서버 없음** — COMIC_SERVER가 없으면 FakeComicGateway |
+| FN-A39 | 온디바이스 자동 자막(ML Kit) | **서버 API 없음** | `features/stt/mlkit_transcriber.dart`, `transcript_store.dart`, `caption_controller.dart`, `caption_auto_section.dart`, `caption_line.dart`, `android_audio.dart`, `pcm_wav.dart`, `speech_analysis.dart`, `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `MlKitTranscriber.kt`, `SttChannel.kt`, `AudioDecoder.kt`, `MicPermission.kt`, `SubtitleOverlay.kt` | **자막은 폰에서 만든다.** ML Kit GenAI 온디바이스 음성 인식이 전사하고 오디오·전사문은 기기를 떠나지 않는다 — 서버 API가 없다. 2분 영상 약 18초(재생 시간의 약 1/8, 오디오를 8배속으로 먹인다). 결과는 `videoId`별로 캐시해 다시 열 때 재사용한다(빈 결과·실패는 캐시하지 않음). **사용자가 자막 탭에서 고친 줄도 같은 캐시에 즉시 저장된다** — 다시 열 때와 4컷 만화 구성(FN-A40)이 고친 문장을 쓴다. 편집 화면의 "폐기"는 자르기·효과만 되돌리고 자막 수정은 남는다. **마이크 권한은 자막 탭 진입 시점에 묻는다** — 파일 입력인데도 ML Kit이 요구한다(`local_edit_screen.dart`가 `MlKitTranscriber().requestMicrophone()`을 먼저 부른다). `SttChannel.kt`(채널 `stt/media`)와 `AudioDecoder.kt`는 **이 기능의 코드 경로다** — ML Kit에 넣을 16kHz 모노 WAV를 만든다(`android_audio.dart`가 리샘플). **폴백이 없다** — ML Kit이 준비되지 않으면 자막이 없고 `CaptionController.message`가 사유를 알린다(모델 내려받기 진행률 / 마이크 권한 / 기기 미지원). whisper 모델 에셋과 코드는 삭제됐다(커밋 `3bb0a47`). `SubtitleOverlay.kt`는 굽기에 계속 쓰인다. 자르기·자막·효과는 인코딩 1회에 함께 처리 |
+| FN-A40 | 4컷 만화 만들기 | API-71, API-72 | `features/comic/*`, `ui/content_video_detail_screen.dart`, `core/api_client.dart` | 폰이 올리는 것은 전사문(글)뿐. **서버가 자기 저장소의 원본에서 프레임 4~6장을 뽑아 전사문과 함께 Gemini로 보낸다**(외부 AI 고지 대상). 키는 워커만 보관. 앱·백엔드 게이트웨이·파이썬 워커 모두 구현 — 기본으로 실서버를 부르고, `--dart-define=COMIC_SERVER=false`면 FakeComicGateway(견본) |
 | FN-A22 | 가족 목록/초대 | API-23, API-14, API-18 | `ui/family_screen.dart` | 403, 409(ALREADY_DEVICE_MEMBER/INVITATION_PENDING/EMAIL_MISMATCH) |
 | FN-A23 | 보낸 초대 취소 | API-19 | `ui/family_screen.dart` | 403, 409 INVITATION_NOT_PENDING |
 | FN-A24 | 소유권 이전/구성원 내보내기 | API-12, API-24 | `ui/family_screen.dart` | transfer는 `controller.api` 직접호출(래퍼 미사용); 409 ALREADY_OWNER/TRANSFER_TARGET_NOT_ACTIVE_MEMBER/OWNER_CANNOT_BE_REVOKED |
@@ -223,6 +224,7 @@ flowchart TD
 | FN-E07 | 이벤트 클립 업로드 | 젯슨+서버 | 트리거 전후 구간 클립 생성해 서버 업로드 흐름으로 전달 | REQ-F-37 / API-25,26 | `ai/yolo/laughter_clip_uploader.py`, `segment_clip_uploader.py`(systemd Restart=always) |
 | FN-S11 | 영상 업로드(기기측, presigned URL) | 서버 | `Idempotency-Key`로 중복 방지, 500MiB 초과 거부, 업로드URL TTL15분 | REQ-F-37 / API-25,26 | `video/api/IotVideoController.java`, `IotVideoService.java` |
 | FN-A15 | 영상 목록/필터 | 폰 | 웃음 감지/편집 완료 분류 + 기간(날짜 범위) 필터. 참여 중인 모든 금고를 병렬 조회해 합침 | REQ-F-21 | `ui/all_memories_screen.dart` |
+| FN-A15a | 편집본 업로드 상태 표시 | 폰+서버 | UPLOADING·FAILED 편집본도 상태와 함께 표시하고, UPLOADING이 있으면 목록을 5초 간격 최대 60회 자동 재조회 | REQ-F-21 / API-82 | `ui/all_memories_screen.dart` |
 | FN-S12 | 영상 목록/상세 조회 | 서버 | 커서 페이지네이션(size 1~100) | REQ-F-19,21 / API-27,28 | `video/api/VideoController.java`, `VideoQueryService.java` — ⚠️ `thumbnailUrl` 항상 null |
 | FN-A17 | 영상 상세/재생 | 폰+서버 | READY 상태일 때만 서명 재생 URL 발급받아 재생 | REQ-F-22 / API-31 | `ui/content_video_detail_screen.dart` — 409 `VIDEO_NOT_READY`, 503 |
 | FN-S14 | 영상 재생/다운로드 URL 발급 | 서버 | READY 아니면 거부, 재생/다운로드 URL TTL5분(`attachment` 옵션만 다름) | REQ-F-22,26 / API-31,32 | `video/application/VideoQueryService.java` |
@@ -235,7 +237,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | FN-A21 | 로컬 영상 편집 | 폰 | 서명 다운로드 URL로 원본을 내려받아 자체 편집 화면에서 구간 자르기(트림)·화면 비율 6종(원본/9:16/1:1/16:9/4:3/3:4)·음량(0~100%)·자막(수동+FN-A39 자동)·필터 3종(warm/vivid/mono)·이모지 스티커를 편집하고 결과를 MediaStore(`Movies/WilliamJames`) 갤러리에 저장('애니메이션' 툴과 준비화면 '음악' 카드는 미기능 스텁이므로 제외) | REQ-F-27 / API-32(재사용) | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt` |
 | FN-A39 | 온디바이스 자동 자막(ML Kit) | 폰 | ML Kit GenAI 온디바이스 음성 인식이 **폰에서** 시각별 자막을 만들고, 줄마다 수정할 수 있게 한다. 2분 영상 약 18초. 마이크 권한은 자막 탭 진입 시점에 묻는다(파일 입력인데도 ML Kit이 요구한다). 결과는 `videoId`로 캐시하고, 저장 시 다른 편집 효과와 한 번에 인코딩한다. **오디오·전사문이 기기를 떠나지 않는다** | REQ-F-27 / **서버 API 없음** | `features/stt/*`(mlkit_transcriber, transcript_store, caption_controller, caption_auto_section, caption_line, android_audio, pcm_wav, speech_analysis), `MlKitTranscriber.kt`, `SttChannel.kt`, `AudioDecoder.kt`, `MicPermission.kt`, `SubtitleOverlay.kt` |
-| FN-A40 | 4컷 만화 만들기 | 폰+서버 | 자막이 만든 전사문을 서버에 보내면, **서버가 저장된 원본에서 프레임 4~6장을 뽑아 전사문과 함께 Gemini에 넣어** 4컷 구성을 만든다(API-71). 사용자가 대사를 고친 뒤 만화 그림 한 장(2x2 격자)을 받는다(API-72). 대사는 영화 자막처럼 각 컷에 앱이 얹고, 완성작은 갤러리에 저장한다. **외부 AI(Gemini, 구글)로 전사문과 프레임이 나가므로 개인정보 고지 대상이다** | REQ-F-27 / API-71, API-72 **[제안·미구현]**(`04-api-spec.md` 6절) | `features/comic/*`, `ui/content_video_detail_screen.dart` |
+| FN-A40 | 4컷 만화 만들기 | 폰+서버 | 자막이 만든 전사문을 서버에 보내면, **서버가 저장된 원본에서 프레임 4~6장을 뽑아 전사문과 함께 Gemini에 넣어** 4컷 구성을 만든다(API-71). 사용자가 대사를 고친 뒤 만화 그림 한 장(2x2 격자)을 받는다(API-72). 대사는 영화 자막처럼 각 컷에 앱이 얹고, 완성작은 갤러리에 저장한다. **외부 AI(Gemini, 구글)로 전사문과 프레임이 나가므로 개인정보 고지 대상이다** | REQ-F-27 / API-71, API-72(`04-api-spec.md` 6절) | `features/comic/*`, `ui/content_video_detail_screen.dart` |
 
 폰 완결인 것은 편집(FN-A21)과 자동 자막(FN-A39) 둘이다 — 원본 다운로드는 API-32를 재사용하고, 자막은 서버 API가 없다. 서버 AI를 쓰는 것은 4컷 만화(FN-A40)뿐이다(API-71·72). 폰이 올리는 것은 전사문(글)뿐이고 영상·오디오는 어느 기능도 올리지 않는다 — 단 **API-71에서 서버가 자기 저장소의 원본에서 프레임을 뽑아 Gemini에 전달한다.** Gemini 키와 이미지 생성 키는 서버가 보관한다.
 
@@ -340,7 +342,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN-A12 | 독립형 라이브 화면(`LiveScreen`) | **제거됨** — 도달 불가 HLS 기반 코드로 WebRTC 전용 전환에서 삭제 |
 | FN-A14 | 기념일 배너/편집 | 부분 구현 — 일정 추가·수정·매년 반복은 동작하나 앱 메모리 전용(재실행 시 소실, 서버 미연동) — REQ-F-20 · `ui/content_calendar_screen.dart`, `ui/schedule_editor_screen.dart` |
 | FN-A16 | 영상 삭제(OWNER 전용) | 확장 — REQ-F-25 · `ui/all_memories_screen.dart` |
-| FN-A18 | 영상 메타데이터(제목/메모) 편집 | 확장 — REQ-F-23 · `ui/content_video_detail_screen.dart` |
+| FN-A18 | 영상 제목 편집 | 확장 — REQ-F-23 · `ui/content_video_detail_screen.dart` |
 | FN-A19 | 즐겨찾기 토글 | 확장 — REQ-F-24 · `ui/content_video_detail_screen.dart`, `app/app_controller.dart` |
 | FN-A26 | 프로필 이름 수정 | 앱 화면은 있으나 서버 API 부재(`PATCH /api/auth/me` 없음)로 호출 실패 — REQ-F-06 · `ui/profile_edit_screen.dart`, `core/api_client.dart` |
 | FN-A28 | 알림 설정(로컬 토글) | 확장 — 설정 화면에 기념일·주간 리포트·새로운 추억 3개 로컬 Secure Storage 토글(서버 발송 영향 없음) — REQ-F-32 · `ui/settings_screen.dart` |

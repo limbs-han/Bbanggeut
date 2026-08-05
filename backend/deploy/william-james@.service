@@ -1,0 +1,31 @@
+[Unit]
+# 무중단 배포용 슬롯 인스턴스. %i가 포트이며 JAR도 슬롯별로 따로 둔다 —
+# 실행 중인 JVM이 읽고 있는 파일을 덮어쓰면 nested jar 로딩이 깨진다.
+Description=William James Spring Boot API (port %i)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/william-james/app
+EnvironmentFile=/home/ubuntu/william-james/secrets/app.env
+# MQTT client ID에 슬롯 포트를 붙인다. MQTT는 같은 client ID로 새 연결이 오면
+# 기존 세션을 끊는 프로토콜이라, 두 슬롯이 겹치는 배포 구간에서 둘이 1초 남짓
+# 주기로 서로를 밀어냈다(2026-08-04 05:20~05:21 로그). 그 동안 기기 명령과
+# 텔레메트리가 함께 흔들린다. 커맨드라인 인자는 프로파일 YAML보다 우선하므로
+# app.env의 MQTT_CLIENT_ID는 그대로 두고 여기서 덮어쓴다.
+ExecStart=/usr/bin/java -jar /home/ubuntu/william-james/app/server-%i.jar --server.address=127.0.0.1 --server.port=%i --app.mqtt.client-id=wj-backend-%i
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/william-james
+
+[Install]
+WantedBy=multi-user.target

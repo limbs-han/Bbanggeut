@@ -27,6 +27,20 @@ class EmbeddedLivePlayer extends StatefulWidget {
   final DeviceStatus? status;
   final bool houseMode;
 
+  /// 비활성으로 바뀐 순간 라이브를 놓아야 하는가.
+  ///
+  /// 홈은 다른 화면이 위를 덮으면 [isActive]를 내려 라이브를 끈다 — 보이지도
+  /// 않는 스트림이 배터리와 데이터를 먹으니 옳다. 문제는 전체 화면도 라우트를
+  /// push한다는 점이었다. 전체 화면은 이 위젯의 플레이어를 그대로 받아 그리는데,
+  /// 홈이 그 플레이어를 닫고 버려서 전체 화면을 누르면 라이브가 그 자리에서
+  /// 끊겼다. 전체 화면은 라이브가 계속 돌아야 하는 유일한 라우트다.
+  @visibleForTesting
+  static bool shouldSuspend({
+    required bool wasActive,
+    required bool isActive,
+    required bool fullscreenOpen,
+  }) => wasActive && !isActive && !fullscreenOpen;
+
   @override
   State<EmbeddedLivePlayer> createState() => _EmbeddedLivePlayerState();
 }
@@ -159,6 +173,15 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   /// 일부러 끊은 것이라 "연결이 끊어졌습니다"를 띄우면 안 된다.
   bool resyncing = false;
 
+  /// 전체 화면이 이 플레이어를 들고 위에 떠 있다.
+  ///
+  /// **왜 필요한가**: 홈은 다른 화면이 위를 덮으면 [EmbeddedLivePlayer.isActive]를
+  /// 내려 라이브를 끈다(배터리·데이터). 전체 화면도 라우트를 push하므로 그
+  /// 규칙에 걸려, 전체 화면이 방금 넘겨받은 플레이어를 홈이 닫고 버렸다 —
+  /// 전체 화면을 누르면 라이브가 그 자리에서 끊겼다. 전체 화면은 라이브를
+  /// 계속 봐야 하는 유일한 라우트라 이 구간만 규칙에서 뺀다.
+  bool fullscreenOpen = false;
+
   bool get hasPlayback => whepPlayer.connected;
 
   /// 지금 보는 그림이 실시간 맨 앞인가. LIVE 표시등이 이것을 그린다.
@@ -215,7 +238,11 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       unawaited(_closeForDeviceChange());
       return;
     }
-    if (oldWidget.isActive && !widget.isActive) {
+    if (EmbeddedLivePlayer.shouldSuspend(
+      wasActive: oldWidget.isActive,
+      isActive: widget.isActive,
+      fullscreenOpen: fullscreenOpen,
+    )) {
       unawaited(_suspend());
     } else if (!oldWidget.isActive &&
         widget.isActive &&
@@ -529,6 +556,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   Future<void> _openFullscreen() async {
     if (!whepPlayer.connected) return;
+    // push보다 먼저 세워 둔다. push가 홈에 "덮였다"를 알리고, 그 알림이
+    // didUpdateWidget으로 돌아오는 것이 이 함수가 await에서 깨어나기 전이다.
+    fullscreenOpen = true;
     try {
       if (!mounted) return;
       await Navigator.push<void>(
@@ -546,6 +576,10 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         ),
       );
     } finally {
+      fullscreenOpen = false;
+      // 전체 화면에서 나왔는데 홈이 이미 다른 이유로 비활성이면(탭을 옮겼거나
+      // 다른 화면이 덮고 있으면) 그때는 규칙대로 라이브를 놓는다.
+      if (mounted && !widget.isActive) unawaited(_suspend());
       await SystemChrome.setPreferredOrientations(const [
         DeviceOrientation.portraitUp,
       ]);

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/api_client.dart';
+import '../core/models.dart';
 import 'widgets.dart';
 
 class LaughReportContentScreen extends StatefulWidget {
@@ -20,9 +21,18 @@ class LaughReportContentScreen extends StatefulWidget {
 class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
   AppController get controller => widget.controller;
 
-  /// 서버 집계(API-46, type=LAUGHTER)의 일별 웃음 감지 수. 기기가 없거나
-  /// 요청이 실패하면 null로 남아 단말 집계로 폴백한다.
+  /// 서버 집계의 일별 웃음 감지 수. 요청이 실패하면 null로 남아 단말
+  /// 집계로 폴백한다.
   Map<DateTime, int>? _serverCounts;
+
+  /// 가족 전체 합산(API-80)일 때 기기별 분해. 기기 단위 집계에서는 비어 있다.
+  List<VaultDeviceCount> _byDevice = const [];
+
+  /// 금고 전체 합산으로 볼지, 선택한 기기만 볼지. 금고에 기기가 둘 이상일
+  /// 때만 의미가 있어 그때만 토글을 노출한다.
+  bool _familyWide = true;
+
+  bool get _canToggle => (controller.selectedVault?.devices.length ?? 0) > 1;
 
   @override
   void initState() {
@@ -31,27 +41,57 @@ class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
   }
 
   Future<void> _loadServerCounts() async {
-    final device = controller.selectedDevice;
-    if (device == null) return;
     final today = DateUtils.dateOnly(DateTime.now());
     final monday = today.subtract(Duration(days: today.weekday - 1));
+    final from = monday.subtract(const Duration(days: 7));
+    final vault = controller.selectedVault;
+    final device = controller.selectedDevice;
     try {
-      final stats = await controller.api.getEventStats(
-        device.id,
-        from: monday.subtract(const Duration(days: 7)),
-        to: today,
-        type: 'LAUGHTER',
-      );
+      Map<DateTime, int> counts;
+      var byDevice = const <VaultDeviceCount>[];
+      if (_familyWide && vault != null) {
+        final stats = await controller.api.getVaultEventStats(
+          vault.id,
+          from: from,
+          to: today,
+          type: 'LAUGHTER',
+        );
+        counts = _toCounts(stats.dailyCounts);
+        byDevice = stats.byDevice;
+      } else if (device != null) {
+        final stats = await controller.api.getEventStats(
+          device.id,
+          from: from,
+          to: today,
+          type: 'LAUGHTER',
+        );
+        counts = _toCounts(stats.dailyCounts);
+      } else {
+        return;
+      }
       if (!mounted) return;
-      setState(
-        () => _serverCounts = {
-          for (final daily in stats.dailyCounts)
-            if (daily.date != null) DateUtils.dateOnly(daily.date!): daily.count,
-        },
-      );
+      setState(() {
+        _serverCounts = counts;
+        _byDevice = byDevice;
+      });
     } on ApiFailure {
       // 서버 집계를 못 받으면 이미 불러온 영상 목록으로 계속 그린다.
     }
+  }
+
+  Map<DateTime, int> _toCounts(List<DailyVideoCount> dailyCounts) => {
+    for (final daily in dailyCounts)
+      if (daily.date != null) DateUtils.dateOnly(daily.date!): daily.count,
+  };
+
+  void _switchScope(bool familyWide) {
+    if (_familyWide == familyWide) return;
+    setState(() {
+      _familyWide = familyWide;
+      _serverCounts = null;
+      _byDevice = const [];
+    });
+    _loadServerCounts();
   }
 
   Map<DateTime, int> get _countsByDay {
@@ -98,6 +138,13 @@ class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
                   sliver: SliverList.list(
                     children: [
                       _ReportHeader(onBack: () => Navigator.maybePop(context)),
+                      if (_canToggle) ...[
+                        const SizedBox(height: 14),
+                        _ScopeToggle(
+                          familyWide: _familyWide,
+                          onChanged: _switchScope,
+                        ),
+                      ],
                       const SizedBox(height: 22),
                       _LuckyPouchCard(
                         count: weeklyTotal,
@@ -144,6 +191,10 @@ class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
                         busiestIndex: busiestIndex,
                         count: weeklyCounts[busiestIndex],
                       ),
+                      if (_byDevice.length > 1) ...[
+                        const SizedBox(height: 14),
+                        _ByDeviceCard(counts: _byDevice),
+                      ],
                     ],
                   ),
                 ),
@@ -501,6 +552,137 @@ class _WeekPouchCard extends StatelessWidget {
               );
             }),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 가족 전체 합산(API-80)과 선택한 기기만 보기를 오가는 토글. 금고에 기기가
+/// 둘 이상일 때만 나타난다.
+class _ScopeToggle extends StatelessWidget {
+  const _ScopeToggle({required this.familyWide, required this.onChanged});
+
+  final bool familyWide;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: _ScopeButton(
+          label: '가족 전체',
+          selected: familyWide,
+          onTap: () => onChanged(true),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _ScopeButton(
+          label: '이 기기만',
+          selected: !familyWide,
+          onTap: () => onChanged(false),
+        ),
+      ),
+    ],
+  );
+}
+
+class _ScopeButton extends StatelessWidget {
+  const _ScopeButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    selected: selected,
+    button: true,
+    child: InkWell(
+      key: ValueKey('report-scope-$label'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.coral : Colors.white.withValues(alpha: .7),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? AppColors.coral : const Color(0xFFF0D9C6),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            color: selected ? Colors.white : AppColors.inkSoft,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// 가족 합산일 때 어느 기기에서 몇 번 웃었는지. 기기가 둘 이상일 때만 뜬다.
+class _ByDeviceCard extends StatelessWidget {
+  const _ByDeviceCard({required this.counts});
+
+  final List<VaultDeviceCount> counts;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = counts.fold<int>(0, (sum, item) => sum + item.count);
+    return _ReportCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '기기별 웃음 🏠',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          for (final item in counts) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    item.name.isEmpty ? '이름 없는 기기' : item.name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${item.count}회',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.coralDark,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: total == 0 ? 0 : item.count / total,
+                minHeight: 8,
+                backgroundColor: const Color(0xFFFFF0E0),
+                valueColor: const AlwaysStoppedAnimation(AppColors.coral),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
         ],
       ),
     );

@@ -39,14 +39,64 @@ class VideoCommandServiceTest {
         VideoRow video = video();
         UpdateVideoRequest request = new UpdateVideoRequest();
         request.setTitle("  새 제목  ");
-        request.setDescription(null);
+        when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("OWNER"));
+        when(mapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+
+        service.update(userId, video.id(), request);
+
+        verify(mapper).updateMetadata(video.id(), true, "새 제목", false, null);
+    }
+
+    @Test
+    void memberCannotRenameCapturedVideo() {
+        // 기기가 담아 온 원본은 가족 공동의 기록이라 이름은 OWNER가 정한다.
+        UUID userId = UUID.randomUUID();
+        VideoRow video = video();
+        UpdateVideoRequest request = new UpdateVideoRequest();
+        request.setTitle("내 마음대로 바꾼 제목");
+        when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
+
+        assertThatThrownBy(() -> service.update(userId, video.id(), request))
+            .isInstanceOf(ApiException.class)
+            .satisfies(exception -> {
+                ApiException apiException = (ApiException) exception;
+                assertThat(apiException.status().value()).isEqualTo(403);
+                assertThat(apiException.code()).isEqualTo("FORBIDDEN_ROLE");
+            });
+    }
+
+    @Test
+    void memberCanRenameEditOutput() {
+        // 편집본은 구성원이 직접 만든 결과물이다.
+        UUID userId = UUID.randomUUID();
+        VideoRow video = editOutput();
+        UpdateVideoRequest request = new UpdateVideoRequest();
+        request.setTitle("내가 만든 편집본");
         when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
         when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
         when(mapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
 
         service.update(userId, video.id(), request);
 
-        verify(mapper).updateMetadata(video.id(), true, "새 제목", true, null, false, null);
+        verify(mapper).updateMetadata(video.id(), true, "내가 만든 편집본", false, null);
+    }
+
+    @Test
+    void memberCanStillFavoriteCapturedVideo() {
+        // 제목을 못 바꾸는 것과 보기 표시를 못 하는 것은 다른 일이다.
+        UUID userId = UUID.randomUUID();
+        VideoRow video = video();
+        UpdateVideoRequest request = new UpdateVideoRequest();
+        request.setFavorite(true);
+        when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
+        when(mapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+
+        service.update(userId, video.id(), request);
+
+        verify(mapper).updateMetadata(video.id(), false, null, true, true);
     }
 
     @Test
@@ -104,11 +154,64 @@ class VideoCommandServiceTest {
         verify(mapper).insertDeletionJob(video.id());
     }
 
+    @Test
+    void memberCanDeleteOwnEditOutput() {
+        // 자기가 만든 편집본은 스스로 치울 수 있어야 한다.
+        UUID userId = UUID.randomUUID();
+        VideoRow video = editOutput();
+        when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
+        when(mapper.findCreatorId(video.id())).thenReturn(Optional.of(userId));
+        when(mapper.markDeleting(video.id(), userId)).thenReturn(1);
+
+        service.delete(userId, video.id());
+
+        verify(mapper).insertDeletionJob(video.id());
+    }
+
+    @Test
+    void memberCannotDeleteSomeoneElsesEditOutput() {
+        UUID userId = UUID.randomUUID();
+        VideoRow video = editOutput();
+        when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("MEMBER"));
+        when(mapper.findCreatorId(video.id())).thenReturn(Optional.of(UUID.randomUUID()));
+
+        assertThatThrownBy(() -> service.delete(userId, video.id()))
+            .isInstanceOf(ApiException.class)
+            .satisfies(exception -> {
+                ApiException apiException = (ApiException) exception;
+                assertThat(apiException.status().value()).isEqualTo(403);
+                assertThat(apiException.code()).isEqualTo("FORBIDDEN_ROLE");
+            });
+    }
+
+    @Test
+    void ownerCanDeleteAnyEditOutput() {
+        UUID userId = UUID.randomUUID();
+        VideoRow video = editOutput();
+        when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("OWNER"));
+        when(mapper.markDeleting(video.id(), userId)).thenReturn(1);
+
+        service.delete(userId, video.id());
+
+        verify(mapper).insertDeletionJob(video.id());
+    }
+
     private VideoRow video() {
+        return video("IOT_CAPTURE");
+    }
+
+    private VideoRow editOutput() {
+        return video("EDIT_OUTPUT");
+    }
+
+    private VideoRow video(String sourceType) {
         Instant now = Instant.parse("2026-07-17T10:00:00Z");
         return new VideoRow(
-            UUID.randomUUID(), UUID.randomUUID(), "IOT_CAPTURE", "TOUCH", "event-1",
-            "영상", "설명", "video/mp4", 100L, "a".repeat(64), 1000L,
+            UUID.randomUUID(), UUID.randomUUID(), sourceType, "TOUCH", "event-1",
+            "영상", "video/mp4", 100L, "a".repeat(64), 1000L,
             now.minusSeconds(1), now, "private/video.mp4", "READY", false, now);
     }
 }

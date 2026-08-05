@@ -102,10 +102,7 @@ class _HostState extends State<_Host> {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: Center(
-      child: FilledButton(
-        onPressed: _openSheet,
-        child: const Text('자막'),
-      ),
+      child: FilledButton(onPressed: _openSheet, child: const Text('자막')),
     ),
   );
 }
@@ -157,7 +154,10 @@ void main() {
       find.byKey(const ValueKey('auto-caption-field')),
       '그거 만지면 안 돼',
     );
-    await tester.tap(find.text('넣기'));
+    await tester.pump();
+    final submit = find.byKey(const ValueKey('auto-caption-edit-submit'));
+    await tester.ensureVisible(submit);
+    tester.widget<FilledButton>(submit).onPressed!();
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('자막 적용'));

@@ -901,55 +901,6 @@ class EditorProject {
         hasCaptions;
   }
 
-  /// 서버(FFmpeg)가 만들 수 있는 프로젝트인가.
-  ///
-  /// 서버 렌더러(video_editor/render_video.py)는 **컷 하나 + 줌**만 안다.
-  /// 자막·스티커·블러·필터·캔버스 변형·오디오 변경·다중 클립·AR 효과가
-  /// 있으면 앱(Media3)이 만들어 올린다 — 서버로 보내면 그 요소들이
-  /// 조용히 사라진 완성본이 나온다.
-  bool get serverRenderable {
-    final originalCanvas =
-        canvas.ratio == EditorCanvasRatio.original &&
-        canvas.scale == 1 &&
-        canvas.offsetX == 0 &&
-        canvas.offsetY == 0 &&
-        canvas.rotationDegrees == 0;
-    final originalAudio = !audio.muted && audio.sourceVolume == 1;
-    return clips.length == 1 &&
-        clips.single.arEffectId == null &&
-        originalCanvas &&
-        originalAudio &&
-        look == EditorLook.none &&
-        arEffectId == null &&
-        textLayers.isEmpty &&
-        stickerLayers.isEmpty &&
-        blurLayers.isEmpty;
-  }
-
-  /// 서버 렌더링용 컷·줌 recipe. 시각은 전부 원본 영상 기준 ms다
-  /// (video_editor render_recipe 계약).
-  Map<String, Object?> toServerRenderRecipe() {
-    final clip = clips.single;
-    return {
-      'cut': {
-        'startMs': clip.sourceStartMs,
-        'endMs': clip.sourceEndMs,
-        'durationMs': clip.durationMs,
-      },
-      'zoomEnabled': zoomSegments.isNotEmpty,
-      'zoomSegments': [
-        for (final zoom in zoomSegments)
-          {
-            'startMs': zoom.sourceStartMs,
-            'endMs': zoom.sourceEndMs,
-            'scale': zoom.scale,
-            'focusX': zoom.focus.x,
-            'focusY': zoom.focus.y,
-          },
-      ],
-    };
-  }
-
   EditorClip? get selectedClip {
     final id = selectedClipId;
     if (id == null) return null;
