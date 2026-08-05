@@ -13,6 +13,8 @@ Examples:
   bash ./test-speaker-output.sh plughw:CARD=Device,DEV=0 3
 
 ALSA_DEVICE defaults to TALKBACK_OUTPUT_DEVICE, then "default".
+SPEAKER_TEST_LEVEL defaults to 1.0, which produces an approximately 0 dBFS
+full-scale sine wave. Use a value between 0 and 1 to reduce the signal level.
 The generated mono tone is duplicated to both stereo channels so a single
 speaker connected to either LOUT or ROUT can be tested.
 EOF
@@ -39,7 +41,7 @@ fi
 DEVICE="${1:-${TALKBACK_OUTPUT_DEVICE:-default}}"
 DURATION_SECONDS="${2:-3}"
 FREQUENCY_HZ="${SPEAKER_TEST_FREQUENCY_HZ:-880}"
-VOLUME="${SPEAKER_TEST_VOLUME:-1.0}"
+SIGNAL_LEVEL="${SPEAKER_TEST_LEVEL:-1.0}"
 FFMPEG_PATH="${FFMPEG_PATH:-/usr/bin/ffmpeg}"
 MIXER_CARD=""
 
@@ -55,8 +57,8 @@ if [[ ! "$FREQUENCY_HZ" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     echo "SPEAKER_TEST_FREQUENCY_HZ must be a positive number: ${FREQUENCY_HZ}" >&2
     exit 2
 fi
-if [[ ! "$VOLUME" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]]; then
-    echo "SPEAKER_TEST_VOLUME must be between 0 and 1: ${VOLUME}" >&2
+if [[ ! "$SIGNAL_LEVEL" =~ ^(0([.][0-9]+)?|1([.]0+)?)$ ]]; then
+    echo "SPEAKER_TEST_LEVEL must be between 0 and 1: ${SIGNAL_LEVEL}" >&2
     exit 2
 fi
 
@@ -82,9 +84,9 @@ cat <<EOF
 ALSA device : ${DEVICE}
 Duration    : ${DURATION_SECONDS}s
 Frequency   : ${FREQUENCY_HZ}Hz
-SW volume   : ${VOLUME}
+Signal level: ${SIGNAL_LEVEL} (1.0 is approximately 0 dBFS)
 
-WARNING: the test signal defaults to 100% software volume.
+WARNING: the test signal defaults to full-scale digital output.
 Keep earphones out of your ears and the PAM8403 knob near minimum for the first run.
 Starting the test tone in 2 seconds. Press Ctrl+C to cancel.
 EOF
@@ -94,7 +96,7 @@ if ! "$FFMPEG_PATH" \
     -hide_banner -nostdin -loglevel warning \
     -f lavfi \
     -i "sine=frequency=${FREQUENCY_HZ}:sample_rate=48000:duration=${DURATION_SECONDS}" \
-    -filter:a "volume=${VOLUME}" \
+    -filter:a "volume=8*${SIGNAL_LEVEL}" \
     -ac 2 -ar 48000 \
     -f alsa "$DEVICE"; then
     cat >&2 <<EOF
