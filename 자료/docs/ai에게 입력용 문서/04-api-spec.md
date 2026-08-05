@@ -388,7 +388,7 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "sourceType": "IOT_CAPTURE|USER_UPLOAD|EDIT_OUTPUT",
   "triggerType": "LAUGHTER|CLAP|WAKE_WORD|TOUCH|MANUAL|USER_UPLOAD|EDIT",
   "eventTypes": ["LAUGHTER", "CLAP"],
-  "sourceEventId": null, "title": "string", "description": null,
+  "sourceEventId": null, "title": "string",
   "contentType": "video/mp4", "sizeBytes": 1048576, "checksumSha256": "string",
   "durationMs": 60000, "capturedStartAt": "2026-07-27T00:00:00Z", "capturedEndAt": "2026-07-27T00:01:00Z",
   "status": "UPLOADING|PROCESSING|READY|FAILED|DELETING|DELETED",

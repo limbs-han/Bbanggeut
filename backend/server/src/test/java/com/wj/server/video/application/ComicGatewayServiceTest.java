@@ -195,7 +195,6 @@ class ComicGatewayServiceTest {
             "LAUGHTER",
             null,
             "웃음이 담긴 순간",
-            null,
             "video/mp4",
             1024L,
             "sha",

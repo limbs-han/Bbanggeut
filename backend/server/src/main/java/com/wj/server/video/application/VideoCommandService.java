@@ -41,14 +41,13 @@ public class VideoCommandService {
         if (!member) {
             denyUpdate(video.deviceId(), userId, videoId, "OWNER 또는 MEMBER 권한이 필요합니다.");
         }
-        boolean renaming = request.titlePresent() || request.descriptionPresent();
+        boolean renaming = request.titlePresent();
         if (renaming && !owner && !isEditOutput(video)) {
             denyUpdate(
                 video.deviceId(), userId, videoId, "원본 영상의 제목은 OWNER만 바꿀 수 있습니다.");
         }
         videoMapper.updateMetadata(
             videoId, request.titlePresent(), normalizedTitle(request),
-            request.descriptionPresent(), request.description(),
             request.favoritePresent(), request.favorite());
         VideoResponse response = toResponse(
             videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(this::notFound));
@@ -95,16 +94,13 @@ public class VideoCommandService {
     }
 
     private void validate(UpdateVideoRequest request) {
-        if (!request.titlePresent() && !request.descriptionPresent() && !request.favoritePresent()) {
+        if (!request.titlePresent() && !request.favoritePresent()) {
             throw validation("수정할 필드를 하나 이상 입력해야 합니다.");
         }
         if (request.titlePresent()) {
             if (request.title() == null || request.title().trim().isEmpty() || request.title().trim().length() > 120) {
                 throw validation("title은 공백이 아닌 1자 이상 120자 이하여야 합니다.");
             }
-        }
-        if (request.descriptionPresent() && request.description() != null && request.description().length() > 500) {
-            throw validation("description은 500자 이하여야 합니다.");
         }
         if (request.favoritePresent() && request.favorite() == null) {
             throw validation("isFavorite은 null일 수 없습니다.");
@@ -118,7 +114,7 @@ public class VideoCommandService {
     private VideoResponse toResponse(VideoRow video) {
         return new VideoResponse(
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(), video.sourceEventId(),
-            video.title(), video.description(), video.contentType(), video.sizeBytes(), video.checksumSha256(),
+            video.title(), video.contentType(), video.sizeBytes(), video.checksumSha256(),
             video.durationMs(), video.capturedStartAt(), video.capturedEndAt(), video.status(), video.favorite(),
             null, video.createdAt(),
             VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));
