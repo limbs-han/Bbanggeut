@@ -202,6 +202,21 @@ class AxisConfigurationTests(unittest.TestCase):
         ):
             self.assertEqual(parse_args().startup_position, "park")
 
+    def test_start_armed_defaults_to_true(self) -> None:
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertTrue(parse_args().start_armed)
+
+    def test_start_armed_can_be_disabled_for_manual_power_up(self) -> None:
+        environment = {"DEVICE_ID": DEVICE_ID, "SERVO_START_ARMED": "false"}
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertFalse(parse_args().start_armed)
+
     def test_startup_position_can_use_persisted_state(self) -> None:
         environment = {
             "DEVICE_ID": DEVICE_ID,
@@ -408,6 +423,56 @@ class ServoControllerTests(unittest.TestCase):
         self.assertAlmostEqual(self.controller.current_pan_deg, 2.0)
         self.assertAlmostEqual(self.controller.current_tilt_deg, 1.0)
         self.assertEqual(self.controller.mode, "TRACKING")
+
+    def test_disarmed_controller_ignores_targets_until_armed(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(0.0, -50.0),
+            output_armed=False,
+        )
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        self.assertFalse(controller.tick(10.1))
+        self.assertFalse(controller.tick(10.2))
+        self.assertEqual(output.positions, [])
+        self.assertEqual(controller.mode, "STARTUP_WAITING")
+        self.assertEqual(controller.position_snapshot(), (0.0, -50.0))
+
+        self.assertTrue(controller.arm())
+
+        self.assertEqual(controller.mode, "HOLD")
+        self.assertEqual(controller.position_snapshot(), (0.0, -50.0))
+        self.assertFalse(controller.arm())
+
+    def test_arming_follows_targets_from_the_held_position(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(0.0, -50.0),
+            output_armed=False,
+        )
+        controller.arm()
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        self.assertTrue(controller.tick(10.1))
+        self.assertEqual(output.positions, [(0.0, -50.0)])
 
     def test_first_pulse_exactly_restores_saved_position(self) -> None:
         output = RecordingOutput()

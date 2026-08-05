@@ -237,6 +237,7 @@ SERVO_TILT_PULSE_DIRECTION=1
 SERVO_MINIMUM_PULSE_US=1000
 SERVO_MAXIMUM_PULSE_US=2000
 SERVO_STARTUP_POSITION=park
+SERVO_START_ARMED=true
 SERVO_STATE_FILE=/var/lib/william-james-servo/position.json
 SERVO_STATE_MAX_AGE_SECONDS=604800
 SERVO_STATE_SAVE_INTERVAL_SECONDS=0.25
@@ -263,6 +264,24 @@ TILT는 기구적으로 시작 위치가 상단 스톱이고 아래로만 움직
 정지 위치가 PARK로 결정돼 있다. 저장 파일에 남는 값은 실제 각도가 아니라
 **마지막으로 명령한 각도**이므로, 서보가 무전원이던 구간에서는 실제 위치와
 갈라진다. PARK 상수가 저장값보다 항상 정확한 이유다.
+
+### 손으로 서보 전원을 켤 때: SERVO_START_ARMED=false
+
+PARK 펄스를 미리 내보내도, 컨트롤러가 곧바로 추적을 시작하면 실드를 켜기까지의
+대기 구간에서 명령 각도가 다시 PARK를 떠난다. 서보는 아직 전원이 없어 따라오지
+못하므로, 실드를 켜는 순간 그 어긋난 각도로 튄다. 실제로 기동 90초 뒤 PAN이
+`0°`에서 하한 `-10°`까지 걸어간 것을 확인했다.
+
+실드를 손으로 켜는 운용에서는 `SERVO_START_ARMED=false`로 둔다. 컨트롤러는
+`STARTUP_WAITING` 상태로 PARK 펄스만 유지하고 목표 메시지를 무시한다. 실드를
+켠 뒤 `SIGUSR1`을 보내면 그 시점의 위치에서 추적을 시작한다.
+
+```bash
+sudo systemctl kill -s USR1 wj-servo-controller
+```
+
+부팅 시 실드가 이미 켜져 있는 상시 운용에서는 기본값 `true`가 맞다. 그때는
+전원과 신호가 함께 올라오므로 어긋날 구간이 없다.
 
 `SERVO_STARTUP_POSITION=persisted`로 바꾸면 이전 동작으로 돌아간다. 컨트롤러는
 동작 중 마지막 명령 각도를 `SERVO_STATE_FILE`에 원자적으로 저장하고, 재시작 후

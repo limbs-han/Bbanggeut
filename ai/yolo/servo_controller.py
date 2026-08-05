@@ -664,6 +664,21 @@ class ServoController:
             self.output.write_positions(pan_deg, tilt_deg)
         return should_write
 
+    def arm(self) -> bool:
+        """Start following targets from the position currently held.
+
+        Used after the servo power rail is switched on, so the controller
+        never accumulates commands the servo cannot physically follow.
+        """
+        with self._lock:
+            if self.output_armed:
+                return False
+            self.output_armed = True
+            self.target_pan_deg = self.current_pan_deg
+            self.target_tilt_deg = self.current_tilt_deg
+            self.mode = "HOLD"
+            return True
+
     def request_home(self) -> None:
         with self._lock:
             if not self.output_armed:
@@ -859,6 +874,16 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("SERVO_STARTUP_POSITION", "park"),
     )
     parser.add_argument(
+        "--start-armed",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("SERVO_START_ARMED", True),
+        help=(
+            "Follow targets immediately. Disable when the servo power rail is "
+            "switched on by hand after the service starts; the controller then "
+            "holds the startup position until it receives SIGUSR1."
+        ),
+    )
+    parser.add_argument(
         "--pan-home-pulse-us",
         type=float,
         default=float(os.getenv("SERVO_PAN_HOME_PULSE_US", "1500")),
@@ -1046,9 +1071,12 @@ def run(args: argparse.Namespace) -> None:
         expected_device_id=args.device_id,
         message_timeout_seconds=args.message_timeout,
         initial_position=restored_position,
-        output_armed=not args.enable_hardware or restored_position is not None,
+        output_armed=(
+            not args.enable_hardware
+            or (restored_position is not None and args.start_armed)
+        ),
     )
-    if args.enable_hardware and controller.output_armed:
+    if args.enable_hardware and restored_position is not None:
         startup_pan_deg, startup_tilt_deg = controller.position_snapshot()
         output.write_positions(startup_pan_deg, startup_tilt_deg)
         print(
@@ -1056,6 +1084,12 @@ def run(args: argparse.Namespace) -> None:
             f"pan={startup_pan_deg:+.2f}deg tilt={startup_tilt_deg:+.2f}deg "
             "before servo power is applied"
         )
+        if not args.start_armed:
+            print(
+                "Servo startup hold: targets ignored until armed. Switch the "
+                "servo power on, then run: sudo systemctl kill -s USR1 "
+                "wj-servo-controller"
+            )
     target_topic = args.topic or (
         f"homecam/v2/{args.device_id}/control/framing/target"
     )
@@ -1136,8 +1170,20 @@ def run(args: argparse.Namespace) -> None:
         del signum, frame
         stop.set()
 
+    def request_arm(signum: int, frame: Any) -> None:
+        del signum, frame
+        pan_deg, tilt_deg = controller.position_snapshot()
+        if controller.arm():
+            print(
+                "Servo armed: following targets from "
+                f"pan={pan_deg:+.2f}deg tilt={tilt_deg:+.2f}deg"
+            )
+        else:
+            print("Servo armed already; SIGUSR1 ignored")
+
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGUSR1, request_arm)
 
     print(
         "Servo hardware: "
