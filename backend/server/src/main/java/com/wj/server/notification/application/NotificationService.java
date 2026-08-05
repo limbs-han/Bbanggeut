@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
 import com.wj.server.notification.api.NotificationResponse;
+import com.wj.server.notification.domain.ComicMadeRow;
 import com.wj.server.notification.persistence.NotificationMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class NotificationService {
+    /** 목록 배지용이라 넉넉하면 충분하다 — 금고 하나의 만화가 이보다 많을 일은 없다. */
+    private static final int MAX_COMIC_LIST = 200;
+
     private final NotificationMapper mapper;
     private final PushNotificationDispatcher pushDispatcher;
 
@@ -106,6 +110,18 @@ public class NotificationService {
         if (inserted > 0) {
             pushDispatcher.editCommentAdded(actorUserId, videoId, body);
         }
+    }
+
+    /**
+     * 이 금고에서 만화를 만들어 둔 영상 목록. 추억 탭 목록의 배지에 쓴다.
+     *
+     * <p>만화 존재 여부를 따로 저장하지 않고 COMIC_READY 알림 행을 기록으로
+     * 쓴다 — 거기에 vault_id와 resource_id가 이미 있어서, 영상마다 워커에 묻는
+     * N+1을 만들지 않아도 된다. 금고 구성원이 아니면 빈 목록이 나온다.
+     */
+    @Transactional(readOnly = true)
+    public List<ComicMadeRow> listVaultComics(UUID userId, UUID vaultId) {
+        return mapper.findComicsByVault(userId, vaultId, MAX_COMIC_LIST);
     }
 
     @Transactional(readOnly = true)
