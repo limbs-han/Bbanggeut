@@ -154,15 +154,48 @@ k6를 같은 인스턴스에서 돌렸기 때문에 CPU를 애플리케이션과
 단건 분석 실측치는 이미 코드에 있다(`analysis_jobs.py:34`, 2분 내외 영상 5개):
 음량 0.2s + YAMNet 0.7s + 영상 4.5s + 표정 11s = **약 16.4초**.
 
+## 운영 환경 실측 (2026-08-05)
+
+부하 시나리오의 크기·개수를 여기서 가져온다. 추정이 아니라 운영 실측이다.
+
+**인스턴스** — 4 vCPU / 15 GB RAM / 루트 309 GB(86 GB 사용, 224 GB 여유).
+
+**동시 실행 컨테이너 15개.** 그중 **7개가 Jenkins**다(`jenkins`, 빌드 에이전트
+4개, `jenkins-postgres-ci`, `jenkins-redis-ci`). 나머지 8개가 서비스
+본체다(postgres·redis·minio·mediamtx·mosquitto·editor-api·prometheus·grafana).
+빌드가 도는 동안 4 vCPU를 서비스와 나눠 쓴다 — 분리 순서 1번의 근거다.
+
+**영상 저장 현황** (업로드 완료 269건):
+
+| 항목 | 값 |
+| --- | ---: |
+| 평균 크기 | 27.2 MB |
+| 최대 크기 | 65.8 MB |
+| 평균 길이 | 88.5 초 |
+| 최대 길이 | 209.3 초 |
+| 총 용량 | 7.16 GB |
+
+여기서 따라 나오는 것:
+
+- **평균 비트레이트 약 2.5 Mbps**(27.2 MB ÷ 88.5초). B축 대역폭 계산의 입력값이다.
+  시청자 100명이면 약 250 Mbps — 대역폭보다 MediaMTX의 SRTP CPU가 먼저 막힐
+  것이라는 가설의 근거다.
+- **업로드 본문은 27 MB가 현실값이다.** 저장소 픽스처(12~16 MB)로 재면 디스크
+  쓰기량을 절반쯤 적게 잡는다. `prepare.sh`의 기본값을 27 MB로 두었다.
+- **분석 시간 실측치(2분 영상 16.4초)는 평균 길이(88.5초)와 거의 맞다.** 즉
+  D축 단건 16초는 현실적인 값이고, 최대 길이 209초면 약 2.4배로 늘어난다.
+
 ## 이 측정으로 답하지 못하는 것
 
 **무료 저장 용량·영상 길이·가격**은 부하 문제가 아니라 구현 공백이다.
-용량 기준 쿼터가 코드에 없다 — 있는 것은 시간 기준뿐이다
-(`devices.retention_days` 기본 30일, 프리미엄 365일, 영상당 500 MiB).
-사용자별 총량·개수·재생 시간 상한은 없다.
+용량 기준 쿼터가 코드에 없다 — 있는 것은 시간 기준뿐이다(금고·기기
+`retention_days` 기본 30일, 프리미엄 365일, 영상당 500 MiB 상한).
+**사용자별 총량·개수·재생 시간 상한은 없다.**
 
-원가 계산의 입력값은 운영 DB에서 나온다:
+위 실측으로 절반은 계산된다: 평균 27.2 MB / 88.5초. 남은 입력값은 **기기 1대가
+하루에 몇 건을 만드는가**다. 이것까지 나오면 "30일 보관 = 1인당 N GB = 원가 X원"이
+확정된다.
 
 ```bash
-docker exec william-james-postgres-1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select count(*), round(avg(size_bytes)/1048576.0,1) avg_mb, round(avg(duration_ms)/1000.0,1) avg_sec, round(sum(size_bytes)/1073741824.0,2) total_gb from videos where uploaded_at is not null"
+docker exec william-james-postgres-1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select device_id, count(*) clips, min(date(captured_start_at)) first_day, max(date(captured_start_at)) last_day from videos where uploaded_at is not null group by device_id order by clips desc"
 ```
