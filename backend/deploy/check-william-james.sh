@@ -31,6 +31,20 @@ check curl --fail --silent --max-time 10 "http://127.0.0.1:${active_port}/actuat
 check curl --fail --silent --max-time 10 https://i15e201.p.ssafy.io/health
 check curl --fail --silent --max-time 10 http://127.0.0.1:18080/health
 
+# 라이브 재생은 nginx auth_request가 백엔드 introspect까지 왕복해야 열린다.
+# 이 왕복만 깨지면 /health는 200이라 위 점검을 모두 통과한다 — 2026-08-05에
+# 라이브가 12시간 죽어 있었는데도 알림이 없었던 이유다. 없는 토큰에는 401이
+# 정답이므로, 401이 아니면 판정 경로 자체가 고장난 것이다(500이면 auth_request가
+# 백엔드에서 2xx/401/403이 아닌 응답을 받았다는 뜻).
+live_auth_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 10 \
+  --request POST --header 'Content-Type: application/sdp' --data-binary 'v=0' \
+  'https://i15e201.p.ssafy.io/webrtc/live/00000000-0000-0000-0000-000000000000/whep?token=monitor-probe' ||
+  true)"
+if [[ "$live_auth_status" != "401" ]]; then
+  echo "FAILED: live WHEP auth returned ${live_auth_status} (expected 401)" >&2
+  failures+=("live WHEP auth ${live_auth_status}")
+fi
+
 for container in \
   william-james-postgres-1 \
   william-james-redis-1 \
