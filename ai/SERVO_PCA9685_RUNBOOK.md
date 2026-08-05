@@ -236,6 +236,7 @@ SERVO_PAN_PULSE_DIRECTION=1
 SERVO_TILT_PULSE_DIRECTION=1
 SERVO_MINIMUM_PULSE_US=1000
 SERVO_MAXIMUM_PULSE_US=2000
+SERVO_STARTUP_POSITION=park
 SERVO_STATE_FILE=/var/lib/william-james-servo/position.json
 SERVO_STATE_MAX_AGE_SECONDS=604800
 SERVO_STATE_SAVE_INTERVAL_SECONDS=0.25
@@ -251,20 +252,37 @@ PAN은 `-80~+80`, TILT는 구조물 한계 때문에 `-50~+80`을 사용한다.
 
 ### 부팅 시 급회전 방지
 
-컨트롤러는 동작 중 마지막 명령 각도를 `SERVO_STATE_FILE`에 원자적으로 저장한다.
-재시작 후 첫 PWM은 HOME `0°`가 아니라 저장된 PAN/TILT 각도를 그대로 출력하고,
-그 다음 제어 주기부터 속도 제한을 적용한다.
+기본값은 `SERVO_STARTUP_POSITION=park`다. 기동 시 저장 파일을 무시하고 PARK
+각도(PAN `0°`, TILT `-50°`)를 초기 위치로 삼은 뒤, MQTT 수신을 시작하기 전에
+그 각도의 펄스를 즉시 출력한다. PCA9685는 Jetson 3.3V로 동작하므로 서보용
+외부 전원이 꺼져 있어도 펄스는 살아 있다. 따라서 **컨트롤러를 먼저 띄우고
+배터리 실드를 나중에 켜면**, 서보는 전원이 들어오는 순간 이미 자기 위치인
+PARK를 명령받아 움직이지 않는다.
 
-상태 파일이 없거나, 다른 기기에서 생성됐거나, 설정 범위를 벗어나거나,
-`SERVO_STATE_MAX_AGE_SECONDS`보다 오래됐으면 상태는 `STARTUP_WAITING`이 된다.
+TILT는 기구적으로 시작 위치가 상단 스톱이고 아래로만 움직일 수 있어, 무전원
+정지 위치가 PARK로 결정돼 있다. 저장 파일에 남는 값은 실제 각도가 아니라
+**마지막으로 명령한 각도**이므로, 서보가 무전원이던 구간에서는 실제 위치와
+갈라진다. PARK 상수가 저장값보다 항상 정확한 이유다.
+
+`SERVO_STARTUP_POSITION=persisted`로 바꾸면 이전 동작으로 돌아간다. 컨트롤러는
+동작 중 마지막 명령 각도를 `SERVO_STATE_FILE`에 원자적으로 저장하고, 재시작 후
+첫 PWM으로 저장된 PAN/TILT 각도를 그대로 출력한 뒤 다음 제어 주기부터 속도
+제한을 적용한다. 서보 전원을 한 번도 끊지 않는 운용에서만 사용한다.
+
+`persisted` 모드에서 상태 파일이 없거나, 다른 기기에서 생성됐거나, 설정 범위를
+벗어나거나, `SERVO_STATE_MAX_AGE_SECONDS`보다 오래됐으면 상태는
+`STARTUP_WAITING`이 된다.
 이때 PCA9685 채널은 비활성 상태를 유지하며 객체 추적 메시지가 들어와도 PWM을
 출력하지 않는다. 현재 물리 각도를 확인해 유효한 상태 파일을 만든 뒤 서비스를
 재시작해야 한다.
 
 정상적인 서비스 종료에서는 MQTT 수신을 먼저 중단하고
-`SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS` 동안 속도 제한을 지키며 HOME으로 이동한 뒤
-최종 `0°` 위치를 저장하고 PWM 채널을 끈다. 갑작스러운 전원 차단에서는 마지막
-주기 저장값을 다음 부팅 때 사용한다.
+`SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS` 동안 속도 제한을 지키며 PARK
+(PAN `0°`, TILT `-50°`)로 이동한 뒤 그 위치를 저장하고 PWM 채널을 끈다.
+
+따라서 전원을 내리는 순서는 **서비스 정지 → PARK 복귀 확인 → 배터리 실드
+OFF**다. PARK가 아닌 각도에서 실드를 먼저 끄면 다음 기동 때 서보가 PARK로
+급하게 되돌아간다.
 
 ## 9. 하드웨어 출력 활성화
 

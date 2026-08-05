@@ -414,11 +414,6 @@ class Pca9685ServoOutput:
         self._bus.write_byte_data(self._address, self.PRE_SCALE, prescale)
         self._bus.write_byte_data(self._address, self.MODE1, wake_mode)
         time.sleep(0.005)
-        self._bus.write_byte_data(
-            self._address,
-            self.MODE1,
-            wake_mode | self.MODE1_RESTART,
-        )
         self._bus.write_byte_data(self._address, self.MODE2, self.MODE2_OUTDRV)
 
     def _write_pulse(self, channel: int, pulse_us: float) -> None:
@@ -859,6 +854,11 @@ def parse_args() -> argparse.Namespace:
         default=float(os.getenv("SERVO_TILT_PARK_DEG", "-50")),
     )
     parser.add_argument(
+        "--startup-position",
+        choices=("park", "persisted"),
+        default=os.getenv("SERVO_STARTUP_POSITION", "park"),
+    )
+    parser.add_argument(
         "--pan-home-pulse-us",
         type=float,
         default=float(os.getenv("SERVO_PAN_HOME_PULSE_US", "1500")),
@@ -996,7 +996,14 @@ def run(args: argparse.Namespace) -> None:
 
     pan, tilt = build_axis_configs(args)
     restored_position: tuple[float, float] | None = None
-    if args.enable_hardware:
+    if args.enable_hardware and args.startup_position == "park":
+        restored_position = (pan.park_deg, tilt.park_deg)
+        print(
+            "Servo startup safety: parked start "
+            f"pan={pan.park_deg:+.2f}deg tilt={tilt.park_deg:+.2f}deg "
+            "(saved position ignored)"
+        )
+    elif args.enable_hardware:
         try:
             restored_position = load_saved_position(
                 args.state_file,
@@ -1041,6 +1048,14 @@ def run(args: argparse.Namespace) -> None:
         initial_position=restored_position,
         output_armed=not args.enable_hardware or restored_position is not None,
     )
+    if args.enable_hardware and controller.output_armed:
+        startup_pan_deg, startup_tilt_deg = controller.position_snapshot()
+        output.write_positions(startup_pan_deg, startup_tilt_deg)
+        print(
+            "Servo startup hold: PWM live at "
+            f"pan={startup_pan_deg:+.2f}deg tilt={startup_tilt_deg:+.2f}deg "
+            "before servo power is applied"
+        )
     target_topic = args.topic or (
         f"homecam/v2/{args.device_id}/control/framing/target"
     )

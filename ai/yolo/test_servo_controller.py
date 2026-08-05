@@ -195,6 +195,24 @@ class AxisConfigurationTests(unittest.TestCase):
         self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (-50.0, 80.0))
         self.assertEqual((pan.park_deg, tilt.park_deg), (0.0, -50.0))
 
+    def test_startup_position_defaults_to_park(self) -> None:
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertEqual(parse_args().startup_position, "park")
+
+    def test_startup_position_can_use_persisted_state(self) -> None:
+        environment = {
+            "DEVICE_ID": DEVICE_ID,
+            "SERVO_STARTUP_POSITION": "persisted",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertEqual(parse_args().startup_position, "persisted")
+
     def test_tilt_supports_symmetric_limits_around_home(self) -> None:
         environment = {
             "DEVICE_ID": DEVICE_ID,
@@ -345,8 +363,14 @@ class Pca9685OutputTests(unittest.TestCase):
             for address, register, value in bus.byte_writes
             if address == 0x60 and register == Pca9685ServoOutput.MODE1
         ]
-        self.assertEqual(mode1_writes, [0x11, 0x21, 0xA1])
+        self.assertEqual(mode1_writes, [0x11, 0x21])
         self.assertEqual(mode1_writes[-1] & Pca9685ServoOutput.MODE1_SLEEP, 0)
+        restart_writes = [
+            value
+            for value in mode1_writes
+            if value & Pca9685ServoOutput.MODE1_RESTART
+        ]
+        self.assertEqual(restart_writes, [])
 
 
 class ServoControllerTests(unittest.TestCase):
