@@ -15,12 +15,17 @@ class MemoryVideoCard extends StatelessWidget {
     required this.video,
     this.onChanged,
     this.onDeleted,
+    this.hasComic = false,
   });
 
   final AppController controller;
   final VideoMemory video;
   final VoidCallback? onChanged;
   final VoidCallback? onDeleted;
+
+  /// 이 영상으로 만들어 둔 4컷 만화가 있는가. 만화는 화면을 벗어난 뒤에
+  /// 완성되므로, 목록에서 "만들어 뒀다"를 알 수 있어야 다시 찾아 들어간다.
+  final bool hasComic;
 
   /// 형식 하나를 만들 때마다 패턴을 파싱하고 로케일을 찾는다. 목록을 넘길 때
   /// 카드마다 두 개씩 새로 만들던 것을 한 번만 만들어 나눠 쓴다.
@@ -174,7 +179,32 @@ class MemoryVideoCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 5),
-                  VideoEventTypePills(video: video, compact: true),
+                  Row(
+                    children: [
+                      VideoEventTypePills(video: video, compact: true),
+                      if (hasComic) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          key: const ValueKey('memory-comic-badge'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.yellowSoft,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            '🎨 만화',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 5),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,

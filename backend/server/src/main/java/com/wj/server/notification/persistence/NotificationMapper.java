@@ -3,6 +3,7 @@ package com.wj.server.notification.persistence;
 import java.util.List;
 import java.util.UUID;
 
+import com.wj.server.notification.domain.ComicMadeRow;
 import com.wj.server.notification.domain.NotificationRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -130,6 +131,33 @@ public interface NotificationMapper {
     int insertComicReadyNotification(
         @Param("userId") UUID userId,
         @Param("videoId") UUID videoId
+    );
+
+    /**
+     * 이 금고에서 만화를 만들어 둔 영상과 그 시각.
+     *
+     * <p>별도 저장을 두지 않고 알림 행을 기록으로 쓴다 — 만화가 완성될 때마다
+     * COMIC_READY 행이 남고, 거기에 vault_id와 resource_id가 이미 있다. 그래서
+     * 목록 배지를 그리려고 영상마다 워커에 묻는 N+1을 만들지 않아도 된다.
+     *
+     * <p>누가 만들었는지는 보지 않는다. 만화는 금고에 속하므로 가족 누구에게나
+     * 배지가 보여야 한다.
+     */
+    @Select("""
+        SELECT n.resource_id AS video_id, MIN(n.created_at) AS made_at
+          FROM notifications n
+          JOIN vault_memberships m ON m.vault_id = n.vault_id
+         WHERE n.vault_id = #{vaultId} AND n.type = 'COMIC_READY'
+           AND n.resource_id IS NOT NULL
+           AND m.user_id = #{userId} AND m.status = 'ACTIVE'
+         GROUP BY n.resource_id
+         ORDER BY made_at DESC
+         LIMIT #{limit}
+        """)
+    List<ComicMadeRow> findComicsByVault(
+        @Param("userId") UUID userId,
+        @Param("vaultId") UUID vaultId,
+        @Param("limit") int limit
     );
 
     @Insert("""

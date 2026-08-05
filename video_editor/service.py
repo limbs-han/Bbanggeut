@@ -809,6 +809,10 @@ def comic_image(
         raise HTTPException(status_code=422, detail=str(failure)) from failure
     except comic.ComicError as failure:
         raise HTTPException(status_code=502, detail=str(failure)) from failure
+    # 이 경로로 만든 만화도 알림을 남긴다. 알림 행이 "이 금고의 어떤 영상에
+    # 만화가 있는가"의 기록이기도 해서(백엔드가 목록 배지에 쓴다), 한쪽 경로만
+    # 알림을 보내면 동기로 만든 만화는 목록에서 배지가 빠진다.
+    backend_events.comic_ready(video_id, _token_subject(http_request))
     return {"image": base64.b64encode(png).decode()}
 
 

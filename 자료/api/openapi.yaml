@@ -1986,6 +1986,31 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/vaults/{vaultId}/comics:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Videos]
+      operationId: listVaultComics
+      summary: 금고에서 만화를 만들어 둔 영상 목록
+      description: |
+        추억 탭 목록이 "만화 있음" 배지를 그리는 데 쓴다. 영상마다 만화 존재 여부를
+        따로 묻지 않기 위한 목록이다 — 목록이 100건이면 왕복도 100번이 된다.
+
+        누가 만들었는지는 보지 않는다. 만화는 금고에 속하므로 가족 누구에게나 배지가
+        보여야 한다. 금고 구성원이 아니면 빈 목록이다.
+      responses:
+        '200':
+          description: 만화가 있는 영상 목록(최신순)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VaultComic'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/vaults/{vaultId}/edits:
     parameters:
       - $ref: '#/components/parameters/VaultId'
@@ -3401,6 +3426,19 @@ components:
           type: string
           format: byte
           description: 정사각 PNG의 순수 base64. `data:image/png;base64,` 접두어를 붙이지 않는다.
+
+    VaultComic:
+      type: object
+      description: 만화를 만들어 둔 영상 한 건.
+      required: [videoId, madeAt]
+      properties:
+        videoId:
+          type: string
+          format: uuid
+        madeAt:
+          type: string
+          format: date-time
+          description: 처음 완성된 시각.
 
     ComicJob:
       type: object

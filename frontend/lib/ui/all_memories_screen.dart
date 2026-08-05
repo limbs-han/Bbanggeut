@@ -81,6 +81,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
   List<Map<String, dynamic>> _drafts = const [];
   List<Map<String, dynamic>> _edited = const [];
 
+  /// 만화를 만들어 둔 영상 id. 카드에 배지를 그리는 데만 쓴다.
+  Set<String> _comicVideoIds = const {};
+
   /// 올라가는 중인 편집본을 뒤따라가는 재조회. 5초 간격으로 최대 5분.
   Timer? _uploadFollowUp;
   int _uploadFollowUpCount = 0;
@@ -110,6 +113,15 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             .listVaultEdits(widget.controller.selectedVault!.id)
             .then((edited) {
               if (mounted) setState(() => _edited = edited);
+            })
+            .catchError((Object _) {}),
+      // 만화 배지. 실패해도 목록은 그대로 보여야 하므로 조용히 넘긴다 —
+      // 배지가 없는 것과 목록이 안 나오는 것은 무게가 다르다.
+      if (widget.controller.selectedVault != null)
+        widget.controller.api
+            .listVaultComicVideoIds(widget.controller.selectedVault!.id)
+            .then((ids) {
+              if (mounted) setState(() => _comicVideoIds = ids);
             })
             .catchError((Object _) {}),
     ]);
@@ -588,6 +600,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                         controller: widget.controller,
                         video: items[index],
                         onChanged: _refresh,
+                        hasComic: _comicVideoIds.contains(items[index].id),
                       ),
                     ),
             ),
