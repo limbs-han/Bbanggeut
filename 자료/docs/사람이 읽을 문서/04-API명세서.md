@@ -1048,6 +1048,9 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-84 | `POST /api/videos/{videoId}/comments` | 영상 댓글 작성 — 작성자는 토큰의 사용자 UUID(앱이 보낸 이름을 믿지 않는다), 작성자 외 금고 구성원에게 알림·FCM |
 | API-85 | `PATCH /api/videos/{videoId}/comments/{commentId}` | 영상 댓글 수정 — 쓴 사람만. OWNER에게도 열지 않는다(남의 말을 고쳐 쓰는 것과 지우는 것은 다른 일이다) |
 | API-86 | `DELETE /api/videos/{videoId}/comments/{commentId}` | 영상 댓글 삭제 — 쓴 사람 또는 금고 OWNER. 부적절한 댓글은 OWNER가 지운다 |
+| API-87 | `GET /api/vaults/{vaultId}/places` | 금고 장소 배치와 내 기기 순서 — 장소 이름·기기 배정은 금고 공통(집의 사실), 기기 순서는 사람마다(보기 취향) |
+| API-88 | `PUT /api/vaults/{vaultId}/places` | 장소 배치 저장 — 구성원 누구나. 목록을 통째로 갈아 끼운다(앱이 한 화면에서 장소 추가와 기기 이동을 함께 한다) |
+| API-89 | `PUT /api/vaults/{vaultId}/device-order` | 내 기기 순서 저장 — 부른 사람에게만 적용된다 |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + 기기별 분해(`byDevice`). Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계해 기기 양도 후에도 과거 금고 통계가 오염되지 않음. **앱 웃음 리포트의 "가족 전체" 토글이 사용** |
 
 #### 비밀번호 API 동작 규칙 (API-55~57)
