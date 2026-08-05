@@ -118,14 +118,18 @@ echo "   분석 대상 ${made}건"
 echo "== 4. 업로드 본문 준비"
 payload="$work_dir/payload.bin"
 fixture="$repo_root/runtime/production-video-fixtures/owner-edit-01.mp4"
-if [ -f "$fixture" ]; then
-  # 실제 이벤트 클립(10~16 MB)과 같은 크기·형식을 쓴다. 크기가 곧 디스크
-  # 쓰기량이므로 여기서 현실성을 지키는 게 중요하다.
+if [ "${USE_FIXTURE:-0}" = "1" ] && [ -f "$fixture" ]; then
+  # 디코딩 가능한 실제 mp4가 필요할 때만. 저장소 픽스처는 12~16 MB로
+  # 운영 평균(27.2 MB)보다 작아서 디스크 쓰기량을 절반쯤 적게 잡는다.
   cp "$fixture" "$payload"
 else
-  # 픽스처가 없으면 12 MB 무작위 바이트. 업로드는 /complete를 부르지 않으므로
-  # 내용이 mp4일 필요는 없다 — 디스크에 쓰이는 바이트 수만 같으면 된다.
-  openssl rand -out "$payload" $((12 * 1024 * 1024))
+  # 기본은 운영 실측 평균 크기의 무작위 바이트다. /complete를 부르지 않으므로
+  # 내용이 mp4일 필요는 없고, 디스크에 쓰이는 바이트 수만 맞으면 된다.
+  #
+  # 27 MB는 추정이 아니라 운영 DB 실측이다(2026-08-05, 업로드 완료 269건):
+  #   평균 27.2 MB / 최대 65.8 MB, 평균 88.5초 / 최대 209.3초.
+  # 앞선 픽스처 기준(12 MB)으로 재면 저장소 부하를 과소평가한다.
+  openssl rand -out "$payload" $(( ${PAYLOAD_MB:-27} * 1024 * 1024 ))
 fi
 size_bytes="$(wc -c <"$payload" | tr -d ' ')"
 checksum="$(sha256_of "$payload")"

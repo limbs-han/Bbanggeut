@@ -10,9 +10,14 @@
 # 부작용: 테스트 버킷에 (PARALLEL × SIZE_MB) MB를 쓴다. 끝나면 지운다.
 # 여유 공간을 먼저 확인하고, 모자라면 아무것도 하지 않고 멈춘다.
 #
+# 크기 기준(운영 DB 실측, 2026-08-05 · 업로드 완료 269건):
+#   평균 클립 27.2 MB / 최대 65.8 MB, 선언 상한 500 MiB.
+#   현실적인 폭주는 SIZE_MB=27, 최악 케이스는 SIZE_MB=500이다.
+#
 # 실행 (서버에서):
-#   ./storage-io.sh              # 기본 8병렬 × 100 MB
-#   PARALLEL=20 SIZE_MB=500 ./storage-io.sh   # 최악 케이스
+#   ./storage-io.sh                            # 기본 8병렬 × 100 MB
+#   PARALLEL=20 SIZE_MB=27 ./storage-io.sh     # 현실적인 동시 폭주
+#   PARALLEL=10 SIZE_MB=500 ./storage-io.sh    # 최악 케이스
 set -euo pipefail
 
 PARALLEL="${PARALLEL:-8}"
