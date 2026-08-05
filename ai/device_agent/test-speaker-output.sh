@@ -41,6 +41,11 @@ DURATION_SECONDS="${2:-3}"
 FREQUENCY_HZ="${SPEAKER_TEST_FREQUENCY_HZ:-880}"
 VOLUME="${SPEAKER_TEST_VOLUME:-1.0}"
 FFMPEG_PATH="${FFMPEG_PATH:-/usr/bin/ffmpeg}"
+MIXER_CARD=""
+
+if [[ "$DEVICE" =~ CARD=([^,]+) ]]; then
+    MIXER_CARD="${BASH_REMATCH[1]}"
+fi
 
 if [[ ! "$DURATION_SECONDS" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     echo "DURATION_SECONDS must be a positive number: ${DURATION_SECONDS}" >&2
@@ -63,6 +68,14 @@ if [[ "$FFMPEG_PATH" == */* ]]; then
 elif ! command -v "$FFMPEG_PATH" >/dev/null 2>&1; then
     echo "FFmpeg is not available: ${FFMPEG_PATH}" >&2
     exit 1
+fi
+
+if [[ -n "$MIXER_CARD" ]] && command -v amixer >/dev/null 2>&1; then
+    if amixer -c "$MIXER_CARD" sset Speaker 100% unmute >/dev/null 2>&1; then
+        echo "ALSA mixer  : Speaker 100% (card ${MIXER_CARD})"
+    else
+        echo "Warning: could not set the Speaker mixer on card ${MIXER_CARD}." >&2
+    fi
 fi
 
 cat <<EOF

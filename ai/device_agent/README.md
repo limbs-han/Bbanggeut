@@ -47,6 +47,10 @@ bash ./test-speaker-output.sh --list
 bash ./test-speaker-output.sh plughw:CARD=Device,DEV=0 3
 ```
 
+For ALSA names containing `CARD=...`, the script also unmutes the card's
+`Speaker` mixer and raises it to 100%. This prevents a restored USB mixer value
+such as 29% from making a 100% generated signal sound quiet.
+
 Replace `Device` with the card identifier reported by `aplay -L`. The script
 uses `TALKBACK_OUTPUT_DEVICE` when no device argument is supplied, so the final
 configuration can be verified directly:
