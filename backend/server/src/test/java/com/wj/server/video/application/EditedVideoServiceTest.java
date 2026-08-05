@@ -97,6 +97,12 @@ class EditedVideoServiceTest {
     void commentIsStoredWithTokenIdentityAndNotifiesFamily() {
         when(videoMapper.findAccessibleVideo(USER_ID, SOURCE_ID))
             .thenReturn(Optional.of(source()));
+        // 응답은 저장된 행을 다시 읽어 만든다 — 이름과 시각이 목록과 같아야
+        // 앱이 방금 쓴 댓글을 목록에 그대로 붙일 수 있다.
+        Instant storedAt = Instant.parse("2026-08-05T12:00:00Z");
+        when(commentMapper.findComment(any(), eq(SOURCE_ID))).thenAnswer(
+            call -> Optional.of(new VideoCommentRow(
+                call.getArgument(0), USER_ID, "할머니", "귀엽다", storedAt)));
 
         var comment = service().addComment(
             USER_ID, SOURCE_ID, new CreateVideoCommentRequest("  귀엽다  "));
@@ -104,6 +110,8 @@ class EditedVideoServiceTest {
         // 작성자는 토큰의 사용자 UUID다 — 앱이 보낸 이름을 믿지 않는다.
         assertThat(comment.authorId()).isEqualTo(USER_ID);
         assertThat(comment.body()).isEqualTo("귀엽다");
+        assertThat(comment.authorName()).isEqualTo("할머니");
+        assertThat(comment.createdAt()).isEqualTo(storedAt);
         verify(commentMapper).insert(any(), eq(SOURCE_ID), eq(USER_ID), eq("귀엽다"));
         verify(notificationService).editCommentAdded(
             eq(USER_ID), eq(SOURCE_ID), anyString(), eq("귀엽다"));

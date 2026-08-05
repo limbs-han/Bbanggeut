@@ -118,6 +118,25 @@ public interface ComicMapper {
         @Param("limit") int limit
     );
 
+    /**
+     * 댓글 한 줄. 쓰거나 고친 뒤 **저장된 것을 그대로** 돌려주려고 쓴다.
+     *
+     * 예전에는 응답을 손으로 조립하면서 이름을 null로, 시각을 서버 시계로
+     * 채웠다. 앱은 그 응답을 목록에 그대로 붙이므로, 방금 쓴 댓글만 이름이
+     * '가족'으로 보이고 시각도 DB와 어긋났다.
+     */
+    @Select("""
+        SELECT m.id, m.author_id AS authorId, u.display_name AS authorName,
+               m.body, m.created_at AS createdAt
+          FROM comic_comments m
+          JOIN users u ON u.id = m.author_id
+         WHERE m.id = #{commentId} AND m.video_id = #{videoId}
+        """)
+    Optional<VideoCommentRow> findComment(
+        @Param("commentId") UUID commentId,
+        @Param("videoId") UUID videoId
+    );
+
     @Insert("""
         INSERT INTO comic_comments (id, video_id, author_id, body)
         VALUES (#{id}, #{videoId}, #{authorId}, #{body})

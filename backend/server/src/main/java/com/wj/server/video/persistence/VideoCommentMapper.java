@@ -46,6 +46,22 @@ public interface VideoCommentMapper {
     );
 
     /**
+     * 댓글 한 줄. 쓰거나 고친 뒤 **저장된 것을 그대로** 돌려주려고 쓴다 —
+     * 손으로 조립하면 이름이 빠지고 시각이 DB와 어긋난다(ComicMapper 참고).
+     */
+    @Select("""
+        SELECT c.id, c.author_id AS authorId, u.display_name AS authorName,
+               c.body, c.created_at AS createdAt
+          FROM video_comments c
+          JOIN users u ON u.id = c.author_id
+         WHERE c.id = #{commentId} AND c.video_id = #{videoId}
+        """)
+    Optional<VideoCommentRow> findComment(
+        @Param("commentId") UUID commentId,
+        @Param("videoId") UUID videoId
+    );
+
+    /**
      * 댓글의 작성자. 수정·삭제 권한을 가리는 데 쓴다.
      *
      * {@code video_id}까지 함께 보는 이유는 다른 영상의 댓글 id를 들고 와도

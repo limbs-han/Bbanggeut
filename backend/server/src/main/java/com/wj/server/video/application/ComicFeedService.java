@@ -12,6 +12,7 @@ import com.wj.server.video.api.UpdateVideoCommentRequest;
 import com.wj.server.video.api.VaultComicResponse;
 import com.wj.server.video.api.VideoCommentResponse;
 import com.wj.server.video.domain.ComicRow;
+import com.wj.server.video.domain.VideoCommentRow;
 import com.wj.server.video.persistence.ComicMapper;
 import com.wj.server.video.persistence.VideoMapper;
 import org.springframework.http.HttpStatus;
@@ -96,7 +97,7 @@ public class ComicFeedService {
         String body = requireBody(request.body());
         UUID commentId = UUID.randomUUID();
         comicMapper.insertComment(commentId, videoId, userId, body);
-        return new VideoCommentResponse(commentId, userId, null, body, Instant.now());
+        return storedComment(commentId, videoId);
     }
 
     /** 댓글은 쓴 사람만 고친다(영상 댓글과 같은 규칙). */
@@ -115,7 +116,7 @@ public class ComicFeedService {
         if (comicMapper.updateCommentBody(commentId, videoId, body) != 1) {
             throw notFound();
         }
-        return new VideoCommentResponse(commentId, userId, null, body, Instant.now());
+        return storedComment(commentId, videoId);
     }
 
     /** 쓴 사람은 자기 댓글을, OWNER는 금고의 어느 댓글이든 지운다. */
@@ -165,6 +166,15 @@ public class ComicFeedService {
         return new VaultComicResponse(
             row.videoId(), shown, custom, row.madeAt(),
             row.likeCount(), row.likedByMe(), row.commentCount());
+    }
+
+    /// 저장된 댓글을 그대로 읽어 응답으로 쓴다. 이름은 users 조인에서 오고
+    /// 시각은 DB가 찍은 값이라, 방금 쓴 댓글도 목록과 똑같이 보인다.
+    private VideoCommentResponse storedComment(UUID commentId, UUID videoId) {
+        VideoCommentRow row = comicMapper.findComment(commentId, videoId)
+            .orElseThrow(ComicFeedService::notFound);
+        return new VideoCommentResponse(
+            row.id(), row.authorId(), row.authorName(), row.body(), row.createdAt());
     }
 
     private static ApiException notFound() {
