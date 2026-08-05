@@ -2232,7 +2232,7 @@ paths:
         '403':
           $ref: '#/components/responses/ForbiddenRole'
         '422':
-          $ref: '#/components/responses/ValidationFailed'
+          $ref: '#/components/responses/ValidationError'
 
   /api/laugh-memories/{memoryId}/reaction:
     put:
@@ -2272,7 +2272,7 @@ paths:
         '409':
           description: 삭제·만료된 영상에는 반응할 수 없다 (VIDEO_NOT_READY)
         '422':
-          $ref: '#/components/responses/ValidationFailed'
+          $ref: '#/components/responses/ValidationError'
 components:
   securitySchemes:
     UserBearerAuth:
@@ -3747,3 +3747,74 @@ components:
           nullable: true
         hasNext:
           type: boolean
+
+    LaughReactionType:
+      type: string
+      description: 웃음 뽑기 이모지 반응 종류.
+      enum: [FUNNY, MISS_THIS, GOOD_SAVE, EMBARRASSING, AGAIN]
+
+    LaughReactionMember:
+      type: object
+      description: 반응을 남긴 구성원 한 명. 반응이 없는 구성원은 담기지 않는다.
+      required: [memberId, displayName, reactionType, isMe]
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        reactionType:
+          $ref: '#/components/schemas/LaughReactionType'
+        isMe:
+          type: boolean
+          description: >-
+            로그인 사용자 본인의 반응인지. 프로필 사진은 서버가 알지 못하므로
+            앱이 이름 첫 글자로 아바타를 그리고 본인 것만 기기 아바타로 바꾼다.
+
+    LaughMemory:
+      type: object
+      description: 뽑힌 웃음 영상 한 건과 그 반응.
+      required: [video, reactionCounts, familyReactions]
+      properties:
+        video:
+          $ref: '#/components/schemas/Video'
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 보관 만료 시각(retention_until). 보관 정책이 없으면 null.
+        reactionCounts:
+          type: object
+          description: 반응 종류별 개수. 키는 LaughReactionType 값이다.
+          additionalProperties:
+            type: integer
+            minimum: 0
+        myReaction:
+          nullable: true
+          description: 로그인 사용자가 남긴 반응. 남기지 않았으면 null.
+          allOf:
+            - $ref: '#/components/schemas/LaughReactionType'
+        familyReactions:
+          type: array
+          description: 반응을 남긴 구성원 목록. 반응이 없으면 빈 배열.
+          items:
+            $ref: '#/components/schemas/LaughReactionMember'
+
+    LaughDrawResult:
+      type: object
+      description: >-
+        웃음 뽑기 결과. 꺼낼 영상이 없는 것은 오류가 아니라 정상 상태이므로
+        404가 아니라 200 + hasMemory=false로 응답한다.
+      required: [hasMemory]
+      properties:
+        hasMemory:
+          type: boolean
+          description: 뽑을 영상이 있었는지. false면 memory가 null이고 message가 채워진다.
+        memory:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LaughMemory'
+        message:
+          type: string
+          nullable: true
+          description: 빈 결과일 때 앱이 그대로 보여 줄 안내 문구.
