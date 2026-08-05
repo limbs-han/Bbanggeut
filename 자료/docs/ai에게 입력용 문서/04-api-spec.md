@@ -856,7 +856,7 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-12 | `POST /api/devices/{deviceId}/transfer-ownership` | 기기 소유권 이전 |
 | API-13 | `DELETE /api/devices/{deviceId}` | 기기 해제 |
 | API-28 | `GET /api/videos/{videoId}` | 영상 단건 상세 조회 |
-| API-29 | `PATCH /api/videos/{videoId}` | 영상 메타데이터(제목/메모/즐겨찾기) 수정 |
+| API-29 | `PATCH /api/videos/{videoId}` | 영상 제목·즐겨찾기 수정. 원본 제목은 OWNER만, 편집본 제목과 즐겨찾기는 OWNER/MEMBER |
 | API-30 | `DELETE /api/videos/{videoId}` | 영상 삭제(OWNER, 비동기 202) |
 | API-39 | `GET /api/devices/{deviceId}/subscription` | 구독 상태 조회 |
 | API-40 | `PUT /api/devices/{deviceId}/subscription` | 구독 활성화 |
