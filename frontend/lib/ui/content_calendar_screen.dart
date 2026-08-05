@@ -720,7 +720,8 @@ class _SelectedMemoryCard extends StatelessWidget {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    videos.first.title,
+                    // 날짜는 고른 날이 이미 말해 준다 — 시각과 종류만 적는다.
+                    videoDisplayTitle(videos.first, includeDate: false),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

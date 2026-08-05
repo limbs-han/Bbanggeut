@@ -30,9 +30,17 @@ class MemoryVideoCard extends StatelessWidget {
   DateTime get _start =>
       video.capturedStartAt ?? video.createdAt ?? DateTime.now();
 
+  /// **왜 길이를 다시 재는가**: 끝 시각을 시작 + 2분으로 박아 두었더니 30초
+  /// 클립도 "09:27 - 09:29"로 보였다. 길이를 아는 영상은 그 길이로 끝을 잡고,
+  /// 모르는 영상은 끝을 아예 적지 않는다 — 틀린 범위보다 없는 편이 낫다.
   String get _timeRange {
     final start = _start;
-    final end = start.add(const Duration(minutes: 2));
+    final durationMs = video.durationMs;
+    if (durationMs == null || durationMs <= 0) return _dayTime.format(start);
+    final end = start.add(Duration(milliseconds: durationMs));
+    // 30초 클립은 시작과 끝이 같은 분에 든다. "09:27 - 09:27"은 범위가 아니라
+    // 잡음이므로 그때는 시작만 적는다.
+    if (_time.format(end) == _time.format(start)) return _dayTime.format(start);
     return '${_dayTime.format(start)} - ${_time.format(end)}';
   }
 
@@ -137,7 +145,7 @@ class MemoryVideoCard extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          video.title,
+                          videoDisplayTitle(video),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
