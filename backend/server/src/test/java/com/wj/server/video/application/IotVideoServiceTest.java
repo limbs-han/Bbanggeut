@@ -118,7 +118,7 @@ class IotVideoServiceTest {
     @Test
     void completedLaughterVideoNotifiesDeviceMembersIdempotently() {
         VideoRow laughterVideo = new VideoRow(
-            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", EVENT_ID, "웃음 영상", null,
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", EVENT_ID, "웃음 영상",
             "video/mp4", 100L, CHECKSUM, 1000L,
             Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
             "private/device/video.mp4", "READY", false,
@@ -234,7 +234,7 @@ class IotVideoServiceTest {
 
     private VideoRow video(String status) {
         return new VideoRow(
-            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "TOUCH", EVENT_ID, "영상", null,
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "TOUCH", EVENT_ID, "영상",
             "video/mp4", 100L, CHECKSUM, 1000L,
             Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
             "private/device/video.mp4", status, false, Instant.parse("2026-07-17T10:00:02Z"));

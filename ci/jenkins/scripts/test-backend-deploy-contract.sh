@@ -132,6 +132,23 @@ then
 fi
 grep -Fq 'WJ_BACKEND_ACCESS_KEY' \
   "${repository_root}/backend/deploy/provision-secrets.sh"
+
+# 프로덕션 프로파일 이름 계약.
+#
+# 활성 프로파일 이름과 프로파일 파일 이름은 한 몸이다. 어긋나면 Spring이
+# 프로파일을 찾지 못해 application.yml의 로컬 기본값(localhost DB, 저장소에
+# 공개된 JWT 개발 키)으로 떨어진다. DB 연결이 먼저 실패해 기동이 멈추고 무중단
+# 배포가 롤백하므로 사용자 영향은 없지만, 배포가 통째로 실패한다.
+#
+# 2026-08-05까지 이 파일 이름은 application-demo.yml이었다 — 데모와 무관한데
+# 이름이 그래서 지워도 되는 파일로 읽혔다.
+if [[ ! -f "${repository_root}/backend/server/src/main/resources/application-prod.yml" ]]
+then
+  echo "application-prod.yml이 없습니다 — 운영 프로파일 파일 이름을 확인하세요." >&2
+  exit 1
+fi
+grep -Fq 'SPRING_PROFILES_ACTIVE=prod' \
+  "${repository_root}/backend/deploy/provision-secrets.sh"
 grep -Fq 'mc admin policy attach' \
   "${repository_root}/backend/deploy/docker-compose.yml"
 if grep -Eq '^ *MINIO_ACCESS_KEY: \$\{MINIO_ROOT_USER\}' \

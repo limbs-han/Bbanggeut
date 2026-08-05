@@ -64,7 +64,7 @@ public interface VideoMapper {
      */
     @Select("""
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id,
-               v.title, v.description, v.content_type, v.size_bytes, v.checksum_sha256,
+               v.title, v.content_type, v.size_bytes, v.checksum_sha256,
                v.duration_ms, v.captured_start_at, v.captured_end_at, v.storage_key,
                v.status, v.is_favorite AS favorite, v.created_at,
                array_to_string(v.event_types, ',') AS event_types_csv
@@ -88,7 +88,7 @@ public interface VideoMapper {
      * 부를 수 없으므로 서버가 객체가 왔는지 훑어 승격한다.
      */
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -147,7 +147,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -161,7 +161,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -291,7 +291,7 @@ public interface VideoMapper {
 
     @Select("""
         <script>
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -331,7 +331,7 @@ public interface VideoMapper {
 
     @Select("""
         <script>
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -380,21 +380,9 @@ public interface VideoMapper {
         @Param("to") Instant to
     );
 
-    @Select("""
-        SELECT count(*)
-          FROM videos
-         WHERE device_id = #{deviceId} AND status = 'READY'
-           AND description IS NOT NULL AND btrim(description) <> ''
-           AND captured_start_at >= #{from} AND captured_start_at < #{to}
-        """)
-    long countReadyVideosWithMemo(
-        @Param("deviceId") UUID deviceId,
-        @Param("from") Instant from,
-        @Param("to") Instant to
-    );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -476,7 +464,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -494,7 +482,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -526,7 +514,6 @@ public interface VideoMapper {
     @Update("""
         UPDATE videos
            SET title = CASE WHEN #{titlePresent} THEN #{title} ELSE title END,
-               description = CASE WHEN #{descriptionPresent} THEN #{description} ELSE description END,
                is_favorite = CASE WHEN #{favoritePresent} THEN #{favorite} ELSE is_favorite END,
                updated_at = now()
          WHERE id = #{videoId}
@@ -535,8 +522,6 @@ public interface VideoMapper {
         @Param("videoId") UUID videoId,
         @Param("titlePresent") boolean titlePresent,
         @Param("title") String title,
-        @Param("descriptionPresent") boolean descriptionPresent,
-        @Param("description") String description,
         @Param("favoritePresent") boolean favoritePresent,
         @Param("favorite") Boolean favorite
     );

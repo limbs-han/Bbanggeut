@@ -1255,15 +1255,16 @@ paths:
     patch:
       tags: [Videos]
       operationId: updateVideo
-      summary: 영상 제목·설명·즐겨찾기 수정
+      summary: 영상 제목·즐겨찾기 수정
       description: |
         필드마다 권한이 다르다.
 
-        - 제목·설명: 기기가 담아 온 원본은 OWNER만 바꾼다(가족 공동의 기록이다).
+        - 제목: 기기가 담아 온 원본은 OWNER만 바꾼다(가족 공동의 기록이다).
           `sourceType=EDIT_OUTPUT`인 편집본은 OWNER와 MEMBER가 바꾼다.
         - 즐겨찾기: OWNER와 MEMBER 모두 토글한다.
 
-        설명(메모)은 앱에서 걷어낸 기능이다. 필드는 하위 호환을 위해 남아 있다.
+        메모(`description`)는 2026-08-05에 제거했다. DB 칼럼은 무중단 배포 규칙상
+        다음 릴리스에서 지운다.
       requestBody:
         required: true
         content:
@@ -2060,6 +2061,98 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/vaults/{vaultId}/places:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultPlaceLayout
+      summary: 금고 장소 배치와 내 기기 순서
+      description: |
+        `places`와 `devicePlaces`는 금고 공통이다 — 장소 이름과 기기가 어느 장소에
+        있는지는 집의 사실이라 가족이 함께 본다.
+
+        `deviceOrder`는 부른 사람의 것이다 — 기기를 어떤 순서로 볼지는 보기
+        취향이라 사람마다 둔다.
+
+        지금 어느 장소를 보고 있는지는 화면 상태라 서버에 두지 않는다.
+      responses:
+        '200':
+          description: 배치와 순서
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    put:
+      tags: [Vaults]
+      operationId: replaceVaultPlaceLayout
+      summary: 금고 장소 배치 저장
+      description: |
+        장소 이름과 기기 배정을 통째로 갈아 끼운다. 금고 구성원 누구나 할 수 있다 —
+        홈캠을 안방으로 옮긴 사람이 그 사실을 적을 수 있어야 하고, 잘못 적어도
+        되돌리기 쉬운 데이터다.
+
+        앱이 한 화면에서 장소 추가와 기기 이동을 함께 하므로 항목별로 나누지 않는다.
+        목록에 없는 장소로 보낸 배정과 금고에 없는 기기는 조용히 버린다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlaceLayoutRequest'
+      responses:
+        '200':
+          description: 저장된 배치
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/vaults/{vaultId}/device-order:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    put:
+      tags: [Vaults]
+      operationId: replaceDeviceOrder
+      summary: 내 기기 순서 저장
+      description: 부른 사람에게만 적용된다. 다른 구성원 화면의 순서는 그대로다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceIds]
+              properties:
+                deviceIds:
+                  type: array
+                  items: {type: string, format: uuid}
+      responses:
+        '200':
+          description: 저장된 배치와 순서
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
   /api/vaults/{vaultId}/event-stats:
     parameters:
       - $ref: '#/components/parameters/VaultId'
@@ -2529,7 +2622,7 @@ components:
 
     HomeSummary:
       type: object
-      required: [deviceId, date, timeZone, captureCount, savedCount, memoCount]
+      required: [deviceId, date, timeZone, captureCount, savedCount]
       description: 홈 대시보드용 오늘 요약 집계. 현재 데이터 모델에서는 captureCount와 savedCount가 같은 값이며, edge가 원시 이벤트 수를 별도로 보고하면 분리된다.
       properties:
         deviceId:
@@ -2550,10 +2643,6 @@ components:
           type: integer
           minimum: 0
           description: 오늘 저장된 영상 수
-        memoCount:
-          type: integer
-          minimum: 0
-          description: 오늘 저장된 영상 중 메모(설명)가 작성된 수
         latestHighlight:
           type: object
           allOf:
@@ -2906,10 +2995,6 @@ components:
         title:
           type: string
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         contentType:
           type: string
           example: video/mp4
@@ -3065,10 +3150,6 @@ components:
           type: string
           minLength: 1
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         isFavorite:
           type: boolean
 
@@ -3489,6 +3570,35 @@ components:
           description: |
             일정을 넣을 금고. 생략하면 사용자가 속한 금고가 하나일 때만 그것으로
             정하고, 여러 곳에 속해 있으면 422로 되묻는다.
+
+    PlaceLayout:
+      type: object
+      required: [places, devicePlaces, deviceOrder]
+      properties:
+        places:
+          type: array
+          description: 금고 공통 장소 이름(정렬 순서 그대로)
+          items: {type: string, maxLength: 15}
+        devicePlaces:
+          type: object
+          description: 금고 공통 — 기기 id를 장소 이름에 매핑
+          additionalProperties: {type: string, maxLength: 15}
+        deviceOrder:
+          type: array
+          description: 부른 사람만의 기기 순서. 비어 있으면 서버 기본 순서를 쓴다
+          items: {type: string, format: uuid}
+
+    UpdatePlaceLayoutRequest:
+      type: object
+      required: [places, devicePlaces]
+      properties:
+        places:
+          type: array
+          maxItems: 20
+          items: {type: string, minLength: 1, maxLength: 15}
+        devicePlaces:
+          type: object
+          additionalProperties: {type: string, maxLength: 15}
 
     Schedule:
       type: object

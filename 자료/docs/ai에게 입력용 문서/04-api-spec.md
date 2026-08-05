@@ -388,7 +388,7 @@ ID 체계: API-01~73(REST, `API-06`은 서버 부재로 본문·부록 모두 �
   "sourceType": "IOT_CAPTURE|USER_UPLOAD|EDIT_OUTPUT",
   "triggerType": "LAUGHTER|CLAP|WAKE_WORD|TOUCH|MANUAL|USER_UPLOAD|EDIT",
   "eventTypes": ["LAUGHTER", "CLAP"],
-  "sourceEventId": null, "title": "string", "description": null,
+  "sourceEventId": null, "title": "string",
   "contentType": "video/mp4", "sizeBytes": 1048576, "checksumSha256": "string",
   "durationMs": 60000, "capturedStartAt": "2026-07-27T00:00:00Z", "capturedEndAt": "2026-07-27T00:01:00Z",
   "status": "UPLOADING|PROCESSING|READY|FAILED|DELETING|DELETED",
@@ -880,6 +880,9 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-75 | `POST /api/schedules` | 일정 등록(`{title(1~80), date, memo?(≤500), yearly?(기본 false), emoji?(기본 ❤️), vaultId?}` → 201). 구성원 누구나. 금고당 200개 초과·다중 금고에서 vaultId 생략 시 422, 남의 금고는 403 |
 | API-76 | `PUT /api/schedules/{scheduleId}` | 일정 수정(API-75와 같은 본문 → 200). 적은 사람 또는 금고 OWNER만. 권한 없으면 403, 볼 수 없는 일정은 404 |
 | API-77 | `DELETE /api/schedules/{scheduleId}` | 일정 삭제(204). 적은 사람 또는 금고 OWNER만. 권한 없으면 403, 볼 수 없는 일정은 404 |
+| API-87 | `GET /api/vaults/{vaultId}/places` | 금고 장소 배치(공통)와 내 기기 순서(개인). 응답 `{places, devicePlaces, deviceOrder}` |
+| API-88 | `PUT /api/vaults/{vaultId}/places` | 장소 이름·기기 배정을 통째로 저장. 구성원 누구나. 없는 장소·금고 밖 기기는 버림. 장소 20개·이름 15자 초과 시 422 |
+| API-89 | `PUT /api/vaults/{vaultId}/device-order` | 내 기기 순서 저장(`{deviceIds}`). 부른 사람에게만 적용 |
 | API-78 | `GET /api/notifications/preferences` | 알림 설정 조회(`{anniversaryAlerts, weeklyReport, newMemoryAlerts}`). 저장 행이 없으면 모두 true |
 | API-79 | `PUT /api/notifications/preferences` | 알림 설정 저장(세 토글 일괄 → 200에 저장값). `newMemoryAlerts=false`면 새 영상 푸시 발송 대상에서 제외(인앱 알림은 계속 쌓임) |
 | API-81 | `POST /api/videos/{videoId}/edits` | 편집 완성본 업로드 예약(EDIT_OUTPUT 행 + 서명 URL, Content-Type만 서명). 완료 통보 없이 서버가 도착 감지 |

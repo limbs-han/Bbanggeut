@@ -39,14 +39,13 @@ class VideoCommandServiceTest {
         VideoRow video = video();
         UpdateVideoRequest request = new UpdateVideoRequest();
         request.setTitle("  새 제목  ");
-        request.setDescription(null);
         when(mapper.lockAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
         when(mapper.findActiveRole(userId, video.id())).thenReturn(Optional.of("OWNER"));
         when(mapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
 
         service.update(userId, video.id(), request);
 
-        verify(mapper).updateMetadata(video.id(), true, "새 제목", true, null, false, null);
+        verify(mapper).updateMetadata(video.id(), true, "새 제목", false, null);
     }
 
     @Test
@@ -81,7 +80,7 @@ class VideoCommandServiceTest {
 
         service.update(userId, video.id(), request);
 
-        verify(mapper).updateMetadata(video.id(), true, "내가 만든 편집본", false, null, false, null);
+        verify(mapper).updateMetadata(video.id(), true, "내가 만든 편집본", false, null);
     }
 
     @Test
@@ -97,7 +96,7 @@ class VideoCommandServiceTest {
 
         service.update(userId, video.id(), request);
 
-        verify(mapper).updateMetadata(video.id(), false, null, false, null, true, true);
+        verify(mapper).updateMetadata(video.id(), false, null, true, true);
     }
 
     @Test
@@ -212,7 +211,7 @@ class VideoCommandServiceTest {
         Instant now = Instant.parse("2026-07-17T10:00:00Z");
         return new VideoRow(
             UUID.randomUUID(), UUID.randomUUID(), sourceType, "TOUCH", "event-1",
-            "영상", "설명", "video/mp4", 100L, "a".repeat(64), 1000L,
+            "영상", "video/mp4", 100L, "a".repeat(64), 1000L,
             now.minusSeconds(1), now, "private/video.mp4", "READY", false, now);
     }
 }

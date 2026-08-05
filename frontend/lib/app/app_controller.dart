@@ -130,6 +130,7 @@ class AppController extends ChangeNotifier {
     if (listEquals(savedOrder, nextOrder)) return;
     _deviceOrders[scope] = nextOrder;
     unawaited(_savePlacePreferences());
+    unawaited(_pushDeviceOrder());
   }
 
   void _syncPresenceStatus(
@@ -155,7 +156,78 @@ class AppController extends ChangeNotifier {
     return userId == null ? null : 'bbanggeut_device_places_v1_$userId';
   }
 
+  /// 장소 배치를 읽는다. 서버가 원본이고 로컬은 오프라인 사본이다.
+  ///
+  /// **왜 로컬을 남기는가**: 배치는 홈 화면이 처음 그려질 때 이미 필요하다.
+  /// 서버 응답을 기다리면 기기 목록이 한 번 흔들리고, 비행기 모드에서는 아예
+  /// 못 읽는다. 로컬로 먼저 그리고 서버 값이 오면 갈아 끼운다.
+  ///
+  /// 지금 보고 있는 장소(selectedPlace)는 화면 상태라 서버에 두지 않는다.
   Future<void> _loadPlacePreferences() async {
+    await _loadLocalPlacePreferences();
+    await _syncPlaceLayoutFromServer();
+  }
+
+  /// 서버 배치를 받아 반영한다. 서버가 비어 있으면 이 폰의 배치를 한 번 올린다.
+  ///
+  /// **왜 올려 주는가**: 서버화 이전에 각자 정리해 둔 배치가 있다. 그냥
+  /// 서버 값(빈 목록)으로 덮으면 모두의 장소·순서가 기본값으로 초기화된다.
+  Future<void> _syncPlaceLayoutFromServer() async {
+    final vault = selectedVault;
+    if (vault == null) return;
+    try {
+      final layout = await api.getPlaceLayout(vault.id);
+      if (layout.isEmpty) {
+        await _pushPlaceLayout();
+        await _pushDeviceOrder();
+        return;
+      }
+      _placeNames
+        ..clear()
+        ..addAll(layout.places);
+      _devicePlaces
+        ..clear()
+        ..addAll(layout.devicePlaces);
+      if (layout.deviceOrder.isNotEmpty) {
+        _deviceOrders[vault.id] = List<String>.of(layout.deviceOrder);
+      }
+      if (!_placeNames.contains(_selectedPlaceName)) {
+        _selectedPlaceName = _placeNames.first;
+      }
+      unawaited(_savePlacePreferences());
+      notifyListeners();
+    } on ApiFailure {
+      // 오프라인이면 로컬 사본으로 계속 쓴다.
+    }
+  }
+
+  Future<void> _pushPlaceLayout() async {
+    final vault = selectedVault;
+    if (vault == null) return;
+    try {
+      await api.replacePlaceLayout(
+        vault.id,
+        places: List<String>.of(_placeNames),
+        devicePlaces: Map<String, String>.of(_devicePlaces),
+      );
+    } on ApiFailure {
+      // 로컬에는 남아 있다. 다음 진입에서 다시 맞춘다.
+    }
+  }
+
+  Future<void> _pushDeviceOrder() async {
+    final vault = selectedVault;
+    if (vault == null) return;
+    final order = _deviceOrders[vault.id];
+    if (order == null || order.isEmpty) return;
+    try {
+      await api.replaceDeviceOrder(vault.id, List<String>.of(order));
+    } on ApiFailure {
+      // 로컬에는 남아 있다.
+    }
+  }
+
+  Future<void> _loadLocalPlacePreferences() async {
     final key = _placeStorageKey;
     if (key == null) return;
     try {
@@ -252,6 +324,7 @@ class AppController extends ChangeNotifier {
     }
     _devicePlaces[deviceId] = normalized;
     unawaited(_savePlacePreferences());
+    unawaited(_pushPlaceLayout());
     notifyListeners();
   }
 
@@ -280,6 +353,7 @@ class AppController extends ChangeNotifier {
         if (placeIds.contains(id)) (reordered..moveNext()).current else id,
     ];
     unawaited(_savePlacePreferences());
+    unawaited(_pushDeviceOrder());
     notifyListeners();
   }
 
@@ -295,6 +369,7 @@ class AppController extends ChangeNotifier {
     _placeNames.add(normalized);
     _selectedPlaceName = normalized;
     unawaited(_savePlacePreferences());
+    unawaited(_pushPlaceLayout());
     notifyListeners();
     return true;
   }

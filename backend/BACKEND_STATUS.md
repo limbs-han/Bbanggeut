@@ -10,7 +10,7 @@
 
 | 구분 | 상태 | 비고 |
 | --- | --- | --- |
-| Spring Boot API | 구현·배포 완료 | **무중단 배포 슬롯** — systemd `william-james@8081`/`@8082` 중 하나가 활성(nginx upstream이 지시), loopback 전용. Flyway **V38**까지. 상세: `deploy/ZERO_DOWNTIME.md` |
+| Spring Boot API | 구현·배포 완료 | **무중단 배포 슬롯** — systemd `william-james@8081`/`@8082` 중 하나가 활성(nginx upstream이 지시), loopback 전용. Flyway **V40**까지. 운영 프로파일은 `application-prod.yml`(활성 프로파일 `prod`) — 2026-08-05까지 이름이 `application-demo.yml`이었다. 상세: `deploy/ZERO_DOWNTIME.md` |
 | PostgreSQL 16 | 배포 완료 | Docker, loopback 전용 |
 | Redis 7 | 배포 완료 | 로그인·claim 시도 제한, 기기 presence(90초 TTL) |
 | MinIO | 배포 완료 | 영상 버킷 + 편집 버킷(william-james-edit), loopback 전용. **최소 권한 계정 분리** — 백엔드는 `wj-backend`(영상 버킷만), editor-api는 `wj-editor`(편집 버킷만), root는 관리 전용. 서로의 버킷·admin API는 거부됨(실측 확인) |
