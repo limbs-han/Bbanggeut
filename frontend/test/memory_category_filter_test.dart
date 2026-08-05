@@ -54,4 +54,16 @@ void main() {
     expect(matchesMemoryCategory(captured, MemoryCategory.editing), isFalse);
     expect(matchesMemoryCategory(edited, MemoryCategory.editing), isFalse);
   });
+
+  test('만화도 영상 행으로 판정하지 않는다', () {
+    // 금고 만화 목록(GET /api/vaults/{id}/comics)으로 따로 그린다. 영상 행에는
+    // 만화 여부가 없으므로 여기서 참을 돌려주면 원본이 만화 탭에 다 나온다.
+    expect(matchesMemoryCategory(captured, MemoryCategory.comic), isFalse);
+    expect(matchesMemoryCategory(edited, MemoryCategory.comic), isFalse);
+  });
+
+  test('네 카테고리가 모두 있다 — 원본·편집 중·편집 완료·만화', () {
+    expect(MemoryCategory.values, hasLength(4));
+    expect(MemoryCategory.values, contains(MemoryCategory.comic));
+  });
 }

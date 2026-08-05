@@ -23,7 +23,7 @@ import 'package:william_james_app/features/stt/transcript_store.dart';
 class _MemoryStore extends TranscriptStore {
   _MemoryStore(List<CaptionLine> lines)
     : super(
-        transcriber: (_) async => lines,
+        transcriber: (_, [_]) async => lines,
         root: () async => throw StateError('쓰이지 않는다'),
       );
 

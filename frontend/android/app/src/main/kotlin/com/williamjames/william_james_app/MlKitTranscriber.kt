@@ -160,8 +160,20 @@ object MlKitTranscriber {
     /**
      * [wavPath]는 16kHz 모노 PCM WAV여야 한다([AndroidAudioExtractor]의 출력).
      * 인식된 구간들을 순서대로 돌려준다. 무발화면 빈 목록이다.
+     *
+     * [onProgress]로 **실제** 진행률(0~99)이 올라온다. 엔진은 진행 상황을 알려
+     * 주지 않지만, 우리가 오디오를 직접 먹이고 있으므로 "얼마나 먹였는가"를 안다 —
+     * 그것이 곧 남은 일의 양이다. 화면이 시간으로 짐작한 퍼센트를 보여 주던
+     * 동안에는 예상보다 오래 걸리면 한 값에 붙어 멈춘 것처럼 보였다.
+     *
+     * 99에서 멈춰 둔다. 다 먹인 뒤에도 엔진이 마지막 final을 내놓기까지 시간이
+     * 걸리는데, 그 사이에 100%가 떠 있으면 끝난 줄 알고 기다림이 더 길게 느껴진다.
      */
-    fun transcribe(context: Context, wavPath: String): List<Line> = runBlocking {
+    fun transcribe(
+        context: Context,
+        wavPath: String,
+        onProgress: (Int) -> Unit = {},
+    ): List<Line> = runBlocking {
         if (!hasMicPermission(context)) {
             // 파일을 주는데도 필요하다. 없으면 ERROR_TYPE_INSUFFICIENT_PERMISSION으로 죽는다.
             throw Unavailable("RECORD_AUDIO 권한이 없습니다.")
@@ -176,17 +188,27 @@ object MlKitTranscriber {
             }
 
             val fed = AtomicLong(0)
+            val total = (bytes.size - start).coerceAtLeast(1)
             val pipe = ParcelFileDescriptor.createPipe()
             val writer = Thread {
                 runCatching {
                     ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { out ->
                         var offset = start
+                        var reported = -1
                         while (offset < bytes.size) {
                             val n = minOf(CHUNK_BYTES, bytes.size - offset)
                             out.write(bytes, offset, n)
                             out.flush()
                             offset += n
                             fed.addAndGet(n.toLong())
+                            // 1%가 실제로 올라갔을 때만 채널을 두드린다. 100ms마다
+                            // 보내면 긴 영상에서 수백 번이 되고, 그 왕복이 전사와
+                            // 같은 스레드를 다툰다.
+                            val percent = ((offset - start).toLong() * 99 / total).toInt()
+                            if (percent > reported) {
+                                reported = percent
+                                onProgress(percent.coerceIn(0, 99))
+                            }
                             Thread.sleep(CHUNK_MS / PACE)
                         }
                     }

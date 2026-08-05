@@ -35,14 +35,14 @@ void main() {
       CaptionController(store: storeWith(transcriber));
 
   test('시작 전에는 상태가 없고 줄도 없다', () {
-    final subject = controllerWith((_) async => _lines());
+    final subject = controllerWith((_, [_]) async => _lines());
     expect(subject.status, isNull);
     expect(subject.lines, isEmpty);
     expect(subject.message(), contains('준비'));
   });
 
   test('전사가 끝나면 줄이 들어오고 알림이 간다', () async {
-    final store = storeWith((_) async => _lines());
+    final store = storeWith((_, [_]) async => _lines());
     final subject = CaptionController(store: store);
     var notified = 0;
     subject.addListener(() => notified++);
@@ -58,7 +58,7 @@ void main() {
 
   test('두 번 시작해도 전사는 한 번만 돈다', () async {
     var calls = 0;
-    final store = storeWith((_) async {
+    final store = storeWith((_, [_]) async {
       calls++;
       return _lines();
     });
@@ -76,7 +76,7 @@ void main() {
   // 아무 일도 일어나지 않았다.
   test('다시 만들면 캐시를 버리고 전사를 처음부터 다시 돌린다', () async {
     var calls = 0;
-    final store = storeWith((_) async {
+    final store = storeWith((_, [_]) async {
       calls++;
       return [CaptionLine(startMs: 0, endMs: 1000, text: '$calls번째 결과')];
     });
@@ -98,7 +98,7 @@ void main() {
 
   test('다시 만들면 손으로 고쳐 둔 줄도 함께 버려진다', () async {
     var calls = 0;
-    final store = storeWith((_) async {
+    final store = storeWith((_, [_]) async {
       calls++;
       return [CaptionLine(startMs: 0, endMs: 1000, text: '$calls번째 결과')];
     });
@@ -120,7 +120,7 @@ void main() {
 
   test('다시 만드는 중에는 옛 작업이 끝나도 줄이 되돌아오지 않는다', () async {
     var calls = 0;
-    final store = storeWith((_) async {
+    final store = storeWith((_, [_]) async {
       calls++;
       return [CaptionLine(startMs: 0, endMs: 1000, text: '$calls번째 결과')];
     });
@@ -136,7 +136,7 @@ void main() {
   });
 
   test('전사가 실패해도 줄은 비고 상태만 실패가 된다', () async {
-    final store = storeWith((_) async => throw StateError('모델 없음'));
+    final store = storeWith((_, [_]) async => throw StateError('모델 없음'));
     final subject = CaptionController(store: store);
 
     subject.start('v1', '/video/v1.mp4');
@@ -148,7 +148,7 @@ void main() {
   });
 
   test('도는 중이면 예상 시간을 알려준다', () async {
-    final store = storeWith((_) async {
+    final store = storeWith((_, [_]) async {
       await Future<void>.delayed(const Duration(milliseconds: 50));
       return _lines();
     });
@@ -162,7 +162,7 @@ void main() {
   });
 
   test('사용자가 고치면 hasUserEdits가 켜지고 알림이 간다', () async {
-    final store = storeWith((_) async => _lines());
+    final store = storeWith((_, [_]) async => _lines());
     final subject = CaptionController(store: store);
     subject.start('v1', '/video/v1.mp4');
     await store.pending;
@@ -182,7 +182,7 @@ void main() {
   });
 
   test('고친 자막은 캐시 파일에도 저장된다 — 만화 구성이 그 파일을 읽는다', () async {
-    final store = storeWith((_) async => _lines());
+    final store = storeWith((_, [_]) async => _lines());
     final subject = CaptionController(store: store);
     subject.start('v1', '/video/v1.mp4');
     await store.pending;
@@ -198,7 +198,7 @@ void main() {
   });
 
   test('없는 번호를 고치라고 해도 죽지 않고 수정으로 세지 않는다', () async {
-    final store = storeWith((_) async => _lines());
+    final store = storeWith((_, [_]) async => _lines());
     final subject = CaptionController(store: store);
     subject.start('v1', '/video/v1.mp4');
     await store.pending;
@@ -210,7 +210,7 @@ void main() {
   });
 
   test('textAt과 forExport는 현재 줄을 그대로 쓴다', () async {
-    final store = storeWith((_) async => _lines());
+    final store = storeWith((_, [_]) async => _lines());
     final subject = CaptionController(store: store);
     subject.start('v1', '/video/v1.mp4');
     await store.pending;

@@ -153,7 +153,7 @@ void main() {
     testWidgets('S24+에서 만드는 중 화면이 넘치지 않는다', (tester) async {
       useS24(tester);
       final gate = Completer<List<CaptionLine>>();
-      final store = _MemoryStore((_) => gate.future);
+      final store = _MemoryStore((_, [_]) => gate.future);
       final controller = CaptionController(store: store);
       addTearDown(controller.dispose);
       controller.start('v1', '/video/v1.mp4');
@@ -173,7 +173,7 @@ void main() {
     testWidgets('S24+에서 검토 완료 버튼이 제스처바 위에 온다', (tester) async {
       useS24(tester);
       final store = _MemoryStore(
-        (_) async => [
+        (_, [_]) async => [
           for (var index = 0; index < 12; index++)
             CaptionLine(
               startMs: index * 2000,
@@ -202,7 +202,7 @@ void main() {
     testWidgets('S24+에서 줄 수정 창이 키보드 위에 다 보인다', (tester) async {
       useS24(tester);
       final store = _MemoryStore(
-        (_) async => [CaptionLine(startMs: 0, endMs: 1500, text: '고쳐 볼 문장')],
+        (_, [_]) async => [CaptionLine(startMs: 0, endMs: 1500, text: '고쳐 볼 문장')],
       );
       final controller = CaptionController(store: store);
       addTearDown(controller.dispose);

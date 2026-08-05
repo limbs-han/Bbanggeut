@@ -99,11 +99,29 @@ class MlKitTranscriber {
   ///
   /// 시각은 **근사치다.** 엔진이 타임스탬프를 주지 않아 각 낱말이 처음 인식된
   /// 시점으로 역산한다. 실제 정답과 대조했을 때 오차가 ±2초 안이었다.
-  Future<List<CaptionLine>> transcribe(String wavPath) async {
-    final raw = await channel.invokeListMethod<Map<Object?, Object?>>(
-      'mlkitTranscribe',
-      {'wav': wavPath},
-    );
+  /// [onProgress]로 **실제** 진행률(0~99)이 올라온다. 네이티브가 오디오를 직접
+  /// 먹이므로 "얼마나 먹였는가"를 알고, 그것이 남은 일의 양이다.
+  Future<List<CaptionLine>> transcribe(
+    String wavPath, {
+    void Function(int percent)? onProgress,
+  }) async {
+    if (onProgress != null) {
+      channel.setMethodCallHandler((call) async {
+        if (call.method == 'mlkitTranscribeProgress') {
+          onProgress((call.arguments as num).toInt());
+        }
+      });
+    }
+    final List<Map<Object?, Object?>>? raw;
+    try {
+      raw = await channel.invokeListMethod<Map<Object?, Object?>>(
+        'mlkitTranscribe',
+        {'wav': wavPath},
+      );
+    } finally {
+      // 걸어 둔 채 두면 다음 호출의 진행률이 옛 콜백으로 샌다(ensure와 같다).
+      if (onProgress != null) channel.setMethodCallHandler(null);
+    }
     if (raw == null) return const [];
     return raw
         .map(

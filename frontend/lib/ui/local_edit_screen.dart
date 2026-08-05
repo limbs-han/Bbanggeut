@@ -76,7 +76,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   String? _status;
   String? _error;
   final Map<String, EditRecommendation> _presetRecommendations = {};
+
+  /// AI 컷 칩을 잠글 만큼 바쁜가.
+  ///
+  /// **잠그는 경우는 둘뿐이다.** 서버가 이 영상을 아직 분석하지 않았거나(눌러도
+  /// 404다), 사용자가 방금 누른 요청이 날아가고 있을 때(연타 방지). 뒤에서
+  /// 조용히 채우는 프리셋 미리 받기는 여기 들어가지 않는다 — 예전에는
+  /// 들어 있어서, **이미 분석해 둔 영상에서도** 프리셋 셋을 차례로 받는 동안
+  /// 칩이 계속 잠겨 있었다. 그게 "AI 컷이 겁나 늦게 켜진다"의 정체다.
   bool _recommendationLoading = false;
+
+  /// 프리셋을 뒤에서 미리 받는 중인가. 칩을 잠그지 않는다.
+  bool _presetPrefetching = false;
 
   /// 서버가 이 영상을 분석하는 동안 true. AI 컷 칩은 그동안 흐리게 잠긴다.
   bool _analysisRunning = false;
@@ -145,6 +156,13 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
           ? '저장된 편집 상태를 불러오고 있어요'
           : '추억 영상을 안전하게 불러오고 있어요';
     });
+
+    // **원본을 내려받기 전에** 서버 분석을 깨운다. 서버는 자기 MinIO에서 원본을
+    // 직접 읽으므로 폰의 다운로드를 기다릴 이유가 없다 — 둘이 나란히 돌면
+    // 편집기가 열릴 때쯤 분석이 이미 상당히 진행돼 있고, AI 컷 칩이 훨씬
+    // 먼저 열린다. 예전에는 다운로드 → 초안 조회 → 추천 404 → 그때 분석
+    // 시작이라, 진입 시간이 통째로 분석 앞에 쌓였다.
+    unawaited(_warmServerAnalysis());
 
     try {
       final sourcePath = await _downloadSource();
@@ -300,6 +318,10 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       if (EditRecommendationClient.isAnalysisRequired(failure)) {
         // 서버는 있는데 이 영상은 처음 본다 — 원본을 분석시키고, 끝나면
         // 스낵바로 알린 뒤 AI 컷과 자동 줌을 연다. 편집은 그동안 계속된다.
+        //
+        // 대개는 [_warmServerAnalysis]가 이미 시작해 뒀고, 그러면 이 호출은
+        // 곧바로 돌아간다. presigned URL을 못 받아 미리 시작하지 못했을 때
+        // 로컬 원본으로 올리는 길이 여기 남아 있다.
         final sourcePath = _sourcePath;
         if (mounted && sourcePath != null) {
           unawaited(_beginServerAnalysis(sourcePath));
@@ -334,13 +356,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   /// 그 사이 편집 화면에서 실제로 필요한 요청(썸네일·초안 저장)까지 뒤로 밀린다.
   /// 차례로 받으면 첫 프리셋은 훨씬 빨리 손에 들어오고, 그 뒤는 사용자가 화면을
   /// 보는 동안 조용히 채워진다.
+  ///
+  /// **이 동안 AI 컷 칩을 잠그지 않는다.** 미리 받기는 편의일 뿐이고, 칩은 응답이
+  /// 없어도 누를 수 있게 만들어져 있다 — 누르면 그때 받아 오거나 화면 쪽 기본
+  /// 규칙으로 자른다([_selectRecommendationPreset]). 예전에는 이 동안에도
+  /// 잠겨서, 이미 분석해 둔 영상조차 칩이 한참 뒤에 켜졌다.
   Future<void> _loadPresetRecommendations() async {
-    if (_recommendationLoading) return;
+    if (_presetPrefetching || _analysisRunning) return;
     final missing = const ['short', 'medium', 'long']
         .where((preset) => !_presetRecommendations.containsKey(preset))
         .toList(growable: false);
     if (missing.isEmpty) return;
-    if (mounted) setState(() => _recommendationLoading = true);
+    _presetPrefetching = true;
     try {
       for (final preset in missing) {
         final value = await _recommendations.recommend(
@@ -354,14 +381,52 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     } catch (_) {
       // 기본 자동 추천은 이미 적용됐다. 프리셋 일부를 못 가져와도 편집은 계속한다.
     } finally {
-      if (mounted) setState(() => _recommendationLoading = false);
+      _presetPrefetching = false;
     }
+  }
+
+  /// 화면에 들어오자마자 서버 분석을 깨운다. **로컬 원본을 기다리지 않는다.**
+  ///
+  /// 이 영상을 이미 분석해 뒀으면 아무것도 하지 않는다. 분석이 없으면 백엔드
+  /// presigned URL만 넘겨 서버가 자기 저장소에서 읽게 한다 — 폰에 원본이
+  /// 없어도 되는 유일한 길이다. URL을 못 받으면 조용히 물러난다. 그때는
+  /// 예전처럼 [_applyDraftOrRecommendation]이 로컬 원본으로 다시 시도한다.
+  Future<void> _warmServerAnalysis() async {
+    if (!EditRecommendationClient.networkAllowed || _analysisRunning) return;
+    try {
+      final status = await _recommendations.analysisStatus(widget.video.id);
+      if (!mounted || status.isDone) return;
+      if (status.isRunning) {
+        // 이미 돌고 있다 — 새로 요청하지 않고 따라만 간다.
+        _analysisRunning = true;
+        setState(() => _recommendationLoading = true);
+        _analysisPollTimer = Timer.periodic(
+          const Duration(seconds: 2),
+          (_) => _pollServerAnalysis(),
+        );
+        return;
+      }
+    } catch (_) {
+      // 서버가 안 닿으면 미리 시작할 수 없다. 기존 경로가 알려 준다.
+      return;
+    }
+    await _beginServerAnalysis(null, quiet: true);
   }
 
   /// 원본을 편집 서버에 올려 분석을 시작하고 2초마다 상태를 확인한다.
   /// 그동안 AI 컷 칩은 잠기고, 끝나면 자동 추천(컷+자동 줌)을 적용한 뒤
   /// 스낵바로 알린다. 실패해도 수동 편집은 그대로 계속된다.
-  Future<void> _beginServerAnalysis(String sourcePath) async {
+  ///
+  /// [sourcePath]가 null이면 presigned URL만 쓴다 — 원본을 아직 내려받지 않은
+  /// 시점(진입 즉시)에 부르는 경로다. URL도 못 받으면 아무 일도 하지 않고
+  /// 물러나므로, 뒤이어 로컬 원본으로 다시 부를 수 있다.
+  ///
+  /// [quiet]이면 스낵바를 띄우지 않는다. 진입 즉시 부를 때는 준비 화면이 이미
+  /// 상태를 말하고 있어서, 그 위에 스낵바를 겹치면 시끄럽다.
+  Future<void> _beginServerAnalysis(
+    String? sourcePath, {
+    bool quiet = false,
+  }) async {
     if (_analysisRunning) return;
     _analysisRunning = true;
     _recommendationLoading = true;
@@ -375,6 +440,13 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         )).url;
       } catch (_) {
         sourceUrl = null;
+      }
+      if (sourceUrl == null && sourcePath == null) {
+        // 올릴 방법이 없다. 잠금을 풀고 물러난다 — 원본이 도착한 뒤에 다시
+        // 부를 수 있어야 한다.
+        _analysisRunning = false;
+        _recommendationLoading = false;
+        return;
       }
       final status = await _recommendations.requestAnalysis(
         videoId: widget.video.id,
@@ -390,13 +462,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         _failServerAnalysis(status.error);
         return;
       }
-      showAppSnack(context, 'AI가 영상을 분석하고 있어요 — 끝나면 알려드릴게요');
+      if (!quiet) {
+        showAppSnack(context, 'AI가 영상을 분석하고 있어요 — 끝나면 알려드릴게요');
+      }
       _analysisPollTimer = Timer.periodic(
         const Duration(seconds: 2),
         (_) => _pollServerAnalysis(),
       );
     } catch (_) {
-      _failServerAnalysis(null);
+      _failServerAnalysis(null, quiet: quiet);
     }
   }
 
@@ -455,10 +529,15 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     }
   }
 
-  void _failServerAnalysis(String? error) {
+  /// [quiet]이면 알리지 않는다. 진입 즉시 미리 시작한 시도가 실패한 것은
+  /// 사용자가 아직 아무것도 부탁하지 않은 상태라, 곧바로 실패를 띄우면
+  /// 편집기가 열리기도 전에 빨간 스낵이 뜬다. 그 뒤 로컬 원본으로 다시
+  /// 시도하는 길이 남아 있다.
+  void _failServerAnalysis(String? error, {bool quiet = false}) {
     _stopServerAnalysis();
     if (!mounted) return;
     setState(() => _recommendationLoading = false);
+    if (quiet) return;
     showAppSnack(
       context,
       error == null || error.isEmpty
