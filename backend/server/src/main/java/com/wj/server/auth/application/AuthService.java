@@ -15,6 +15,7 @@ import com.wj.server.auth.api.LoginRequest;
 import com.wj.server.auth.api.RefreshTokenRequest;
 import com.wj.server.auth.api.ResetPasswordRequest;
 import com.wj.server.auth.api.SignUpRequest;
+import com.wj.server.auth.api.UpdateProfileRequest;
 import com.wj.server.auth.api.UserSummary;
 import com.wj.server.auth.domain.AuthSessionRow;
 import com.wj.server.auth.domain.UserRow;
@@ -179,6 +180,26 @@ public class AuthService {
      * transfer it first — otherwise the device would end up ownerless, which
      * the one-active-OWNER constraint forbids.
      */
+    /// 표시 이름을 바꾼다.
+    ///
+    /// 앱은 프로필 수정 화면에서 `PATCH /api/auth/me`로 이것만 보낸다. 이메일은
+    /// 로그인 식별자라 여기서 바꾸지 않는다.
+    @Transactional
+    public UserSummary updateProfile(UUID userId, UpdateProfileRequest request) {
+        // 가입과 같은 규칙으로 다듬는다. DB의 ck_users_display_name도 공백을
+        // 다듬은 길이를 보므로, 다듬지 않으면 "  이름  "이 60자 제약에서
+        // 엉뚱하게 걸린다.
+        String displayName = request.displayName().trim();
+        UserRow user = authMapper.findUserById(userId)
+            .orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다."));
+        if (authMapper.updateDisplayName(userId, displayName) != 1) {
+            throw new ApiException(
+                HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다.");
+        }
+        return new UserSummary(user.id(), user.email(), displayName);
+    }
+
     @Transactional
     public void withdraw(UUID userId) {
         if (authMapper.hasActiveOwnerMembership(userId)) {

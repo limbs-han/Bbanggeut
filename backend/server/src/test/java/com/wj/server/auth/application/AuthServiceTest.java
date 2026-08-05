@@ -21,6 +21,7 @@ import com.wj.server.auth.api.ForgotPasswordRequest;
 import com.wj.server.auth.api.RefreshTokenRequest;
 import com.wj.server.auth.api.ResetPasswordRequest;
 import com.wj.server.auth.api.SignUpRequest;
+import com.wj.server.auth.api.UpdateProfileRequest;
 import com.wj.server.auth.application.AuthService.ClientContext;
 import com.wj.server.auth.domain.AuthSessionRow;
 import com.wj.server.auth.domain.PasswordResetTokenRow;
@@ -186,6 +187,34 @@ class AuthServiceTest {
             .isEqualTo("INVALID_REFRESH_TOKEN");
 
         verify(authMapper, never()).revokeAllSessionsForUser(any());
+    }
+
+    @Test
+    void updateProfileTrimsDisplayNameAndReturnsUpdatedSummary() {
+        UUID userId = UUID.randomUUID();
+        UserRow user = new UserRow(userId, "user@example.com", "encoded", "이전 이름", "ACTIVE", 0);
+        when(authMapper.findUserById(userId)).thenReturn(Optional.of(user));
+        when(authMapper.updateDisplayName(userId, "새 이름")).thenReturn(1);
+
+        var summary = authService.updateProfile(
+            userId, new UpdateProfileRequest("  새 이름  "));
+
+        verify(authMapper).updateDisplayName(userId, "새 이름");
+        assertThat(summary.displayName()).isEqualTo("새 이름");
+        assertThat(summary.email()).isEqualTo("user@example.com");
+        assertThat(summary.id()).isEqualTo(userId);
+    }
+
+    @Test
+    void updateProfileRejectsUnknownUserWithoutWriting() {
+        UUID userId = UUID.randomUUID();
+        when(authMapper.findUserById(userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.updateProfile(
+            userId, new UpdateProfileRequest("새 이름")))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("리소스를 찾을 수 없습니다");
+        verify(authMapper, never()).updateDisplayName(any(), anyString());
     }
 
     @Test
