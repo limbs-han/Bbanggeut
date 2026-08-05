@@ -359,7 +359,11 @@ paths:
       tags: [Schedules]
       operationId: listSchedules
       summary: 캘린더 일정 목록
-      description: 로그인 사용자의 일정(기념일)을 날짜 오름차순으로 반환한다.
+      description: |
+        일정은 금고 구성원이 함께 본다. 사용자가 활성 구성원인 모든 금고의
+        일정을 날짜 오름차순으로 반환한다.
+
+        금고가 없던 시절에 적은 일정(`vaultId` 없음)은 적은 사람에게만 보인다.
       responses:
         '200':
           description: 일정 목록
@@ -375,7 +379,12 @@ paths:
       tags: [Schedules]
       operationId: createSchedule
       summary: 캘린더 일정 등록
-      description: 사용자당 최대 200개까지 등록할 수 있다.
+      description: |
+        금고 구성원 누구나 등록한다. 금고당 최대 200개다.
+
+        `vaultId`를 보내면 그 금고의 활성 구성원인지 확인한다. 생략하면 사용자가
+        속한 금고가 하나일 때만 그것으로 정하고, 여러 곳에 속해 있으면 422로
+        되묻는다. 금고가 하나도 없으면 예전처럼 개인 일정이 된다.
       requestBody:
         required: true
         content:
@@ -393,6 +402,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -401,6 +412,7 @@ paths:
       tags: [Schedules]
       operationId: updateSchedule
       summary: 캘린더 일정 수정
+      description: 일정을 적은 사람 또는 금고 OWNER만 수정한다.
       parameters:
         - in: path
           name: scheduleId
@@ -425,12 +437,15 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
     delete:
       tags: [Schedules]
       operationId: deleteSchedule
       summary: 캘린더 일정 삭제
+      description: 일정을 적은 사람 또는 금고 OWNER만 삭제한다.
       parameters:
         - in: path
           name: scheduleId
@@ -3467,14 +3482,31 @@ components:
           type: string
           maxLength: 16
           default: '❤️'
+        vaultId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            일정을 넣을 금고. 생략하면 사용자가 속한 금고가 하나일 때만 그것으로
+            정하고, 여러 곳에 속해 있으면 422로 되묻는다.
 
     Schedule:
       type: object
-      required: [id, title, date, memo, yearly, emoji]
+      required: [id, authorId, title, date, memo, yearly, emoji]
       properties:
         id:
           type: string
           format: uuid
+        authorId:
+          type: string
+          format: uuid
+          description: |
+            이 일정을 적은 사람. 앱이 "내가 적은 일정인가"를 보고 수정·삭제
+            버튼을 가리는 데 쓴다. 서버도 같은 규칙으로 거른다.
+        authorName:
+          type: string
+          nullable: true
+          description: 적은 사람의 표시 이름. 서버가 `users`에서 조인해 준다.
         title:
           type: string
         date:
