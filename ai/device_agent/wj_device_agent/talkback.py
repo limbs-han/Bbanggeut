@@ -60,7 +60,11 @@ class TalkbackManager:
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                # Keep FFmpeg diagnostics attached to the systemd service.
+                # Talkback can fail before a long-lived process is visible in
+                # pgrep (RTSP path, TLS, authentication, or ALSA errors), and
+                # discarding stderr makes all of those failures indistinguishable.
+                stderr=None,
             )
             self._stream_id = stream_id
             self._hard_expires_at = hard_expires_at

@@ -111,6 +111,7 @@ MediaMTX 계정 권한은 다음과 같이 나뉜다.
 - `bash ai/device_agent/test-speaker-output.sh --list`로 Jetson의 ALSA 출력 장치 이름을 확인한다.
 - `bash ai/device_agent/test-speaker-output.sh plughw:CARD=<카드명>,DEV=0 3`으로 기본 약 -12dBFS(`SPEAKER_TEST_LEVEL=0.25`)의 3초 테스트음을 재생한 뒤 `TALKBACK_OUTPUT_DEVICE`에 같은 장치명을 설정한다. `1.0`은 약 0dBFS 풀스케일이며, 이어폰은 귀에서 빼고 PAM8403 노브는 최소 근처에서 시작한다.
 - 테스트 스크립트는 `CARD=<카드명>`을 인식하면 해당 USB 카드의 `Speaker` 믹서도 음소거 해제하고 100%로 올린다.
+- 기기 FFmpeg의 stderr는 systemd journal로 전달한다. `발화 송출 대기 중`이 반복될 때 `journalctl -fu wj-device-agent`에서 RTSP·TLS·인증·ALSA 종료 원인을 확인한다.
 - 스피커 한 개는 PAM8403의 한 채널 `OUT+`와 `OUT-` 사이에 연결하며, BTL 출력의 `OUT-`를 GND에 연결하지 않는다.
 - 실제 장비 시험으로 PAM8403 볼륨 기본 위치와 소프트웨어 음량을 확정한다.
 - 반이중 뮤트 전환 시점의 체감 지연 측정

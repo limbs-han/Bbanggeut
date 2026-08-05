@@ -66,10 +66,12 @@ EXPIRES_AT = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
 class TalkbackManagerTest(unittest.TestCase):
     def test_start_substitutes_the_stream_url_into_the_player_command(self):
         calls = []
+        options = []
         process = FakeProcess()
 
         def factory(command, **kwargs):
             calls.append(command)
+            options.append(kwargs)
             return process
 
         manager = TalkbackManager(config(), factory)
@@ -86,6 +88,9 @@ class TalkbackManagerTest(unittest.TestCase):
                 "default",
             ],
         )
+        self.assertEqual(options[0]["stdin"], subprocess.DEVNULL)
+        self.assertEqual(options[0]["stdout"], subprocess.DEVNULL)
+        self.assertIsNone(options[0]["stderr"])
         self.assertTrue(manager.snapshot().running)
 
     def test_repeated_start_for_the_same_stream_only_extends_the_lease(self):
