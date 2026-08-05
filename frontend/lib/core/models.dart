@@ -566,6 +566,10 @@ class NotificationPreferences {
 }
 
 /// 캘린더 일정(기념일). 서버 일정 CRUD(API-74~77)와 같은 스키마다.
+/// 금고 구성원이 함께 보는 일정.
+///
+/// [authorId]는 이 일정을 적은 사람이다. 수정·삭제는 적은 사람과 금고 OWNER만
+/// 할 수 있어서, 버튼을 가리려면 앱도 누가 적었는지 알아야 한다.
 class CalendarSchedule {
   const CalendarSchedule({
     required this.id,
@@ -574,6 +578,9 @@ class CalendarSchedule {
     this.memo = '',
     this.yearly = false,
     this.emoji = '❤️',
+    this.authorId,
+    this.authorName,
+    this.vaultId,
   });
 
   final String id;
@@ -582,6 +589,16 @@ class CalendarSchedule {
   final String memo;
   final bool yearly;
   final String emoji;
+  final String? authorId;
+  final String? authorName;
+
+  /// 어느 금고에 넣을지. 보내지 않으면 서버가 사용자의 금고가 하나일 때만
+  /// 알아서 정한다.
+  final String? vaultId;
+
+  /// 이 일정을 내가 고치고 지울 수 있는가.
+  bool canManage({required String? myUserId, required bool isOwner}) =>
+      isOwner || (authorId != null && authorId == myUserId);
 
   factory CalendarSchedule.fromJson(Map<String, dynamic> json) =>
       CalendarSchedule(
@@ -591,6 +608,8 @@ class CalendarSchedule {
         memo: json['memo'] as String? ?? '',
         yearly: json['yearly'] as bool? ?? false,
         emoji: json['emoji'] as String? ?? '❤️',
+        authorId: json['authorId'] as String?,
+        authorName: json['authorName'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -602,6 +621,7 @@ class CalendarSchedule {
     'memo': memo,
     'yearly': yearly,
     'emoji': emoji,
+    'vaultId': ?vaultId,
   };
 
   CalendarSchedule copyWith({
@@ -611,6 +631,7 @@ class CalendarSchedule {
     String? memo,
     bool? yearly,
     String? emoji,
+    String? vaultId,
   }) => CalendarSchedule(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -618,6 +639,9 @@ class CalendarSchedule {
     memo: memo ?? this.memo,
     yearly: yearly ?? this.yearly,
     emoji: emoji ?? this.emoji,
+    authorId: authorId,
+    authorName: authorName,
+    vaultId: vaultId ?? this.vaultId,
   );
 }
 
