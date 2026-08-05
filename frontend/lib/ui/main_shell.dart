@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import 'calendar_screen.dart';
-import 'family_screen.dart';
+import '../features/laugh_draw/laugh_draw_screen.dart';
 import 'home_screen.dart';
 import 'no_device_screens.dart';
 import 'settings_screen.dart';
@@ -157,10 +157,12 @@ class _MainShellState extends State<MainShell>
       openVideos: () => _selectIndex(1),
       openCalendar: () => _selectIndex(0),
     ),
+    // 커뮤니티 탭은 웃음 뽑기다. 가족(추억 금고)이 아직 없으면 뽑을 영상도 없어
+    // 기존 안내 화면을 그대로 둔다.
     3 =>
       widget.controller.selectedVault == null
           ? NoDeviceFamilyScreen(controller: widget.controller)
-          : FamilyScreen(controller: widget.controller),
+          : LaughDrawScreen(app: widget.controller),
     _ =>
       widget.controller.selectedDevice == null
           ? NoDeviceSettingsScreen(controller: widget.controller)
@@ -256,9 +258,9 @@ class _MainShellState extends State<MainShell>
                   label: '홈',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.family_restroom_outlined),
-                  selectedIcon: Icon(Icons.family_restroom_rounded),
-                  label: '가족',
+                  icon: Icon(Icons.groups_outlined),
+                  selectedIcon: Icon(Icons.groups_rounded),
+                  label: '커뮤니티',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.settings_outlined),

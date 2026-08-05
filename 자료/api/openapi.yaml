@@ -2194,6 +2194,110 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /api/families/{familyId}/laugh-memories/random:
+    get:
+      summary: 웃음 뽑기 - 최근 웃음 영상 무작위 조회
+      description: >-
+        최근 days일(기본 3일 = 72시간) 안에 저장된 해당 가족의 웃음 영상 중 하나를 무작위로 돌려준다.
+        삭제·만료·재생 불가 영상과 다른 가족의 영상은 후보에서 제외된다.
+        꺼낼 영상이 없는 것은 오류가 아니라 정상 상태이므로 404가 아니라 200 + hasMemory=false로 응답한다.
+        excludeIds로 이번 화면에서 이미 본 영상을 제외할 수 있고, 모든 후보가 제외되면 제외를 풀고 다시 고른다.
+      parameters:
+        - $ref: '#/components/parameters/FamilyId'
+        - name: days
+          in: query
+          description: 후보 기간(일). 기본 3, 최대 7.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 7
+            default: 3
+        - name: excludeIds
+          in: query
+          description: 이번 화면에서 이미 본 영상 ID. 쉼표로 구분한다.
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+      responses:
+        '200':
+          description: 뽑힌 웃음 영상 또는 빈 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughDrawResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/laugh-memories/{memoryId}:
+    get:
+      summary: 웃음 뽑기 - 뽑은 영상 단건 조회
+      description: >-
+        앱이 기기에 적어 둔 "오늘 뽑은 영상" ID로 결과 화면을 되살릴 때 부른다.
+        구성원이 아니거나 영상이 삭제·만료돼 재생할 수 없으면 존재 여부를 숨기고 404를 돌려준다.
+      parameters:
+        - name: memoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 뽑힌 웃음 영상과 반응
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughMemory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/laugh-memories/{memoryId}/reaction:
+    put:
+      summary: 웃음 뽑기 - 이모지 반응 등록·변경
+      description: >-
+        로그인 사용자의 반응을 남기거나 바꾼다. 사용자 한 명당 영상 하나에 반응 하나만 존재하며,
+        같은 반응을 다시 보내도 개수는 늘지 않는다. 반응 취소는 지원하지 않는다.
+      parameters:
+        - name: memoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reactionType]
+              properties:
+                reactionType:
+                  type: string
+                  enum: [FUNNY, MISS_THIS, GOOD_SAVE, EMBARRASSING, AGAIN]
+      responses:
+        '200':
+          description: 반영된 반응 개수와 내 반응
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughMemory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 삭제·만료된 영상에는 반응할 수 없다 (VIDEO_NOT_READY)
+        '422':
+          $ref: '#/components/responses/ValidationError'
 components:
   securitySchemes:
     UserBearerAuth:
@@ -2208,6 +2312,14 @@ components:
       description: IoT 기기 전용 운영 자격 증명. 사용자 JWT와 상호 대체할 수 없다.
 
   parameters:
+    FamilyId:
+      name: familyId
+      in: path
+      required: true
+      description: 선택된 Memory Vault ID
+      schema:
+        type: string
+        format: uuid
     DeviceId:
       name: deviceId
       in: path
@@ -3660,3 +3772,76 @@ components:
           nullable: true
         hasNext:
           type: boolean
+
+    LaughReactionType:
+      type: string
+      description: 웃음 뽑기 이모지 반응 종류.
+      enum: [FUNNY, MISS_THIS, GOOD_SAVE, EMBARRASSING, AGAIN]
+
+    LaughReactionMember:
+      type: object
+      description: 반응을 남긴 구성원 한 명. 반응이 없는 구성원은 담기지 않는다.
+      required: [memberId, displayName, reactionType, isMe]
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        reactionType:
+          $ref: '#/components/schemas/LaughReactionType'
+        isMe:
+          type: boolean
+          description: >-
+            로그인 사용자 본인의 반응인지. 프로필 사진은 서버가 알지 못하므로
+            앱이 이름 첫 글자로 아바타를 그리고 본인 것만 기기 아바타로 바꾼다.
+
+    LaughMemory:
+      type: object
+      description: 뽑힌 웃음 영상 한 건과 그 반응.
+      required: [video, reactionCounts, familyReactions]
+      properties:
+        video:
+          $ref: '#/components/schemas/Video'
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 보관 만료 시각(retention_until). 보관 정책이 없으면 null.
+        reactionCounts:
+          type: object
+          description: 반응 종류별 개수. 키는 LaughReactionType 값이다.
+          additionalProperties:
+            type: integer
+            minimum: 0
+        myReaction:
+          type: string
+          nullable: true
+          description: 로그인 사용자가 남긴 반응. 남기지 않았으면 null.
+          allOf:
+            - $ref: '#/components/schemas/LaughReactionType'
+        familyReactions:
+          type: array
+          description: 반응을 남긴 구성원 목록. 반응이 없으면 빈 배열.
+          items:
+            $ref: '#/components/schemas/LaughReactionMember'
+
+    LaughDrawResult:
+      type: object
+      description: >-
+        웃음 뽑기 결과. 꺼낼 영상이 없는 것은 오류가 아니라 정상 상태이므로
+        404가 아니라 200 + hasMemory=false로 응답한다.
+      required: [hasMemory]
+      properties:
+        hasMemory:
+          type: boolean
+          description: 뽑을 영상이 있었는지. false면 memory가 null이고 message가 채워진다.
+        memory:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LaughMemory'
+        message:
+          type: string
+          nullable: true
+          description: 빈 결과일 때 앱이 그대로 보여 줄 안내 문구.

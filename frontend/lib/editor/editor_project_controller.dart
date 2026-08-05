@@ -11,6 +11,14 @@ class EditorProjectController extends ChangeNotifier {
   EditorProjectController(this._project);
 
   static const minimumClipDurationMs = 100;
+
+  /// 자막 한 줄이 화면에 머무는 최소 시간. 이보다 짧으면 읽을 수 없다.
+  ///
+  /// 전사가 주는 시각은 낱말이 처음 인식된 시점으로 역산한 근사치라 0.1초
+  /// 짜리 조각이 흔하다. 그런 줄은 **버리지 않고 이 길이까지 늘린다** —
+  /// 버리면 컷 안에 있는 대사가 소리 없이 사라진다
+  /// ([applyTranscriptCaptions] 참조).
+  static const minimumCaptionDurationMs = 200;
   static const _historyLimit = 60;
 
   /// AR 효과가 놓은 스티커의 id 앞에 붙는다. 효과를 바꾸거나 지울 때 사용자가
@@ -719,7 +727,7 @@ class EditorProjectController extends ChangeNotifier {
     int endMs, {
     bool notify = true,
   }) {
-    if (endMs - startMs < 200) return;
+    if (endMs - startMs < minimumCaptionDurationMs) return;
     beginGesture();
     var changed = false;
     final texts = [
@@ -747,7 +755,7 @@ class EditorProjectController extends ChangeNotifier {
     int endMs, {
     bool notify = true,
   }) {
-    if (endMs - startMs < 200) return;
+    if (endMs - startMs < minimumCaptionDurationMs) return;
     beginGesture();
     var changed = false;
     final stickers = [
@@ -1269,14 +1277,33 @@ class EditorProjectController extends ChangeNotifier {
           clip.sourceStartMs,
           clip.sourceEndMs,
         );
-        if (overlapEnd - overlapStart < 200) continue;
+        // 겹치는 구간이 아예 없다 = 잘라 낸 자리의 대사다. 그 장면은 영상에
+        // 없으니 자막도 없다.
+        if (overlapEnd <= overlapStart) continue;
+        var start = overlapStart;
+        var end = overlapEnd;
+        if (end - start < minimumCaptionDurationMs) {
+          // 컷 **안**인데 너무 짧다. 버리면 "컷 안 자막인데 안 들어간다"가
+          // 된다 — 전사가 주는 시각은 낱말이 처음 인식된 시점으로 역산한
+          // 근사치라 0.1초짜리 조각이 흔하다. 읽을 수 있는 길이까지 늘려
+          // 준다. 뒤로 못 늘리면 앞으로 당긴다.
+          end = math.min(clip.sourceEndMs, start + minimumCaptionDurationMs);
+          if (end - start < minimumCaptionDurationMs) {
+            start = math.max(
+              clip.sourceStartMs,
+              end - minimumCaptionDurationMs,
+            );
+          }
+          // 클립 자체가 그보다 짧다. 이건 정말로 넣을 자리가 없다.
+          if (end - start < minimumCaptionDurationMs) continue;
+        }
         added.add(
           EditorTextLayer(
             id: _nextId('ai-caption'),
             text: text,
             position: NormalizedPoint(0.5, 0.78),
-            startMs: timelineStartMs + overlapStart - clip.sourceStartMs,
-            endMs: timelineStartMs + overlapEnd - clip.sourceStartMs,
+            startMs: timelineStartMs + start - clip.sourceStartMs,
+            endMs: timelineStartMs + end - clip.sourceStartMs,
             fontSize: 28,
             clipId: clip.id,
           ),
