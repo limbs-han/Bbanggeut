@@ -195,7 +195,7 @@ class WhepPlayerController extends ChangeNotifier {
       }
       if (!hasActiveAudioMedia(answerSdp)) {
         // Production live playback requires MediaMTX to send WebRTC audio.
-        throw const WhepPlaybackException();
+        throw const WhepPlaybackException(failure: WhepFailure.audioMissing);
       }
 
       final location = response.headers.value('location');
@@ -212,7 +212,7 @@ class WhepPlayerController extends ChangeNotifier {
         audioTrackReady.future,
       ]).timeout(const Duration(seconds: 10));
       if (!await _waitForInboundAudio(peer)) {
-        throw const WhepPlaybackException();
+        throw const WhepPlaybackException(failure: WhepFailure.audioMissing);
       }
       _connected = true;
       // 방금 붙었으면 정의상 맨 앞이다. unknown으로 두면 첫 통계가 올
@@ -220,9 +220,12 @@ class WhepPlayerController extends ChangeNotifier {
       _liveEdge = LiveEdge.live;
       _startLiveEdgeMonitor();
       notifyListeners();
-    } catch (_) {
+    } catch (error) {
       await close();
-      throw const WhepPlaybackException();
+      if (error is WhepPlaybackException) rethrow;
+      throw WhepPlaybackException(
+        statusCode: error is DioException ? error.response?.statusCode : null,
+      );
     }
   }
 
@@ -428,10 +431,37 @@ class WhepPlayerController extends ChangeNotifier {
   }
 }
 
-class WhepPlaybackException implements Exception {
-  const WhepPlaybackException();
+/// 재생이 왜 실패했는지. 화면은 이 값으로 안내 문구를 고른다.
+enum WhepFailure {
+  /// 시그널링 단계에서 끝났다 — 서버 오류 응답, 네트워크 단절, 타임아웃.
+  signaling,
 
+  /// 연결은 됐는데 오디오가 오지 않았다 — 송출 코덱이 Opus가 아닐 때.
+  audioMissing,
+}
+
+class WhepPlaybackException implements Exception {
+  const WhepPlaybackException({
+    this.failure = WhepFailure.signaling,
+    this.statusCode,
+  });
+
+  final WhepFailure failure;
+
+  /// WHEP 시그널링 응답의 HTTP 상태. 모르면 null이다.
+  final int? statusCode;
+
+  /// **왜 실패 종류를 나누는가**: 예전에는 어떤 이유로 실패해도 "송출 장치의
+  /// Opus 오디오 설정을 확인해 주세요"라고 안내했다. 서버가 500을 내던
+  /// 장애(2026-08-05, nginx auth_request)에서 이 문구가 기기를 의심하게 만들어
+  /// 엉뚱한 곳을 뒤지게 했다. 상태 코드까지 화면에 남기면 사용자 제보만으로
+  /// 서버 문제임을 알 수 있다.
   @override
-  String toString() =>
-      'WebRTC 영상과 오디오를 수신하지 못했습니다. 송출 장치의 Opus 오디오 설정을 확인해 주세요.';
+  String toString() => switch (failure) {
+    WhepFailure.audioMissing =>
+      '라이브 오디오를 받지 못했습니다. 송출 장치의 Opus 오디오 설정을 확인해 주세요.',
+    WhepFailure.signaling => statusCode == null
+        ? '라이브에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+        : '라이브에 연결하지 못했습니다(서버 응답 $statusCode). 잠시 후 다시 시도해 주세요.',
+  };
 }
