@@ -731,19 +731,22 @@
 ### API-74 `GET /api/schedules` — 캘린더 일정 목록
 
 - 인증: 사용자 JWT
-- 요청: 없음(로그인 사용자 본인의 일정만)
+- 요청: 없음(사용자가 활성 구성원인 모든 금고의 일정)
 - 응답: `200 List<ScheduleResponse>` — 날짜 오름차순
 
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | id | UUID | 필수 | 일정 ID |
+| authorId | UUID | 필수 | 이 일정을 적은 사람. 앱이 수정·삭제 버튼을 가리는 데 쓴다 |
+| authorName | String | 옵션 | 적은 사람의 표시 이름(서버가 `users`에서 조인) |
 | title | String | 필수 | 제목(1~80자) |
 | date | LocalDate | 필수 | 일정 날짜 |
 | memo | String | 필수 | 메모(빈 문자열 가능, 최대 500자) |
 | yearly | boolean | 필수 | 매년 반복 여부 |
 | emoji | String | 필수 | 표시 이모지(기본 ❤️, 최대 16자) |
 
-- 비고: 일정은 사용자 귀속이다. 캘린더 화면이 금고와 무관하게 한 목록을 쓰므로 가족 공유 일정은 요구가 생길 때 별도 설계한다.
+- 비고: 일정은 금고 공유다(2026-08-05 전환). `vault_id`가 공유 범위이고 `user_id`는 작성자다.
+- 비고: 금고가 없던 시절에 적은 일정(`vaultId` 없음)은 적은 사람에게만 보인다. 마이그레이션이 옮길 금고가 없던 일정이라 개인 일정으로 남는다.
 
 ### API-75 `POST /api/schedules` — 캘린더 일정 등록
 
@@ -757,22 +760,26 @@
 | memo | String | 옵션(기본 빈 문자열) | 최대 500자 |
 | yearly | Boolean | 옵션(기본 false) | 매년 반복 여부 |
 | emoji | String | 옵션(기본 ❤️) | 최대 16자 |
+| vaultId | UUID | 옵션 | 일정을 넣을 금고. 생략하면 사용자가 속한 금고가 하나일 때만 그것으로 정한다 |
 
 - 응답: `201 ScheduleResponse`(API-74와 동일 스키마)
-- 에러: 400 `VALIDATION_FAILED`(필드 형식), 422 `VALIDATION_FAILED`(사용자당 200개 상한 초과)
+- 에러: 400 `VALIDATION_FAILED`(필드 형식), 403 `FORBIDDEN_ROLE`(그 금고의 구성원이 아님), 422 `VALIDATION_FAILED`(금고당 200개 상한 초과, 또는 여러 금고에 속해 있는데 `vaultId`를 생략)
+- 비고: 금고 구성원 누구나 등록한다.
 
 ### API-76 `PUT /api/schedules/{scheduleId}` — 캘린더 일정 수정
 
 - 인증: 사용자 JWT
 - 요청: PathVariable `scheduleId` + `ScheduleRequest`(API-75와 동일)
 - 응답: `200 ScheduleResponse`
-- 에러: 404 `RESOURCE_NOT_FOUND`(내 일정이 아니거나 없음)
+- 에러: 403 `FORBIDDEN_ROLE`(적은 사람도 OWNER도 아님), 404 `RESOURCE_NOT_FOUND`(없거나 볼 수 없는 일정)
+- 비고: 일정을 적은 사람 또는 금고 OWNER만 수정한다.
 
 ### API-77 `DELETE /api/schedules/{scheduleId}` — 캘린더 일정 삭제
 
 - 인증: 사용자 JWT
 - 응답: `204`
-- 에러: 404 `RESOURCE_NOT_FOUND`(내 일정이 아니거나 없음)
+- 에러: 403 `FORBIDDEN_ROLE`(적은 사람도 OWNER도 아님), 404 `RESOURCE_NOT_FOUND`(없거나 볼 수 없는 일정)
+- 비고: 일정을 적은 사람 또는 금고 OWNER만 삭제한다.
 
 ### API-62 `GET /api/devices/{deviceId}/laugh-report` **[제안]**
 
