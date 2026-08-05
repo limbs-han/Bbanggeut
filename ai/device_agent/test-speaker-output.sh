@@ -13,7 +13,7 @@ Examples:
   bash ./test-speaker-output.sh plughw:CARD=Device,DEV=0 3
 
 ALSA_DEVICE defaults to TALKBACK_OUTPUT_DEVICE, then "default".
-SPEAKER_TEST_LEVEL defaults to 0.5, approximately -6 dBFS. Use a value
+SPEAKER_TEST_LEVEL defaults to 0.25, approximately -12 dBFS. Use a value
 between 0 and 1 to adjust the signal level; 1.0 is approximately 0 dBFS.
 The generated mono tone is duplicated to both stereo channels so a single
 speaker connected to either LOUT or ROUT can be tested.
@@ -41,7 +41,7 @@ fi
 DEVICE="${1:-${TALKBACK_OUTPUT_DEVICE:-default}}"
 DURATION_SECONDS="${2:-3}"
 FREQUENCY_HZ="${SPEAKER_TEST_FREQUENCY_HZ:-880}"
-SIGNAL_LEVEL="${SPEAKER_TEST_LEVEL:-0.5}"
+SIGNAL_LEVEL="${SPEAKER_TEST_LEVEL:-0.25}"
 FFMPEG_PATH="${FFMPEG_PATH:-/usr/bin/ffmpeg}"
 MIXER_CARD=""
 
@@ -86,7 +86,7 @@ Duration    : ${DURATION_SECONDS}s
 Frequency   : ${FREQUENCY_HZ}Hz
 Signal level: ${SIGNAL_LEVEL} (1.0 is approximately 0 dBFS)
 
-WARNING: the test signal defaults to approximately -6 dBFS.
+WARNING: the test signal defaults to approximately -12 dBFS.
 Keep earphones out of your ears and the PAM8403 knob near minimum for the first run.
 Starting the test tone in 2 seconds. Press Ctrl+C to cancel.
 EOF
