@@ -873,6 +873,15 @@ class ApiClient {
   Future<Map<String, dynamic>> getComicJob(String videoId) =>
       _get('/api/videos/$videoId/comic/image');
 
+  /// 금고에서 만화를 만들어 둔 영상 id 집합. 추억 탭 배지에 쓴다.
+  ///
+  /// 영상마다 따로 묻지 않는다 — 목록이 100건이면 왕복도 100번이 된다.
+  Future<Set<String>> listVaultComicVideoIds(String vaultId) async =>
+      (await _getList('/api/vaults/$vaultId/comics'))
+          .map((item) => item['videoId'] as String? ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
   /// presigned URL에서 바이트를 그대로 받는다.
   ///
   /// 서명이 URL 안에 있으므로 **Bearer 헤더를 붙이면 안 된다** — MinIO는 서명과

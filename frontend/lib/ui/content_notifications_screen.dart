@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import '../features/comic/comic_screen.dart';
 import 'content_calendar_screen.dart';
 import 'edited_video_screen.dart';
 import 'invitation_inbox_screen.dart';
@@ -73,6 +74,17 @@ class _ContentNotificationsScreenState
     }
   }
 
+  /// 알림이 가리키는 영상. 이미 받아 둔 목록에 있으면 그것을 쓰고, 없으면
+  /// 한 건만 받아 온다 — 목록에 없는 영상(다른 기기·오래된 것)도 열려야 한다.
+  Future<VideoMemory> _videoFor(String videoId) async {
+    final matches = widget.controller.videos.where(
+      (candidate) => candidate.id == videoId,
+    );
+    return matches.isNotEmpty
+        ? matches.first
+        : await widget.controller.api.getVideo(videoId);
+  }
+
   Future<void> _open(AppNotification item) async {
     if (!item.isRead) {
       try {
@@ -104,18 +116,33 @@ class _ContentNotificationsScreenState
       );
       return;
     }
+    // 만화 완성은 만화 화면으로 곧장 간다. 그림 생성이 백그라운드로 바뀌면서
+    // "화면을 나간 뒤에 끝나는 것"이 정상 경로가 됐으므로, 알림에서 한 번에
+    // 결과까지 가야 한다 — 영상 상세를 거치게 하면 만화 버튼을 다시 찾아
+    // 눌러야 한다.
+    if (item.type == 'COMIC_READY' && item.resourceId != null) {
+      try {
+        final video = await _videoFor(item.resourceId!);
+        if (!mounted) return;
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ComicScreen(api: widget.controller.api, video: video),
+          ),
+        );
+      } catch (failure) {
+        if (mounted) showAppSnack(context, '$failure', error: true);
+      }
+      return;
+    }
     // 분석 완료는 웃음 영상 도착과 같은 목적지다 — 영상 상세에서 편집하기를
     // 누르면 이미 분석돼 있어 AI 컷이 바로 열린다.
     if ((item.type == 'LAUGHTER_VIDEO_READY' ||
             item.type == 'EDIT_ANALYSIS_READY') &&
         item.resourceId != null) {
       try {
-        final matches = widget.controller.videos.where(
-          (candidate) => candidate.id == item.resourceId,
-        );
-        final video = matches.isNotEmpty
-            ? matches.first
-            : await widget.controller.api.getVideo(item.resourceId!);
+        final video = await _videoFor(item.resourceId!);
         if (!mounted) return;
         await Navigator.push<void>(
           context,
@@ -353,5 +380,6 @@ class _ContentNotificationsScreenState
   'LAUGHTER_VIDEO_READY' => (emoji: '📷', background: AppColors.sageSoft),
   'EDIT_ANALYSIS_READY' => (emoji: '✨', background: AppColors.sageSoft),
   'EDIT_COMMENT_ADDED' => (emoji: '💬', background: AppColors.yellowSoft),
+  'COMIC_READY' => (emoji: '🎨', background: AppColors.yellowSoft),
   _ => (emoji: '🔔', background: AppColors.yellowSoft),
 };
