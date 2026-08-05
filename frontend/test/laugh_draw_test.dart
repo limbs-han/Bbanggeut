@@ -126,7 +126,6 @@ LaughMemory _memory({
     triggerType: 'LAUGHTER',
     eventTypes: const ['LAUGHTER'],
     title: '아빠의 이상한 춤',
-    description: '그날 우리 가족은 한참 웃었어요',
     status: 'READY',
     favorite: false,
     durationMs: 42000,

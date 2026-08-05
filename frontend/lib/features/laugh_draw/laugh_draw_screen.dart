@@ -125,11 +125,6 @@ class _LaughDrawScreenState extends State<LaughDrawScreen>
         : title;
   }
 
-  String _description(LaughMemory memory) {
-    final description = memory.video.description?.trim() ?? '';
-    return description.isEmpty ? _fallbackDescription : description;
-  }
-
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.transparent,
@@ -422,7 +417,9 @@ class _LaughDrawScreenState extends State<LaughDrawScreen>
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  _description(memory),
+                  // 영상 메모 기능은 develop에서 제거됐다(6393a77). 서버가 설명을
+                  // 주지 않으므로 뽑기 화면은 이 고정 문구만 쓴다.
+                  _fallbackDescription,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyMedium,
