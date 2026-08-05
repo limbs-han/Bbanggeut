@@ -199,3 +199,5 @@ k6를 같은 인스턴스에서 돌렸기 때문에 CPU를 애플리케이션과
 ```bash
 docker exec william-james-postgres-1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select device_id, count(*) clips, min(date(captured_start_at)) first_day, max(date(captured_start_at)) last_day from videos where uploaded_at is not null group by device_id order by clips desc"
 ```
+
+계산 결과는 [저장 정책과 수용량](../../자료/docs/사람이%20읽을%20문서/06-저장정책과수용량.md)에 정리했다.
