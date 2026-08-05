@@ -81,6 +81,18 @@ public class NotificationService {
         }
     }
 
+    /** 4컷 만화 완성 — 만들기를 누른 사람에게만 알린다. */
+    @Transactional
+    public void comicReady(UUID userId, UUID videoId) {
+        if (userId == null) {
+            return;
+        }
+        int inserted = mapper.insertComicReadyNotification(userId, videoId);
+        if (inserted > 0) {
+            pushDispatcher.comicReady(userId, videoId);
+        }
+    }
+
     /** 편집 영상 새 댓글 — 작성자를 뺀 금고 구성원 전체에게 알린다. */
     @Transactional
     public void editCommentAdded(

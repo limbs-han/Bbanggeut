@@ -63,6 +63,13 @@ def analysis_ready(video_id: str, user_id: str | None) -> None:
     _notify({"type": "ANALYSIS_READY", "videoId": video_id, "userId": user_id})
 
 
+def comic_ready(video_id: str, user_id: str | None) -> None:
+    """4컷 만화가 다 그려졌다 — 요청한 사람에게만 알린다."""
+    if not user_id:
+        return
+    _notify({"type": "COMIC_READY", "videoId": video_id, "userId": user_id})
+
+
 def comment_added(
     video_id: str, user_id: str | None, comment_id: Any, body: str
 ) -> None:
