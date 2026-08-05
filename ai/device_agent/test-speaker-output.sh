@@ -39,7 +39,7 @@ fi
 DEVICE="${1:-${TALKBACK_OUTPUT_DEVICE:-default}}"
 DURATION_SECONDS="${2:-3}"
 FREQUENCY_HZ="${SPEAKER_TEST_FREQUENCY_HZ:-880}"
-VOLUME="${SPEAKER_TEST_VOLUME:-0.15}"
+VOLUME="${SPEAKER_TEST_VOLUME:-1.0}"
 FFMPEG_PATH="${FFMPEG_PATH:-/usr/bin/ffmpeg}"
 
 if [[ ! "$DURATION_SECONDS" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -71,7 +71,8 @@ Duration    : ${DURATION_SECONDS}s
 Frequency   : ${FREQUENCY_HZ}Hz
 SW volume   : ${VOLUME}
 
-Keep the PAM8403 knob near minimum for the first run.
+WARNING: the test signal defaults to 100% software volume.
+Keep earphones out of your ears and the PAM8403 knob near minimum for the first run.
 Starting the test tone in 2 seconds. Press Ctrl+C to cancel.
 EOF
 sleep 2

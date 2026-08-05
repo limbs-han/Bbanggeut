@@ -36,8 +36,9 @@ with `SPEAKER_UNAVAILABLE` rather than accepted by a device with no speaker.
 ### Testing the Jetson speaker output
 
 After wiring the USB audio adapter, PAM8403, and passive speaker, list the ALSA
-playback devices and run a low-volume three-second tone before enabling
-talkback:
+playback devices and run a three-second tone before enabling talkback. The test
+signal defaults to 100% software volume, so keep earphones out of your ears and
+the PAM8403 knob near minimum for the first run:
 
 ```bash
 sudo apt-get install -y alsa-utils
