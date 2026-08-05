@@ -162,6 +162,8 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               ? meta['title'] as String
               : original?.title ?? '편집한 영상',
           savedAt: DateTime.tryParse(meta['savedAt'] as String? ?? ''),
+          myUserId: widget.controller.user?.id,
+          isOwner: widget.controller.isOwner,
         ),
       ),
     );

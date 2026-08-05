@@ -312,7 +312,14 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
               ),
             ),
             const SizedBox(height: 18),
-            _MemoryDetailCard(video: _video, onEdit: _editMetadata),
+            _MemoryDetailCard(
+              video: _video,
+              onEdit: _editMetadata,
+              canRename: canManageVideo(
+                _video,
+                isOwner: widget.controller.isOwner,
+              ),
+            ),
             const SizedBox(height: 18),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
@@ -378,10 +385,17 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
 }
 
 class _MemoryDetailCard extends StatelessWidget {
-  const _MemoryDetailCard({required this.video, required this.onEdit});
+  const _MemoryDetailCard({
+    required this.video,
+    required this.onEdit,
+    required this.canRename,
+  });
 
   final VideoMemory video;
   final VoidCallback onEdit;
+
+  /// 원본 영상의 제목은 OWNER만 바꾼다. 못 바꾸는 사람에게는 버튼을 감춘다.
+  final bool canRename;
 
   @override
   Widget build(BuildContext context) {
@@ -429,17 +443,18 @@ class _MemoryDetailCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
               ),
-              const SizedBox(width: 10),
-              IconButton.outlined(
-                tooltip: '제목 수정',
-                onPressed: onEdit,
-                style: IconButton.styleFrom(
-                  foregroundColor: AppColors.coralDark,
-                  side: const BorderSide(color: Color(0xFFFFD5C5)),
-                  minimumSize: const Size.square(48),
+              if (canRename) const SizedBox(width: 10),
+              if (canRename)
+                IconButton.outlined(
+                  tooltip: '제목 수정',
+                  onPressed: onEdit,
+                  style: IconButton.styleFrom(
+                    foregroundColor: AppColors.coralDark,
+                    side: const BorderSide(color: Color(0xFFFFD5C5)),
+                    minimumSize: const Size.square(48),
+                  ),
+                  icon: const Icon(Icons.edit_rounded),
                 ),
-                icon: const Icon(Icons.edit_rounded),
-              ),
             ],
           ),
           const SizedBox(height: 8),

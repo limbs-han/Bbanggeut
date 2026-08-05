@@ -97,6 +97,8 @@ class _ContentNotificationsScreenState
             api: widget.controller.api,
             videoId: item.resourceId!,
             title: '',
+            myUserId: widget.controller.user?.id,
+            isOwner: widget.controller.isOwner,
           ),
         ),
       );

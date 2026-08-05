@@ -184,14 +184,17 @@ class MemoryVideoCard extends StatelessWidget {
                         onPressed: () => _edit(context),
                         icon: const Icon(Icons.content_cut_rounded),
                       ),
-                      IconButton(
-                        tooltip: '삭제하기',
-                        onPressed: () => _delete(context),
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          color: Colors.red,
+                      // 원본 삭제는 OWNER만 한다. 편집본은 서버가 "만든 사람
+                      // 또는 OWNER"로 한 번 더 거른다.
+                      if (canManageVideo(video, isOwner: controller.isOwner))
+                        IconButton(
+                          tooltip: '삭제하기',
+                          onPressed: () => _delete(context),
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Colors.red,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ],

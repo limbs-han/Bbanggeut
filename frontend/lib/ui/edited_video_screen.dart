@@ -21,6 +21,8 @@ class EditedVideoScreen extends StatefulWidget {
     required this.title,
     required this.api,
     this.savedAt,
+    this.myUserId,
+    this.isOwner = false,
   });
 
   final String videoId;
@@ -29,6 +31,12 @@ class EditedVideoScreen extends StatefulWidget {
 
   /// 편집본·댓글을 다루는 백엔드 클라이언트.
   final ApiClient api;
+
+  /// 지금 로그인한 사용자. 자기 댓글에만 수정·삭제를 띄우기 위해 받는다.
+  final String? myUserId;
+
+  /// 금고 OWNER인가. OWNER는 남의 댓글도 지울 수 있다(수정은 못 한다).
+  final bool isOwner;
 
   @override
   State<EditedVideoScreen> createState() => _EditedVideoScreenState();
@@ -126,6 +134,53 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
       if (mounted) showAppSnack(context, '댓글을 남기지 못했어요.', error: true);
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// 내가 쓴 댓글인가. 수정은 쓴 사람만 할 수 있다.
+  bool _isMine(VideoComment comment) =>
+      widget.myUserId != null && widget.myUserId == comment.authorId;
+
+  Future<void> _editComment(VideoComment comment) async {
+    final edited = await showDialog<String>(
+      context: context,
+      builder: (_) => _CommentEditorDialog(initialBody: comment.body),
+    );
+    if (edited == null || edited == comment.body) return;
+    try {
+      await widget.api.updateVideoComment(widget.videoId, comment.id, edited);
+      await _loadComments();
+      if (mounted) showAppSnack(context, '댓글을 고쳤어요.');
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
+    }
+  }
+
+  Future<void> _deleteComment(VideoComment comment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('댓글을 지울까요?'),
+        content: const Text('지운 댓글은 되돌릴 수 없어요.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.deleteVideoComment(widget.videoId, comment.id);
+      await _loadComments();
+      if (mounted) showAppSnack(context, '댓글을 지웠어요.');
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
     }
   }
 
@@ -307,6 +362,32 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                                 ],
                               ),
                             ),
+                            // 내 댓글은 고치고 지운다. OWNER는 남의 댓글도
+                            // 지울 수 있지만 고치지는 못한다 — 남의 말을
+                            // 고쳐 쓰는 것과 지우는 것은 다른 일이다.
+                            if (_isMine(comment) || widget.isOwner)
+                              PopupMenuButton<String>(
+                                key: Key('comment-menu-${comment.id}'),
+                                icon: const Icon(
+                                  Icons.more_horiz_rounded,
+                                  size: 18,
+                                  color: AppColors.muted,
+                                ),
+                                onSelected: (value) => value == 'edit'
+                                    ? _editComment(comment)
+                                    : _deleteComment(comment),
+                                itemBuilder: (_) => [
+                                  if (_isMine(comment))
+                                    const PopupMenuItem(
+                                      value: 'edit',
+                                      child: Text('수정'),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('삭제'),
+                                  ),
+                                ],
+                              ),
                           ],
                         );
                       },
@@ -350,4 +431,58 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
       ),
     );
   }
+}
+
+/// 댓글 한 줄을 고치는 작은 입력창.
+class _CommentEditorDialog extends StatefulWidget {
+  const _CommentEditorDialog({required this.initialBody});
+
+  final String initialBody;
+
+  @override
+  State<_CommentEditorDialog> createState() => _CommentEditorDialogState();
+}
+
+class _CommentEditorDialogState extends State<_CommentEditorDialog> {
+  late final TextEditingController _body;
+
+  @override
+  void initState() {
+    super.initState();
+    _body = TextEditingController(text: widget.initialBody)
+      ..addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('댓글 고치기'),
+    content: TextField(
+      key: const Key('comment-edit-input'),
+      controller: _body,
+      autofocus: true,
+      maxLength: 500,
+      minLines: 1,
+      maxLines: 4,
+      decoration: const InputDecoration(hintText: '댓글을 입력해 주세요'),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        key: const Key('comment-edit-save'),
+        onPressed: _body.text.trim().isEmpty
+            ? null
+            : () => Navigator.pop(context, _body.text.trim()),
+        child: const Text('저장'),
+      ),
+    ],
+  );
 }

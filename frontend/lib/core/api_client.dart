@@ -489,6 +489,20 @@ class ApiClient {
         '/api/videos/$id',
         data: {'title': ?title, 'isFavorite': ?favorite},
       );
+
+  /// 댓글 수정. 쓴 사람만 통과한다(서버가 403으로 거른다).
+  Future<void> updateVideoComment(
+    String videoId,
+    String commentId,
+    String body,
+  ) async => _patch(
+    '/api/videos/$videoId/comments/$commentId',
+    data: {'body': body},
+  );
+
+  /// 댓글 삭제. 쓴 사람 또는 금고 OWNER만 통과한다.
+  Future<void> deleteVideoComment(String videoId, String commentId) async =>
+      _delete('/api/videos/$videoId/comments/$commentId');
   Future<void> deleteVideo(String id) async => _delete('/api/videos/$id');
   Future<VideoMemory> getVideo(String id) async =>
       VideoMemory.fromJson(await _get('/api/videos/$id'));
