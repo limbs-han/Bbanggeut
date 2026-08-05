@@ -48,6 +48,7 @@ dependencies:
   flutter_webrtc: ^1.5.2
   video_thumbnail: ^0.5.6
   image_picker: ^1.2.3
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -73,6 +74,9 @@ flutter:
 
   assets:
     - assets/images/
+    # 웃음 뽑기 효과음. 저작권이 불분명한 외부 음원을 쓰지 않고
+    # tool/generate_laugh_draw_sfx.dart로 직접 합성해 구운 파일이다.
+    - assets/audio/
     # STT 모델 에셋(181MiB)은 없앴다. 자막은 ML Kit 온디바이스 인식이 만들고
     # 모델은 시스템(AICore)이 들고 있어서 앱이 실을 것이 없다.
     # 근거는 자료/docs/사람이 읽을 문서/06-STT모델가이드.md 참조.

@@ -237,7 +237,7 @@ void main() {
     expect(navigation, findsOneWidget);
     expect(tester.widget<NavigationBar>(navigation).selectedIndex, 2);
     expect(api.streamCreationCount, 0);
-    for (final label in ['홈', '캘린더', '추억', '가족', '설정']) {
+    for (final label in ['홈', '캘린더', '추억', '커뮤니티', '설정']) {
       expect(
         find.descendant(of: navigation, matching: find.text(label)),
         findsOneWidget,
@@ -326,8 +326,10 @@ void main() {
     final navigation = find.byKey(const ValueKey('main-bottom-navigation'));
     int selectedTab() => tester.widget<NavigationBar>(navigation).selectedIndex;
 
-    for (final tab in ['캘린더', '추억', '가족', '설정']) {
-      await tester.tap(find.descendant(of: navigation, matching: find.text(tab)));
+    for (final tab in ['캘린더', '추억', '커뮤니티', '설정']) {
+      await tester.tap(
+        find.descendant(of: navigation, matching: find.text(tab)),
+      );
       await tester.pumpAndSettle();
       expect(selectedTab(), isNot(2), reason: '$tab 탭으로 옮겨지지 않았다');
 
