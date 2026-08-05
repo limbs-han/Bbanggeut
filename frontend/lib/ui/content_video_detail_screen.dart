@@ -270,20 +270,25 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                       color: AppColors.coral,
                     ),
                   ),
-                  IconButton(
-                    tooltip: '영상 삭제',
-                    onPressed: _deleting ? null : _deleteVideo,
-                    iconSize: 30,
-                    icon: _deleting
-                        ? const SizedBox.square(
-                            dimension: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(
-                            Icons.delete_outline_rounded,
-                            color: AppColors.coral,
-                          ),
-                  ),
+                  // 목록 카드와 같은 기준으로 가린다. 서버는 원본을 OWNER만,
+                  // 편집본을 OWNER 또는 만든 사람만 지우게 한다
+                  // (VideoCommandService.delete). 여기만 조건 없이 버튼을
+                  // 띄우고 있어서 MEMBER가 누르면 403을 받았다.
+                  if (canManageVideo(_video, isOwner: widget.controller.isOwner))
+                    IconButton(
+                      tooltip: '영상 삭제',
+                      onPressed: _deleting ? null : _deleteVideo,
+                      iconSize: 30,
+                      icon: _deleting
+                          ? const SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.delete_outline_rounded,
+                              color: AppColors.coral,
+                            ),
+                    ),
                 ],
               ),
             ),
