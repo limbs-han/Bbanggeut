@@ -159,6 +159,17 @@ do
   fi
 done
 
+# 슬롯마다 다른 MQTT client ID를 쓰는지 고정한다. MQTT는 같은 client ID로 새
+# 연결이 오면 기존 세션을 끊으므로, 두 슬롯이 겹치는 배포 구간에서 둘이 서로를
+# 1초 남짓 주기로 밀어냈다(2026-08-04 05:20~05:21). 그 동안 기기 명령과
+# 텔레메트리가 함께 흔들린다.
+if ! grep -Fq -e '--app.mqtt.client-id=wj-backend-%i' \
+  "${repository_root}/backend/deploy/william-james@.service"
+then
+  echo "슬롯 유닛이 MQTT client ID를 슬롯별로 나누지 않습니다 — 배포 중 두 슬롯이 서로를 끊습니다." >&2
+  exit 1
+fi
+
 # 업로드 한도 정합: 서버 선언(500 MiB)보다 nginx가 크게 열려 있으면 초과
 # 본문이 MinIO 디스크에 도달한 뒤에야 거절된다.
 if ! grep -A 8 'location \^~ /william-james-videos'   "${repository_root}/backend/deploy/nginx-william-james.conf" |

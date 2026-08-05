@@ -7,7 +7,6 @@ import java.util.UUID;
 import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.StreamProperties;
-import com.wj.server.config.DemoProperties;
 import com.wj.server.iot.telemetry.DevicePresenceStore;
 import com.wj.server.stream.api.StreamSessionResponse;
 import com.wj.server.stream.api.TalkbackResponse;
@@ -28,7 +27,6 @@ public class StreamService {
     private final StreamProperties properties;
     private final AuditService auditService;
     private final Clock clock;
-    private final DemoProperties demoProperties;
     private final DevicePresenceStore presenceStore;
 
     @Autowired
@@ -38,11 +36,10 @@ public class StreamService {
         LiveTokenService liveTokenService,
         StreamProperties properties,
         AuditService auditService,
-        DemoProperties demoProperties,
         DevicePresenceStore presenceStore
     ) {
         this(mapper, publisher, liveTokenService, properties, auditService,
-            demoProperties, presenceStore, Clock.systemUTC());
+            presenceStore, Clock.systemUTC());
     }
 
     StreamService(
@@ -51,7 +48,6 @@ public class StreamService {
         LiveTokenService liveTokenService,
         StreamProperties properties,
         AuditService auditService,
-        DemoProperties demoProperties,
         DevicePresenceStore presenceStore,
         Clock clock
     ) {
@@ -60,7 +56,6 @@ public class StreamService {
         this.liveTokenService = liveTokenService;
         this.properties = properties;
         this.auditService = auditService;
-        this.demoProperties = demoProperties;
         this.presenceStore = presenceStore;
         this.clock = clock;
     }
@@ -93,25 +88,17 @@ public class StreamService {
         } else {
             streamId = stream.id();
             mapper.reuseStream(streamId, hardExpiresAt);
-            boolean reusableSourceWasReady = "RUNNING".equals(stream.status())
-                || "STOP_PENDING".equals(stream.status());
             // A RUNNING database row does not prove that the edge publisher
-            // survived a reboot or network loss. Production viewers wait for
-            // a fresh idempotent START/READY handshake before receiving WHEP.
-            sessionStatus = demoProperties.enabled() && reusableSourceWasReady
-                ? "READY" : "PENDING";
+            // survived a reboot or network loss. Viewers wait for a fresh
+            // idempotent START/READY handshake before receiving WHEP.
+            sessionStatus = "PENDING";
         }
 
         UUID sessionId = UUID.randomUUID();
         mapper.insertSession(
             sessionId, streamId, deviceId, userId, sessionStatus,
             now, now.plus(properties.viewerTtl()));
-        if (demoProperties.enabled()) {
-            if (newStream) {
-                mapper.markStreamReady(deviceId, streamId, hardExpiresAt);
-                mapper.markSessionsReady(streamId);
-            }
-        } else if (!publisher.start(deviceId, sessionId, streamId, hardExpiresAt)) {
+        if (!publisher.start(deviceId, sessionId, streamId, hardExpiresAt)) {
             mapper.markStreamFailed(deviceId, streamId, "MQTT_PUBLISH_FAILED");
             mapper.markSessionsFailed(streamId, "MQTT_PUBLISH_FAILED");
         }
@@ -145,8 +132,7 @@ public class StreamService {
         // 살아 있는데 소리만 30초에 끊긴다. START_TALKBACK은 계약상 멱등이라
         // 같은 streamId면 기기는 재생을 끊지 않고 만료만 민다.
         Instant talkbackExpiresAt = now.plus(properties.talkbackTtl());
-        if (mapper.extendTalkback(session.deviceId(), sessionId, talkbackExpiresAt) == 1
-            && !demoProperties.enabled()) {
+        if (mapper.extendTalkback(session.deviceId(), sessionId, talkbackExpiresAt) == 1) {
             publisher.startTalkback(session.deviceId(), session.streamId(), talkbackExpiresAt);
         }
         if ("PENDING".equals(session.status())) {
@@ -195,8 +181,7 @@ public class StreamService {
             .orElseThrow(() -> new ApiException(
                 HttpStatus.CONFLICT, "TALKBACK_BUSY", "다른 구성원이 말하는 중입니다."));
 
-        if (!demoProperties.enabled()
-            && !publisher.startTalkback(session.deviceId(), session.streamId(), expiresAt)) {
+        if (!publisher.startTalkback(session.deviceId(), session.streamId(), expiresAt)) {
             mapper.releaseTalkback(session.deviceId(), sessionId);
             throw new ApiException(
                 HttpStatus.SERVICE_UNAVAILABLE, "MQTT_PUBLISH_FAILED", "기기에 명령을 전달하지 못했습니다.");
@@ -220,11 +205,8 @@ public class StreamService {
     }
 
     private void releaseTalkback(StreamSessionRow session, String reason) {
-        mapper.releaseTalkback(session.deviceId(), session.id()).ifPresent(released -> {
-            if (!demoProperties.enabled()) {
-                publisher.stopTalkback(session.deviceId(), released.streamId(), reason);
-            }
-        });
+        mapper.releaseTalkback(session.deviceId(), session.id()).ifPresent(released ->
+            publisher.stopTalkback(session.deviceId(), released.streamId(), reason));
     }
 
     @Transactional(readOnly = true)
@@ -247,16 +229,8 @@ public class StreamService {
         String whepUrl = null;
         if ("READY".equals(row.status()) && row.viewerExpiresAt().isAfter(clock.instant())) {
             String token = liveTokenService.issue(row.id(), row.userId(), row.deviceId(), row.streamId());
-            String configuredDemoWhepUrl = demoProperties.liveWhepUrl();
-            boolean explicitDemoWhepUrl = demoProperties.enabled()
-                && configuredDemoWhepUrl != null && !configuredDemoWhepUrl.isBlank();
-            String whepBaseUrl = explicitDemoWhepUrl
-                ? configuredDemoWhepUrl
-                : properties.webrtcBaseUrl().replaceAll("/$", "") + "/" + row.streamId() + "/whep";
-            if (explicitDemoWhepUrl) {
-                whepBaseUrl += (whepBaseUrl.contains("?") ? "&" : "?") + "streamId=" + row.streamId();
-            }
-            whepUrl = whepBaseUrl + (whepBaseUrl.contains("?") ? "&" : "?") + "token=" + token;
+            whepUrl = properties.webrtcBaseUrl().replaceAll("/$", "")
+                + "/" + row.streamId() + "/whep?token=" + token;
         }
         return new StreamSessionResponse(
             row.id(), row.streamId(), row.deviceId(), row.status(), whepUrl,
