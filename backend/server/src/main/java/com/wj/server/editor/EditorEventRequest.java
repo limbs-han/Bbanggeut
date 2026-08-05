@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Size;
 /**
  * 편집 서버(editor-api)가 보내는 서비스 이벤트.
  *
- * @param type      ANALYSIS_READY | COMMENT_ADDED
+ * @param type      ANALYSIS_READY | COMIC_READY | COMMENT_ADDED
  * @param videoId   원본 영상 id
  * @param userId    행위자(분석 요청자·댓글 작성자). editor-api가 앱 토큰의 sub에서 뽑는다
  * @param commentId 댓글 이벤트의 멱등 키 조각

@@ -69,6 +69,28 @@ class _StubGateway implements ComicGateway {
     if (imageError != null) throw imageError!;
     return png;
   }
+
+  /// 백그라운드 경로. 화면 테스트는 대기 줄을 흉내 내지 않고 곧바로 끝난 것으로
+  /// 둔다 — 폴링 타이머를 가짜 시계 위에서 돌리면 검증하려는 화면이 아니라
+  /// 타이머를 검증하게 된다.
+  @override
+  Future<ComicJobStatus> enqueueImage(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style = comicDefaultStyle,
+  }) async {
+    imageCalls++;
+    if (imageError != null) throw imageError!;
+    return const ComicJobStatus(status: 'done', imageUrl: 'stub://comic');
+  }
+
+  /// 화면을 열 때 부른다. 저장된 만화가 없는 상태에서 시작해야 구성 화면이 뜬다.
+  @override
+  Future<ComicJobStatus> jobStatus(String videoId) async =>
+      const ComicJobStatus(status: 'none');
+
+  @override
+  Future<Uint8List> download(String imageUrl) async => png;
 }
 
 final _video = VideoMemory(
