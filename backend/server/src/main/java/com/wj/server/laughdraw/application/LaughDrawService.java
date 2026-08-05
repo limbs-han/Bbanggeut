@@ -167,9 +167,12 @@ public class LaughDrawService {
     }
 
     private VideoResponse toVideoResponse(LaughMemoryRow row) {
+        // VideoResponse에 description이 없다 — 영상 메모 기능이 제거됐다.
+        // videos.description 컬럼과 LaughMemoryRow.description은 남아 있지만
+        // 응답에는 싣지 않는다.
         return new VideoResponse(
             row.id(), row.deviceId(), row.sourceType(), row.triggerType(), null,
-            row.title(), row.description(), row.contentType(), row.sizeBytes(), null,
+            row.title(), row.contentType(), row.sizeBytes(), null,
             row.durationMs(), row.capturedStartAt(), row.capturedEndAt(), row.status(),
             row.favorite(), null, row.createdAt(),
             VideoEventTypes.fromCsv(row.eventTypesCsv(), row.triggerType()));
