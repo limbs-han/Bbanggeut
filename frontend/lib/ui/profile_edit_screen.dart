@@ -55,8 +55,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       setState(() => errorText = '이름은 2자 이상 입력해 주세요.');
       return;
     }
-    if (value.length > 80) {
-      setState(() => errorText = '이름은 80자 이하로 입력해 주세요.');
+    // 서버와 DB(users.display_name varchar(60))가 60자까지만 받는다. 여기서
+    // 80자를 허용하면 그 사이 길이는 저장 버튼을 누른 뒤 서버 오류로 되돌아온다.
+    if (value.length > 60) {
+      setState(() => errorText = '이름은 60자 이하로 입력해 주세요.');
       return;
     }
     setState(() => errorText = null);
@@ -362,7 +364,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   TextField(
                     key: const Key('profile-display-name'),
                     controller: displayName,
-                    maxLength: 80,
+                    maxLength: 60,
                     textInputAction: TextInputAction.done,
                     onSubmitted: (_) => _save(),
                     decoration: InputDecoration(
