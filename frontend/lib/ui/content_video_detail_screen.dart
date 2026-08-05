@@ -12,6 +12,7 @@ import '../core/video_source_cache.dart';
 import '../features/comic/comic_screen.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
+import 'video_comments_section.dart';
 import 'widgets.dart';
 
 class ContentVideoDetailScreen extends StatefulWidget {
@@ -381,6 +382,16 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                 '4컷 만화 만들기',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
               ),
+            ),
+            const Divider(height: 28),
+            // 원본에도 가족 댓글을 남긴다. 백엔드는 원본과 편집본을 구별하지
+            // 않으므로(둘 다 videos 행 + video_comments) 편집본 화면과 같은
+            // 위젯을 쓴다. 바깥이 ListView라 안에서 또 스크롤하지 않는다.
+            VideoCommentsSection(
+              api: widget.controller.api,
+              videoId: _video.id,
+              myUserId: widget.controller.user?.id,
+              isOwner: widget.controller.isOwner,
             ),
           ],
         ),

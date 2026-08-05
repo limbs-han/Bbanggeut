@@ -8,7 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_theme.dart';
 import '../core/api_client.dart';
-import '../core/models.dart';
+import 'video_comments_section.dart';
 import 'widgets.dart';
 
 /// 편집 완료 영상 하나를 재생하고 가족 댓글을 다는 화면. 영상과 댓글 모두
@@ -43,10 +43,11 @@ class EditedVideoScreen extends StatefulWidget {
 }
 
 class _EditedVideoScreenState extends State<EditedVideoScreen> {
-  final _commentInput = TextEditingController();
   VideoPlayerController? _player;
-  List<VideoComment> _comments = const [];
-  bool _sending = false;
+
+  /// 머리줄에 적을 댓글 수. 목록과 입력은 VideoCommentsSection이 들고 있고
+  /// 개수만 콜백으로 받아 온다.
+  int _commentCount = 0;
 
   /// 갤러리 저장 진행률(0~1). null이면 저장 중이 아니다.
   double? _downloadProgress;
@@ -91,7 +92,6 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
   void initState() {
     super.initState();
     _preparePlayer();
-    _loadComments();
   }
 
   Future<void> _preparePlayer() async {
@@ -113,81 +113,9 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
     }
   }
 
-  Future<void> _loadComments() async {
-    try {
-      final comments = await widget.api.listVideoComments(widget.videoId);
-      if (mounted) setState(() => _comments = comments);
-    } catch (_) {
-      // 댓글을 못 불러와도 재생은 계속한다.
-    }
-  }
-
-  Future<void> _sendComment() async {
-    final text = _commentInput.text.trim();
-    if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
-    try {
-      await widget.api.addVideoComment(widget.videoId, text);
-      _commentInput.clear();
-      await _loadComments();
-    } catch (_) {
-      if (mounted) showAppSnack(context, '댓글을 남기지 못했어요.', error: true);
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
-  /// 내가 쓴 댓글인가. 수정은 쓴 사람만 할 수 있다.
-  bool _isMine(VideoComment comment) =>
-      widget.myUserId != null && widget.myUserId == comment.authorId;
-
-  Future<void> _editComment(VideoComment comment) async {
-    final edited = await showDialog<String>(
-      context: context,
-      builder: (_) => _CommentEditorDialog(initialBody: comment.body),
-    );
-    if (edited == null || edited == comment.body) return;
-    try {
-      await widget.api.updateVideoComment(widget.videoId, comment.id, edited);
-      await _loadComments();
-      if (mounted) showAppSnack(context, '댓글을 고쳤어요.');
-    } catch (failure) {
-      if (mounted) showAppSnack(context, '$failure', error: true);
-    }
-  }
-
-  Future<void> _deleteComment(VideoComment comment) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('댓글을 지울까요?'),
-        content: const Text('지운 댓글은 되돌릴 수 없어요.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await widget.api.deleteVideoComment(widget.videoId, comment.id);
-      await _loadComments();
-      if (mounted) showAppSnack(context, '댓글을 지웠어요.');
-    } catch (failure) {
-      if (mounted) showAppSnack(context, '$failure', error: true);
-    }
-  }
-
   @override
   void dispose() {
     _player?.dispose();
-    _commentInput.dispose();
     super.dispose();
   }
 
@@ -281,7 +209,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                     ),
                   ),
                   Text(
-                    '댓글 ${_comments.length}',
+                    '댓글 $_commentCount',
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -291,139 +219,19 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
               ),
             ),
             const Divider(height: 16),
+            // 목록·입력·수정·삭제는 원본 상세 화면과 같은 위젯을 쓴다.
+            // 개수만 콜백으로 받아 위 머리줄에 적는다.
             Expanded(
-              child: _comments.isEmpty
-                  ? const Center(
-                      child: Text(
-                        '첫 댓글을 남겨 보세요!',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      itemCount: _comments.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final comment = _comments[index];
-                        final createdAt = comment.createdAt?.toLocal();
-                        final author = comment.authorName?.isNotEmpty == true
-                            ? comment.authorName!
-                            : '가족';
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            CircleAvatar(
-                              radius: 15,
-                              backgroundColor: AppColors.sage.withValues(
-                                alpha: 0.35,
-                              ),
-                              child: Text(
-                                author.characters.first,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        author,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      if (createdAt != null)
-                                        Text(
-                                          DateFormat(
-                                            'M.d HH:mm',
-                                          ).format(createdAt),
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: AppColors.muted,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  Text(
-                                    comment.body,
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // 내 댓글은 고치고 지운다. OWNER는 남의 댓글도
-                            // 지울 수 있지만 고치지는 못한다 — 남의 말을
-                            // 고쳐 쓰는 것과 지우는 것은 다른 일이다.
-                            if (_isMine(comment) || widget.isOwner)
-                              PopupMenuButton<String>(
-                                key: Key('comment-menu-${comment.id}'),
-                                icon: const Icon(
-                                  Icons.more_horiz_rounded,
-                                  size: 18,
-                                  color: AppColors.muted,
-                                ),
-                                onSelected: (value) => value == 'edit'
-                                    ? _editComment(comment)
-                                    : _deleteComment(comment),
-                                itemBuilder: (_) => [
-                                  if (_isMine(comment))
-                                    const PopupMenuItem(
-                                      value: 'edit',
-                                      child: Text('수정'),
-                                    ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text('삭제'),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                12,
-                6,
-                12,
-                8 + MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _commentInput,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendComment(),
-                      decoration: const InputDecoration(
-                        hintText: '따뜻한 한마디를 남겨 주세요',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _sending ? null : _sendComment,
-                    icon: _sending
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
-                  ),
-                ],
+              child: VideoCommentsSection(
+                api: widget.api,
+                videoId: widget.videoId,
+                myUserId: widget.myUserId,
+                isOwner: widget.isOwner,
+                expanded: true,
+                showHeader: false,
+                onCountChanged: (count) {
+                  if (mounted) setState(() => _commentCount = count);
+                },
               ),
             ),
           ],
@@ -431,58 +239,4 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
       ),
     );
   }
-}
-
-/// 댓글 한 줄을 고치는 작은 입력창.
-class _CommentEditorDialog extends StatefulWidget {
-  const _CommentEditorDialog({required this.initialBody});
-
-  final String initialBody;
-
-  @override
-  State<_CommentEditorDialog> createState() => _CommentEditorDialogState();
-}
-
-class _CommentEditorDialogState extends State<_CommentEditorDialog> {
-  late final TextEditingController _body;
-
-  @override
-  void initState() {
-    super.initState();
-    _body = TextEditingController(text: widget.initialBody)
-      ..addListener(() => setState(() {}));
-  }
-
-  @override
-  void dispose() {
-    _body.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('댓글 고치기'),
-    content: TextField(
-      key: const Key('comment-edit-input'),
-      controller: _body,
-      autofocus: true,
-      maxLength: 500,
-      minLines: 1,
-      maxLines: 4,
-      decoration: const InputDecoration(hintText: '댓글을 입력해 주세요'),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('취소'),
-      ),
-      FilledButton(
-        key: const Key('comment-edit-save'),
-        onPressed: _body.text.trim().isEmpty
-            ? null
-            : () => Navigator.pop(context, _body.text.trim()),
-        child: const Text('저장'),
-      ),
-    ],
-  );
 }
