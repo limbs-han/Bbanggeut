@@ -159,6 +159,17 @@ do
   fi
 done
 
+# 슬롯마다 다른 MQTT client ID를 쓰는지 고정한다. MQTT는 같은 client ID로 새
+# 연결이 오면 기존 세션을 끊으므로, 두 슬롯이 겹치는 배포 구간에서 둘이 서로를
+# 1초 남짓 주기로 밀어냈다(2026-08-04 05:20~05:21). 그 동안 기기 명령과
+# 텔레메트리가 함께 흔들린다.
+if ! grep -Fq -e '--app.mqtt.client-id=wj-backend-%i' \
+  "${repository_root}/backend/deploy/william-james@.service"
+then
+  echo "슬롯 유닛이 MQTT client ID를 슬롯별로 나누지 않습니다 — 배포 중 두 슬롯이 서로를 끊습니다." >&2
+  exit 1
+fi
+
 # 라이브 인증 서브요청의 Host 계약. 위에서 포트 직접 지정을 막았으므로 이
 # 경로는 항상 upstream 이름으로 나가는데, 그 이름의 밑줄이 Host 헤더에 실리면
 # Tomcat이 불법 문자로 보고 400을 낸다. auth_request는 2xx·401·403만 판정으로

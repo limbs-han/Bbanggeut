@@ -1,3 +1,13 @@
+# 이름은 demo지만 **운영 프로파일**이다. 지우지 말 것.
+#
+# 서버 env가 `SPRING_PROFILES_ACTIVE=demo`이므로 프로덕션이 이 파일을 활성
+# 프로파일로 읽는다. 여기 담긴 값이 DB 접속·JWT 서명 키·S3·MQTT·WebRTC 주소
+# 전부다. "데모 설정"으로 보고 지우면 운영이 DB와 서명 키를 잃는다.
+#
+# 데모 모드(`app.demo.enabled`)는 2026-08-05에 제거했고 이 파일과는 무관하다.
+# `application-prod.yml`로 옮기려면 파일 이름과 서버 env의
+# `SPRING_PROFILES_ACTIVE`를 같은 배포에서 함께 바꿔야 한다 — 한쪽만 바뀌면
+# 백엔드가 이 값들 없이 기동한다.
 spring:
   datasource:
     url: ${DB_URL}

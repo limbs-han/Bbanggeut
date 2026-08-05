@@ -56,9 +56,6 @@ management:
         include: health,info,metrics,prometheus
 
 app:
-  demo:
-    enabled: ${DEMO_MODE_ENABLED:false}
-    live-whep-url: ${DEMO_LIVE_WHEP_URL:}
   auth:
     access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:14d}
