@@ -873,14 +873,14 @@ class ApiClient {
   Future<Map<String, dynamic>> getComicJob(String videoId) =>
       _get('/api/videos/$videoId/comic/image');
 
-  /// 금고에서 만화를 만들어 둔 영상 id 집합. 추억 탭 배지에 쓴다.
+  /// 금고에서 만화를 만들어 둔 목록. `videoId`와 만든 시각(`madeAt`)이 온다.
   ///
+  /// 추억 탭의 '만화' 목록과 카드 배지가 **이 한 번의 응답**을 함께 쓴다.
   /// 영상마다 따로 묻지 않는다 — 목록이 100건이면 왕복도 100번이 된다.
-  Future<Set<String>> listVaultComicVideoIds(String vaultId) async =>
+  Future<List<Map<String, dynamic>>> listVaultComics(String vaultId) async =>
       (await _getList('/api/vaults/$vaultId/comics'))
-          .map((item) => item['videoId'] as String? ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
+          .where((item) => (item['videoId'] as String?)?.isNotEmpty == true)
+          .toList();
 
   /// presigned URL에서 바이트를 그대로 받는다.
   ///

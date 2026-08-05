@@ -17,17 +17,49 @@ import 'android_audio.dart';
 import 'caption_line.dart';
 import 'mlkit_transcriber.dart';
 
+/// 전사가 지금 무엇을 하는 중인가. 진행률의 뜻이 단계마다 다르다.
+enum TranscriptStage {
+  /// 영상에서 소리를 뽑아 16kHz WAV로 바꾸는 중. 진행률을 모른다.
+  audio,
+
+  /// 대사를 알아듣는 중. 진행률이 실제 값이다.
+  recognizing,
+}
+
+/// 전사 진행 상황 보고. [percent]는 0~99다.
+typedef TranscribeProgress = void Function(TranscriptStage stage, int percent);
+
 /// 영상 파일 경로를 받아 자막 줄을 돌려준다. 실패하면 던진다.
-typedef VideoTranscriber = Future<List<CaptionLine>> Function(String videoPath);
+///
+/// [onProgress]를 주면 진행 상황을 흘려보낸다. 주지 않아도 동작은 같다 —
+/// 테스트 대역은 무시하면 된다.
+typedef VideoTranscriber =
+    Future<List<CaptionLine>> Function(
+      String videoPath, [
+      TranscribeProgress? onProgress,
+    ]);
 
 sealed class TranscriptJobState {
   const TranscriptJobState();
 }
 
-/// 돌고 있다. 진행률은 없다 — whisper가 중간 상황을 알려주지 않는다.
-/// 화면은 자기가 아는 영상 길이로 예상 시간을 계산해 보여준다.
+/// 돌고 있다.
+///
+/// **[percent]는 짐작이 아니라 실제 값이다.** 엔진이 진행 상황을 알려주지
+/// 않지만 우리가 오디오를 직접 먹이므로 먹인 양을 안다(`MlKitTranscriber`).
+/// 예전에는 화면이 예상 시간으로 퍼센트를 만들었는데, 예상보다 오래 걸리면
+/// 95%에 붙어 멈춘 것처럼 보였고 시트를 닫았다 열면 1%부터 다시 셌다 —
+/// 세는 주체가 화면이었기 때문이다. 이제 작업이 세고, 화면은 읽기만 한다.
+///
+/// [TranscriptStage.audio] 단계에서는 진행률을 모르므로 0이다.
 class TranscriptRunning extends TranscriptJobState {
-  const TranscriptRunning();
+  const TranscriptRunning({
+    this.stage = TranscriptStage.audio,
+    this.percent = 0,
+  });
+
+  final TranscriptStage stage;
+  final int percent;
 }
 
 class TranscriptReady extends TranscriptJobState {
@@ -111,6 +143,10 @@ class TranscriptStore {
     return job;
   }
 
+  /// 이 영상의 전사가 지금 돌고 있는가. 화면이 "이미 돌고 있으니 기다리면
+  /// 된다"를 판단하는 데 쓴다.
+  bool isRunning(String videoId) => _jobs[videoId]?.value is TranscriptRunning;
+
   /// 캐시를 버리고 **처음부터 다시** 전사한다.
   ///
   /// [ensure]로는 다시 돌릴 수 없다 — 돌던 작업이 남아 있으면 그것을 그대로
@@ -157,7 +193,12 @@ class TranscriptStore {
         job.value = TranscriptReady(cached);
         return;
       }
-      final fresh = await transcriber(videoPath);
+      final fresh = await transcriber(videoPath, (stage, percent) {
+        // 끝난 뒤에 늦게 도착한 보고로 상태를 되돌리지 않는다.
+        if (job.value is TranscriptRunning) {
+          job.value = TranscriptRunning(stage: stage, percent: percent);
+        }
+      });
       if (fresh.isEmpty) {
         // 빈 결과를 저장하면 캐시 적중으로 보여 영구히 재시도가 막힌다.
         _jobs.remove(videoId);
@@ -243,7 +284,11 @@ Future<MlKitReadiness> prepareMlKit(MlKitTranscriber mlkit) async {
 ///
 /// 그래서 [prepareMlKit]이 실패하면 자막이 없다. 화면이 이유를 알려 줘야 한다
 /// (`CaptionController.message` 참조).
-Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
+Future<List<CaptionLine>> transcribeVideo(
+  String videoPath, [
+  TranscribeProgress? onProgress,
+]) async {
+  onProgress?.call(TranscriptStage.audio, 0);
   final temporary = await getTemporaryDirectory();
   final directory = Directory(
     '${temporary.path}${Platform.pathSeparator}stt',
@@ -256,7 +301,12 @@ Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
     final mlkit = MlKitTranscriber();
     if (await prepareMlKit(mlkit) != MlKitReadiness.ready) return const [];
 
-    final lines = await mlkit.transcribe(wavPath);
+    final lines = await mlkit.transcribe(
+      wavPath,
+      onProgress: onProgress == null
+          ? null
+          : (percent) => onProgress(TranscriptStage.recognizing, percent),
+    );
     debugPrint('[stt] 엔진=ML Kit basic, ${lines.length}줄');
     // 시각은 낱말이 처음 인식된 시점으로 역산한 근사치다. 싱크가 밀리는지
     // 눈으로 판단할 수 있게 앞 몇 줄을 찍는다.

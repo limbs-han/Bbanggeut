@@ -7,12 +7,13 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../editor/edit_recommendation_client.dart';
+import '../features/comic/comic_screen.dart';
 import 'edited_video_screen.dart';
 import 'local_edit_screen.dart';
 import 'memory_video_card.dart';
 import 'widgets.dart';
 
-enum MemoryCategory { laughter, editing, edited }
+enum MemoryCategory { laughter, editing, edited, comic }
 
 enum MemorySort { newest, oldest }
 
@@ -58,6 +59,9 @@ bool matchesMemoryCategory(VideoMemory video, MemoryCategory category) =>
       // 그쪽에 있다(ADR-001의 남은 부채). 영상 행으로는 판정하지 않는다.
       MemoryCategory.editing => false,
       MemoryCategory.edited => video.isEditOutput,
+      // 만화도 영상 행에 없다. 금고 만화 목록(GET /api/vaults/{id}/comics)으로
+      // 따로 그린다.
+      MemoryCategory.comic => false,
     };
 
 class AllMemoriesScreen extends StatefulWidget {
@@ -81,7 +85,11 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
   List<Map<String, dynamic>> _drafts = const [];
   List<Map<String, dynamic>> _edited = const [];
 
-  /// 만화를 만들어 둔 영상 id. 카드에 배지를 그리는 데만 쓴다.
+  /// 만들어 둔 만화 목록(videoId·madeAt). '만화' 탭이 그린다.
+  List<Map<String, dynamic>> _comics = const [];
+
+  /// 같은 응답에서 뽑아 둔 id 집합. 카드 배지가 목록의 매 줄마다 확인하므로
+  /// 그릴 때마다 다시 만들지 않는다.
   Set<String> _comicVideoIds = const {};
 
   /// 올라가는 중인 편집본을 뒤따라가는 재조회. 5초 간격으로 최대 5분.
@@ -115,13 +123,19 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               if (mounted) setState(() => _edited = edited);
             })
             .catchError((Object _) {}),
-      // 만화 배지. 실패해도 목록은 그대로 보여야 하므로 조용히 넘긴다 —
-      // 배지가 없는 것과 목록이 안 나오는 것은 무게가 다르다.
+      // 만화 목록과 배지. 실패해도 영상 목록은 그대로 보여야 하므로 조용히
+      // 넘긴다 — 배지가 없는 것과 목록이 안 나오는 것은 무게가 다르다.
       if (widget.controller.selectedVault != null)
         widget.controller.api
-            .listVaultComicVideoIds(widget.controller.selectedVault!.id)
-            .then((ids) {
-              if (mounted) setState(() => _comicVideoIds = ids);
+            .listVaultComics(widget.controller.selectedVault!.id)
+            .then((comics) {
+              if (!mounted) return;
+              setState(() {
+                _comics = comics;
+                _comicVideoIds = {
+                  for (final comic in comics) comic['videoId'] as String,
+                };
+              });
             })
             .catchError((Object _) {}),
     ]);
@@ -419,6 +433,96 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     );
   }
 
+  /// 만들어 둔 4컷 만화 목록. 누르면 그 만화를 다시 본다.
+  ///
+  /// 영상 목록에서 배지만 보여 주던 동안에는, 만화를 보려면 그 원본을 목록에서
+  /// 찾아 상세로 들어가야 했다. 만화가 어느 영상에서 나왔는지 기억해야 하는
+  /// 일이라 사실상 다시 열 길이 없었다.
+  Widget _comicList() {
+    if (_comics.isEmpty) {
+      return const EmptyState(
+        icon: Icons.auto_stories_outlined,
+        title: '만든 만화가 없어요',
+        message: '영상 상세 화면에서 4컷 만화를 만들면 여기 모여요.',
+      );
+    }
+    final entries = [..._comics];
+    entries.sort((left, right) {
+      final leftAt =
+          DateTime.tryParse(left['madeAt'] as String? ?? '') ?? DateTime(1970);
+      final rightAt =
+          DateTime.tryParse(right['madeAt'] as String? ?? '') ?? DateTime(1970);
+      return sort == MemorySort.newest
+          ? rightAt.compareTo(leftAt)
+          : leftAt.compareTo(rightAt);
+    });
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+      itemCount: entries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final videoId = entry['videoId'] as String;
+        final original = _videoById(videoId);
+        final madeAt = DateTime.tryParse(
+          entry['madeAt'] as String? ?? '',
+        )?.toLocal();
+        return Card(
+          child: ListTile(
+            leading: original != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: MemoryThumbnail(
+                      api: widget.controller.api,
+                      video: original,
+                      width: 56,
+                      height: 40,
+                    ),
+                  )
+                : CircleAvatar(
+                    backgroundColor: AppColors.sage.withValues(alpha: 0.3),
+                    child: const Icon(
+                      Icons.auto_stories_rounded,
+                      color: AppColors.sageDark,
+                    ),
+                  ),
+            title: Text(
+              original == null ? '원본을 불러오는 중' : videoDisplayTitle(original),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              madeAt == null
+                  ? '4컷 만화'
+                  : '${DateFormat('M월 d일 HH:mm').format(madeAt)}에 만든 4컷 만화',
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.muted,
+            ),
+            onTap: () {
+              if (original == null) {
+                showAppSnack(context, '원본 영상을 찾지 못했어요.');
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ComicScreen(
+                    api: widget.controller.api,
+                    video: original,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _pickDateRange() async {
     final now = DateTime.now();
     final picked = await showDateRangePicker(
@@ -510,7 +614,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  // 카테고리가 셋이라 좁은 화면에서는 다 안 들어간다.
+                  // 카테고리가 넷이라 좁은 화면에서는 다 안 들어간다.
                   // 카테고리 묶음만 옆으로 밀어 보게 한다.
                   Expanded(
                     child: SingleChildScrollView(
@@ -544,6 +648,15 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                               _loadEditorLists();
                             },
                           ),
+                          const SizedBox(width: 8),
+                          _CategoryButton(
+                            label: '만화',
+                            selected: category == MemoryCategory.comic,
+                            onPressed: () {
+                              setState(() => category = MemoryCategory.comic);
+                              _loadEditorLists();
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -563,7 +676,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
             ),
             const SizedBox(height: 10),
             Expanded(
-              child: category != MemoryCategory.laughter
+              child: category == MemoryCategory.comic
+                  ? _comicList()
+                  : category != MemoryCategory.laughter
                   ? _editorList()
                   : widget.controller.videosLoading &&
                         widget.controller.videos.isEmpty

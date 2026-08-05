@@ -18,6 +18,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../app/app_theme.dart';
 import '../../core/api_client.dart';
 import '../../core/models.dart';
+import '../../core/video_source_cache.dart';
 import '../../ui/widgets.dart';
 import 'comic_controller.dart';
 import 'comic_gateway.dart';
@@ -55,6 +56,15 @@ class _ComicScreenState extends State<ComicScreen> {
       ComicController(
         gateway: defaultComicGateway(widget.api),
         videoId: widget.video.id,
+        // 자막을 이 화면에서 만들 수 있게 원본 통로를 넘긴다. 편집 화면과 같은
+        // 캐시를 쓰므로 이미 받아 둔 영상이면 곧바로 전사로 넘어간다.
+        sourceProvider: (onProgress) => VideoSourceCache.ensure(
+          api: widget.api,
+          videoId: widget.video.id,
+          onProgress: (received, total) {
+            if (total > 0) onProgress(received * 100 ~/ total);
+          },
+        ),
       );
 
   bool _saving = false;
@@ -184,15 +194,11 @@ class _ComicScreenState extends State<ComicScreen> {
   );
 
   Widget _body() => switch (_controller.state) {
-    ComicNeedsTranscript() => const Center(
-      child: Padding(
-        padding: EdgeInsets.all(28),
-        child: Text(
-          '대사를 먼저 알아들어야 만화를 만들 수 있어요.\n'
-          '영상 편집 화면에서 자막을 한 번 열어 주세요.',
-          textAlign: TextAlign.center,
-        ),
-      ),
+    ComicNeedsTranscript() => _needsTranscript(),
+    ComicTranscribing(:final label, :final percent) => _Busy(
+      label,
+      percent: percent,
+      hint: '들린 대사로 만화 이야기를 짜요.',
     ),
     ComicLoadingScript() => const _Busy('이야기를 짜고 있어요'),
     // 서버가 뒤에서 그린다 — 화면을 벗어나도 되고 끝나면 알림이 온다.
@@ -204,12 +210,40 @@ class _ComicScreenState extends State<ComicScreen> {
     ),
     ComicScriptReady(:final cuts) => _cutList(cuts),
     ComicFailed(:final reason, :final cuts) => _failed(reason, cuts),
-    ComicReady(:final cuts, :final image) => _finished(cuts, image),
+    ComicReady(:final cuts, :final image, :final savedAt) => _finished(
+      cuts,
+      image,
+      savedAt,
+    ),
     ComicSaved(:final image, :final savedAt) => _saved(image, savedAt),
   };
 
-  /// 전에 만들어 둔 만화. 구성은 아직 받지 않았으므로 대사 고치기는 눌렀을 때
-  /// 받는다 — 구성 요청은 호출마다 돈이 든다.
+  /// 자막이 없어 만화를 시작할 수 없다. **여기서 바로 만들 수 있게 한다.**
+  ///
+  /// 예전에는 "편집 화면에서 자막을 열어 주세요"라고만 적어 두었다. 만화를
+  /// 만들려고 들어온 사람을 다른 화면으로 보내 놓고 돌아오게 하는 길이라,
+  /// 실제로는 여기서 멈췄다.
+  Widget _needsTranscript() => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: EmptyState(
+        icon: Icons.graphic_eq_rounded,
+        title: '먼저 대사를 알아들어야 해요',
+        message: '영상에서 들린 말로 만화 이야기를 짜요. 몇 분 걸릴 수 있어요.',
+        action: _controller.sourceProvider == null
+            ? null
+            : FilledButton.icon(
+                key: const ValueKey('comic-make-transcript'),
+                onPressed: _controller.transcribe,
+                icon: const Icon(Icons.auto_awesome_rounded),
+                label: const Text('AI 자막 만들기'),
+              ),
+      ),
+    ),
+  );
+
+  /// 전에 만들어 둔 만화인데 구성을 함께 받지 못했다(서버가 구성을 남기기 전에
+  /// 만든 옛 만화). 대사를 되살리려면 구성을 새로 받아야 한다.
   Widget _saved(Uint8List image, DateTime? savedAt) => Column(
     children: [
       if (savedAt != null)
@@ -220,9 +254,8 @@ class _ComicScreenState extends State<ComicScreen> {
             style: const TextStyle(fontSize: 12, color: AppColors.muted),
           ),
         ),
-      // 자막 띠는 구성(cuts)이 있어야 얹는다. 저장본은 구성을 아직 받지
-      // 않았으므로 그림만 보여 준다 — 서버가 만든 그림에는 대사가 그려져
-      // 있지 않으니 여기서는 칸만 보인다.
+      // 자막 띠는 구성(cuts)이 있어야 얹는다. 이 만화는 구성이 없으므로
+      // 그림만 보여 준다 — 서버가 만든 그림에는 대사가 그려져 있지 않다.
       Expanded(child: Center(child: Image.memory(image))),
       Padding(
         padding: const EdgeInsets.all(16),
@@ -298,8 +331,20 @@ class _ComicScreenState extends State<ComicScreen> {
   /// 글자가 섞여 나오거나 격자가 2x2로 안 나오는 것은 앱이 막을 수 없다(설계의
   /// "막을 수 없다"). 그때 사용자가 하는 일이 다시 만들기 또는 대사 고치기다. 없으면
   /// 뒤로 나가야 하고, 그러면 컨트롤러가 사라져 고친 대사 네 줄이 전부 날아간다.
-  Widget _finished(List<ComicCut> cuts, Uint8List image) => Column(
+  Widget _finished(
+    List<ComicCut> cuts,
+    Uint8List image,
+    DateTime? savedAt,
+  ) => Column(
     children: [
+      if (savedAt != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Text(
+            '${DateFormat('M월 d일 HH:mm').format(savedAt.toLocal())}에 만든 만화',
+            style: const TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+        ),
       Expanded(
         child: Center(
           child: RepaintBoundary(
@@ -387,12 +432,16 @@ class _SampleNotice extends StatelessWidget {
 }
 
 class _Busy extends StatelessWidget {
-  const _Busy(this.message, {this.hint});
+  const _Busy(this.message, {this.hint, this.percent});
 
   final String message;
 
   /// 기다리는 동안 알아야 할 것. 그림 생성은 화면을 나가도 계속된다.
   final String? hint;
+
+  /// 실제 진행률(0~99). 모르는 단계면 null이고 표시가 흐르기만 한다 — 없는
+  /// 숫자를 만들어 보여 주면 한 값에 붙어 멈춘 것처럼 보인다.
+  final int? percent;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -401,9 +450,14 @@ class _Busy extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
+          CircularProgressIndicator(
+            value: percent == null ? null : percent! / 100,
+          ),
           const SizedBox(height: 16),
-          Text(message, textAlign: TextAlign.center),
+          Text(
+            percent == null ? message : '$message · $percent%',
+            textAlign: TextAlign.center,
+          ),
           if (hint != null) ...[
             const SizedBox(height: 8),
             Text(

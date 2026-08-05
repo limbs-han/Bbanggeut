@@ -478,7 +478,7 @@ void main() {
     ];
 
     test('쓴 것을 그대로 읽는다', () async {
-      final subject = store((_) async => const []);
+      final subject = store((_, [_]) async => const []);
       await subject.write('v1', lines());
 
       final read = await subject.read('v1');
@@ -489,12 +489,12 @@ void main() {
     });
 
     test('캐시가 없는 videoId는 null을 돌려준다', () async {
-      expect(await store((_) async => const []).read('없는영상'), isNull);
+      expect(await store((_, [_]) async => const []).read('없는영상'), isNull);
     });
 
     test('캐시가 있으면 전사를 다시 돌리지 않는다', () async {
       var calls = 0;
-      final subject = store((_) async {
+      final subject = store((_, [_]) async {
         calls++;
         return lines();
       });
@@ -510,7 +510,7 @@ void main() {
 
     test('캐시가 없으면 한 번 전사하고 저장한다', () async {
       var calls = 0;
-      final subject = store((_) async {
+      final subject = store((_, [_]) async {
         calls++;
         return lines();
       });
@@ -525,7 +525,7 @@ void main() {
 
     test('같은 videoId로 두 번 불러도 전사는 한 번만 돈다', () async {
       var calls = 0;
-      final subject = store((_) async {
+      final subject = store((_, [_]) async {
         calls++;
         return lines();
       });
@@ -539,7 +539,7 @@ void main() {
     });
 
     test('전사가 던지면 실패 상태가 되고 파일을 남기지 않는다', () async {
-      final subject = store((_) async => throw StateError('모델 없음'));
+      final subject = store((_, [_]) async => throw StateError('모델 없음'));
 
       final job = subject.ensure('v1', '/video/v1.mp4');
       await subject.pending;
@@ -550,7 +550,7 @@ void main() {
 
     test('실패한 뒤 다시 부르면 재시도한다', () async {
       var calls = 0;
-      final subject = store((_) async {
+      final subject = store((_, [_]) async {
         calls++;
         if (calls == 1) throw StateError('첫 번째는 실패');
         return lines();
@@ -566,7 +566,7 @@ void main() {
     });
 
     test('전사 결과가 비면 실패로 본다 — 빈 캐시를 남기면 재시도가 막힌다', () async {
-      final subject = store((_) async => const []);
+      final subject = store((_, [_]) async => const []);
 
       final job = subject.ensure('v1', '/video/v1.mp4');
       await subject.pending;
@@ -577,7 +577,7 @@ void main() {
 
     test('캐시 파일이 깨졌으면 null로 읽고 다시 전사한다', () async {
       var calls = 0;
-      final subject = store((_) async {
+      final subject = store((_, [_]) async {
         calls++;
         return lines();
       });

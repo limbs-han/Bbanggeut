@@ -700,6 +700,10 @@ def _comic_panel_key(video_id: str) -> str:
     return f"comic/{video_id}/panel.png"
 
 
+def _comic_script_key(video_id: str) -> str:
+    return f"comic/{video_id}/script.json"
+
+
 def _render_and_store_comic(
     video_id: str, cuts: list[dict[str, Any]], style: str | None
 ) -> bytes:
@@ -782,6 +786,16 @@ def comic_script(
                 "savedAt": datetime.now().astimezone().isoformat(),
             },
         )
+        # 구성도 남긴다. 이걸 저장하지 않으면 앱이 화면에 들어올 때마다 구성을
+        # 처음부터 다시 받는다 — 뒤로 갔다 오면 사용자가 고친 대사가 사라지고
+        # Gemini 호출료가 다시 든다. 실제로 그렇게 동작하고 있었다.
+        store.put(
+            _comic_script_key(video_id),
+            {
+                "cuts": script["cuts"],
+                "savedAt": datetime.now().astimezone().isoformat(),
+            },
+        )
     except (BotoCoreError, ClientError, OSError):
         # 시트를 못 남겨도 구성은 돌려준다 — 2단계가 시트 없이 조립하면 품질만
         # 떨어지고, 여기서 502를 주면 이미 쓴 구성 호출값을 버리게 된다.
@@ -860,6 +874,16 @@ def comic_image_status(
     if saved is not None:
         url = store.presign_get(_comic_panel_key(video_id))
 
+    # 저장해 둔 구성. 이것을 함께 주면 앱이 화면에 다시 들어올 때 구성을 새로
+    # 받지 않는다 — 그 호출은 Gemini 과금이고, 새로 받으면 사용자가 고친 대사도
+    # 서버 원문으로 덮인다. 그림을 아직 만들지 않은 영상에도 있을 수 있다.
+    try:
+        script = store.get_json(_comic_script_key(video_id))
+    except (BotoCoreError, ClientError, OSError):
+        script = None
+    # 그림을 만들 때 보낸 구성이 가장 최신이다(사용자가 고친 대사가 들어 있다).
+    cuts = (saved or {}).get("cuts") or (script or {}).get("cuts")
+
     if tracked is not None:
         job, position = tracked
         snapshot = job.snapshot(position=position)
@@ -867,6 +891,7 @@ def comic_image_status(
         # 재시도가 실패했다고 어제 만든 만화를 감출 이유가 없다.
         snapshot["imageUrl"] = url
         snapshot["savedAt"] = (saved or {}).get("savedAt")
+        snapshot["cuts"] = cuts
         return snapshot
     if saved is not None:
         return {
@@ -876,12 +901,16 @@ def comic_image_status(
             "queuePosition": 0,
             "imageUrl": url,
             "savedAt": saved.get("savedAt"),
+            "cuts": cuts,
         }
     return {
         "videoId": video_id,
+        # 그림은 없지만 구성은 있을 수 있다. 그 경우도 status는 none이고, 앱은
+        # cuts를 보고 구성 화면부터 다시 이어 간다.
         "status": "none",
         "error": None,
         "queuePosition": 0,
         "imageUrl": None,
         "savedAt": None,
+        "cuts": cuts,
     }
