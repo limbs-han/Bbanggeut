@@ -53,6 +53,25 @@ class _StubGateway implements ComicGateway {
     if (imageError != null) throw imageError!;
     return Uint8List.fromList([9, 9, 9]);
   }
+
+  @override
+  Future<ComicJobStatus> enqueueImage(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style = comicDefaultStyle,
+  }) async {
+    receivedCuts = cuts;
+    if (imageError != null) throw imageError!;
+    return const ComicJobStatus(status: 'done', imageUrl: 'stub://comic');
+  }
+
+  @override
+  Future<ComicJobStatus> jobStatus(String videoId) async =>
+      const ComicJobStatus(status: 'none');
+
+  @override
+  Future<Uint8List> download(String imageUrl) async =>
+      Uint8List.fromList([9, 9, 9]);
 }
 
 List<CaptionLine> _lines() => [
