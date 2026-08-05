@@ -80,7 +80,10 @@ consumed by its RTSP demuxer after a successful RTSPS connection. If journal
 logs repeat `Option tls_verify not found`, keep the RTSPS URL and use the
 GStreamer `TALKBACK_COMMAND` from `device-agent.jetson.env.example`. GStreamer's
 `rtspsrc` validates the server certificate through the system TLS database and
-decodes the Opus track to the configured ALSA device.
+decodes the Opus track to the configured ALSA device. The wrapper separates the
+credentials from the RTSP URL into `rtspsrc`'s `user-id` and `user-pw`
+properties because GStreamer does not reliably use URL userinfo for RTSP Basic
+authentication.
 
 ### Standing in for the device with a laptop
 
