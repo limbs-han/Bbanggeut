@@ -460,21 +460,29 @@ class _MemberTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                StatusPill(
-                  label: isOwner ? 'OWNER' : 'MEMBER',
-                  color: AppColors.sageSoft,
-                ),
-                if (isOwner) ...[
-                  const SizedBox(width: 5),
-                  const Text(
-                    '👑',
-                    key: Key('settings-owner-crown'),
-                    style: TextStyle(fontSize: 18, height: 1),
+            // 카드 폭은 구성원 수로 나눠 정해지므로(최대 3장) 이 줄이 쓸 수 있는
+            // 폭은 기기 폭에 따라 달라진다. OWNER 배지와 왕관은 고정 크기라 좁은
+            // 폭에서는 합이 카드보다 커진다 — 실제 갤럭시 S24+에서 0.172px
+            // 넘쳤다. 넘치는 대신 그만큼 줄어들게 한다.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                children: [
+                  StatusPill(
+                    label: isOwner ? 'OWNER' : 'MEMBER',
+                    color: AppColors.sageSoft,
                   ),
+                  if (isOwner) ...[
+                    const SizedBox(width: 5),
+                    const Text(
+                      '👑',
+                      key: Key('settings-owner-crown'),
+                      style: TextStyle(fontSize: 18, height: 1),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
             const SizedBox(height: 8),
             Text(
