@@ -33,6 +33,36 @@ app mutes its own WHEP playback while transmitting.
 `TALKBACK_ENABLED` is off by default. Without it `START_TALKBACK` is rejected
 with `SPEAKER_UNAVAILABLE` rather than accepted by a device with no speaker.
 
+### Testing the Jetson speaker output
+
+After wiring the USB audio adapter, PAM8403, and passive speaker, list the ALSA
+playback devices and run a low-volume three-second tone before enabling
+talkback:
+
+```bash
+sudo apt-get install -y alsa-utils
+cd /opt/william-james/device-agent
+bash ./test-speaker-output.sh --list
+bash ./test-speaker-output.sh plughw:CARD=Device,DEV=0 3
+```
+
+Replace `Device` with the card identifier reported by `aplay -L`. The script
+uses `TALKBACK_OUTPUT_DEVICE` when no device argument is supplied, so the final
+configuration can be verified directly:
+
+```bash
+set -a
+source /etc/william-james/device-agent.env
+set +a
+bash ./test-speaker-output.sh
+```
+
+The tone is duplicated to both stereo channels. A single speaker on
+`LOUT+`/`LOUT-` or `ROUT+`/`ROUT-` therefore receives the same test signal.
+Start with the PAM8403 hardware knob near minimum. Never connect either output
+minus terminal to power or signal ground because the module uses bridge-tied
+speaker outputs.
+
 ### Standing in for the device with a laptop
 
 The talkback player is the only speaker-dependent part, so a laptop can take the
