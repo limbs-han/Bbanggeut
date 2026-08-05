@@ -1496,6 +1496,181 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/videos/{videoId}/comic:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    patch:
+      tags: [Videos]
+      operationId: updateComicTitle
+      summary: 만화 제목 바꾸기
+      description: |
+        빈 제목을 보내면 붙인 제목을 지우고 원본 영상 제목으로 되돌아간다 — 지울 길이
+        없으면 한번 잘못 붙인 이름을 되돌릴 수 없다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string, maxLength: 200}
+      responses:
+        '200':
+          description: 바뀐 만화
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultComic'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/videos/{videoId}/comic/like:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    put:
+      tags: [Videos]
+      operationId: likeComic
+      summary: 만화 좋아요
+      description: |
+        같은 사람이 두 번 눌러도 개수가 늘지 않는다 — 앱이 연타하거나 응답을 놓쳐 다시
+        보내도 어긋나지 않아야 한다.
+      responses:
+        '200':
+          description: 누른 뒤의 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicLike'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    delete:
+      tags: [Videos]
+      operationId: unlikeComic
+      summary: 만화 좋아요 취소
+      responses:
+        '200':
+          description: 취소한 뒤의 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicLike'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}/comic/comments:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    get:
+      tags: [Videos]
+      operationId: listComicComments
+      summary: 만화 댓글 목록
+      description: |
+        영상 댓글(`/comments`)과 나눠 둔다 — 만화에 단 말과 영상에 단 말은 가리키는
+        대상이 다르다. 한 스레드로 합치면 만화 피드에 영상 얘기가 섞인다.
+      responses:
+        '200':
+          description: 댓글 목록(오래된 순)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VideoComment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    post:
+      tags: [Videos]
+      operationId: addComicComment
+      summary: 만화 댓글 작성
+      description: 작성자는 토큰의 사용자 UUID로 기록한다 — 앱이 보낸 표시 이름을 믿지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '201':
+          description: 작성된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/videos/{videoId}/comic/comments/{commentId}:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+      - in: path
+        name: commentId
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Videos]
+      operationId: updateComicComment
+      summary: 만화 댓글 수정
+      description: 쓴 사람만 고칠 수 있다(영상 댓글과 같은 규칙).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: 수정된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteComicComment
+      summary: 만화 댓글 삭제
+      description: 쓴 사람 또는 금고 OWNER가 삭제한다.
+      responses:
+        '204':
+          description: 삭제됨
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
   /api/iot/registration-codes:
     post:
       tags: [IoT]
@@ -1992,16 +2167,17 @@ paths:
     get:
       tags: [Videos]
       operationId: listVaultComics
-      summary: 금고에서 만화를 만들어 둔 영상 목록
+      summary: 금고의 만화 목록
       description: |
-        추억 탭 목록이 "만화 있음" 배지를 그리는 데 쓴다. 영상마다 만화 존재 여부를
-        따로 묻지 않기 위한 목록이다 — 목록이 100건이면 왕복도 100번이 된다.
+        추억 탭의 만화 피드가 이 목록을 그린다. 제목·좋아요 수·내가 눌렀는지·댓글 수를
+        함께 세어 주므로 만화마다 따로 묻지 않는다 — 피드가 스무 장이면 왕복이 예순
+        번이 된다.
 
-        누가 만들었는지는 보지 않는다. 만화는 금고에 속하므로 가족 누구에게나 배지가
-        보여야 한다. 금고 구성원이 아니면 빈 목록이다.
+        누가 만들었는지는 보지 않는다. 만화는 금고에 속하므로 가족 누구에게나 보여야
+        한다. 금고 구성원이 아니면 빈 목록이다.
       responses:
         '200':
-          description: 만화가 있는 영상 목록(최신순)
+          description: 금고의 만화 목록(최신순)
           content:
             application/json:
               schema:
@@ -3429,16 +3605,46 @@ components:
 
     VaultComic:
       type: object
-      description: 만화를 만들어 둔 영상 한 건.
-      required: [videoId, madeAt]
+      description: |
+        만화 한 장. 추억 탭의 만화 피드가 이 목록을 그대로 그린다.
+
+        그림 주소는 여기 없다. 만화 PNG는 단기 서명 URL로만 받을 수 있어서 목록에
+        담으면 화면에 보이지도 않는 만화의 URL까지 발급하고 그 사이 만료된다. 앱은
+        화면에 들어온 카드만 `GET /api/videos/{videoId}/comic/image`로 받는다.
+      required: [videoId, title, customTitle, madeAt, likeCount, likedByMe, commentCount]
       properties:
         videoId:
           type: string
           format: uuid
+          description: 원본 영상 id. 만화의 식별자이기도 하다.
+        title:
+          type: string
+          description: 보여 줄 제목. 붙인 제목이 없으면 원본 영상 제목이다.
+        customTitle:
+          type: boolean
+          description: 사용자가 제목을 붙였는가. 제목 고치기 창의 기본값을 가른다.
         madeAt:
           type: string
           format: date-time
           description: 처음 완성된 시각.
+        likeCount:
+          type: integer
+        likedByMe:
+          type: boolean
+        commentCount:
+          type: integer
+
+    ComicLike:
+      type: object
+      description: |
+        좋아요를 누르거나 취소한 뒤의 상태. 개수를 함께 주는 이유는 앱이 자기 숫자를
+        ±1 하는 것만으로는 그 사이 가족이 누른 것을 반영하지 못하기 때문이다.
+      required: [likeCount, likedByMe]
+      properties:
+        likeCount:
+          type: integer
+        likedByMe:
+          type: boolean
 
     ComicJob:
       type: object

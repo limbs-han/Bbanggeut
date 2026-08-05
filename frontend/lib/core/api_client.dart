@@ -873,14 +873,49 @@ class ApiClient {
   Future<Map<String, dynamic>> getComicJob(String videoId) =>
       _get('/api/videos/$videoId/comic/image');
 
-  /// 금고에서 만화를 만들어 둔 목록. `videoId`와 만든 시각(`madeAt`)이 온다.
+  /// 금고의 만화 목록. 제목·좋아요·댓글 수를 함께 준다.
   ///
-  /// 추억 탭의 '만화' 목록과 카드 배지가 **이 한 번의 응답**을 함께 쓴다.
-  /// 영상마다 따로 묻지 않는다 — 목록이 100건이면 왕복도 100번이 된다.
-  Future<List<Map<String, dynamic>>> listVaultComics(String vaultId) async =>
+  /// 추억 탭의 만화 피드와 카드 배지가 **이 한 번의 응답**을 함께 쓴다.
+  /// 만화마다 따로 묻지 않는다 — 피드가 스무 장이면 왕복이 예순 번이 된다.
+  Future<List<VaultComic>> listVaultComics(String vaultId) async =>
       (await _getList('/api/vaults/$vaultId/comics'))
-          .where((item) => (item['videoId'] as String?)?.isNotEmpty == true)
-          .toList();
+          .map(VaultComic.fromJson)
+          .where((comic) => comic.videoId.isNotEmpty)
+          .toList(growable: false);
+
+  /// 만화 제목을 바꾼다. 빈 제목을 보내면 원본 영상 제목으로 되돌아간다.
+  Future<VaultComic> updateComicTitle(String videoId, String title) async =>
+      VaultComic.fromJson(
+        await _patchMap('/api/videos/$videoId/comic', data: {'title': title}),
+      );
+
+  /// 좋아요를 켜고 끈다. 응답에 개수와 내 상태가 함께 온다 — 앱이 자기 숫자를
+  /// ±1 하는 것만으로는 그 사이 가족이 누른 것을 반영하지 못한다.
+  Future<({int likeCount, bool likedByMe})> setComicLiked(
+    String videoId,
+    bool liked,
+  ) async {
+    final body = liked
+        ? await _put('/api/videos/$videoId/comic/like')
+        : await _deleteMap('/api/videos/$videoId/comic/like');
+    return (
+      likeCount: (body['likeCount'] as num?)?.toInt() ?? 0,
+      likedByMe: body['likedByMe'] as bool? ?? liked,
+    );
+  }
+
+  Future<List<VideoComment>> listComicComments(String videoId) async =>
+      (await _getList(
+        '/api/videos/$videoId/comic/comments',
+      )).map(VideoComment.fromJson).toList(growable: false);
+
+  Future<VideoComment> addComicComment(String videoId, String body) async =>
+      VideoComment.fromJson(
+        await _post('/api/videos/$videoId/comic/comments', data: {'body': body}),
+      );
+
+  Future<void> deleteComicComment(String videoId, String commentId) async =>
+      _delete('/api/videos/$videoId/comic/comments/$commentId');
 
   /// presigned URL에서 바이트를 그대로 받는다.
   ///

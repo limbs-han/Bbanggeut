@@ -508,6 +508,61 @@ class VideoComment {
   );
 }
 
+/// 만화 피드 한 장.
+///
+/// 그림은 여기 없다. 만화 PNG는 단기 서명 URL로만 받을 수 있어서 목록에 담으면
+/// 화면에 보이지도 않는 만화의 URL까지 발급하고 그 사이 만료된다. 화면에 들어온
+/// 카드만 따로 받는다.
+class VaultComic {
+  const VaultComic({
+    required this.videoId,
+    required this.title,
+    this.customTitle = false,
+    this.madeAt,
+    this.likeCount = 0,
+    this.likedByMe = false,
+    this.commentCount = 0,
+  });
+
+  final String videoId;
+
+  /// 보여 줄 제목. 붙인 제목이 없으면 서버가 원본 영상 제목을 넣어 준다.
+  final String title;
+
+  /// 사용자가 제목을 붙였는가. 제목 고치기 창의 기본값을 가른다.
+  final bool customTitle;
+  final DateTime? madeAt;
+  final int likeCount;
+  final bool likedByMe;
+  final int commentCount;
+
+  factory VaultComic.fromJson(Map<String, dynamic> json) => VaultComic(
+    videoId: json['videoId'] as String? ?? '',
+    title: json['title'] as String? ?? '4컷 만화',
+    customTitle: json['customTitle'] as bool? ?? false,
+    madeAt: parseDate(json['madeAt']),
+    likeCount: (json['likeCount'] as num?)?.toInt() ?? 0,
+    likedByMe: json['likedByMe'] as bool? ?? false,
+    commentCount: (json['commentCount'] as num?)?.toInt() ?? 0,
+  );
+
+  VaultComic copyWith({
+    String? title,
+    bool? customTitle,
+    int? likeCount,
+    bool? likedByMe,
+    int? commentCount,
+  }) => VaultComic(
+    videoId: videoId,
+    title: title ?? this.title,
+    customTitle: customTitle ?? this.customTitle,
+    madeAt: madeAt,
+    likeCount: likeCount ?? this.likeCount,
+    likedByMe: likedByMe ?? this.likedByMe,
+    commentCount: commentCount ?? this.commentCount,
+  );
+}
+
 /// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
 class VaultEventStats {
   const VaultEventStats({

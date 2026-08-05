@@ -2,6 +2,7 @@ package com.wj.server.editor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -12,6 +13,7 @@ import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
 import com.wj.server.notification.application.NotificationService;
+import com.wj.server.video.application.ComicFeedService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -26,6 +28,8 @@ class EditorEventServiceTest {
     private JwtDecoder decoder;
     @Mock
     private NotificationService notifications;
+    @Mock
+    private ComicFeedService comics;
 
     private static final UUID VIDEO_ID = UUID.randomUUID();
     private static final UUID USER_ID = UUID.randomUUID();
@@ -38,7 +42,7 @@ class EditorEventServiceTest {
     }
 
     private EditorEventService service() {
-        return new EditorEventService(decoder, notifications);
+        return new EditorEventService(decoder, notifications, comics);
     }
 
     @Test
@@ -61,6 +65,24 @@ class EditorEventServiceTest {
             new EditorEventRequest("COMMENT_ADDED", VIDEO_ID, USER_ID, "7", "귀엽다"));
 
         verify(notifications).editCommentAdded(USER_ID, VIDEO_ID, "7", "귀엽다");
+    }
+
+    /**
+     * 만화가 완성되면 알림보다 **만화 행이 먼저** 필요하다 — 제목·좋아요·댓글이
+     * 그 행을 참조하고, 피드도 그 행을 읽는다. 알림만 보내면 만화가 어디에도
+     * 나타나지 않는다.
+     */
+    @Test
+    void comicReadyEventRegistersTheComicAndNotifies() {
+        when(decoder.decode("valid")).thenReturn(token("wj-editor", "editor-event"));
+
+        service().handle(
+            "Bearer valid",
+            new EditorEventRequest("COMIC_READY", VIDEO_ID, USER_ID, null, null));
+
+        var order = inOrder(comics, notifications);
+        order.verify(comics).register(VIDEO_ID);
+        order.verify(notifications).comicReady(USER_ID, VIDEO_ID);
     }
 
     @Test

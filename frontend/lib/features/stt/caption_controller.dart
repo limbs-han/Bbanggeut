@@ -95,9 +95,15 @@ class CaptionController extends ChangeNotifier {
       // 기다리지도, 실패로 죽지도 않는다 — 저장이 안 돼도 메모리 수정은
       // 유지되고 내보내기에는 그대로 반영된다. 잡지 않으면 fire-and-forget
       // Future의 예외가 잡히지 않은 비동기 오류로 터진다.
-      pendingWrite = _store.write(videoId, _lines).catchError((Object error) {
-        debugPrint('[stt] 자막 수정을 저장하지 못했습니다($videoId): $error');
-      });
+      //
+      // 서버에도 올린다. 자막을 고치는 일은 "이 영상에서 무슨 말이 나왔는지"를
+      // 바로잡는 일이라, 가족 모두에게 바로잡힌 것이 맞다.
+      pendingWrite = _store
+          .write(videoId, _lines)
+          .then((_) => _store.publish(videoId, _lines))
+          .catchError((Object error) {
+            debugPrint('[stt] 자막 수정을 저장하지 못했습니다($videoId): $error');
+          });
     }
     notifyListeners();
   }

@@ -590,5 +590,111 @@ void main() {
       await subject.pending;
       expect(calls, 1);
     });
+
+    // 전사 결과는 영상에만 달린 값이라 누가 만들어도 같다. 폰에만 캐시하던
+    // 동안에는 가족 각자가 같은 영상을 자기 기기에서 다시 돌렸고(같은 결과에
+    // 같은 시간), 앱을 다시 깔면 전부 날아갔다.
+    group('서버 보관', () {
+      test('서버에 있으면 전사를 돌리지 않고 받아 쓴다', () async {
+        var calls = 0;
+        final remote = _FakeRemote(saved: lines());
+        final subject = TranscriptStore(
+          transcriber: (_, [_]) async {
+            calls++;
+            return lines();
+          },
+          root: () async => temporary,
+          remote: remote,
+        );
+
+        final job = subject.ensure('v1', '/video/v1.mp4');
+        await subject.pending;
+
+        expect(calls, 0, reason: '몇 분 걸리는 일을 다시 할 이유가 없다');
+        expect((job.value as TranscriptReady).lines, hasLength(2));
+        // 다음에는 서버도 거치지 않게 이 기기에도 남긴다.
+        expect(await subject.read('v1'), hasLength(2));
+      });
+
+      test('만든 전사문을 서버에 올린다', () async {
+        final remote = _FakeRemote();
+        final subject = TranscriptStore(
+          transcriber: (_, [_]) async => lines(),
+          root: () async => temporary,
+          remote: remote,
+        );
+
+        subject.ensure('v1', '/video/v1.mp4');
+        await subject.pending;
+
+        expect(remote.uploaded['v1'], hasLength(2));
+      });
+
+      test('서버가 안 닿아도 이 기기에서 만든다', () async {
+        final subject = TranscriptStore(
+          transcriber: (_, [_]) async => lines(),
+          root: () async => temporary,
+          remote: _FakeRemote(broken: true),
+        );
+
+        final job = subject.ensure('v1', '/video/v1.mp4');
+        await subject.pending;
+
+        expect(job.value, isA<TranscriptReady>());
+      });
+
+      /// "다시 만들기"가 서버 사본을 받아 오면 아무 일도 일어나지 않는다.
+      test('다시 만들기는 서버 사본을 건너뛴다', () async {
+        var calls = 0;
+        final subject = TranscriptStore(
+          transcriber: (_, [_]) async {
+            calls++;
+            return [CaptionLine(startMs: 0, endMs: 900, text: '$calls번째')];
+          },
+          root: () async => temporary,
+          remote: _FakeRemote(saved: lines()),
+        );
+
+        final job = subject.restart('v1', '/video/v1.mp4');
+        await subject.pending;
+
+        expect(calls, 1);
+        expect((job.value as TranscriptReady).lines.first.text, '1번째');
+      });
+
+      test('고친 자막은 서버에도 올라간다', () async {
+        final remote = _FakeRemote();
+        final subject = TranscriptStore(
+          transcriber: (_, [_]) async => lines(),
+          root: () async => temporary,
+          remote: remote,
+        );
+
+        await subject.publish('v1', lines());
+
+        expect(remote.uploaded['v1'], hasLength(2));
+      });
+    });
   });
+}
+
+/// 서버 보관소 대역. 받은 것을 기억해 두고, [broken]이면 던진다.
+class _FakeRemote implements TranscriptRemote {
+  _FakeRemote({this.saved, this.broken = false});
+
+  final List<CaptionLine>? saved;
+  final bool broken;
+  final Map<String, List<CaptionLine>> uploaded = {};
+
+  @override
+  Future<List<CaptionLine>?> load(String videoId) async {
+    if (broken) throw StateError('서버 없음');
+    return saved;
+  }
+
+  @override
+  Future<void> save(String videoId, List<CaptionLine> lines) async {
+    if (broken) throw StateError('서버 없음');
+    uploaded[videoId] = lines;
+  }
 }
