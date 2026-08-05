@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import 'android_audio.dart';
 import 'caption_line.dart';
 import 'mlkit_transcriber.dart';
+import 'transcript_remote.dart';
 
 /// 전사가 지금 무엇을 하는 중인가. 진행률의 뜻이 단계마다 다르다.
 enum TranscriptStage {
@@ -72,10 +73,29 @@ class TranscriptFailed extends TranscriptJobState {
   final String reason;
 }
 
+/// 서버에 보관된 전사문 통로.
+///
+/// **왜 서버까지 가는가**: 전사 결과는 영상에만 달린 값이라 누가 만들어도 같다.
+/// 폰에만 캐시하던 동안에는 가족 각자가 같은 영상을 자기 기기에서 다시 돌렸고
+/// (같은 결과에 같은 시간), 앱을 다시 깔면 전부 날아갔다.
+abstract interface class TranscriptRemote {
+  /// 저장된 전사문. 없으면 null.
+  Future<List<CaptionLine>?> load(String videoId);
+
+  Future<void> save(String videoId, List<CaptionLine> lines);
+}
+
 class TranscriptStore {
-  TranscriptStore({required this.transcriber, required this.root});
+  TranscriptStore({
+    required this.transcriber,
+    required this.root,
+    this.remote,
+  });
 
   final VideoTranscriber transcriber;
+
+  /// 서버 보관소. null이면 이 기기 안에서만 캐시한다(테스트·오프라인).
+  final TranscriptRemote? remote;
 
   /// 자막을 둘 폴더. 임시 폴더가 아니라 **영구 저장소**여야 한다 — 시스템이
   /// 정리해 가면 캐시가 매번 날아간다.
@@ -165,7 +185,11 @@ class TranscriptStore {
     _jobs[videoId] = job;
     // 파일 캐시를 지우는 것까지가 한 묶음이다. 지우기가 실패해도 전사는
     // 이어 가되, `_run`이 옛 파일을 읽지 않도록 지운 뒤에 시작한다.
-    pending = clear(videoId).then((_) => _run(videoId, videoPath, job));
+    //
+    // **서버 사본도 건너뛴다**(useRemote: false). 서버에서 다시 받아 오면
+    // "다시 만들기"를 눌러도 같은 결과가 즉시 돌아와 아무 일도 일어나지 않는다.
+    pending = clear(videoId)
+        .then((_) => _run(videoId, videoPath, job, useRemote: false));
     return job;
   }
 
@@ -181,17 +205,53 @@ class TranscriptStore {
     }
   }
 
+  /// 서버에 전사문을 올린다. 실패해도 자막은 이 기기에 그대로 있다 — 공유가
+  /// 안 되는 것과 자막이 없는 것은 무게가 다르다.
+  Future<void> _upload(String videoId, List<CaptionLine> lines) async {
+    final target = remote;
+    if (target == null || lines.isEmpty) return;
+    try {
+      await target.save(videoId, lines);
+    } catch (error) {
+      debugPrint('[stt] 자막을 서버에 올리지 못했습니다($videoId): $error');
+    }
+  }
+
+  /// 사용자가 고친 자막을 서버에도 반영한다. 고치는 일은 "이 영상에서 무슨
+  /// 말이 나왔는지"를 바로잡는 일이라 가족 모두에게 바로잡힌 것이 맞다.
+  Future<void> publish(String videoId, List<CaptionLine> lines) =>
+      _upload(videoId, lines);
+
+  /// [useRemote]가 false면 서버 사본을 보지 않는다 — "다시 만들기"가 서버에서
+  /// 같은 결과를 받아 오면 아무 일도 일어나지 않는다([restart]).
   Future<void> _run(
     String videoId,
     String videoPath,
-    ValueNotifier<TranscriptJobState> job,
-  ) async {
+    ValueNotifier<TranscriptJobState> job, {
+    bool useRemote = true,
+  }) async {
     try {
       final cached = await read(videoId);
       if (cached != null && cached.isNotEmpty) {
         debugPrint('[stt] 자막 캐시 적중($videoId) 줄=${cached.length}');
         job.value = TranscriptReady(cached);
         return;
+      }
+      // 이 기기에 없어도 가족 누군가 이미 만들어 뒀을 수 있다. 전사는 몇 분이
+      // 걸리므로 받아 쓸 수 있으면 그게 언제나 낫다.
+      if (useRemote && remote != null) {
+        try {
+          final shared = await remote!.load(videoId);
+          if (shared != null && shared.isNotEmpty) {
+            debugPrint('[stt] 서버 자막 적중($videoId) 줄=${shared.length}');
+            await write(videoId, shared);
+            job.value = TranscriptReady(shared);
+            return;
+          }
+        } catch (error) {
+          // 서버가 안 닿으면 이 기기에서 만든다. 막을 이유가 없다.
+          debugPrint('[stt] 서버 자막을 받지 못했습니다($videoId): $error');
+        }
       }
       final fresh = await transcriber(videoPath, (stage, percent) {
         // 끝난 뒤에 늦게 도착한 보고로 상태를 되돌리지 않는다.
@@ -207,6 +267,9 @@ class TranscriptStore {
       }
       await write(videoId, fresh);
       job.value = TranscriptReady(fresh);
+      // 다음 사람은 기다리지 않게 한다. 결과를 이미 화면에 넘겼으므로 이 올리기가
+      // 늦거나 실패해도 사용자는 기다리지 않는다.
+      await _upload(videoId, fresh);
     } catch (error, stack) {
       // 사유를 반드시 남긴다. 상태만 바꾸면 화면에는 "못 알아들었어요" 한 줄만
       // 뜨고, 진짜 무발화인지 오디오 추출이 깨진 것인지 구분할 수 없다.
@@ -231,6 +294,7 @@ TranscriptStore transcriptStore = TranscriptStore(
     final documents = await getApplicationDocumentsDirectory();
     return Directory('${documents.path}${Platform.pathSeparator}captions');
   },
+  remote: HttpTranscriptRemote(),
 );
 
 /// 모델 내려받기 진행률(0~100). 준비 중이 아니면 null이다.

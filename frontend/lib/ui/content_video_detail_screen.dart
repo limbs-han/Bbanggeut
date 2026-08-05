@@ -9,6 +9,7 @@ import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../core/video_gallery_saver.dart';
 import '../core/video_source_cache.dart';
+import '../editor/edit_recommendation_client.dart';
 import '../features/comic/comic_screen.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
@@ -49,11 +50,67 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   bool _hasPlayed = false;
   Timer? _idlePrefetchTimer;
 
+  /// 저장해 둔 편집 초안이 있는가. 버튼 문구와 '초안 삭제'를 가른다.
+  bool _hasDraft = false;
+  bool _discardingDraft = false;
+  final _editClient = EditRecommendationClient();
+
   @override
   void initState() {
     super.initState();
     _video = widget.video;
     _loadPlayer();
+    _loadDraftState();
+  }
+
+  /// 초안이 있는지 조용히 확인한다. 실패하면 없는 것으로 둔다 — 편집 자체는
+  /// 초안이 있든 없든 되므로 오류를 띄울 이유가 없다.
+  Future<void> _loadDraftState() async {
+    if (!EditRecommendationClient.networkAllowed) return;
+    try {
+      final draft = await _editClient.loadDraft(_video.id);
+      if (mounted) setState(() => _hasDraft = draft != null);
+    } catch (_) {
+      // 초안 유무를 모르면 없는 쪽으로 둔다.
+    }
+  }
+
+  Future<void> _discardDraft() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const ValueKey('discard-draft-dialog'),
+        title: const Text('편집 초안을 지울까요?'),
+        content: const Text(
+          '저장해 둔 편집이 사라져요. 원본 영상과 이미 완성한 편집본은 그대로 있어요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('지우기'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _discardingDraft = true);
+    try {
+      await _editClient.deleteDraft(_video.id);
+      if (!mounted) return;
+      setState(() {
+        _hasDraft = false;
+        _discardingDraft = false;
+      });
+      showAppSnack(context, '편집 초안을 지웠어요.');
+    } catch (failure) {
+      if (!mounted) return;
+      setState(() => _discardingDraft = false);
+      showAppSnack(context, '초안을 지우지 못했어요: $failure', error: true);
+    }
   }
 
   Future<void> _loadPlayer() async {
@@ -205,6 +262,8 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
     // 돌아오면 다시 만든다. 편집기가 원본을 받아 뒀으므로 이번에는
     // 네트워크 없이 캐시 파일로 열린다.
     if (mounted) await _loadPlayer();
+    // 편집기는 나올 때 초안을 저장한다. 방금 생겼을 수 있으니 다시 본다.
+    if (mounted) await _loadDraftState();
   }
 
   Future<void> _deleteVideo() async {
@@ -357,16 +416,36 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
               LinearProgressIndicator(value: _saveProgress),
             ],
             const SizedBox(height: 12),
+            // 편집 기록이 있으면 "이어서"라고 말해 준다. 예전에는 초안이 있어도
+            // 같은 '영상 편집하기'였고, 초안은 '편집 중' 탭에서만 보였다 —
+            // 여기서 눌러도 이어서 열리는데 그걸 알 길이 없었다.
             FilledButton.icon(
+              key: const ValueKey('open-editor'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(62),
                 elevation: 5,
                 shadowColor: const Color(0x55F47B61),
               ),
               onPressed: _openEditor,
-              icon: const Icon(Icons.content_cut_rounded, size: 27),
-              label: const Text('영상 편집하기'),
+              icon: Icon(
+                _hasDraft ? Icons.edit_note_rounded : Icons.content_cut_rounded,
+                size: 27,
+              ),
+              label: Text(_hasDraft ? '이어서 편집하기' : '영상 편집하기'),
             ),
+            if (_hasDraft) ...[
+              const SizedBox(height: 6),
+              // 초안을 버릴 길. 없으면 잘못 저장한 편집을 이어서 여는 것 말고는
+              // 방법이 없어서, 원본부터 다시 시작하려면 편집기에서 되돌리기를
+              // 끝까지 눌러야 했다.
+              TextButton.icon(
+                key: const ValueKey('discard-draft'),
+                onPressed: _discardingDraft ? null : _discardDraft,
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                style: TextButton.styleFrom(foregroundColor: AppColors.muted),
+                label: Text(_discardingDraft ? '지우는 중' : '편집 초안 삭제'),
+              ),
+            ],
             const SizedBox(height: 12),
             // 처리가 끝나기 전에는 전사문이 없어 만화를 만들 수 없다.
             OutlinedButton.icon(

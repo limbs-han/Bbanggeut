@@ -225,6 +225,14 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
     title: '빵긋',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
+    // 화면 대부분이 고정 px 치수로 짜여 있어 아주 큰 시스템 글자 배율에서는
+    // 글자가 잘린다. 1.3배까지는 기기 설정을 그대로 따르고 그 위만 묶는다 —
+    // 가족이 함께 쓰는 앱이라 큰 글씨 수요를 아예 막지는 않는다. 개별 화면이
+    // 더 좁으면 그 화면에서 다시 조인다(예: 홈의 '오늘의 기록' 카드).
+    builder: (context, child) => MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: child!,
+    ),
     home: AnimatedBuilder(
       animation: controller,
       builder: (context, _) {

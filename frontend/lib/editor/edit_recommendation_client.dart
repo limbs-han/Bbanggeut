@@ -267,4 +267,40 @@ class EditRecommendationClient {
         Map<String, dynamic>.from(item as Map),
     ];
   }
+
+  /// 저장해 둔 초안을 버린다. 없는 초안을 지우라고 해도 성공이다 — 사용자가
+  /// 원한 상태(초안 없음)가 이미 이뤄진 것이라 오류로 볼 이유가 없다.
+  Future<void> deleteDraft(String videoId) async {
+    await _dio.delete<void>('/v1/edit-projects/$videoId');
+  }
+
+  /// 서버에 저장된 전사문(AI 자막). 없으면 null.
+  ///
+  /// **왜 서버에 두는가**: 전사는 폰에만 캐시됐다. 그래서 같은 영상을 가족 각자가
+  /// 자기 폰에서 다시 돌렸고(같은 결과에 같은 시간), 앱을 다시 깔면 전부
+  /// 날아갔다. 결과는 영상에만 달린 값이라 한 번 만들면 모두가 쓸 수 있다.
+  Future<List<Map<String, dynamic>>?> loadTranscript(String videoId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/v1/transcripts/$videoId',
+      );
+      final lines = response.data?['lines'] as List?;
+      if (lines == null || lines.isEmpty) return null;
+      return [for (final line in lines) Map<String, dynamic>.from(line as Map)];
+    } on DioException catch (failure) {
+      if (failure.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// 전사문을 서버에 남긴다. 빈 목록은 서버가 거절한다(422).
+  Future<void> saveTranscript(
+    String videoId,
+    List<Map<String, Object?>> lines,
+  ) async {
+    await _dio.put<void>(
+      '/v1/transcripts/$videoId',
+      data: <String, Object?>{'lines': lines},
+    );
+  }
 }
