@@ -3470,6 +3470,17 @@ components:
           format: date-time
           nullable: true
           description: 그림을 저장한 시각. 없으면 null.
+        cuts:
+          type: array
+          nullable: true
+          description: |
+            저장해 둔 4컷 구성. 앱이 화면에 다시 들어올 때 구성을 새로 받지 않게 하려고
+            함께 준다 — 그 호출은 과금이고, 새로 받으면 사용자가 고친 대사가 서버 원문으로
+            덮인다. 만든 적이 없으면 null이다.
+
+            그림을 아직 만들지 않았어도(`status: none`) 구성만 있을 수 있다.
+          items:
+            $ref: '#/components/schemas/ComicCut'
 
     SignedUrlResponse:
       type: object
