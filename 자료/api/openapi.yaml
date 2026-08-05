@@ -1855,6 +1855,85 @@ paths:
         '404':
           $ref: '#/components/responses/HiddenNotFound'
 
+  /api/families/{familyId}/laugh-memories/random:
+    get:
+      summary: 웃음 뽑기 - 최근 웃음 영상 무작위 조회
+      description: >-
+        최근 days일(기본 3일 = 72시간) 안에 저장된 해당 가족의 웃음 영상 중 하나를 무작위로 돌려준다.
+        삭제·만료·재생 불가 영상과 다른 가족의 영상은 후보에서 제외된다.
+        꺼낼 영상이 없는 것은 오류가 아니라 정상 상태이므로 404가 아니라 200 + hasMemory=false로 응답한다.
+        excludeIds로 이번 화면에서 이미 본 영상을 제외할 수 있고, 모든 후보가 제외되면 제외를 풀고 다시 고른다.
+      parameters:
+        - $ref: '#/components/parameters/FamilyId'
+        - name: days
+          in: query
+          description: 후보 기간(일). 기본 3, 최대 7.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 7
+            default: 3
+        - name: excludeIds
+          in: query
+          description: 이번 화면에서 이미 본 영상 ID. 쉼표로 구분한다.
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+      responses:
+        '200':
+          description: 뽑힌 웃음 영상 또는 빈 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughDrawResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /api/laugh-memories/{memoryId}/reaction:
+    put:
+      summary: 웃음 뽑기 - 이모지 반응 등록·변경
+      description: >-
+        로그인 사용자의 반응을 남기거나 바꾼다. 사용자 한 명당 영상 하나에 반응 하나만 존재하며,
+        같은 반응을 다시 보내도 개수는 늘지 않는다. 반응 취소는 지원하지 않는다.
+      parameters:
+        - name: memoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reactionType]
+              properties:
+                reactionType:
+                  type: string
+                  enum: [FUNNY, MISS_THIS, GOOD_SAVE, EMBARRASSING, AGAIN]
+      responses:
+        '200':
+          description: 반영된 반응 개수와 내 반응
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughMemory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 삭제·만료된 영상에는 반응할 수 없다 (VIDEO_NOT_READY)
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
 components:
   securitySchemes:
     UserBearerAuth:
@@ -1869,6 +1948,14 @@ components:
       description: IoT 기기 전용 운영 자격 증명. 사용자 JWT와 상호 대체할 수 없다.
 
   parameters:
+    FamilyId:
+      name: familyId
+      in: path
+      required: true
+      description: 선택된 Memory Vault ID
+      schema:
+        type: string
+        format: uuid
     DeviceId:
       name: deviceId
       in: path
