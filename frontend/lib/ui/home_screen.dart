@@ -832,8 +832,11 @@ class _TodayRecordsCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        SizedBox(
-          height: 154,
+        // 높이를 154로 고정해 두면 실제 갤럭시 S24+의 논리 폭(411dp)에서 이미
+        // 내용이 넘친다 — 개발용 에뮬레이터가 480dp로 더 넓어 가려져 있었다.
+        // 시스템 글자 배율까지 오르면 더 벌어지므로, 내용이 요구하는 높이를
+        // 따라가게 한다. 양쪽 타일은 그중 높은 쪽에 맞춰 늘어난다(stretch).
+        IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -972,13 +975,19 @@ class _TodayLaughCard extends StatelessWidget {
                         const Row(
                           children: [
                             Flexible(
-                              child: Text(
-                                '오늘의 웃음',
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: AppColors.inkSoft,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
+                              // 큰 글씨 설정에서 '웃음'이 잘려 나가는 대신
+                              // 글자가 줄어든다.
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '오늘의 웃음',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: AppColors.inkSoft,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1113,14 +1122,19 @@ class _TodayCompactStatCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.inkSoft,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
+                // 큰 글씨 설정에서 '즐겨찾는 영상'이 '즐겨찾는 …'으로 잘리는
+                // 대신 글자가 줄어든다.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: AppColors.inkSoft,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 _TodayValue(value: value, unit: unit),

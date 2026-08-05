@@ -620,10 +620,8 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       borderRadius: BorderRadius.circular(widget.houseMode ? 0 : 24),
       child: Column(
         children: [
-          AspectRatio(
-            // 바깥 홈 카드의 3px 테두리가 차지하는 실제 높이를 제외한다.
-            // 4:3을 그대로 쓰면 S24+ 폭에서 내부가 1.5px 넘친다.
-            aspectRatio: widget.houseMode ? 1.34 : 16 / 9,
+          _LiveSurfaceBox(
+            houseMode: widget.houseMode,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _handleVideoTap,
@@ -1207,4 +1205,27 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
       ),
     ),
   );
+}
+
+/// 라이브 영상 표면의 높이를 정한다.
+///
+/// **홈 카드에서는 비율을 다시 걸지 않는다**: 바깥 홈 카드가 이미
+/// `AspectRatio(4 / 3)`으로 높이를 정해 주기 때문에, 여기서 비율을 한 번 더
+/// 걸면 두 제약이 어긋난다. 바깥 카드의 3px 테두리가 먹는 6px은 폭과 무관하게
+/// 고정이라 비율로 보정하면 필요한 값이 폭마다 달라진다 — 그래서 예전에 쓰던
+/// 1.34는 S24+ 기본 폭에서만 맞았고, 화면 크기 설정을 키워 논리 폭이 좁아지면
+/// 소수점 단위로 다시 넘쳤다. 부모가 남겨 준 높이를 그대로 채우면 폭이 얼마든
+/// 어긋나지 않는다.
+///
+/// 전체 화면 라이브에서는 부모가 높이를 정해 주지 않으므로 16:9를 유지한다.
+class _LiveSurfaceBox extends StatelessWidget {
+  const _LiveSurfaceBox({required this.houseMode, required this.child});
+
+  final bool houseMode;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => houseMode
+      ? Expanded(child: child)
+      : AspectRatio(aspectRatio: 16 / 9, child: child);
 }
