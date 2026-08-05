@@ -21,6 +21,8 @@ import '../../ui/widgets.dart';
 import 'comic_comment_sheet.dart';
 import 'comic_gateway.dart';
 import 'comic_screen.dart';
+import 'comic_script.dart';
+import 'comic_viewer.dart';
 
 class ComicFeed extends StatefulWidget {
   const ComicFeed({
@@ -52,6 +54,10 @@ class ComicFeed extends StatefulWidget {
 class _ComicFeedState extends State<ComicFeed> {
   /// videoId → 받아 둔 PNG. 값이 없으면 아직 안 받았고, null이면 받지 못했다.
   final Map<String, Uint8List?> _images = {};
+
+  /// 그림과 함께 온 저장 구성. 대사를 크게 보기에서 그리는 데 쓴다 — 따로
+  /// 청하지 않는다(구성 만들기 호출은 과금이고, 사용자가 고친 대사를 덮는다).
+  final Map<String, List<ComicCut>> _cuts = {};
   final Set<String> _loading = {};
 
   /// 화면에서 손으로 바꾼 값. 목록을 다시 받기 전까지 이것이 이긴다 — 좋아요를
@@ -75,6 +81,8 @@ class _ComicFeedState extends State<ComicFeed> {
     Uint8List? bytes;
     try {
       final status = await _gateway.jobStatus(videoId);
+      final cuts = status.cuts;
+      if (cuts != null && cuts.isNotEmpty) _cuts[videoId] = cuts;
       if (status.done && status.imageUrl != null) {
         bytes = await _gateway.download(status.imageUrl!);
       }
@@ -150,6 +158,27 @@ class _ComicFeedState extends State<ComicFeed> {
       _edited[videoId] ??
       widget.comics.firstWhere((comic) => comic.videoId == videoId);
 
+  /// 만화를 크게 본다. 그림과 대사만 보여 주는 화면이라 편집과 섞이지 않는다.
+  Future<void> _view(VaultComic comic) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ComicViewerScreen(
+          title: comic.title,
+          image: _images[comic.videoId],
+          cuts: _cuts[comic.videoId],
+          // 크게 보다가 대사를 고치고 싶을 수 있다. 뷰어를 닫고 편집으로 넘긴다.
+          onEdit: widget.videoById(comic.videoId) == null
+              ? null
+              : () {
+                  Navigator.pop(context);
+                  _open(comic);
+                },
+        ),
+      ),
+    );
+  }
+
   /// 만화 화면을 연다 — 대사를 고쳐 다시 만들거나 저장·공유하는 곳이다.
   Future<void> _open(VaultComic comic) async {
     final video = widget.videoById(comic.videoId);
@@ -196,6 +225,7 @@ class _ComicFeedState extends State<ComicFeed> {
           madeAtLabel: comic.madeAt == null
               ? null
               : _dayTime.format(comic.madeAt!.toLocal()),
+          onView: () => _view(comic),
           onOpen: () => _open(comic),
           onLike: () => _toggleLike(comic),
           onComments: () => _openComments(comic),
@@ -213,6 +243,7 @@ class _ComicCard extends StatelessWidget {
     required this.image,
     required this.loaded,
     required this.madeAtLabel,
+    required this.onView,
     required this.onOpen,
     required this.onLike,
     required this.onComments,
@@ -226,6 +257,11 @@ class _ComicCard extends StatelessWidget {
   /// 있어서, 진행 표시와 오류 표시를 가르려면 이 값이 필요하다.
   final bool loaded;
   final String? madeAtLabel;
+
+  /// 크게 보기 — 그림과 대사만 보여 준다.
+  final VoidCallback onView;
+
+  /// 대사 고치기 — 편집 화면으로 간다.
   final VoidCallback onOpen;
   final VoidCallback onLike;
   final VoidCallback onComments;
@@ -285,7 +321,7 @@ class _ComicCard extends StatelessWidget {
         AspectRatio(
           aspectRatio: 1,
           child: GestureDetector(
-            onTap: onOpen,
+            onTap: onView,
             child: ColoredBox(
               color: AppColors.surfaceWarm,
               child: image != null
@@ -350,7 +386,14 @@ class _ComicCard extends StatelessWidget {
                 ),
               const Spacer(),
               TextButton.icon(
+                key: ValueKey('comic-edit-${comic.videoId}'),
                 onPressed: onOpen,
+                icon: const Icon(Icons.edit_rounded, size: 16),
+                label: const Text('대사 고치기'),
+              ),
+              TextButton.icon(
+                key: ValueKey('comic-view-${comic.videoId}'),
+                onPressed: onView,
                 icon: const Icon(Icons.open_in_full_rounded, size: 16),
                 label: const Text('크게 보기'),
               ),

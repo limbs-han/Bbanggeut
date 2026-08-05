@@ -14,6 +14,7 @@ import com.wj.server.video.api.EditUploadResponse;
 import com.wj.server.video.api.UpdateVideoCommentRequest;
 import com.wj.server.video.api.VideoCommentResponse;
 import com.wj.server.video.api.VideoResponse;
+import com.wj.server.video.domain.VideoCommentRow;
 import com.wj.server.video.domain.VideoRow;
 import com.wj.server.video.persistence.VideoCommentMapper;
 import com.wj.server.video.persistence.VideoMapper;
@@ -111,8 +112,7 @@ public class EditedVideoService {
         commentMapper.insert(commentId, videoId, userId, body);
         // 작성자를 뺀 금고 구성원에게 알림 + FCM.
         notificationService.editCommentAdded(userId, videoId, commentId.toString(), body);
-        return new VideoCommentResponse(
-            commentId, userId, null, body, Instant.now());
+        return storedComment(commentId, videoId);
     }
 
     /**
@@ -139,7 +139,7 @@ public class EditedVideoService {
         if (commentMapper.updateBody(commentId, videoId, body) != 1) {
             throw notFound();
         }
-        return new VideoCommentResponse(commentId, userId, null, body, Instant.now());
+        return storedComment(commentId, videoId);
     }
 
     /** 쓴 사람은 자기 댓글을, OWNER는 금고의 어느 댓글이든 지운다. */
@@ -175,6 +175,14 @@ public class EditedVideoService {
             video.favorite(), null, video.createdAt(),
             com.wj.server.video.domain.VideoEventTypes.fromCsv(
                 video.eventTypesCsv(), video.triggerType()));
+    }
+
+    /// 저장된 댓글을 그대로 읽어 응답으로 쓴다 — 이유는 ComicFeedService 참고.
+    private VideoCommentResponse storedComment(UUID commentId, UUID videoId) {
+        VideoCommentRow row = commentMapper.findComment(commentId, videoId)
+            .orElseThrow(this::notFound);
+        return new VideoCommentResponse(
+            row.id(), row.authorId(), row.authorName(), row.body(), row.createdAt());
     }
 
     private ApiException notFound() {

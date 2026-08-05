@@ -659,44 +659,76 @@ Future<MemoryConnectionChoice?> showMemoryConnectionChoice(
 /// **빈 값으로 확인해도 취소가 아니다.** 만화는 빈 제목을 "붙인 제목을 지우고
 /// 영상 제목으로 되돌린다"로 쓰므로, 지울 길을 없애면 한번 잘못 붙인 이름을
 /// 되돌릴 수 없다. 취소는 null이고, 빈 문자열은 지우기다.
+/// 제목을 물어보는 창. 취소하면 null, 저장하면 입력한 글이다.
+///
+/// **왜 컨트롤러를 창 위젯이 들고 있는가**: 예전에는 이 함수가
+/// `TextEditingController`를 만들고 `finally`에서 버렸다. `showDialog`의
+/// Future는 라우트를 pop하는 **순간** 끝나지만 창은 닫히는 애니메이션 동안
+/// 아직 화면에 살아 있다. 그 사이에 컨트롤러를 버리면 살아 있는 TextField가
+/// 죽은 컨트롤러를 붙잡은 채 정리되어 프레임 어서션으로 터졌다
+/// (`_dependents.isEmpty`, 빨간 화면). 컨트롤러를 쓰는 위젯이 직접 들고
+/// 자기 dispose에서 버리면 수명이 정확히 맞는다.
 Future<String?> promptForTitle(
   BuildContext context, {
   required String title,
   String initial = '',
   String? hint,
-}) async {
-  final field = TextEditingController(text: initial);
-  try {
-    return await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        key: const Key('title-prompt-dialog'),
-        title: Text(title),
-        content: TextField(
-          key: const Key('title-prompt-field'),
-          controller: field,
-          autofocus: true,
-          maxLength: 60,
-          textInputAction: TextInputAction.done,
-          onSubmitted: (value) => Navigator.pop(dialogContext, value),
-          decoration: InputDecoration(hintText: hint ?? '새 제목'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            key: const Key('title-prompt-save'),
-            onPressed: () => Navigator.pop(dialogContext, field.text),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-  } finally {
-    field.dispose();
+}) => showDialog<String>(
+  context: context,
+  builder: (_) => _TitlePromptDialog(title: title, initial: initial, hint: hint),
+);
+
+class _TitlePromptDialog extends StatefulWidget {
+  const _TitlePromptDialog({
+    required this.title,
+    required this.initial,
+    required this.hint,
+  });
+
+  final String title;
+  final String initial;
+  final String? hint;
+
+  @override
+  State<_TitlePromptDialog> createState() => _TitlePromptDialogState();
+}
+
+class _TitlePromptDialogState extends State<_TitlePromptDialog> {
+  late final TextEditingController _field = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    key: const Key('title-prompt-dialog'),
+    title: Text(widget.title),
+    content: TextField(
+      key: const Key('title-prompt-field'),
+      controller: _field,
+      autofocus: true,
+      maxLength: 60,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (value) => Navigator.pop(context, value),
+      decoration: InputDecoration(hintText: widget.hint ?? '새 제목'),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        key: const Key('title-prompt-save'),
+        onPressed: () => Navigator.pop(context, _field.text),
+        child: const Text('저장'),
+      ),
+    ],
+  );
 }
 
 Future<bool> confirmVideoDeletion(BuildContext context) async =>
