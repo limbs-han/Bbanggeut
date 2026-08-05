@@ -2234,6 +2234,31 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /api/laugh-memories/{memoryId}:
+    get:
+      summary: 웃음 뽑기 - 뽑은 영상 단건 조회
+      description: >-
+        앱이 기기에 적어 둔 "오늘 뽑은 영상" ID로 결과 화면을 되살릴 때 부른다.
+        구성원이 아니거나 영상이 삭제·만료돼 재생할 수 없으면 존재 여부를 숨기고 404를 돌려준다.
+      parameters:
+        - name: memoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 뽑힌 웃음 영상과 반응
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughMemory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
   /api/laugh-memories/{memoryId}/reaction:
     put:
       summary: 웃음 뽑기 - 이모지 반응 등록·변경
@@ -3790,6 +3815,7 @@ components:
             type: integer
             minimum: 0
         myReaction:
+          type: string
           nullable: true
           description: 로그인 사용자가 남긴 반응. 남기지 않았으면 null.
           allOf:
@@ -3811,6 +3837,7 @@ components:
           type: boolean
           description: 뽑을 영상이 있었는지. false면 memory가 null이고 message가 채워진다.
         memory:
+          type: object
           nullable: true
           allOf:
             - $ref: '#/components/schemas/LaughMemory'
