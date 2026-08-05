@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter/rendering.dart';
 import 'package:gal/gal.dart';
 import 'package:share_plus/share_plus.dart';
@@ -62,8 +63,9 @@ class _ComicScreenState extends State<ComicScreen> {
   void initState() {
     super.initState();
     _controller.addListener(_onChanged);
-    // 빌드 페이즈 밖에서 시작한다.
-    Future.microtask(_controller.start);
+    // 빌드 페이즈 밖에서 시작한다. open()은 전에 만들어 둔 만화가 있으면
+    // 그것을 먼저 보여 주고, 없으면 구성부터 받는다.
+    Future.microtask(_controller.open);
   }
 
   void _onChanged() {
@@ -193,11 +195,49 @@ class _ComicScreenState extends State<ComicScreen> {
       ),
     ),
     ComicLoadingScript() => const _Busy('이야기를 짜고 있어요'),
-    ComicLoadingImage() => const _Busy('그림을 그리고 있어요'),
+    // 서버가 뒤에서 그린다 — 화면을 벗어나도 되고 끝나면 알림이 온다.
+    ComicLoadingImage(:final queuePosition) => _Busy(
+      queuePosition > 0
+          ? '앞에 $queuePosition개가 있어요. 순서를 기다리는 중이에요'
+          : '그림을 그리고 있어요',
+      hint: '이 화면을 나가도 계속 만들어요. 다 되면 알림으로 알려 드려요.',
+    ),
     ComicScriptReady(:final cuts) => _cutList(cuts),
     ComicFailed(:final reason, :final cuts) => _failed(reason, cuts),
     ComicReady(:final cuts, :final image) => _finished(cuts, image),
+    ComicSaved(:final image, :final savedAt) => _saved(image, savedAt),
   };
+
+  /// 전에 만들어 둔 만화. 구성은 아직 받지 않았으므로 대사 고치기는 눌렀을 때
+  /// 받는다 — 구성 요청은 호출마다 돈이 든다.
+  Widget _saved(Uint8List image, DateTime? savedAt) => Column(
+    children: [
+      if (savedAt != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Text(
+            '${DateFormat('M월 d일 HH:mm').format(savedAt.toLocal())}에 만든 만화',
+            style: const TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+        ),
+      // 자막 띠는 구성(cuts)이 있어야 얹는다. 저장본은 구성을 아직 받지
+      // 않았으므로 그림만 보여 준다 — 서버가 만든 그림에는 대사가 그려져
+      // 있지 않으니 여기서는 칸만 보인다.
+      Expanded(child: Center(child: Image.memory(image))),
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('comic-remake'),
+            onPressed: _controller.start,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('대사 고쳐 다시 만들기'),
+          ),
+        ),
+      ),
+    ],
+  );
 
   Widget _cutList(List<ComicCut> cuts, {String? error}) => Column(
     children: [
@@ -347,19 +387,33 @@ class _SampleNotice extends StatelessWidget {
 }
 
 class _Busy extends StatelessWidget {
-  const _Busy(this.message);
+  const _Busy(this.message, {this.hint});
 
   final String message;
 
+  /// 기다리는 동안 알아야 할 것. 그림 생성은 화면을 나가도 계속된다.
+  final String? hint;
+
   @override
   Widget build(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const CircularProgressIndicator(),
-        const SizedBox(height: 16),
-        Text(message),
-      ],
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          Text(message, textAlign: TextAlign.center),
+          if (hint != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              hint!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
+          ],
+        ],
+      ),
     ),
   );
 }

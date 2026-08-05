@@ -27,12 +27,61 @@ const comicServerReady = bool.fromEnvironment('COMIC_SERVER', defaultValue: true
 /// 기본 화풍. 화면에 고르는 UI를 두지 않는다(설계의 "하지 않는 것").
 const comicDefaultStyle = 'webtoon';
 
+/// 만화 작업 상태 한 장. 서버 응답(ComicJob)을 그대로 옮긴다.
+class ComicJobStatus {
+  const ComicJobStatus({
+    required this.status,
+    this.error,
+    this.queuePosition = 0,
+    this.imageUrl,
+    this.savedAt,
+  });
+
+  /// none · queued · running · done · failed. `none`은 만든 적이 없다는 뜻이고
+  /// 오류가 아니다.
+  final String status;
+  final String? error;
+
+  /// 대기 순번. 0이면 지금 그리는 중이거나 이미 끝났다.
+  final int queuePosition;
+  final String? imageUrl;
+  final DateTime? savedAt;
+
+  bool get done => status == 'done';
+  bool get failed => status == 'failed';
+  bool get working => status == 'queued' || status == 'running';
+
+  factory ComicJobStatus.fromJson(Map<String, dynamic> json) => ComicJobStatus(
+    status: json['status'] as String? ?? 'none',
+    error: json['error'] as String?,
+    queuePosition: (json['queuePosition'] as num?)?.toInt() ?? 0,
+    imageUrl: json['imageUrl'] as String?,
+    savedAt: DateTime.tryParse(json['savedAt'] as String? ?? ''),
+  );
+}
+
 abstract interface class ComicGateway {
   /// 전사문 → 4컷 구성.
   Future<List<ComicCut>> script(String videoId, List<CaptionLine> lines);
 
   /// 4컷 구성 → 만화 그림 한 장(PNG 바이트). 2x2 격자다.
+  ///
+  /// 화면을 붙잡아 두고 곧바로 결과를 보는 경로다. 오래 걸리는 생성은
+  /// [enqueueImage]로 맡기고 [jobStatus]로 따라간다.
   Future<Uint8List> image(String videoId, List<ComicCut> cuts, {String style});
+
+  /// 그림 만들기를 서버에 맡긴다. 화면을 벗어나도 계속되고 끝나면 알림이 온다.
+  Future<ComicJobStatus> enqueueImage(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style,
+  });
+
+  /// 맡긴 작업의 상태. 다 됐으면 [ComicJobStatus.imageUrl]로 그림을 받는다.
+  Future<ComicJobStatus> jobStatus(String videoId);
+
+  /// 저장된 그림을 바이트로 받는다.
+  Future<Uint8List> download(String imageUrl);
 }
 
 ComicGateway defaultComicGateway(ApiClient api) =>
@@ -64,6 +113,23 @@ class HttpComicGateway implements ComicGateway {
     }
     return base64Decode(encoded);
   }
+
+  @override
+  Future<ComicJobStatus> enqueueImage(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style = comicDefaultStyle,
+  }) async => ComicJobStatus.fromJson(
+    await api.enqueueComicImage(videoId, cuts: cutsToJson(cuts), style: style),
+  );
+
+  @override
+  Future<ComicJobStatus> jobStatus(String videoId) async =>
+      ComicJobStatus.fromJson(await api.getComicJob(videoId));
+
+  @override
+  Future<Uint8List> download(String imageUrl) =>
+      api.downloadBytes(imageUrl);
 }
 
 /// 서버가 없을 때 쓰는 가짜. 화면과 흐름을 그대로 검증할 수 있게 만든다.
@@ -131,5 +197,31 @@ class FakeComicGateway implements ComicGateway {
     picture.dispose();
     if (data == null) throw StateError('가짜 그림을 만들지 못했습니다.');
     return data.buffer.asUint8List();
+  }
+
+  /// 견본은 즉시 그린다. 대기 줄을 흉내 내면 화면 작업만 느려진다.
+  Uint8List? _drawn;
+
+  @override
+  Future<ComicJobStatus> enqueueImage(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style = comicDefaultStyle,
+  }) async {
+    _drawn = await image(videoId, cuts, style: style);
+    return const ComicJobStatus(status: 'done', imageUrl: 'fake://comic');
+  }
+
+  @override
+  Future<ComicJobStatus> jobStatus(String videoId) async => ComicJobStatus(
+    status: _drawn == null ? 'none' : 'done',
+    imageUrl: _drawn == null ? null : 'fake://comic',
+  );
+
+  @override
+  Future<Uint8List> download(String imageUrl) async {
+    final drawn = _drawn;
+    if (drawn == null) throw StateError('아직 만든 만화가 없습니다.');
+    return drawn;
   }
 }

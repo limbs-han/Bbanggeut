@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -852,6 +853,45 @@ class ApiClient {
     data: {'cuts': cuts, 'style': style},
     options: _aiOptions,
   );
+
+  /// 만화 그림 만들기를 서버에 맡긴다(202). 화면을 벗어나도 계속되고 끝나면
+  /// 알림이 온다 — 진행 상황은 [getComicJob]으로 본다.
+  ///
+  /// 긴 대기(_aiOptions)를 붙이지 않는다. 이 호출은 작업을 맡기고 곧바로
+  /// 돌아오므로 평범한 요청과 같다.
+  Future<Map<String, dynamic>> enqueueComicImage(
+    String videoId, {
+    required List<Map<String, Object?>> cuts,
+    required String style,
+  }) => _put(
+    '/api/videos/$videoId/comic/image',
+    data: {'cuts': cuts, 'style': style},
+  );
+
+  /// 만화 작업 상태. `status`는 none·queued·running·done·failed이고, 다 됐으면
+  /// `imageUrl`로 그림을 받는다.
+  Future<Map<String, dynamic>> getComicJob(String videoId) =>
+      _get('/api/videos/$videoId/comic/image');
+
+  /// presigned URL에서 바이트를 그대로 받는다.
+  ///
+  /// 서명이 URL 안에 있으므로 **Bearer 헤더를 붙이면 안 된다** — MinIO는 서명과
+  /// Authorization 헤더가 함께 오면 거절한다. 그래서 인터셉터가 없는 별도
+  /// 클라이언트로 부른다(리프레시 호출이 쓰는 방식과 같다).
+  Future<Uint8List> downloadBytes(String url) async {
+    try {
+      final response = await Dio().get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: aiReceiveTimeout,
+        ),
+      );
+      return Uint8List.fromList(response.data ?? const []);
+    } on DioException catch (e) {
+      throw _failure(e);
+    }
+  }
 
   /// 만화 두 엔드포인트(API-71·72)에만 붙이는 긴 수신 대기. 나머지 호출은
   /// 전역 기본값 20초 그대로다 — 평범한 요청까지 3분을 기다리면 안 된다.

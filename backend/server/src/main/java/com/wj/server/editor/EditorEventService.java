@@ -33,6 +33,8 @@ public class EditorEventService {
         switch (request.type()) {
             case "ANALYSIS_READY" ->
                 notifications.editAnalysisReady(request.userId(), request.videoId());
+            case "COMIC_READY" ->
+                notifications.comicReady(request.userId(), request.videoId());
             case "COMMENT_ADDED" ->
                 notifications.editCommentAdded(
                     request.userId(), request.videoId(), request.commentId(), request.body());

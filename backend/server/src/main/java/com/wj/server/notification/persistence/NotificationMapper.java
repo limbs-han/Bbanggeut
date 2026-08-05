@@ -118,6 +118,24 @@ public interface NotificationMapper {
         INSERT INTO notifications (
             id, user_id, type, title, body, vault_id, resource_id, dedupe_key
         )
+        SELECT gen_random_uuid(), u.id, 'COMIC_READY',
+               '4컷 만화가 완성됐어요', '추억 탭에서 만화를 확인해 보세요',
+               v.vault_id, v.id, 'comic:' || CAST(v.id AS text)
+          FROM videos v
+          JOIN users u ON u.id = #{userId}
+         WHERE v.id = #{videoId}
+           AND u.status = 'ACTIVE' AND u.deleted_at IS NULL
+        ON CONFLICT (user_id, dedupe_key) DO NOTHING
+        """)
+    int insertComicReadyNotification(
+        @Param("userId") UUID userId,
+        @Param("videoId") UUID videoId
+    );
+
+    @Insert("""
+        INSERT INTO notifications (
+            id, user_id, type, title, body, vault_id, resource_id, dedupe_key
+        )
         SELECT gen_random_uuid(), m.user_id, 'EDIT_COMMENT_ADDED',
                '가족이 편집 영상에 댓글을 남겼어요', #{body},
                v.vault_id, v.id,

@@ -25,6 +25,7 @@ from . import backend_access, backend_events
 from . import comic
 from .adaptive_cli import build_adaptive_recipe
 from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
+from .comic_jobs import ComicJobManager, ComicQueueFull
 
 
 FIXTURE_ROOT = Path(
@@ -300,6 +301,16 @@ class RecipeStore:
             Key=key,
             Body=body,
             ContentType="application/json",
+        )
+
+    def put_bytes(self, key: str, body: bytes, content_type: str) -> None:
+        """그림처럼 JSON이 아닌 것을 그대로 넣는다."""
+        self.ensure_bucket()
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=body,
+            ContentType=content_type,
         )
 
     def get_json(self, key: str) -> dict[str, Any] | None:
@@ -685,6 +696,62 @@ def _comic_sheet_key(video_id: str) -> str:
     return f"comic/{video_id}/sheet.json"
 
 
+def _comic_panel_key(video_id: str) -> str:
+    return f"comic/{video_id}/panel.png"
+
+
+def _render_and_store_comic(
+    video_id: str, cuts: list[dict[str, Any]], style: str | None
+) -> bytes:
+    """만화 한 장을 그려 MinIO에 남기고 그 바이트를 돌려준다.
+
+    동기 경로(POST)와 백그라운드 작업이 함께 쓴다 — 그림을 만드는 방법이 두
+    벌이면 한쪽만 고치는 일이 생긴다.
+    """
+    # 시트는 있으면 좋고 없으면 없는 대로 간다. MinIO가 죽었다고 그림까지
+    # 못 만들 이유가 없다 — `get_json`은 ClientError만 잡아서 연결 오류
+    # (BotoCoreError)는 그대로 올라온다.
+    try:
+        sheet = store.get_json(_comic_sheet_key(video_id)) or {}
+    except (BotoCoreError, ClientError, OSError):
+        sheet = {}
+
+    png = comic.render_comic(
+        cuts,
+        characters=sheet.get("characters") or [],
+        setting=str(sheet.get("setting") or ""),
+        style=style,
+    )
+
+    # 저장은 최선 노력이다. 저장에 실패해도 방금 만든 그림을 버리지 않는다 —
+    # 동기 경로는 응답으로 돌려주고, 백그라운드 경로는 아래에서 예외로 잡아
+    # 상태에 남긴다.
+    store.put_bytes(_comic_panel_key(video_id), png, "image/png")
+    store.put(
+        f"comic/{video_id}/panel.json",
+        {
+            "videoId": video_id,
+            "cuts": cuts,
+            "style": style,
+            "savedAt": datetime.now().astimezone().isoformat(),
+        },
+    )
+    return png
+
+
+def _render_comic_job(
+    video_id: str, cuts: list[dict[str, Any]], style: str | None
+) -> None:
+    """백그라운드 작업자가 부르는 진입점. 그림 자체는 버리고 저장만 남긴다."""
+    _render_and_store_comic(video_id, cuts, style)
+
+
+comic_jobs = ComicJobManager(
+    render=_render_comic_job,
+    on_done=lambda job: backend_events.comic_ready(job.video_id, job.requested_by),
+)
+
+
 @app.post("/v1/comic/{video_id}/script")
 def comic_script(
     video_id: str, request: ComicScriptRequest, http_request: Request = None
@@ -727,28 +794,90 @@ def comic_script(
 def comic_image(
     video_id: str, request: ComicImageRequest, http_request: Request = None
 ) -> dict[str, Any]:
-    """2단계 — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 PNG다.
+    """2단계(동기) — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 PNG다.
 
     `data:image/png;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
+
+    앱은 백그라운드 경로(PUT)를 쓴다. 이 경로는 화면을 벗어나지 않고 곧바로
+    결과를 보려는 호출(재시도·도구)을 위해 남겨 둔다 — 그림 만드는 방법은
+    `_render_and_store_comic` 한 곳이므로 결과는 양쪽이 같고 저장도 같이 된다.
     """
     _require_video_access(http_request, video_id)
-    # 시트는 있으면 좋고 없으면 없는 대로 간다. MinIO가 죽었다고 그림까지
-    # 못 만들 이유가 없다 — `get_json`은 ClientError만 잡아서 연결 오류
-    # (BotoCoreError)는 그대로 올라온다.
     try:
-        sheet = store.get_json(_comic_sheet_key(video_id)) or {}
-    except (BotoCoreError, ClientError, OSError):
-        sheet = {}
-
-    try:
-        png = comic.render_comic(
-            request.cuts,
-            characters=sheet.get("characters") or [],
-            setting=str(sheet.get("setting") or ""),
-            style=request.style,
-        )
+        png = _render_and_store_comic(video_id, request.cuts, request.style)
     except comic.ComicContractError as failure:
         raise HTTPException(status_code=422, detail=str(failure)) from failure
     except comic.ComicError as failure:
         raise HTTPException(status_code=502, detail=str(failure)) from failure
     return {"image": base64.b64encode(png).decode()}
+
+
+@app.put("/v1/comic/{video_id}/image")
+def comic_image_enqueue(
+    video_id: str, request: ComicImageRequest, http_request: Request = None
+) -> JSONResponse:
+    """2단계(백그라운드) — 그림을 뒤에서 만든다. 202를 주고 곧 돌려보낸다.
+
+    Gemini 이미지 호출이 수십 초라 화면을 붙잡아 둘 이유가 없다. 끝나면
+    MinIO에 남고 백엔드 알림(COMIC_READY)이 나간다. 앱은 GET으로 상태를
+    확인하거나 알림을 받고 추억 탭에서 다시 본다.
+    """
+    _require_video_access(http_request, video_id)
+    try:
+        job, position = comic_jobs.submit(
+            video_id,
+            request.cuts,
+            request.style,
+            requested_by=_token_subject(http_request),
+        )
+    except ComicQueueFull as failure:
+        # 오래 기다린 끝에 실패하게 두지 않고 지금 거절한다.
+        raise HTTPException(status_code=429, detail=str(failure)) from failure
+    return JSONResponse(status_code=202, content=job.snapshot(position=position))
+
+
+@app.get("/v1/comic/{video_id}/image")
+def comic_image_status(
+    video_id: str, http_request: Request = None
+) -> dict[str, Any]:
+    """만화 작업 상태와, 다 됐으면 그림을 받을 presigned URL.
+
+    앱이 화면을 다시 열었을 때 이 하나로 "만드는 중 / 다 됨 / 실패"를 가른다.
+    저장된 그림이 있으면 작업 기록이 사라진 뒤에도 done으로 답한다 — 서버가
+    재시작해도 이미 만든 만화는 그대로 있다.
+    """
+    _require_video_access(http_request, video_id)
+    tracked = comic_jobs.get(video_id)
+    url = None
+    try:
+        saved = store.get_json(f"comic/{video_id}/panel.json")
+    except (BotoCoreError, ClientError, OSError):
+        saved = None
+    if saved is not None:
+        url = store.presign_get(_comic_panel_key(video_id))
+
+    if tracked is not None:
+        job, position = tracked
+        snapshot = job.snapshot(position=position)
+        # 작업이 실패했더라도 예전에 만든 그림이 있으면 그것은 그대로 준다 —
+        # 재시도가 실패했다고 어제 만든 만화를 감출 이유가 없다.
+        snapshot["imageUrl"] = url
+        snapshot["savedAt"] = (saved or {}).get("savedAt")
+        return snapshot
+    if saved is not None:
+        return {
+            "videoId": video_id,
+            "status": "done",
+            "error": None,
+            "queuePosition": 0,
+            "imageUrl": url,
+            "savedAt": saved.get("savedAt"),
+        }
+    return {
+        "videoId": video_id,
+        "status": "none",
+        "error": None,
+        "queuePosition": 0,
+        "imageUrl": None,
+        "savedAt": None,
+    }

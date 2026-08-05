@@ -12,6 +12,7 @@ import '../core/video_source_cache.dart';
 import '../features/comic/comic_screen.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
+import 'video_comments_section.dart';
 import 'widgets.dart';
 
 class ContentVideoDetailScreen extends StatefulWidget {
@@ -270,20 +271,25 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                       color: AppColors.coral,
                     ),
                   ),
-                  IconButton(
-                    tooltip: '영상 삭제',
-                    onPressed: _deleting ? null : _deleteVideo,
-                    iconSize: 30,
-                    icon: _deleting
-                        ? const SizedBox.square(
-                            dimension: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(
-                            Icons.delete_outline_rounded,
-                            color: AppColors.coral,
-                          ),
-                  ),
+                  // 목록 카드와 같은 기준으로 가린다. 서버는 원본을 OWNER만,
+                  // 편집본을 OWNER 또는 만든 사람만 지우게 한다
+                  // (VideoCommandService.delete). 여기만 조건 없이 버튼을
+                  // 띄우고 있어서 MEMBER가 누르면 403을 받았다.
+                  if (canManageVideo(_video, isOwner: widget.controller.isOwner))
+                    IconButton(
+                      tooltip: '영상 삭제',
+                      onPressed: _deleting ? null : _deleteVideo,
+                      iconSize: 30,
+                      icon: _deleting
+                          ? const SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.delete_outline_rounded,
+                              color: AppColors.coral,
+                            ),
+                    ),
                 ],
               ),
             ),
@@ -376,6 +382,16 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                 '4컷 만화 만들기',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
               ),
+            ),
+            const Divider(height: 28),
+            // 원본에도 가족 댓글을 남긴다. 백엔드는 원본과 편집본을 구별하지
+            // 않으므로(둘 다 videos 행 + video_comments) 편집본 화면과 같은
+            // 위젯을 쓴다. 바깥이 ListView라 안에서 또 스크롤하지 않는다.
+            VideoCommentsSection(
+              api: widget.controller.api,
+              videoId: _video.id,
+              myUserId: widget.controller.user?.id,
+              isOwner: widget.controller.isOwner,
             ),
           ],
         ),

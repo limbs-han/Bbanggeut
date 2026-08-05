@@ -111,6 +111,18 @@ public class PushNotificationDispatcher {
                     "resourceId", videoId.toString())));
     }
 
+    /** 4컷 만화 완성 — 만들기를 누른 사람에게만 보낸다. */
+    public void comicReady(UUID userId, UUID videoId) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByUser(userId),
+            new PushMessage(
+                "4컷 만화가 완성됐어요",
+                "추억 탭에서 만화를 확인해 보세요",
+                Map.of(
+                    "type", "COMIC_READY",
+                    "resourceId", videoId.toString())));
+    }
+
     /** 편집 영상 새 댓글 — 작성자를 뺀 금고 구성원 전체에게 보낸다. */
     public void editCommentAdded(UUID actorUserId, UUID videoId, String body) {
         dispatchAfterCommit(
