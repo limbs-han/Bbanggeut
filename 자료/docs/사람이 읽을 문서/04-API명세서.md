@@ -1039,6 +1039,8 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-82 | `GET /api/vaults/{vaultId}/edits` | 금고의 편집 완성본 목록(최신순 100건). 올라가는 중(UPLOADING)과 실패(FAILED)도 함께 준다 — 업로드 진행 상황이 상단 알림으로만 나가서, 알림을 끈 기기에서는 목록이 유일한 단서다 |
 | API-83 | `GET /api/videos/{videoId}/comments` | 영상 댓글 목록 — 작성자 표시 이름은 서버가 `users`에서 조인 |
 | API-84 | `POST /api/videos/{videoId}/comments` | 영상 댓글 작성 — 작성자는 토큰의 사용자 UUID(앱이 보낸 이름을 믿지 않는다), 작성자 외 금고 구성원에게 알림·FCM |
+| API-85 | `PATCH /api/videos/{videoId}/comments/{commentId}` | 영상 댓글 수정 — 쓴 사람만. OWNER에게도 열지 않는다(남의 말을 고쳐 쓰는 것과 지우는 것은 다른 일이다) |
+| API-86 | `DELETE /api/videos/{videoId}/comments/{commentId}` | 영상 댓글 삭제 — 쓴 사람 또는 금고 OWNER. 부적절한 댓글은 OWNER가 지운다 |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + 기기별 분해(`byDevice`). Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계해 기기 양도 후에도 과거 금고 통계가 오염되지 않음. **앱 웃음 리포트의 "가족 전체" 토글이 사용** |
 
 #### 비밀번호 API 동작 규칙 (API-55~57)

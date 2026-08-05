@@ -174,6 +174,16 @@ public interface VideoMapper {
         @Param("videoId") UUID videoId
     );
 
+    /**
+     * 이 영상을 만든 사람. 편집본 삭제 권한을 가리는 데 쓴다.
+     *
+     * {@link VideoRow}에 얹지 않은 이유는 이 값을 쓰는 곳이 삭제 한 군데뿐인데
+     * record에 넣으면 영상을 읽는 모든 select를 함께 넓혀야 하기 때문이다.
+     * 기기가 올린 원본은 이 값이 비어 있다(사람이 만든 것이 아니다).
+     */
+    @Select("SELECT created_by FROM videos WHERE id = #{videoId}")
+    Optional<UUID> findCreatorId(@Param("videoId") UUID videoId);
+
     @Update("""
         UPDATE videos v
            SET status = 'READY', uploaded_at = now(),

@@ -1241,7 +1241,14 @@ paths:
       tags: [Videos]
       operationId: updateVideo
       summary: 영상 제목·설명·즐겨찾기 수정
-      description: 해당 기기의 활성 OWNER 또는 MEMBER만 수행할 수 있다.
+      description: |
+        필드마다 권한이 다르다.
+
+        - 제목·설명: 기기가 담아 온 원본은 OWNER만 바꾼다(가족 공동의 기록이다).
+          `sourceType=EDIT_OUTPUT`인 편집본은 OWNER와 MEMBER가 바꾼다.
+        - 즐겨찾기: OWNER와 MEMBER 모두 토글한다.
+
+        설명(메모)은 앱에서 걷어낸 기능이다. 필드는 하위 호환을 위해 남아 있다.
       requestBody:
         required: true
         content:
@@ -1267,7 +1274,12 @@ paths:
       tags: [Videos]
       operationId: deleteVideo
       summary: 영상 삭제 요청
-      description: 기본 정책에서는 해당 기기의 활성 OWNER만 수행한다.
+      description: |
+        기기가 담아 온 원본은 OWNER만 지운다 — 지우면 가족 모두가 그 기록을 잃는다.
+
+        `sourceType=EDIT_OUTPUT`인 편집본은 만든 사람 또는 OWNER가 지운다.
+        구성원이 만든 편집본을 스스로 치울 수 있어야 하고, 남의 편집본은
+        건드리지 못한다.
       responses:
         '202':
           description: 비동기 삭제 요청 수락
@@ -1974,6 +1986,64 @@ paths:
           $ref: '#/components/responses/HiddenNotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
+
+  /api/videos/{videoId}/comments/{commentId}:
+    parameters:
+      - in: path
+        name: videoId
+        required: true
+        schema: {type: string, format: uuid}
+      - in: path
+        name: commentId
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Videos]
+      operationId: updateVideoComment
+      summary: 영상 댓글 수정
+      description: |
+        쓴 사람만 고칠 수 있다. OWNER에게도 열지 않는다 — 남의 말을 고쳐 쓰는
+        것과 지우는 것은 다른 일이다. 부적절한 댓글은 삭제로 처리한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: 수정된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteVideoComment
+      summary: 영상 댓글 삭제
+      description: 쓴 사람 또는 금고 OWNER가 삭제한다.
+      responses:
+        '204':
+          description: 삭제됨
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
 
   /api/vaults/{vaultId}/event-stats:
     parameters:
