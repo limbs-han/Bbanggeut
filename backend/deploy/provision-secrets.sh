@@ -68,7 +68,7 @@ source "$INFRA_ENV"
 if [[ ! -f "$APP_ENV" ]]; then
   JWT_SIGNING_KEY="$(openssl rand -hex 48)"
   cat > "$APP_ENV" <<EOF
-SPRING_PROFILES_ACTIVE=demo
+SPRING_PROFILES_ACTIVE=prod
 DB_URL=jdbc:postgresql://127.0.0.1:5432/$POSTGRES_DB
 DB_USER=$POSTGRES_USER
 DB_PASSWORD=$POSTGRES_PASSWORD
