@@ -38,9 +38,10 @@ with `SPEAKER_UNAVAILABLE` rather than accepted by a device with no speaker.
 After wiring the USB audio adapter, PAM8403, and passive speaker, list the ALSA
 playback devices and run a three-second tone before enabling talkback. FFmpeg's
 `sine` source is one-eighth of full scale by default, so the script compensates
-it by 8x. `SPEAKER_TEST_LEVEL=1.0` therefore produces an approximately 0 dBFS
-full-scale signal. Keep earphones out of your ears and the PAM8403 knob near
-minimum for the first run:
+it by 8x and then applies `SPEAKER_TEST_LEVEL`. The default level is `0.25`,
+approximately -12 dBFS; `1.0` produces an approximately 0 dBFS full-scale
+signal. Keep earphones out of your ears and the PAM8403 knob near minimum for
+the first run:
 
 ```bash
 sudo apt-get install -y alsa-utils
@@ -53,9 +54,9 @@ For ALSA names containing `CARD=...`, the script also unmutes the card's
 `Speaker` mixer and raises it to 100%. This prevents a restored USB mixer value
 such as 29% from making a 100% generated signal sound quiet.
 
-To reduce the digital test level, set a value between 0 and 1. For example,
-`SPEAKER_TEST_LEVEL=0.25 bash ./test-speaker-output.sh` runs at one quarter of
-the full-scale peak.
+To adjust the digital test level, set a value between 0 and 1. For example,
+`SPEAKER_TEST_LEVEL=0.5 bash ./test-speaker-output.sh` runs at one half of the
+full-scale peak.
 
 Replace `Device` with the card identifier reported by `aplay -L`. The script
 uses `TALKBACK_OUTPUT_DEVICE` when no device argument is supplied, so the final
