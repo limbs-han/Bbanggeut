@@ -54,7 +54,7 @@ class EditedVideoServiceTest {
 
     private VideoRow source() {
         return new VideoRow(
-            SOURCE_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", "event-1", "웃음 영상", null,
+            SOURCE_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", "event-1", "웃음 영상",
             "video/mp4", 100L, "a".repeat(64), 5000L,
             Instant.parse("2026-08-04T10:00:00Z"), Instant.parse("2026-08-04T10:00:05Z"),
             "private/device/video.mp4", "READY", false,

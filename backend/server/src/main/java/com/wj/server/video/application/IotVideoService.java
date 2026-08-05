@@ -289,7 +289,7 @@ public class IotVideoService {
     private VideoResponse toResponse(VideoRow video) {
         return new VideoResponse(
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
-            video.sourceEventId(), video.title(), null, video.contentType(), video.sizeBytes(),
+            video.sourceEventId(), video.title(), video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
             video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
             VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));

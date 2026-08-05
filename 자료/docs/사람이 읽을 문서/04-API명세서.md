@@ -476,7 +476,6 @@
 | eventTypes | List\<String\> | 필수 | 영상에 함께 기록된 유형. triggerType을 포함하며 중복 없음 |
 | sourceEventId | String | 옵션(nullable) | 원본 이벤트 ID |
 | title | String | 필수 | 제목 |
-| description | String | 옵션(nullable) | 메모 |
 | contentType | String | 필수 | 콘텐츠 타입 |
 | sizeBytes | Long | 옵션(nullable) | 파일 크기 |
 | checksumSha256 | String | 옵션(nullable) | 체크섬 |

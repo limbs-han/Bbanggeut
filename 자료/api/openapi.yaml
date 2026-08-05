@@ -1255,15 +1255,16 @@ paths:
     patch:
       tags: [Videos]
       operationId: updateVideo
-      summary: 영상 제목·설명·즐겨찾기 수정
+      summary: 영상 제목·즐겨찾기 수정
       description: |
         필드마다 권한이 다르다.
 
-        - 제목·설명: 기기가 담아 온 원본은 OWNER만 바꾼다(가족 공동의 기록이다).
+        - 제목: 기기가 담아 온 원본은 OWNER만 바꾼다(가족 공동의 기록이다).
           `sourceType=EDIT_OUTPUT`인 편집본은 OWNER와 MEMBER가 바꾼다.
         - 즐겨찾기: OWNER와 MEMBER 모두 토글한다.
 
-        설명(메모)은 앱에서 걷어낸 기능이다. 필드는 하위 호환을 위해 남아 있다.
+        메모(`description`)는 2026-08-05에 제거했다. DB 칼럼은 무중단 배포 규칙상
+        다음 릴리스에서 지운다.
       requestBody:
         required: true
         content:
@@ -2529,7 +2530,7 @@ components:
 
     HomeSummary:
       type: object
-      required: [deviceId, date, timeZone, captureCount, savedCount, memoCount]
+      required: [deviceId, date, timeZone, captureCount, savedCount]
       description: 홈 대시보드용 오늘 요약 집계. 현재 데이터 모델에서는 captureCount와 savedCount가 같은 값이며, edge가 원시 이벤트 수를 별도로 보고하면 분리된다.
       properties:
         deviceId:
@@ -2550,10 +2551,6 @@ components:
           type: integer
           minimum: 0
           description: 오늘 저장된 영상 수
-        memoCount:
-          type: integer
-          minimum: 0
-          description: 오늘 저장된 영상 중 메모(설명)가 작성된 수
         latestHighlight:
           type: object
           allOf:
@@ -2906,10 +2903,6 @@ components:
         title:
           type: string
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         contentType:
           type: string
           example: video/mp4
@@ -3065,10 +3058,6 @@ components:
           type: string
           minLength: 1
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         isFavorite:
           type: boolean
 

@@ -11,7 +11,6 @@ public record VideoResponse(
     String triggerType,
     String sourceEventId,
     String title,
-    String description,
     String contentType,
     Long sizeBytes,
     String checksumSha256,
@@ -31,7 +30,6 @@ public record VideoResponse(
         String triggerType,
         String sourceEventId,
         String title,
-        String description,
         String contentType,
         Long sizeBytes,
         String checksumSha256,
@@ -45,7 +43,7 @@ public record VideoResponse(
     ) {
         this(
             id, deviceId, sourceType, triggerType, sourceEventId, title,
-            description, contentType, sizeBytes, checksumSha256, durationMs,
+            contentType, sizeBytes, checksumSha256, durationMs,
             capturedStartAt, capturedEndAt, status, isFavorite, thumbnailUrl,
             createdAt, List.of(triggerType));
     }
