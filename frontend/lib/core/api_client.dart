@@ -100,6 +100,9 @@ class ApiClient {
   /// 인증하도록 현재 액세스 토큰을 내어 준다. 로그인 전이면 null.
   String? get accessToken => _memoryAccessToken;
 
+  /// 기능별 Repository가 기존 인증·토큰 재발급 인터셉터를 재사용한다.
+  Dio get authenticatedDio => _dio;
+
   /// 액세스 토큰이 만료됐을 때 외부 클라이언트가 갱신을 부탁하는 통로.
   /// 진행 중인 갱신이 있으면 그 결과를 같이 기다린다.
   Future<bool> refreshAccessToken() => _tryRefresh();
