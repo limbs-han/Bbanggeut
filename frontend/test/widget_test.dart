@@ -430,14 +430,9 @@ void main() {
     expect(find.text('등록된 메모가 없습니다'), findsNothing);
     expect(find.text('메모를 남겨보세요!'), findsNothing);
 
-    await tester.tap(find.byTooltip('제목 수정'));
-    await tester.pumpAndSettle();
-    expect(find.text('추억 제목 바꾸기'), findsOneWidget);
-    expect(find.byKey(const Key('memory-title-input')), findsOneWidget);
-    expect(find.byKey(const Key('memory-memo-input')), findsNothing);
-    expect(find.byKey(const Key('memory-metadata-save')), findsOneWidget);
-    await tester.tap(find.byTooltip('닫기'));
-    await tester.pumpAndSettle();
+    // 이 컨트롤러는 금고를 소유하지 않는다 — 원본 영상의 제목은 OWNER만
+    // 바꾸므로 수정 버튼이 보이지 않아야 한다.
+    expect(find.byTooltip('제목 수정'), findsNothing);
 
     final editButton = find.widgetWithText(FilledButton, '영상 편집하기');
     await tester.ensureVisible(editButton);

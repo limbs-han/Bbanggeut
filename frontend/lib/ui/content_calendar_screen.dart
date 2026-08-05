@@ -222,6 +222,8 @@ class _ContentCalendarScreenState extends State<ContentCalendarScreen> {
                       date: _selected,
                       edited: selectedEdited,
                       api: widget.controller.api,
+                      myUserId: widget.controller.user?.id,
+                      isOwner: widget.controller.isOwner,
                     ),
                   ],
                 ],
@@ -868,11 +870,15 @@ class _SelectedEditedCard extends StatelessWidget {
     required this.date,
     required this.edited,
     required this.api,
+    this.myUserId,
+    this.isOwner = false,
   });
 
   final DateTime date;
   final List<Map<String, dynamic>> edited;
   final ApiClient api;
+  final String? myUserId;
+  final bool isOwner;
 
   @override
   Widget build(BuildContext context) => _DaySummaryCard(
@@ -918,6 +924,8 @@ class _SelectedEditedCard extends StatelessWidget {
                     savedAt: DateTime.tryParse(
                       meta['savedAt'] as String? ?? '',
                     ),
+                    myUserId: myUserId,
+                    isOwner: isOwner,
                   ),
                 ),
               ),
