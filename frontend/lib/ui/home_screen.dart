@@ -147,7 +147,7 @@ class HomeScreen extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      latest.title,
+                                      videoDisplayTitle(latest),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: Theme.of(
@@ -156,10 +156,10 @@ class HomeScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 5),
                                     Text(
-                                      memoryDate(
-                                        latest.capturedStartAt ??
-                                            latest.createdAt,
-                                      ),
+                                      // 제목이 날짜·시각·종류를 이미 담으므로
+                                      // 여기서는 길이를 적는다. 같은 시각을 두
+                                      // 형식으로 두 번 쓰던 자리다.
+                                      '길이 ${durationLabel(latest.durationMs)}',
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodyMedium,
