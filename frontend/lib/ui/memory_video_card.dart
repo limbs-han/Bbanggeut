@@ -173,15 +173,6 @@ class MemoryVideoCard extends StatelessWidget {
                     _timeRange,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    video.description?.trim().isNotEmpty == true
-                        ? video.description!.trim()
-                        : '등록된 메모가 없습니다',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
                   const SizedBox(height: 5),
                   VideoEventTypePills(video: video, compact: true),
                   const SizedBox(height: 5),

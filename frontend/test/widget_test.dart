@@ -422,23 +422,19 @@ void main() {
     );
 
     expect(find.text('오늘의 추억  🌱'), findsOneWidget);
-    expect(find.text('등록된 메모가 없습니다'), findsOneWidget);
-    expect(find.text('메모를 남겨보세요!'), findsOneWidget);
     expect(find.text('갤러리에 저장'), findsOneWidget);
-    expect(find.byType(Image), findsWidgets);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('empty-memory-memo-action')),
-        matching: find.byIcon(Icons.edit_rounded),
-      ),
-      findsNothing,
-    );
 
-    await tester.tap(find.text('메모를 남겨보세요!'));
+    // 메모 기능은 걷어냈다. 되살아나면 여기서 잡힌다.
+    // (마스코트 그림은 메모 상자에 붙어 있던 장식이라 함께 사라졌다 —
+    //  그래서 이 화면에 Image가 있는지 보던 단정도 뺐다.)
+    expect(find.text('등록된 메모가 없습니다'), findsNothing);
+    expect(find.text('메모를 남겨보세요!'), findsNothing);
+
+    await tester.tap(find.byTooltip('제목 수정'));
     await tester.pumpAndSettle();
-    expect(find.text('추억 기록하기'), findsOneWidget);
+    expect(find.text('추억 제목 바꾸기'), findsOneWidget);
     expect(find.byKey(const Key('memory-title-input')), findsOneWidget);
-    expect(find.byKey(const Key('memory-memo-input')), findsOneWidget);
+    expect(find.byKey(const Key('memory-memo-input')), findsNothing);
     expect(find.byKey(const Key('memory-metadata-save')), findsOneWidget);
     await tester.tap(find.byTooltip('닫기'));
     await tester.pumpAndSettle();

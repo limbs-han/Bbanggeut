@@ -484,19 +484,11 @@ class ApiClient {
     }
   }
 
-  Future<void> updateVideo(
-    String id, {
-    String? title,
-    String? description,
-    bool? favorite,
-  }) async => _patch(
-    '/api/videos/$id',
-    data: {
-      'title': ?title,
-      'description': ?description,
-      'isFavorite': ?favorite,
-    },
-  );
+  Future<void> updateVideo(String id, {String? title, bool? favorite}) async =>
+      _patch(
+        '/api/videos/$id',
+        data: {'title': ?title, 'isFavorite': ?favorite},
+      );
   Future<void> deleteVideo(String id) async => _delete('/api/videos/$id');
   Future<VideoMemory> getVideo(String id) async =>
       VideoMemory.fromJson(await _get('/api/videos/$id'));

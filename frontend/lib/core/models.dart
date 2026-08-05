@@ -316,7 +316,6 @@ class VideoMemory {
     required this.favorite,
     this.eventTypes = const [],
     this.sourceType = 'IOT_CAPTURE',
-    this.description,
     this.durationMs,
     this.thumbnailUrl,
     this.capturedStartAt,
@@ -327,7 +326,6 @@ class VideoMemory {
   final String triggerType;
   final List<String> eventTypes;
   final String title;
-  final String? description;
   final String status;
   final bool favorite;
   final String sourceType;
@@ -335,6 +333,23 @@ class VideoMemory {
   final String? thumbnailUrl;
   final DateTime? capturedStartAt;
   final DateTime? createdAt;
+
+  /// 서버 응답을 다시 받지 않고 방금 바꾼 값만 갈아 끼울 때 쓴다. 목록을
+  /// 통째로 다시 조회하면 사용자는 자기가 누른 결과를 몇 초 뒤에 본다.
+  VideoMemory copyWith({String? title, bool? favorite}) => VideoMemory(
+    id: id,
+    deviceId: deviceId,
+    triggerType: triggerType,
+    eventTypes: eventTypes,
+    sourceType: sourceType,
+    title: title ?? this.title,
+    status: status,
+    favorite: favorite ?? this.favorite,
+    durationMs: durationMs,
+    thumbnailUrl: thumbnailUrl,
+    capturedStartAt: capturedStartAt,
+    createdAt: createdAt,
+  );
   List<String> get effectiveEventTypes => eventTypes.isEmpty
       ? List.unmodifiable([triggerType])
       : eventTypes;
@@ -354,7 +369,6 @@ class VideoMemory {
         triggerType: triggerType,
       ),
       title: json['title'] as String? ?? '이름 없는 추억',
-      description: json['description'] as String?,
       status: json['status'] as String? ?? 'PROCESSING',
       favorite: json['isFavorite'] as bool? ?? false,
       sourceType: json['sourceType'] as String? ?? 'IOT_CAPTURE',
