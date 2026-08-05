@@ -47,6 +47,15 @@ public interface AuthMapper {
     @Update("UPDATE users SET last_login_at = now(), updated_at = now() WHERE id = #{id}")
     int updateLastLogin(@Param("id") UUID id);
 
+    @Update("""
+        UPDATE users
+           SET display_name = #{displayName},
+               updated_at = now()
+         WHERE id = #{id}
+           AND deleted_at IS NULL
+        """)
+    int updateDisplayName(@Param("id") UUID id, @Param("displayName") String displayName);
+
     @Insert("""
         INSERT INTO auth_sessions (
             id, user_id, refresh_token_hash, client_name, user_agent, ip_address, expires_at

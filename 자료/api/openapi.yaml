@@ -187,6 +187,32 @@ paths:
           $ref: '#/components/responses/ValidationError'
 
   /api/auth/me:
+    patch:
+      tags: [Auth]
+      operationId: updateMyProfile
+      summary: 내 프로필 수정
+      description: |
+        표시 이름만 바꾼다. 이메일은 로그인 식별자라 이 API로 바꿀 수 없다.
+        앞뒤 공백은 서버가 다듬어 저장한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: 수정된 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
     delete:
       tags: [Auth]
       operationId: withdrawAccount
@@ -2769,6 +2795,16 @@ components:
           format: email
         displayName:
           type: string
+          maxLength: 60
+
+    UpdateProfileRequest:
+      type: object
+      required: [displayName]
+      additionalProperties: false
+      properties:
+        displayName:
+          type: string
+          minLength: 1
           maxLength: 60
 
     SignUpRequest:
