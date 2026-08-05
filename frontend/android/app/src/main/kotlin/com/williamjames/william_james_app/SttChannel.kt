@@ -68,7 +68,9 @@ object SttChannel {
                             result.error("bad_args", "wav 경로가 필요합니다.", null)
                         } else {
                             offThread(result) {
-                                MlKitTranscriber.transcribe(application, wav)
+                                MlKitTranscriber.transcribe(application, wav) { percent ->
+                                    main.post { channel.invokeMethod("mlkitTranscribeProgress", percent) }
+                                }
                                     .map { mapOf("startMs" to it.startMs, "endMs" to it.endMs, "text" to it.text) }
                             }
                         }

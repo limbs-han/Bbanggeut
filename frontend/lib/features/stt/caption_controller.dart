@@ -25,6 +25,23 @@ class CaptionController extends ChangeNotifier {
 
   TranscriptJobState? get status => _job?.value;
 
+  /// 전사 진행률(0~99). 도는 중이 아니거나 아직 모르면 null.
+  ///
+  /// 작업이 세는 값이라 시트를 닫았다 열어도 이어진다 — 화면이 세던 동안에는
+  /// 다시 열 때마다 1%부터 시작했다.
+  int? get percent {
+    final state = status;
+    if (state is! TranscriptRunning) return null;
+    if (state.stage == TranscriptStage.audio || state.percent <= 0) return null;
+    return state.percent;
+  }
+
+  /// 지금 어느 단계인가. 도는 중이 아니면 null.
+  TranscriptStage? get stage {
+    final state = status;
+    return state is TranscriptRunning ? state.stage : null;
+  }
+
   /// 사용자가 자막을 고쳤는가. 화면이 이 값을 편집 상태의 `hasUnsavedChanges`에
   /// 반영한다 — 전사 결과가 들어온 것만으로는 켜지지 않아야 한다(화면을 열자마자
   /// 폐기 경고가 뜨면 안 된다).

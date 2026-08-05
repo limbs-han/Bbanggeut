@@ -1,7 +1,6 @@
 /// 자막 시트에 끼우는 자동 자막 섹션.
 library;
 
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -50,12 +49,6 @@ class CaptionAutoSection extends StatefulWidget {
 
 class _CaptionAutoSectionState extends State<CaptionAutoSection> {
   final _field = TextEditingController();
-  Timer? _progressTimer;
-  DateTime? _progressStartedAt;
-  int _estimatedPercent = 1;
-
-  /// 남은 시간(초). 예상 시간에서 지난 만큼을 뺀 값이라 퍼센트와 같은 근거다.
-  int _remainingSeconds = 0;
 
   bool get _isLoading => widget.controller.status is TranscriptRunning;
 
@@ -63,54 +56,15 @@ class _CaptionAutoSectionState extends State<CaptionAutoSection> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
-    _syncProgressTimer();
   }
 
   void _onControllerChanged() {
-    _syncProgressTimer();
     if (mounted) setState(() {});
-  }
-
-  void _syncProgressTimer() {
-    if (!_isLoading) {
-      _progressTimer?.cancel();
-      _progressTimer = null;
-      return;
-    }
-    if (_progressTimer != null) return;
-    _progressStartedAt = DateTime.now();
-    _estimatedPercent = 1;
-    _remainingSeconds = widget.estimateSeconds ?? 0;
-    _progressTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!mounted || !_isLoading) {
-        _progressTimer?.cancel();
-        _progressTimer = null;
-        return;
-      }
-      final expectedSeconds = math.max(10, widget.estimateSeconds ?? 60);
-      final elapsedMs = DateTime.now()
-          .difference(_progressStartedAt!)
-          .inMilliseconds;
-      final next = (1 + elapsedMs / (expectedSeconds * 1000) * 94)
-          .floor()
-          .clamp(1, 95);
-      // 예상보다 오래 끌면 음수가 된다. 0에서 멈춰 두고 화면이 문구를 바꾼다.
-      final remainingMs = math.max(0, expectedSeconds * 1000 - elapsedMs);
-      final nextRemaining = (remainingMs / 1000).ceil();
-      if (next == _estimatedPercent && nextRemaining == _remainingSeconds) {
-        return;
-      }
-      setState(() {
-        _estimatedPercent = next;
-        _remainingSeconds = nextRemaining;
-      });
-    });
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
-    _progressTimer?.cancel();
     _field.dispose();
     super.dispose();
   }
@@ -142,17 +96,23 @@ class _CaptionAutoSectionState extends State<CaptionAutoSection> {
     },
   );
 
+  /// 진행 화면.
+  ///
+  /// **퍼센트는 짐작하지 않는다.** 모델 내려받기는 내려받은 바이트에서, 대사
+  /// 인식은 엔진에 먹인 오디오 양에서 온다(`MlKitTranscriber`). 아직 셀 것이
+  /// 없는 단계(소리 뽑기)에서는 숫자를 빼고 띠만 흐르게 둔다 — 없는 숫자를
+  /// 만들어 보여 주면 예상보다 오래 걸릴 때 한 값에 붙어 멈춘 것처럼 보인다.
   Widget _loadingContent(int? downloadPercent) {
     final preparing = downloadPercent != null;
-    final visiblePercent = (downloadPercent ?? _estimatedPercent).clamp(1, 99);
-    final statusText = widget.controller.message(
-      estimateSeconds: widget.estimateSeconds,
-    );
-    // 예상 시간을 아는 동안에는 줄어드는 숫자를 보여 준다. 고정된 "약 108초
-    // 걸려요"는 아무리 기다려도 그대로라 멈춘 것처럼 읽힌다.
-    final countdown = widget.estimateSeconds == null || _progressTimer == null
-        ? null
-        : (_remainingSeconds > 0 ? '약 $_remainingSeconds초 남았어요' : '거의 다 됐어요');
+    final percent = downloadPercent ?? widget.controller.percent;
+    // 오디오를 다 먹인 뒤에도 엔진이 마지막 문장을 내놓기까지 시간이 걸린다.
+    // 그 구간을 '대사 인식'에 두면 99%에 붙어 멈춘 것처럼 읽히므로, 실제로
+    // 하는 일 그대로 마지막 단계로 넘긴다.
+    final step = preparing || widget.controller.stage == TranscriptStage.audio
+        ? 0
+        : (percent ?? 0) >= 99
+        ? 2
+        : 1;
     return Column(
       key: const ValueKey('auto-caption-loading'),
       mainAxisSize: MainAxisSize.min,
@@ -170,7 +130,13 @@ class _CaptionAutoSectionState extends State<CaptionAutoSection> {
         ),
         const SizedBox(height: 12),
         Text(
-          preparing ? '자막 기능을 준비하는 중' : '영상 소리를 분석하는 중',
+          preparing
+              ? '자막 기능을 준비하는 중'
+              : switch (step) {
+                  0 => '영상에서 소리를 뽑는 중',
+                  1 => '대사를 알아듣는 중',
+                  _ => '알아들은 대사를 자막으로 정리하는 중',
+                },
           style: const TextStyle(
             color: AppColors.inkSoft,
             fontSize: 15,
@@ -181,23 +147,37 @@ class _CaptionAutoSectionState extends State<CaptionAutoSection> {
         const AnimatedCaptionWaveform(),
         const SizedBox(height: 20),
         Text(
-          '자동 자막 생성 중 · $visiblePercent%',
+          percent == null ? '자동 자막 생성 중' : '자동 자막 생성 중 · $percent%',
+          key: const ValueKey('auto-caption-percent'),
           style: const TextStyle(
             color: AppColors.ink,
             fontSize: 17,
             fontWeight: FontWeight.w900,
           ),
         ),
+        const SizedBox(height: 10),
+        // 값을 아는 동안은 채워지는 띠, 모르는 동안은 흐르는 띠. 둘 다 같은
+        // 자리를 쓰므로 단계가 넘어갈 때 화면이 튀지 않는다.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            key: const ValueKey('auto-caption-bar'),
+            value: percent == null ? null : percent / 100,
+            minHeight: 8,
+            backgroundColor: AppColors.line,
+            color: _captionCoral,
+          ),
+        ),
         const SizedBox(height: 8),
         Text(
-          countdown ?? statusText,
+          widget.controller.message(estimateSeconds: widget.estimateSeconds),
           textAlign: TextAlign.center,
           style: const TextStyle(color: AppColors.muted, fontSize: 13),
         ),
         const SizedBox(height: 20),
         const Divider(color: _captionBorder, height: 1),
         const SizedBox(height: 16),
-        _CaptionProgressSteps(preparing: preparing),
+        _CaptionProgressSteps(step: step),
         const SizedBox(height: 18),
         const Text(
           '완료되면 자막 검토 화면으로 이동해요.',
@@ -1058,41 +1038,42 @@ const _captionSparkles = <_CaptionSparkleSpec>[
   ),
 ];
 
+/// 지금 몇 번째 단계인가(0 소리 불러오기 · 1 대사 인식 · 2 자막 정리).
 class _CaptionProgressSteps extends StatelessWidget {
-  const _CaptionProgressSteps({required this.preparing});
+  const _CaptionProgressSteps({required this.step});
 
-  final bool preparing;
+  final int step;
+
+  static const _pending = Color(0xFFA79D94);
 
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      _CaptionStep(
-        icon: preparing ? Icons.downloading_rounded : Icons.check_rounded,
-        label: '소리 불러오기',
-        color: _captionGreen,
-        active: preparing,
-        completed: !preparing,
-      ),
-      const Expanded(
-        child: Divider(color: _captionBorder, indent: 8, endIndent: 8),
-      ),
-      _CaptionStep(
-        icon: preparing ? Icons.circle_outlined : Icons.circle,
-        label: '대사 인식',
-        color: preparing ? const Color(0xFFA79D94) : _captionCoral,
-        active: !preparing,
-      ),
-      const Expanded(
-        child: Divider(color: _captionBorder, indent: 8, endIndent: 8),
-      ),
-      const _CaptionStep(
-        icon: Icons.circle_outlined,
-        label: '자막 정리',
-        color: Color(0xFFA79D94),
-        active: false,
-      ),
-    ],
-  );
+  Widget build(BuildContext context) {
+    Widget stepAt(int index, String label, Color color) => _CaptionStep(
+      icon: index < step
+          ? Icons.check_rounded
+          : index == step
+          ? Icons.circle
+          : Icons.circle_outlined,
+      label: label,
+      color: index <= step ? color : _pending,
+      active: index == step,
+      completed: index < step,
+    );
+
+    return Row(
+      children: [
+        stepAt(0, '소리 불러오기', _captionGreen),
+        const Expanded(
+          child: Divider(color: _captionBorder, indent: 8, endIndent: 8),
+        ),
+        stepAt(1, '대사 인식', _captionCoral),
+        const Expanded(
+          child: Divider(color: _captionBorder, indent: 8, endIndent: 8),
+        ),
+        stepAt(2, '자막 정리', _captionGreen),
+      ],
+    );
+  }
 }
 
 class _CaptionStep extends StatelessWidget {

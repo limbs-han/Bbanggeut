@@ -18,8 +18,23 @@ sealed class ComicState {
 }
 
 /// 자막(전사문)이 없다. 만화를 만들 수 없다.
+///
+/// 여기서 끝이 아니다 — [ComicController.transcribe]로 이 화면에서 바로 자막을
+/// 만들 수 있다. 예전에는 "편집 화면에서 자막을 열어 주세요"라고만 안내했는데,
+/// 만화를 만들려던 사람을 다른 화면으로 보내 놓고 돌아오게 하는 길이었다.
 class ComicNeedsTranscript extends ComicState {
   const ComicNeedsTranscript();
+}
+
+/// 이 화면에서 자막을 만들고 있다. 원본 내려받기와 전사를 함께 나타낸다.
+///
+/// [percent]가 null이면 진행률을 모르는 단계다(원본 내려받기 시작 전 등).
+class ComicTranscribing extends ComicState {
+  const ComicTranscribing(this.label, {this.percent});
+
+  /// 지금 무엇을 하는 중인지. 화면이 그대로 보여 준다.
+  final String label;
+  final int? percent;
 }
 
 class ComicLoadingScript extends ComicState {
@@ -41,20 +56,26 @@ class ComicLoadingImage extends ComicState {
   final int queuePosition;
 }
 
-/// 전에 만들어 둔 만화가 서버에 있다. 구성(대사)은 아직 받지 않았다.
+/// 전에 만들어 둔 만화가 서버에 있는데 **구성을 함께 받지 못했다.**
 ///
-/// 구성 요청은 호출마다 돈이 든다. 그래서 열자마자 받지 않고, 사용자가
-/// "대사 고쳐 다시 만들기"를 누를 때만 받는다.
+/// 서버가 구성(script.json)을 남기기 전에 만든 옛 만화만 이 상태로 온다. 구성이
+/// 없으면 자막 띠를 얹을 수 없어 그림만 보여 주고, 대사를 되살리려면 구성을
+/// 새로 받아야 한다. 구성이 함께 왔으면 [ComicReady]로 간다 — 그래야 대사와
+/// 저장·공유 버튼이 그대로 있다.
 class ComicSaved extends ComicState {
   const ComicSaved(this.image, this.savedAt);
   final Uint8List image;
   final DateTime? savedAt;
 }
 
+/// 그림과 구성이 모두 손에 있다. 자막 띠를 얹어 보여 주고 저장·공유할 수 있다.
+///
+/// [savedAt]은 서버에 저장된 만화를 다시 열었을 때만 있다 — 방금 만든 것은 null.
 class ComicReady extends ComicState {
-  const ComicReady(this.cuts, this.image);
+  const ComicReady(this.cuts, this.image, {this.savedAt});
   final List<ComicCut> cuts;
   final Uint8List image;
+  final DateTime? savedAt;
 }
 
 /// 실패했지만 구성이 있으면 함께 들고 있는다 — 고친 대사를 잃지 않기 위해서다.
@@ -68,12 +89,19 @@ class ComicController extends ChangeNotifier {
   ComicController({
     required this.gateway,
     required this.videoId,
+    this.sourceProvider,
     stt.TranscriptStore? store,
   }) : _store = store ?? stt.transcriptStore;
 
   final ComicGateway gateway;
   final String videoId;
   final stt.TranscriptStore _store;
+
+  /// 원본 영상을 기기에 내려놓고 그 경로를 주는 통로. 자막을 이 화면에서 만들 때
+  /// 쓴다 — 전사는 로컬 파일이 있어야 돌아간다. null이면 자막 만들기를 걸지
+  /// 않는다(화면이 버튼을 감춘다).
+  final Future<String> Function(void Function(int percent) onProgress)?
+  sourceProvider;
 
   ComicState _state = const ComicLoadingScript();
   List<ComicCut> _cuts = <ComicCut>[];
@@ -114,6 +142,69 @@ class ComicController extends ChangeNotifier {
     } catch (error) {
       _set(ComicFailed('$error', null));
     }
+  }
+
+  /// 자막이 없을 때 **이 화면에서** 자막을 만든다. 끝나면 곧바로 구성을 받는다.
+  ///
+  /// 편집 화면으로 보내지 않는 이유: 만화를 만들려고 들어온 사람에게 다른
+  /// 화면을 거쳐 돌아오라고 하는 길이었다. 전사는 로컬 원본이 있어야 도니까
+  /// [sourceProvider]로 먼저 내려받는다.
+  Future<void> transcribe() async {
+    final provider = sourceProvider;
+    if (provider == null) return;
+    _set(const ComicTranscribing('영상을 불러오고 있어요'));
+    final String path;
+    try {
+      path = await provider((percent) {
+        if (!_disposed) {
+          _set(ComicTranscribing('영상을 불러오고 있어요', percent: percent));
+        }
+      });
+    } catch (error) {
+      _set(ComicFailed('$error', null));
+      return;
+    }
+    if (_disposed) return;
+    _set(const ComicTranscribing('대사를 알아듣고 있어요'));
+    final failure = await _awaitTranscript(path);
+    if (_disposed) return;
+    if (failure != null) {
+      _set(ComicFailed(failure, null));
+      return;
+    }
+    await start();
+  }
+
+  /// 전사가 끝날 때까지 기다리며 진행률을 화면에 흘린다. 실패 사유를 돌려주고,
+  /// 잘 끝나면 null이다.
+  ///
+  /// 자막 화면과 **같은 작업**을 본다([stt.TranscriptStore.ensure]는 같은
+  /// videoId에 하나만 돌린다). 그래서 편집 화면에서 이미 돌고 있으면 여기서는
+  /// 그 진행률만 따라간다.
+  Future<String?> _awaitTranscript(String videoPath) {
+    final job = _store.ensure(videoId, videoPath);
+    final done = Completer<String?>();
+    void onChanged() {
+      switch (job.value) {
+        case stt.TranscriptRunning(:final percent):
+          if (!_disposed) {
+            _set(
+              ComicTranscribing(
+                '대사를 알아듣고 있어요',
+                percent: percent == 0 ? null : percent,
+              ),
+            );
+          }
+        case stt.TranscriptReady():
+          if (!done.isCompleted) done.complete(null);
+        case stt.TranscriptFailed(:final reason):
+          if (!done.isCompleted) done.complete(reason);
+      }
+    }
+
+    job.addListener(onChanged);
+    onChanged();
+    return done.future.whenComplete(() => job.removeListener(onChanged));
   }
 
   /// 빈 글이면 null로 둔다 — 빈 자막 띠를 그리지 않는다.
@@ -157,8 +248,15 @@ class ComicController extends ChangeNotifier {
     }
     if (status.done && status.imageUrl != null) {
       try {
+        final image = await gateway.download(status.imageUrl!);
+        // 구성이 함께 왔으면 완성 화면으로 간다 — 자막 띠가 얹히고 저장·공유·
+        // 대사 고치기가 그대로 있다. 예전에는 언제나 ComicSaved로 갔는데, 그
+        // 화면은 그림만 그려서 나갔다 오면 **대사 네 줄이 사라진 것처럼**
+        // 보였다(실사용 지적). 구성을 못 받은 옛 만화만 ComicSaved로 둔다.
         _set(
-          ComicSaved(await gateway.download(status.imageUrl!), status.savedAt),
+          _cuts.isEmpty
+              ? ComicSaved(image, status.savedAt)
+              : ComicReady(_cuts, image, savedAt: status.savedAt),
         );
         return;
       } catch (_) {

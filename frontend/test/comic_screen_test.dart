@@ -19,7 +19,7 @@ import 'package:william_james_app/features/stt/transcript_store.dart';
 class _MemoryStore extends TranscriptStore {
   _MemoryStore(this._saved)
     : super(
-        transcriber: (_) async => const [],
+        transcriber: (_, [_]) async => const [],
         root: () async => Directory.systemTemp,
       );
 
@@ -143,6 +143,7 @@ void main() {
     List<CaptionLine>? saved,
     Object? scriptError,
     Object? imageError,
+    Future<String> Function(void Function(int percent))? sourceProvider,
   }) {
     gateway = _StubGateway(
       png: png,
@@ -152,15 +153,26 @@ void main() {
     return ComicController(
       gateway: gateway,
       videoId: 'v1',
+      sourceProvider: sourceProvider,
       store: _MemoryStore(saved),
     );
   }
 
-  testWidgets('전사문이 없으면 안내를 보여준다', (tester) async {
+  // 자막이 없을 때 **여기서 만들 수 있어야 한다.** 편집 화면으로 보내 놓고
+  // 돌아오라고 하는 안내는 실제로 여기서 멈추게 했다.
+  testWidgets('전사문이 없으면 자막 만들기 버튼을 보여준다', (tester) async {
+    await pump(tester, build(sourceProvider: (_) async => '/video/v1.mp4'));
+
+    expect(find.textContaining('먼저 대사를'), findsOneWidget);
+    expect(find.byKey(const ValueKey('comic-make-transcript')), findsOneWidget);
+    expect(find.byKey(const ValueKey('comic-make-image')), findsNothing);
+  });
+
+  // 원본을 받아올 통로가 없으면 누를 수 없는 버튼을 보여 주지 않는다.
+  testWidgets('원본 통로가 없으면 자막 만들기 버튼도 없다', (tester) async {
     await pump(tester, build());
 
-    expect(find.textContaining('대사를 먼저'), findsOneWidget);
-    expect(find.byKey(const ValueKey('comic-make-image')), findsNothing);
+    expect(find.byKey(const ValueKey('comic-make-transcript')), findsNothing);
   });
 
   testWidgets('구성을 받으면 네 컷을 보여준다', (tester) async {

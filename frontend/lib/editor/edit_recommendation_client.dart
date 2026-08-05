@@ -193,12 +193,18 @@ class EditRecommendationClient {
   /// 직접 내려받는다 — 실서버에서는 원본이 이미 같은 호스트의 MinIO에
   /// 있으므로 폰이 영상을 LTE로 다시 올리는 낭비를 피한다. 없으면
   /// [filePath]의 로컬 원본을 통째로 올린다.
+  ///
+  /// [filePath]가 null이면 [sourceUrl]로만 요청한다 — 원본을 아직 내려받지
+  /// 않은 시점에 분석을 미리 시작하는 경로다(편집 화면 진입 즉시).
   Future<EditAnalysisStatus> requestAnalysis({
     required String videoId,
-    required String filePath,
+    String? filePath,
     String? sourceUrl,
     void Function(int sent, int total)? onProgress,
   }) async {
+    if (sourceUrl == null && filePath == null) {
+      throw ArgumentError('sourceUrl이나 filePath 하나는 있어야 합니다.');
+    }
     final Response<Map<String, dynamic>> response;
     if (sourceUrl != null) {
       response = await _dio.put<Map<String, dynamic>>(
@@ -206,7 +212,7 @@ class EditRecommendationClient {
         data: {'sourceUrl': sourceUrl},
       );
     } else {
-      final file = File(filePath);
+      final file = File(filePath!);
       final length = await file.length();
       response = await _dio.put<Map<String, dynamic>>(
         '/v1/edit-analyses/$videoId',
