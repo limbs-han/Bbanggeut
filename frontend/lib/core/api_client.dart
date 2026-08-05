@@ -322,6 +322,33 @@ class ApiClient {
         await _put('/api/schedules/${schedule.id}', data: schedule.toJson()),
       );
 
+  /// 금고의 장소 배치와 내 기기 순서.
+  Future<PlaceLayout> getPlaceLayout(String vaultId) async =>
+      PlaceLayout.fromJson(await _get('/api/vaults/$vaultId/places'));
+
+  /// 금고 공통 배치를 통째로 저장한다. 구성원 누구나 할 수 있다.
+  Future<PlaceLayout> replacePlaceLayout(
+    String vaultId, {
+    required List<String> places,
+    required Map<String, String> devicePlaces,
+  }) async => PlaceLayout.fromJson(
+    await _put(
+      '/api/vaults/$vaultId/places',
+      data: {'places': places, 'devicePlaces': devicePlaces},
+    ),
+  );
+
+  /// 내 기기 순서만 저장한다. 다른 구성원 화면에는 영향이 없다.
+  Future<PlaceLayout> replaceDeviceOrder(
+    String vaultId,
+    List<String> deviceIds,
+  ) async => PlaceLayout.fromJson(
+    await _put(
+      '/api/vaults/$vaultId/device-order',
+      data: {'deviceIds': deviceIds},
+    ),
+  );
+
   Future<void> deleteSchedule(String scheduleId) async =>
       _delete('/api/schedules/$scheduleId');
 

@@ -570,6 +570,40 @@ class NotificationPreferences {
 ///
 /// [authorId]는 이 일정을 적은 사람이다. 수정·삭제는 적은 사람과 금고 OWNER만
 /// 할 수 있어서, 버튼을 가리려면 앱도 누가 적었는지 알아야 한다.
+/// 금고의 장소 배치와 내 기기 순서.
+///
+/// [places]와 [devicePlaces]는 금고 공통이다 — 장소 이름과 기기가 어느 장소에
+/// 있는지는 집의 사실이라 가족이 함께 본다. [deviceOrder]는 이 사람만의
+/// 순서다 — 기기를 어떤 순서로 볼지는 보기 취향이다.
+class PlaceLayout {
+  const PlaceLayout({
+    this.places = const [],
+    this.devicePlaces = const {},
+    this.deviceOrder = const [],
+  });
+
+  final List<String> places;
+  final Map<String, String> devicePlaces;
+  final List<String> deviceOrder;
+
+  /// 서버에 아직 아무 배치도 없는가. 이 폰의 로컬 배치를 한 번 올려야 하는지
+  /// 판단하는 기준이다.
+  bool get isEmpty => places.isEmpty;
+
+  factory PlaceLayout.fromJson(Map<String, dynamic> json) => PlaceLayout(
+    places: (json['places'] as List? ?? const [])
+        .whereType<String>()
+        .toList(growable: false),
+    devicePlaces: {
+      for (final entry in (json['devicePlaces'] as Map? ?? const {}).entries)
+        '${entry.key}': '${entry.value}',
+    },
+    deviceOrder: (json['deviceOrder'] as List? ?? const [])
+        .whereType<String>()
+        .toList(growable: false),
+  );
+}
+
 class CalendarSchedule {
   const CalendarSchedule({
     required this.id,
