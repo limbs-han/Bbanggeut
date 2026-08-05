@@ -11,6 +11,7 @@ import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.CreateEditUploadRequest;
 import com.wj.server.video.api.CreateVideoCommentRequest;
 import com.wj.server.video.api.EditUploadResponse;
+import com.wj.server.video.api.UpdateVideoCommentRequest;
 import com.wj.server.video.api.VideoCommentResponse;
 import com.wj.server.video.api.VideoResponse;
 import com.wj.server.video.domain.VideoRow;
@@ -112,6 +113,50 @@ public class EditedVideoService {
         notificationService.editCommentAdded(userId, videoId, commentId.toString(), body);
         return new VideoCommentResponse(
             commentId, userId, null, body, Instant.now());
+    }
+
+    /**
+     * 댓글은 쓴 사람만 고친다.
+     *
+     * OWNER에게도 열지 않은 이유는 남의 말을 고쳐 쓰는 것과 지우는 것이 다른
+     * 일이기 때문이다. 부적절한 댓글은 {@link #deleteComment}로 지운다.
+     */
+    @Transactional
+    public VideoCommentResponse updateComment(
+        UUID userId, UUID videoId, UUID commentId, UpdateVideoCommentRequest request
+    ) {
+        videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(this::notFound);
+        UUID authorId = commentMapper.findAuthorId(commentId, videoId).orElseThrow(this::notFound);
+        if (!userId.equals(authorId)) {
+            throw new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "자신이 쓴 댓글만 고칠 수 있습니다.");
+        }
+        String body = request.body().strip();
+        if (body.isEmpty()) {
+            throw new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED", "댓글 내용을 입력해야 합니다.");
+        }
+        if (commentMapper.updateBody(commentId, videoId, body) != 1) {
+            throw notFound();
+        }
+        return new VideoCommentResponse(commentId, userId, null, body, Instant.now());
+    }
+
+    /** 쓴 사람은 자기 댓글을, OWNER는 금고의 어느 댓글이든 지운다. */
+    @Transactional
+    public void deleteComment(UUID userId, UUID videoId, UUID commentId) {
+        videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(this::notFound);
+        UUID authorId = commentMapper.findAuthorId(commentId, videoId).orElseThrow(this::notFound);
+        boolean owner = "OWNER".equals(
+            videoMapper.findActiveRole(userId, videoId).orElseThrow(this::notFound));
+        if (!userId.equals(authorId) && !owner) {
+            throw new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                "자신이 쓴 댓글이거나 OWNER만 삭제할 수 있습니다.");
+        }
+        if (commentMapper.delete(commentId, videoId) != 1) {
+            throw notFound();
+        }
     }
 
     private String normalizedTitle(String requested, String sourceTitle) {

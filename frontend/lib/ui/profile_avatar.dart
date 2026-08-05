@@ -32,20 +32,39 @@ class ProfileAvatarStore {
   static const _kindKey = 'wj_profile_avatar_kind';
   static const _valueKey = 'wj_profile_avatar_value';
 
+  static const fallback = ProfileAvatarSelection.asset(
+    'assets/images/profile_avatar_hello.png',
+  );
+
+  /// 지금 쓰는 아바타. [ProfileAvatarView]가 이 값을 듣는다.
+  ///
+  /// **왜 Future가 아니라 notifier인가**: 아바타는 홈·설정·가족 화면에 동시에
+  /// 뜨고, 그중 몇은 `const ProfileAvatarView(radius: 24)`처럼 const로 박혀
+  /// 있다. const 위젯은 부모가 `setState`를 불러도 Flutter가 같은 인스턴스를
+  /// 알아보고 서브트리 리빌드를 건너뛴다 — `build` 안에서 저장소를 읽는 구조로는
+  /// 새로 고른 그림이 그 자리에 영영 반영되지 않았다. 설정 화면이 프로필 수정에서
+  /// 돌아올 때 `setState`를 부르고 있는데도 작은 아바타만 예전 그림으로 남던
+  /// 이유다. notifier는 위젯 동일성과 무관하게 듣는 쪽을 다시 그린다.
+  static final ValueNotifier<ProfileAvatarSelection> current =
+      ValueNotifier<ProfileAvatarSelection>(fallback);
+
   static Future<ProfileAvatarSelection>? _loaded;
 
   /// 한 번 읽은 값을 들고 있는다.
   ///
-  /// **왜**: [ProfileAvatarView]가 이걸 `build` 안의 FutureBuilder로 읽는다.
-  /// 그래서 화면이 다시 그려질 때마다 보안 저장소를 두 번 읽고 파일 존재까지
-  /// 확인했다. 안드로이드 보안 저장소는 읽을 때마다 키스토어를 거치는데, 아바타는
-  /// 홈·설정·가족 화면에 여러 개가 동시에 뜨고 그 화면들은 컨트롤러가 알릴 때마다
-  /// 다시 그려진다 — 아무 것도 바뀌지 않았는데 채널 왕복만 쌓였다.
+  /// **왜**: 안드로이드 보안 저장소는 읽을 때마다 키스토어를 거친다. 화면이
+  /// 다시 그려질 때마다 읽으면 아무 것도 바뀌지 않았는데 채널 왕복만 쌓인다.
   ///
   /// 값이 바뀌는 길은 [save] 하나뿐이라, 그쪽에서 갈아 끼우면 어긋날 일이 없다.
   static Future<ProfileAvatarSelection> load() => _loaded ??= _read();
 
   static Future<ProfileAvatarSelection> _read() async {
+    final selection = await _readStored();
+    current.value = selection;
+    return selection;
+  }
+
+  static Future<ProfileAvatarSelection> _readStored() async {
     try {
       final values = await Future.wait([
         _storage.read(key: _kindKey),
@@ -59,19 +78,28 @@ class ProfileAvatarStore {
         return ProfileAvatarSelection.asset(value);
       }
     } catch (_) {}
-    return const ProfileAvatarSelection.asset(
-      'assets/images/profile_avatar_hello.png',
-    );
+    return fallback;
   }
 
   static Future<void> save(ProfileAvatarSelection selection) async {
     _loaded = Future.value(selection);
+    current.value = selection;
     await Future.wait([
       _storage.write(key: _kindKey, value: selection.isFile ? 'file' : 'asset'),
       _storage.write(key: _valueKey, value: selection.value),
     ]);
   }
 }
+
+/// 갤러리에서 고른 사진을 앱 문서 폴더에 저장할 때 쓰는 파일 이름 접두사.
+///
+/// 사진마다 다른 이름을 붙인다. 같은 이름에 새 사진을 덮어쓰면 Flutter 이미지
+/// 캐시가 파일 경로를 키로 잡고 있어 예전 사진을 계속 그린다 — 사진을 두 번
+/// 바꾸면 두 번째가 반영되지 않았다.
+///
+/// 이 접두사는 이름 하나만 쓰던 시절의 `profile_avatar.jpg`에도 걸리므로,
+/// 정리할 때 옛 파일까지 함께 지워진다.
+const avatarFilePrefix = 'profile_avatar';
 
 class ProfileAvatarView extends StatelessWidget {
   const ProfileAvatarView({super.key, required this.radius, this.selection});
@@ -82,15 +110,12 @@ class ProfileAvatarView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (selection != null) return _image(context, selection!);
-    return FutureBuilder<ProfileAvatarSelection>(
-      future: ProfileAvatarStore.load(),
-      builder: (context, snapshot) => _image(
-        context,
-        snapshot.data ??
-            const ProfileAvatarSelection.asset(
-              'assets/images/profile_avatar_hello.png',
-            ),
-      ),
+    // 첫 호출에서만 실제로 읽는다. 읽고 나면 notifier가 값을 들고 있으므로
+    // 이 위젯이 다시 그려지든 말든 이후 변경은 notifier를 타고 들어온다.
+    ProfileAvatarStore.load();
+    return ValueListenableBuilder<ProfileAvatarSelection>(
+      valueListenable: ProfileAvatarStore.current,
+      builder: (context, selected, _) => _image(context, selected),
     );
   }
 

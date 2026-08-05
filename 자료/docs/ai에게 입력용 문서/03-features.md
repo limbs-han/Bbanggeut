@@ -142,7 +142,7 @@ flowchart TD
 | FN-A15a | 편집본 업로드 상태 표시 | API-82 | `ui/all_memories_screen.dart` | UPLOADING·FAILED 편집본도 상태와 함께 표시. UPLOADING이 있으면 5초 간격 최대 60회 자동 재조회 |
 | FN-A16 | 영상 삭제 | API-30 | `ui/all_memories_screen.dart` | 403 FORBIDDEN_ROLE, 404 |
 | FN-A17 | 영상 상세/재생 | API-31 | `ui/content_video_detail_screen.dart` | 409 VIDEO_NOT_READY, 503 |
-| FN-A18 | 메타데이터(제목/메모) 편집 | API-29, API-28 | `ui/content_video_detail_screen.dart` | 403, 422 VALIDATION_FAILED |
+| FN-A18 | 제목 편집(원본은 OWNER, 편집본은 OWNER/MEMBER) | API-29, API-28 | `ui/content_video_detail_screen.dart` | 403 FORBIDDEN_ROLE, 422 VALIDATION_FAILED |
 | FN-A19 | 즐겨찾기 토글 | API-29 | `ui/content_video_detail_screen.dart`, `ui/favorite_videos_screen.dart`, `app/app_controller.dart` | - |
 | FN-A20 | 영상 다운로드 | API-32 | `ui/content_video_detail_screen.dart` | 409, 503 |
 | FN-A21 | 로컬 영상 편집 | API-32 | `ui/local_edit_screen.dart`, `core/video_exporter.dart`, `core/video_edit_state.dart`, `MainActivity.kt`(exportWithTrim) | 구간 자르기(트림)·화면 비율 6종·음량·자막·필터 3종·이모지 스티커 편집(애니메이션·음악 스텁 제외). MediaStore 갤러리 저장 단독(앱 내 공유 없음) |
@@ -342,7 +342,7 @@ MVP 7단계·가족 공유 밖이지만 기능·문서는 유지하는 항목이
 | FN-A12 | 독립형 라이브 화면(`LiveScreen`) | **제거됨** — 도달 불가 HLS 기반 코드로 WebRTC 전용 전환에서 삭제 |
 | FN-A14 | 기념일 배너/편집 | 부분 구현 — 일정 추가·수정·매년 반복은 동작하나 앱 메모리 전용(재실행 시 소실, 서버 미연동) — REQ-F-20 · `ui/content_calendar_screen.dart`, `ui/schedule_editor_screen.dart` |
 | FN-A16 | 영상 삭제(OWNER 전용) | 확장 — REQ-F-25 · `ui/all_memories_screen.dart` |
-| FN-A18 | 영상 메타데이터(제목/메모) 편집 | 확장 — REQ-F-23 · `ui/content_video_detail_screen.dart` |
+| FN-A18 | 영상 제목 편집 | 확장 — REQ-F-23 · `ui/content_video_detail_screen.dart` |
 | FN-A19 | 즐겨찾기 토글 | 확장 — REQ-F-24 · `ui/content_video_detail_screen.dart`, `app/app_controller.dart` |
 | FN-A26 | 프로필 이름 수정 | 앱 화면은 있으나 서버 API 부재(`PATCH /api/auth/me` 없음)로 호출 실패 — REQ-F-06 · `ui/profile_edit_screen.dart`, `core/api_client.dart` |
 | FN-A28 | 알림 설정(로컬 토글) | 확장 — 설정 화면에 기념일·주간 리포트·새로운 추억 3개 로컬 Secure Storage 토글(서버 발송 영향 없음) — REQ-F-32 · `ui/settings_screen.dart` |

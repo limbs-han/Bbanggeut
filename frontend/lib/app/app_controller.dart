@@ -823,28 +823,29 @@ class AppController extends ChangeNotifier {
 
   Future<bool> toggleFavorite(VideoMemory video) async => _guard(() async {
     await api.updateVideo(video.id, favorite: !video.favorite);
-    final index = videos.indexWhere((item) => item.id == video.id);
-    if (index >= 0) {
-      final next = [...videos];
-      next[index] = VideoMemory(
-        id: video.id,
-        deviceId: video.deviceId,
-        triggerType: video.triggerType,
-        eventTypes: video.eventTypes,
-        sourceType: video.sourceType,
-        title: video.title,
-        description: video.description,
-        status: video.status,
-        favorite: !video.favorite,
-        durationMs: video.durationMs,
-        thumbnailUrl: video.thumbnailUrl,
-        capturedStartAt: video.capturedStartAt,
-        createdAt: video.createdAt,
-      );
-      videos = next;
-      notifyListeners();
-    }
+    _replaceVideo(video.copyWith(favorite: !video.favorite));
   });
+
+  /// 제목을 바꾸고 목록의 그 한 줄만 갈아 끼운다.
+  ///
+  /// **왜 다시 조회하지 않는가**: 예전에는 저장 뒤 그 영상을 다시 받고
+  /// `refreshDeviceData()`까지 불러, 기기 상태·통계·목록·구성원·초대·홈 요약
+  /// 여섯 요청이 끝날 때까지 화면이 예전 제목을 들고 기다렸다. 바뀐 값은 방금
+  /// 우리가 보낸 그 값이라 서버에 되물을 이유가 없다.
+  Future<bool> renameVideo(VideoMemory video, String title) async =>
+      _guard(() async {
+        await api.updateVideo(video.id, title: title);
+        _replaceVideo(video.copyWith(title: title));
+      });
+
+  void _replaceVideo(VideoMemory updated) {
+    final index = videos.indexWhere((item) => item.id == updated.id);
+    if (index < 0) return;
+    final next = [...videos];
+    next[index] = updated;
+    videos = next;
+    notifyListeners();
+  }
 
   Future<bool> createInvitation(String email, String role) async =>
       _guard(() async {

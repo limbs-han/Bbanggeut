@@ -162,6 +162,8 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
               ? meta['title'] as String
               : original?.title ?? '편집한 영상',
           savedAt: DateTime.tryParse(meta['savedAt'] as String? ?? ''),
+          myUserId: widget.controller.user?.id,
+          isOwner: widget.controller.isOwner,
         ),
       ),
     );
@@ -214,10 +216,13 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
         MemoryCategory.edited =>
           video.triggerType == 'EDIT' || video.sourceType == 'EDIT_OUTPUT',
       };
+      // 화면에 보이는 제목으로도 찾을 수 있어야 한다. 기기 기본 제목은 날짜·
+      // 시각·종류를 담은 제목으로 바꿔 그리므로, 저장된 제목만 보면 사용자가
+      // 읽은 글자로 검색해도 걸리지 않는다.
       final matchesKeyword =
           keyword.isEmpty ||
           video.title.toLowerCase().contains(keyword) ||
-          (video.description?.toLowerCase().contains(keyword) ?? false);
+          videoDisplayTitle(video).toLowerCase().contains(keyword);
       final startedAt = video.capturedStartAt ?? video.createdAt;
       final matchesDate =
           dateRange == null ||
@@ -376,7 +381,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                         autofocus: true,
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
-                          hintText: '영상 제목과 메모 검색',
+                          hintText: '영상 제목 검색',
                           prefixIcon: const Icon(Icons.search_rounded),
                           suffixIcon: IconButton(
                             tooltip: '검색어 초기화',
