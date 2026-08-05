@@ -53,7 +53,7 @@ class TalkbackManager:
 
             read_url = self._config.talkback_url_template.format(stream_id=stream_id)
             command = [
-                read_url if part == "{url}" else part
+                part.replace("{url}", read_url)
                 for part in self._config.talkback_command_template
             ]
             self._process = self._process_factory(

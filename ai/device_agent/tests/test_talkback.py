@@ -110,6 +110,24 @@ class TalkbackManagerTest(unittest.TestCase):
         self.assertEqual(len(started), 1)
         self.assertEqual(manager.snapshot().hard_expires_at, extended)
 
+    def test_start_substitutes_a_url_embedded_in_a_player_property(self):
+        calls = []
+
+        def factory(command, **kwargs):
+            calls.append(command)
+            return FakeProcess()
+
+        manager = TalkbackManager(
+            config(talkback_command_template=("gst-launch-1.0", "location={url}")),
+            factory,
+        )
+        manager.start(STREAM_ID, EXPIRES_AT)
+
+        self.assertEqual(
+            calls[0],
+            ["gst-launch-1.0", f"location=rtsp://localhost/talkback/{STREAM_ID}"],
+        )
+
     def test_start_rejects_a_second_stream_while_one_is_playing(self):
         manager = TalkbackManager(config(), lambda command, **kwargs: FakeProcess())
         manager.start(STREAM_ID, EXPIRES_AT)
