@@ -35,6 +35,7 @@ class ComicJobStatus {
     this.queuePosition = 0,
     this.imageUrl,
     this.savedAt,
+    this.cuts,
   });
 
   /// none · queued · running · done · failed. `none`은 만든 적이 없다는 뜻이고
@@ -47,6 +48,11 @@ class ComicJobStatus {
   final String? imageUrl;
   final DateTime? savedAt;
 
+  /// 서버가 들고 있는 4컷 구성. 화면에 다시 들어올 때 이것을 쓰면 구성을 새로
+  /// 받지 않는다 — 그 호출은 과금이고, 새로 받으면 사용자가 고친 대사가 서버
+  /// 원문으로 덮인다. 만든 적이 없으면 null.
+  final List<ComicCut>? cuts;
+
   bool get done => status == 'done';
   bool get failed => status == 'failed';
   bool get working => status == 'queued' || status == 'running';
@@ -57,7 +63,19 @@ class ComicJobStatus {
     queuePosition: (json['queuePosition'] as num?)?.toInt() ?? 0,
     imageUrl: json['imageUrl'] as String?,
     savedAt: DateTime.tryParse(json['savedAt'] as String? ?? ''),
+    cuts: _cutsOrNull(json),
   );
+
+  /// 구성이 이상해도 상태 읽기가 죽지 않게 한다. parseComicCuts는 4컷이 아니면
+  /// 예외를 던지는데, 그것 때문에 "만드는 중"조차 못 읽으면 화면이 멈춘다.
+  static List<ComicCut>? _cutsOrNull(Map<String, dynamic> json) {
+    if (json['cuts'] == null) return null;
+    try {
+      return parseComicCuts(json);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 abstract interface class ComicGateway {

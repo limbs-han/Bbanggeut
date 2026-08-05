@@ -149,9 +149,17 @@ class ComicController extends ChangeNotifier {
       await start();
       return;
     }
+    // 서버가 들고 있는 구성을 먼저 받아 둔다. 이게 없으면 화면에 들어올 때마다
+    // 구성을 새로 받아서, 뒤로 갔다 오면 고친 대사가 사라지고 Gemini 호출료가
+    // 다시 든다 — 실제로 그렇게 돌고 있었다.
+    if (status.cuts != null && status.cuts!.isNotEmpty) {
+      _cuts = status.cuts!;
+    }
     if (status.done && status.imageUrl != null) {
       try {
-        _set(ComicSaved(await gateway.download(status.imageUrl!), status.savedAt));
+        _set(
+          ComicSaved(await gateway.download(status.imageUrl!), status.savedAt),
+        );
         return;
       } catch (_) {
         // 그림을 못 받았으면 처음부터 만들 수 있게 둔다.
@@ -160,6 +168,11 @@ class ComicController extends ChangeNotifier {
     if (status.working) {
       _set(ComicLoadingImage(_cuts, queuePosition: status.queuePosition));
       _poll();
+      return;
+    }
+    // 그림은 없지만 구성이 있으면 거기서 이어 간다. 구성을 다시 받지 않는다.
+    if (_cuts.isNotEmpty) {
+      _set(ComicScriptReady(_cuts));
       return;
     }
     await start();
