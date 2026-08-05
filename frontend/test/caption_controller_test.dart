@@ -71,6 +71,70 @@ void main() {
     expect(calls, 1);
   });
 
+  // "다시 만들기"가 실제로 다시 도는지. 예전에는 start를 다시 부르는 것이
+  // 전부여서 세 겹의 캐시(컨트롤러의 job, 저장소의 job, 파일)에 다 막혀
+  // 아무 일도 일어나지 않았다.
+  test('다시 만들면 캐시를 버리고 전사를 처음부터 다시 돌린다', () async {
+    var calls = 0;
+    final store = storeWith((_) async {
+      calls++;
+      return [CaptionLine(startMs: 0, endMs: 1000, text: '$calls번째 결과')];
+    });
+    final subject = CaptionController(store: store);
+
+    subject.start('v1', '/video/v1.mp4');
+    await store.pending;
+    expect(subject.lines.single.text, '1번째 결과');
+
+    subject.restart('v1', '/video/v1.mp4');
+    // 새 작업으로 갈아탔으니 다시 도는 중이어야 한다.
+    expect(subject.status, isA<TranscriptRunning>());
+    await store.pending;
+
+    expect(calls, 2);
+    expect(subject.lines.single.text, '2번째 결과');
+    expect(subject.status, isA<TranscriptReady>());
+  });
+
+  test('다시 만들면 손으로 고쳐 둔 줄도 함께 버려진다', () async {
+    var calls = 0;
+    final store = storeWith((_) async {
+      calls++;
+      return [CaptionLine(startMs: 0, endMs: 1000, text: '$calls번째 결과')];
+    });
+    final subject = CaptionController(store: store);
+
+    subject.start('v1', '/video/v1.mp4');
+    await store.pending;
+    subject.edit(0, '내가 고친 문장');
+    await subject.pendingWrite;
+    expect(subject.hasUserEdits, isTrue);
+
+    subject.restart('v1', '/video/v1.mp4');
+    await store.pending;
+
+    // 고쳐 둔 문장이 파일에 남아 있었어도 새 결과가 이긴다.
+    expect(subject.lines.single.text, '2번째 결과');
+    expect(subject.hasUserEdits, isFalse);
+  });
+
+  test('다시 만드는 중에는 옛 작업이 끝나도 줄이 되돌아오지 않는다', () async {
+    var calls = 0;
+    final store = storeWith((_) async {
+      calls++;
+      return [CaptionLine(startMs: 0, endMs: 1000, text: '$calls번째 결과')];
+    });
+    final subject = CaptionController(store: store);
+
+    subject.start('v1', '/video/v1.mp4');
+    await store.pending;
+    subject.restart('v1', '/video/v1.mp4');
+    await store.pending;
+
+    // 옛 작업의 알림을 아직 듣고 있으면 여기서 1번째 결과로 돌아간다.
+    expect(subject.lines.single.text, '2번째 결과');
+  });
+
   test('전사가 실패해도 줄은 비고 상태만 실패가 된다', () async {
     final store = storeWith((_) async => throw StateError('모델 없음'));
     final subject = CaptionController(store: store);
@@ -112,6 +176,9 @@ void main() {
     expect(subject.lines[0].text, '그거 만지면 안 돼');
     expect(subject.hasUserEdits, isTrue);
     expect(notified, 1);
+    // 캐시 쓰기를 기다리지 않고 끝내면 tearDown이 임시 폴더를 지우는 것과
+    // 겹쳐 가끔 터진다. 이 테스트가 볼 것은 아니지만 끝은 봐야 한다.
+    await subject.pendingWrite;
   });
 
   test('고친 자막은 캐시 파일에도 저장된다 — 만화 구성이 그 파일을 읽는다', () async {

@@ -726,56 +726,270 @@ void main() {
     expect(sheetRequested, isTrue);
   });
 
-  testWidgets('자막 탭 영상 레인에도 클립 컷 구간 손잡이가 있다', (tester) async {
+  // 기존 "어느 탭에서도 절반을 넘는다" 테스트는 자막이 **없는** 상태만 봐서
+  // 이걸 놓쳤다. 자막이 들어오면 눈금이 세 줄로 서면서 자막 탭만 44%까지
+  // 눌렸다 — 다른 탭은 54~63%였다.
+  testWidgets('S24+ 자막 탭에서도 미리보기가 화면의 절반을 넘는다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 891)
+      ..devicePixelRatio = 1
+      ..padding = const FakeViewPadding(top: 32, bottom: 24)
+      ..viewPadding = const FakeViewPadding(top: 32, bottom: 24);
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      for (var index = 0; index < 6; index++)
+        (
+          startMs: index * 2000,
+          endMs: index * 2000 + 1200,
+          text: '$index번째 대사',
+        ),
+    ]);
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    final preview = tester.getSize(find.byType(VideoPreviewWorkspace)).height;
+    expect(
+      preview,
+      greaterThanOrEqualTo(891 * 0.5),
+      reason: '자막이 있는 자막 탭에서 미리보기가 절반 밑으로 눌렸다 (${preview}dp)',
+    );
+    // 눈금 세 줄이 다 서 있어야 한다 — 미리보기를 키우려고 접으면 안 된다.
+    for (final key in const [
+      'editor-caption-video-track',
+      'editor-caption-direct-track',
+      'editor-caption-ai-track',
+    ]) {
+      expect(find.byKey(Key(key)), findsOneWidget, reason: '$key가 사라졌다');
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  // 시트 두 개(직접 텍스트·AI 자막)는 caption_editing_s24_fit_test.dart가 본다.
+  // 여기서는 편집기 안의 자막 탭 — 패널과 타임라인이다.
+  testWidgets('S24+ 시스템 영역까지 재도 자막 탭이 모든 상태에서 안 넘친다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 891)
+      ..devicePixelRatio = 1
+      ..padding = const FakeViewPadding(top: 32, bottom: 24)
+      ..viewPadding = const FakeViewPadding(top: 32, bottom: 24);
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+
+    // ① 자막이 하나도 없을 때 — 두 갈래 안내 카드
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '빈 자막 탭이 넘쳤다');
+    expect(find.text('직접 자막').hitTestable(), findsOneWidget);
+    expect(find.text('자동 자막').hitTestable(), findsOneWidget);
+
+    // ② 현재 위치 추가 카드
+    await tester.pumpWidget(workspace(controller, directCaptionAddMode: true));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '추가 카드가 넘쳤다');
+    expect(
+      find
+          .byKey(const Key('editor-direct-caption-add-at-playhead'))
+          .hitTestable(),
+      findsOneWidget,
+    );
+
+    // ③ AI 자막이 들어오고 하나가 골라진 상태 — 칩 목록·타임라인·손잡이가 함께 선다
+    controller.applyTranscriptCaptions([
+      for (var index = 0; index < 8; index++)
+        (
+          startMs: index * 1200,
+          endMs: index * 1200 + 900,
+          text: '$index번째로 들린 대사예요',
+        ),
+    ]);
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '자막이 있는 탭이 넘쳤다');
+
+    for (final key in const [
+      'editor-caption-track-timeline',
+      'editor-caption-start-handle',
+      'editor-caption-end-handle',
+      'editor-open-text-sheet',
+      'editor-open-ai-caption',
+    ]) {
+      final finder = find.byKey(Key(key));
+      expect(finder.hitTestable(), findsOneWidget, reason: '$key를 누를 수 없다');
+      expect(
+        tester.getRect(finder).bottom,
+        lessThanOrEqualTo(891 - 24),
+        reason: '$key가 제스처바에 걸쳤다',
+      );
+    }
+
+    // ④ 직접 자막까지 더해 두 레인이 모두 찬 상태
+    controller.addTextLayer(text: '직접 넣은 자막', startMs: 1000, endMs: 4000);
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '두 레인이 찬 탭이 넘쳤다');
+  });
+
+  // 컷은 컷 편집 탭에서 정하고, 자막 탭은 그 안에 자막을 놓는 일만 한다.
+  // 여기서 컷을 줄였다 늘렸다 하게 두면 자막을 놓다가 영상이 잘려 나가고
+  // 자막 시각도 그때마다 밀린다. 다만 **영상은 보여야 한다** — 무엇을 보고
+  // 자막을 놓겠나.
+  testWidgets('자막 탭에서는 컷을 조절할 수 없고 구간과 영상만 보여 준다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final controller = newController()..selectTool(EditorTool.text);
     addTearDown(controller.dispose);
+    expect(
+      controller.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 10000),
+      isTrue,
+    );
     controller.applyTranscriptCaptions([
-      (startMs: 1000, endMs: 2000, text: '아니 이거 말고'),
+      (startMs: 5000, endMs: 6000, text: '들린 대사'),
     ]);
-    int? changedStart;
-    bool? changedStartHandle;
-    var committed = 0;
+    var trimmed = 0;
 
     await tester.pumpWidget(
-      workspace(
-        controller,
-        onTrimChanged: (startMs, _, startHandle) {
-          changedStart = startMs;
-          changedStartHandle = startHandle;
-        },
-        onTrimCommitted: () => committed++,
-      ),
+      workspace(controller, onTrimChanged: (_, _, _) => trimmed++),
     );
     await tester.pumpAndSettle();
 
-    final startHandle = find.byKey(
-      const Key('editor-caption-clip-start-handle'),
+    // 조절 손잡이는 없다.
+    expect(
+      find.byKey(const Key('editor-caption-clip-start-handle')),
+      findsNothing,
     );
-    expect(startHandle, findsOneWidget);
     expect(
       find.byKey(const Key('editor-caption-clip-end-handle')),
+      findsNothing,
+    );
+
+    // 영상 레인과 자막 손잡이는 그대로 있다.
+    expect(find.byKey(const Key('editor-caption-video-track')), findsOneWidget);
+    expect(
+      find.byKey(const Key('editor-caption-start-handle')),
       findsOneWidget,
     );
-    // 자막 손잡이와 겹치지 않는다 — 영상 레인과 자막 레인이 서로 다른 줄이다.
-    expect(
-      tester.getCenter(startHandle).dy,
-      isNot(
-        tester
-            .getCenter(find.byKey(const Key('editor-caption-start-handle')))
-            .dy,
-      ),
-    );
 
-    await tester.drag(startHandle, const Offset(40, 0));
+    // 영상 레인을 끌어도 컷은 그대로고 재생 위치만 움직인다.
+    await tester.drag(
+      find.byKey(const Key('editor-caption-video-track')),
+      const Offset(80, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(trimmed, 0, reason: '자막 탭에서 컷이 바뀌었다');
+    expect(controller.project.clips.single.sourceStartMs, 2000);
+    expect(controller.project.clips.single.sourceEndMs, 10000);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('자막 구간은 컷 밖으로 나가지 못한다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    expect(
+      controller.trimSelectedClip(sourceStartMs: 2000, sourceEndMs: 10000),
+      isTrue,
+    );
+    controller.addTextLayer(text: '직접 자막', startMs: 1000, endMs: 4000);
+    final id = controller.project.textLayers.single.id;
+    controller.selectLayer(id);
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    // 끝 손잡이를 클립 밖으로 한참 끈다.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const Key('editor-caption-end-handle'))),
+    );
+    await gesture.moveBy(const Offset(400, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final layer = controller.project.textLayers.single;
+    // 클립은 8초짜리다 — 자막도 거기서 멈춘다.
+    expect(layer.endMs, lessThanOrEqualTo(8000));
+    expect(layer.startMs, greaterThanOrEqualTo(0));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('자막 손잡이는 재생 위치에 달라붙고 손가락 자리가 44dp다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.addTextLayer(text: '직접 자막', startMs: 2000, endMs: 5000);
+    final id = controller.project.textLayers.single.id;
+    controller
+      ..selectLayer(id)
+      ..setPlayhead(3000);
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    final startHandle = find.byKey(const Key('editor-caption-start-handle'));
+    // 보이는 손잡이는 10dp지만 눌리는 자리는 44dp다.
+    expect(tester.getSize(startHandle).width, 44);
+
+    final timeline = find.byKey(const Key('editor-caption-track-timeline'));
+    // 라벨 54dp와 오른쪽 여백 8dp를 뺀 것이 눈금의 실제 폭이다.
+    final trackWidth = tester.getSize(timeline).width - 54 - 8;
+    final msPerPx = 12000 / trackWidth;
+
+    // 재생 위치 100ms 앞까지만 끌어도 딱 붙어야 한다.
+    final gesture = await tester.startGesture(tester.getCenter(startHandle));
+    await gesture.moveBy(Offset((2900 - 2000) / msPerPx, 0));
     await tester.pump();
 
-    expect(changedStartHandle, isTrue);
-    expect(changedStart, greaterThan(0));
-    expect(committed, 1);
+    expect(controller.project.textLayers.single.startMs, 3000);
+
+    await gesture.up();
+    await tester.pump();
+    expect(controller.project.textLayers.single.startMs, 3000);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('먼 자리에서는 달라붙지 않고 끈 만큼만 움직인다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.addTextLayer(text: '직접 자막', startMs: 2000, endMs: 9000);
+    final id = controller.project.textLayers.single.id;
+    controller
+      ..selectLayer(id)
+      ..setPlayhead(8000);
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    final timeline = find.byKey(const Key('editor-caption-track-timeline'));
+    final trackWidth = tester.getSize(timeline).width - 54 - 8;
+    final msPerPx = 12000 / trackWidth;
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const Key('editor-caption-start-handle'))),
+    );
+    await gesture.moveBy(Offset((4000 - 2000) / msPerPx, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    // 재생 위치(8000)와 한참 떨어져 있으니 끈 자리에 그대로 선다.
+    expect(controller.project.textLayers.single.startMs, closeTo(4000, 60));
     expect(tester.takeException(), isNull);
   });
 

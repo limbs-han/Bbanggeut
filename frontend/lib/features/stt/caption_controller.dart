@@ -38,6 +38,21 @@ class CaptionController extends ChangeNotifier {
     _onJobChanged();
   }
 
+  /// 캐시를 버리고 처음부터 다시 전사한다. 사용자가 "다시 만들기"를 고른
+  /// 때만 부른다.
+  ///
+  /// [start]로는 안 된다 — 한 번 잡은 작업이 있으면 그대로 돌아 나가기
+  /// 때문이다. 여기서는 듣던 작업을 놓고, 손으로 고친 줄도 함께 버린다.
+  /// 버리는 것이 곧 사용자가 고른 것이다(대화상자가 그렇게 알린다).
+  void restart(String videoId, String videoPath) {
+    _job?.removeListener(_onJobChanged);
+    _videoId = videoId;
+    _lines = <CaptionLine>[];
+    _hasUserEdits = false;
+    _job = _store.restart(videoId, videoPath)..addListener(_onJobChanged);
+    _onJobChanged();
+  }
+
   /// [edit]가 캐시 파일에 저장할 때 쓴다. [start]가 채운다.
   String? _videoId;
 

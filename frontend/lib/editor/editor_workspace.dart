@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/app_theme.dart';
 import 'editor_ar_effects.dart';
@@ -207,6 +209,7 @@ class EditorWorkspace extends StatelessWidget {
                       project,
                       availableHeight: constraints.maxHeight,
                       timelineHeight: timelineHeight,
+                      directCaptionAddMode: directCaptionAddMode,
                     );
               return Stack(
                 children: [
@@ -262,8 +265,6 @@ class EditorWorkspace extends StatelessWidget {
                               thumbnails: thumbnails,
                               onSeek: onSeek,
                               onEditCommitted: onEditCommitted,
-                              onClipTrimChanged: onTrimChanged,
-                              onClipTrimCommitted: onTrimCommitted,
                             ),
                           ),
                         ),
@@ -426,7 +427,10 @@ double _rangeTimelineHeightFor(
   _RangeTimelineTarget? target,
 ) {
   if (target?.isTextTimeline != true) return layout.trimBarHeight;
-  return (layout.trimBarHeight * 1.85).clamp(128.0, 148.0);
+  // 자막 눈금은 세 줄이라 컷 띠보다 높아야 하지만, 예전 배수(1.85 → S24+에서
+  // 145dp)는 실제로 쓰는 110dp보다 35dp나 컸다. 그 여유가 고스란히 미리보기
+  // 에서 빠져나갔다.
+  return (layout.trimBarHeight * 1.45).clamp(112.0, 136.0);
 }
 
 /// 줌·자막 탭이 다루는 클립. 클립을 고르면 그 클립에 귀속된 것만 보인다.
@@ -640,8 +644,6 @@ class _RangeTimeline extends StatelessWidget {
     required this.thumbnails,
     required this.onSeek,
     required this.onEditCommitted,
-    required this.onClipTrimChanged,
-    required this.onClipTrimCommitted,
   });
 
   final EditorProject project;
@@ -649,12 +651,6 @@ class _RangeTimeline extends StatelessWidget {
   final _RangeTimelineTarget target;
   final List<String> thumbnails;
   final ValueChanged<int> onSeek;
-
-  /// 클립의 컷 구간(원본 시각)을 바꾼다. 컷 편집 탭의 손잡이와 **같은**
-  /// 콜백이다 — 되돌리기 이력과 잡은 쪽 프레임 미리보기가 거기에 들어 있다.
-  final void Function(int startMs, int endMs, bool startHandle)
-  onClipTrimChanged;
-  final VoidCallback onClipTrimCommitted;
   final VoidCallback onEditCommitted;
 
   /// 원본 [fromMs, toMs) 구간을 대표하는 프레임들. 클립이 짧아도 띠가
@@ -772,8 +768,6 @@ class _RangeTimeline extends StatelessWidget {
       thumbnails: _sliceThumbnails(scope.sourceStartMs, scope.sourceEndMs),
       onSeek: onSeek,
       onEditCommitted: onEditCommitted,
-      onClipTrimChanged: onClipTrimChanged,
-      onClipTrimCommitted: onClipTrimCommitted,
     );
   }
 
@@ -848,8 +842,6 @@ class _CaptionTrackTimeline extends StatefulWidget {
     required this.thumbnails,
     required this.onSeek,
     required this.onEditCommitted,
-    required this.onClipTrimChanged,
-    required this.onClipTrimCommitted,
   });
 
   final EditorProject project;
@@ -861,29 +853,35 @@ class _CaptionTrackTimeline extends StatefulWidget {
   final List<String> thumbnails;
   final ValueChanged<int> onSeek;
   final VoidCallback onEditCommitted;
-  final void Function(int startMs, int endMs, bool startHandle)
-  onClipTrimChanged;
-  final VoidCallback onClipTrimCommitted;
 
   @override
   State<_CaptionTrackTimeline> createState() => _CaptionTrackTimelineState();
 }
 
 class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
+  // 세 레인이 다 들어가면서도 미리보기를 눌러 앉히지 않는 치수.
+  //
+  // **왜 빡빡한가**: 자막 탭은 눈금(세 줄)과 도구 칸(제목·자막 목록·구간
+  // 줄)을 함께 세우는 유일한 탭이다. 예전 치수(내용 127dp)로는 S24+에서
+  // 미리보기가 화면의 44%까지 눌렸다 — 다른 탭은 54~63%였다. 여기 숫자를
+  // 올릴 때는 `S24+ 자막 탭에서도 미리보기가 화면의 절반을 넘는다`를 함께
+  // 본다.
   static const _labelWidth = 54.0;
   static const _rightInset = 8.0;
-  static const _headerHeight = 22.0;
-  static const _videoTop = 24.0;
-  static const _videoHeight = 34.0;
-  static const _directTop = 63.0;
-  static const _aiTop = 98.0;
-  static const _captionHeight = 29.0;
+  static const _headerHeight = 18.0;
+  static const _videoTop = 20.0;
+  static const _videoHeight = 30.0;
+  static const _directTop = 54.0;
+  static const _aiTop = 84.0;
+  static const _captionHeight = 26.0;
   static const _minimumCaptionMs = 200;
   static const _ribbonHeight = 13.0;
   static const _ribbonMergeGapPx = 6.0;
   static const _ribbonMinWidthPx = 3.0;
-  static const _cutHandleWidth = 16.0;
-  static const _cutTouchWidth = 44.0;
+  static const _captionTouchWidth = 44.0;
+
+  /// 자막 레인(29dp) 위아래로 더 넘겨 잡는 여유.
+  static const _captionTouchInset = 8.0;
 
   bool _dragging = false;
   bool _draggingStart = false;
@@ -892,19 +890,21 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
   double _msPerPx = 1;
   int _anchorStartMs = 0;
   int _anchorEndMs = 0;
+
+  /// 끄는 동안의 자막 구간. 부모에게 알리지 않고(`notify: false`) 여기서
+  /// 들고 그린다 — 매 프레임 편집 화면 전체를 다시 그리면 손잡이가 손가락을
+  /// 못 따라온다. 컷 편집 띠도 같은 이유로 같은 방식을 쓴다.
+  int? _liveStartMs;
+  int? _liveEndMs;
+
+  /// 지금 달라붙어 있는 자리. null이면 붙지 않았다.
+  int? _snappedMs;
+
+  /// 그 자리가 **재생바**인가. 세 레인(영상 컷·직접·AI)이 공유하는 기준점이라
+  /// 여기에 붙으면 재생바 자체를 굵게 그려 준다.
+  bool _snappedToPlayhead = false;
   int _playheadDragStartMs = 0;
   double _playheadTravelPx = 0;
-
-  /// 컷 손잡이를 끄는 동안의 상태. 끄는 중에는 부모가 다시 그리지 않으므로
-  /// (`trimSelectedClip(notify: false)`) 잡은 자리를 이 위젯이 직접 기억한다.
-  bool _cutDragging = false;
-  bool _cutDraggingStart = false;
-  double _cutTravelPx = 0;
-  double _cutMsPerPx = 1;
-  int _cutAnchorStartMs = 0;
-  int _cutAnchorEndMs = 0;
-  int _cutStartMs = 0;
-  int _cutEndMs = 0;
 
   List<EditorTextLayer> get _layers =>
       _textLayersOfClip(widget.project, widget.scope);
@@ -922,6 +922,16 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
   bool _ribboned(EditorTextLayer layer) =>
       _automatic(layer) && layer.id != widget.selectedLayer?.id;
 
+  /// 지금 끌고 있는 자막이면 손안의 값을, 아니면 저장된 값을 준다.
+  bool _live(EditorTextLayer layer) =>
+      _dragging && layer.id == widget.selectedLayer?.id;
+
+  int _startOf(EditorTextLayer layer) =>
+      _live(layer) ? _liveStartMs ?? layer.startMs : layer.startMs;
+
+  int _endOf(EditorTextLayer layer) =>
+      _live(layer) ? _liveEndMs ?? layer.endMs : layer.endMs;
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
@@ -934,31 +944,13 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
               .clamp(0.0, trackWidth);
 
       final selected = widget.selectedLayer;
-      final selectedStartX = selected == null ? 0.0 : xOf(selected.startMs);
-      final selectedEndX = selected == null ? 0.0 : xOf(selected.endMs);
+      final selectedStartMs = selected == null ? 0 : _startOf(selected);
+      final selectedEndMs = selected == null ? 0 : _endOf(selected);
+      final selectedStartX = selected == null ? 0.0 : xOf(selectedStartMs);
+      final selectedEndX = selected == null ? 0.0 : xOf(selectedEndMs);
       final playheadX = xOf(widget.project.playheadMs);
       final selectedTop = selected == null ? 0.0 : _laneTop(selected);
       final accent = selected == null ? AppColors.coral : _accent(selected);
-
-      // 컷 손잡이는 **고른 클립**에만 붙인다 — 자르는 함수가 고른 클립을
-      // 대상으로 삼으므로, 다른 클립의 자막을 보고 있을 때 손잡이를 내주면
-      // 엉뚱한 클립이 잘린다.
-      final trimmable = widget.scope.id == widget.project.selectedClip?.id;
-      final trackRight = trackLeft + trackWidth;
-      // 끄는 중에는 필름스트립이 그대로 서 있고 손잡이만 움직인다. 어디서
-      // 잘리는지가 프레임 위에 바로 보인다.
-      final cutStartX = _cutDragging
-          ? (trackLeft + (_cutStartMs - _cutAnchorStartMs) / _cutMsPerPx).clamp(
-              trackLeft,
-              trackRight,
-            )
-          : trackLeft;
-      final cutEndX = _cutDragging
-          ? (trackLeft + (_cutEndMs - _cutAnchorStartMs) / _cutMsPerPx).clamp(
-              trackLeft,
-              trackRight,
-            )
-          : trackRight;
 
       return DecoratedBox(
         decoration: BoxDecoration(
@@ -1017,6 +1009,7 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
                   child: _captionFilmStrip(),
                 ),
               ),
+              _cutRangeMark(left: trackLeft, width: trackWidth),
               _laneBackground(
                 left: trackLeft,
                 top: _directTop,
@@ -1041,8 +1034,11 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
                 else
                   _captionSegment(
                     layer: layer,
-                    left: xOf(layer.startMs),
-                    width: math.max(8, xOf(layer.endMs) - xOf(layer.startMs)),
+                    left: xOf(_startOf(layer)),
+                    width: math.max(
+                      8,
+                      xOf(_endOf(layer)) - xOf(_startOf(layer)),
+                    ),
                     trackWidth: trackWidth,
                   ),
               Positioned(
@@ -1056,81 +1052,74 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
                   onHorizontalDragStart: (_) => _startPlayheadDrag(trackWidth),
                   onHorizontalDragUpdate: (details) =>
                       _updatePlayheadDrag(details.delta.dx, trackWidth),
+                  // 세 레인의 손잡이가 모두 이 봉에 달라붙는다. 붙는 순간
+                  // **봉 자체가 굵어지고 밝아진다** — 작은 손잡이 색만 바뀌면
+                  // 정작 그 위를 손가락이 덮고 있어 보이지 않는다.
                   child: Stack(
                     alignment: Alignment.topCenter,
                     children: [
                       Positioned(
                         top: 1,
                         bottom: 0,
-                        width: 2,
+                        width: _snappedToPlayhead ? 4 : 2,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: AppColors.coral,
+                            color: _snappedToPlayhead
+                                ? AppColors.coralDark
+                                : AppColors.coral,
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
                       ),
-                      const DecoratedBox(
+                      DecoratedBox(
                         decoration: BoxDecoration(
-                          color: AppColors.coral,
+                          color: _snappedToPlayhead
+                              ? AppColors.coralDark
+                              : AppColors.coral,
                           shape: BoxShape.circle,
+                          border: _snappedToPlayhead
+                              ? Border.all(color: Colors.white, width: 2)
+                              : null,
                         ),
-                        child: SizedBox.square(dimension: 10),
+                        child: SizedBox.square(
+                          dimension: _snappedToPlayhead ? 16 : 10,
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
-              // 컷 손잡이는 재생 봉보다 위에 둔다. 봉이 클립 끝에 붙어
-              // 있을 때 손잡이를 못 잡으면 더 이상 자를 수가 없다.
-              if (trimmable) ...[
-                if (_cutDragging) ...[
-                  _cutVeil(left: trackLeft, width: cutStartX - trackLeft),
-                  _cutVeil(left: cutEndX, width: trackRight - cutEndX),
-                ],
-                _cutHandleFace(edgeX: cutStartX, isStart: true),
-                _cutHandleFace(edgeX: cutEndX, isStart: false),
-                _cutHandleTouch(
-                  keyValue: const Key('editor-caption-clip-start-handle'),
-                  edgeX: cutStartX,
-                  isStart: true,
-                  width: width,
-                  trackWidth: trackWidth,
-                ),
-                _cutHandleTouch(
-                  keyValue: const Key('editor-caption-clip-end-handle'),
-                  edgeX: cutEndX,
-                  isStart: false,
-                  width: width,
-                  trackWidth: trackWidth,
-                ),
-              ],
               if (selected != null) ...[
-                _captionHandle(
+                _captionHandleFace(
+                  centerX: selectedStartX,
+                  top: selectedTop,
+                  color: accent,
+                  snapped: _snappedMs != null && _snappedMs == selectedStartMs,
+                ),
+                _captionHandleFace(
+                  centerX: selectedEndX,
+                  top: selectedTop,
+                  color: accent,
+                  snapped: _snappedMs != null && _snappedMs == selectedEndMs,
+                ),
+                _captionHandleTouch(
                   keyValue: const Key('editor-caption-start-handle'),
                   centerX: selectedStartX,
                   top: selectedTop,
                   width: width,
-                  color: accent,
                   isStart: true,
                   trackWidth: trackWidth,
                 ),
-                _captionHandle(
+                _captionHandleTouch(
                   keyValue: const Key('editor-caption-end-handle'),
                   centerX: selectedEndX,
                   top: selectedTop,
                   width: width,
-                  color: accent,
                   isStart: false,
                   trackWidth: trackWidth,
                 ),
               ],
-              if (_cutDragging)
-                _dragBadge(
-                  trackLeft,
-                  '컷 ${frameClock(_cutStartMs)}–${frameClock(_cutEndMs)}',
-                )
-              else if (_dragging && selected != null)
+              if (_dragging && selected != null)
                 _dragBadge(
                   trackLeft,
                   '${frameClock(selected.startMs)}–${frameClock(selected.endMs)}',
@@ -1168,74 +1157,32 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
     ),
   );
 
-  /// 컷 밖으로 빠지는 자리를 덮는 막. 끄는 동안만 뜬다 — "여기는 빠져요"가
-  /// 프레임 위에 그대로 보인다.
-  Widget _cutVeil({required double left, required double width}) => Positioned(
-    left: left,
-    top: _videoTop,
-    width: math.max(0, width),
-    height: _videoHeight,
-    child: const IgnorePointer(child: ColoredBox(color: TrimBarTokens.outside)),
-  );
-
-  /// 보이는 컷 손잡이. 컷 편집 탭과 같은 노랑이라, 자막(코랄)·AI(올리브)
-  /// 손잡이와 색만으로 구분된다. 손가락은 [_cutHandleTouch]가 받는다.
-  Widget _cutHandleFace({required double edgeX, required bool isStart}) =>
+  /// 컷 편집 탭에서 정해 둔 구간을 **표시만** 한다.
+  ///
+  /// 이 레인이 펼치는 것이 곧 그 구간이라, 위아래 노란 줄이 "여기까지가 네
+  /// 영상이다"를 말해 준다. 컷 편집 탭과 같은 색이라 어느 구간인지 바로
+  /// 이어진다.
+  ///
+  /// **손잡이는 없다.** 여기서 컷을 줄였다 늘렸다 하게 두면 자막을 놓다가
+  /// 영상이 잘려 나가고, 자막 시각도 그때마다 밀린다. 컷은 컷 편집 탭에서
+  /// 정하고, 이 탭은 그 안에 자막을 놓는 일만 한다.
+  Widget _cutRangeMark({required double left, required double width}) =>
       Positioned(
-        left: isStart ? edgeX : edgeX - _cutHandleWidth,
+        left: left,
         top: _videoTop,
-        width: _cutHandleWidth,
+        width: width,
         height: _videoHeight,
-        child: IgnorePointer(
+        child: const IgnorePointer(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: TrimBarTokens.handle,
-              // 둥근 쪽이 바깥이다 — 구간을 감싸는 괄호처럼 보인다.
-              borderRadius: BorderRadius.horizontal(
-                left: Radius.circular(isStart ? 7 : 2),
-                right: Radius.circular(isStart ? 2 : 7),
+              border: Border.symmetric(
+                horizontal: BorderSide(color: TrimBarTokens.handle, width: 2),
               ),
             ),
-            child: Center(
-              child: Container(
-                width: 2,
-                height: 13,
-                decoration: BoxDecoration(
-                  color: TrimBarTokens.handleInk,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+            child: SizedBox.expand(),
           ),
         ),
       );
-
-  /// 손잡이 위에 얹는 투명한 손가락 판. 보이는 손잡이는 16dp지만 실제로
-  /// 눌리는 자리는 44dp다.
-  Widget _cutHandleTouch({
-    required Key keyValue,
-    required double edgeX,
-    required bool isStart,
-    required double width,
-    required double trackWidth,
-  }) => Positioned(
-    left:
-        ((isStart ? edgeX + _cutHandleWidth / 2 : edgeX - _cutHandleWidth / 2) -
-                _cutTouchWidth / 2)
-            .clamp(0.0, math.max(0.0, width - _cutTouchWidth)),
-    top: _videoTop,
-    width: _cutTouchWidth,
-    height: _videoHeight,
-    child: GestureDetector(
-      key: keyValue,
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragStart: (_) => _startCut(isStart, trackWidth),
-      onHorizontalDragUpdate: (details) => _updateCut(details.delta.dx),
-      onHorizontalDragEnd: (_) => _endCut(),
-      onHorizontalDragCancel: _endCut,
-      child: const SizedBox.expand(),
-    ),
-  );
 
   Widget _timeHeader(double trackLeft, double trackWidth) => Positioned(
     left: trackLeft,
@@ -1355,10 +1302,10 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
       for (final layer in _layers)
         if (_ribboned(layer))
           (
-            left: xOf(layer.startMs),
+            left: xOf(_startOf(layer)),
             right: math.max(
-              xOf(layer.endMs),
-              xOf(layer.startMs) + _ribbonMinWidthPx,
+              xOf(_endOf(layer)),
+              xOf(_startOf(layer)) + _ribbonMinWidthPx,
             ),
           ),
     ]..sort((a, b) => a.left.compareTo(b.left));
@@ -1474,19 +1421,62 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
     );
   }
 
-  Widget _captionHandle({
+  /// 보이는 자막 구간 손잡이. 손가락은 [_captionHandleTouch]가 받는다.
+  ///
+  /// 붙는 순간 속이 색으로 차고 조금 굵어진다 — 손끝의 떨림과 함께 "여기
+  /// 걸렸다"를 눈으로도 알려 준다.
+  Widget _captionHandleFace({
+    required double centerX,
+    required double top,
+    required Color color,
+    required bool snapped,
+  }) => Positioned(
+    left: centerX - (snapped ? 6 : 5),
+    top: top,
+    width: snapped ? 12 : 10,
+    height: _captionHeight,
+    child: IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: snapped ? color : Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color, width: snapped ? 2 : 1.5),
+        ),
+        child: Center(
+          child: Container(
+            width: 2,
+            height: 14,
+            decoration: BoxDecoration(
+              color: snapped ? Colors.white : color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  /// 손잡이 위에 얹는 투명한 손가락 판.
+  ///
+  /// 보이는 것은 10dp지만 **눌리는 자리는 44dp**다. 레인이 29dp밖에 안 되니
+  /// 위아래로도 넉넉히 넘겨 잡는다 — 작은 그림을 정확히 집으라고 요구하면
+  /// 손잡이가 안 잡히고, 그때마다 밑에 깔린 자막 조각이 눌려 선택만 바뀐다.
+  /// 이것이 "손잡이가 잘 안 움직인다"의 절반이었다.
+  Widget _captionHandleTouch({
     required Key keyValue,
     required double centerX,
     required double top,
     required double width,
-    required Color color,
     required bool isStart,
     required double trackWidth,
   }) => Positioned(
-    left: (centerX - 16).clamp(0.0, math.max(0.0, width - 32)),
-    top: top - 2,
-    width: 32,
-    height: _captionHeight + 4,
+    left: (centerX - _captionTouchWidth / 2).clamp(
+      0.0,
+      math.max(0.0, width - _captionTouchWidth),
+    ),
+    top: math.max(_headerHeight, top - _captionTouchInset),
+    width: _captionTouchWidth,
+    height: _captionHeight + _captionTouchInset * 2,
     child: GestureDetector(
       key: keyValue,
       behavior: HitTestBehavior.opaque,
@@ -1494,27 +1484,7 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
       onHorizontalDragUpdate: (details) => _updateHandle(details.delta.dx),
       onHorizontalDragEnd: (_) => _endDrag(),
       onHorizontalDragCancel: _endDrag,
-      child: Center(
-        child: Container(
-          width: 10,
-          height: _captionHeight,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: color, width: 1.5),
-          ),
-          child: Center(
-            child: Container(
-              width: 2,
-              height: 14,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-        ),
-      ),
+      child: const SizedBox.expand(),
     ),
   );
 
@@ -1529,51 +1499,55 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
       _msPerPx = widget.span / math.max(1.0, trackWidth);
       _anchorStartMs = selected.startMs;
       _anchorEndMs = selected.endMs;
+      _liveStartMs = selected.startMs;
+      _liveEndMs = selected.endMs;
+      _snappedMs = null;
     });
   }
 
-  void _startCut(bool isStart, double trackWidth) {
-    final clip = widget.scope;
-    setState(() {
-      _cutDragging = true;
-      _cutDraggingStart = isStart;
-      _cutTravelPx = 0;
-      // 눈금 배율은 잡은 순간의 것으로 고정한다. 자르는 동안 클립이 짧아지는데
-      // 배율까지 따라 바뀌면 손가락 아래에서 그림이 달아난다.
-      _cutMsPerPx = widget.span / math.max(1.0, trackWidth);
-      _cutAnchorStartMs = clip.sourceStartMs;
-      _cutAnchorEndMs = clip.sourceEndMs;
-      _cutStartMs = clip.sourceStartMs;
-      _cutEndMs = clip.sourceEndMs;
-    });
-  }
-
-  void _updateCut(double deltaPx) {
-    if (!_cutDragging) return;
-    _cutTravelPx += deltaPx;
-    final moved = (_cutTravelPx * _cutMsPerPx).round();
-    const minimum = EditorProjectController.minimumClipDurationMs;
-    var start = _cutAnchorStartMs;
-    var end = _cutAnchorEndMs;
-    if (_cutDraggingStart) {
-      start = _frameAligned(_cutAnchorStartMs + moved).clamp(0, end - minimum);
-    } else {
-      end = _frameAligned(
-        _cutAnchorEndMs + moved,
-      ).clamp(start + minimum, widget.project.sourceDurationMs);
+  /// 가까운 자리에 손잡이를 달라붙게 한다.
+  ///
+  /// **왜 필요한가**: 이 눈금은 클립 하나를 폭에 맞춰 펼치므로 1dp가 수십~수백
+  /// ms다. "재생 위치에 딱", "앞 자막이 끝나는 데서 바로"는 아주 흔한 요구인데
+  /// 손가락으로 그 한 점을 맞히는 건 사실상 불가능하다. 컷 편집 띠가 쓰는
+  /// 규칙([TrimBarTokens.snapDistance])을 그대로 가져온다.
+  ///
+  /// 붙는 자리는 재생 위치, 클립의 처음과 끝, 그리고 **다른 자막의 경계**다.
+  /// 마지막 것이 있어야 자막을 빈틈없이 이어 붙일 수 있다.
+  int _snapCaption(int rawMs, String draggedId) {
+    final tolerance = (TrimBarTokens.snapDistance * _msPerPx).round();
+    var best = rawMs;
+    var bestDistance = tolerance + 1;
+    for (final target in <int>[
+      widget.clipTimelineStart,
+      widget.clipTimelineStart + widget.span,
+      widget.project.playheadMs,
+      for (final other in _layers)
+        if (other.id != draggedId) ...[other.startMs, other.endMs],
+    ]) {
+      final distance = (target - rawMs).abs();
+      if (distance <= tolerance && distance < bestDistance) {
+        best = target;
+        bestDistance = distance;
+      }
     }
-    if (start == _cutStartMs && end == _cutEndMs) return;
-    setState(() {
-      _cutStartMs = start;
-      _cutEndMs = end;
-    });
-    widget.onClipTrimChanged(start, end, _cutDraggingStart);
+    final landed = bestDistance <= tolerance ? best : null;
+    _rememberSnap(
+      landed,
+      onPlayhead: landed != null && landed == widget.project.playheadMs,
+    );
+    return best;
   }
 
-  void _endCut() {
-    if (!_cutDragging) return;
-    setState(() => _cutDragging = false);
-    widget.onClipTrimCommitted();
+  /// 붙은 자리를 기억하고, 처음 붙는 순간에만 손끝에 알린다.
+  ///
+  /// 재생바에 붙었는지를 따로 들고 있는 이유는 **재생바 자체를 굵게** 만들기
+  /// 위해서다. 손잡이만 밝아지는 것으로는 손가락에 가려 안 보인다.
+  void _rememberSnap(int? landed, {required bool onPlayhead}) {
+    if (landed == _snappedMs && (landed != null) == _snappedToPlayhead) return;
+    _snappedMs = landed;
+    _snappedToPlayhead = onPlayhead;
+    if (landed != null) unawaited(HapticFeedback.selectionClick());
   }
 
   void _startPlayheadDrag(double trackWidth) {
@@ -1604,15 +1578,29 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
     var start = _anchorStartMs;
     var end = _anchorEndMs;
     if (_draggingStart) {
-      start = _frameAligned(
-        _anchorStartMs + (_travelPx * _msPerPx).round(),
+      start = _snapCaption(
+        _frameAligned(_anchorStartMs + (_travelPx * _msPerPx).round()),
+        selected.id,
       ).clamp(clipStart, end - _minimumCaptionMs);
     } else {
-      end = _frameAligned(
-        _anchorEndMs + (_travelPx * _msPerPx).round(),
+      end = _snapCaption(
+        _frameAligned(_anchorEndMs + (_travelPx * _msPerPx).round()),
+        selected.id,
       ).clamp(start + _minimumCaptionMs, clipEnd);
     }
-    widget.controller.updateTextLayerRangeGesture(selected.id, start, end);
+    if (start == _liveStartMs && end == _liveEndMs) return;
+    // 그림은 이 위젯이, 값은 컨트롤러가 각자 맡는다. 알림을 끄지 않으면
+    // 매 프레임 편집 화면 전체가 다시 그려져 손잡이가 손가락을 못 따라온다.
+    setState(() {
+      _liveStartMs = start;
+      _liveEndMs = end;
+    });
+    widget.controller.updateTextLayerRangeGesture(
+      selected.id,
+      start,
+      end,
+      notify: false,
+    );
   }
 
   void _startSlide(double trackWidth) {
@@ -1626,6 +1614,9 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
       _msPerPx = widget.span / math.max(1.0, trackWidth);
       _anchorStartMs = selected.startMs;
       _anchorEndMs = selected.endMs;
+      _liveStartMs = selected.startMs;
+      _liveEndMs = selected.endMs;
+      _snappedMs = null;
     });
   }
 
@@ -1637,13 +1628,22 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
     final clipStart = widget.clipTimelineStart;
     final clipEnd = clipStart + widget.span;
     final duration = _anchorEndMs - _anchorStartMs;
-    final start = _frameAligned(
-      _anchorStartMs + (_travelPx * _msPerPx).round(),
+    // 통째로 옮길 때는 **앞머리**가 달라붙는다. 뒤끝까지 같이 보면 두 자리가
+    // 번갈아 당겨서 자막이 떨린다.
+    final start = _snapCaption(
+      _frameAligned(_anchorStartMs + (_travelPx * _msPerPx).round()),
+      selected.id,
     ).clamp(clipStart, clipEnd - duration);
+    if (start == _liveStartMs) return;
+    setState(() {
+      _liveStartMs = start;
+      _liveEndMs = start + duration;
+    });
     widget.controller.updateTextLayerRangeGesture(
       selected.id,
       start,
       start + duration,
+      notify: false,
     );
   }
 
@@ -1659,6 +1659,11 @@ class _CaptionTrackTimelineState extends State<_CaptionTrackTimeline> {
       _dragging = false;
       _draggingStart = false;
       _sliding = false;
+      // 확정된 값은 이제 프로젝트에 있다. 손안의 값을 남겨 두면 다음 드래그
+      // 첫 프레임에 옛 자리가 한 번 스친다.
+      _liveStartMs = null;
+      _liveEndMs = null;
+      _snappedMs = null;
     });
     widget.onEditCommitted();
   }
@@ -1676,15 +1681,23 @@ double _toolPanelHeightFor(
   EditorProject project, {
   required double availableHeight,
   required double timelineHeight,
+  bool directCaptionAddMode = false,
 }) {
   if (project.selectedTool == EditorTool.cut) return 0;
+  // 현재 위치 추가 카드는 자막 탭에서 유일하게 제 높이를 고집하는 조각이다.
+  // 잠깐 거쳐 가는 단계라 여기서만 한 뼘 더 준다 — 이 한 상태 때문에 늘
+  // 넉넉히 잡으면 정작 오래 머무는 자막 목록 화면의 미리보기가 눌린다.
+  if (project.selectedTool == EditorTool.text && directCaptionAddMode) {
+    return layout.toolPanelHeight * 1.35;
+  }
   final wanted = switch (project.selectedTool) {
     // 장면 카드 한 줄과 배율 슬라이더 한 줄.
     EditorTool.zoom => layout.toolPanelHeight * 1.45,
     // 비율 선택 한 줄과 확대 슬라이더 한 줄.
     EditorTool.ratio => layout.toolPanelHeight * 1.5,
-    // 자막 목록 아래에 구간 조절 줄이 한 줄 더 붙는다.
-    EditorTool.text => layout.toolPanelHeight * 1.3,
+    // 자막 목록 아래에 구간 조절 줄이 한 줄 더 붙는다. 이 탭만 위에 세 줄
+    // 짜리 눈금까지 세우므로 배수를 넉넉히 주면 미리보기가 눌린다.
+    EditorTool.text => layout.toolPanelHeight * 1.03,
     // 일반 스티커 줄과 얼굴 추적(AR) 줄, 두 줄을 담는다.
     EditorTool.sticker => layout.toolPanelHeight * 1.7,
     _ => layout.toolPanelHeight,
@@ -1859,7 +1872,7 @@ class EditorTopBar extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    '저장',
+                    '임시저장',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -3400,7 +3413,12 @@ class _DirectCaptionAddCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     key: const Key('editor-direct-caption-add-card'),
-    padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+    // 이 카드는 도구 칸이 준 높이 안에 **딱 맞춰** 서야 한다. 자기 크기를
+    // 고집하는 조각뿐이라 한 픽셀이 모자라도 바로 넘친다. S24+에서 상태바·
+    // 제스처바를 빼고 나면 여유가 100dp도 안 되므로, 여백은 아래에서 재 본
+    // 값(92dp)에 맞춰 두었다 — 여기 숫자를 올릴 때는
+    // `S24+ 시스템 영역까지 재도 자막 탭이 모든 상태에서 안 넘친다`를 함께 본다.
+    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(14),
@@ -3414,7 +3432,7 @@ class _DirectCaptionAddCard extends StatelessWidget {
           children: [
             const SizedBox(
               width: 24,
-              height: 38,
+              height: 34,
               child: Stack(
                 alignment: Alignment.topCenter,
                 children: [
@@ -3480,7 +3498,7 @@ class _DirectCaptionAddCard extends StatelessWidget {
               ),
             ),
             const Padding(
-              padding: EdgeInsets.only(top: 20),
+              padding: EdgeInsets.only(top: 17),
               child: Text(
                 '시간은 추가 후 조절할 수 있어요',
                 style: TextStyle(
@@ -3495,7 +3513,7 @@ class _DirectCaptionAddCard extends StatelessWidget {
         const SizedBox(height: 6),
         SizedBox(
           width: double.infinity,
-          height: 38,
+          height: 36,
           child: FilledButton.icon(
             key: const Key('editor-direct-caption-add-at-playhead'),
             onPressed: onAdd,

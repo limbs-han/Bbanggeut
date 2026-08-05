@@ -35,6 +35,13 @@ class _MemoryStore extends TranscriptStore {
   Future<void> write(String videoId, List<CaptionLine> lines) async {
     _saved = lines;
   }
+
+  // read·write와 같은 층이다. 이것을 안 덮으면 다시 만들기가 진짜 파일을
+  // 만지러 가서, 가짜 시계에 걸린 위젯 테스트가 끝나지 않는다.
+  @override
+  Future<void> clear(String videoId) async {
+    _saved = null;
+  }
 }
 
 void main() {

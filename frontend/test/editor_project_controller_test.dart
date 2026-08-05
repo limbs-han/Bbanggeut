@@ -255,6 +255,90 @@ void main() {
     expect(subject.project.textLayers.single.backgroundColor.a, 0);
   });
 
+  // "AI 자막 적용이 아예 안 된다"의 정체. 편집기는 열리자마자 추천 컷을
+  // 얹어 2분짜리를 십몇 초로 줄이는데, 전사는 원본 전체를 훑는다. 컷 밖
+  // 대사를 넣지 않는 것 자체는 맞다 — 그 장면은 영상에 없다. 화면이 그것을
+  // 말해 주지 않는 것이 문제였다(local_edit_screen의 빈 결과 안내 참조).
+  test('컷 구간 밖 대사는 자막으로 들어가지 않는다', () {
+    // 원본 10초짜리를 3~7초만 남기고 자른다.
+    final subject = controller();
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 3000, sourceEndMs: 7000),
+      isTrue,
+    );
+
+    subject.applyTranscriptCaptions([
+      (startMs: 500, endMs: 1500, text: '컷 앞'),
+      (startMs: 8000, endMs: 9000, text: '컷 뒤'),
+    ]);
+
+    expect(subject.project.textLayers, isEmpty);
+  });
+
+  // 컷 안에 있는데도 "컷 밖"이라며 안 들어가던 것. 전사 시각은 낱말이 처음
+  // 인식된 시점으로 역산한 근사치라 0.1초짜리 조각이 흔한데, 그걸 최소 길이
+  // 미달로 버리고 있었다.
+  test('컷 안이면 아주 짧은 대사도 버리지 않고 읽을 길이로 늘린다', () {
+    final subject = controller();
+
+    subject.applyTranscriptCaptions([
+      (startMs: 3000, endMs: 3080, text: '음'),
+      (startMs: 5000, endMs: 5120, text: '아니'),
+    ]);
+
+    final layers = subject.project.textLayers;
+    expect(layers, hasLength(2));
+    for (final layer in layers) {
+      expect(
+        layer.endMs - layer.startMs,
+        greaterThanOrEqualTo(
+          EditorProjectController.minimumCaptionDurationMs,
+        ),
+      );
+    }
+    // 시작은 들린 자리 그대로다 — 늘리는 것은 뒤쪽이다.
+    expect(layers.first.startMs, 3000);
+  });
+
+  test('클립 끝에 붙은 짧은 대사는 앞으로 당겨서 넣는다', () {
+    final subject = controller();
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 0, sourceEndMs: 5000),
+      isTrue,
+    );
+
+    // 클립 끝(5000)에서 50ms 앞. 뒤로는 늘릴 자리가 없다.
+    subject.applyTranscriptCaptions([
+      (startMs: 4950, endMs: 4990, text: '끝말'),
+    ]);
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.endMs, 5000);
+    expect(
+      layer.endMs - layer.startMs,
+      EditorProjectController.minimumCaptionDurationMs,
+    );
+  });
+
+  test('컷 안에 걸치는 대사만 클립 기준 시각으로 들어간다', () {
+    final subject = controller();
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 3000, sourceEndMs: 7000),
+      isTrue,
+    );
+
+    subject.applyTranscriptCaptions([
+      (startMs: 500, endMs: 1500, text: '컷 앞'),
+      (startMs: 4000, endMs: 5000, text: '컷 안'),
+    ]);
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.text, '컷 안');
+    // 원본 4초 = 컷이 3초에서 시작하니 클립 안에서는 1초다.
+    expect(layer.startMs, 1000);
+    expect(layer.endMs, 2000);
+  });
+
   test('자동 자막은 기존 기본 스타일로 만들고 사용자가 다시 바꿀 수 있다', () {
     final subject = controller();
     subject.applyTranscriptCaptions([
