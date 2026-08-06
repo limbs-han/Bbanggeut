@@ -34,7 +34,52 @@ public final class VideoEventTypes {
         "TOUCH", "카메라에서 직접 담은 영상이 도착했어요");
     private static final String DEFAULT_ARRIVAL_HEADLINE = "새 추억 영상이 도착했어요";
 
+    /**
+     * 감지로 담긴 영상의 제목. <b>서버가 정한다 — 기기가 보낸 title을 쓰지
+     * 않는다.</b>
+     *
+     * <p>같은 웃음 영상인데 목록과 알림에 세 가지 이름이 섞여 있었다. 기기
+     * 스크립트가 저마다 다른 문자열을 들고 있었기 때문이다 —
+     * {@code segment_clip_uploader.py}는 "웃음이 담긴 순간",
+     * {@code laughter_clip_uploader.py}는 "웃음이 감지된 순간". 여기에 손으로
+     * 부른 curl 한 번이 "웃음"을 넣자 2026-08-06 17:38 알림만 본문이 "웃음"으로
+     * 떴다(실제로 겪은 일이다). 이름은 사용자에게 보이는 것이므로 클라이언트가
+     * 아니라 서버가 쥔다 — 기기 스크립트를 몇 벌 고치든 화면은 흔들리지 않는다.
+     *
+     * <p>사람이 올린 영상(MANUAL·USER_UPLOAD·EDIT)은 여기 없다. 그 이름은
+     * 올린 사람이 붙인 것이라 서버가 덮으면 안 된다.
+     */
+    private static final Map<String, String> ARRIVAL_TITLES = Map.of(
+        "LAUGHTER", "웃음이 담긴 순간",
+        "CLAP", "박수가 시작된 순간",
+        "WAKE_WORD", "카메라를 부른 순간",
+        "TOUCH", "카메라에서 직접 담은 순간");
+
+    /**
+     * 두 유형이 같이 잡혔을 때만 쓰는 이름. 대표 유형 하나로 줄이면 "웃음이
+     * 담긴 순간"이 되어 박수가 함께 잡혔다는 사실이 사라진다.
+     */
+    private static final Map<Set<String>, String> MIXED_ARRIVAL_TITLES = Map.of(
+        Set.of("LAUGHTER", "CLAP"), "웃음과 박수가 함께 담긴 순간");
+
     private VideoEventTypes() {
+    }
+
+    /**
+     * 이 영상에 서버가 붙일 제목. 감지 유형이 아니면 {@code null}이고, 그때는
+     * 부르는 쪽이 올린 사람의 제목을 그대로 쓴다.
+     */
+    public static String arrivalTitle(List<String> eventTypes) {
+        String mixed = MIXED_ARRIVAL_TITLES.get(Set.copyOf(eventTypes));
+        if (mixed != null) {
+            return mixed;
+        }
+        return PRESENTATION_ORDER.stream()
+            .filter(eventTypes::contains)
+            .map(ARRIVAL_TITLES::get)
+            .filter(Objects::nonNull)
+            .findFirst()
+            .orElse(null);
     }
 
     /** 기기가 스스로 잡아서 담은 영상인가 — 알림을 보낼 대상인지 가른다. */

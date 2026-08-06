@@ -84,11 +84,55 @@ class _EmptyGateway implements ComicGateway {
   Future<Uint8List> download(String imageUrl) async => Uint8List(0);
 }
 
+/// 상태 조회가 처음엔 터지고, 두 번째부터는 그림을 준다. 회선이 잠깐 흔들린
+/// 상황 그대로다 — 그 한 번 때문에 카드가 영영 비면 안 된다.
+class _FlakyGateway implements ComicGateway {
+  _FlakyGateway({this.status = 'done'});
+
+  final String status;
+  int statusCalls = 0;
+
+  @override
+  Future<List<ComicCut>> script(String videoId, List<CaptionLine> lines) async =>
+      const [];
+
+  @override
+  Future<Uint8List> image(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style = comicDefaultStyle,
+  }) async => Uint8List(0);
+
+  @override
+  Future<ComicJobStatus> enqueueImage(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style = comicDefaultStyle,
+  }) async => const ComicJobStatus(status: 'none');
+
+  @override
+  Future<ComicJobStatus> jobStatus(String videoId) async {
+    statusCalls++;
+    if (statusCalls == 1) throw const ApiFailure('연결이 끊겼어요');
+    return ComicJobStatus(status: status, imageUrl: 'https://minio/panel.jpg');
+  }
+
+  /// 1x1 투명 GIF. 실제 디코딩이 되는 최소 바이트라 Image.memory가 죽지 않는다.
+  @override
+  Future<Uint8List> download(String imageUrl) async => Uint8List.fromList([
+    0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x21, 0xF9, 0x04, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3B,
+  ]);
+}
+
 void main() {
   Future<void> pump(
     WidgetTester tester, {
     required ApiClient api,
     List<VaultComic> comics = const [],
+    ComicGateway? gateway,
   }) async {
     // 만화 한 장이 화면 폭의 정사각이라 기본 테스트 화면(800x600)에서는 아래
     // 버튼 줄이 밖으로 밀린다. 실제 폰에 가까운 세로 화면으로 둔다.
@@ -102,7 +146,7 @@ void main() {
             api: api,
             comics: comics,
             videoById: (_) => null,
-            gateway: _EmptyGateway(),
+            gateway: gateway ?? _EmptyGateway(),
           ),
         ),
       ),
@@ -206,6 +250,44 @@ void main() {
 
     expect(find.byKey(const ValueKey('comic-rename-v1')), findsOneWidget);
     expect(find.byKey(const ValueKey('comic-rename-v2')), findsOneWidget);
+  });
+
+  /// 예전에는 실패를 null로 영구히 기억해서, 회선이 한 번 흔들리면 그 카드가
+  /// 앱을 껐다 켤 때까지 비어 있었다.
+  testWidgets('그림을 못 받으면 다시 시도할 수 있다', (tester) async {
+    final gateway = _FlakyGateway();
+    await pump(
+      tester,
+      api: _FakeApi(),
+      comics: [comic()],
+      gateway: gateway,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('만화를 불러오지 못했어요'), findsOneWidget);
+    expect(find.byKey(const ValueKey('comic-retry-v1')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('comic-retry-v1')));
+    await tester.pumpAndSettle();
+
+    expect(gateway.statusCalls, 2, reason: '다시 시도가 실제로 다시 청한다');
+    expect(find.text('만화를 불러오지 못했어요'), findsNothing);
+  });
+
+  /// 서버가 아직 그리는 중인 것과 못 받은 것은 사용자가 할 일이 다르다 —
+  /// 앞은 기다리면 되고 뒤는 다시 눌러야 한다. 예전에는 둘 다 '불러오지
+  /// 못했어요'로 보였다.
+  testWidgets('아직 그리는 중이면 실패로 말하지 않는다', (tester) async {
+    await pump(
+      tester,
+      api: _FakeApi(),
+      comics: [comic()],
+      gateway: _FlakyGateway(status: 'running')..statusCalls = 1,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('그림을 그리고 있어요'), findsOneWidget);
+    expect(find.text('만화를 불러오지 못했어요'), findsNothing);
   });
 }
 

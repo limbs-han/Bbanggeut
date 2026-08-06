@@ -63,6 +63,10 @@ FRAME_BASE64_BUDGET = 72_000
 FRAME_WIDTH = 320
 FRAME_QUALITY = "8"
 
+# 완성 만화를 앱에 보낼 때의 JPEG 품질(ffmpeg -q:v, 2~31이며 낮을수록 좋다).
+# [normalize_square_image]가 왜 PNG를 버렸는지 설명한다.
+PANEL_QUALITY = os.environ.get("COMIC_PANEL_QUALITY", "4")
+
 DEFAULT_STYLE = "soft webtoon"
 
 # 컷 번호 → 격자 위치. 읽는 순서와 같다. 앱이 자막을 이 순서로 얹으므로
@@ -566,7 +570,7 @@ def build_image_prompt(
         "bottom-left (3), bottom-right (4). "
         # 앱이 칸을 그림의 4등분으로 잡고 자막을 앉히므로, 격자 바깥에 여백이
         # 있으면 자막이 칸 중심에서 밀린다. 지켜지지 않을 때를 대비해 서버가
-        # 받은 그림에서 테두리를 실제로 잘라내지만(normalize_square_png),
+        # 받은 그림에서 테두리를 실제로 잘라내지만(normalize_square_image),
         # 애초에 안 그리게 하는 것이 낫다.
         "The 2x2 grid must fill the entire image edge to edge: no outer border, "
         "no margin, no frame, no matting around the four panels."
@@ -717,18 +721,31 @@ def _detect_content_box(data: bytes) -> tuple[int, int, int, int] | None:
     return box if crop_box_is_trustworthy(box, *size) else None
 
 
-def normalize_square_png(data: bytes) -> bytes:
-    """PNG·정사각으로 맞추고, 모델이 그린 외곽 테두리를 잘라낸다.
+def normalize_square_image(data: bytes) -> bytes:
+    """모델이 그린 외곽 테두리를 잘라내고, 정사각으로 맞추고, JPEG으로 인코딩한다.
 
-    앱은 base64 PNG만 받고, 2x2 격자를 전제로 자막을 얹는다. 정사각이 아니면
+    **왜 정사각인가**: 앱은 2x2 격자를 전제로 자막을 얹는다. 정사각이 아니면
     `BoxFit.contain`이 위아래 여백을 만들어 자막 네 개가 전부 칸을 벗어난다.
-    모델 출력을 믿지 않고 여기서 한 번 맞춘다 — 이미 정사각 PNG면 그대로 다시
-    쓰는 셈이라 비용이 없다.
+    모델 출력을 믿지 않고 여기서 한 번 맞춘다.
 
     테두리를 자른 뒤에도 정사각으로 다시 채운다. 실측에서 사면 여백이 거의
     같아(40·41·42·42) 자른 결과가 이미 정사각에 가깝고, 채우는 양은 1~2px이라
     칸 중심을 흩뜨리지 않는다. 늘려서 억지로 정사각을 만들지 않는 이유는 그림이
     비틀리기 때문이다.
+
+    **왜 PNG가 아니라 JPEG인가**: 모델이 주는 PNG는 1024x1024인데 2MB가 넘는다
+    (실측 2026-08-06, 운영 MinIO의 만화 일곱 장: 1.33MB~2.12MB, 평균 1.7MB).
+    만화 탭은 화면에 보이는 카드마다 이 파일을 한 장씩 받으므로, 카드 다섯이면
+    모바일 회선으로 10MB다 — 그림이 뜨기까지 오래 걸리고 중간에 실패한다.
+
+    같은 그림을 JPEG q4로 다시 인코딩하면 **171KB**다(같은 1024폭 유지, 실측
+    2.12MB → 12분의 1). 만화는 사진이 아니라 평면 채색이라 이 품질에서 눈에
+    띄는 열화가 없고, 앱은 이 그림 위에 자막 띠를 따로 얹으므로 글자가 뭉갤
+    일도 없다. 해상도를 줄이지 않고 압축만 바꾸는 이유가 이것이다 — 폭을 줄이면
+    '크게 보기'에서 흐려진다.
+
+    자르기·재기는 **들어온 PNG**를 보고 한다([png_size]) — 나가는 형식이
+    바뀌어도 그 경로는 그대로다.
     """
     box = _detect_content_box(data)
     crop = ""
@@ -750,7 +767,10 @@ def normalize_square_png(data: bytes) -> bytes:
             "-f",
             "image2pipe",
             "-vcodec",
-            "png",
+            "mjpeg",
+            # 2~31, 낮을수록 좋다. 4는 평면 채색에서 열화가 보이지 않는 선이다.
+            "-q:v",
+            PANEL_QUALITY,
             "pipe:1",
         ],
         stdin=data,
@@ -764,7 +784,7 @@ def render_comic(
     setting: str = "",
     style: str = DEFAULT_STYLE,
 ) -> bytes:
-    """4컷 구성 → 2x2 만화 PNG 바이트."""
+    """4컷 구성 → 2x2 만화 JPEG 바이트."""
     payload = _gms(
         IMAGE_MODEL,
         {
@@ -785,7 +805,7 @@ def render_comic(
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         },
     )
-    return normalize_square_png(_first_image(payload))
+    return normalize_square_image(_first_image(payload))
 
 
 def usage_summary(payload: Mapping[str, Any]) -> dict[str, int]:

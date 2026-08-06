@@ -53,9 +53,33 @@ class ComicFeed extends StatefulWidget {
   State<ComicFeed> createState() => _ComicFeedState();
 }
 
+/// 카드 한 장이 그림 자리에 무엇을 그려야 하는가.
+///
+/// 예전에는 `Map<String, Uint8List?>` 하나로 "아직 안 받음(키 없음)"과 "못
+/// 받음(null)"만 갈랐다. 그래서 두 가지가 같은 칸으로 떨어졌다 — 서버가 아직
+/// 그리는 중인 만화와, 회선이 끊겨 못 받은 만화가 똑같이 '만화를 불러오지
+/// 못했어요'로 보였다. 게다가 실패를 null로 **영구히 기억**해서 다시 받을 길이
+/// 없었다. 화면을 벗어났다 돌아와도 그 카드만 계속 비어 있었다.
+enum _PanelPhase {
+  /// 받는 중. 처음 한 번이거나 사용자가 다시 시도를 눌렀다.
+  loading,
+
+  /// 서버가 아직 그리는 중이다. 실패가 아니라 기다리면 되는 상태다.
+  drawing,
+
+  /// 그림이 있다.
+  ready,
+
+  /// 못 받았다. 다시 시도할 수 있다.
+  failed,
+}
+
 class _ComicFeedState extends State<ComicFeed> {
-  /// videoId → 받아 둔 PNG. 값이 없으면 아직 안 받았고, null이면 받지 못했다.
-  final Map<String, Uint8List?> _images = {};
+  /// videoId → 받아 둔 그림. 성공한 것만 들어간다.
+  final Map<String, Uint8List> _images = {};
+
+  /// videoId → 그림 자리 상태. 없으면 아직 청하지 않았다.
+  final Map<String, _PanelPhase> _phase = {};
 
   /// 그림과 함께 온 저장 구성. 대사를 크게 보기에서 그리는 데 쓴다 — 따로
   /// 청하지 않는다(구성 만들기 호출은 과금이고, 사용자가 고친 대사를 덮는다).
@@ -76,23 +100,48 @@ class _ComicFeedState extends State<ComicFeed> {
     return _edited[comic.videoId] ?? comic;
   }
 
-  /// 그림을 한 번만 받는다. 실패도 기억한다 — 안 그러면 매 프레임 다시 시도한다.
+  /// 그림을 한 번 받는다.
+  ///
+  /// 결과를 [_phase]에 기억해 매 프레임 다시 시도하지 않는다. 다만 **실패는
+  /// 끝이 아니다** — [_retry]가 기록을 지우고 이 함수를 다시 부른다. 회선이
+  /// 잠깐 끊겨 못 받은 카드를 영영 빈 채로 두면 사용자가 할 수 있는 일이
+  /// 없어진다(앱을 껐다 켜는 것 말고는).
   Future<void> _ensureImage(String videoId) async {
-    if (_images.containsKey(videoId) || _loading.contains(videoId)) return;
+    if (_phase.containsKey(videoId) || _loading.contains(videoId)) return;
     _loading.add(videoId);
     Uint8List? bytes;
+    _PanelPhase phase;
     try {
       final status = await _gateway.jobStatus(videoId);
       final cuts = status.cuts;
       if (cuts != null && cuts.isNotEmpty) _cuts[videoId] = cuts;
       if (status.done && status.imageUrl != null) {
         bytes = await _gateway.download(status.imageUrl!);
+        phase = _PanelPhase.ready;
+      } else {
+        // 아직 그리는 중인 것과 그림이 없는 것을 가른다. 앞은 기다리면 되고,
+        // 뒤는 목록에는 있는데 그림이 사라진 경우라 다시 시도가 맞다.
+        phase = status.working ? _PanelPhase.drawing : _PanelPhase.failed;
       }
     } catch (_) {
-      // 못 받은 것도 결과다. 카드가 "볼 수 없어요"를 보여 준다.
+      // 못 받은 것도 결과다. 카드가 다시 시도 버튼을 보여 준다.
+      phase = _PanelPhase.failed;
     }
     _loading.remove(videoId);
-    if (mounted) setState(() => _images[videoId] = bytes);
+    if (!mounted) return;
+    setState(() {
+      if (bytes != null) _images[videoId] = bytes;
+      _phase[videoId] = phase;
+    });
+  }
+
+  /// 못 받았거나 아직 그리는 중이던 카드를 다시 청한다.
+  void _retry(String videoId) {
+    setState(() {
+      _phase.remove(videoId);
+      _images.remove(videoId);
+    });
+    _ensureImage(videoId);
   }
 
   Future<void> _toggleLike(VaultComic comic) async {
@@ -221,6 +270,7 @@ class _ComicFeedState extends State<ComicFeed> {
     // 때까지 지운 그림이 캐시에서 되살아난다.
     setState(() {
       _images.remove(comic.videoId);
+      _phase.remove(comic.videoId);
       _cuts.remove(comic.videoId);
       _edited.remove(comic.videoId);
     });
@@ -236,7 +286,7 @@ class _ComicFeedState extends State<ComicFeed> {
       return;
     }
     // 카드를 그리려고 이미 받아 둔 그림과 구성을 들려 보낸다. 안 그러면 편집
-    // 화면이 같은 상태 조회와 같은 PNG를 처음부터 다시 받는다.
+    // 화면이 같은 상태 조회와 같은 그림을 처음부터 다시 받는다.
     final image = _images[comic.videoId];
     final cuts = _cuts[comic.videoId];
     await Navigator.push(
@@ -256,6 +306,7 @@ class _ComicFeedState extends State<ComicFeed> {
     // 남겨 두면 방금 고친 대사가 아니라 예전 대사가 그림 위에 계속 얹힌다.
     setState(() {
       _images.remove(comic.videoId);
+      _phase.remove(comic.videoId);
       _cuts.remove(comic.videoId);
     });
     await widget.onChanged?.call();
@@ -285,7 +336,8 @@ class _ComicFeedState extends State<ComicFeed> {
           comic: comic,
           image: _images[comic.videoId],
           cuts: _cuts[comic.videoId],
-          loaded: _images.containsKey(comic.videoId),
+          phase: _phase[comic.videoId] ?? _PanelPhase.loading,
+          onRetry: () => _retry(comic.videoId),
           madeAtLabel: comic.madeAt == null
               ? null
               : _dayTime.format(comic.madeAt!.toLocal()),
@@ -303,13 +355,54 @@ class _ComicFeedState extends State<ComicFeed> {
   }
 }
 
+/// 그림 자리에 놓는 안내 한 덩이 — 아이콘, 한 줄, 그리고 할 수 있는 일.
+class _PanelNotice extends StatelessWidget {
+  const _PanelNotice({
+    required this.icon,
+    required this.message,
+    this.hint,
+    this.action,
+  });
+
+  final IconData icon;
+  final String message;
+  final String? hint;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 28, color: AppColors.muted),
+      const SizedBox(height: 8),
+      Text(
+        message,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.inkSoft,
+        ),
+      ),
+      if (hint != null) ...[
+        const SizedBox(height: 3),
+        Text(
+          hint!,
+          style: const TextStyle(fontSize: 11, color: AppColors.muted),
+        ),
+      ],
+      if (action != null) ...[const SizedBox(height: 4), action!],
+    ],
+  );
+}
+
 class _ComicCard extends StatelessWidget {
   const _ComicCard({
     super.key,
     required this.comic,
     required this.image,
     required this.cuts,
-    required this.loaded,
+    required this.phase,
+    required this.onRetry,
     required this.madeAtLabel,
     required this.onView,
     required this.onOpen,
@@ -326,9 +419,12 @@ class _ComicCard extends StatelessWidget {
   /// 그림만 보여 준다(구성을 남기기 전에 만든 옛 만화).
   final List<ComicCut>? cuts;
 
-  /// 받기를 이미 마쳤는가. [image]가 null인 것은 "아직"과 "못 받았다" 둘 다일 수
-  /// 있어서, 진행 표시와 오류 표시를 가르려면 이 값이 필요하다.
-  final bool loaded;
+  /// 그림 자리에 무엇을 그릴지. [image]가 null인 것만으로는 "아직", "그리는
+  /// 중", "못 받았다"를 가를 수 없다.
+  final _PanelPhase phase;
+
+  /// 못 받았거나 그리는 중일 때 다시 청한다.
+  final VoidCallback onRetry;
   final String? madeAtLabel;
 
   /// 크게 보기 — 그림과 대사만 보여 준다.
@@ -343,6 +439,34 @@ class _ComicCard extends StatelessWidget {
   /// 만화 지우기. null이면 버튼을 감춘다 — OWNER가 아닌 사람에게는 누를 수 없는
   /// 버튼을 보이지 않는다.
   final VoidCallback? onDelete;
+
+  /// 그림이 아직 없을 때 그 자리에 놓는 것.
+  ///
+  /// 세 경우를 갈라 말한다. 예전에는 "받는 중"과 "못 받음" 둘뿐이었고, 못 받은
+  /// 카드에는 아무 길이 없었다 — 회선이 잠깐 흔들려 한 장을 놓치면 그 카드만
+  /// 계속 비어 있었다.
+  Widget _placeholder() => switch (phase) {
+    _PanelPhase.ready || _PanelPhase.loading => const SizedBox.square(
+      dimension: 24,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    ),
+    _PanelPhase.drawing => const _PanelNotice(
+      icon: Icons.brush_rounded,
+      message: '그림을 그리고 있어요',
+      hint: '다 되면 알림으로 알려 드려요',
+    ),
+    _PanelPhase.failed => _PanelNotice(
+      icon: Icons.wifi_off_rounded,
+      message: '만화를 불러오지 못했어요',
+      // 버튼 하나가 "앱을 껐다 켜기" 말고 할 수 있는 유일한 길이다.
+      action: TextButton.icon(
+        key: ValueKey('comic-retry-${comic.videoId}'),
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh_rounded, size: 16),
+        label: const Text('다시 시도'),
+      ),
+    ),
+  };
 
   @override
   Widget build(BuildContext context) => SoftCard(
@@ -416,27 +540,14 @@ class _ComicCard extends StatelessWidget {
             onTap: onView,
             child: ColoredBox(
               color: AppColors.surfaceWarm,
-              // 대사를 그림 위에 얹는다. 만화 PNG에는 말풍선이 없어서(그림
+              // 대사를 그림 위에 얹는다. 만화 그림에는 말풍선이 없어서(그림
               // 프롬프트가 막는다) 띠를 얹지 않으면 피드에서는 말 없는 그림
               // 넉 장으로만 보인다 — 편집 화면에 들어가야 대사가 보였다.
               child: image != null
                   ? (cuts == null || cuts!.isEmpty
                         ? Image.memory(image!, fit: BoxFit.contain)
                         : ComicCanvas(image: image!, cuts: cuts!))
-                  : Center(
-                      child: loaded
-                          ? const Text(
-                              '만화를 불러오지 못했어요',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.muted,
-                              ),
-                            )
-                          : const SizedBox.square(
-                              dimension: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                    ),
+                  : Center(child: _placeholder()),
             ),
           ),
         ),
