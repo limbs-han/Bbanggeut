@@ -394,6 +394,17 @@ jobs = AnalysisJobManager(
     on_done=lambda job: backend_events.analysis_ready(
         job.video_id, job.requested_by
     ),
+    # 진행 상태를 백엔드가 들게 한다. 예전에는 이 관리자의 메모리에만 있어서,
+    # 워커를 재배포하면 진행 중이던 분석이 "분석한 적 없음"으로 보였다.
+    on_start=lambda job: backend_events.analysis_started(
+        job.video_id, job.stage, job.requested_by
+    ),
+    on_progress=lambda job: backend_events.analysis_progress(
+        job.video_id, job.stage, job.progress
+    ),
+    on_failed=lambda job: backend_events.analysis_failed(
+        job.video_id, job.error or "", job.requested_by
+    ),
 )
 
 
@@ -544,6 +555,11 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
     if running is not None and running.status == "running":
         return JSONResponse(status_code=202, content=running.snapshot())
     if _load_cached_analyses(video_id) is not None:
+        # 이미 분석해 둔 영상이다. 백엔드에도 그렇게 남긴다 — V46 이전에 분석한
+        # 영상은 상태 행이 없어서, 알려 주지 않으면 앱이 영원히 "분석한 적 없음"을
+        # 본다. userId는 비운다: 상태만 남기고 알림은 보내지 않는다(사용자가 청한
+        # 적 없는 "분석 완료" 알림이 뜨면 그게 더 이상하다).
+        backend_events.analysis_ready(video_id, None)
         return JSONResponse(
             content={"videoId": video_id, "status": "done", "progress": 1.0}
         )

@@ -3,6 +3,7 @@ package com.wj.server.editor;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.notification.application.NotificationService;
 import com.wj.server.video.application.ComicFeedService;
+import com.wj.server.video.application.VideoAnalysisService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -21,15 +22,18 @@ public class EditorEventService {
     private final JwtDecoder decoder;
     private final NotificationService notifications;
     private final ComicFeedService comics;
+    private final VideoAnalysisService analyses;
 
     public EditorEventService(
         JwtDecoder decoder,
         NotificationService notifications,
-        ComicFeedService comics
+        ComicFeedService comics,
+        VideoAnalysisService analyses
     ) {
         this.decoder = decoder;
         this.notifications = notifications;
         this.comics = comics;
+        this.analyses = analyses;
     }
 
     public void handle(String authorization, EditorEventRequest request) {
@@ -38,8 +42,28 @@ public class EditorEventService {
                 HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "편집 서버 토큰이 필요합니다.");
         }
         switch (request.type()) {
-            case "ANALYSIS_READY" ->
-                notifications.editAnalysisReady(request.userId(), request.videoId());
+            // 진행 보고는 알림을 만들지 않는다 — 상태만 남긴다. 단계마다 알림이
+            // 나가면 영상 하나에 알림이 다섯 번 뜬다.
+            case "ANALYSIS_STARTED" ->
+                analyses.markStarted(
+                    request.videoId(), request.stage(), request.userId());
+            case "ANALYSIS_PROGRESS" ->
+                analyses.markProgress(
+                    request.videoId(), request.stage(),
+                    request.progress() == null ? 0f : request.progress());
+            case "ANALYSIS_FAILED" ->
+                analyses.markFailed(
+                    request.videoId(), request.body(), request.userId());
+            // 상태를 먼저 남기고 알린다. 알림을 못 보내도(받는 사람이 탈퇴했다든지)
+            // "분석 끝났다"는 사실은 남아야 앱이 영원히 분석 중을 보지 않는다.
+            case "ANALYSIS_READY" -> {
+                analyses.markDone(request.videoId(), request.userId());
+                // 청한 사람이 없는 분석도 있다(상태만 남기는 경로). 알림은 받는
+                // 사람이 있어야 만든다.
+                if (request.userId() != null) {
+                    notifications.editAnalysisReady(request.userId(), request.videoId());
+                }
+            }
             // 만화 행을 먼저 세운다 — 제목·좋아요·댓글이 이 행을 참조하므로,
             // 알림만 보내고 행이 없으면 피드에 나오지도 않는다. 알림을 못 보내도
             // (받는 사람이 탈퇴했다든지) 만화 자체는 남아야 한다.

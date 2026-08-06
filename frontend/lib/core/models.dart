@@ -571,6 +571,58 @@ class VaultComic {
   );
 }
 
+/// 영상 분석(소리·움직임·표정)의 진행 상태.
+///
+/// 서버가 들고 있는 값이다 — 예전에는 편집 워커의 메모리에만 있어서, 워커를
+/// 재배포하면 진행 중이던 분석이 사라져 보였고 다른 가족 폰은 애초에 알 수
+/// 없었다. AI 자동 컷·줌과 만화 프레임 선정이 모두 이 분석 결과를 쓴다.
+class VideoAnalysis {
+  const VideoAnalysis({
+    required this.status,
+    this.stage,
+    this.progress = 0,
+    this.error,
+  });
+
+  /// NONE(분석한 적 없음) · RUNNING · DONE · FAILED.
+  final String status;
+
+  /// 지금 단계. 사람에게 보여 줄 문구는 [stageLabel]이 만든다.
+  final String? stage;
+
+  /// 0.0~1.0.
+  final double progress;
+  final String? error;
+
+  bool get isRunning => status == 'RUNNING';
+  bool get isDone => status == 'DONE';
+  bool get isFailed => status == 'FAILED';
+
+  /// 몇 퍼센트인지 아직 모르면 null — 없는 숫자를 만들어 보여 주면 한 값에
+  /// 붙어 멈춘 것처럼 보인다(만화 화면에서 같은 판단을 했다).
+  int? get percent => progress <= 0 ? null : (progress * 100).round();
+
+  /// 단계 이름을 사람 말로. 모르는 단계는 뭉뚱그린다 — 워커가 단계를 하나 더
+  /// 늘렸을 때 앱이 영문 코드를 그대로 보여 주는 것보다 낫다.
+  String get stageLabel => switch (stage) {
+    'download' => '영상을 가져오는 중',
+    'audio' => '소리 크기를 보는 중',
+    'yamnet' => '무슨 소리인지 듣는 중',
+    'video' => '움직임을 보는 중',
+    'expression' => '표정을 보는 중',
+    _ => '분석하는 중',
+  };
+
+  factory VideoAnalysis.fromJson(Map<String, dynamic> json) => VideoAnalysis(
+    status: json['status'] as String? ?? 'NONE',
+    stage: json['stage'] as String?,
+    progress: (json['progress'] as num?)?.toDouble() ?? 0,
+    error: json['error'] as String?,
+  );
+
+  static const none = VideoAnalysis(status: 'NONE');
+}
+
 /// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
 class VaultEventStats {
   const VaultEventStats({

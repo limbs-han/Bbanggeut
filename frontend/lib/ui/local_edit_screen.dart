@@ -13,6 +13,7 @@ import '../core/saved_video_edit.dart';
 import '../core/video_edit_state.dart';
 import '../core/video_exporter.dart';
 import '../core/video_source_cache.dart';
+import '../features/analysis/analysis_notice.dart';
 import '../features/stt/caption_auto_section.dart';
 import '../features/stt/caption_controller.dart';
 import '../features/stt/mlkit_transcriber.dart';
@@ -1824,7 +1825,19 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             ? _preparing()
             : !_editorReady
             ? SafeArea(child: _failed())
-            : _editorShell(),
+            // 분석이 도는 동안 AI 컷 칩은 흐리게 잠기지만, 왜 잠겼는지는 화면에
+            // 없었다. 띠는 진행 중·실패일 때만 자리를 차지한다(끝나면
+            // SizedBox.shrink). 끝나면 프리셋 추천을 다시 받는다.
+            : Column(
+                children: [
+                  AnalysisNoticeBar(
+                    api: widget.controller.api,
+                    videoId: widget.video.id,
+                    onDone: _loadPresetRecommendations,
+                  ),
+                  Expanded(child: _editorShell()),
+                ],
+              ),
       ),
     ),
   );
