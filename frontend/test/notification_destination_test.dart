@@ -87,6 +87,41 @@ void main() {
       }
     });
 
+    /// 만화 알림으로 들어온 사람은 만화만 보고 나가지 않는다 — 어떤 장면으로
+    /// 만들었는지 원본이 궁금해진다. 예전에는 뒤로 가면 알림함이나 홈으로
+    /// 튕겨서, 그 영상을 다시 보려면 추억 탭에서 처음부터 뒤져야 했다.
+    test('만화 아래에는 그 영상 상세를 깔아 둔다', () {
+      expect(
+        notificationBeneathFor(NotificationDestination.comic),
+        NotificationDestination.videoDetail,
+      );
+    });
+
+    test('나머지 목적지는 아래에 아무것도 깔지 않는다', () {
+      for (final destination in NotificationDestination.values) {
+        if (destination == NotificationDestination.comic) continue;
+        expect(
+          notificationBeneathFor(destination),
+          isNull,
+          reason: '$destination 아래에 깔 화면을 정한 적이 없다',
+        );
+      }
+    });
+
+    /// 아래에 깔 화면은 그 목적지가 **영상 하나로 열 수 있는 것**이어야 한다.
+    /// 캘린더나 가족 화면을 깔라고 하면 라우팅이 던진다.
+    test('아래에 까는 화면은 영상으로 열 수 있는 목적지뿐이다', () {
+      const openableWithVideo = {
+        NotificationDestination.videoDetail,
+        NotificationDestination.comic,
+      };
+      for (final destination in NotificationDestination.values) {
+        final beneath = notificationBeneathFor(destination);
+        if (beneath == null) continue;
+        expect(openableWithVideo, contains(beneath));
+      }
+    });
+
     test('모르는 종류는 기본 경로로 떨어진다', () {
       expect(
         notificationDestinationFor('SOMETHING_NEW', hasResource: true),
