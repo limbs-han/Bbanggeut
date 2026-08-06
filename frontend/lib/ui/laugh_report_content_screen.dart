@@ -25,14 +25,8 @@ class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
   /// 집계로 폴백한다.
   Map<DateTime, int>? _serverCounts;
 
-  /// 가족 전체 합산(API-80)일 때 기기별 분해. 기기 단위 집계에서는 비어 있다.
+  /// 가족 전체 합산(API-80)에 포함된 기기별 웃음 횟수.
   List<VaultDeviceCount> _byDevice = const [];
-
-  /// 금고 전체 합산으로 볼지, 선택한 기기만 볼지. 금고에 기기가 둘 이상일
-  /// 때만 의미가 있어 그때만 토글을 노출한다.
-  bool _familyWide = true;
-
-  bool get _canToggle => (controller.selectedVault?.devices.length ?? 0) > 1;
 
   @override
   void initState() {
@@ -45,34 +39,18 @@ class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
     final monday = today.subtract(Duration(days: today.weekday - 1));
     final from = monday.subtract(const Duration(days: 7));
     final vault = controller.selectedVault;
-    final device = controller.selectedDevice;
+    if (vault == null) return;
     try {
-      Map<DateTime, int> counts;
-      var byDevice = const <VaultDeviceCount>[];
-      if (_familyWide && vault != null) {
-        final stats = await controller.api.getVaultEventStats(
-          vault.id,
-          from: from,
-          to: today,
-          type: 'LAUGHTER',
-        );
-        counts = _toCounts(stats.dailyCounts);
-        byDevice = stats.byDevice;
-      } else if (device != null) {
-        final stats = await controller.api.getEventStats(
-          device.id,
-          from: from,
-          to: today,
-          type: 'LAUGHTER',
-        );
-        counts = _toCounts(stats.dailyCounts);
-      } else {
-        return;
-      }
+      final stats = await controller.api.getVaultEventStats(
+        vault.id,
+        from: from,
+        to: today,
+        type: 'LAUGHTER',
+      );
       if (!mounted) return;
       setState(() {
-        _serverCounts = counts;
-        _byDevice = byDevice;
+        _serverCounts = _toCounts(stats.dailyCounts);
+        _byDevice = stats.byDevice;
       });
     } on ApiFailure {
       // 서버 집계를 못 받으면 이미 불러온 영상 목록으로 계속 그린다.
@@ -83,16 +61,6 @@ class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
     for (final daily in dailyCounts)
       if (daily.date != null) DateUtils.dateOnly(daily.date!): daily.count,
   };
-
-  void _switchScope(bool familyWide) {
-    if (_familyWide == familyWide) return;
-    setState(() {
-      _familyWide = familyWide;
-      _serverCounts = null;
-      _byDevice = const [];
-    });
-    _loadServerCounts();
-  }
 
   Map<DateTime, int> get _countsByDay {
     final server = _serverCounts;
@@ -138,13 +106,6 @@ class _LaughReportContentScreenState extends State<LaughReportContentScreen> {
                   sliver: SliverList.list(
                     children: [
                       _ReportHeader(onBack: () => Navigator.maybePop(context)),
-                      if (_canToggle) ...[
-                        const SizedBox(height: 14),
-                        _ScopeToggle(
-                          familyWide: _familyWide,
-                          onChanged: _switchScope,
-                        ),
-                      ],
                       const SizedBox(height: 22),
                       _LuckyPouchCard(
                         count: weeklyTotal,
@@ -556,78 +517,6 @@ class _WeekPouchCard extends StatelessWidget {
       ),
     );
   }
-}
-
-/// 가족 전체 합산(API-80)과 선택한 기기만 보기를 오가는 토글. 금고에 기기가
-/// 둘 이상일 때만 나타난다.
-class _ScopeToggle extends StatelessWidget {
-  const _ScopeToggle({required this.familyWide, required this.onChanged});
-
-  final bool familyWide;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: _ScopeButton(
-          label: '가족 전체',
-          selected: familyWide,
-          onTap: () => onChanged(true),
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: _ScopeButton(
-          label: '이 기기만',
-          selected: !familyWide,
-          onTap: () => onChanged(false),
-        ),
-      ),
-    ],
-  );
-}
-
-class _ScopeButton extends StatelessWidget {
-  const _ScopeButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    selected: selected,
-    button: true,
-    child: InkWell(
-      key: ValueKey('report-scope-$label'),
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        height: 44,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.coral : Colors.white.withValues(alpha: .7),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? AppColors.coral : const Color(0xFFF0D9C6),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-            color: selected ? Colors.white : AppColors.inkSoft,
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 /// 가족 합산일 때 어느 기기에서 몇 번 웃었는지. 기기가 둘 이상일 때만 뜬다.

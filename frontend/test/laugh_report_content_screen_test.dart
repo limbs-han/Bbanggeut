@@ -54,6 +54,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('웃음 리포트'), findsOneWidget);
+    expect(find.text('가족 전체'), findsNothing);
+    expect(find.text('이 기기만'), findsNothing);
     expect(find.text('이번 주 웃음 복주머니 ♥'), findsOneWidget);
     expect(find.text('웃음 횟수'), findsOneWidget);
     expect(find.text('3회'), findsOneWidget);
