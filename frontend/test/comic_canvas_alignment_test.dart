@@ -9,6 +9,10 @@ import 'package:william_james_app/features/comic/panel_subtitle.dart';
 ///
 /// 눈으로는 "옆으로 빗겨난 느낌"까지만 알 수 있고 몇 픽셀이 어긋났는지는
 /// 알 수 없다. 칸 중심과 띠 중심을 직접 재서 못박는다.
+///
+/// **기준은 그림이지 [ComicCanvas] 전체가 아니다.** 만화답게 보이라고 그림
+/// 바깥에 흰 테두리를 두르는데([comicFrameRatio]), 칸은 그 안쪽 그림을
+/// 4등분한 것이다. 바깥 사각형을 기준으로 재면 테두리 두께만큼 틀리게 나온다.
 void main() {
   /// 1x1 투명 PNG. 그림 내용은 배치와 무관하다.
   final png = Uint8List.fromList(const [
@@ -49,7 +53,8 @@ void main() {
     );
     await tester.pump();
 
-    final canvas = tester.getRect(find.byType(ComicCanvas));
+    // 칸을 4등분하는 기준은 테두리 안쪽 그림이다.
+    final canvas = tester.getRect(find.byType(Image));
     final bands = tester.widgetList(find.byType(DecoratedBox)).toList();
     expect(bands, hasLength(comicCutCount), reason: '컷마다 띠 하나');
 
@@ -68,6 +73,44 @@ void main() {
     }
   });
 
+  /// 모델이 그리던 바깥 테두리를 서버가 잘라내면서(자막 정렬을 맞추려고)
+  /// 만화 느낌이 사라졌다. 테두리는 그림 밖에 앱이 두른다 — 정렬은 그대로 두고
+  /// 겉모습만 되살리는 자리다.
+  testWidgets('그림 바깥에 만화 테두리를 두른다', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: side,
+            height: side,
+            child: ComicCanvas(image: png, cuts: cuts()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final outer = tester.getRect(find.byType(ComicCanvas));
+    final picture = tester.getRect(find.byType(Image));
+
+    expect(outer.width, side, reason: '차지하는 자리는 그대로다');
+    expect(
+      picture.width,
+      moreOrLessEquals(side * (1 - comicFrameRatio * 2), epsilon: 0.5),
+      reason: '그림은 테두리만큼 안쪽으로 들어간다',
+    );
+    // 사면이 같아야 한다. 모델이 그리던 테두리는 40·41·42·42로 제각각이었다.
+    final frame = side * comicFrameRatio;
+    for (final gap in [
+      picture.left - outer.left,
+      outer.right - picture.right,
+      picture.top - outer.top,
+      outer.bottom - picture.bottom,
+    ]) {
+      expect(gap, moreOrLessEquals(frame, epsilon: 0.5));
+    }
+  });
+
   testWidgets('띠는 자기 칸을 넘지 않아 옆 컷 그림을 밟지 않는다', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -82,7 +125,7 @@ void main() {
     );
     await tester.pump();
 
-    final canvas = tester.getRect(find.byType(ComicCanvas));
+    final canvas = tester.getRect(find.byType(Image));
     final middleX = canvas.center.dx;
 
     for (var index = 0; index < comicCutCount; index++) {
