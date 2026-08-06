@@ -14,6 +14,20 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 class FlywayMigrationIntegrationTest {
+    /**
+     * 지금 저장소에 있는 마지막 마이그레이션 번호. 마이그레이션을 추가할 때마다
+     * 함께 올린다.
+     *
+     * <p>일부러 하드코딩해서 스키마 변경이 리뷰 없이 지나가지 않게 한다. 이
+     * 단정이 실패하면 마이그레이션이 깨진 것이 아니라 이 숫자가 뒤처진 것이다 —
+     * {@code result.success}는 그대로 통과한다.
+     *
+     * <p>이 값이 뒤처졌는지는 {@link SchemaVersionGuardTest}가 DB 없이도
+     * 확인한다. 이 클래스는 Docker나 {@code TEST_POSTGRES_*}가 없으면 건너뛰므로,
+     * 로컬에서는 번호를 빠뜨려도 초록으로 보였다(실제로 그렇게 한 번 통과했다).
+     */
+    static final String LATEST_SCHEMA_VERSION = "48";
+
     private static PostgreSQLContainer<?> postgres;
     private static String jdbcUrl;
     private static String username;
@@ -121,10 +135,7 @@ class FlywayMigrationIntegrationTest {
         var result = latestFlyway.migrate();
 
         assertThat(result.success).isTrue();
-        // 마이그레이션을 추가할 때마다 함께 올린다. 일부러 하드코딩해서 스키마
-        // 변경이 리뷰 없이 지나가지 않게 한다. 실패하면 마이그레이션이 깨진 것이
-        // 아니라 이 숫자가 뒤처진 것이다 — result.success는 그대로 통과한다.
-        assertThat(result.targetSchemaVersion).isEqualTo("47");
+        assertThat(result.targetSchemaVersion).isEqualTo(LATEST_SCHEMA_VERSION);
         try (var connection = DriverManager.getConnection(
             jdbcUrl, username, password);
              var statement = connection.prepareStatement(
