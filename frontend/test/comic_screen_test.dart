@@ -119,14 +119,13 @@ List<CaptionLine> _lines() => [
 ];
 
 /// 0컷 대사를 '고친 대사'로 바꾼다. 온디바이스 인식이 틀려 손으로 고치는 상황이다.
+///
+/// 목록에서 바로 고친다 — 다이얼로그를 열고 '넣기'를 누르는 단계가 없다.
 Future<void> _editFirstDialogue(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('comic-cut-0')));
-  await tester.pumpAndSettle();
   await tester.enterText(
-    find.byKey(const ValueKey('comic-dialogue-field')),
+    find.byKey(const ValueKey('comic-dialogue-field-0')),
     '고친 대사',
   );
-  await tester.tap(find.text('넣기'));
   await tester.pumpAndSettle();
 }
 

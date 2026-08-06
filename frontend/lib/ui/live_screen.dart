@@ -190,9 +190,19 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   String get liveChipLabel {
     if (paused) return 'LIVE로 돌아가기';
     if (!started) return 'LIVE 준비';
-    if (!hasPlayback) return connecting ? 'LIVE 연결 중' : 'LIVE 다시 연결';
+    // 한 번 붙었다가 끊긴 상태와 처음 여는 상태를 갈라 말한다 — 재연결 중이면
+    // 사용자가 아무것도 하지 않아도 된다는 것을 알아야 한다.
+    if (!hasPlayback) {
+      if (reconnecting) return 'LIVE 재연결 중';
+      return connecting ? 'LIVE 연결 중' : 'LIVE 다시 연결';
+    }
     return atLiveEdge ? 'LIVE' : '실시간으로';
   }
+
+  /// 보다가 끊겨 스스로 다시 붙고 있는 중인가.
+  bool get reconnecting =>
+      !hasPlayback && error == null && !closing && warmupDeadline != null &&
+      session != null;
 
   /// 세션을 만든 순간부터 첫 프레임까지가 전부 "준비 중"이다. 이 동안 재생
   /// 버튼이 살아 있으면 조급한 탭이 _restart()로 이어져 진행 중이던 워밍업을
@@ -212,10 +222,18 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   /// 기기 스피커 → 기기 마이크 → 앱 → 기기로 도는 순환을 앱이 끊어야 한다.
   Future<void> _applyPlaybackMute() => whepPlayer.setMuted(muted || talking);
 
+  /// 끊긴 뒤 스스로 다시 붙어 보는 시간.
+  ///
+  /// 서버가 미디어 끊김을 30초에 판정하고 120초까지 세션을 재연결 대기로
+  /// 살려 둔다(StreamMediaReconcileWorker). 앱이 더 짧게 포기하면 살아 있는
+  /// 세션을 앞에 두고 "다시 시도해 주세요"를 띄우게 되므로 같은 눈금을 쓴다.
+  static const _reconnectWindow = Duration(seconds: 120);
+
   void _handleWebRtcState() {
     if (!mounted) return;
     if (whepPlayer.connected) {
       webRtcWasConnected = true;
+      warmupDeadline = null;
       setState(() => error = null);
       return;
     }
@@ -224,9 +242,18 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       return;
     }
     webRtcWasConnected = false;
-    setState(() {
-      error = 'WebRTC 연결이 끊어졌습니다. 다시 시도해 주세요.';
-    });
+    // **막다른 길로 끝내지 않는다.** 실제로 잡히는 끊김의 대부분은 송출이 몇 초
+    // 밀린 것이고, 서버는 그동안 세션을 재연결 대기로 살려 둔다. 예전에는 여기서
+    // 곧바로 오류를 띄웠고, 사용자는 카메라를 깨우는 몇 초를 처음부터 다시
+    // 기다리며 라이브를 손으로 재시작해야 했다.
+    warmupDeadline ??= DateTime.now().add(_reconnectWindow);
+    setState(() => error = null);
+    // 재생이 붙은 뒤에는 폴링을 멈춰 두었으므로 다시 켠다 — 세션이 READY로
+    // 돌아오는 순간을 이것이 잡아 재생을 다시 연다.
+    pollTimer ??= Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _checkStatus(),
+    );
   }
 
   @override
@@ -401,6 +428,10 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
           // MediaMTX에 스트림이 실제로 붙기 전일 수 있다. 첫 실패를 곧장
           // 에러로 보여주면 사용자가 다시 눌러 세션을 재시작하는 수밖에
           // 없으므로, 준비 표시를 유지한 채 조용히 다시 붙는다.
+          //
+          // 한 번 보다가 끊긴 경우에는 [_handleWebRtcState]가 이 기한을 미리
+          // 재연결 창(120초)으로 늘려 둔다 — 처음 여는 25초와 달리, 서버가
+          // 세션을 살려 두는 동안은 앱도 계속 붙어 봐야 한다.
           warmupDeadline ??= DateTime.now().add(const Duration(seconds: 25));
           if (DateTime.now().isAfter(warmupDeadline!)) {
             _cancelTimers();
@@ -421,7 +452,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       }.contains(updated.status)) {
         _cancelTimers();
         if (mounted) {
-          setState(() => error = updated.failureCode ?? '라이브 세션이 종료됐어요.');
+          setState(() => error = _sessionEndedMessage(updated.failureCode));
         }
       }
     } catch (failure) {
@@ -430,6 +461,17 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       }
     }
   }
+
+  /// 세션이 끝난 이유를 사람이 읽는 문구로.
+  ///
+  /// 예전에는 서버 코드를 그대로 화면에 찍었다. 화면에 `MEDIA_NOT_FLOWING`이
+  /// 떠 있으면 사용자는 무엇을 해야 하는지 알 수 없다.
+  static String _sessionEndedMessage(String? failureCode) => switch (failureCode) {
+    'MEDIA_NOT_FLOWING' => '카메라 연결이 오래 끊겨 있어 라이브를 멈췄어요.\n다시 시도해 주세요.',
+    'NO_ACTIVE_VIEWERS' => '보는 사람이 없어 라이브를 멈췄어요.',
+    null => '라이브 세션이 종료됐어요.',
+    _ => '라이브가 끊겼어요. 다시 시도해 주세요.',
+  };
 
   void _cancelTimers() {
     pollTimer?.cancel();
