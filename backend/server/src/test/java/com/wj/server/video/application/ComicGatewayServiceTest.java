@@ -45,6 +45,8 @@ class ComicGatewayServiceTest {
     private AuditService auditService;
     @Mock
     private SlidingWindowRateLimiter rateLimiter;
+    @Mock
+    private ComicFeedService comicFeedService;
 
     private ComicGatewayService service;
 
@@ -55,7 +57,7 @@ class ComicGatewayServiceTest {
             "http://127.0.0.1:1", Duration.ofSeconds(2), Duration.ofHours(1), 20);
         service = new ComicGatewayService(
             videoMapper, objectStorageService, auditService, rateLimiter, properties,
-            RestClient.builder());
+            comicFeedService, RestClient.builder());
     }
 
     @Test
@@ -176,6 +178,62 @@ class ComicGatewayServiceTest {
         assertThat(thrown.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(thrown.code()).isEqualTo("COMIC_WORKER_UNAVAILABLE");
         verify(auditService, never()).success(any(), any(), anyString(), anyString(), any());
+    }
+
+    /**
+     * 워커를 부르기 전에 권한을 본다. 순서가 뒤집히면 OWNER가 아닌 사람이 남의
+     * 만화 그림을 먼저 날린 뒤에야 403을 받는다.
+     */
+    @Test
+    void deleteChecksPermissionBeforeTouchingWorker() {
+        UUID userId = UUID.randomUUID();
+        VideoRow video = video("READY");
+        when(videoMapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+        org.mockito.Mockito.doThrow(
+            new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "만화는 OWNER만 삭제할 수 있습니다."))
+            .when(comicFeedService).requireDeletable(userId, video.id());
+
+        assertThatThrownBy(() -> service.deleteComic(userId, "tok", video.id()))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).status())
+            .isEqualTo(HttpStatus.FORBIDDEN);
+
+        verify(comicFeedService, never()).delete(any());
+        verify(auditService, never()).success(any(), any(), anyString(), anyString(), any());
+    }
+
+    /**
+     * 워커 삭제가 실패하면 행도 남겨야 한다. 행만 지우면 피드에서는 사라졌는데
+     * 그림은 그대로라, 다시 만들 때 예전 대사가 되살아난다.
+     */
+    @Test
+    void deleteKeepsTheRowWhenWorkerCannotBeReached() {
+        UUID userId = UUID.randomUUID();
+        VideoRow video = video("READY");
+        when(videoMapper.findAccessibleVideo(userId, video.id())).thenReturn(Optional.of(video));
+
+        ApiException thrown = (ApiException) org.assertj.core.api.Assertions.catchThrowable(
+            () -> service.deleteComic(userId, "tok", video.id()));
+
+        assertThat(thrown.code()).isEqualTo("COMIC_WORKER_UNAVAILABLE");
+        verify(comicFeedService).requireDeletable(userId, video.id());
+        verify(comicFeedService, never()).delete(any());
+        verify(auditService, never()).success(any(), any(), anyString(), anyString(), any());
+    }
+
+    /** 만화가 없는 영상, 또는 남의 금고 영상. 워커까지 가지 않는다. */
+    @Test
+    void deleteRejectsUnknownVideo() {
+        UUID userId = UUID.randomUUID();
+        UUID videoId = UUID.randomUUID();
+        when(videoMapper.findAccessibleVideo(userId, videoId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.deleteComic(userId, "tok", videoId))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("RESOURCE_NOT_FOUND");
+
+        verifyNoInteractions(comicFeedService);
     }
 
     private ComicScriptRequest script(String text) {

@@ -81,7 +81,8 @@ class EditorEventServiceTest {
             new EditorEventRequest("COMIC_READY", VIDEO_ID, USER_ID, null, null));
 
         var order = inOrder(comics, notifications);
-        order.verify(comics).register(VIDEO_ID);
+        // 만든 사람으로 요청자를 남긴다 — 자기가 만든 만화는 자기가 지운다.
+        order.verify(comics).register(VIDEO_ID, USER_ID);
         order.verify(notifications).comicReady(USER_ID, VIDEO_ID);
     }
 

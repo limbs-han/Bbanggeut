@@ -522,6 +522,7 @@ class VaultComic {
     this.likeCount = 0,
     this.likedByMe = false,
     this.commentCount = 0,
+    this.canDelete = false,
   });
 
   final String videoId;
@@ -536,6 +537,11 @@ class VaultComic {
   final bool likedByMe;
   final int commentCount;
 
+  /// 이 만화를 지울 수 있는가 — 만든 사람 또는 금고 OWNER. **서버가 판정한다.**
+  /// 앱이 역할로 다시 계산하면 규칙이 두 곳에 생겨 서버와 어긋난다. 값이 없으면
+  /// 감춘다 — 없는 권한을 보여 주는 쪽이 눌렀을 때 403보다 나쁘다.
+  final bool canDelete;
+
   factory VaultComic.fromJson(Map<String, dynamic> json) => VaultComic(
     videoId: json['videoId'] as String? ?? '',
     title: json['title'] as String? ?? '4컷 만화',
@@ -544,6 +550,7 @@ class VaultComic {
     likeCount: (json['likeCount'] as num?)?.toInt() ?? 0,
     likedByMe: json['likedByMe'] as bool? ?? false,
     commentCount: (json['commentCount'] as num?)?.toInt() ?? 0,
+    canDelete: json['canDelete'] as bool? ?? false,
   );
 
   VaultComic copyWith({
@@ -560,6 +567,7 @@ class VaultComic {
     likeCount: likeCount ?? this.likeCount,
     likedByMe: likedByMe ?? this.likedByMe,
     commentCount: commentCount ?? this.commentCount,
+    canDelete: canDelete,
   );
 }
 

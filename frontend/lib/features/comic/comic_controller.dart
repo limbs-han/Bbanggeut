@@ -85,11 +85,29 @@ class ComicFailed extends ComicState {
   final List<ComicCut>? cuts;
 }
 
+/// 이미 받아 둔 만화. 피드가 카드를 그리려고 받은 그림과 구성을 그대로 넘긴다.
+///
+/// **왜 필요한가**: 피드는 만화를 보여 주려고 이미 상태를 묻고 PNG를 받아 둔다.
+/// 그런데 '수정하기'를 누르면 편집 화면이 컨트롤러를 새로 만들어 같은 것을 처음부터
+/// 다시 받았다 — 앱→백엔드→워커→MinIO 왕복에 수 MB 재다운로드까지, 이미 만든
+/// 만화를 여는 데만 몇 초가 걸린 이유다.
+class ComicSeed {
+  const ComicSeed({required this.image, required this.cuts, this.savedAt});
+
+  final Uint8List image;
+
+  /// 저장된 4컷 구성. 비어 있으면 씨앗으로 쓰지 않는다 — 대사 없이 완성 화면에
+  /// 들어가면 자막 띠가 사라진 것처럼 보인다.
+  final List<ComicCut> cuts;
+  final DateTime? savedAt;
+}
+
 class ComicController extends ChangeNotifier {
   ComicController({
     required this.gateway,
     required this.videoId,
     this.sourceProvider,
+    this.seed,
     stt.TranscriptStore? store,
   }) : _store = store ?? stt.transcriptStore;
 
@@ -102,6 +120,9 @@ class ComicController extends ChangeNotifier {
   /// 않는다(화면이 버튼을 감춘다).
   final Future<String> Function(void Function(int percent) onProgress)?
   sourceProvider;
+
+  /// 부르는 쪽이 이미 받아 둔 만화. 있으면 [open]이 서버를 묻지 않는다.
+  final ComicSeed? seed;
 
   ComicState _state = const ComicLoadingScript();
   List<ComicCut> _cuts = <ComicCut>[];
@@ -232,6 +253,20 @@ class ComicController extends ChangeNotifier {
   /// 경로가 됐다. 그래서 열자마자 구성부터 받으면 이미 만들어 둔 만화를 못 보고
   /// 돈만 다시 쓴다. 서버 상태를 먼저 물어보고 갈래를 정한다.
   Future<void> open() async {
+    // 부르는 쪽이 방금 받은 것을 들고 왔으면 그대로 연다. 같은 상태 조회와 같은
+    // PNG를 한 번 더 받을 이유가 없다 — 피드가 카드를 그리며 이미 받은 것이다.
+    final seed = this.seed;
+    if (seed != null && seed.cuts.isNotEmpty) {
+      // 베끼는 이유: ComicCut.dialogue는 고칠 수 있는 값이다. 목록을 그대로
+      // 받아 쓰면 여기서 고친 대사가 피드가 들고 있는 것까지 바꿔서, 다시
+      // 만들지 않고 뒤로 나가도 피드에 고친 대사가 남는다.
+      _cuts = [
+        for (final cut in seed.cuts)
+          ComicCut(beat: cut.beat, scene: cut.scene, dialogue: cut.dialogue),
+      ];
+      _set(ComicReady(_cuts, seed.image, savedAt: seed.savedAt));
+      return;
+    }
     ComicJobStatus status;
     try {
       status = await gateway.jobStatus(videoId);

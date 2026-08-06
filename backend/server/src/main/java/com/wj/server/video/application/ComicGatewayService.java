@@ -65,6 +65,7 @@ public class ComicGatewayService {
     private final AuditService auditService;
     private final SlidingWindowRateLimiter rateLimiter;
     private final ComicProperties properties;
+    private final ComicFeedService comicFeedService;
     private final RestClient workerClient;
 
     public ComicGatewayService(
@@ -73,6 +74,7 @@ public class ComicGatewayService {
         AuditService auditService,
         SlidingWindowRateLimiter rateLimiter,
         ComicProperties properties,
+        ComicFeedService comicFeedService,
         RestClient.Builder restClientBuilder
     ) {
         this.videoMapper = videoMapper;
@@ -80,6 +82,7 @@ public class ComicGatewayService {
         this.auditService = auditService;
         this.rateLimiter = rateLimiter;
         this.properties = properties;
+        this.comicFeedService = comicFeedService;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
         // 워커가 스스로 150초에 끊는다. 여기서 더 짧게 끊으면 워커의 한국어 실패
@@ -180,6 +183,27 @@ public class ComicGatewayService {
         return response;
     }
 
+    /**
+     * 만화를 지운다 — 워커가 든 그림·구성과 피드 행이 함께 사라진다.
+     *
+     * <p><b>순서가 워커 먼저인 이유</b>: 행을 먼저 지우면 워커 호출이 실패했을 때
+     * 그림은 그대로인데 피드에서만 사라진다. 워커를 먼저 부르면 실패는 "아무것도
+     * 지워지지 않음"이라 사용자가 다시 누르면 된다. 반대로 워커만 성공하고 행이
+     * 남는 경우는 다시 눌러 복구된다 — 워커의 DELETE는 멱등이다.
+     *
+     * <p>영상이 READY인지는 보지 않는다. 보관이 끝나 상태가 바뀐 영상의 만화도
+     * 지울 수 있어야 한다.
+     */
+    public void deleteComic(UUID userId, String token, UUID videoId) {
+        VideoRow video = videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(
+            () -> new ApiException(
+                HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다."));
+        comicFeedService.requireDeletable(userId, videoId);
+        callWorker(HttpMethod.DELETE, "/v1/comic/" + videoId, token, null, Void.class);
+        comicFeedService.delete(videoId);
+        auditService.success(video.deviceId(), userId, "COMIC_DELETE", "VIDEO", videoId);
+    }
+
     private VideoRow readyVideo(UUID userId, UUID videoId, String action) {
         VideoRow video = videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(
             () -> new ApiException(
@@ -275,6 +299,15 @@ public class ComicGatewayService {
                 .retrieve()
                 .body(responseType);
         } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == HttpStatus.CONFLICT.value()) {
+                // 지금은 삭제 경로만 409를 낸다 — 그리는 중인 만화를 지우려 한
+                // 경우다. 502로 뭉개면 "서버 오류"로 보이지만 실제로는 잠시 뒤
+                // 다시 누르면 되는 상황이다.
+                throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "COMIC_BUSY",
+                    "만화를 만드는 중입니다. 다 만든 뒤에 지울 수 있습니다.");
+            }
             if (exception.getStatusCode().value() == HttpStatus.UNPROCESSABLE_ENTITY.value()) {
                 // 워커가 재료 부족으로 거절한 경우다. 다시 눌러도 같은 결과이므로
                 // 사용자에게 다른 영상을 고르라고 알려야 한다.

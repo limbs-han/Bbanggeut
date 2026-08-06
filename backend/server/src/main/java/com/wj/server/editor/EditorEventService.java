@@ -44,7 +44,7 @@ public class EditorEventService {
             // 알림만 보내고 행이 없으면 피드에 나오지도 않는다. 알림을 못 보내도
             // (받는 사람이 탈퇴했다든지) 만화 자체는 남아야 한다.
             case "COMIC_READY" -> {
-                comics.register(request.videoId());
+                comics.register(request.videoId(), request.userId());
                 notifications.comicReady(request.userId(), request.videoId());
             }
             case "COMMENT_ADDED" ->

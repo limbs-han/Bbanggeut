@@ -55,7 +55,14 @@ class ComicFeedServiceTest {
     }
 
     private ComicRow comic(String title, int likes, boolean likedByMe) {
-        return new ComicRow(VIDEO_ID, title, "웃음 영상", MADE_AT, likes, likedByMe, 2);
+        return comic(title, likes, likedByMe, false, "MEMBER");
+    }
+
+    private ComicRow comic(
+        String title, int likes, boolean likedByMe, boolean mine, String myRole
+    ) {
+        return new ComicRow(
+            VIDEO_ID, title, "웃음 영상", MADE_AT, likes, likedByMe, 2, mine, myRole);
     }
 
     private void accessible() {
@@ -212,6 +219,82 @@ class ComicFeedServiceTest {
         service().deleteComment(USER_ID, VIDEO_ID, COMMENT_ID);
 
         verify(comicMapper).deleteComment(COMMENT_ID, VIDEO_ID);
+    }
+
+    /** 남이 만든 만화를 MEMBER가 지울 수는 없다. */
+    @Test
+    void aMemberCannotDeleteSomeoneElsesComic() {
+        accessible();
+        when(comicMapper.find(USER_ID, VIDEO_ID))
+            .thenReturn(Optional.of(comic(null, 0, false, false, "MEMBER")));
+
+        assertThatThrownBy(() -> service().requireDeletable(USER_ID, VIDEO_ID))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("만든 사람이나 OWNER만");
+        verify(comicMapper, never()).delete(VIDEO_ID);
+    }
+
+    /** 잘못 만든 만화는 자기 손으로 치울 수 있어야 한다. */
+    @Test
+    void theCreatorMayDeleteTheirOwnComic() {
+        accessible();
+        when(comicMapper.find(USER_ID, VIDEO_ID))
+            .thenReturn(Optional.of(comic(null, 0, false, true, "MEMBER")));
+
+        service().requireDeletable(USER_ID, VIDEO_ID);
+        service().delete(VIDEO_ID);
+
+        verify(comicMapper).delete(VIDEO_ID);
+    }
+
+    /** 만든 사람이 나간 뒤에도 누군가는 정리할 수 있어야 한다. */
+    @Test
+    void theVaultOwnerMayDeleteAnyComic() {
+        accessible();
+        when(comicMapper.find(USER_ID, VIDEO_ID))
+            .thenReturn(Optional.of(comic(null, 0, false, false, "OWNER")));
+
+        service().requireDeletable(USER_ID, VIDEO_ID);
+        service().delete(VIDEO_ID);
+
+        verify(comicMapper).delete(VIDEO_ID);
+    }
+
+    /** V45 이전 만화는 만든 사람을 남기지 않았다 — OWNER만 지운다. */
+    @Test
+    void anOldComicWithoutACreatorIsOwnerOnly() {
+        accessible();
+        when(comicMapper.find(USER_ID, VIDEO_ID))
+            .thenReturn(Optional.of(comic(null, 0, false, false, "EDITOR")));
+
+        assertThatThrownBy(() -> service().requireDeletable(USER_ID, VIDEO_ID))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("만든 사람이나 OWNER만");
+    }
+
+    /** 앱이 규칙을 다시 계산하지 않도록 목록이 판정을 함께 준다. */
+    @Test
+    void theFeedTellsTheAppWhichComicsItMayDelete() {
+        when(comicMapper.findByVault(USER_ID, VAULT_ID, 100)).thenReturn(List.of(
+            comic("내가 만든 것", 0, false, true, "MEMBER"),
+            comic("남이 만든 것", 0, false, false, "MEMBER")));
+
+        var feed = service().listByVault(USER_ID, VAULT_ID);
+
+        assertThat(feed.get(0).canDelete()).isTrue();
+        assertThat(feed.get(1).canDelete()).isFalse();
+    }
+
+    /** 만화가 없는 영상은 404다 — 있는지 여부를 403과 404의 차이로 흘리지 않는다. */
+    @Test
+    void deletingAComicThatIsNotThereIsNotFound() {
+        accessible();
+        when(comicMapper.find(USER_ID, VIDEO_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().requireDeletable(USER_ID, VIDEO_ID))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("리소스를 찾을 수 없습니다");
+        verify(comicMapper, never()).delete(VIDEO_ID);
     }
 
     @Test

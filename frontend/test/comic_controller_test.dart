@@ -46,6 +46,11 @@ class _StubGateway implements ComicGateway {
   /// 그 호출은 과금이고, 새로 받으면 사용자가 고친 대사를 덮는다.
   int scriptCalls = 0;
 
+  /// 상태 조회와 그림 내려받기 횟수. 이미 받아 둔 만화를 들고 화면을 열 때
+  /// 이것이 0이어야 한다 — 같은 것을 두 번 받으면 여는 데만 몇 초가 걸린다.
+  int jobStatusCalls = 0;
+  int downloadCalls = 0;
+
   @override
   Future<List<ComicCut>> script(String videoId, List<CaptionLine> lines) async {
     scriptCalls++;
@@ -79,12 +84,16 @@ class _StubGateway implements ComicGateway {
   }
 
   @override
-  Future<ComicJobStatus> jobStatus(String videoId) async =>
-      saved ?? const ComicJobStatus(status: 'none');
+  Future<ComicJobStatus> jobStatus(String videoId) async {
+    jobStatusCalls++;
+    return saved ?? const ComicJobStatus(status: 'none');
+  }
 
   @override
-  Future<Uint8List> download(String imageUrl) async =>
-      Uint8List.fromList([9, 9, 9]);
+  Future<Uint8List> download(String imageUrl) async {
+    downloadCalls++;
+    return Uint8List.fromList([9, 9, 9]);
+  }
 }
 
 List<CaptionLine> _lines() => [
@@ -97,12 +106,19 @@ void main() {
     _StubGateway? gateway,
     List<CaptionLine> transcribed = const [],
     Future<String> Function(void Function(int percent))? sourceProvider,
+    ComicSeed? seed,
   }) => ComicController(
     gateway: gateway ?? _StubGateway(),
     videoId: 'v1',
     sourceProvider: sourceProvider,
+    seed: seed,
     store: _MemoryStore(saved, transcribed: transcribed),
   );
+
+  List<ComicCut> seedCuts() => [
+    for (var i = 0; i < 4; i++)
+      ComicCut(beat: '컷$i', scene: '장면$i', dialogue: '대사$i'),
+  ];
 
   test('전사문이 없으면 만들 수 없다고 알린다', () async {
     final subject = controller();
@@ -287,5 +303,54 @@ void main() {
     await subject.transcribe();
 
     expect(subject.state, isA<ComicNeedsTranscript>());
+  });
+
+  test('이미 받아 둔 만화를 들고 열면 서버를 다시 묻지 않는다', () async {
+    final gateway = _StubGateway();
+    final subject = controller(
+      gateway: gateway,
+      seed: ComicSeed(
+        image: Uint8List.fromList([1, 2, 3]),
+        cuts: seedCuts(),
+        savedAt: DateTime.utc(2026, 8, 5, 17, 30),
+      ),
+    );
+
+    await subject.open();
+
+    expect(subject.state, isA<ComicReady>());
+    expect((subject.state as ComicReady).image, [1, 2, 3]);
+    expect((subject.state as ComicReady).savedAt, DateTime.utc(2026, 8, 5, 17, 30));
+    expect(gateway.jobStatusCalls, 0, reason: '상태를 다시 물으면 왕복이 되살아난다');
+    expect(gateway.downloadCalls, 0, reason: '같은 PNG를 두 번 받으면 안 된다');
+  });
+
+  /// 씨앗을 그대로 받아 쓰면 여기서 고친 대사가 피드가 들고 있는 목록까지
+  /// 바꿔서, 다시 만들지 않고 뒤로 나가도 피드에 고친 대사가 남는다.
+  test('씨앗 구성을 고쳐도 부르는 쪽 목록은 그대로다', () async {
+    final original = seedCuts();
+    final subject = controller(
+      seed: ComicSeed(image: Uint8List.fromList([1]), cuts: original),
+    );
+    await subject.open();
+
+    subject.editDialogue(0, '고친 대사');
+
+    expect(subject.cuts[0].dialogue, '고친 대사');
+    expect(original[0].dialogue, '대사0');
+  });
+
+  /// 구성 없이 그림만 있는 옛 만화는 씨앗으로 쓰지 않는다 — 완성 화면에 대사가
+  /// 빠진 채로 들어가면 자막 띠가 사라진 것처럼 보인다.
+  test('구성이 빈 씨앗은 무시하고 평소 경로로 간다', () async {
+    final gateway = _StubGateway();
+    final subject = controller(
+      gateway: gateway,
+      seed: ComicSeed(image: Uint8List.fromList([1]), cuts: const []),
+    );
+
+    await subject.open();
+
+    expect(gateway.jobStatusCalls, 1);
   });
 }

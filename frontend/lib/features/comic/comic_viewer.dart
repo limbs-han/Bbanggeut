@@ -6,9 +6,13 @@
 ///
 /// **왜 대사를 여기서 그리나**: 만화 그림에는 말풍선이 없다(그림 프롬프트가
 /// 일부러 막는다 — 모델이 그린 글자는 깨진 한글이 되기 때문이다). 그래서
-/// 대사는 앱이 그림 아래에 얹어야 하고, 그러지 않으면 "만화에 텍스트가 안
-/// 뜬다"가 된다. 대사는 그림을 받을 때 함께 온 저장 구성(cuts)을 쓴다 —
-/// 새로 만들지 않으므로 과금도, 사용자가 고친 대사를 덮을 일도 없다.
+/// 대사는 앱이 얹어야 하고, 그러지 않으면 "만화에 텍스트가 안 뜬다"가 된다.
+/// 대사는 그림을 받을 때 함께 온 저장 구성(cuts)을 쓴다 — 새로 만들지 않으므로
+/// 과금도, 사용자가 고친 대사를 덮을 일도 없다.
+///
+/// 대사는 **그림 위 자막 띠**([ComicCanvas])와 아래 대사 칸에 함께 둔다.
+/// 띠는 어느 칸의 말인지 알려 주고, 아래 칸은 띠 글씨(11pt)가 작아 읽기 힘든
+/// 사람을 위한 것이다. 하나만 두면 둘 중 한쪽이 아쉬워진다.
 library;
 
 import 'dart:typed_data';
@@ -17,6 +21,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_theme.dart';
 import 'comic_script.dart';
+import 'panel_subtitle.dart';
 
 class ComicViewerScreen extends StatelessWidget {
   const ComicViewerScreen({
@@ -35,7 +40,7 @@ class ComicViewerScreen extends StatelessWidget {
   /// 저장된 4컷 구성. 대사가 여기 있다. 없으면 대사 칸을 접는다.
   final List<ComicCut>? cuts;
 
-  /// 대사를 고치러 가는 길. null이면 버튼을 감춘다.
+  /// 만화를 고치러 가는 길. null이면 버튼을 감춘다.
   final VoidCallback? onEdit;
 
   /// 대사가 하나라도 있는 컷들. 상황만 있는 컷은 빼고 보여 준다.
@@ -60,7 +65,7 @@ class ComicViewerScreen extends StatelessWidget {
               key: const Key('comic-viewer-edit'),
               onPressed: onEdit,
               icon: const Icon(Icons.edit_rounded, size: 18),
-              label: const Text('대사 고치기'),
+              label: const Text('수정하기'),
               style: TextButton.styleFrom(foregroundColor: Colors.white),
             ),
           const SizedBox(width: 4),
@@ -85,7 +90,13 @@ class ComicViewerScreen extends StatelessWidget {
                   : InteractiveViewer(
                       key: const Key('comic-viewer-image'),
                       maxScale: 4,
-                      child: Image.memory(image!, fit: BoxFit.contain),
+                      // 대사는 그림 위에 얹어야 만화가 된다. 아래 대사 칸만
+                      // 두었더니 "만화에 글자가 없다"는 말이 그대로 남았다 —
+                      // 그림과 말이 떨어져 있으면 어느 칸의 말인지 알 수 없다.
+                      // 벌려 보면 띠도 함께 커진다.
+                      child: cuts == null || cuts!.isEmpty
+                          ? Image.memory(image!, fit: BoxFit.contain)
+                          : ComicCanvas(image: image!, cuts: cuts!),
                     ),
             ),
             if (spoken.isNotEmpty)
