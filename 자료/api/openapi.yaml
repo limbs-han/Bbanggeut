@@ -1802,6 +1802,11 @@ paths:
         MVP는 최대 500 MiB의 단일 PUT만 지원한다. 응답의 `requiredHeaders`를 PUT 요청에 그대로
         포함해야 한다. 저장소가 체크섬 헤더를 지원하면 `x-amz-checksum-sha256`을 사용하고,
         그렇지 않으면 서명된 `x-amz-meta-sha256` 메타데이터를 사용한다.
+
+        **감지가 꺼진 카메라는 `409 DETECTION_DISABLED`로 거절한다**
+        (`DeviceSummary.detectionEnabled`). 이 거절은 terminal이다 — 기기는
+        재시도하지 말고 그 클립을 버려야 한다. 재시도 큐에 쌓아 두면 감지를 다시
+        켠 순간 꺼져 있던 동안의 영상이 한꺼번에 저장되어, 끈 의미가 사라진다.
       security:
         - DeviceBearerAuth: []
       parameters:
@@ -3009,6 +3014,19 @@ components:
           type: string
           format: date-time
           nullable: true
+        detectionEnabled:
+          type: boolean
+          default: true
+          description: |
+            감지·저장 스위치. `false`면 서버가 이 카메라의 영상 업로드를
+            `409 DETECTION_DISABLED`로 거절한다.
+
+            **서버 측 차단이다.** 카메라는 여전히 찍고 올리려 시도하고, 실시간
+            보기도 그대로 된다. 카메라 자체를 멈추려면 기기 펌웨어가 필요하다.
+
+            409를 쓰는 이유: 기기 업로더가 403·409만 terminal로 보고 재시도하지
+            않는다. 429나 5xx로 돌려주면 재시도 큐에 쌓였다가 감지를 다시 켠
+            순간 밀린 것이 한꺼번에 들어온다.
 
     Device:
       allOf:
@@ -3069,6 +3087,11 @@ components:
           type: integer
           minimum: 1
           maximum: 3650
+        detectionEnabled:
+          type: boolean
+          description: |
+            감지·저장 스위치를 켜고 끈다. 금고 OWNER만 바꿀 수 있다.
+            준 필드만 바뀐다 — 이 값을 빼면 지금 설정이 그대로 유지된다.
 
     DeviceStatus:
       type: object
