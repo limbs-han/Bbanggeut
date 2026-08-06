@@ -7,8 +7,14 @@ from unittest import mock
 import jwt
 from fastapi import HTTPException
 
+from pathlib import Path
+
 from video_editor import service
-from video_editor.analysis_jobs import AnalysisJob
+from video_editor.analysis_jobs import (
+    AnalysisJob,
+    AnalysisJobManager,
+    AnalysisQueueFull,
+)
 from video_editor.service import (
     RecommendationRequest,
     _face_tracks,
@@ -148,6 +154,69 @@ class AnalysisFlowTest(unittest.TestCase):
             # _load_cached_analyses 몫이고, 여기서는 대체돼 있다).
             status = service.analysis_status("new-video")
         self.assertEqual("done", status["status"])
+
+
+class AnalysisQueueLimitTest(unittest.TestCase):
+    """대기 줄 상한.
+
+    작업자가 하나뿐인데 상한이 없으면 뒤쪽 작업은 차례가 올 때까지 기다리는
+    동안 원본 presigned URL(백엔드 기본 5분)이 만료되어, 오래 기다린 끝에
+    내려받기부터 실패한다. 기다리게 하는 대신 지금 거절한다.
+    """
+
+    def _manager(self, max_waiting: int = 2) -> AnalysisJobManager:
+        # 실제 분석은 돌리지 않는다 — 줄 세는 규칙만 본다.
+        manager = AnalysisJobManager(save=lambda *_: None, max_waiting=max_waiting)
+        manager._executor.shutdown(wait=False)
+        manager._executor = mock.Mock()
+        return manager
+
+    def _fill(self, manager: AnalysisJobManager, count: int) -> None:
+        for index in range(count):
+            manager.submit(f"v{index}", Path(f"/tmp/v{index}.mp4"))
+
+    def test_accepts_up_to_the_limit(self) -> None:
+        """도는 것 하나는 상한에서 뺀다 — 세는 것은 '기다리는 줄'이다."""
+        manager = self._manager(max_waiting=2)
+
+        self._fill(manager, 3)
+
+        self.assertEqual(3, len(manager._waiting_ids()))
+
+    def test_rejects_once_the_line_is_full(self) -> None:
+        manager = self._manager(max_waiting=2)
+        self._fill(manager, 3)
+
+        with self.assertRaises(AnalysisQueueFull):
+            manager.submit("v-late", Path("/tmp/v-late.mp4"))
+
+    def test_a_finished_job_frees_a_slot(self) -> None:
+        """끝난 작업이 줄을 계속 차지하면 상한이 영구 잠금이 된다."""
+        manager = self._manager(max_waiting=2)
+        self._fill(manager, 3)
+        manager._jobs["v0"].status = "done"
+
+        manager.submit("v-next", Path("/tmp/v-next.mp4"))
+
+        self.assertIn("v-next", manager._jobs)
+
+    def test_resubmitting_a_running_video_does_not_take_a_slot(self) -> None:
+        """같은 영상을 다시 눌러도 줄이 늘지 않아야 한다."""
+        manager = self._manager(max_waiting=2)
+        self._fill(manager, 3)
+
+        manager.submit("v0", Path("/tmp/v0.mp4"))
+
+        self.assertEqual(3, len(manager._waiting_ids()))
+
+    def test_position_tells_how_many_are_ahead(self) -> None:
+        """얼마나 기다려야 하는지 모르면 사용자는 그냥 다시 누른다."""
+        manager = self._manager(max_waiting=4)
+        self._fill(manager, 3)
+
+        self.assertEqual(0, manager.position("v0"))
+        self.assertEqual(2, manager.position("v2"))
+        self.assertEqual(0, manager.position("v-unknown"))
 
 
 class ComicFrameTimelineTest(unittest.TestCase):

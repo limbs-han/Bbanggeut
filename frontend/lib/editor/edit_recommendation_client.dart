@@ -186,6 +186,15 @@ class EditRecommendationClient {
   static bool isAnalysisRequired(Object failure) =>
       failure is DioException && failure.response?.statusCode == 404;
 
+  /// 분석 대기 줄이 가득 차 거절당했다(429).
+  ///
+  /// 실패가 아니라 **나중에 다시 오라**는 뜻이다. 서버는 작업자가 하나뿐이라
+  /// 줄을 무한정 받지 않는다 — 받아 두면 차례가 올 때쯤 원본 서명 URL이
+  /// 만료되어, 오래 기다린 끝에 실패한다. 화면이 이것을 실패로 알리면
+  /// 사용자는 될 일을 안 된다고 믿고 그만둔다.
+  static bool isAnalysisBusy(Object failure) =>
+      failure is DioException && failure.response?.statusCode == 429;
+
   /// 백그라운드 분석을 시작한다. 이미 분석돼 있으면 서버가 곧바로 done을
   /// 돌려준다.
   ///

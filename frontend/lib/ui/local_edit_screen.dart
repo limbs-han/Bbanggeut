@@ -470,7 +470,18 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         const Duration(seconds: 2),
         (_) => _pollServerAnalysis(),
       );
-    } catch (_) {
+    } catch (failure) {
+      // 줄이 찬 것은 실패가 아니다. 잠금만 풀어 다시 누를 수 있게 하고, 될 일을
+      // 안 된다고 믿지 않도록 문구를 나눈다.
+      if (EditRecommendationClient.isAnalysisBusy(failure)) {
+        _stopServerAnalysis();
+        if (!mounted) return;
+        setState(() => _recommendationLoading = false);
+        if (!quiet) {
+          showAppSnack(context, '지금은 분석 순서가 밀려 있어요 — 잠시 뒤 다시 눌러 주세요');
+        }
+        return;
+      }
       _failServerAnalysis(null, quiet: quiet);
     }
   }
