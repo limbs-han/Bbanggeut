@@ -2,10 +2,13 @@
 
 The controller keeps camera-space positions separate from raw servo pulses:
 
-* PAN defaults to -90 through +90 degrees; TILT defaults to -50 through +80
-  degrees to avoid driving the installed linkage into its mechanical stop.
+* PAN defaults to -90 through +90 degrees; TILT defaults to 0 through +110
+  degrees, which is where the installed gimbal reaches its mechanical stop.
   The pulse guard spans the full SG90 range, so these angle limits — not the
   guard — are what keeps the linkage off its stops.
+* Logical degrees track physical degrees: 495-2505us covers 180 degrees at
+  11.1111us per degree. Both axes PARK at logical 0, which the horn was
+  mounted to match, so applying servo power does not move the linkage.
 * Pulse direction and calibration remain deployment settings because linkage
   orientation and individual SG90 endpoints vary.
 * The last commanded position is restored before the first hardware pulse so
@@ -861,12 +864,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tilt-min-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MIN_DEG", "-50")),
+        default=float(os.getenv("SERVO_TILT_MIN_DEG", "0")),
     )
     parser.add_argument(
         "--tilt-max-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MAX_DEG", "80")),
+        default=float(os.getenv("SERVO_TILT_MAX_DEG", "110")),
     )
     parser.add_argument(
         "--pan-park-deg",
@@ -876,7 +879,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tilt-park-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_PARK_DEG", "-50")),
+        default=float(os.getenv("SERVO_TILT_PARK_DEG", "0")),
     )
     parser.add_argument(
         "--startup-position",
@@ -901,17 +904,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tilt-home-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_TILT_HOME_PULSE_US", "1500")),
+        default=float(os.getenv("SERVO_TILT_HOME_PULSE_US", "611")),
     )
     parser.add_argument(
         "--pan-pulse-us-per-degree",
         type=float,
-        default=float(os.getenv("SERVO_PAN_PULSE_US_PER_DEGREE", "5.555556")),
+        default=float(os.getenv("SERVO_PAN_PULSE_US_PER_DEGREE", "11.1111")),
     )
     parser.add_argument(
         "--tilt-pulse-us-per-degree",
         type=float,
-        default=float(os.getenv("SERVO_TILT_PULSE_US_PER_DEGREE", "5.555556")),
+        default=float(os.getenv("SERVO_TILT_PULSE_US_PER_DEGREE", "11.1111")),
     )
     # The SG90 datasheet range. It is a hardware backstop against pulses the
     # servo cannot accept, not a travel limit: at the default scale it admits
@@ -920,18 +923,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--minimum-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_MINIMUM_PULSE_US", "500")),
+        default=float(os.getenv("SERVO_MINIMUM_PULSE_US", "495")),
     )
     parser.add_argument(
         "--maximum-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_MAXIMUM_PULSE_US", "2500")),
+        default=float(os.getenv("SERVO_MAXIMUM_PULSE_US", "2505")),
     )
     parser.add_argument(
         "--pan-pulse-direction",
         type=int,
         choices=(-1, 1),
-        default=int(os.getenv("SERVO_PAN_PULSE_DIRECTION", "1")),
+        default=int(os.getenv("SERVO_PAN_PULSE_DIRECTION", "-1")),
     )
     parser.add_argument(
         "--tilt-pulse-direction",
@@ -942,22 +945,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pan-response-gain",
         type=float,
-        default=float(os.getenv("SERVO_PAN_RESPONSE_GAIN", "45")),
+        default=float(os.getenv("SERVO_PAN_RESPONSE_GAIN", "22.5")),
     )
     parser.add_argument(
         "--tilt-response-gain",
         type=float,
-        default=float(os.getenv("SERVO_TILT_RESPONSE_GAIN", "45")),
+        default=float(os.getenv("SERVO_TILT_RESPONSE_GAIN", "22.5")),
     )
     parser.add_argument(
         "--pan-max-speed",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MAX_SPEED", "40")),
+        default=float(os.getenv("SERVO_PAN_MAX_SPEED", "20")),
     )
     parser.add_argument(
         "--tilt-max-speed",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MAX_SPEED", "40")),
+        default=float(os.getenv("SERVO_TILT_MAX_SPEED", "20")),
     )
     parser.add_argument(
         "--message-timeout",
@@ -1009,7 +1012,7 @@ def parse_args() -> argparse.Namespace:
         "--shutdown-home-timeout",
         type=float,
         default=float(
-            os.getenv("SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS", "3")
+            os.getenv("SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS", "7")
         ),
     )
     args = parser.parse_args()

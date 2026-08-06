@@ -193,12 +193,39 @@ class AxisConfigurationTests(unittest.TestCase):
             pan, tilt = build_axis_configs(parse_args())
 
         self.assertEqual((pan.minimum_deg, pan.maximum_deg), (-90.0, 90.0))
-        self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (-50.0, 80.0))
-        self.assertEqual((pan.park_deg, tilt.park_deg), (0.0, -50.0))
+        self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (0.0, 110.0))
+        self.assertEqual((pan.park_deg, tilt.park_deg), (0.0, 0.0))
         self.assertEqual(
             (pan.minimum_pulse_us, pan.maximum_pulse_us),
-            (500.0, 2500.0),
+            (495.0, 2505.0),
         )
+
+    def test_defaults_park_both_axes_at_the_mounted_zero(self) -> None:
+        # The horns were seated so that these pulses are where the linkage
+        # rests without power. Applying servo power must not move it.
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            pan, tilt = build_axis_configs(parse_args())
+
+        self.assertAlmostEqual(pan.pulse_for_position(pan.park_deg), 1500.0)
+        self.assertAlmostEqual(tilt.pulse_for_position(tilt.park_deg), 611.0)
+
+    def test_defaults_map_logical_degrees_onto_physical_degrees(self) -> None:
+        # 495..2505us spans 180 physical degrees at 11.1111us per degree, so a
+        # logical degree is a physical one. PAN turns right on a falling pulse.
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            pan, tilt = build_axis_configs(parse_args())
+
+        self.assertEqual(pan.pulse_direction, -1)
+        self.assertEqual(tilt.pulse_direction, 1)
+        self.assertAlmostEqual(pan.pulse_for_position(90.0), 500.001)
+        self.assertAlmostEqual(pan.pulse_for_position(-90.0), 2499.999)
+        self.assertAlmostEqual(tilt.pulse_for_position(110.0), 1833.221)
 
     def test_pan_90_does_not_fit_the_old_narrow_pulse_guard(self) -> None:
         # PAN +-90 lands exactly on 1000 and 2000us, and the rounding of
@@ -275,12 +302,16 @@ class AxisConfigurationTests(unittest.TestCase):
             parse_args()
 
     def test_tilt_supports_symmetric_limits_around_home(self) -> None:
+        # The deployed TILT sits at one end of its travel, but nothing in the
+        # axis code assumes that. A mount that can move both ways only needs a
+        # home pulse with room on either side.
         environment = {
             "DEVICE_ID": DEVICE_ID,
             "SERVO_TILT_MIN_DEG": "-20",
             "SERVO_TILT_MAX_DEG": "20",
             "SERVO_TILT_PARK_DEG": "0",
             "SERVO_TILT_PULSE_DIRECTION": "1",
+            "SERVO_TILT_HOME_PULSE_US": "1500",
         }
         with (
             patch.dict(os.environ, environment, clear=False),
@@ -293,8 +324,8 @@ class AxisConfigurationTests(unittest.TestCase):
         self.assertEqual(tilt.park_deg, 0.0)
         self.assertEqual(tilt.maximum_deg, 20.0)
         self.assertEqual(tilt.pulse_direction, 1)
-        self.assertAlmostEqual(tilt.pulse_for_position(-20.0), 1388.88888)
-        self.assertAlmostEqual(tilt.pulse_for_position(20.0), 1611.11112)
+        self.assertAlmostEqual(tilt.pulse_for_position(-20.0), 1277.778)
+        self.assertAlmostEqual(tilt.pulse_for_position(20.0), 1722.222)
 
 
 class PositionPersistenceTests(unittest.TestCase):

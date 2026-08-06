@@ -79,8 +79,8 @@ function percentFor(value, min, max) {
 function updateAxis(axis, servo) {
   const current = number(servo[`${axis}_deg`]);
   const target = number(servo[`target_${axis}_deg`]);
-  const min = number(servo[`${axis}_minimum_deg`], axis === "pan" ? -90 : -50);
-  const max = number(servo[`${axis}_maximum_deg`], axis === "pan" ? 90 : 80);
+  const min = number(servo[`${axis}_minimum_deg`], axis === "pan" ? -90 : 0);
+  const max = number(servo[`${axis}_maximum_deg`], axis === "pan" ? 90 : 110);
   const pulse = servo[`${axis}_pulse_us`];
 
   text(`${axis}-angle`, fixed(current));

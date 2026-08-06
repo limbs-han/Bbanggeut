@@ -34,8 +34,8 @@ export DEVICE_ID="$(sudo grep -m1 '^DEVICE_ID=' /etc/william-james/device-agent.
 
 - 상태가 `HOLD` → 객체가 잡히면 `TRACKING` → 사라지면 `NO_TARGET_HOLD` →
   5초 뒤 `HOME`으로 전이하는지
-- `pan_deg`가 `-90~+90`, `tilt_deg`가 `-50~+80`을 한 번도 벗어나지 않는지
-- `HOME` 상태의 목표가 PARK(`target_pan_deg=0`, `target_tilt_deg=-50`)인지.
+- `pan_deg`가 `-90~+90`, `tilt_deg`가 `0~+110`을 한 번도 벗어나지 않는지
+- `HOME` 상태의 목표가 PARK(`target_pan_deg=0`, `target_tilt_deg=0`)인지.
   상태 이름은 HOME이지만 이동 지점은 PARK가 맞다
 
 ## 2. 회귀: 복원 위치가 없으면 SIGUSR1 무장을 거부한다
@@ -90,10 +90,10 @@ sudo kill -s USR1 %1
 
 확인할 것:
 
-- 기동 직후 `Servo startup safety: parked start pan=+0.00deg tilt=-50.00deg`와
+- 기동 직후 `Servo startup safety: parked start pan=+0.00deg tilt=+0.00deg`와
   `Servo startup hold: PWM live at ...`가 순서대로 뜨는지
 - `SIGUSR1` 이후 `Servo armed: following targets from pan=+0.00deg
-  tilt=-50.00deg`가 뜨는지. 2단계와 달리 여기서는 무장돼야 한다
+  tilt=+0.00deg`가 뜨는지. 2단계와 달리 여기서는 무장돼야 한다
 
 정리: `kill %1`
 
@@ -115,7 +115,7 @@ SERVO_START_ARMED=false \
 ~/venvs/yolo/bin/python -u ~/ai/yolo/servo_controller.py
 ```
 
-`Servo startup hold: PWM live at pan=+0.00deg tilt=-50.00deg`를 확인한 뒤:
+`Servo startup hold: PWM live at pan=+0.00deg tilt=+0.00deg`를 확인한 뒤:
 
 1. 실드를 켠다. 혼에 부하가 없으므로 서보는 자유롭게 PARK로 이동한다.
 2. 짐벌을 자연 정지 위치에 둔 채 혼을 다시 체결한다. TILT는 스톱을 계속 밀지
@@ -137,17 +137,17 @@ sudo journalctl -u wj-servo-controller -f
 
 확인할 것:
 
-- `Servo startup hold: PWM live at pan=+0.00deg tilt=-50.00deg`를 **먼저**
+- `Servo startup hold: PWM live at pan=+0.00deg tilt=+0.00deg`를 **먼저**
   확인한 뒤에 배터리 실드를 켠다
 - 실드를 켜는 순간 서보가 튀지 않는지. PARK 펄스를 이미 받고 있으므로
   움직일 이유가 없다
 
 ## 6. 종료 시 PARK 복귀 시간 실측
 
-이번 변경에서 `TimeoutStopSec`을 5초에서 10초로 올린 근거를 실측으로 확정한다.
-`SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS`는 기본값 `3`을 그대로 두었다.
+`SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS=7`, `TimeoutStopSec=12`의 근거를 실측으로
+확정한다. 계산상 최악 복귀는 TILT `+110°`를 `20°/s`로 도는 5.5초다.
 
-TILT를 `+80`에 가깝게 보낸 상태(카메라 앞에서 아래쪽에 사람이 오래 서 있으면
+TILT를 `+110`에 가깝게 보낸 상태(카메라 앞에서 아래쪽에 사람이 오래 서 있으면
 된다)를 만든 뒤:
 
 ```bash
@@ -160,31 +160,21 @@ sudo systemctl stop wj-servo-controller
 
 - 정지 직전의 `tilt_deg`
 - 정지 명령부터 PWM 채널이 꺼질 때까지의 실제 초 (journalctl 타임스탬프)
-- 마지막 저장 위치가 PARK(`0`, `-50`)에 도달했는지, 아니면 중간에서 끊겼는지
+- 마지막 저장 위치가 PARK(`0`, `0`)에 도달했는지, 아니면 중간에서 끊겼는지
 
-**PARK에 도달하지 못했다면** `SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS` 상향을 별도
-건으로 올린다. TILT `-50~+80` 전 범위에서 최악의 복귀는 130° ÷ 40°/s = 3.25초라
-기본값 3초로는 원리적으로 부족하다. 이번 변경 범위에서는 값을 바꾸지 않고
-사실만 런북에 적어 두었다.
+**PARK에 도달하지 못했다면** `SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS`와
+`TimeoutStopSec`을 함께 올린다. 복귀 시간은 `범위 ÷ MAX_SPEED`다.
 
-## 7. PAN ±90 단계 확대
+## 7. 실제 회전 각도 확인
 
-각도 한계를 `-90~+90`으로 넓혔다. 현장 검증은 `±10`까지만 되어 있으므로 런북
-§8의 7번 절차대로 `±20 → ±40 → ±60 → ±80 → ±90` 순으로 올리며 매 단계
-충돌·걸림·소음·전압 강하를 확인한다.
-
-`SERVO_MINIMUM_PULSE_US`/`SERVO_MAXIMUM_PULSE_US`도 `500/2500`으로 넓혔다.
-이는 펄스 자체가 서보 규격을 벗어나는 것만 막는 backstop이고, 기구물을 지키는
-것은 각도 한계다. 단계를 건너뛰면 걸러줄 장치가 없다.
-
-기본 환산율 `5.555556us/°`는 "1000us에 180°"를 가정한 값이다. SG90에서 그
-구간의 실제 회전은 보통 90~120°이므로, 논리 `±90°`가 물리 `±90°`라는 보장은
-없다. 각 단계에서 **실제 회전 각도를 각도기로 확인**하고, 논리값과 크게 다르면
-`SERVO_PAN_PULSE_US_PER_DEGREE` 재보정을 별도 건으로 올린다.
+환산율 `11.1111us/°`는 `495~2505us`가 물리 180°를 덮는다는 가정이다. SG90
+개체차로 실제는 160~170°일 수 있다. PAN을 논리 `±90°`로 보낸 상태에서
+**각도기로 실제 회전각을 재고**, 크게 다르면 `SERVO_*_PULSE_US_PER_DEGREE`
+재보정을 별도 건으로 올린다. 논리 각도와 화면 오차의 대응이 여기에 달려 있다.
 
 ## 8. 결과 기록
 
-아래를 채워 MR에 남긴다.
+아래를 채워 MR에 남긴다. 2026-08-06 시점에 확인된 항목은 채워 두었다.
 
 | 항목 | 결과 |
 | --- | --- |
@@ -192,8 +182,11 @@ sudo systemctl stop wj-servo-controller
 | 1. 각도 범위 이탈 | |
 | 2. SIGUSR1 무장 거부 | |
 | 3. park 경로 무장 | |
-| 4. 혼 재체결 후 전원 인가 시 튐 | |
-| 5. 실드 인가 시 튐 | |
+| 4. 혼 재체결 후 전원 인가 시 튐 | **없음** (2026-08-06 확인) |
+| 5. 실드 인가 시 튐 | **없음** (2026-08-06 확인) |
+| 5. PAN 회전 방향 | 펄스 상승 = 왼쪽 → `DIRECTION=-1` (2026-08-06) |
+| 5. TILT 회전 방향 | 펄스 상승 = 전방 → `DIRECTION=1` (2026-08-06) |
+| 5. 기계적 스윕 한계 | PAN `±90` 통과, TILT `+110`이 짐벌 한계 (2026-08-06) |
 | 6. 정지 직전 TILT 각도 | |
 | 6. PARK 복귀 실측 시간 | |
 | 6. PARK 도달 여부 | |
