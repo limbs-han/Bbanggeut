@@ -53,14 +53,18 @@ class TalkbackManager:
 
             read_url = self._config.talkback_url_template.format(stream_id=stream_id)
             command = [
-                read_url if part == "{url}" else part
+                part.replace("{url}", read_url)
                 for part in self._config.talkback_command_template
             ]
             self._process = self._process_factory(
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                # Keep FFmpeg diagnostics attached to the systemd service.
+                # Talkback can fail before a long-lived process is visible in
+                # pgrep (RTSP path, TLS, authentication, or ALSA errors), and
+                # discarding stderr makes all of those failures indistinguishable.
+                stderr=None,
             )
             self._stream_id = stream_id
             self._hard_expires_at = hard_expires_at

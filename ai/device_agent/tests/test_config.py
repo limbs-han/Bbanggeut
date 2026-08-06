@@ -171,6 +171,24 @@ class AgentConfigTest(unittest.TestCase):
                 ("ffplay", "-nodisp", "-autoexit", "{url}"),
             )
 
+    def test_talkback_url_placeholder_can_be_embedded_in_an_argument(self):
+        with tempfile.TemporaryDirectory() as directory:
+            mqtt_ca = Path(directory) / "mqtt-ca.crt"
+            mqtt_ca.write_text("test", encoding="utf-8")
+            environment = base_environment(mqtt_ca)
+            environment["TALKBACK_ENABLED"] = "true"
+            environment["TALKBACK_COMMAND"] = (
+                '["gst-launch-1.0","rtspsrc","location={url}"]'
+            )
+
+            with patch.dict("os.environ", environment, clear=True):
+                config = AgentConfig.from_environment()
+
+            self.assertEqual(
+                config.talkback_command_template,
+                ("gst-launch-1.0", "rtspsrc", "location={url}"),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

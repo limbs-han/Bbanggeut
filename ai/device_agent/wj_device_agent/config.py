@@ -188,7 +188,8 @@ class AgentConfig:
                 "-f", os.environ.get("TALKBACK_OUTPUT_FORMAT", "alsa"),
                 os.environ.get("TALKBACK_OUTPUT_DEVICE", "default"),
             )
-        if talkback_command is not None and talkback_command.count("{url}") != 1:
+        placeholder_count = sum(part.count("{url}") for part in talkback_command or ())
+        if talkback_command is not None and placeholder_count != 1:
             raise ValueError("TALKBACK_COMMAND must contain {url} exactly once")
 
         return cls(

@@ -115,7 +115,14 @@ MediaMTX 계정 권한은 다음과 같이 나뉜다.
 
 ## 8. 남은 하드웨어 의존 작업
 
-- 기기 스피커 BOM 확정. 현재 `hardware/`에는 pan-tilt 프레임만 있다.
-- 스피커 도착 후 ALSA 출력 디바이스 지정과 볼륨 기본값 결정
+- 기기 스피커 구성은 USB 오디오 어댑터, PAM8403 앰프와 수동 스피커를 기준으로 검증한다.
+- `bash ai/device_agent/test-speaker-output.sh --list`로 Jetson의 ALSA 출력 장치 이름을 확인한다.
+- `bash ai/device_agent/test-speaker-output.sh plughw:CARD=<카드명>,DEV=0 3`으로 기본 약 -12dBFS(`SPEAKER_TEST_LEVEL=0.25`)의 3초 테스트음을 재생한 뒤 `TALKBACK_OUTPUT_DEVICE`에 같은 장치명을 설정한다. `1.0`은 약 0dBFS 풀스케일이며, 이어폰은 귀에서 빼고 PAM8403 노브는 최소 근처에서 시작한다.
+- 테스트 스크립트는 `CARD=<카드명>`을 인식하면 해당 USB 카드의 `Speaker` 믹서도 음소거 해제하고 100%로 올린다.
+- 기기 FFmpeg의 stderr는 systemd journal로 전달한다. `발화 송출 대기 중`이 반복될 때 `journalctl -fu wj-device-agent`에서 RTSP·TLS·인증·ALSA 종료 원인을 확인한다.
+- Jetson Ubuntu 22.04의 FFmpeg 4.4에서 RTSPS 입력 성공 뒤 `Option tls_verify not found`가 발생하면 `device-agent.jetson.env.example`의 GStreamer `TALKBACK_COMMAND`를 사용한다. `rtspsrc`의 기본 `validate-all`과 시스템 CA 데이터베이스를 유지하며 Opus를 ALSA USB 출력으로 재생한다.
+- GStreamer 래퍼는 자격증명이 제거된 URL을 `location`에 넣고 사용자명·비밀번호를 `rtspsrc`의 `user-id`·`user-pw` 속성으로 전달한다. URL userinfo를 직접 사용했을 때 발생하는 RTSP 인증 실패를 피한다.
+- 스피커 한 개는 PAM8403의 한 채널 `OUT+`와 `OUT-` 사이에 연결하며, BTL 출력의 `OUT-`를 GND에 연결하지 않는다.
+- 실제 장비 시험으로 PAM8403 볼륨 기본 위치와 소프트웨어 음량을 확정한다.
 - 반이중 뮤트 전환 시점의 체감 지연 측정
 - 실패율이 높으면 Coturn 도입 검토
