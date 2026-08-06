@@ -140,7 +140,10 @@ def process_event(args: argparse.Namespace, trigger_path: Path) -> bool:
     upload_request = {
         "sourceEventId": event_id,
         "triggerType": "LAUGHTER",
-        "title": "웃음이 감지된 순간",
+        # 서버가 감지 유형으로 제목을 다시 정하므로(VideoEventTypes.arrivalTitle)
+        # 이 값은 화면에 뜨지 않는다. 그래도 서버와 같은 문구로 둔다 — 다르면
+        # 로그를 읽는 사람이 두 이름 중 무엇이 진짜인지 매번 확인해야 한다.
+        "title": "웃음이 담긴 순간",
         "capturedStartAt": instant(captured_start),
         "capturedEndAt": instant(captured_end),
         "durationMs": duration_ms,

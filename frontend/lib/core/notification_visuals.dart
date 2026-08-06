@@ -108,3 +108,8 @@ const _fallback = NotificationVisual(
 /// 빈칸을 그리지 않아야 한다.
 NotificationVisual notificationVisualFor(String type) =>
     _visuals[type] ?? _fallback;
+
+/// 시각이 정의된 알림 종류. 목적지도 함께 있는지 테스트가 대조한다 — 종류가
+/// 늘 때 이모지만 더하고 갈 곳을 빠뜨리면 사용자는 눌렀는데 아무 일도 일어나지
+/// 않는 것을 본다.
+Iterable<String> get knownNotificationTypes => _visuals.keys;

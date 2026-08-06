@@ -375,7 +375,7 @@ class DiscardTest(unittest.TestCase):
         self.assertIsNone(manager.get("v1"))
 
     def test_discard_refuses_while_the_worker_is_drawing(self) -> None:
-        """기록만 지우면 작업자가 다 그린 뒤 panel.png를 다시 써서 되살아난다."""
+        """기록만 지우면 작업자가 다 그린 뒤 panel.jpg를 다시 써서 되살아난다."""
         manager = self._manager()
         manager._jobs["v1"] = ComicJob(video_id="v1", status="running")
 
@@ -389,3 +389,61 @@ class DiscardTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OuterMarginTrimTest(unittest.TestCase):
+    """모델이 2x2 바깥에 그린 흰 테두리를 잘라내는 판단 로직.
+
+    앱은 칸을 그림의 수학적 4등분으로 잡고 그 가운데에 자막 띠를 앉힌다.
+    테두리가 있으면 왼쪽 칸의 실제 중심이 오른쪽으로 밀리는데 띠는 25%에
+    그대로 앉아, 좌우 띠가 서로 반대 방향으로 빗겨난다. 실측(1024x1024)에서
+    사면 40~42px이었고 그때 어긋남이 16px이었다.
+
+    ffmpeg 없이 검증할 수 있는 부분만 본다 — 검출값 파싱과 믿을지 말지의 판단.
+    """
+
+    def test_parses_last_crop_line(self) -> None:
+        # cropdetect는 프레임마다 한 줄씩 남긴다. 마지막 값이 가장 정확하다.
+        stderr = (
+            "[Parsed_cropdetect_1 @ 0x1] x1:20 x2:1000 crop=944:940:40:42\n"
+            "[Parsed_cropdetect_1 @ 0x1] x1:20 x2:1000 crop=944:942:40:41\n"
+        )
+        self.assertEqual((944, 942, 40, 41), comic.parse_crop_box(stderr))
+
+    def test_no_crop_line_is_none(self) -> None:
+        self.assertIsNone(comic.parse_crop_box("ffmpeg version 7.0\n"))
+
+    def test_measured_real_margin_is_trusted(self) -> None:
+        # 실서버 만화의 실측값이다. 이것을 믿지 못하면 고치는 의미가 없다.
+        self.assertTrue(comic.crop_box_is_trustworthy((944, 942, 40, 41), 1024, 1024))
+
+    def test_trimming_too_much_is_not_trusted(self) -> None:
+        # 밝은 화풍이면 칸 내용까지 테두리로 오인될 수 있다. 그때 잘라 버리면
+        # 그림이 망가진다 — 띠가 조금 빗겨나는 것보다 나쁘다.
+        self.assertFalse(comic.crop_box_is_trustworthy((500, 500, 262, 262), 1024, 1024))
+
+    def test_box_outside_the_image_is_not_trusted(self) -> None:
+        self.assertFalse(comic.crop_box_is_trustworthy((1000, 1000, 40, 40), 1024, 1024))
+        self.assertFalse(comic.crop_box_is_trustworthy((0, 940, 40, 42), 1024, 1024))
+        self.assertFalse(comic.crop_box_is_trustworthy((944, 940, -1, 42), 1024, 1024))
+
+    def test_reads_png_size_without_an_image_library(self) -> None:
+        # Pillow·numpy는 분석 전용 의존성이라 이 경로에 없을 수 있다.
+        header = (
+            b"\x89PNG\r\n\x1a\n"
+            + b"\x00\x00\x00\rIHDR"
+            + (1024).to_bytes(4, "big")
+            + (768).to_bytes(4, "big")
+            + b"\x08\x06\x00\x00\x00"
+        )
+        self.assertEqual((1024, 768), comic.png_size(header))
+
+    def test_non_png_has_no_size(self) -> None:
+        self.assertIsNone(comic.png_size(b"not a png"))
+        self.assertIsNone(comic.png_size(b""))
+
+    def test_prompt_forbids_the_outer_frame(self) -> None:
+        # 서버가 잘라내기는 하지만, 애초에 안 그리게 하는 것이 낫다.
+        prompt = comic.build_image_prompt(CUTS)
+        self.assertIn("no outer border", prompt)
+        self.assertIn("edge to edge", prompt)

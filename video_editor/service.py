@@ -7,6 +7,7 @@ import json
 import math
 import os
 import tempfile
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -813,12 +814,28 @@ def _comic_sheet_key(video_id: str) -> str:
 
 
 def _comic_panel_key(video_id: str) -> str:
+    """지금 쓰는 그림 키. JPEG인 이유는 [comic.normalize_square_image] 참고."""
+    return f"comic/{video_id}/panel.jpg"
+
+
+def _comic_legacy_panel_key(video_id: str) -> str:
+    """JPEG으로 바꾸기 전에 만든 만화. 다시 만들지 않는 한 그대로 남아 있다."""
     return f"comic/{video_id}/panel.png"
 
 
 def _comic_saved_key(video_id: str) -> str:
     """그림과 함께 남긴 구성·저장 시각. 그림이 있다는 증거로도 쓴다."""
     return f"comic/{video_id}/panel.json"
+
+
+def _comic_stored_panel_key(video_id: str, saved: Mapping[str, Any] | None) -> str:
+    """이 만화의 그림이 실제로 놓인 키.
+
+    `panelKey`는 JPEG 전환 때 넣었다. 없는 저장본은 그 전에 만든 것이므로
+    PNG 자리를 본다 — 옛 만화 일곱 장을 다시 그리게 만들 이유가 없다.
+    """
+    stored = (saved or {}).get("panelKey")
+    return str(stored) if stored else _comic_legacy_panel_key(video_id)
 
 
 def _comic_script_key(video_id: str) -> str:
@@ -865,7 +882,7 @@ def _render_and_store_comic(
     except (BotoCoreError, ClientError, OSError):
         sheet = {}
 
-    png = comic.render_comic(
+    panel = comic.render_comic(
         cuts,
         characters=sheet.get("characters") or [],
         setting=str(sheet.get("setting") or ""),
@@ -875,17 +892,27 @@ def _render_and_store_comic(
     # 저장은 최선 노력이다. 저장에 실패해도 방금 만든 그림을 버리지 않는다 —
     # 동기 경로는 응답으로 돌려주고, 백그라운드 경로는 아래에서 예외로 잡아
     # 상태에 남긴다.
-    store.put_bytes(_comic_panel_key(video_id), png, "image/png")
+    panel_key = _comic_panel_key(video_id)
+    store.put_bytes(panel_key, panel, "image/jpeg")
     store.put(
         _comic_saved_key(video_id),
         {
             "videoId": video_id,
             "cuts": cuts,
             "style": style,
+            # 어느 키에 그림을 놓았는지 함께 남긴다. 이것이 없으면 상태 조회가
+            # JPEG인지 옛 PNG인지 알아내려고 MinIO를 두 번 더 두드려야 한다.
+            "panelKey": panel_key,
             "savedAt": datetime.now().astimezone().isoformat(),
         },
     )
-    return png
+    # 같은 영상을 다시 그렸다면 옛 PNG가 남아 있다. 지우지 않으면 아무도 읽지
+    # 않는 2MB가 금고마다 쌓인다.
+    try:
+        store.delete(_comic_legacy_panel_key(video_id))
+    except (BotoCoreError, ClientError, OSError):
+        pass
+    return panel
 
 
 def _render_comic_job(
@@ -958,9 +985,11 @@ def comic_script(
 def comic_image(
     video_id: str, request: ComicImageRequest, http_request: Request = None
 ) -> dict[str, Any]:
-    """2단계(동기) — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 PNG다.
+    """2단계(동기) — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 JPEG다.
 
-    `data:image/png;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
+    `data:image/jpeg;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
+    앱은 바이트를 `Image.memory`에 그대로 넘기고 그쪽이 형식을 알아보므로,
+    PNG에서 JPEG으로 바뀌어도 앱을 고칠 것이 없다.
 
     앱은 백그라운드 경로(PUT)를 쓴다. 이 경로는 화면을 벗어나지 않고 곧바로
     결과를 보려는 호출(재시도·도구)을 위해 남겨 둔다 — 그림 만드는 방법은
@@ -1022,7 +1051,7 @@ def comic_image_status(
     except (BotoCoreError, ClientError, OSError):
         saved = None
     if saved is not None:
-        url = store.presign_get(_comic_panel_key(video_id))
+        url = store.presign_get(_comic_stored_panel_key(video_id, saved))
 
     # 저장해 둔 구성. 이것을 함께 주면 앱이 화면에 다시 들어올 때 구성을 새로
     # 받지 않는다 — 그 호출은 Gemini 과금이고, 새로 받으면 사용자가 고친 대사도
@@ -1086,6 +1115,8 @@ def delete_comic(video_id: str, http_request: Request = None) -> Response:
     try:
         for key in (
             _comic_panel_key(video_id),
+            # 옛 PNG도 함께 지운다 — 남기면 지운 만화의 그림만 버킷에 살아남는다.
+            _comic_legacy_panel_key(video_id),
             _comic_saved_key(video_id),
             _comic_script_key(video_id),
             _comic_sheet_key(video_id),
