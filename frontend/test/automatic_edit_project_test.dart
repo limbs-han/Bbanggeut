@@ -101,7 +101,9 @@ void main() {
     // 잘못 눌렀으면 되돌리기 한 번으로 이전 구간이 그대로 돌아온다.
     controller.undo();
     expect(
-      controller.project.clips.map((c) => '${c.sourceStartMs}-${c.sourceEndMs}'),
+      controller.project.clips.map(
+        (c) => '${c.sourceStartMs}-${c.sourceEndMs}',
+      ),
       clips.map((c) => '${c.sourceStartMs}-${c.sourceEndMs}'),
     );
   });

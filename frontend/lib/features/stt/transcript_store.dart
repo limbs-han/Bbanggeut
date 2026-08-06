@@ -354,9 +354,7 @@ Future<List<CaptionLine>> transcribeVideo(
 ]) async {
   onProgress?.call(TranscriptStage.audio, 0);
   final temporary = await getTemporaryDirectory();
-  final directory = Directory(
-    '${temporary.path}${Platform.pathSeparator}stt',
-  );
+  final directory = Directory('${temporary.path}${Platform.pathSeparator}stt');
   await directory.create(recursive: true);
   final wavPath = '${directory.path}${Platform.pathSeparator}audio_16k.wav';
 

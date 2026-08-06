@@ -68,7 +68,10 @@ class VideoGallerySaver {
       try {
         // 네이티브 MediaStore 경로가 gal보다 빠르다 — 커널 복사로 한 번에
         // 옮기고, 권한 플러그인을 거치지 않는다.
-        await _platform.saveToGallery(inputPath: path, title: _safeTitle(title));
+        await _platform.saveToGallery(
+          inputPath: path,
+          title: _safeTitle(title),
+        );
         return;
       } on EditorPlatformException {
         // MediaStore가 막힌 기기가 있다. gal로 한 번 더 시도한다.

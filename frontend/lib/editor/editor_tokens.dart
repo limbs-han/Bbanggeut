@@ -2,7 +2,17 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../app/app_theme.dart';
+
 abstract final class EditorColorTokens {
+  /// 편집 화면의 바닥. **흰색**이다.
+  ///
+  /// **왜 크림([background])이 아닌가**: 자막 판이 화면 절반을 쓰게 되면서
+  /// 얇은 막대·머리카락 같은 구분선·흰 카드가 전부 이 바닥 위에 놓인다.
+  /// 크림빛 바닥에서는 흰 카드가 한 겹 떠 보이고 회색 구분선이 누렇게
+  /// 물들었다. [background]는 이제 흰 바닥 위에 얹는 **칩·타일의 옅은 살**로만
+  /// 남는다 — 거기서는 크림이 제 몫을 한다.
+  static const canvas = Color(0xFFFFFFFF);
   static const background = Color(0xFFFFF7EE);
   static const surface = Color(0xFFFFFDFC);
   static const previewWorkspace = Color(0xFF0F0F10);
@@ -14,6 +24,24 @@ abstract final class EditorColorTokens {
   static const border = Color(0xFFEBD7C5);
   static const selected = Color(0xFFFFE9DF);
   static const shadow = Color(0x147A4F32);
+
+  /// 자막 편집 화면의 고밀도 조각들이 쓰는 값.
+  ///
+  /// **왜 따로 두는가**: [border]는 크림빛이 도는 굵은 테두리라 카드 하나를
+  /// 감쌀 때는 맞지만, 얇은 단추·구분선을 그 색으로 그으면 선이 화면을
+  /// 가른다. 아래 셋은 "있는 줄도 모를 만큼 얇게" 쓰는 자리 전용이다.
+  static const hairline = Color(0xFFEEE9E5);
+
+  /// 시간 눈금·자막 시각처럼 읽히되 앞으로 나서지 않아야 하는 글자.
+  static const subtle = Color(0xFF756D68);
+
+  /// +N 배지처럼 색을 갖지 않는 알갱이의 바닥.
+  static const badge = Color(0xFFF1ECE6);
+
+  /// 고른 자막 카드의 바닥. 제 색(코랄·올리브)을 아주 낮은 투명도로 깐
+  /// 것이라, 카드가 물드는 정도로만 "고른 것"을 말한다.
+  static const directWash = Color(0xFFFBEDEA);
+  static const automaticWash = Color(0xFFF0F3E9);
 }
 
 /// 줌·자막처럼 한 클립에 여러 구간이 달릴 때 서로를 구분하는 색.
@@ -29,6 +57,46 @@ abstract final class EditorMarkerTokens {
   ];
 
   static Color colorAt(int index) => palette[index % palette.length];
+}
+
+/// 자막 하나를 알아보는 색과 막대의 두께.
+///
+/// 타임라인 막대·자막 카드 번호·겹침 시트의 줄이 **같은 자막에 같은 색**을
+/// 쓴다 — 번호를 읽지 않아도 색만으로 "그 자막"을 짚을 수 있다.
+///
+/// 색을 정하는 것은 자막이 만들어진 곳(직접/AI)이 아니라 **순번**이다. 세 색이
+/// 돌아가며 붙으므로 이웃한 막대가 늘 다른 색을 받는다 — 실처럼 얇은 막대가
+/// 촘촘히 늘어서도 어디서 하나가 끝나고 다음이 시작하는지가 보인다. 출처는
+/// 색이 아니라 카드가 말한다.
+abstract final class EditorCaptionTokens {
+  /// 막대 전용 색이다. 앱 팔레트([AppColors.coral], [AppColors.sageDark])를
+  /// 그대로 쓰지 않는 까닭은 **바탕이 다르기 때문**이다 — 단추와 아이콘은
+  /// 크림빛 배경에 얹히지만 이 막대는 흰 바탕에 4dp 실선으로 눕는다. 앱
+  /// 올리브(#6E7F45)는 그 폭에서 검게 가라앉았고, 앱 코랄(#F47B61)은 주황과
+  /// 구분이 흐렸다. 조금 더 맑고 진한 값으로 셋을 벌려 놓는다.
+  static const coral = Color(0xFFF06C55);
+  static const amber = Color(0xFFEF9B3F);
+  static const olive = Color(0xFF7F9957);
+
+  static const palette = <Color>[coral, amber, olive];
+
+  static Color colorAt(int index) => palette[index % palette.length];
+
+  /// 막대 두께. 글자는 아래 자막 카드가 맡고 막대는 **길이와 색만** 말한다 —
+  /// 실처럼 얇아야 겹친 자막 세 층이 프레임 띠를 밀어내지 않는다.
+  static const barHeight = 4.0;
+
+  /// 고른 막대만 조금 두꺼워진다. 테두리도 그림자도 두르지 않는다 — 4dp
+  /// 막대에 두르면 색이 남지 않고, 얇은 눈금 판이 단추밭처럼 보인다.
+  static const selectedBarHeight = 6.0;
+
+  /// 영상 위 글자 상자의 조작선(테두리·손잡이)에 받치는 그림자. 밝은 장면에서
+  /// 흰 손잡이와 코랄 테두리가 배경에 묻히지 않을 만큼만 옅게 깐다.
+  static const overlayShadow = BoxShadow(
+    color: Color(0x4D000000),
+    blurRadius: 5,
+    offset: Offset(0, 1.5),
+  );
 }
 
 abstract final class EditorSpacingTokens {

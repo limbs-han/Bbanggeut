@@ -511,12 +511,13 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
   void _updateWindowSlide(double deltaPx) {
     if (!_slidingWindow) return;
     _slideTravelPx += deltaPx;
-    final int start = _frameAligned(
-      (_slideAnchorStartMs + _slideTravelPx * _msPerPx).round(),
-    ).clamp(
-      _lowerBoundMs,
-      math.max(_lowerBoundMs, _upperBoundMs - _slideDurationMs),
-    );
+    final int start =
+        _frameAligned(
+          (_slideAnchorStartMs + _slideTravelPx * _msPerPx).round(),
+        ).clamp(
+          _lowerBoundMs,
+          math.max(_lowerBoundMs, _upperBoundMs - _slideDurationMs),
+        );
     setState(() {
       _liveStartMs = start;
       _liveEndMs = start + _slideDurationMs;

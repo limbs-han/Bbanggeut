@@ -76,7 +76,8 @@ class WhipPublisherController extends ChangeNotifier {
       };
       peer.onConnectionState = (state) {
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-            state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+            state ==
+                RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
           _transmitting = false;
           notifyListeners();
         }

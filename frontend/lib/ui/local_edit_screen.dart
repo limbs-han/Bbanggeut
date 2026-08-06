@@ -23,6 +23,7 @@ import '../editor/editor_direct_text_sheet.dart';
 import '../editor/edit_recommendation_client.dart';
 import '../editor/editor_text_style_bar.dart';
 import '../editor/editor_platform.dart';
+import '../editor/editor_tokens.dart';
 import '../editor/editor_workspace.dart';
 import 'widgets.dart';
 
@@ -1242,7 +1243,6 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     setState(() {});
   }
 
-  /// 전사 결과를 **일반 자막 레이어로** 합친다. 실제로 합쳤으면 true.
   ///
   /// 전사 완료 알림과 시트 닫힘, 두 군데서 불리므로 내용 서명이 같으면
   /// 건너뛴다 — 자막 탭에서 고쳐 둔 AI 자막이 원문으로 되돌아가지 않는다.
@@ -2147,15 +2147,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         if (_saving) return;
         setState(() => _directCaptionAddMode = true);
       },
-      onTextEdit: (id) {
-        // 자막 시작으로 옮겨 놓고 바로 그 위에서 고친다.
-        final layer = projectController.project.textLayers
-            .where((item) => item.id == id)
-            .firstOrNull;
-        if (layer != null) unawaited(_seekToPosition(layer.startMs));
-        _startTextEditing(layerId: id);
-      },
-      onTextRemove: (id) {
+      // 자막 카드·겹침 시트의 연필. 영상 위 글자 상자를 두 번 누르는 것과
+      // 같은 길이다.
+      onEditCaption: (id) => _startTextEditing(layerId: id),
+      onDeleteCaption: (id) {
+        if (_saving) return;
         projectController.removeTextLayer(id);
         _editState.markExternalEditApplied();
         setState(() {});
@@ -3201,6 +3197,11 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
                 ? Border.all(color: AppColors.coral, width: 1.6)
                 : null,
             borderRadius: BorderRadius.circular(7),
+            // 밝은 장면에서는 코랄 테두리도 배경에 녹는다. 그림자를 옅게
+            // 받쳐야 조작선이 어떤 영상 위에서도 보인다.
+            boxShadow: selected
+                ? const [EditorCaptionTokens.overlayShadow]
+                : null,
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
@@ -3226,9 +3227,18 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
                             : GestureDetector(
                                 key: Key('editor-layer-${widget.layer.id}'),
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () => widget.controller.selectLayer(
-                                  widget.layer.id,
-                                ),
+                                // 한 번 눌러 고르고, 고른 상자를 다시 누르면
+                                // 바로 고친다. 자막 막대에서 연필을 걷어낸
+                                // 뒤로는 여기가 고치러 들어가는 유일한 길이다.
+                                onTap: () {
+                                  if (selected && widget.onDoubleTap != null) {
+                                    widget.onDoubleTap!();
+                                    return;
+                                  }
+                                  widget.controller.selectLayer(
+                                    widget.layer.id,
+                                  );
+                                },
                                 onDoubleTap: widget.onDoubleTap,
                                 onScaleStart: (_) => _beginTransform(),
                                 onScaleUpdate: (details) => _updateTransform(
@@ -3240,17 +3250,11 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
                                 child: box,
                               ),
                       ),
-                      if (selected)
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          child: _LayerHandle(
-                            dimension: _handleSize,
-                            icon: Icons.close_rounded,
-                            background: const Color(0xE6231A14),
-                            onTap: _deleteLayer,
-                          ),
-                        ),
+                      // 지우기는 영상 위에 두지 않는다. 왼쪽 위 X는 "닫기"로
+                      // 읽히는데 실제로는 자막을 지웠고, 되돌리려면 실행
+                      // 취소를 찾아야 했다. 지우는 자리는 자막 카드 줄
+                      // 머리의 휴지통 하나뿐이다 — 무엇이 지워질지 카드로
+                      // 보이는 자리다.
                       if (selected)
                         Positioned(
                           right: 0,
@@ -3360,11 +3364,6 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
     widget.controller.endLayerGesture();
     widget.onChanged();
   }
-
-  void _deleteLayer() {
-    widget.controller.selectLayer(widget.layer.id);
-    if (widget.controller.deleteSelectedLayer()) widget.onChanged();
-  }
 }
 
 /// 자식의 중심을 정규화 좌표에 정확히 놓는다.
@@ -3394,7 +3393,6 @@ class _LayerHandle extends StatelessWidget {
     required this.dimension,
     required this.icon,
     required this.background,
-    this.onTap,
     this.onPanStart,
     this.onPanUpdate,
     this.onPanEnd,
@@ -3403,7 +3401,6 @@ class _LayerHandle extends StatelessWidget {
   final double dimension;
   final IconData icon;
   final Color background;
-  final VoidCallback? onTap;
 
   /// 화면 기준 손가락 위치를 그대로 넘긴다. 상자 중심에서의 거리로 크기를
   /// 정하려면 누적 delta가 아니라 절대 좌표가 있어야 한다.
@@ -3414,7 +3411,6 @@ class _LayerHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     behavior: HitTestBehavior.opaque,
-    onTap: onTap,
     onPanStart: onPanStart == null
         ? null
         : (details) => onPanStart!(details.globalPosition),
@@ -3430,6 +3426,8 @@ class _LayerHandle extends StatelessWidget {
         color: background,
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 1.6),
+        // 흰 테두리를 두른 손잡이도 밝은 장면 위에서는 윤곽이 사라진다.
+        boxShadow: const [EditorCaptionTokens.overlayShadow],
       ),
       child: Icon(icon, color: Colors.white, size: dimension * 0.5),
     ),
