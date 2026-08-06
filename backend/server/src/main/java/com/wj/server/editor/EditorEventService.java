@@ -71,6 +71,10 @@ public class EditorEventService {
                 comics.register(request.videoId(), request.userId());
                 notifications.comicReady(request.userId(), request.videoId());
             }
+            // 대사 구성만 끝난 단계다. 만화 행은 아직 세우지 않는다 — 그림이
+            // 없는 만화가 피드에 나오면 눌러도 볼 것이 없다.
+            case "COMIC_SCRIPT_READY" ->
+                notifications.comicScriptReady(request.userId(), request.videoId());
             case "COMMENT_ADDED" ->
                 notifications.editCommentAdded(
                     request.userId(), request.videoId(), request.commentId(), request.body());

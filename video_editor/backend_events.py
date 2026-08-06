@@ -106,6 +106,18 @@ def analysis_ready(video_id: str, user_id: str | None) -> None:
     _notify({"type": "ANALYSIS_READY", "videoId": video_id, "userId": user_id})
 
 
+def comic_script_ready(video_id: str, user_id: str | None) -> None:
+    """만화 1단계(대사 구성)가 끝났다 — 요청한 사람에게만 알린다.
+
+    1단계는 동기 응답이지만 Gemini 호출이라 20초 가까이 걸린다. 그 사이 앱을
+    내려놓거나 화면을 벗어난 사용자에게는 대사가 준비된 것을 알릴 통로가
+    없었고, 돌아와서 다시 부르면 같은 호출료가 또 들었다.
+    """
+    if not user_id:
+        return
+    _notify({"type": "COMIC_SCRIPT_READY", "videoId": video_id, "userId": user_id})
+
+
 def comic_ready(video_id: str, user_id: str | None) -> None:
     """4컷 만화가 다 그려졌다 — 요청한 사람에게만 알린다."""
     if not user_id:

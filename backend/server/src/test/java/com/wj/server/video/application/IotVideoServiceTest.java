@@ -183,8 +183,49 @@ class IotVideoServiceTest {
             DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
 
         assertThat(response.eventTypes()).containsExactly("LAUGHTER", "CLAP");
-        verify(notificationService).laughterVideoReady(
-            DEVICE_ID, VIDEO_ID, laughterVideo.title());
+        // 웃음과 박수가 같이 잡혔으면 대표 유형인 웃음으로 알린다.
+        verify(notificationService).videoArrived(
+            DEVICE_ID, VIDEO_ID, "웃음 영상이 도착했어요", laughterVideo.title());
+    }
+
+    /**
+     * 박수만으로 잡힌 영상도 알린다. 예전에는 LAUGHTER가 없으면 알림도
+     * 알림함 행도 만들어지지 않아서, 영상이 도착해도 아무 말이 없었다.
+     */
+    @Test
+    void completedClapOnlyVideoAlsoNotifiesWithItsOwnHeadline() {
+        VideoRow clapVideo = new VideoRow(
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "CLAP", EVENT_ID, "박수 영상",
+            "video/mp4", 100L, CHECKSUM, 1000L,
+            Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
+            "private/device/video.mp4", "READY", false,
+            Instant.parse("2026-07-17T10:00:02Z"), "CLAP");
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
+            .thenReturn(Optional.of(clapVideo));
+
+        service.complete(DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
+
+        verify(notificationService).videoArrived(
+            DEVICE_ID, VIDEO_ID, "박수 소리가 담긴 영상이 도착했어요", clapVideo.title());
+    }
+
+    /** 사람이 올린 영상·편집본은 알리지 않는다 — 올린 사람은 이미 알고 있다. */
+    @Test
+    void userUploadedVideoIsNotAnnouncedAsAnArrival() {
+        VideoRow uploaded = new VideoRow(
+            VIDEO_ID, DEVICE_ID, "USER_UPLOAD", "USER_UPLOAD", EVENT_ID, "직접 올린 영상",
+            "video/mp4", 100L, CHECKSUM, 1000L,
+            Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
+            "private/device/video.mp4", "READY", false,
+            Instant.parse("2026-07-17T10:00:02Z"), "USER_UPLOAD");
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
+            .thenReturn(Optional.of(uploaded));
+
+        service.complete(DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
+
+        verify(notificationService, never()).videoArrived(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -274,9 +315,9 @@ class IotVideoServiceTest {
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("VIDEO_STATE_CONFLICT");
-        verify(notificationService, never()).laughterVideoReady(
+        verify(notificationService, never()).videoArrived(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-            org.mockito.ArgumentMatchers.any());
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     private IotUploadUrlRequest request(long size) {

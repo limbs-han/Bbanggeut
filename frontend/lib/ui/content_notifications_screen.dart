@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
+import '../core/notification_visuals.dart';
 import '../features/comic/comic_screen.dart';
 import 'content_calendar_screen.dart';
 import 'edited_video_screen.dart';
@@ -120,7 +121,11 @@ class _ContentNotificationsScreenState
     // "화면을 나간 뒤에 끝나는 것"이 정상 경로가 됐으므로, 알림에서 한 번에
     // 결과까지 가야 한다 — 영상 상세를 거치게 하면 만화 버튼을 다시 찾아
     // 눌러야 한다.
-    if (item.type == 'COMIC_READY' && item.resourceId != null) {
+    //
+    // 대사 준비 알림도 같은 곳으로 보낸다. 만화 화면이 저장된 구성을 읽어
+    // 대사 편집으로 이어 주므로, 사용자가 고칠 자리가 곧 여기다.
+    if ((item.type == 'COMIC_READY' || item.type == 'COMIC_SCRIPT_READY') &&
+        item.resourceId != null) {
       try {
         final video = await _videoFor(item.resourceId!);
         if (!mounted) return;
@@ -296,7 +301,7 @@ class _ContentNotificationsScreenState
         separatorBuilder: (_, _) => const SizedBox(height: 9),
         itemBuilder: (_, index) {
           final item = items[index];
-          final visual = _visualFor(item.type);
+          final visual = notificationVisualFor(item.type);
           return SoftCard(
             color: item.isRead ? AppColors.surface : const Color(0xFFFFFBF6),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -324,6 +329,19 @@ class _ContentNotificationsScreenState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // 갈래를 먼저 알려 주는 라벨. 제목이 비슷한 알림
+                        // ('...이 도착했어요'가 여럿이다)을 훑어 읽을 때
+                        // 이모지 하나만으로는 갈라지지 않았다.
+                        Text(
+                          visual.category,
+                          style: TextStyle(
+                            color: visual.accent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 1),
                         Text(
                           item.title,
                           style: TextStyle(
@@ -335,6 +353,8 @@ class _ContentNotificationsScreenState
                         const SizedBox(height: 2),
                         Text(
                           item.body,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: AppColors.inkSoft,
                             fontSize: 12,
@@ -374,12 +394,3 @@ class _ContentNotificationsScreenState
   }
 }
 
-({String emoji, Color background}) _visualFor(String type) => switch (type) {
-  'INVITATION_RECEIVED' => (emoji: '❤️', background: const Color(0xFFFFEAE6)),
-  'INVITATION_ACCEPTED' => (emoji: '🤝', background: const Color(0xFFFFEAE6)),
-  'LAUGHTER_VIDEO_READY' => (emoji: '📷', background: AppColors.sageSoft),
-  'EDIT_ANALYSIS_READY' => (emoji: '✨', background: AppColors.sageSoft),
-  'EDIT_COMMENT_ADDED' => (emoji: '💬', background: AppColors.yellowSoft),
-  'COMIC_READY' => (emoji: '🎨', background: AppColors.yellowSoft),
-  _ => (emoji: '🔔', background: AppColors.yellowSoft),
-};

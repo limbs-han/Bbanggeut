@@ -381,6 +381,19 @@ public interface VideoMapper {
     );
 
 
+    /**
+     * 홈의 "최근 저장된 추억" 카드에 들어가는 한 건. 이름은 highlight지만
+     * 고르는 기준은 <b>최신순뿐</b>이다.
+     *
+     * <p><b>왜 즐겨찾기를 먼저 보지 않는가</b>: 예전 정렬은
+     * {@code is_favorite DESC}가 맨 앞이었다. 그러면 즐겨찾기를 한 번 누른
+     * 순간 그 영상이 카드에 못박히고, 그 뒤로 저장되는 영상은 아무리 새것이어도
+     * 홈에 올라오지 못한다 — 실제로 즐겨찾기 4건 중 가장 최신이 7월 31일인
+     * 기기에서, 영상 268건이 쌓이고 오늘 것이 계속 들어오는데도 홈은 7월 31일
+     * 영상을 보여 주고 있었다. 카드 제목이 "최근 저장된 추억"이므로 사용자가
+     * 기대하는 값은 가장 최근에 저장된 것이고, 즐겨찾기는 홈이 아니라 즐겨찾기
+     * 화면이 담당한다.
+     */
     @Select("""
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
@@ -393,7 +406,7 @@ public interface VideoMapper {
            AND m.user_id = #{userId}
            AND m.status = 'ACTIVE'
            AND v.status = 'READY'
-         ORDER BY v.is_favorite DESC, v.captured_start_at DESC NULLS LAST, v.created_at DESC
+         ORDER BY v.captured_start_at DESC NULLS LAST, v.created_at DESC
          LIMIT 1
         """)
     Optional<VideoRow> findLatestHighlight(

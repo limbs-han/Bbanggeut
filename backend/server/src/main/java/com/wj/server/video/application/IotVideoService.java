@@ -152,7 +152,7 @@ public class IotVideoService {
             deviceEventService.linkUpload(
                 deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
                 video.capturedStartAt(), video.id(), "READY");
-            notifyLaughterVideo(video);
+            notifyVideoArrived(video);
             return toResponse(video);
         }
         if (!"UPLOADING".equals(video.status())) {
@@ -193,29 +193,30 @@ public class IotVideoService {
         deviceEventService.linkUpload(
             deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
             video.capturedStartAt(), video.id(), "READY");
-        if (hasLaughterEvent(completed)) {
-            notificationService.laughterVideoReady(
-                completed.deviceId(), completed.id(), completed.title());
-        }
+        notifyVideoArrived(completed);
         return toResponse(completed);
     }
 
     /**
-     * 웃음이 잡힌 영상인가. 대표 유형(triggerType)이 CLAP 등 다른 것이어도
-     * 다중 이벤트 목록에 LAUGHTER가 있으면 웃음 영상이다 — 대표 유형만 보면
-     * V33 이후의 다중 이벤트 영상이 알림 없이 지나간다.
+     * 기기가 스스로 잡아 담은 영상이 도착했다고 알린다.
+     *
+     * <p><b>왜 웃음만 알리지 않는가</b>: 예전에는 이벤트 목록에 LAUGHTER가
+     * 있을 때만 알렸다. 그래서 박수(CLAP)로 잡힌 영상은 저장은 되는데 알림도
+     * 알림함의 행도 만들어지지 않았고, 사용자에게는 "영상이 도착했는데 아무
+     * 말이 없다"로 보였다 — 실서버에서 CLAP 영상 세 건이 연달아 그렇게
+     * 지나갔다. 감지로 담긴 영상이면 알리고, 무엇 때문에 담겼는지는 제목이
+     * 말해 준다. 사람이 직접 올린 영상·편집본은 여전히 알리지 않는다(올린
+     * 사람은 이미 알고, 가족에게는 별도 통로가 있다).
      */
-    private static boolean hasLaughterEvent(VideoRow video) {
-        return VideoEventTypes
-            .fromCsv(video.eventTypesCsv(), video.triggerType())
-            .contains("LAUGHTER");
-    }
-
-    private void notifyLaughterVideo(VideoRow video) {
-        if (hasLaughterEvent(video)) {
-            notificationService.laughterVideoReady(
-                video.deviceId(), video.id(), video.title());
+    private void notifyVideoArrived(VideoRow video) {
+        List<String> eventTypes = VideoEventTypes.fromCsv(
+            video.eventTypesCsv(), video.triggerType());
+        if (!VideoEventTypes.isDetection(eventTypes)) {
+            return;
         }
+        notificationService.videoArrived(
+            video.deviceId(), video.id(),
+            VideoEventTypes.arrivalHeadline(eventTypes), video.title());
     }
 
     private VideoRow createVideo(

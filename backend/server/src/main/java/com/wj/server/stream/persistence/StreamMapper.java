@@ -216,6 +216,25 @@ public interface StreamMapper {
         """)
     int markSessionsFailed(@Param("streamId") UUID streamId, @Param("failureCode") String failureCode);
 
+    /**
+     * 시청 중인 세션을 재연결 대기로 내린다 — 미디어가 끊겼지만 아직 포기하지
+     * 않은 상태다.
+     *
+     * <p>PENDING은 이미 "송출이 붙기를 기다리는 중"이라는 뜻이고 앱도 그렇게
+     * 다룬다(폴링하며 READY를 기다린다). 그래서 새 상태를 만들지 않고 READY를
+     * PENDING으로 되돌린다 — whepUrl은 READY에서만 나가므로 죽은 재생 주소가
+     * 앱에 다시 건네지는 일도 함께 막힌다.
+     *
+     * <p>{@code viewer_expires_at}은 건드리지 않는다. 앱 heartbeat가 그 값을
+     * 계속 밀어 주므로 유예 동안 세션이 만료되지 않고, 시청자가 사라지면
+     * 원래대로 idle 정리에 걸린다.
+     */
+    @Update("""
+        UPDATE stream_sessions SET status = 'PENDING', updated_at = now()
+         WHERE stream_id = #{streamId} AND status = 'READY'
+        """)
+    int markSessionsReconnecting(@Param("streamId") UUID streamId);
+
     @Update("""
         UPDATE device_streams SET status = 'STOPPED', stop_deadline_at = NULL, updated_at = now()
          WHERE id = #{streamId} AND device_id = #{deviceId}
