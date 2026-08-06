@@ -5,12 +5,7 @@ import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../core/notification_visuals.dart';
-import '../features/comic/comic_screen.dart';
-import 'content_calendar_screen.dart';
-import 'edited_video_screen.dart';
-import 'invitation_inbox_screen.dart';
-import 'laugh_report_content_screen.dart';
-import 'video_detail_screen.dart';
+import 'notification_routing.dart';
 import 'widgets.dart';
 
 class ContentNotificationsScreen extends StatefulWidget {
@@ -75,17 +70,6 @@ class _ContentNotificationsScreenState
     }
   }
 
-  /// 알림이 가리키는 영상. 이미 받아 둔 목록에 있으면 그것을 쓰고, 없으면
-  /// 한 건만 받아 온다 — 목록에 없는 영상(다른 기기·오래된 것)도 열려야 한다.
-  Future<VideoMemory> _videoFor(String videoId) async {
-    final matches = widget.controller.videos.where(
-      (candidate) => candidate.id == videoId,
-    );
-    return matches.isNotEmpty
-        ? matches.first
-        : await widget.controller.api.getVideo(videoId);
-  }
-
   Future<void> _open(AppNotification item) async {
     if (!item.isRead) {
       try {
@@ -102,97 +86,16 @@ class _ContentNotificationsScreenState
     }
 
     if (!mounted) return;
-    if (item.type == 'EDIT_COMMENT_ADDED' && item.resourceId != null) {
-      await Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EditedVideoScreen(
-            api: widget.controller.api,
-            videoId: item.resourceId!,
-            title: '',
-            myUserId: widget.controller.user?.id,
-            isOwner: widget.controller.isOwner,
-          ),
-        ),
-      );
-      return;
-    }
-    // 만화 완성은 만화 화면으로 곧장 간다. 그림 생성이 백그라운드로 바뀌면서
-    // "화면을 나간 뒤에 끝나는 것"이 정상 경로가 됐으므로, 알림에서 한 번에
-    // 결과까지 가야 한다 — 영상 상세를 거치게 하면 만화 버튼을 다시 찾아
-    // 눌러야 한다.
-    //
-    // 대사 준비 알림도 같은 곳으로 보낸다. 만화 화면이 저장된 구성을 읽어
-    // 대사 편집으로 이어 주므로, 사용자가 고칠 자리가 곧 여기다.
-    if ((item.type == 'COMIC_READY' || item.type == 'COMIC_SCRIPT_READY') &&
-        item.resourceId != null) {
-      try {
-        final video = await _videoFor(item.resourceId!);
-        if (!mounted) return;
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                ComicScreen(api: widget.controller.api, video: video),
-          ),
-        );
-      } catch (failure) {
-        if (mounted) showAppSnack(context, '$failure', error: true);
-      }
-      return;
-    }
-    // 분석 완료는 웃음 영상 도착과 같은 목적지다 — 영상 상세에서 편집하기를
-    // 누르면 이미 분석돼 있어 AI 컷이 바로 열린다.
-    if ((item.type == 'LAUGHTER_VIDEO_READY' ||
-            item.type == 'EDIT_ANALYSIS_READY') &&
-        item.resourceId != null) {
-      try {
-        final video = await _videoFor(item.resourceId!);
-        if (!mounted) return;
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                VideoDetailScreen(controller: widget.controller, video: video),
-          ),
-        );
-      } catch (failure) {
-        if (mounted) showAppSnack(context, '$failure', error: true);
-      }
-      return;
-    }
-
-    // 주기 리포트 알림은 각자의 화면으로 — 기념일은 캘린더, 주간 리포트는
-    // 웃음 리포트다.
-    if (item.type == 'ANNIVERSARY' || item.type == 'WEEKLY_REPORT') {
-      await Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => item.type == 'ANNIVERSARY'
-              ? ContentCalendarScreen(controller: widget.controller)
-              : LaughReportContentScreen(controller: widget.controller),
-        ),
-      );
-      return;
-    }
-
-    if (item.type == 'INVITATION_RECEIVED') {
-      await widget.controller.refreshMyInvitations();
-      if (!mounted) return;
-      if (widget.onOpenInvitations != null) {
-        widget.onOpenInvitations!();
-      } else {
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                InvitationInboxScreen(controller: widget.controller),
-          ),
-        );
-      }
-      return;
-    }
-    widget.onOpenDevices?.call();
+    // 목적지 결정은 여기 두지 않는다 — 푸시를 눌렀을 때 도는 쪽(app.dart)과
+    // 갈라져 있던 동안 같은 알림이 어디서 눌렀느냐에 따라 다른 곳으로 갔다.
+    await openNotificationTarget(
+      context,
+      controller: widget.controller,
+      type: item.type,
+      resourceId: item.resourceId,
+      onOpenInvitations: widget.onOpenInvitations,
+      onOpenDevices: widget.onOpenDevices,
+    );
   }
 
   @override
