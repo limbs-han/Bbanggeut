@@ -225,6 +225,89 @@ def frame_timestamps(duration: float, count: int = FRAME_COUNT) -> list[float]:
     return [duration * (index + 0.5) / count for index in range(count)]
 
 
+# 만화 칸으로 쓸 프레임의 점수. 편집이 쓰는 eventScore를 그대로 쓰지 않는 이유는
+# 그 값이 소리 중심이기 때문이다 — 화면 밖에서 크게 웃는 순간은 자동 컷에는 맞지만
+# 만화 칸으로는 빈 방 사진이 된다. 얼굴이 보이고 흐리지 않은 쪽으로 기울인다.
+_PANEL_VISUAL_FLOOR = 0.55
+
+
+def panel_score(window: Mapping[str, Any]) -> float:
+    """구간 하나가 만화 칸으로 얼마나 쓸 만한가. 0~1."""
+    features = window.get("features") or {}
+    visual = (
+        0.5 * float(features.get("facePresence", 0.0))
+        + 0.3 * float(features.get("faceProminence", 0.0))
+        + 0.2 * float(features.get("visualQuality", 0.0))
+    )
+    event = float(window.get("eventScore", 0.0))
+    return event * (_PANEL_VISUAL_FLOOR + (1 - _PANEL_VISUAL_FLOOR) * min(1.0, visual))
+
+
+def _window_center_seconds(window: Mapping[str, Any]) -> float | None:
+    try:
+        start = int(window["startMs"])
+        end = int(window["endMs"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (start + end) / 2000
+
+
+def panel_timestamps(
+    timeline: Sequence[Mapping[str, Any]],
+    duration: float,
+    count: int = FRAME_COUNT,
+) -> list[float]:
+    """점수 타임라인에서 만화 칸으로 쓸 시각을 고른다. 시간 순으로 돌려준다.
+
+    **왜 등분이 아닌가**: [frame_timestamps]는 영상을 count등분해 가운데를 뽑는다.
+    내용을 전혀 보지 않아서, 웃음이 3초에 터져도 6·18·30초를 가져간다. 편집(자동
+    컷·줌)은 이미 같은 분석에서 나온 타임라인으로 순간을 고르고 있는데 만화만
+    쓰지 않았다.
+
+    **왜 간격을 두는가**: 점수만 보면 상위 다섯이 같은 2초 안에 몰린다. 웃음
+    한 번이 여러 구간에 걸치기 때문이다. 그러면 네 칸이 거의 같은 그림이 되어
+    기승전결이 사라진다. 최소 간격을 두고 고른 뒤 시간 순으로 되돌린다.
+
+    타임라인이 없거나 쓸 구간이 없으면 등분으로 되돌아간다 — 분석을 아직 돌리지
+    않은 영상도 만화는 만들 수 있어야 한다.
+    """
+    if duration <= 0 or count <= 0:
+        return []
+    # 앞뒤 가장자리는 검은 화면이거나 흔들린다. visualQuality가 걸러 주기는 하나
+    # 영상 분석 없이 소리만으로 만든 타임라인에는 그 값이 없다.
+    # 경계를 포함하지 않는다. 구간이 1초씩이면 첫 구간의 가운데가 정확히 0.5초라,
+    # 여기서 등호를 허용하면 걸러 내려던 첫 프레임이 그대로 통과한다.
+    margin = min(0.5, duration * 0.05)
+    windows = [
+        (at, panel_score(window))
+        for window in timeline
+        if (at := _window_center_seconds(window)) is not None
+        and margin < at < duration - margin
+    ]
+    if not windows:
+        return frame_timestamps(duration, count)
+
+    # 점수가 같으면 앞선 순간을 고른다 — 같은 입력에 같은 만화가 나와야 한다.
+    ranked = sorted(windows, key=lambda pair: (-pair[1], pair[0]))
+    min_gap = duration / (count * 2)
+    picked: list[float] = []
+    for at, _ in ranked:
+        if all(abs(at - other) >= min_gap for other in picked):
+            picked.append(at)
+        if len(picked) == count:
+            break
+    # 짧은 영상은 간격을 지키다 개수를 못 채운다. 남은 자리는 점수 순으로 메운다 —
+    # 비슷한 칸이라도 프레임이 적은 것보다 낫다(인물표가 흔들린다).
+    if len(picked) < count:
+        for at, _ in ranked:
+            if at not in picked:
+                picked.append(at)
+            if len(picked) == count:
+                break
+    picked.sort()
+    return picked
+
+
 def fit_frame_budget(
     frames: Sequence[bytes], budget: int = FRAME_BASE64_BUDGET
 ) -> list[bytes]:
@@ -244,16 +327,29 @@ def fit_frame_budget(
     return kept
 
 
-def extract_frames(video_url: str, count: int = FRAME_COUNT) -> list[bytes]:
+def extract_frames(
+    video_url: str,
+    count: int = FRAME_COUNT,
+    timeline: Sequence[Mapping[str, Any]] | None = None,
+) -> list[bytes]:
     """원본에서 JPEG 프레임 몇 장을 뽑는다. presigned URL을 그대로 먹인다.
 
     개수는 [FRAME_LIMIT]으로, 크기는 [FRAME_BASE64_BUDGET]으로 자른다. 둘 다
     필요한 이유는 GMS가 **요청 크기**에서 끊는데 장당 크기가 영상에 따라 배로
     달라지기 때문이다 — 개수만 막으면 어떤 영상에서는 그대로 400이 된다.
+
+    `timeline`(편집 분석이 남긴 점수 타임라인)을 주면 무슨 일이 일어난 순간에서
+    뽑는다. 없으면 등분한다.
     """
     frames: list[bytes] = []
     count = max(1, min(FRAME_LIMIT, count))
-    for at in frame_timestamps(video_duration_seconds(video_url), count):
+    duration = video_duration_seconds(video_url)
+    moments = (
+        frame_timestamps(duration, count)
+        if not timeline
+        else panel_timestamps(timeline, duration, count)
+    )
+    for at in moments:
         # -ss를 -i 앞에 두면 빠른 탐색이다. 뒤에 두면 앞부터 디코딩한다.
         jpeg = _run(
             [
@@ -373,12 +469,19 @@ def build_script(
     *,
     count: int = FRAME_COUNT,
     frames: Sequence[bytes] | None = None,
+    timeline: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """프레임 + 자막 → 4컷 구성과 인물·배경 시트.
 
     `frames`를 주면 추출을 건너뛴다 — 테스트와 재시도용이다.
+    `timeline`은 편집 분석이 남긴 점수 타임라인이다 — 주면 그 영상에서 실제로
+    무슨 일이 일어난 순간을 프레임으로 쓴다.
     """
-    images = list(frames) if frames is not None else extract_frames(video_url, count)
+    images = (
+        list(frames)
+        if frames is not None
+        else extract_frames(video_url, count, timeline)
+    )
     spoken = lines_to_text(lines) or "(대사 기록이 없다 — 프레임만 보고 짜라.)"
     parts: list[dict[str, Any]] = [
         {"text": f"{SCRIPT_PROMPT}\n\n대사 기록\n{spoken}"}

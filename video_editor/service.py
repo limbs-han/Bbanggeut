@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import backend_access, backend_events
 from . import comic
 from .adaptive_cli import build_adaptive_recipe
+from .adaptive_selector import build_timeline
 from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
 from .comic_jobs import ComicJobManager, ComicQueueFull
 
@@ -779,8 +780,37 @@ def _comic_panel_key(video_id: str) -> str:
     return f"comic/{video_id}/panel.png"
 
 
+def _comic_saved_key(video_id: str) -> str:
+    """그림과 함께 남긴 구성·저장 시각. 그림이 있다는 증거로도 쓴다."""
+    return f"comic/{video_id}/panel.json"
+
+
 def _comic_script_key(video_id: str) -> str:
     return f"comic/{video_id}/script.json"
+
+
+def _comic_frame_timeline(video_id: str) -> list[dict[str, Any]] | None:
+    """만화가 프레임을 고를 점수 타임라인. 분석이 없으면 None.
+
+    **왜 분석을 다시 돌리지 않나**: 편집(AI 자동 컷·줌)이 이미 같은 영상을 분석해
+    `edit-analyses/{video_id}/*.json`에 남겨 두었다. 소리(yamnet·audio)와 영상
+    (video·expression) 네 종이 다 있어야 타임라인을 만들 수 있고, 하나라도 없으면
+    `_load_cached_analyses`가 None을 준다. 그때는 만화가 등분으로 되돌아간다 —
+    분석을 아직 안 돌린 영상이라고 만화를 못 만들 이유는 없다.
+    """
+    try:
+        analyses = _load_cached_analyses(video_id)
+    except (BotoCoreError, ClientError, OSError):
+        return None
+    if analyses is None:
+        return None
+    try:
+        return build_timeline(
+            analyses["yamnet"], analyses["audio"], analyses.get("video")
+        )
+    except (KeyError, TypeError, ValueError):
+        # 분석 파일이 예전 판이라 모양이 다를 수 있다. 만화를 막을 일은 아니다.
+        return None
 
 
 def _render_and_store_comic(
@@ -811,7 +841,7 @@ def _render_and_store_comic(
     # 상태에 남긴다.
     store.put_bytes(_comic_panel_key(video_id), png, "image/png")
     store.put(
-        f"comic/{video_id}/panel.json",
+        _comic_saved_key(video_id),
         {
             "videoId": video_id,
             "cuts": cuts,
@@ -850,6 +880,7 @@ def comic_script(
             request.video_url,
             request.lines,
             count=request.frame_count or comic.FRAME_COUNT,
+            timeline=_comic_frame_timeline(video_id),
         )
     except comic.ComicContractError as failure:
         raise HTTPException(status_code=422, detail=str(failure)) from failure
@@ -947,7 +978,7 @@ def comic_image_status(
     tracked = comic_jobs.get(video_id)
     url = None
     try:
-        saved = store.get_json(f"comic/{video_id}/panel.json")
+        saved = store.get_json(_comic_saved_key(video_id))
     except (BotoCoreError, ClientError, OSError):
         saved = None
     if saved is not None:
@@ -993,3 +1024,33 @@ def comic_image_status(
         "savedAt": None,
         "cuts": cuts,
     }
+
+
+@app.delete("/v1/comic/{video_id}", status_code=204)
+def delete_comic(video_id: str, http_request: Request = None) -> Response:
+    """만화를 통째로 버린다 — 그림, 구성, 인물·배경 시트까지.
+
+    **왜 구성까지 지우나**: 구성만 남기면 앱이 상태를 물었을 때 `cuts`가 그대로
+    와서, 지운 만화가 "그림 없는 만화"로 목록에 되살아난다. 지운다는 말은 그
+    영상에 만화가 없던 상태로 되돌린다는 뜻이다.
+
+    없는 것을 지우라고 해도 204다 — 목록을 보고 눌렀는데 그 사이 다른 가족이
+    지웠다면 사용자가 원한 상태가 이미 이뤄진 것이다(초안 삭제와 같은 판단).
+    """
+    _require_video_access(http_request, video_id)
+    if not comic_jobs.discard(video_id):
+        raise HTTPException(
+            status_code=409,
+            detail="만화를 만드는 중입니다. 다 만든 뒤에 지울 수 있습니다.",
+        )
+    try:
+        for key in (
+            _comic_panel_key(video_id),
+            _comic_saved_key(video_id),
+            _comic_script_key(video_id),
+            _comic_sheet_key(video_id),
+        ):
+            store.delete(key)
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(status_code=503, detail=f"MinIO 삭제 실패: {failure}") from failure
+    return Response(status_code=204)

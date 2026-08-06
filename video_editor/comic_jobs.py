@@ -89,6 +89,21 @@ class ComicJobManager:
             )
             return job, position
 
+    def discard(self, video_id: str) -> bool:
+        """작업 기록을 지운다. 지웠으면 True, 그리는 중이라 못 지웠으면 False.
+
+        **왜 그리는 중이면 거절하나**: 기록만 지워도 작업자 스레드는 계속 그린다.
+        끝나면 `panel.png`를 다시 쓰므로, 지운 만화가 잠시 뒤 혼자 되살아난다.
+        스레드를 중간에 세울 방법이 없으니 끝나기를 기다리게 하는 것이 맞다.
+        """
+        with self._lock:
+            job = self._jobs.get(video_id)
+            if job is not None and job.status in ("queued", "running"):
+                return False
+            self._jobs.pop(video_id, None)
+            self._pending.pop(video_id, None)
+            return True
+
     def submit(
         self,
         video_id: str,

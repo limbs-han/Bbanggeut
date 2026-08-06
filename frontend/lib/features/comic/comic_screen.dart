@@ -31,6 +31,7 @@ class ComicScreen extends StatefulWidget {
     required this.api,
     required this.video,
     this.controller,
+    this.seed,
   });
 
   final ApiClient api;
@@ -38,6 +39,9 @@ class ComicScreen extends StatefulWidget {
 
   /// 주입되면 그대로 쓴다. 위젯 테스트가 가짜 상태를 넣는 통로다.
   final ComicController? controller;
+
+  /// 부르는 쪽이 이미 받아 둔 만화. 있으면 화면이 곧바로 완성 상태로 열린다.
+  final ComicSeed? seed;
 
   @override
   State<ComicScreen> createState() => _ComicScreenState();
@@ -56,6 +60,7 @@ class _ComicScreenState extends State<ComicScreen> {
       ComicController(
         gateway: defaultComicGateway(widget.api),
         videoId: widget.video.id,
+        seed: widget.seed,
         // 자막을 이 화면에서 만들 수 있게 원본 통로를 넘긴다. 편집 화면과 같은
         // 캐시를 쓰므로 이미 받아 둔 영상이면 곧바로 전사로 넘어간다.
         sourceProvider: (onProgress) => VideoSourceCache.ensure(
@@ -397,7 +402,7 @@ class _ComicScreenState extends State<ComicScreen> {
                     key: const ValueKey('comic-edit-cuts'),
                     onPressed: _saving ? null : _controller.backToCuts,
                     icon: const Icon(Icons.edit_rounded),
-                    label: const Text('대사 고치기'),
+                    label: const Text('수정하기'),
                   ),
                 ),
               ],

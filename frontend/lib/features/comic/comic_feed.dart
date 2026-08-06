@@ -19,10 +19,12 @@ import '../../core/api_client.dart';
 import '../../core/models.dart';
 import '../../ui/widgets.dart';
 import 'comic_comment_sheet.dart';
+import 'comic_controller.dart';
 import 'comic_gateway.dart';
 import 'comic_screen.dart';
 import 'comic_script.dart';
 import 'comic_viewer.dart';
+import 'panel_subtitle.dart';
 
 class ComicFeed extends StatefulWidget {
   const ComicFeed({
@@ -167,7 +169,7 @@ class _ComicFeedState extends State<ComicFeed> {
           title: comic.title,
           image: _images[comic.videoId],
           cuts: _cuts[comic.videoId],
-          // 크게 보다가 대사를 고치고 싶을 수 있다. 뷰어를 닫고 편집으로 넘긴다.
+          // 크게 보다가 고치고 싶을 수 있다. 뷰어를 닫고 편집으로 넘긴다.
           onEdit: widget.videoById(comic.videoId) == null
               ? null
               : () {
@@ -179,6 +181,53 @@ class _ComicFeedState extends State<ComicFeed> {
     );
   }
 
+  /// 만화를 지운다. 그림·구성과 좋아요·댓글이 함께 사라지고 원본 영상은 남는다.
+  ///
+  /// 낙관적으로 지우지 않는다 — 좋아요와 달리 되돌릴 수 없는 동작이라, 서버가
+  /// 지웠다고 답한 뒤에 목록에서 없애야 "사라졌다 다시 나타나는" 일이 없다.
+  Future<void> _delete(VaultComic comic) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('comic-delete-dialog'),
+        title: const Text('만화를 지울까요?'),
+        content: Text(
+          '‘${comic.title}’ 만화와 거기 달린 좋아요·댓글이 사라져요.\n'
+          '원본 영상은 그대로 있어요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            key: const Key('comic-delete-confirm'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('지우기'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.api.deleteComic(comic.videoId);
+    } catch (failure) {
+      if (mounted) showAppSnack(context, '$failure', error: true);
+      return;
+    }
+    if (!mounted) return;
+    // 받아 둔 그림과 구성도 버린다. 남겨 두면 같은 영상으로 만화를 다시 만들
+    // 때까지 지운 그림이 캐시에서 되살아난다.
+    setState(() {
+      _images.remove(comic.videoId);
+      _cuts.remove(comic.videoId);
+      _edited.remove(comic.videoId);
+    });
+    showAppSnack(context, '만화를 지웠어요.');
+    await widget.onChanged?.call();
+  }
+
   /// 만화 화면을 연다 — 대사를 고쳐 다시 만들거나 저장·공유하는 곳이다.
   Future<void> _open(VaultComic comic) async {
     final video = widget.videoById(comic.videoId);
@@ -186,15 +235,29 @@ class _ComicFeedState extends State<ComicFeed> {
       showAppSnack(context, '원본 영상을 찾지 못했어요.');
       return;
     }
+    // 카드를 그리려고 이미 받아 둔 그림과 구성을 들려 보낸다. 안 그러면 편집
+    // 화면이 같은 상태 조회와 같은 PNG를 처음부터 다시 받는다.
+    final image = _images[comic.videoId];
+    final cuts = _cuts[comic.videoId];
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ComicScreen(api: widget.api, video: video),
+        builder: (_) => ComicScreen(
+          api: widget.api,
+          video: video,
+          seed: image == null || cuts == null || cuts.isEmpty
+              ? null
+              : ComicSeed(image: image, cuts: cuts, savedAt: comic.madeAt),
+        ),
       ),
     );
     if (!mounted) return;
-    // 다시 만들었을 수 있으니 그림을 버리고 다시 받는다.
-    setState(() => _images.remove(comic.videoId));
+    // 다시 만들었을 수 있으니 그림을 버리고 다시 받는다. 구성도 함께 버린다 —
+    // 남겨 두면 방금 고친 대사가 아니라 예전 대사가 그림 위에 계속 얹힌다.
+    setState(() {
+      _images.remove(comic.videoId);
+      _cuts.remove(comic.videoId);
+    });
     await widget.onChanged?.call();
   }
 
@@ -221,6 +284,7 @@ class _ComicFeedState extends State<ComicFeed> {
           key: ValueKey('comic-card-${comic.videoId}'),
           comic: comic,
           image: _images[comic.videoId],
+          cuts: _cuts[comic.videoId],
           loaded: _images.containsKey(comic.videoId),
           madeAtLabel: comic.madeAt == null
               ? null
@@ -230,6 +294,9 @@ class _ComicFeedState extends State<ComicFeed> {
           onLike: () => _toggleLike(comic),
           onComments: () => _openComments(comic),
           onRename: () => _rename(comic),
+          // 지울 수 있는지는 서버가 만화마다 판정해 준다(만든 사람 또는 OWNER).
+          // 앱이 역할로 다시 계산하면 규칙이 두 곳에 생긴다.
+          onDelete: comic.canDelete ? () => _delete(comic) : null,
         );
       },
     );
@@ -241,6 +308,7 @@ class _ComicCard extends StatelessWidget {
     super.key,
     required this.comic,
     required this.image,
+    required this.cuts,
     required this.loaded,
     required this.madeAtLabel,
     required this.onView,
@@ -248,10 +316,15 @@ class _ComicCard extends StatelessWidget {
     required this.onLike,
     required this.onComments,
     required this.onRename,
+    required this.onDelete,
   });
 
   final VaultComic comic;
   final Uint8List? image;
+
+  /// 저장된 4컷 구성. 대사가 여기 있다 — 그림 위에 자막 띠로 얹는다. 없으면
+  /// 그림만 보여 준다(구성을 남기기 전에 만든 옛 만화).
+  final List<ComicCut>? cuts;
 
   /// 받기를 이미 마쳤는가. [image]가 null인 것은 "아직"과 "못 받았다" 둘 다일 수
   /// 있어서, 진행 표시와 오류 표시를 가르려면 이 값이 필요하다.
@@ -261,11 +334,15 @@ class _ComicCard extends StatelessWidget {
   /// 크게 보기 — 그림과 대사만 보여 준다.
   final VoidCallback onView;
 
-  /// 대사 고치기 — 편집 화면으로 간다.
+  /// 수정하기 — 편집 화면으로 간다.
   final VoidCallback onOpen;
   final VoidCallback onLike;
   final VoidCallback onComments;
   final VoidCallback onRename;
+
+  /// 만화 지우기. null이면 버튼을 감춘다 — OWNER가 아닌 사람에게는 누를 수 없는
+  /// 버튼을 보이지 않는다.
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) => SoftCard(
@@ -312,6 +389,21 @@ class _ComicCard extends StatelessWidget {
                   color: AppColors.muted,
                 ),
               ),
+              // 삭제는 아래 버튼 줄이 아니라 여기 둔다. 아래는 이미 '수정하기'와
+              // '크게 보기'가 폭을 다 쓰고 있어서 셋째 버튼을 넣으면 좁은 기기에서
+              // 글자가 꺾인다(만화 화면에서 겪은 문제다).
+              if (onDelete != null)
+                IconButton(
+                  key: ValueKey('comic-delete-${comic.videoId}'),
+                  tooltip: '만화 지우기',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onDelete,
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    size: 20,
+                    color: AppColors.muted,
+                  ),
+                ),
             ],
           ),
         ),
@@ -324,8 +416,13 @@ class _ComicCard extends StatelessWidget {
             onTap: onView,
             child: ColoredBox(
               color: AppColors.surfaceWarm,
+              // 대사를 그림 위에 얹는다. 만화 PNG에는 말풍선이 없어서(그림
+              // 프롬프트가 막는다) 띠를 얹지 않으면 피드에서는 말 없는 그림
+              // 넉 장으로만 보인다 — 편집 화면에 들어가야 대사가 보였다.
               child: image != null
-                  ? Image.memory(image!, fit: BoxFit.contain)
+                  ? (cuts == null || cuts!.isEmpty
+                        ? Image.memory(image!, fit: BoxFit.contain)
+                        : ComicCanvas(image: image!, cuts: cuts!))
                   : Center(
                       child: loaded
                           ? const Text(
@@ -389,7 +486,7 @@ class _ComicCard extends StatelessWidget {
                 key: ValueKey('comic-edit-${comic.videoId}'),
                 onPressed: onOpen,
                 icon: const Icon(Icons.edit_rounded, size: 16),
-                label: const Text('대사 고치기'),
+                label: const Text('수정하기'),
               ),
               TextButton.icon(
                 key: ValueKey('comic-view-${comic.videoId}'),

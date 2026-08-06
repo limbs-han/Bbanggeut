@@ -917,6 +917,12 @@ class ApiClient {
   Future<void> deleteComicComment(String videoId, String commentId) async =>
       _delete('/api/videos/$videoId/comic/comments/$commentId');
 
+  /// 만화를 지운다 — 그림·구성과 좋아요·댓글이 함께 사라진다. 원본 영상은
+  /// 남는다. 만든 사람 또는 금고 OWNER만 할 수 있고, 그리는 중이면
+  /// 409(COMIC_BUSY)다.
+  Future<void> deleteComic(String videoId) async =>
+      _delete('/api/videos/$videoId/comic');
+
   /// presigned URL에서 바이트를 그대로 받는다.
   ///
   /// 서명이 URL 안에 있으므로 **Bearer 헤더를 붙이면 안 된다** — MinIO는 서명과

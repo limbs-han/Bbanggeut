@@ -18,6 +18,9 @@ import java.util.UUID;
  * @param likeCount    좋아요 수
  * @param likedByMe    지금 보는 사람이 눌렀는가
  * @param commentCount 댓글 수
+ * @param canDelete    지금 보는 사람이 이 만화를 지울 수 있는가(만든 사람 또는
+ *                     금고 OWNER). 앱은 이 값으로 삭제 버튼을 보이고 감춘다 —
+ *                     규칙을 앱이 다시 계산하면 서버와 어긋난다
  */
 public record VaultComicResponse(
     UUID videoId,
@@ -26,6 +29,7 @@ public record VaultComicResponse(
     Instant madeAt,
     int likeCount,
     boolean likedByMe,
-    int commentCount
+    int commentCount,
+    boolean canDelete
 ) {
 }
