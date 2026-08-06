@@ -454,15 +454,28 @@ class MemoryThumbnail extends StatelessWidget {
     return (math.max(width, height * 16 / 9) * ratio).round();
   }
 
-  Widget _fallback(BuildContext context) => video.thumbnailUrl != null
-      ? Image.network(
-          video.thumbnailUrl!,
-          fit: BoxFit.cover,
-          cacheWidth: _decodeWidth(context),
-          errorBuilder: (_, _, _) =>
-              const FamilyReferenceImage(borderRadius: 0),
-        )
-      : const FamilyReferenceImage(borderRadius: 0);
+  /// 서버가 만들어 둔 미리보기. 없거나 실패하면 [onMissing]으로 넘어간다.
+  ///
+  /// **왜 이것을 먼저 쓰는가**: 예전에는 기기가 원본을 열어 프레임을 뽑는 쪽이
+  /// 먼저였고, 이 값은 그게 실패했을 때의 대체였다(그런데 서버가 늘 null을
+  /// 보내서 한 번도 쓰이지 않았다). 기기가 뽑으려면 원본 MP4를 받아야 하는데
+  /// 실측(2026-08-06, 운영 로그) 한 장에 **6.5MB**다. 서버가 만든 JPEG은 그
+  /// 300분의 1이라, 있으면 이쪽이 언제나 낫다.
+  Widget _serverThumbnail(BuildContext context, Widget Function() onMissing) {
+    final url = video.thumbnailUrl;
+    if (url == null) return onMissing();
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      cacheWidth: _decodeWidth(context),
+      // 아직 안 만들어진 영상은 404다. 그때만 기기에서 뽑는 예전 길로 간다 —
+      // 서버가 URL을 줄 때 존재를 확인하지 않기 때문에 정상 경로다.
+      errorBuilder: (_, _, _) => onMissing(),
+    );
+  }
+
+  Widget _fallback(BuildContext context) =>
+      const FamilyReferenceImage(borderRadius: 0);
 
   Widget _frame(BuildContext context, String path) => Image.file(
     File(path),
@@ -475,26 +488,29 @@ class MemoryThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 이미 뽑아 둔 프레임이 있으면 [FutureBuilder]를 태우지 않는다.
-    // 스크롤을 되돌릴 때마다 한 프레임 대체 이미지가 스쳤고, 그 대체 이미지가
-    // 원격 썸네일이면 스크롤 도중에 네트워크 요청까지 새로 나갔다.
-    final ready = VideoThumbnailCache.readyPath(video.id);
+    // 기기에서 뽑는 길. 서버 그림이 없을 때만 탄다.
+    //
+    // 이미 뽑아 둔 프레임이 있으면 [FutureBuilder]를 태우지 않는다. 스크롤을
+    // 되돌릴 때마다 한 프레임 대체 이미지가 스쳤고, 그 대체 이미지가 원격
+    // 썸네일이면 스크롤 도중에 네트워크 요청까지 새로 나갔다.
+    Widget extractOnDevice() {
+      final ready = VideoThumbnailCache.readyPath(video.id);
+      if (ready != null) return _frame(context, ready);
+      return FutureBuilder<String?>(
+        future: VideoThumbnailCache.frameAtOneMinute(api, video),
+        builder: (context, snapshot) {
+          final path = snapshot.data;
+          return path == null ? _fallback(context) : _frame(context, path);
+        },
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(13),
       child: SizedBox(
         width: width,
         height: height,
-        child: ready != null
-            ? _frame(context, ready)
-            : FutureBuilder<String?>(
-                future: VideoThumbnailCache.frameAtOneMinute(api, video),
-                builder: (context, snapshot) {
-                  final path = snapshot.data;
-                  return path == null
-                      ? _fallback(context)
-                      : _frame(context, path);
-                },
-              ),
+        child: _serverThumbnail(context, extractOnDevice),
       ),
     );
   }

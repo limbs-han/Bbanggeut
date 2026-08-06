@@ -529,9 +529,9 @@ class _CutDialogueCard extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
+                // 기승전결 한 낱말이 보통이지만 모델이 길게 쓸 때도 있다.
+                // 잘라 내면 무슨 대목인지가 사라지므로 줄을 넘긴다.
                 cut.beat,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -544,10 +544,14 @@ class _CutDialogueCard extends StatelessWidget {
         const SizedBox(height: 8),
         // 장면 설명은 읽기 전용 맥락이다 — 이 컷이 어떤 그림인지 알아야 대사가
         // 맞는지 판단할 수 있다. 고치는 대상은 아래 대사 칸뿐이다.
+        //
+        // **자르지 않는다.** 두 줄로 묶고 말줄임표를 붙였더니 문장이 늘 끝에서
+        // 끊겼다 — 모델이 쓰는 장면 묘사는 "누가 무엇을 하고 있고, 그 뒤에서
+        // 누가 무엇을 한다" 꼴이라 뒷절이 통째로 사라진다. 그러면 이 화면이
+        // 존재하는 이유(그림이 어떻게 나올지 보고 대사를 판단하는 것)가
+        // 없어진다. 목록은 어차피 세로로 스크롤되므로 길이를 아낄 자리가 아니다.
         Text(
           cut.scene,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontSize: 12,
             height: 1.35,
@@ -563,7 +567,9 @@ class _CutDialogueCard extends StatelessWidget {
           // 담는데 두 화면이 다른 길이를 쓰면 한쪽에서 고친 대사가 다른 쪽에서
           // 잘린다.
           maxLength: 40,
-          maxLines: 2,
+          // 칸을 늘려 가며 다 보여 준다. 두 줄로 묶어 두면 좁은 기기에서 40자를
+          // 채운 대사의 끝이 스크롤 밖으로 밀려, 자기가 쓴 글을 못 읽는다.
+          maxLines: null,
           minLines: 1,
           textInputAction: TextInputAction.next,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),

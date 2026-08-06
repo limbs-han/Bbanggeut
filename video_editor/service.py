@@ -34,6 +34,7 @@ from .analysis_jobs import (
     analysis_ready,
 )
 from .comic_jobs import ComicJobManager, ComicQueueFull
+from .thumbnails import extract_thumbnail
 
 
 FIXTURE_ROOT = Path(
@@ -412,6 +413,40 @@ jobs = AnalysisJobManager(
         job.video_id, job.error or "", job.requested_by
     ),
 )
+
+
+def _is_backend_service_call(http_request: Request | None) -> bool:
+    """백엔드가 사람 없이 부른 호출인가.
+
+    **왜 사용자 토큰으로는 안 되나**: 목록 썸네일은 영상이 READY가 된 순간
+    백엔드가 스스로 만들라고 시킨다. 그 시점에는 청한 사람이 없다 — 기기가
+    업로드를 끝냈을 뿐이다. 백필도 마찬가지로 사람 없이 돈다.
+
+    그래서 `iss=wj-server` + `typ=editor-service` 서비스 토큰을 따로 받는다.
+    이 토큰은 백엔드만 만들 수 있고(같은 EDITOR_JWT_SECRET), 금고 범위를 보지
+    않는다 — 대신 **어느 영상을 읽을지는 백엔드가 서명한 URL이 정한다.** 워커는
+    받은 URL을 읽어 편집 버킷에 쓸 뿐이라 이 경로로 남의 영상을 꺼낼 수 없다.
+    """
+    if EDITOR_JWT_SECRET is None:
+        return False
+    header = (
+        http_request.headers.get("authorization")
+        if http_request is not None
+        else None
+    )
+    if not header or not header.lower().startswith("bearer "):
+        return False
+    try:
+        claims = jwt.decode(
+            header[len("bearer ") :].strip(),
+            EDITOR_JWT_SECRET,
+            algorithms=["HS256"],
+            issuer="wj-server",
+            options={"require": ["exp", "iss"]},
+        )
+    except jwt.PyJWTError:
+        return False
+    return claims.get("typ") == "editor-service"
 
 
 def _require_video_access(http_request: Request | None, video_id: str) -> None:
@@ -1093,6 +1128,56 @@ def comic_image_status(
         "savedAt": None,
         "cuts": cuts,
     }
+
+
+class ThumbnailRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    video_url: str = Field(alias="videoUrl", min_length=1)
+    """원본 presigned URL. ffmpeg가 그대로 읽는다 — 우리가 내려받지 않는다."""
+
+    duration_ms: int | None = Field(default=None, alias="durationMs", ge=0)
+    """길이를 알면 가운데를 집는다. 모르면 앞쪽으로 물러선다."""
+
+
+def _thumbnail_key(video_id: str) -> str:
+    """디렉터리 한 겹을 두는 이유: 백엔드가 영상을 지울 때 `thumbnails/{id}/`를
+    접두어로 통째로 지운다(ObjectStorageService.EDIT_DATA_PREFIXES). 파일을
+    바로 두면 그 정리에 걸리지 않아 지운 영상의 그림만 버킷에 남는다.
+    """
+    return f"thumbnails/{video_id}/frame.jpg"
+
+
+@app.put("/v1/videos/{video_id}/thumbnail")
+def put_thumbnail(
+    video_id: str, request: ThumbnailRequest, http_request: Request = None
+) -> dict[str, Any]:
+    """목록용 미리보기 한 장을 만들어 편집 버킷에 남긴다.
+
+    왜 서버가 만드는지는 [thumbnails] 모듈 설명에 있다 — 요약하면 앱이 만들면
+    한 장에 6.5MB를 받는다.
+
+    같은 영상에 다시 불러도 안전하다(덮어쓴다). 백필이 그 점에 기대어 실패한
+    것만 다시 돌린다.
+    """
+    # 백엔드가 사람 없이 부르는 경로다(업로드 완료 직후·백필). 사용자 토큰도
+    # 받는다 — 앱이 자기 영상의 그림을 다시 만들게 할 여지를 남긴다.
+    if not _is_backend_service_call(http_request):
+        _require_video_access(http_request, video_id)
+    try:
+        jpeg = extract_thumbnail(request.video_url, request.duration_ms)
+    except comic.ComicError as failure:
+        raise HTTPException(status_code=502, detail=str(failure)) from failure
+
+    key = _thumbnail_key(video_id)
+    try:
+        store.put_bytes(key, jpeg, "image/jpeg")
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(
+            status_code=503, detail=f"MinIO 저장 실패: {failure}"
+        ) from failure
+    print(f"[thumbnail] {video_id} bytes={len(jpeg)}", flush=True)
+    return {"videoId": video_id, "key": key, "bytes": len(jpeg)}
 
 
 @app.delete("/v1/comic/{video_id}", status_code=204)

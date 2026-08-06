@@ -12,6 +12,8 @@
 /// 이모지·카테고리도 `core/notification_visuals.dart`에 모아 두었다.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../app/app_controller.dart';
@@ -57,11 +59,42 @@ Future<void> openNotificationTarget(
         : await controller.api.getVideo(videoId);
   }
 
-  Future<void> pushWithVideo(Widget Function(VideoMemory) build) async {
+  /// 영상 한 건을 여는 목적지의 화면. [notificationBeneathFor]가 고른 화면을
+  /// 세우는 데도 쓴다.
+  Widget screenFor(NotificationDestination target, VideoMemory video) =>
+      switch (target) {
+        NotificationDestination.videoDetail => VideoDetailScreen(
+          controller: controller,
+          video: video,
+        ),
+        NotificationDestination.comic => ComicScreen(
+          api: controller.api,
+          video: video,
+        ),
+        _ => throw ArgumentError('영상으로 열 수 없는 목적지입니다: $target'),
+      };
+
+  /// [notificationBeneathFor]가 정한 화면을 먼저 깔고 목적지를 그 위에 연다.
+  ///
+  /// 깔리는 화면은 **전환 없이** 넣는다. 두 화면이 잇달아 밀려 올라오면
+  /// 사용자가 누른 적 없는 화면이 스쳐 지나가 어수선하다.
+  Future<void> pushWithVideo(NotificationDestination destination) async {
     try {
       final video = await videoFor(resourceId!);
       if (!context.mounted) return;
-      await push(build(video));
+      final beneath = notificationBeneathFor(destination);
+      if (beneath != null) {
+        unawaited(
+          navigator.push<void>(
+            PageRouteBuilder(
+              pageBuilder: (_, _, _) => screenFor(beneath, video),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+          ),
+        );
+      }
+      await push(screenFor(destination, video));
     } catch (failure) {
       if (context.mounted) showAppSnack(context, '$failure', error: true);
     }
@@ -83,15 +116,11 @@ Future<void> openNotificationTarget(
         ),
       );
 
+    // 뒤로가기가 그 영상 상세로 떨어지도록 아래에 깔고 연다 — 이유는
+    // [notificationBeneathFor].
     case NotificationDestination.comic:
-      await pushWithVideo(
-        (video) => ComicScreen(api: controller.api, video: video),
-      );
-
     case NotificationDestination.videoDetail:
-      await pushWithVideo(
-        (video) => VideoDetailScreen(controller: controller, video: video),
-      );
+      await pushWithVideo(destination);
 
     case NotificationDestination.calendar:
       await push(ContentCalendarScreen(controller: controller));
