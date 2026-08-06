@@ -228,7 +228,7 @@ public class IotVideoService {
         String storageKey = "private/" + deviceId + "/events/" + videoId + ".mp4";
         int inserted = videoMapper.insertIotVideo(
             videoId, deviceId, request.triggerType(), VideoEventTypes.toCsv(eventTypes),
-            request.sourceEventId(), request.title().trim(),
+            request.sourceEventId(), storedTitle(eventTypes, request.title()),
             storageKey, request.contentType(), request.sizeBytes(), request.checksumSha256(),
             request.durationMs(), request.capturedStartAt(), request.capturedEndAt());
         return videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
@@ -243,6 +243,24 @@ public class IotVideoService {
             });
     }
 
+    /**
+     * 감지 영상의 제목은 서버가 정한다({@link VideoEventTypes#arrivalTitle}).
+     * 기기가 보낸 제목은 사람이 올린 영상에서만 쓴다.
+     */
+    private static String storedTitle(List<String> eventTypes, String requested) {
+        String canonical = VideoEventTypes.arrivalTitle(eventTypes);
+        return canonical != null ? canonical : requested.trim();
+    }
+
+    /**
+     * 같은 이벤트 ID로 다른 영상을 올리려는 것인지 본다.
+     *
+     * <p><b>제목은 보지 않는다.</b> 감지 영상의 제목은 이제 서버가 정하므로
+     * 기기가 보낸 문자열과 저장된 값이 다른 것이 정상이다. 예전 스크립트가
+     * 올려 둔 행을 재시도할 때도 마찬가지다 — 제목까지 견주면 그 재시도가
+     * 전부 409가 된다. 같은 영상인지는 체크섬·크기·길이·촬영 구간·유형이
+     * 이미 판정하고, 제목은 거기에 아무것도 보태지 않는다.
+     */
     private void verifySameUpload(
         VideoRow video,
         IotUploadUrlRequest request,
@@ -250,7 +268,6 @@ public class IotVideoService {
     ) {
         if (!video.triggerType().equals(request.triggerType())
             || !video.eventTypesCsv().equals(VideoEventTypes.toCsv(eventTypes))
-            || !video.title().equals(request.title().trim())
             || !video.contentType().equals(request.contentType())
             || video.sizeBytes() != request.sizeBytes()
             || video.durationMs() != request.durationMs()

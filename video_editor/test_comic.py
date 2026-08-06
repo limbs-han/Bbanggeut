@@ -375,7 +375,7 @@ class DiscardTest(unittest.TestCase):
         self.assertIsNone(manager.get("v1"))
 
     def test_discard_refuses_while_the_worker_is_drawing(self) -> None:
-        """기록만 지우면 작업자가 다 그린 뒤 panel.png를 다시 써서 되살아난다."""
+        """기록만 지우면 작업자가 다 그린 뒤 panel.jpg를 다시 써서 되살아난다."""
         manager = self._manager()
         manager._jobs["v1"] = ComicJob(video_id="v1", status="running")
 

@@ -252,6 +252,36 @@ class ComicFrameTimelineTest(unittest.TestCase):
             self.assertIsNone(service._comic_frame_timeline("old-video"))
 
 
+class ComicPanelKeyTest(unittest.TestCase):
+    """만화 그림이 PNG에서 JPEG으로 옮겨 가도 옛 만화가 사라지지 않는다.
+
+    운영에 있던 만화 일곱 장은 `panel.png`에 저장돼 있고 저장본(`panel.json`)에
+    `panelKey`가 없다. 새 코드가 JPEG 자리만 보면 그 일곱 장이 전부 "불러오지
+    못했어요"가 된다 — 다시 그리게 하면 그림값이 또 든다.
+    """
+
+    def test_new_comics_are_stored_as_jpeg(self) -> None:
+        self.assertTrue(service._comic_panel_key("v1").endswith("/panel.jpg"))
+
+    def test_a_saved_comic_is_read_from_the_key_it_recorded(self) -> None:
+        saved = {"panelKey": "comic/v1/panel.jpg"}
+        self.assertEqual(
+            service._comic_stored_panel_key("v1", saved), "comic/v1/panel.jpg"
+        )
+
+    def test_a_comic_made_before_the_switch_still_resolves_to_its_png(self) -> None:
+        # panelKey가 없는 저장본 = JPEG 전환 이전에 만든 만화.
+        self.assertEqual(
+            service._comic_stored_panel_key("v1", {"savedAt": "2026-08-05T21:25:00Z"}),
+            "comic/v1/panel.png",
+        )
+
+    def test_a_missing_save_record_falls_back_to_the_png_slot(self) -> None:
+        self.assertEqual(
+            service._comic_stored_panel_key("v1", None), "comic/v1/panel.png"
+        )
+
+
 _TEST_SECRET = "unit-test-signing-key-0123456789abcdef"
 
 
