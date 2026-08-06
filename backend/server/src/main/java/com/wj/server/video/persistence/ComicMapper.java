@@ -26,12 +26,21 @@ public interface ComicMapper {
      * 만화가 완성될 때 부른다. 이미 있으면 만든 시각을 덮지 않는다 — 다시 그린
      * 것도 같은 만화이고, 피드 순서가 재생성 때마다 맨 위로 튀어 오르면
      * 사용자가 만든 순서를 잃는다.
+     *
+     * <p>만든 사람도 같은 이유로 덮지 않는다. 가족이 남의 만화를 다시 그렸다고
+     * 만든 사람이 넘어가면, 원래 만든 사람이 자기 만화를 지울 수 없게 된다.
+     * 다만 비어 있으면 채운다 — V45 이전에 만들어 만든 사람을 모르는 만화가
+     * 다시 그려지면 그때 주인을 갖는다.
      */
     @Insert("""
-        INSERT INTO comics (video_id) VALUES (#{videoId})
-        ON CONFLICT (video_id) DO NOTHING
+        INSERT INTO comics (video_id, created_by) VALUES (#{videoId}, #{createdBy})
+        ON CONFLICT (video_id) DO UPDATE
+           SET created_by = COALESCE(comics.created_by, EXCLUDED.created_by)
         """)
-    int upsert(@Param("videoId") UUID videoId);
+    int upsert(
+        @Param("videoId") UUID videoId,
+        @Param("createdBy") UUID createdBy
+    );
 
     /**
      * 금고의 만화를 최신순으로. 좋아요·댓글 수를 함께 센다.
@@ -48,7 +57,11 @@ public interface ComicMapper {
                         WHERE l.video_id = c.video_id AND l.user_id = #{userId})
                    AS likedByMe,
                (SELECT COUNT(*) FROM comic_comments m WHERE m.video_id = c.video_id)
-                   AS commentCount
+                   AS commentCount,
+               -- created_by가 null인 옛 만화는 비교 결과도 null이다. 그대로
+               -- 두면 boolean 컬럼에 null이 실린다.
+               COALESCE(c.created_by = #{userId}, false) AS mine,
+               vm.role AS myRole
           FROM comics c
           JOIN videos v ON v.id = c.video_id
           JOIN vault_memberships vm ON vm.vault_id = v.vault_id
@@ -72,7 +85,14 @@ public interface ComicMapper {
                         WHERE l.video_id = c.video_id AND l.user_id = #{userId})
                    AS likedByMe,
                (SELECT COUNT(*) FROM comic_comments m WHERE m.video_id = c.video_id)
-                   AS commentCount
+                   AS commentCount,
+               COALESCE(c.created_by = #{userId}, false) AS mine,
+               -- 역할은 없을 수도 있다(멤버십이 끊긴 사이). 접근 권한은 부르는
+               -- 쪽이 이미 봤으므로 여기서는 null을 그대로 두고, 삭제 판정이
+               -- OWNER가 아닌 것으로 다룬다.
+               (SELECT vm.role FROM vault_memberships vm
+                 WHERE vm.vault_id = v.vault_id AND vm.user_id = #{userId}
+                   AND vm.status = 'ACTIVE') AS myRole
           FROM comics c
           JOIN videos v ON v.id = c.video_id
          WHERE c.video_id = #{videoId}
@@ -81,6 +101,16 @@ public interface ComicMapper {
         @Param("userId") UUID userId,
         @Param("videoId") UUID videoId
     );
+
+    /**
+     * 만화 행을 지운다. 좋아요와 댓글은 {@code comics(video_id)}를 참조하므로
+     * FK CASCADE로 함께 사라진다 — 여기서 따로 지우지 않는다.
+     *
+     * <p>원본 영상은 건드리지 않는다. 만화를 지우는 것은 "이 영상으로 만든 만화를
+     * 없앤다"이지 영상을 없애는 일이 아니다.
+     */
+    @Delete("DELETE FROM comics WHERE video_id = #{videoId}")
+    int delete(@Param("videoId") UUID videoId);
 
     /** 빈 제목은 null로 넣는다 — 그래야 앱이 원본 제목으로 되돌아간다. */
     @Update("""

@@ -6,6 +6,7 @@ import com.wj.server.video.application.ComicGatewayService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -71,6 +72,19 @@ public class ComicController {
     ) {
         return comicGatewayService.imageStatus(
             userId(jwt), jwt.getTokenValue(), videoId);
+    }
+
+    /**
+     * 만화 지우기. 그림·구성과 피드 행(좋아요·댓글 포함)이 함께 사라진다.
+     * 금고 OWNER만 할 수 있고, 원본 영상은 그대로 남는다.
+     */
+    @DeleteMapping("/{videoId}/comic")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
+        @AuthenticationPrincipal Jwt jwt,
+        @PathVariable UUID videoId
+    ) {
+        comicGatewayService.deleteComic(userId(jwt), jwt.getTokenValue(), videoId);
     }
 
     private UUID userId(Jwt jwt) {

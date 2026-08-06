@@ -150,6 +150,39 @@ class AnalysisFlowTest(unittest.TestCase):
         self.assertEqual("done", status["status"])
 
 
+class ComicFrameTimelineTest(unittest.TestCase):
+    """만화가 편집 분석을 재사용하는 자리.
+
+    같은 영상을 두 번 분석하지 않는다. 편집(자동 컷·줌)이 남긴 결과를 그대로 읽어
+    "무슨 일이 일어난 순간"에서 만화 프레임을 뽑는다.
+    """
+
+    def test_uses_the_analysis_the_editor_already_stored(self) -> None:
+        analyses = {
+            kind: service._read_analysis("05_20260727_162525", kind)
+            for kind in ("yamnet", "audio", "video", "expression")
+        }
+        with mock.patch.object(
+            service, "_load_cached_analyses", return_value=analyses
+        ):
+            timeline = service._comic_frame_timeline("video-5")
+
+        self.assertIsNotNone(timeline)
+        self.assertTrue(timeline)
+        self.assertIn("eventScore", timeline[0])
+
+    def test_falls_back_when_the_video_was_never_analyzed(self) -> None:
+        """분석을 안 돌린 영상이라고 만화를 못 만들 이유는 없다 — 등분으로 간다."""
+        with mock.patch.object(service, "_load_cached_analyses", return_value=None):
+            self.assertIsNone(service._comic_frame_timeline("new-video"))
+
+    def test_a_malformed_analysis_does_not_block_the_comic(self) -> None:
+        with mock.patch.object(
+            service, "_load_cached_analyses", return_value={"yamnet": {}, "audio": {}}
+        ):
+            self.assertIsNone(service._comic_frame_timeline("old-video"))
+
+
 _TEST_SECRET = "unit-test-signing-key-0123456789abcdef"
 
 

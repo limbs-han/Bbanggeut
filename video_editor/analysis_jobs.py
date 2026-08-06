@@ -89,12 +89,30 @@ class AnalysisJobManager:
         self,
         save: Callable[[str, str, dict[str, Any]], None],
         on_done: Callable[[AnalysisJob], None] | None = None,
+        on_start: Callable[[AnalysisJob], None] | None = None,
+        on_progress: Callable[[AnalysisJob], None] | None = None,
+        on_failed: Callable[[AnalysisJob], None] | None = None,
     ) -> None:
         self._jobs: dict[str, AnalysisJob] = {}
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._save = save
         self._on_done = on_done
+        self._on_start = on_start
+        self._on_progress = on_progress
+        self._on_failed = on_failed
+
+    @staticmethod
+    def _report(
+        hook: Callable[[AnalysisJob], None] | None, job: AnalysisJob
+    ) -> None:
+        """상태 보고는 최선 노력이다. 백엔드가 잠깐 죽었다고 분석을 멈추지 않는다."""
+        if hook is None:
+            return
+        try:
+            hook(job)
+        except Exception:  # noqa: BLE001 — 보고 실패는 분석과 무관하다
+            pass
 
     def get(self, video_id: str) -> AnalysisJob | None:
         with self._lock:
@@ -122,6 +140,9 @@ class AnalysisJobManager:
                 requested_by=requested_by,
             )
             self._jobs[video_id] = job
+        # 락 밖에서 보고한다 — 백엔드 호출은 네트워크라, 락을 쥔 채로 부르면
+        # 그동안 상태를 묻는 요청이 전부 멈춘다.
+        self._report(self._on_start, job)
         self._executor.submit(self._run, job, video_path, source_url)
         return job
 
@@ -135,16 +156,15 @@ class AnalysisJobManager:
                 try:
                     self._run_once(job, video_path, source_url)
                     job.status = "done"
-                    if self._on_done is not None:
-                        try:
-                            self._on_done(job)
-                        except Exception:  # noqa: BLE001 — 알림 실패는 무시
-                            pass
+                    self._report(self._on_done, job)
                     return
                 except Exception as failure:  # noqa: BLE001 — 상태로 보고한다
                     if attempt == 2:
                         job.status = "failed"
                         job.error = f"{type(failure).__name__}: {failure}"
+                        # 실패도 알려야 한다. 안 알리면 백엔드가 RUNNING을 든
+                        # 채로 남아 앱이 영원히 "분석 중"을 본다.
+                        self._report(self._on_failed, job)
                     else:
                         job.stage = "download" if source_url else "audio"
                         job.progress = 0.0
@@ -168,6 +188,9 @@ class AnalysisJobManager:
             job.progress = _STAGE_DONE[stage]
             if next_stage is not None:
                 job.stage = next_stage
+                # 마지막 단계는 알리지 않는다 — 곧바로 완료 보고가 뒤따르므로
+                # 진행률 1.0 직전 값을 한 번 더 보내는 왕복이 된다.
+                self._report(self._on_progress, job)
 
         if source_url is not None:
             with (

@@ -43,6 +43,7 @@ VaultComic comic({
   int likeCount = 2,
   bool likedByMe = false,
   int commentCount = 3,
+  bool canDelete = false,
 }) => VaultComic(
   videoId: videoId,
   title: title,
@@ -51,6 +52,7 @@ VaultComic comic({
   likeCount: likeCount,
   likedByMe: likedByMe,
   commentCount: commentCount,
+  canDelete: canDelete,
 );
 
 /// 만화가 아직 없는 서버. 그림을 청해도 네트워크를 건드리지 않는다 — 실제
@@ -113,6 +115,32 @@ void main() {
 
     expect(find.text('만든 만화가 없어요'), findsOneWidget);
     expect(find.byKey(const ValueKey('comic-feed')), findsNothing);
+  });
+
+  /// 지울 수 있는지는 서버가 만화마다 판정한다(만든 사람 또는 OWNER). 앱이
+  /// 역할로 다시 계산하면 규칙이 두 곳에 생겨 서버와 어긋난다.
+  testWidgets('지울 수 없는 만화에는 삭제 버튼이 없다', (tester) async {
+    await pump(tester, api: _FakeApi(), comics: [comic()]);
+
+    expect(find.byKey(const ValueKey('comic-delete-v1')), findsNothing);
+  });
+
+  testWidgets('지울 수 있는 만화에만 삭제 버튼이 뜬다', (tester) async {
+    await pump(tester, api: _FakeApi(), comics: [comic(canDelete: true)]);
+
+    expect(find.byKey(const ValueKey('comic-delete-v1')), findsOneWidget);
+  });
+
+  /// 되돌릴 수 없는 동작이다. 물어보지 않고 지우면 잘못 누른 손가락 하나로
+  /// 가족이 단 좋아요와 댓글까지 사라진다.
+  testWidgets('삭제는 확인을 먼저 묻는다', (tester) async {
+    await pump(tester, api: _FakeApi(), comics: [comic(canDelete: true)]);
+
+    await tester.tap(find.byKey(const ValueKey('comic-delete-v1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('comic-delete-dialog')), findsOneWidget);
+    expect(find.text('취소'), findsOneWidget);
   });
 
   testWidgets('제목·날짜·좋아요·댓글 수를 한 카드에 보여 준다', (tester) async {

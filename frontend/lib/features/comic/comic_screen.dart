@@ -20,6 +20,7 @@ import '../../core/api_client.dart';
 import '../../core/models.dart';
 import '../../core/video_source_cache.dart';
 import '../../ui/widgets.dart';
+import '../analysis/analysis_notice.dart';
 import 'comic_controller.dart';
 import 'comic_gateway.dart';
 import 'comic_script.dart';
@@ -31,6 +32,7 @@ class ComicScreen extends StatefulWidget {
     required this.api,
     required this.video,
     this.controller,
+    this.seed,
   });
 
   final ApiClient api;
@@ -38,6 +40,9 @@ class ComicScreen extends StatefulWidget {
 
   /// 주입되면 그대로 쓴다. 위젯 테스트가 가짜 상태를 넣는 통로다.
   final ComicController? controller;
+
+  /// 부르는 쪽이 이미 받아 둔 만화. 있으면 화면이 곧바로 완성 상태로 열린다.
+  final ComicSeed? seed;
 
   @override
   State<ComicScreen> createState() => _ComicScreenState();
@@ -56,6 +61,7 @@ class _ComicScreenState extends State<ComicScreen> {
       ComicController(
         gateway: defaultComicGateway(widget.api),
         videoId: widget.video.id,
+        seed: widget.seed,
         // 자막을 이 화면에서 만들 수 있게 원본 통로를 넘긴다. 편집 화면과 같은
         // 캐시를 쓰므로 이미 받아 둔 영상이면 곧바로 전사로 넘어간다.
         sourceProvider: (onProgress) => VideoSourceCache.ensure(
@@ -187,6 +193,11 @@ class _ComicScreenState extends State<ComicScreen> {
       child: Column(
         children: [
           if (!comicServerReady) const _SampleNotice(),
+          // 분석이 끝난 뒤에 만들면 만화 칸이 실제로 무슨 일이 있었던 순간에서
+          // 나온다. 진행 중이면 프레임을 등분해 뽑으므로, 알려 주고 기다릴
+          // 기회를 준다 — 예전에는 아무 표시가 없어서 사용자가 그 결과를 "AI가
+          // 원래 이 정도"로 받아들였다.
+          AnalysisNoticeBar(api: widget.api, videoId: widget.video.id),
           Expanded(child: _body()),
         ],
       ),
@@ -397,7 +408,7 @@ class _ComicScreenState extends State<ComicScreen> {
                     key: const ValueKey('comic-edit-cuts'),
                     onPressed: _saving ? null : _controller.backToCuts,
                     icon: const Icon(Icons.edit_rounded),
-                    label: const Text('대사 고치기'),
+                    label: const Text('수정하기'),
                   ),
                 ),
               ],

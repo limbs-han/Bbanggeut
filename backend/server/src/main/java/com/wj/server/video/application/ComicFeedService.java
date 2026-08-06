@@ -39,10 +39,15 @@ public class ComicFeedService {
         this.videoMapper = videoMapper;
     }
 
-    /** 만화가 완성됐다. 이미 있으면 만든 시각을 덮지 않는다. */
+    /**
+     * 만화가 완성됐다. 이미 있으면 만든 시각과 만든 사람을 덮지 않는다.
+     *
+     * <p>{@code createdBy}는 워커가 알려 준 요청자다. 알 수 없으면(옛 워커,
+     * 토큰 없는 경로) null이고, 그 만화는 OWNER만 지울 수 있다.
+     */
     @Transactional
-    public void register(UUID videoId) {
-        comicMapper.upsert(videoId);
+    public void register(UUID videoId, UUID createdBy) {
+        comicMapper.upsert(videoId, createdBy);
     }
 
     @Transactional(readOnly = true)
@@ -62,6 +67,36 @@ public class ComicFeedService {
             : request.title().strip();
         comicMapper.updateTitle(videoId, title);
         return toResponse(requireComic(userId, videoId));
+    }
+
+    /**
+     * 이 사람이 이 만화를 지울 수 있는가. 지우기 전에 따로 부르는 이유는, 워커
+     * 저장물을 먼저 지우고 행을 나중에 지우기 때문이다 — 권한을 마지막에 보면
+     * 권한 없는 사람이 남의 만화 그림을 먼저 날린 뒤 403을 받는다.
+     *
+     * <p>만든 사람 또는 금고 OWNER가 지운다({@link ComicRow#canDelete}). 만든
+     * 사람에게 여는 이유는 잘못 만든 만화를 자기 손으로 치울 수 있어야 해서고,
+     * OWNER에게도 여는 이유는 만든 사람이 나간 뒤에도 누군가는 정리할 수 있어야
+     * 하기 때문이다. V45 이전에 만들어 만든 사람을 모르는 만화는 OWNER만 지운다.
+     */
+    @Transactional(readOnly = true)
+    public void requireDeletable(UUID userId, UUID videoId) {
+        if (!requireComic(userId, videoId).canDelete()) {
+            throw new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                "만화를 만든 사람이나 OWNER만 삭제할 수 있습니다.");
+        }
+    }
+
+    /**
+     * 만화 행을 지운다. 좋아요·댓글은 FK CASCADE로 함께 사라진다.
+     *
+     * <p>이미 없어도 조용히 넘어간다 — 목록을 보고 눌렀는데 그 사이 다른 기기가
+     * 지웠다면 사용자가 원한 상태가 이미 이뤄진 것이다.
+     */
+    @Transactional
+    public void delete(UUID videoId) {
+        comicMapper.delete(videoId);
     }
 
     /**
@@ -165,7 +200,7 @@ public class ComicFeedService {
                 ? "4컷 만화" : row.sourceTitle());
         return new VaultComicResponse(
             row.videoId(), shown, custom, row.madeAt(),
-            row.likeCount(), row.likedByMe(), row.commentCount());
+            row.likeCount(), row.likedByMe(), row.commentCount(), row.canDelete());
     }
 
     /// 저장된 댓글을 그대로 읽어 응답으로 쓴다. 이름은 users 조인에서 오고
