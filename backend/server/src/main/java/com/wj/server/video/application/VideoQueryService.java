@@ -142,12 +142,20 @@ public class VideoQueryService {
         return videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(this::notFound);
     }
 
+    /**
+     * 목록·상세 응답 한 건.
+     *
+     * <p>{@code thumbnailUrl}은 있는지 확인하지 않고 서명만 해서 넣는다 — 이유는
+     * {@link ObjectStorageService#createThumbnailReadUrl}. 아직 그림이 없는
+     * 영상은 앱이 404를 받고 예전처럼 기기에서 프레임을 뽑는다.
+     */
     private VideoResponse toResponse(VideoRow video) {
         return new VideoResponse(
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
-            video.sourceEventId(), video.title(), video.description(), video.contentType(), video.sizeBytes(),
+            video.sourceEventId(), video.title(), video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
-            video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
+            video.capturedEndAt(), video.status(), video.favorite(),
+            objectStorageService.createThumbnailReadUrl(video.id()), video.createdAt(),
             VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));
     }
 

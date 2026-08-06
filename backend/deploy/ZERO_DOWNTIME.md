@@ -42,6 +42,15 @@ nginx (443) ── upstream william_james ──> 127.0.0.1:8081  (활성)
 `(user_id, dedupe_key)` 유일 제약으로, 스트림·삭제 워커는
 `FOR UPDATE SKIP LOCKED`로 중복이 무해하다.
 
+MQTT는 무해하지 않았다. 두 슬롯이 같은 client ID로 붙으면 브로커가 먼저 붙은
+쪽을 끊는다. 2026-08-04 05:20~05:21 로그에는 두 슬롯이 1.3초 주기로 서로를
+밀어낸 기록이 남아 있고, 그 동안 기기 명령과 텔레메트리가 함께 흔들렸다.
+
+슬롯 유닛이 `--app.mqtt.client-id=wj-backend-<포트>`로 덮어써 슬롯마다 다른 ID를
+쓴다. 커맨드라인 인자가 프로파일 YAML보다 우선하므로 `app.env`의
+`MQTT_CLIENT_ID`는 그대로 둔다. 브로커 인가는 username·role 기준이고 `wj-backend`
+계정에는 client ID 고정이 없으므로 권한에는 영향이 없다.
+
 ## 2026-08-04 실측
 
 전환 중 다운타임이 실제로 0인지 부하를 걸어 확인했다.

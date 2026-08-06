@@ -27,6 +27,20 @@ class EmbeddedLivePlayer extends StatefulWidget {
   final DeviceStatus? status;
   final bool houseMode;
 
+  /// 비활성으로 바뀐 순간 라이브를 놓아야 하는가.
+  ///
+  /// 홈은 다른 화면이 위를 덮으면 [isActive]를 내려 라이브를 끈다 — 보이지도
+  /// 않는 스트림이 배터리와 데이터를 먹으니 옳다. 문제는 전체 화면도 라우트를
+  /// push한다는 점이었다. 전체 화면은 이 위젯의 플레이어를 그대로 받아 그리는데,
+  /// 홈이 그 플레이어를 닫고 버려서 전체 화면을 누르면 라이브가 그 자리에서
+  /// 끊겼다. 전체 화면은 라이브가 계속 돌아야 하는 유일한 라우트다.
+  @visibleForTesting
+  static bool shouldSuspend({
+    required bool wasActive,
+    required bool isActive,
+    required bool fullscreenOpen,
+  }) => wasActive && !isActive && !fullscreenOpen;
+
   @override
   State<EmbeddedLivePlayer> createState() => _EmbeddedLivePlayerState();
 }
@@ -155,6 +169,15 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   /// 일부러 끊은 것이라 "연결이 끊어졌습니다"를 띄우면 안 된다.
   bool resyncing = false;
 
+  /// 전체 화면이 이 플레이어를 들고 위에 떠 있다.
+  ///
+  /// **왜 필요한가**: 홈은 다른 화면이 위를 덮으면 [EmbeddedLivePlayer.isActive]를
+  /// 내려 라이브를 끈다(배터리·데이터). 전체 화면도 라우트를 push하므로 그
+  /// 규칙에 걸려, 전체 화면이 방금 넘겨받은 플레이어를 홈이 닫고 버렸다 —
+  /// 전체 화면을 누르면 라이브가 그 자리에서 끊겼다. 전체 화면은 라이브를
+  /// 계속 봐야 하는 유일한 라우트라 이 구간만 규칙에서 뺀다.
+  bool fullscreenOpen = false;
+
   bool get hasPlayback => whepPlayer.connected;
 
   /// 지금 보는 그림이 실시간 맨 앞인가. LIVE 표시등이 이것을 그린다.
@@ -163,9 +186,19 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   String get liveChipLabel {
     if (paused) return 'LIVE로 돌아가기';
     if (!started) return 'LIVE 준비';
-    if (!hasPlayback) return connecting ? 'LIVE 연결 중' : 'LIVE 다시 연결';
+    // 한 번 붙었다가 끊긴 상태와 처음 여는 상태를 갈라 말한다 — 재연결 중이면
+    // 사용자가 아무것도 하지 않아도 된다는 것을 알아야 한다.
+    if (!hasPlayback) {
+      if (reconnecting) return 'LIVE 재연결 중';
+      return connecting ? 'LIVE 연결 중' : 'LIVE 다시 연결';
+    }
     return atLiveEdge ? 'LIVE' : '실시간으로';
   }
+
+  /// 보다가 끊겨 스스로 다시 붙고 있는 중인가.
+  bool get reconnecting =>
+      !hasPlayback && error == null && !closing && warmupDeadline != null &&
+      session != null;
 
   /// 세션을 만든 순간부터 첫 프레임까지가 전부 "준비 중"이다. 이 동안 재생
   /// 버튼이 살아 있으면 조급한 탭이 _restart()로 이어져 진행 중이던 워밍업을
@@ -188,10 +221,18 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   /// 기기 스피커 → 기기 마이크 → 앱 → 기기로 도는 순환을 앱이 끊어야 한다.
   Future<void> _applyPlaybackMute() => whepPlayer.setMuted(muted || talking);
 
+  /// 끊긴 뒤 스스로 다시 붙어 보는 시간.
+  ///
+  /// 서버가 미디어 끊김을 30초에 판정하고 120초까지 세션을 재연결 대기로
+  /// 살려 둔다(StreamMediaReconcileWorker). 앱이 더 짧게 포기하면 살아 있는
+  /// 세션을 앞에 두고 "다시 시도해 주세요"를 띄우게 되므로 같은 눈금을 쓴다.
+  static const _reconnectWindow = Duration(seconds: 120);
+
   void _handleWebRtcState() {
     if (!mounted) return;
     if (whepPlayer.connected) {
       webRtcWasConnected = true;
+      warmupDeadline = null;
       setState(() => error = null);
       return;
     }
@@ -200,9 +241,18 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       return;
     }
     webRtcWasConnected = false;
-    setState(() {
-      error = 'WebRTC 연결이 끊어졌습니다. 다시 시도해 주세요.';
-    });
+    // **막다른 길로 끝내지 않는다.** 실제로 잡히는 끊김의 대부분은 송출이 몇 초
+    // 밀린 것이고, 서버는 그동안 세션을 재연결 대기로 살려 둔다. 예전에는 여기서
+    // 곧바로 오류를 띄웠고, 사용자는 카메라를 깨우는 몇 초를 처음부터 다시
+    // 기다리며 라이브를 손으로 재시작해야 했다.
+    warmupDeadline ??= DateTime.now().add(_reconnectWindow);
+    setState(() => error = null);
+    // 재생이 붙은 뒤에는 폴링을 멈춰 두었으므로 다시 켠다 — 세션이 READY로
+    // 돌아오는 순간을 이것이 잡아 재생을 다시 연다.
+    pollTimer ??= Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _checkStatus(),
+    );
   }
 
   @override
@@ -214,7 +264,11 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       unawaited(_closeForDeviceChange());
       return;
     }
-    if (oldWidget.isActive && !widget.isActive) {
+    if (EmbeddedLivePlayer.shouldSuspend(
+      wasActive: oldWidget.isActive,
+      isActive: widget.isActive,
+      fullscreenOpen: fullscreenOpen,
+    )) {
       unawaited(_suspend());
     } else if (!oldWidget.isActive &&
         widget.isActive &&
@@ -373,6 +427,10 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
           // MediaMTX에 스트림이 실제로 붙기 전일 수 있다. 첫 실패를 곧장
           // 에러로 보여주면 사용자가 다시 눌러 세션을 재시작하는 수밖에
           // 없으므로, 준비 표시를 유지한 채 조용히 다시 붙는다.
+          //
+          // 한 번 보다가 끊긴 경우에는 [_handleWebRtcState]가 이 기한을 미리
+          // 재연결 창(120초)으로 늘려 둔다 — 처음 여는 25초와 달리, 서버가
+          // 세션을 살려 두는 동안은 앱도 계속 붙어 봐야 한다.
           warmupDeadline ??= DateTime.now().add(const Duration(seconds: 25));
           if (DateTime.now().isAfter(warmupDeadline!)) {
             _cancelTimers();
@@ -393,7 +451,7 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       }.contains(updated.status)) {
         _cancelTimers();
         if (mounted) {
-          setState(() => error = updated.failureCode ?? '라이브 세션이 종료됐어요.');
+          setState(() => error = _sessionEndedMessage(updated.failureCode));
         }
       }
     } catch (failure) {
@@ -402,6 +460,17 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       }
     }
   }
+
+  /// 세션이 끝난 이유를 사람이 읽는 문구로.
+  ///
+  /// 예전에는 서버 코드를 그대로 화면에 찍었다. 화면에 `MEDIA_NOT_FLOWING`이
+  /// 떠 있으면 사용자는 무엇을 해야 하는지 알 수 없다.
+  static String _sessionEndedMessage(String? failureCode) => switch (failureCode) {
+    'MEDIA_NOT_FLOWING' => '카메라 연결이 오래 끊겨 있어 라이브를 멈췄어요.\n다시 시도해 주세요.',
+    'NO_ACTIVE_VIEWERS' => '보는 사람이 없어 라이브를 멈췄어요.',
+    null => '라이브 세션이 종료됐어요.',
+    _ => '라이브가 끊겼어요. 다시 시도해 주세요.',
+  };
 
   void _cancelTimers() {
     pollTimer?.cancel();
@@ -528,6 +597,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
 
   Future<void> _openFullscreen() async {
     if (!whepPlayer.connected) return;
+    // push보다 먼저 세워 둔다. push가 홈에 "덮였다"를 알리고, 그 알림이
+    // didUpdateWidget으로 돌아오는 것이 이 함수가 await에서 깨어나기 전이다.
+    fullscreenOpen = true;
     try {
       if (!mounted) return;
       await Navigator.push<void>(
@@ -545,6 +617,10 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         ),
       );
     } finally {
+      fullscreenOpen = false;
+      // 전체 화면에서 나왔는데 홈이 이미 다른 이유로 비활성이면(탭을 옮겼거나
+      // 다른 화면이 덮고 있으면) 그때는 규칙대로 라이브를 놓는다.
+      if (mounted && !widget.isActive) unawaited(_suspend());
       await SystemChrome.setPreferredOrientations(const [
         DeviceOrientation.portraitUp,
       ]);
@@ -585,10 +661,8 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
       borderRadius: BorderRadius.circular(widget.houseMode ? 0 : 24),
       child: Column(
         children: [
-          AspectRatio(
-            // 바깥 홈 카드의 3px 테두리가 차지하는 실제 높이를 제외한다.
-            // 4:3을 그대로 쓰면 S24+ 폭에서 내부가 1.5px 넘친다.
-            aspectRatio: widget.houseMode ? 1.34 : 16 / 9,
+          _LiveSurfaceBox(
+            houseMode: widget.houseMode,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _handleVideoTap,
@@ -1172,4 +1246,27 @@ class _FullscreenWhepViewState extends State<FullscreenWhepView> {
       ),
     ),
   );
+}
+
+/// 라이브 영상 표면의 높이를 정한다.
+///
+/// **홈 카드에서는 비율을 다시 걸지 않는다**: 바깥 홈 카드가 이미
+/// `AspectRatio(4 / 3)`으로 높이를 정해 주기 때문에, 여기서 비율을 한 번 더
+/// 걸면 두 제약이 어긋난다. 바깥 카드의 3px 테두리가 먹는 6px은 폭과 무관하게
+/// 고정이라 비율로 보정하면 필요한 값이 폭마다 달라진다 — 그래서 예전에 쓰던
+/// 1.34는 S24+ 기본 폭에서만 맞았고, 화면 크기 설정을 키워 논리 폭이 좁아지면
+/// 소수점 단위로 다시 넘쳤다. 부모가 남겨 준 높이를 그대로 채우면 폭이 얼마든
+/// 어긋나지 않는다.
+///
+/// 전체 화면 라이브에서는 부모가 높이를 정해 주지 않으므로 16:9를 유지한다.
+class _LiveSurfaceBox extends StatelessWidget {
+  const _LiveSurfaceBox({required this.houseMode, required this.child});
+
+  final bool houseMode;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => houseMode
+      ? Expanded(child: child)
+      : AspectRatio(aspectRatio: 16 / 9, child: child);
 }

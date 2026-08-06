@@ -476,7 +476,6 @@
 | eventTypes | List\<String\> | 필수 | 영상에 함께 기록된 유형. triggerType을 포함하며 중복 없음 |
 | sourceEventId | String | 옵션(nullable) | 원본 이벤트 ID |
 | title | String | 필수 | 제목 |
-| description | String | 옵션(nullable) | 메모 |
 | contentType | String | 필수 | 콘텐츠 타입 |
 | sizeBytes | Long | 옵션(nullable) | 파일 크기 |
 | checksumSha256 | String | 옵션(nullable) | 체크섬 |
@@ -731,19 +730,22 @@
 ### API-74 `GET /api/schedules` — 캘린더 일정 목록
 
 - 인증: 사용자 JWT
-- 요청: 없음(로그인 사용자 본인의 일정만)
+- 요청: 없음(사용자가 활성 구성원인 모든 금고의 일정)
 - 응답: `200 List<ScheduleResponse>` — 날짜 오름차순
 
 | 필드명 | 타입 | 필수여부 | 설명 |
 |---|---|---|---|
 | id | UUID | 필수 | 일정 ID |
+| authorId | UUID | 필수 | 이 일정을 적은 사람. 앱이 수정·삭제 버튼을 가리는 데 쓴다 |
+| authorName | String | 옵션 | 적은 사람의 표시 이름(서버가 `users`에서 조인) |
 | title | String | 필수 | 제목(1~80자) |
 | date | LocalDate | 필수 | 일정 날짜 |
 | memo | String | 필수 | 메모(빈 문자열 가능, 최대 500자) |
 | yearly | boolean | 필수 | 매년 반복 여부 |
 | emoji | String | 필수 | 표시 이모지(기본 ❤️, 최대 16자) |
 
-- 비고: 일정은 사용자 귀속이다. 캘린더 화면이 금고와 무관하게 한 목록을 쓰므로 가족 공유 일정은 요구가 생길 때 별도 설계한다.
+- 비고: 일정은 금고 공유다(2026-08-05 전환). `vault_id`가 공유 범위이고 `user_id`는 작성자다.
+- 비고: 금고가 없던 시절에 적은 일정(`vaultId` 없음)은 적은 사람에게만 보인다. 마이그레이션이 옮길 금고가 없던 일정이라 개인 일정으로 남는다.
 
 ### API-75 `POST /api/schedules` — 캘린더 일정 등록
 
@@ -757,22 +759,26 @@
 | memo | String | 옵션(기본 빈 문자열) | 최대 500자 |
 | yearly | Boolean | 옵션(기본 false) | 매년 반복 여부 |
 | emoji | String | 옵션(기본 ❤️) | 최대 16자 |
+| vaultId | UUID | 옵션 | 일정을 넣을 금고. 생략하면 사용자가 속한 금고가 하나일 때만 그것으로 정한다 |
 
 - 응답: `201 ScheduleResponse`(API-74와 동일 스키마)
-- 에러: 400 `VALIDATION_FAILED`(필드 형식), 422 `VALIDATION_FAILED`(사용자당 200개 상한 초과)
+- 에러: 400 `VALIDATION_FAILED`(필드 형식), 403 `FORBIDDEN_ROLE`(그 금고의 구성원이 아님), 422 `VALIDATION_FAILED`(금고당 200개 상한 초과, 또는 여러 금고에 속해 있는데 `vaultId`를 생략)
+- 비고: 금고 구성원 누구나 등록한다.
 
 ### API-76 `PUT /api/schedules/{scheduleId}` — 캘린더 일정 수정
 
 - 인증: 사용자 JWT
 - 요청: PathVariable `scheduleId` + `ScheduleRequest`(API-75와 동일)
 - 응답: `200 ScheduleResponse`
-- 에러: 404 `RESOURCE_NOT_FOUND`(내 일정이 아니거나 없음)
+- 에러: 403 `FORBIDDEN_ROLE`(적은 사람도 OWNER도 아님), 404 `RESOURCE_NOT_FOUND`(없거나 볼 수 없는 일정)
+- 비고: 일정을 적은 사람 또는 금고 OWNER만 수정한다.
 
 ### API-77 `DELETE /api/schedules/{scheduleId}` — 캘린더 일정 삭제
 
 - 인증: 사용자 JWT
 - 응답: `204`
-- 에러: 404 `RESOURCE_NOT_FOUND`(내 일정이 아니거나 없음)
+- 에러: 403 `FORBIDDEN_ROLE`(적은 사람도 OWNER도 아님), 404 `RESOURCE_NOT_FOUND`(없거나 볼 수 없는 일정)
+- 비고: 일정을 적은 사람 또는 금고 OWNER만 삭제한다.
 
 ### API-62 `GET /api/devices/{deviceId}/laugh-report` **[제안]**
 
@@ -1039,6 +1045,11 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-82 | `GET /api/vaults/{vaultId}/edits` | 금고의 편집 완성본 목록(최신순 100건). 올라가는 중(UPLOADING)과 실패(FAILED)도 함께 준다 — 업로드 진행 상황이 상단 알림으로만 나가서, 알림을 끈 기기에서는 목록이 유일한 단서다 |
 | API-83 | `GET /api/videos/{videoId}/comments` | 영상 댓글 목록 — 작성자 표시 이름은 서버가 `users`에서 조인 |
 | API-84 | `POST /api/videos/{videoId}/comments` | 영상 댓글 작성 — 작성자는 토큰의 사용자 UUID(앱이 보낸 이름을 믿지 않는다), 작성자 외 금고 구성원에게 알림·FCM |
+| API-85 | `PATCH /api/videos/{videoId}/comments/{commentId}` | 영상 댓글 수정 — 쓴 사람만. OWNER에게도 열지 않는다(남의 말을 고쳐 쓰는 것과 지우는 것은 다른 일이다) |
+| API-86 | `DELETE /api/videos/{videoId}/comments/{commentId}` | 영상 댓글 삭제 — 쓴 사람 또는 금고 OWNER. 부적절한 댓글은 OWNER가 지운다 |
+| API-87 | `GET /api/vaults/{vaultId}/places` | 금고 장소 배치와 내 기기 순서 — 장소 이름·기기 배정은 금고 공통(집의 사실), 기기 순서는 사람마다(보기 취향) |
+| API-88 | `PUT /api/vaults/{vaultId}/places` | 장소 배치 저장 — 구성원 누구나. 목록을 통째로 갈아 끼운다(앱이 한 화면에서 장소 추가와 기기 이동을 함께 한다) |
+| API-89 | `PUT /api/vaults/{vaultId}/device-order` | 내 기기 순서 저장 — 부른 사람에게만 적용된다 |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + 기기별 분해(`byDevice`). Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계해 기기 양도 후에도 과거 금고 통계가 오염되지 않음. **앱 웃음 리포트의 "가족 전체" 토글이 사용** |
 
 #### 비밀번호 API 동작 규칙 (API-55~57)

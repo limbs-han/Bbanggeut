@@ -157,6 +157,7 @@ class DeviceSummary {
     required this.myRole,
     required this.retentionDays,
     this.lastSeenAt,
+    this.detectionEnabled = true,
   });
   final String id;
   final String name;
@@ -165,6 +166,13 @@ class DeviceSummary {
   final String myRole;
   final int retentionDays;
   final DateTime? lastSeenAt;
+
+  /// 감지·저장 스위치. false면 서버가 이 카메라의 영상 업로드를 거절한다.
+  ///
+  /// 기본값이 true인 이유: 이 값을 주지 않는 옛 서버에 붙었을 때 "꺼져 있다"로
+  /// 보이면, 실제로는 저장되고 있는데 화면만 꺼진 것처럼 보인다.
+  final bool detectionEnabled;
+
   bool get isOnline => status == 'ONLINE';
   bool get isOwner => normalizeRole(myRole) == 'OWNER';
   bool get canEditVideos => isOwner || myRole.trim().toUpperCase() == 'EDITOR';
@@ -176,6 +184,18 @@ class DeviceSummary {
     myRole: normalizeRole(json['myRole']),
     retentionDays: (json['retentionDays'] as num?)?.toInt() ?? 30,
     lastSeenAt: parseDate(json['lastSeenAt']),
+    detectionEnabled: json['detectionEnabled'] as bool? ?? true,
+  );
+
+  DeviceSummary copyWith({bool? detectionEnabled}) => DeviceSummary(
+    id: id,
+    name: name,
+    model: model,
+    status: status,
+    myRole: myRole,
+    retentionDays: retentionDays,
+    lastSeenAt: lastSeenAt,
+    detectionEnabled: detectionEnabled ?? this.detectionEnabled,
   );
 }
 
@@ -316,7 +336,6 @@ class VideoMemory {
     required this.favorite,
     this.eventTypes = const [],
     this.sourceType = 'IOT_CAPTURE',
-    this.description,
     this.durationMs,
     this.thumbnailUrl,
     this.capturedStartAt,
@@ -327,7 +346,6 @@ class VideoMemory {
   final String triggerType;
   final List<String> eventTypes;
   final String title;
-  final String? description;
   final String status;
   final bool favorite;
   final String sourceType;
@@ -335,10 +353,36 @@ class VideoMemory {
   final String? thumbnailUrl;
   final DateTime? capturedStartAt;
   final DateTime? createdAt;
-  List<String> get effectiveEventTypes =>
-      eventTypes.isEmpty ? List.unmodifiable([triggerType]) : eventTypes;
+
+  /// 서버 응답을 다시 받지 않고 방금 바꾼 값만 갈아 끼울 때 쓴다. 목록을
+  /// 통째로 다시 조회하면 사용자는 자기가 누른 결과를 몇 초 뒤에 본다.
+  VideoMemory copyWith({String? title, bool? favorite}) => VideoMemory(
+    id: id,
+    deviceId: deviceId,
+    triggerType: triggerType,
+    eventTypes: eventTypes,
+    sourceType: sourceType,
+    title: title ?? this.title,
+    status: status,
+    favorite: favorite ?? this.favorite,
+    durationMs: durationMs,
+    thumbnailUrl: thumbnailUrl,
+    capturedStartAt: capturedStartAt,
+    createdAt: createdAt,
+  );
+  List<String> get effectiveEventTypes => eventTypes.isEmpty
+      ? List.unmodifiable([triggerType])
+      : eventTypes;
   bool hasEventType(String eventType) =>
       effectiveEventTypes.contains(normalizeVideoTrigger(eventType));
+
+  /// 편집 완성본인가.
+  ///
+  /// `triggerType`이나 `eventTypes`로는 판정할 수 없다 — 서버가 편집본 행을
+  /// 만들 때 원본의 trigger_type과 event_types를 그대로 물려주기 때문이다
+  /// (`VideoMapper.insertEditOutput`). 웃음 클립을 편집하면 편집본도
+  /// `LAUGHTER`를 들고 있다. 구분은 `sourceType`으로만 한다.
+  bool get isEditOutput => sourceType == 'EDIT_OUTPUT';
 
   factory VideoMemory.fromJson(Map<String, dynamic> json) {
     final triggerType = normalizeVideoTrigger(
@@ -353,7 +397,6 @@ class VideoMemory {
         triggerType: triggerType,
       ),
       title: json['title'] as String? ?? '이름 없는 추억',
-      description: json['description'] as String?,
       status: json['status'] as String? ?? 'PROCESSING',
       favorite: json['isFavorite'] as bool? ?? false,
       sourceType: json['sourceType'] as String? ?? 'IOT_CAPTURE',
@@ -485,6 +528,121 @@ class VideoComment {
   );
 }
 
+/// 만화 피드 한 장.
+///
+/// 그림은 여기 없다. 만화 PNG는 단기 서명 URL로만 받을 수 있어서 목록에 담으면
+/// 화면에 보이지도 않는 만화의 URL까지 발급하고 그 사이 만료된다. 화면에 들어온
+/// 카드만 따로 받는다.
+class VaultComic {
+  const VaultComic({
+    required this.videoId,
+    required this.title,
+    this.customTitle = false,
+    this.madeAt,
+    this.likeCount = 0,
+    this.likedByMe = false,
+    this.commentCount = 0,
+    this.canDelete = false,
+  });
+
+  final String videoId;
+
+  /// 보여 줄 제목. 붙인 제목이 없으면 서버가 원본 영상 제목을 넣어 준다.
+  final String title;
+
+  /// 사용자가 제목을 붙였는가. 제목 고치기 창의 기본값을 가른다.
+  final bool customTitle;
+  final DateTime? madeAt;
+  final int likeCount;
+  final bool likedByMe;
+  final int commentCount;
+
+  /// 이 만화를 지울 수 있는가 — 만든 사람 또는 금고 OWNER. **서버가 판정한다.**
+  /// 앱이 역할로 다시 계산하면 규칙이 두 곳에 생겨 서버와 어긋난다. 값이 없으면
+  /// 감춘다 — 없는 권한을 보여 주는 쪽이 눌렀을 때 403보다 나쁘다.
+  final bool canDelete;
+
+  factory VaultComic.fromJson(Map<String, dynamic> json) => VaultComic(
+    videoId: json['videoId'] as String? ?? '',
+    title: json['title'] as String? ?? '4컷 만화',
+    customTitle: json['customTitle'] as bool? ?? false,
+    madeAt: parseDate(json['madeAt']),
+    likeCount: (json['likeCount'] as num?)?.toInt() ?? 0,
+    likedByMe: json['likedByMe'] as bool? ?? false,
+    commentCount: (json['commentCount'] as num?)?.toInt() ?? 0,
+    canDelete: json['canDelete'] as bool? ?? false,
+  );
+
+  VaultComic copyWith({
+    String? title,
+    bool? customTitle,
+    int? likeCount,
+    bool? likedByMe,
+    int? commentCount,
+  }) => VaultComic(
+    videoId: videoId,
+    title: title ?? this.title,
+    customTitle: customTitle ?? this.customTitle,
+    madeAt: madeAt,
+    likeCount: likeCount ?? this.likeCount,
+    likedByMe: likedByMe ?? this.likedByMe,
+    commentCount: commentCount ?? this.commentCount,
+    canDelete: canDelete,
+  );
+}
+
+/// 영상 분석(소리·움직임·표정)의 진행 상태.
+///
+/// 서버가 들고 있는 값이다 — 예전에는 편집 워커의 메모리에만 있어서, 워커를
+/// 재배포하면 진행 중이던 분석이 사라져 보였고 다른 가족 폰은 애초에 알 수
+/// 없었다. AI 자동 컷·줌과 만화 프레임 선정이 모두 이 분석 결과를 쓴다.
+class VideoAnalysis {
+  const VideoAnalysis({
+    required this.status,
+    this.stage,
+    this.progress = 0,
+    this.error,
+  });
+
+  /// NONE(분석한 적 없음) · RUNNING · DONE · FAILED.
+  final String status;
+
+  /// 지금 단계. 사람에게 보여 줄 문구는 [stageLabel]이 만든다.
+  final String? stage;
+
+  /// 0.0~1.0.
+  final double progress;
+  final String? error;
+
+  bool get isRunning => status == 'RUNNING';
+  bool get isDone => status == 'DONE';
+  bool get isFailed => status == 'FAILED';
+
+  /// 몇 퍼센트인지 아직 모르면 null — 없는 숫자를 만들어 보여 주면 한 값에
+  /// 붙어 멈춘 것처럼 보인다(만화 화면에서 같은 판단을 했다).
+  int? get percent => progress <= 0 ? null : (progress * 100).round();
+
+  /// 단계 이름을 사람 말로. 모르는 단계는 뭉뚱그린다 — 워커가 단계를 하나 더
+  /// 늘렸을 때 앱이 영문 코드를 그대로 보여 주는 것보다 낫다.
+  String get stageLabel => switch (stage) {
+    'download' => '영상을 가져오는 중',
+    'audio' => '소리 크기를 보는 중',
+    'yamnet' => '무슨 소리인지 듣는 중',
+    'video' => '움직임을 보는 중',
+    'expression' => '표정을 보는 중',
+    _ => '분석하는 중',
+  };
+
+  factory VideoAnalysis.fromJson(Map<String, dynamic> json) => VideoAnalysis(
+    status: json['status'] as String? ?? 'NONE',
+    stage: json['stage'] as String?,
+    progress: (json['progress'] as num?)?.toDouble() ?? 0,
+    error: json['error'] as String?,
+  );
+
+  static const none = VideoAnalysis(status: 'NONE');
+}
+
 /// API-80 금고(가족) 단위 이벤트 통계. 기기별 분해(byDevice)를 함께 준다.
 class VaultEventStats {
   const VaultEventStats({
@@ -495,9 +653,7 @@ class VaultEventStats {
   final int detectedCount;
   final List<DailyVideoCount> dailyCounts;
   final List<VaultDeviceCount> byDevice;
-  factory VaultEventStats.fromJson(
-    Map<String, dynamic> json,
-  ) => VaultEventStats(
+  factory VaultEventStats.fromJson(Map<String, dynamic> json) => VaultEventStats(
     detectedCount: (json['detectedCount'] as num?)?.toInt() ?? 0,
     dailyCounts: (json['dailyCounts'] as List? ?? const [])
         .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))
@@ -553,6 +709,44 @@ class NotificationPreferences {
 }
 
 /// 캘린더 일정(기념일). 서버 일정 CRUD(API-74~77)와 같은 스키마다.
+/// 금고 구성원이 함께 보는 일정.
+///
+/// [authorId]는 이 일정을 적은 사람이다. 수정·삭제는 적은 사람과 금고 OWNER만
+/// 할 수 있어서, 버튼을 가리려면 앱도 누가 적었는지 알아야 한다.
+/// 금고의 장소 배치와 내 기기 순서.
+///
+/// [places]와 [devicePlaces]는 금고 공통이다 — 장소 이름과 기기가 어느 장소에
+/// 있는지는 집의 사실이라 가족이 함께 본다. [deviceOrder]는 이 사람만의
+/// 순서다 — 기기를 어떤 순서로 볼지는 보기 취향이다.
+class PlaceLayout {
+  const PlaceLayout({
+    this.places = const [],
+    this.devicePlaces = const {},
+    this.deviceOrder = const [],
+  });
+
+  final List<String> places;
+  final Map<String, String> devicePlaces;
+  final List<String> deviceOrder;
+
+  /// 서버에 아직 아무 배치도 없는가. 이 폰의 로컬 배치를 한 번 올려야 하는지
+  /// 판단하는 기준이다.
+  bool get isEmpty => places.isEmpty;
+
+  factory PlaceLayout.fromJson(Map<String, dynamic> json) => PlaceLayout(
+    places: (json['places'] as List? ?? const [])
+        .whereType<String>()
+        .toList(growable: false),
+    devicePlaces: {
+      for (final entry in (json['devicePlaces'] as Map? ?? const {}).entries)
+        '${entry.key}': '${entry.value}',
+    },
+    deviceOrder: (json['deviceOrder'] as List? ?? const [])
+        .whereType<String>()
+        .toList(growable: false),
+  );
+}
+
 class CalendarSchedule {
   const CalendarSchedule({
     required this.id,
@@ -561,6 +755,9 @@ class CalendarSchedule {
     this.memo = '',
     this.yearly = false,
     this.emoji = '❤️',
+    this.authorId,
+    this.authorName,
+    this.vaultId,
   });
 
   final String id;
@@ -569,6 +766,16 @@ class CalendarSchedule {
   final String memo;
   final bool yearly;
   final String emoji;
+  final String? authorId;
+  final String? authorName;
+
+  /// 어느 금고에 넣을지. 보내지 않으면 서버가 사용자의 금고가 하나일 때만
+  /// 알아서 정한다.
+  final String? vaultId;
+
+  /// 이 일정을 내가 고치고 지울 수 있는가.
+  bool canManage({required String? myUserId, required bool isOwner}) =>
+      isOwner || (authorId != null && authorId == myUserId);
 
   factory CalendarSchedule.fromJson(Map<String, dynamic> json) =>
       CalendarSchedule(
@@ -578,6 +785,8 @@ class CalendarSchedule {
         memo: json['memo'] as String? ?? '',
         yearly: json['yearly'] as bool? ?? false,
         emoji: json['emoji'] as String? ?? '❤️',
+        authorId: json['authorId'] as String?,
+        authorName: json['authorName'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -589,6 +798,7 @@ class CalendarSchedule {
     'memo': memo,
     'yearly': yearly,
     'emoji': emoji,
+    'vaultId': ?vaultId,
   };
 
   CalendarSchedule copyWith({
@@ -598,6 +808,7 @@ class CalendarSchedule {
     String? memo,
     bool? yearly,
     String? emoji,
+    String? vaultId,
   }) => CalendarSchedule(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -605,6 +816,9 @@ class CalendarSchedule {
     memo: memo ?? this.memo,
     yearly: yearly ?? this.yearly,
     emoji: emoji ?? this.emoji,
+    authorId: authorId,
+    authorName: authorName,
+    vaultId: vaultId ?? this.vaultId,
   );
 }
 

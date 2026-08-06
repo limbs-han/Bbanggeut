@@ -167,4 +167,24 @@ void main() {
     expect(sessionUri.queryParameters['streamId'], 'id');
     expect(sessionUri.queryParameters['token'], 'short-lived');
   });
+
+  test('시그널링이 실패했을 때 송출 장치 오디오 설정을 지목하지 않는다', () {
+    // 서버가 500을 내던 장애에서 이 문구가 기기를 의심하게 만들었다.
+    const failure = WhepPlaybackException(statusCode: 500);
+
+    expect('$failure', contains('서버 응답 500'));
+    expect('$failure', isNot(contains('Opus')));
+  });
+
+  test('상태 코드를 모르면 코드 없이 안내한다', () {
+    const failure = WhepPlaybackException();
+
+    expect('$failure', '라이브에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  });
+
+  test('오디오가 실제로 빠졌을 때만 송출 코덱을 안내한다', () {
+    const failure = WhepPlaybackException(failure: WhepFailure.audioMissing);
+
+    expect('$failure', contains('Opus'));
+  });
 }

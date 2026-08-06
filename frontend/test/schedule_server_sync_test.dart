@@ -38,17 +38,15 @@ class _FakeScheduleApi extends ApiClient {
 
 class _FakeStatsApi extends ApiClient {
   @override
-  Future<EventStats> getEventStats(
-    String deviceId, {
+  Future<VaultEventStats> getVaultEventStats(
+    String vaultId, {
     DateTime? from,
     DateTime? to,
     String? type,
   }) async {
     final today = DateUtils.dateOnly(DateTime.now());
-    return EventStats(
+    return VaultEventStats(
       detectedCount: 5,
-      uploadedVideoCount: 5,
-      byType: const {'LAUGHTER': 5},
       dailyCounts: [DailyVideoCount(date: today, count: 5)],
     );
   }
@@ -94,6 +92,15 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final controller = AppController(api: _FakeStatsApi())
+      ..selectedVault = const MemoryVault(
+        id: 'vault-1',
+        name: '우리 가족',
+        status: 'ACTIVE',
+        myRole: 'OWNER',
+        retentionDays: 30,
+        subscriptionActive: true,
+        devices: [],
+      )
       ..selectedDevice = const DeviceSummary(
         id: 'device-1',
         name: '거실 홈캠',
@@ -113,6 +120,8 @@ void main() {
 
     expect(find.text('웃음 횟수'), findsOneWidget);
     expect(find.text('5회'), findsOneWidget);
+    expect(find.text('가족 전체'), findsNothing);
+    expect(find.text('이 기기만'), findsNothing);
     controller.dispose();
   });
 }

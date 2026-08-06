@@ -65,11 +65,16 @@ public class PushNotificationDispatcher {
                     "resourceId", invitationId.toString())));
     }
 
-    public void laughterVideoReady(UUID deviceId, UUID videoId, String title) {
+    /**
+     * 감지로 담긴 영상 도착 — 제목은 감지 유형이 정한다(웃음·박수·호출·직접).
+     * data의 type은 {@code LAUGHTER_VIDEO_READY}를 유지한다: 앱이 이 값으로
+     * 영상 상세로 보낸다.
+     */
+    public void videoArrived(UUID deviceId, UUID videoId, String headline, String title) {
         dispatchAfterCommit(
             () -> tokenMapper.findActiveTokensByDevice(deviceId),
             new PushMessage(
-                "웃음 영상이 도착했어요",
+                headline,
                 title,
                 Map.of(
                     "type", "LAUGHTER_VIDEO_READY",
@@ -108,6 +113,30 @@ public class PushNotificationDispatcher {
                 "편집기에서 AI 컷과 자동 줌을 쓸 수 있어요",
                 Map.of(
                     "type", "EDIT_ANALYSIS_READY",
+                    "resourceId", videoId.toString())));
+    }
+
+    /** 4컷 만화 완성 — 만들기를 누른 사람에게만 보낸다. */
+    public void comicReady(UUID userId, UUID videoId) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByUser(userId),
+            new PushMessage(
+                "4컷 만화가 완성됐어요",
+                "추억 탭에서 만화를 확인해 보세요",
+                Map.of(
+                    "type", "COMIC_READY",
+                    "resourceId", videoId.toString())));
+    }
+
+    /** 만화 1단계(대사 구성) 완료 — 만들기를 누른 사람에게만 보낸다. */
+    public void comicScriptReady(UUID userId, UUID videoId) {
+        dispatchAfterCommit(
+            () -> tokenMapper.findActiveTokensByUser(userId),
+            new PushMessage(
+                "만화 대사가 준비됐어요",
+                "고칠 곳을 확인하고 그림을 만들어 보세요",
+                Map.of(
+                    "type", "COMIC_SCRIPT_READY",
                     "resourceId", videoId.toString())));
     }
 

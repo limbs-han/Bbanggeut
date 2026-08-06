@@ -132,6 +132,23 @@ then
 fi
 grep -Fq 'WJ_BACKEND_ACCESS_KEY' \
   "${repository_root}/backend/deploy/provision-secrets.sh"
+
+# 프로덕션 프로파일 이름 계약.
+#
+# 활성 프로파일 이름과 프로파일 파일 이름은 한 몸이다. 어긋나면 Spring이
+# 프로파일을 찾지 못해 application.yml의 로컬 기본값(localhost DB, 저장소에
+# 공개된 JWT 개발 키)으로 떨어진다. DB 연결이 먼저 실패해 기동이 멈추고 무중단
+# 배포가 롤백하므로 사용자 영향은 없지만, 배포가 통째로 실패한다.
+#
+# 2026-08-05까지 이 파일 이름은 application-demo.yml이었다 — 데모와 무관한데
+# 이름이 그래서 지워도 되는 파일로 읽혔다.
+if [[ ! -f "${repository_root}/backend/server/src/main/resources/application-prod.yml" ]]
+then
+  echo "application-prod.yml이 없습니다 — 운영 프로파일 파일 이름을 확인하세요." >&2
+  exit 1
+fi
+grep -Fq 'SPRING_PROFILES_ACTIVE=prod' \
+  "${repository_root}/backend/deploy/provision-secrets.sh"
 grep -Fq 'mc admin policy attach' \
   "${repository_root}/backend/deploy/docker-compose.yml"
 if grep -Eq '^ *MINIO_ACCESS_KEY: \$\{MINIO_ROOT_USER\}' \
@@ -158,6 +175,30 @@ do
     exit 1
   fi
 done
+
+# 슬롯마다 다른 MQTT client ID를 쓰는지 고정한다. MQTT는 같은 client ID로 새
+# 연결이 오면 기존 세션을 끊으므로, 두 슬롯이 겹치는 배포 구간에서 둘이 서로를
+# 1초 남짓 주기로 밀어냈다(2026-08-04 05:20~05:21). 그 동안 기기 명령과
+# 텔레메트리가 함께 흔들린다.
+if ! grep -Fq -e '--app.mqtt.client-id=wj-backend-%i' \
+  "${repository_root}/backend/deploy/william-james@.service"
+then
+  echo "슬롯 유닛이 MQTT client ID를 슬롯별로 나누지 않습니다 — 배포 중 두 슬롯이 서로를 끊습니다." >&2
+  exit 1
+fi
+
+# 라이브 인증 서브요청의 Host 계약. 위에서 포트 직접 지정을 막았으므로 이
+# 경로는 항상 upstream 이름으로 나가는데, 그 이름의 밑줄이 Host 헤더에 실리면
+# Tomcat이 불법 문자로 보고 400을 낸다. auth_request는 2xx·401·403만 판정으로
+# 받아들이므로 400은 그대로 클라이언트 500이 된다 — /health는 200인 채 라이브만
+# 죽는다(2026-08-05, 12시간 동안 알림 없이).
+if ! sed -n '/location = \/_live_auth/,/^    }/p' \
+  "${repository_root}/backend/deploy/nginx-william-james.conf" |
+  grep -Fq 'proxy_set_header Host $host;'
+then
+  echo "_live_auth 서브요청에 Host 헤더 지정이 없습니다 — Tomcat이 400을 내고 라이브 전체가 막힙니다." >&2
+  exit 1
+fi
 
 # 업로드 한도 정합: 서버 선언(500 MiB)보다 nginx가 크게 열려 있으면 초과
 # 본문이 MinIO 디스크에 도달한 뒤에야 거절된다.
@@ -193,6 +234,10 @@ grep -Eq 'include: .*prometheus' \
 grep -Fq 'compose up --detach --pull missing --remove-orphans postgres redis minio prometheus grafana' \
   "${repository_root}/ci/jenkins/server/deploy/wj-deploy-backend"
 grep -Fq 'WJ_MONITOR_WEBHOOK_URL' \
+  "${repository_root}/backend/deploy/check-william-james.sh"
+# 모니터가 라이브 인증 경로까지 보는지 고정한다. /health만 보던 시절에는
+# 라이브가 죽어도 점검이 전부 통과했다.
+grep -Fq 'live WHEP auth' \
   "${repository_root}/backend/deploy/check-william-james.sh"
 bash -n "${repository_root}/backend/deploy/check-william-james.sh"
 

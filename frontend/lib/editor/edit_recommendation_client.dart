@@ -186,6 +186,15 @@ class EditRecommendationClient {
   static bool isAnalysisRequired(Object failure) =>
       failure is DioException && failure.response?.statusCode == 404;
 
+  /// 분석 대기 줄이 가득 차 거절당했다(429).
+  ///
+  /// 실패가 아니라 **나중에 다시 오라**는 뜻이다. 서버는 작업자가 하나뿐이라
+  /// 줄을 무한정 받지 않는다 — 받아 두면 차례가 올 때쯤 원본 서명 URL이
+  /// 만료되어, 오래 기다린 끝에 실패한다. 화면이 이것을 실패로 알리면
+  /// 사용자는 될 일을 안 된다고 믿고 그만둔다.
+  static bool isAnalysisBusy(Object failure) =>
+      failure is DioException && failure.response?.statusCode == 429;
+
   /// 백그라운드 분석을 시작한다. 이미 분석돼 있으면 서버가 곧바로 done을
   /// 돌려준다.
   ///
@@ -193,12 +202,18 @@ class EditRecommendationClient {
   /// 직접 내려받는다 — 실서버에서는 원본이 이미 같은 호스트의 MinIO에
   /// 있으므로 폰이 영상을 LTE로 다시 올리는 낭비를 피한다. 없으면
   /// [filePath]의 로컬 원본을 통째로 올린다.
+  ///
+  /// [filePath]가 null이면 [sourceUrl]로만 요청한다 — 원본을 아직 내려받지
+  /// 않은 시점에 분석을 미리 시작하는 경로다(편집 화면 진입 즉시).
   Future<EditAnalysisStatus> requestAnalysis({
     required String videoId,
-    required String filePath,
+    String? filePath,
     String? sourceUrl,
     void Function(int sent, int total)? onProgress,
   }) async {
+    if (sourceUrl == null && filePath == null) {
+      throw ArgumentError('sourceUrl이나 filePath 하나는 있어야 합니다.');
+    }
     final Response<Map<String, dynamic>> response;
     if (sourceUrl != null) {
       response = await _dio.put<Map<String, dynamic>>(
@@ -206,7 +221,7 @@ class EditRecommendationClient {
         data: {'sourceUrl': sourceUrl},
       );
     } else {
-      final file = File(filePath);
+      final file = File(filePath!);
       final length = await file.length();
       response = await _dio.put<Map<String, dynamic>>(
         '/v1/edit-analyses/$videoId',
@@ -260,5 +275,41 @@ class EditRecommendationClient {
       for (final item in response.data?['items'] as List? ?? const [])
         Map<String, dynamic>.from(item as Map),
     ];
+  }
+
+  /// 저장해 둔 초안을 버린다. 없는 초안을 지우라고 해도 성공이다 — 사용자가
+  /// 원한 상태(초안 없음)가 이미 이뤄진 것이라 오류로 볼 이유가 없다.
+  Future<void> deleteDraft(String videoId) async {
+    await _dio.delete<void>('/v1/edit-projects/$videoId');
+  }
+
+  /// 서버에 저장된 전사문(AI 자막). 없으면 null.
+  ///
+  /// **왜 서버에 두는가**: 전사는 폰에만 캐시됐다. 그래서 같은 영상을 가족 각자가
+  /// 자기 폰에서 다시 돌렸고(같은 결과에 같은 시간), 앱을 다시 깔면 전부
+  /// 날아갔다. 결과는 영상에만 달린 값이라 한 번 만들면 모두가 쓸 수 있다.
+  Future<List<Map<String, dynamic>>?> loadTranscript(String videoId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/v1/transcripts/$videoId',
+      );
+      final lines = response.data?['lines'] as List?;
+      if (lines == null || lines.isEmpty) return null;
+      return [for (final line in lines) Map<String, dynamic>.from(line as Map)];
+    } on DioException catch (failure) {
+      if (failure.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// 전사문을 서버에 남긴다. 빈 목록은 서버가 거절한다(422).
+  Future<void> saveTranscript(
+    String videoId,
+    List<Map<String, Object?>> lines,
+  ) async {
+    await _dio.put<void>(
+      '/v1/transcripts/$videoId',
+      data: <String, Object?>{'lines': lines},
+    );
   }
 }

@@ -1,0 +1,35 @@
+# 프로덕션 프로파일.
+#
+# 서버 env가 `SPRING_PROFILES_ACTIVE=prod`이므로 프로덕션이 이 파일을 활성
+# 프로파일로 읽는다. 여기 담긴 값이 DB 접속·JWT 서명 키·S3·MQTT·WebRTC 주소
+# 전부다. 지우면 운영이 기동하지 못한다.
+#
+# 2026-08-05까지 이 파일 이름은 `application-demo.yml`이었다. 데모와 아무 관계가
+# 없는데도 이름이 그래서 "데모 설정이니 지워도 되겠지"로 읽혔다. 파일 이름과
+# 서버 env의 `SPRING_PROFILES_ACTIVE`는 같은 배포에서 함께 바뀌어야 한다 —
+# 한쪽만 바뀌면 Spring이 프로파일을 못 찾아 application.yml의 로컬 기본값으로
+# 떨어지고, 그 DB에 붙지 못해 기동에 실패한다(무중단 배포가 롤백한다).
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+app:
+  auth:
+    jwt-secret: ${JWT_SIGNING_KEY}
+  storage:
+    endpoint: ${S3_ENDPOINT}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+    bucket: ${S3_BUCKET}
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL}
+    client-id: ${MQTT_CLIENT_ID}
+    username: ${MQTT_USERNAME}
+    password: ${MQTT_PASSWORD}
+    environment: ${MQTT_ENV:prod}
+    tls-ca-path: ${MQTT_TLS_CA_PATH}
+  stream:
+    webrtc-base-url: ${WEBRTC_BASE_URL:http://localhost:8889/live}
+    talkback-whip-base-url: ${TALKBACK_WHIP_BASE_URL:http://localhost:8889/talkback}

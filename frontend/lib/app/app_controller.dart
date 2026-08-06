@@ -130,6 +130,7 @@ class AppController extends ChangeNotifier {
     if (listEquals(savedOrder, nextOrder)) return;
     _deviceOrders[scope] = nextOrder;
     unawaited(_savePlacePreferences());
+    unawaited(_pushDeviceOrder());
   }
 
   void _syncPresenceStatus(
@@ -155,7 +156,78 @@ class AppController extends ChangeNotifier {
     return userId == null ? null : 'bbanggeut_device_places_v1_$userId';
   }
 
+  /// 장소 배치를 읽는다. 서버가 원본이고 로컬은 오프라인 사본이다.
+  ///
+  /// **왜 로컬을 남기는가**: 배치는 홈 화면이 처음 그려질 때 이미 필요하다.
+  /// 서버 응답을 기다리면 기기 목록이 한 번 흔들리고, 비행기 모드에서는 아예
+  /// 못 읽는다. 로컬로 먼저 그리고 서버 값이 오면 갈아 끼운다.
+  ///
+  /// 지금 보고 있는 장소(selectedPlace)는 화면 상태라 서버에 두지 않는다.
   Future<void> _loadPlacePreferences() async {
+    await _loadLocalPlacePreferences();
+    await _syncPlaceLayoutFromServer();
+  }
+
+  /// 서버 배치를 받아 반영한다. 서버가 비어 있으면 이 폰의 배치를 한 번 올린다.
+  ///
+  /// **왜 올려 주는가**: 서버화 이전에 각자 정리해 둔 배치가 있다. 그냥
+  /// 서버 값(빈 목록)으로 덮으면 모두의 장소·순서가 기본값으로 초기화된다.
+  Future<void> _syncPlaceLayoutFromServer() async {
+    final vault = selectedVault;
+    if (vault == null) return;
+    try {
+      final layout = await api.getPlaceLayout(vault.id);
+      if (layout.isEmpty) {
+        await _pushPlaceLayout();
+        await _pushDeviceOrder();
+        return;
+      }
+      _placeNames
+        ..clear()
+        ..addAll(layout.places);
+      _devicePlaces
+        ..clear()
+        ..addAll(layout.devicePlaces);
+      if (layout.deviceOrder.isNotEmpty) {
+        _deviceOrders[vault.id] = List<String>.of(layout.deviceOrder);
+      }
+      if (!_placeNames.contains(_selectedPlaceName)) {
+        _selectedPlaceName = _placeNames.first;
+      }
+      unawaited(_savePlacePreferences());
+      notifyListeners();
+    } on ApiFailure {
+      // 오프라인이면 로컬 사본으로 계속 쓴다.
+    }
+  }
+
+  Future<void> _pushPlaceLayout() async {
+    final vault = selectedVault;
+    if (vault == null) return;
+    try {
+      await api.replacePlaceLayout(
+        vault.id,
+        places: List<String>.of(_placeNames),
+        devicePlaces: Map<String, String>.of(_devicePlaces),
+      );
+    } on ApiFailure {
+      // 로컬에는 남아 있다. 다음 진입에서 다시 맞춘다.
+    }
+  }
+
+  Future<void> _pushDeviceOrder() async {
+    final vault = selectedVault;
+    if (vault == null) return;
+    final order = _deviceOrders[vault.id];
+    if (order == null || order.isEmpty) return;
+    try {
+      await api.replaceDeviceOrder(vault.id, List<String>.of(order));
+    } on ApiFailure {
+      // 로컬에는 남아 있다.
+    }
+  }
+
+  Future<void> _loadLocalPlacePreferences() async {
     final key = _placeStorageKey;
     if (key == null) return;
     try {
@@ -252,6 +324,7 @@ class AppController extends ChangeNotifier {
     }
     _devicePlaces[deviceId] = normalized;
     unawaited(_savePlacePreferences());
+    unawaited(_pushPlaceLayout());
     notifyListeners();
   }
 
@@ -280,6 +353,7 @@ class AppController extends ChangeNotifier {
         if (placeIds.contains(id)) (reordered..moveNext()).current else id,
     ];
     unawaited(_savePlacePreferences());
+    unawaited(_pushDeviceOrder());
     notifyListeners();
   }
 
@@ -295,6 +369,7 @@ class AppController extends ChangeNotifier {
     _placeNames.add(normalized);
     _selectedPlaceName = normalized;
     unawaited(_savePlacePreferences());
+    unawaited(_pushPlaceLayout());
     notifyListeners();
     return true;
   }
@@ -674,6 +749,38 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// 홈이 보여 주는 값을 다시 받는다 — 오늘의 웃음, 최근 저장된 추억, 리포트 수.
+  ///
+  /// **왜 필요한가**: 홈 탭에 들어오거나 앱을 다시 열 때 [refreshPresence]만
+  /// 불렀다. 그것은 금고와 기기 목록(카메라가 켜져 있는가)만 새로 받고 요약은
+  /// 건드리지 않는다. 그래서 "웃음이 저장됐어요" 알림을 보고 들어와도 '오늘의
+  /// 웃음' 숫자가 그대로였다 — 캘린더 탭을 한 번 들렀다 오거나 앱을 껐다 켜야
+  /// 바뀌었다.
+  ///
+  /// 짧은 간격으로 겹쳐 부르지 않는다. 알림을 열고 상세를 닫고 앱이 다시
+  /// 활성화되는 것이 몇 백 밀리초 안에 잇따라 일어나서, 막지 않으면 같은
+  /// 여섯 번의 요청이 세 벌 나간다.
+  Future<void> refreshHome({bool force = false}) async {
+    if (!authenticated || selectedDevice == null) return;
+    final now = DateTime.now();
+    final last = _lastHomeRefresh;
+    if (!force &&
+        last != null &&
+        now.difference(last) < _homeRefreshInterval) {
+      return;
+    }
+    _lastHomeRefresh = now;
+    try {
+      await refreshDeviceData();
+    } catch (_) {
+      // 홈 새로고침은 최선 노력이다. 실패하면 마지막으로 받은 값을 그대로 둔다 —
+      // 숫자를 지우면 "0으로 줄었다"로 읽힌다.
+    }
+  }
+
+  static const _homeRefreshInterval = Duration(seconds: 10);
+  DateTime? _lastHomeRefresh;
+
   Future<void> refreshDeviceData() async {
     if (devHomeCam) {
       notifyListeners();
@@ -794,13 +901,21 @@ class AppController extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> updateSelectedDevice({String? name, int? retentionDays}) async =>
+  /// [detectionEnabled]를 false로 주면 서버가 이 카메라의 영상 업로드를
+  /// 거절한다. 카메라는 계속 찍고 올리려 시도한다 — 펌웨어를 바꾸지 않는
+  /// 서버 측 차단이다.
+  Future<bool> updateSelectedDevice({
+    String? name,
+    int? retentionDays,
+    bool? detectionEnabled,
+  }) async =>
       _guard(() async {
         final device = requireSelectedDevice('기기 설정을 바꿀 수 없어요.');
         final updated = await api.updateDevice(
           device.id,
           name: name,
           retentionDays: retentionDays,
+          detectionEnabled: detectionEnabled,
         );
         devices = devices
             .map((item) => item.id == updated.id ? updated : item)
@@ -823,28 +938,29 @@ class AppController extends ChangeNotifier {
 
   Future<bool> toggleFavorite(VideoMemory video) async => _guard(() async {
     await api.updateVideo(video.id, favorite: !video.favorite);
-    final index = videos.indexWhere((item) => item.id == video.id);
-    if (index >= 0) {
-      final next = [...videos];
-      next[index] = VideoMemory(
-        id: video.id,
-        deviceId: video.deviceId,
-        triggerType: video.triggerType,
-        eventTypes: video.eventTypes,
-        sourceType: video.sourceType,
-        title: video.title,
-        description: video.description,
-        status: video.status,
-        favorite: !video.favorite,
-        durationMs: video.durationMs,
-        thumbnailUrl: video.thumbnailUrl,
-        capturedStartAt: video.capturedStartAt,
-        createdAt: video.createdAt,
-      );
-      videos = next;
-      notifyListeners();
-    }
+    _replaceVideo(video.copyWith(favorite: !video.favorite));
   });
+
+  /// 제목을 바꾸고 목록의 그 한 줄만 갈아 끼운다.
+  ///
+  /// **왜 다시 조회하지 않는가**: 예전에는 저장 뒤 그 영상을 다시 받고
+  /// `refreshDeviceData()`까지 불러, 기기 상태·통계·목록·구성원·초대·홈 요약
+  /// 여섯 요청이 끝날 때까지 화면이 예전 제목을 들고 기다렸다. 바뀐 값은 방금
+  /// 우리가 보낸 그 값이라 서버에 되물을 이유가 없다.
+  Future<bool> renameVideo(VideoMemory video, String title) async =>
+      _guard(() async {
+        await api.updateVideo(video.id, title: title);
+        _replaceVideo(video.copyWith(title: title));
+      });
+
+  void _replaceVideo(VideoMemory updated) {
+    final index = videos.indexWhere((item) => item.id == updated.id);
+    if (index < 0) return;
+    final next = [...videos];
+    next[index] = updated;
+    videos = next;
+    notifyListeners();
+  }
 
   Future<bool> createInvitation(String email, String role) async =>
       _guard(() async {

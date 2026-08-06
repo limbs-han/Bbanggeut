@@ -55,15 +55,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       setState(() => errorText = '이름은 2자 이상 입력해 주세요.');
       return;
     }
-    if (value.length > 80) {
-      setState(() => errorText = '이름은 80자 이하로 입력해 주세요.');
+    // 서버와 DB(users.display_name varchar(60))가 60자까지만 받는다. 여기서
+    // 80자를 허용하면 그 사이 길이는 저장 버튼을 누른 뒤 서버 오류로 되돌아온다.
+    if (value.length > 60) {
+      setState(() => errorText = '이름은 60자 이하로 입력해 주세요.');
       return;
     }
     setState(() => errorText = null);
     final ok = await widget.controller.updateProfile(value);
     if (!mounted) return;
     if (ok) {
-      if (avatar != null) await ProfileAvatarStore.save(avatar!);
+      if (avatar != null) {
+        await ProfileAvatarStore.save(avatar!);
+        await _pruneUnusedAvatarFiles(avatar!);
+      }
       if (!mounted) return;
       showAppSnack(context, '프로필을 수정했어요.');
       Navigator.pop(context, true);
@@ -71,6 +76,27 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       setState(
         () => errorText = widget.controller.errorMessage ?? '프로필을 수정하지 못했어요.',
       );
+    }
+  }
+
+  /// 사진을 고를 때마다 파일이 하나 새로 생긴다. 저장이 끝난 뒤 지금 쓰는
+  /// 것만 남기고 지운다.
+  ///
+  /// **저장 뒤에 지우는 이유**: 고르기만 하고 화면을 닫으면 저장소는 여전히
+  /// 예전 파일을 가리킨다. 고르는 시점에 지워버리면 그 파일이 사라져 아바타가
+  /// 기본 캐릭터로 되돌아간다.
+  Future<void> _pruneUnusedAvatarFiles(ProfileAvatarSelection saved) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final keep = saved.isFile ? saved.value : null;
+      for (final entity in directory.listSync()) {
+        if (entity is! File) continue;
+        if (!entity.uri.pathSegments.last.startsWith(avatarFilePrefix)) continue;
+        if (entity.path == keep) continue;
+        await entity.delete();
+      }
+    } catch (_) {
+      // 정리에 실패해도 프로필 저장은 이미 끝났다. 사용자에게 알릴 일이 아니다.
     }
   }
 
@@ -132,8 +158,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final extension = picked.path.contains('.')
           ? picked.path.substring(picked.path.lastIndexOf('.'))
           : '.jpg';
+      final stamp = DateTime.now().millisecondsSinceEpoch;
       final destination =
-          '${directory.path}${Platform.pathSeparator}profile_avatar$extension';
+          '${directory.path}${Platform.pathSeparator}'
+          '$avatarFilePrefix$stamp$extension';
       await File(picked.path).copy(destination);
       if (mounted) {
         setState(() => avatar = ProfileAvatarSelection.file(destination));
@@ -336,7 +364,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   TextField(
                     key: const Key('profile-display-name'),
                     controller: displayName,
-                    maxLength: 80,
+                    maxLength: 60,
                     textInputAction: TextInputAction.done,
                     onSubmitted: (_) => _save(),
                     decoration: InputDecoration(

@@ -16,8 +16,8 @@ public class VideoDeletionJobRepository {
     }
 
     @Transactional
-    public List<VideoDeletionJob> claim(int limit) {
-        return mapper.claim(limit);
+    public List<VideoDeletionJob> claim(int limit, int maxAttempts) {
+        return mapper.claim(limit, maxAttempts);
     }
 
     @Transactional

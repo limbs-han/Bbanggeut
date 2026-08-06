@@ -1,5 +1,13 @@
 logLevel: info
 
+# 송출이 이만큼 조용하면 퍼블리셔 연결을 끊는다. 기본값 10초는 모바일망
+# 기기에게 너무 짧았다 — LTE가 10초만 밀려도 MediaMTX가 RTSPS 퍼블리셔를
+# i/o timeout으로 잘라내고, 경로가 사라지면서 보고 있던 시청자 전원이
+# `closed: terminated`로 함께 떨어진다(운영 로그에서 하루 3건 확인).
+# 30초는 백엔드의 재연결 유예(StreamMediaReconcileWorker, 30초 뒤 재연결
+# 대기 → 120초까지 대기)와 같은 눈금이라, 짧은 끊김을 양쪽이 같이 참는다.
+readTimeout: 30s
+
 authMethod: internal
 # Users are injected by Docker Compose from the root-only infra/.env file.
 authInternalUsers: []

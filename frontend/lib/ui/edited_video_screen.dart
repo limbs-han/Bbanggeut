@@ -8,7 +8,8 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_theme.dart';
 import '../core/api_client.dart';
-import '../core/models.dart';
+import 'media_player_surface.dart';
+import 'video_comments_section.dart';
 import 'widgets.dart';
 
 /// 편집 완료 영상 하나를 재생하고 가족 댓글을 다는 화면. 영상과 댓글 모두
@@ -21,6 +22,8 @@ class EditedVideoScreen extends StatefulWidget {
     required this.title,
     required this.api,
     this.savedAt,
+    this.myUserId,
+    this.isOwner = false,
   });
 
   final String videoId;
@@ -30,15 +33,22 @@ class EditedVideoScreen extends StatefulWidget {
   /// 편집본·댓글을 다루는 백엔드 클라이언트.
   final ApiClient api;
 
+  /// 지금 로그인한 사용자. 자기 댓글에만 수정·삭제를 띄우기 위해 받는다.
+  final String? myUserId;
+
+  /// 금고 OWNER인가. OWNER는 남의 댓글도 지울 수 있다(수정은 못 한다).
+  final bool isOwner;
+
   @override
   State<EditedVideoScreen> createState() => _EditedVideoScreenState();
 }
 
 class _EditedVideoScreenState extends State<EditedVideoScreen> {
-  final _commentInput = TextEditingController();
   VideoPlayerController? _player;
-  List<VideoComment> _comments = const [];
-  bool _sending = false;
+
+  /// 머리줄에 적을 댓글 수. 목록과 입력은 VideoCommentsSection이 들고 있고
+  /// 개수만 콜백으로 받아 온다.
+  int _commentCount = 0;
 
   /// 갤러리 저장 진행률(0~1). null이면 저장 중이 아니다.
   double? _downloadProgress;
@@ -83,7 +93,6 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
   void initState() {
     super.initState();
     _preparePlayer();
-    _loadComments();
   }
 
   Future<void> _preparePlayer() async {
@@ -105,34 +114,9 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
     }
   }
 
-  Future<void> _loadComments() async {
-    try {
-      final comments = await widget.api.listVideoComments(widget.videoId);
-      if (mounted) setState(() => _comments = comments);
-    } catch (_) {
-      // 댓글을 못 불러와도 재생은 계속한다.
-    }
-  }
-
-  Future<void> _sendComment() async {
-    final text = _commentInput.text.trim();
-    if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
-    try {
-      await widget.api.addVideoComment(widget.videoId, text);
-      _commentInput.clear();
-      await _loadComments();
-    } catch (_) {
-      if (mounted) showAppSnack(context, '댓글을 남기지 못했어요.', error: true);
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
   @override
   void dispose() {
     _player?.dispose();
-    _commentInput.dispose();
     super.dispose();
   }
 
@@ -182,25 +166,16 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                       )
                     : player == null
                     ? const Center(child: CircularProgressIndicator())
-                    : GestureDetector(
-                        onTap: () => setState(() {
-                          player.value.isPlaying
-                              ? player.pause()
-                              : player.play();
-                        }),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            VideoPlayer(player),
-                            if (!player.value.isPlaying)
-                              const Icon(
-                                Icons.play_circle_fill_rounded,
-                                size: 64,
-                                color: Colors.white70,
-                              ),
-                          ],
-                        ),
-                      ),
+                    // 원본 상세 화면과 같은 재생 표면을 쓴다.
+                    //
+                    // 예전에는 여기만 손으로 만든 `VideoPlayer` + 눌러서
+                    // 재생·정지였다. 진행 바가 없어서 편집한 영상은 처음부터
+                    // 끝까지 보는 수밖에 없었다 — 몇 분 몇 초로 옮기거나
+                    // 10초를 되감을 방법이 아예 없었고, 남은 길이도 알 수
+                    // 없었다. `MediaPlayerSurface`는 탐색 바·시각 표시·
+                    // ±10초·전체화면을 이미 갖고 있으므로 편집본이 원본과
+                    // 다르게 동작할 이유가 없다.
+                    : MediaPlayerSurface(controller: player),
               ),
             ),
             Padding(
@@ -225,7 +200,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                     ),
                   ),
                   Text(
-                    '댓글 ${_comments.length}',
+                    '댓글 $_commentCount',
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -235,113 +210,19 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
               ),
             ),
             const Divider(height: 16),
+            // 목록·입력·수정·삭제는 원본 상세 화면과 같은 위젯을 쓴다.
+            // 개수만 콜백으로 받아 위 머리줄에 적는다.
             Expanded(
-              child: _comments.isEmpty
-                  ? const Center(
-                      child: Text(
-                        '첫 댓글을 남겨 보세요!',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      itemCount: _comments.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
-                      itemBuilder: (context, index) {
-                        final comment = _comments[index];
-                        final createdAt = comment.createdAt?.toLocal();
-                        final author = comment.authorName?.isNotEmpty == true
-                            ? comment.authorName!
-                            : '가족';
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            CircleAvatar(
-                              radius: 15,
-                              backgroundColor: AppColors.sage.withValues(
-                                alpha: 0.35,
-                              ),
-                              child: Text(
-                                author.characters.first,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        author,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      if (createdAt != null)
-                                        Text(
-                                          DateFormat(
-                                            'M.d HH:mm',
-                                          ).format(createdAt),
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: AppColors.muted,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  Text(
-                                    comment.body,
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                12,
-                6,
-                12,
-                8 + MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _commentInput,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendComment(),
-                      decoration: const InputDecoration(
-                        hintText: '따뜻한 한마디를 남겨 주세요',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _sending ? null : _sendComment,
-                    icon: _sending
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_rounded),
-                  ),
-                ],
+              child: VideoCommentsSection(
+                api: widget.api,
+                videoId: widget.videoId,
+                myUserId: widget.myUserId,
+                isOwner: widget.isOwner,
+                expanded: true,
+                showHeader: false,
+                onCountChanged: (count) {
+                  if (mounted) setState(() => _commentCount = count);
+                },
               ),
             ),
           ],

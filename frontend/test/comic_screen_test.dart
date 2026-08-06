@@ -19,7 +19,7 @@ import 'package:william_james_app/features/stt/transcript_store.dart';
 class _MemoryStore extends TranscriptStore {
   _MemoryStore(this._saved)
     : super(
-        transcriber: (_) async => const [],
+        transcriber: (_, [_]) async => const [],
         root: () async => Directory.systemTemp,
       );
 
@@ -66,6 +66,28 @@ class _StubGateway implements ComicGateway {
     if (imageError != null) throw imageError!;
     return png;
   }
+
+  /// 백그라운드 경로. 화면 테스트는 대기 줄을 흉내 내지 않고 곧바로 끝난 것으로
+  /// 둔다 — 폴링 타이머를 가짜 시계 위에서 돌리면 검증하려는 화면이 아니라
+  /// 타이머를 검증하게 된다.
+  @override
+  Future<ComicJobStatus> enqueueImage(
+    String videoId,
+    List<ComicCut> cuts, {
+    String style = comicDefaultStyle,
+  }) async {
+    imageCalls++;
+    if (imageError != null) throw imageError!;
+    return const ComicJobStatus(status: 'done', imageUrl: 'stub://comic');
+  }
+
+  /// 화면을 열 때 부른다. 저장된 만화가 없는 상태에서 시작해야 구성 화면이 뜬다.
+  @override
+  Future<ComicJobStatus> jobStatus(String videoId) async =>
+      const ComicJobStatus(status: 'none');
+
+  @override
+  Future<Uint8List> download(String imageUrl) async => png;
 }
 
 final _video = VideoMemory(
@@ -95,14 +117,13 @@ List<CaptionLine> _lines() => [
 ];
 
 /// 0컷 대사를 '고친 대사'로 바꾼다. 온디바이스 인식이 틀려 손으로 고치는 상황이다.
+///
+/// 목록에서 바로 고친다 — 다이얼로그를 열고 '넣기'를 누르는 단계가 없다.
 Future<void> _editFirstDialogue(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('comic-cut-0')));
-  await tester.pumpAndSettle();
   await tester.enterText(
-    find.byKey(const ValueKey('comic-dialogue-field')),
+    find.byKey(const ValueKey('comic-dialogue-field-0')),
     '고친 대사',
   );
-  await tester.tap(find.text('넣기'));
   await tester.pumpAndSettle();
 }
 
@@ -119,6 +140,7 @@ void main() {
     List<CaptionLine>? saved,
     Object? scriptError,
     Object? imageError,
+    Future<String> Function(void Function(int percent))? sourceProvider,
   }) {
     gateway = _StubGateway(
       png: png,
@@ -128,15 +150,26 @@ void main() {
     return ComicController(
       gateway: gateway,
       videoId: 'v1',
+      sourceProvider: sourceProvider,
       store: _MemoryStore(saved),
     );
   }
 
-  testWidgets('전사문이 없으면 안내를 보여준다', (tester) async {
+  // 자막이 없을 때 **여기서 만들 수 있어야 한다.** 편집 화면으로 보내 놓고
+  // 돌아오라고 하는 안내는 실제로 여기서 멈추게 했다.
+  testWidgets('전사문이 없으면 자막 만들기 버튼을 보여준다', (tester) async {
+    await pump(tester, build(sourceProvider: (_) async => '/video/v1.mp4'));
+
+    expect(find.textContaining('먼저 대사를'), findsOneWidget);
+    expect(find.byKey(const ValueKey('comic-make-transcript')), findsOneWidget);
+    expect(find.byKey(const ValueKey('comic-make-image')), findsNothing);
+  });
+
+  // 원본을 받아올 통로가 없으면 누를 수 없는 버튼을 보여 주지 않는다.
+  testWidgets('원본 통로가 없으면 자막 만들기 버튼도 없다', (tester) async {
     await pump(tester, build());
 
-    expect(find.textContaining('대사를 먼저'), findsOneWidget);
-    expect(find.byKey(const ValueKey('comic-make-image')), findsNothing);
+    expect(find.byKey(const ValueKey('comic-make-transcript')), findsNothing);
   });
 
   testWidgets('구성을 받으면 네 컷을 보여준다', (tester) async {
@@ -145,6 +178,23 @@ void main() {
     expect(find.text('대사0'), findsOneWidget);
     expect(find.text('장면0'), findsOneWidget);
     expect(find.byKey(const ValueKey('comic-make-image')), findsOneWidget);
+  });
+
+  /// 장면 설명을 두 줄로 묶고 말줄임표를 붙였더니 모델이 쓰는 "누가 무엇을
+  /// 하고 있고, 그 뒤에서 누가 무엇을 한다" 꼴 문장이 늘 뒷절째로 잘렸다.
+  /// 이 화면은 그림이 어떻게 나올지 보고 대사를 판단하라고 있는 것이라,
+  /// 잘리면 존재 이유가 없어진다.
+  testWidgets('장면 설명을 자르지 않고 다 보여 준다', (tester) async {
+    await pump(tester, build(saved: _lines()));
+
+    for (final text in tester.widgetList<Text>(find.textContaining('장면'))) {
+      expect(text.maxLines, isNull, reason: '장면 설명에 줄 수 상한이 없어야 한다');
+      expect(text.overflow, isNot(TextOverflow.ellipsis));
+    }
+    // 컷 대목(beat)도 마찬가지다 — 잘리면 무슨 대목인지가 사라진다.
+    for (final text in tester.widgetList<Text>(find.textContaining('컷0'))) {
+      expect(text.overflow, isNot(TextOverflow.ellipsis));
+    }
   });
 
   testWidgets('대사를 눌러 고치면 목록에 반영된다', (tester) async {

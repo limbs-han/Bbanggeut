@@ -14,6 +14,7 @@ import com.wj.server.config.ComicProperties;
 import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.ComicCutPayload;
 import com.wj.server.video.api.ComicImageRequest;
+import com.wj.server.video.api.ComicJobResponse;
 import com.wj.server.video.api.ComicImageResponse;
 import com.wj.server.video.api.ComicScriptRequest;
 import com.wj.server.video.api.ComicScriptResponse;
@@ -22,6 +23,7 @@ import com.wj.server.video.persistence.VideoMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -63,6 +65,7 @@ public class ComicGatewayService {
     private final AuditService auditService;
     private final SlidingWindowRateLimiter rateLimiter;
     private final ComicProperties properties;
+    private final ComicFeedService comicFeedService;
     private final RestClient workerClient;
 
     public ComicGatewayService(
@@ -71,6 +74,7 @@ public class ComicGatewayService {
         AuditService auditService,
         SlidingWindowRateLimiter rateLimiter,
         ComicProperties properties,
+        ComicFeedService comicFeedService,
         RestClient.Builder restClientBuilder
     ) {
         this.videoMapper = videoMapper;
@@ -78,6 +82,7 @@ public class ComicGatewayService {
         this.auditService = auditService;
         this.rateLimiter = rateLimiter;
         this.properties = properties;
+        this.comicFeedService = comicFeedService;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
         // 워커가 스스로 150초에 끊는다. 여기서 더 짧게 끊으면 워커의 한국어 실패
@@ -127,6 +132,76 @@ public class ComicGatewayService {
         }
         auditService.success(video.deviceId(), userId, "COMIC_IMAGE", "VIDEO", videoId);
         return response;
+    }
+
+    /**
+     * 그림 만들기를 백그라운드 작업으로 맡긴다.
+     *
+     * <p>동기 경로({@link #createImage})는 수십 초를 붙잡아 두므로 사용자가 화면을
+     * 벗어나면 그 시간이 버려졌다. 이 경로는 워커에 넘기고 곧바로 돌아온다 —
+     * 워커가 결과를 저장하고 끝나면 알림(COMIC_READY)이 나간다.
+     *
+     * <p>호출 예산은 동기 경로와 같은 기준으로 센다. 백그라운드라고 해서 생성
+     * 비용이 사라지지는 않는다.
+     */
+    public ComicJobResponse enqueueImage(
+        UUID userId, String token, UUID videoId, ComicImageRequest request) {
+        VideoRow video = readyVideo(userId, videoId, "COMIC_IMAGE");
+        List<ComicCutPayload> cuts = validCuts(request);
+        String style = style(request.style());
+        requireBudget(userId, videoId, video, "COMIC_IMAGE");
+        ComicJobResponse response = callWorker(
+            HttpMethod.PUT,
+            "/v1/comic/" + videoId + "/image",
+            token,
+            Map.of("cuts", cuts, "style", style),
+            ComicJobResponse.class);
+        if (response == null || response.status() == null) {
+            throw workerFailed();
+        }
+        auditService.success(video.deviceId(), userId, "COMIC_IMAGE", "VIDEO", videoId);
+        return response;
+    }
+
+    /**
+     * 만화 작업 상태와, 다 됐으면 그림을 받을 단기 URL.
+     *
+     * <p>호출 예산을 세지 않는다 — 상태 확인은 생성 비용이 없고, 폴링을 막으면
+     * 앱이 진행 상황을 볼 방법이 없어진다.
+     */
+    public ComicJobResponse imageStatus(UUID userId, String token, UUID videoId) {
+        readyVideo(userId, videoId, "COMIC_IMAGE_STATUS");
+        ComicJobResponse response = callWorker(
+            HttpMethod.GET,
+            "/v1/comic/" + videoId + "/image",
+            token,
+            null,
+            ComicJobResponse.class);
+        if (response == null || response.status() == null) {
+            throw workerFailed();
+        }
+        return response;
+    }
+
+    /**
+     * 만화를 지운다 — 워커가 든 그림·구성과 피드 행이 함께 사라진다.
+     *
+     * <p><b>순서가 워커 먼저인 이유</b>: 행을 먼저 지우면 워커 호출이 실패했을 때
+     * 그림은 그대로인데 피드에서만 사라진다. 워커를 먼저 부르면 실패는 "아무것도
+     * 지워지지 않음"이라 사용자가 다시 누르면 된다. 반대로 워커만 성공하고 행이
+     * 남는 경우는 다시 눌러 복구된다 — 워커의 DELETE는 멱등이다.
+     *
+     * <p>영상이 READY인지는 보지 않는다. 보관이 끝나 상태가 바뀐 영상의 만화도
+     * 지울 수 있어야 한다.
+     */
+    public void deleteComic(UUID userId, String token, UUID videoId) {
+        VideoRow video = videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(
+            () -> new ApiException(
+                HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "리소스를 찾을 수 없습니다."));
+        comicFeedService.requireDeletable(userId, videoId);
+        callWorker(HttpMethod.DELETE, "/v1/comic/" + videoId, token, null, Void.class);
+        comicFeedService.delete(videoId);
+        auditService.success(video.deviceId(), userId, "COMIC_DELETE", "VIDEO", videoId);
     }
 
     private VideoRow readyVideo(UUID userId, UUID videoId, String action) {
@@ -209,16 +284,30 @@ public class ComicGatewayService {
     }
 
     private <T> T callWorker(String path, String token, Object body, Class<T> responseType) {
+        return callWorker(HttpMethod.POST, path, token, body, responseType);
+    }
+
+    private <T> T callWorker(
+        HttpMethod method, String path, String token, Object body, Class<T> responseType) {
         try {
-            return workerClient.post()
+            var request = workerClient.method(method)
                 .uri(path)
                 // 워커가 같은 백엔드 토큰을 스스로 검증하고 금고 범위를 다시 본다.
                 // 이 헤더를 빼면 모든 만화 요청이 401이 된다.
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                .body(body)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return (body == null ? request : request.body(body))
                 .retrieve()
                 .body(responseType);
         } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == HttpStatus.CONFLICT.value()) {
+                // 지금은 삭제 경로만 409를 낸다 — 그리는 중인 만화를 지우려 한
+                // 경우다. 502로 뭉개면 "서버 오류"로 보이지만 실제로는 잠시 뒤
+                // 다시 누르면 되는 상황이다.
+                throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "COMIC_BUSY",
+                    "만화를 만드는 중입니다. 다 만든 뒤에 지울 수 있습니다.");
+            }
             if (exception.getStatusCode().value() == HttpStatus.UNPROCESSABLE_ENTITY.value()) {
                 // 워커가 재료 부족으로 거절한 경우다. 다시 눌러도 같은 결과이므로
                 // 사용자에게 다른 영상을 고르라고 알려야 한다.

@@ -64,7 +64,7 @@ public interface VideoMapper {
      */
     @Select("""
         SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id,
-               v.title, v.description, v.content_type, v.size_bytes, v.checksum_sha256,
+               v.title, v.content_type, v.size_bytes, v.checksum_sha256,
                v.duration_ms, v.captured_start_at, v.captured_end_at, v.storage_key,
                v.status, v.is_favorite AS favorite, v.created_at,
                array_to_string(v.event_types, ',') AS event_types_csv
@@ -88,7 +88,7 @@ public interface VideoMapper {
      * 부를 수 없으므로 서버가 객체가 왔는지 훑어 승격한다.
      */
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -147,7 +147,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -161,7 +161,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT id, device_id, source_type, trigger_type, source_event_id, title, description,
+        SELECT id, device_id, source_type, trigger_type, source_event_id, title,
                content_type, size_bytes, checksum_sha256, duration_ms,
                captured_start_at, captured_end_at, storage_key, status,
                is_favorite AS favorite, created_at,
@@ -173,6 +173,16 @@ public interface VideoMapper {
         @Param("deviceId") UUID deviceId,
         @Param("videoId") UUID videoId
     );
+
+    /**
+     * 이 영상을 만든 사람. 편집본 삭제 권한을 가리는 데 쓴다.
+     *
+     * {@link VideoRow}에 얹지 않은 이유는 이 값을 쓰는 곳이 삭제 한 군데뿐인데
+     * record에 넣으면 영상을 읽는 모든 select를 함께 넓혀야 하기 때문이다.
+     * 기기가 올린 원본은 이 값이 비어 있다(사람이 만든 것이 아니다).
+     */
+    @Select("SELECT created_by FROM videos WHERE id = #{videoId}")
+    Optional<UUID> findCreatorId(@Param("videoId") UUID videoId);
 
     @Update("""
         UPDATE videos v
@@ -281,7 +291,7 @@ public interface VideoMapper {
 
     @Select("""
         <script>
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -321,7 +331,7 @@ public interface VideoMapper {
 
     @Select("""
         <script>
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -370,21 +380,22 @@ public interface VideoMapper {
         @Param("to") Instant to
     );
 
-    @Select("""
-        SELECT count(*)
-          FROM videos
-         WHERE device_id = #{deviceId} AND status = 'READY'
-           AND description IS NOT NULL AND btrim(description) <> ''
-           AND captured_start_at >= #{from} AND captured_start_at < #{to}
-        """)
-    long countReadyVideosWithMemo(
-        @Param("deviceId") UUID deviceId,
-        @Param("from") Instant from,
-        @Param("to") Instant to
-    );
 
+    /**
+     * 홈의 "최근 저장된 추억" 카드에 들어가는 한 건. 이름은 highlight지만
+     * 고르는 기준은 <b>최신순뿐</b>이다.
+     *
+     * <p><b>왜 즐겨찾기를 먼저 보지 않는가</b>: 예전 정렬은
+     * {@code is_favorite DESC}가 맨 앞이었다. 그러면 즐겨찾기를 한 번 누른
+     * 순간 그 영상이 카드에 못박히고, 그 뒤로 저장되는 영상은 아무리 새것이어도
+     * 홈에 올라오지 못한다 — 실제로 즐겨찾기 4건 중 가장 최신이 7월 31일인
+     * 기기에서, 영상 268건이 쌓이고 오늘 것이 계속 들어오는데도 홈은 7월 31일
+     * 영상을 보여 주고 있었다. 카드 제목이 "최근 저장된 추억"이므로 사용자가
+     * 기대하는 값은 가장 최근에 저장된 것이고, 즐겨찾기는 홈이 아니라 즐겨찾기
+     * 화면이 담당한다.
+     */
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -395,7 +406,7 @@ public interface VideoMapper {
            AND m.user_id = #{userId}
            AND m.status = 'ACTIVE'
            AND v.status = 'READY'
-         ORDER BY v.is_favorite DESC, v.captured_start_at DESC NULLS LAST, v.created_at DESC
+         ORDER BY v.captured_start_at DESC NULLS LAST, v.created_at DESC
          LIMIT 1
         """)
     Optional<VideoRow> findLatestHighlight(
@@ -466,7 +477,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -484,7 +495,7 @@ public interface VideoMapper {
     );
 
     @Select("""
-        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title, v.description,
+        SELECT v.id, v.device_id, v.source_type, v.trigger_type, v.source_event_id, v.title,
                v.content_type, v.size_bytes, v.checksum_sha256, v.duration_ms,
                v.captured_start_at, v.captured_end_at, v.storage_key, v.status,
                v.is_favorite AS favorite, v.created_at,
@@ -516,7 +527,6 @@ public interface VideoMapper {
     @Update("""
         UPDATE videos
            SET title = CASE WHEN #{titlePresent} THEN #{title} ELSE title END,
-               description = CASE WHEN #{descriptionPresent} THEN #{description} ELSE description END,
                is_favorite = CASE WHEN #{favoritePresent} THEN #{favorite} ELSE is_favorite END,
                updated_at = now()
          WHERE id = #{videoId}
@@ -525,8 +535,6 @@ public interface VideoMapper {
         @Param("videoId") UUID videoId,
         @Param("titlePresent") boolean titlePresent,
         @Param("title") String title,
-        @Param("descriptionPresent") boolean descriptionPresent,
-        @Param("description") String description,
         @Param("favoritePresent") boolean favoritePresent,
         @Param("favorite") Boolean favorite
     );

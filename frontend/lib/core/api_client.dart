@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -99,6 +100,9 @@ class ApiClient {
   /// 편집 서버(editor-api)처럼 별도 Dio를 쓰는 클라이언트가 같은 세션으로
   /// 인증하도록 현재 액세스 토큰을 내어 준다. 로그인 전이면 null.
   String? get accessToken => _memoryAccessToken;
+
+  /// 기능별 Repository가 기존 인증·토큰 재발급 인터셉터를 재사용한다.
+  Dio get authenticatedDio => _dio;
 
   /// 액세스 토큰이 만료됐을 때 외부 클라이언트가 갱신을 부탁하는 통로.
   /// 진행 중인 갱신이 있으면 그 결과를 같이 기다린다.
@@ -322,6 +326,33 @@ class ApiClient {
         await _put('/api/schedules/${schedule.id}', data: schedule.toJson()),
       );
 
+  /// 금고의 장소 배치와 내 기기 순서.
+  Future<PlaceLayout> getPlaceLayout(String vaultId) async =>
+      PlaceLayout.fromJson(await _get('/api/vaults/$vaultId/places'));
+
+  /// 금고 공통 배치를 통째로 저장한다. 구성원 누구나 할 수 있다.
+  Future<PlaceLayout> replacePlaceLayout(
+    String vaultId, {
+    required List<String> places,
+    required Map<String, String> devicePlaces,
+  }) async => PlaceLayout.fromJson(
+    await _put(
+      '/api/vaults/$vaultId/places',
+      data: {'places': places, 'devicePlaces': devicePlaces},
+    ),
+  );
+
+  /// 내 기기 순서만 저장한다. 다른 구성원 화면에는 영향이 없다.
+  Future<PlaceLayout> replaceDeviceOrder(
+    String vaultId,
+    List<String> deviceIds,
+  ) async => PlaceLayout.fromJson(
+    await _put(
+      '/api/vaults/$vaultId/device-order',
+      data: {'deviceIds': deviceIds},
+    ),
+  );
+
   Future<void> deleteSchedule(String scheduleId) async =>
       _delete('/api/schedules/$scheduleId');
 
@@ -484,19 +515,25 @@ class ApiClient {
     }
   }
 
-  Future<void> updateVideo(
-    String id, {
-    String? title,
-    String? description,
-    bool? favorite,
-  }) async => _patch(
-    '/api/videos/$id',
-    data: {
-      'title': ?title,
-      'description': ?description,
-      'isFavorite': ?favorite,
-    },
+  Future<void> updateVideo(String id, {String? title, bool? favorite}) async =>
+      _patch(
+        '/api/videos/$id',
+        data: {'title': ?title, 'isFavorite': ?favorite},
+      );
+
+  /// 댓글 수정. 쓴 사람만 통과한다(서버가 403으로 거른다).
+  Future<void> updateVideoComment(
+    String videoId,
+    String commentId,
+    String body,
+  ) async => _patch(
+    '/api/videos/$videoId/comments/$commentId',
+    data: {'body': body},
   );
+
+  /// 댓글 삭제. 쓴 사람 또는 금고 OWNER만 통과한다.
+  Future<void> deleteVideoComment(String videoId, String commentId) async =>
+      _delete('/api/videos/$videoId/comments/$commentId');
   Future<void> deleteVideo(String id) async => _delete('/api/videos/$id');
   Future<VideoMemory> getVideo(String id) async =>
       VideoMemory.fromJson(await _get('/api/videos/$id'));
@@ -508,14 +545,23 @@ class ApiClient {
       (await _getList(
         '/api/vaults/$vaultId/members',
       )).map(DeviceMember.fromJson).toList();
+  /// 카메라 설정을 고친다. **준 값만 바뀐다** — 서버가 필드 존재 여부로 가른다.
+  ///
+  /// [detectionEnabled]가 false면 서버가 그 카메라의 영상 업로드를 거절한다.
+  /// 카메라 자체는 계속 찍고 올리려 시도하고, 서버가 409로 돌려보낸다.
   Future<DeviceSummary> updateDevice(
     String deviceId, {
     String? name,
     int? retentionDays,
+    bool? detectionEnabled,
   }) async => DeviceSummary.fromJson(
     await _patchMap(
       '/api/devices/$deviceId',
-      data: {'name': ?name, 'retentionDays': ?retentionDays},
+      data: {
+        'name': ?name,
+        'retentionDays': ?retentionDays,
+        'detectionEnabled': ?detectionEnabled,
+      },
     ),
   );
   Future<Invitation> createInvitation(
@@ -816,6 +862,102 @@ class ApiClient {
     data: {'cuts': cuts, 'style': style},
     options: _aiOptions,
   );
+
+  /// 만화 그림 만들기를 서버에 맡긴다(202). 화면을 벗어나도 계속되고 끝나면
+  /// 알림이 온다 — 진행 상황은 [getComicJob]으로 본다.
+  ///
+  /// 긴 대기(_aiOptions)를 붙이지 않는다. 이 호출은 작업을 맡기고 곧바로
+  /// 돌아오므로 평범한 요청과 같다.
+  Future<Map<String, dynamic>> enqueueComicImage(
+    String videoId, {
+    required List<Map<String, Object?>> cuts,
+    required String style,
+  }) => _put(
+    '/api/videos/$videoId/comic/image',
+    data: {'cuts': cuts, 'style': style},
+  );
+
+  /// 만화 작업 상태. `status`는 none·queued·running·done·failed이고, 다 됐으면
+  /// `imageUrl`로 그림을 받는다.
+  Future<Map<String, dynamic>> getComicJob(String videoId) =>
+      _get('/api/videos/$videoId/comic/image');
+
+  /// 금고의 만화 목록. 제목·좋아요·댓글 수를 함께 준다.
+  ///
+  /// 추억 탭의 만화 피드와 카드 배지가 **이 한 번의 응답**을 함께 쓴다.
+  /// 만화마다 따로 묻지 않는다 — 피드가 스무 장이면 왕복이 예순 번이 된다.
+  Future<List<VaultComic>> listVaultComics(String vaultId) async =>
+      (await _getList('/api/vaults/$vaultId/comics'))
+          .map(VaultComic.fromJson)
+          .where((comic) => comic.videoId.isNotEmpty)
+          .toList(growable: false);
+
+  /// 만화 제목을 바꾼다. 빈 제목을 보내면 원본 영상 제목으로 되돌아간다.
+  Future<VaultComic> updateComicTitle(String videoId, String title) async =>
+      VaultComic.fromJson(
+        await _patchMap('/api/videos/$videoId/comic', data: {'title': title}),
+      );
+
+  /// 좋아요를 켜고 끈다. 응답에 개수와 내 상태가 함께 온다 — 앱이 자기 숫자를
+  /// ±1 하는 것만으로는 그 사이 가족이 누른 것을 반영하지 못한다.
+  Future<({int likeCount, bool likedByMe})> setComicLiked(
+    String videoId,
+    bool liked,
+  ) async {
+    final body = liked
+        ? await _put('/api/videos/$videoId/comic/like')
+        : await _deleteMap('/api/videos/$videoId/comic/like');
+    return (
+      likeCount: (body['likeCount'] as num?)?.toInt() ?? 0,
+      likedByMe: body['likedByMe'] as bool? ?? liked,
+    );
+  }
+
+  Future<List<VideoComment>> listComicComments(String videoId) async =>
+      (await _getList(
+        '/api/videos/$videoId/comic/comments',
+      )).map(VideoComment.fromJson).toList(growable: false);
+
+  Future<VideoComment> addComicComment(String videoId, String body) async =>
+      VideoComment.fromJson(
+        await _post('/api/videos/$videoId/comic/comments', data: {'body': body}),
+      );
+
+  Future<void> deleteComicComment(String videoId, String commentId) async =>
+      _delete('/api/videos/$videoId/comic/comments/$commentId');
+
+  /// 만화를 지운다 — 그림·구성과 좋아요·댓글이 함께 사라진다. 원본 영상은
+  /// 남는다. 만든 사람 또는 금고 OWNER만 할 수 있고, 그리는 중이면
+  /// 409(COMIC_BUSY)다.
+  Future<void> deleteComic(String videoId) async =>
+      _delete('/api/videos/$videoId/comic');
+
+  /// 영상 분석(소리·움직임·표정)의 진행 상태.
+  ///
+  /// 편집 워커에 직접 묻지 않는다 — 워커는 상태를 메모리에만 들어서 재배포하면
+  /// 진행 중이던 분석이 사라져 보였다. 분석한 적이 없어도 200이고 NONE이다.
+  Future<VideoAnalysis> videoAnalysis(String videoId) async =>
+      VideoAnalysis.fromJson(await _get('/api/videos/$videoId/analysis'));
+
+  /// presigned URL에서 바이트를 그대로 받는다.
+  ///
+  /// 서명이 URL 안에 있으므로 **Bearer 헤더를 붙이면 안 된다** — MinIO는 서명과
+  /// Authorization 헤더가 함께 오면 거절한다. 그래서 인터셉터가 없는 별도
+  /// 클라이언트로 부른다(리프레시 호출이 쓰는 방식과 같다).
+  Future<Uint8List> downloadBytes(String url) async {
+    try {
+      final response = await Dio().get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: aiReceiveTimeout,
+        ),
+      );
+      return Uint8List.fromList(response.data ?? const []);
+    } on DioException catch (e) {
+      throw _failure(e);
+    }
+  }
 
   /// 만화 두 엔드포인트(API-71·72)에만 붙이는 긴 수신 대기. 나머지 호출은
   /// 전역 기본값 20초 그대로다 — 평범한 요청까지 3분을 기다리면 안 된다.

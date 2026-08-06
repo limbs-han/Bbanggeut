@@ -4,16 +4,14 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/notification_visuals.dart';
 import '../core/push_notification_service.dart';
 import '../ui/auth_screen.dart';
-import '../ui/content_calendar_screen.dart';
 import '../ui/content_notifications_screen.dart';
 import '../ui/device_registration_screen.dart';
-import '../ui/invitation_inbox_screen.dart';
-import '../ui/laugh_report_content_screen.dart';
 import '../ui/main_shell.dart';
+import '../ui/notification_routing.dart';
 import '../ui/onboarding_screen.dart';
-import '../ui/video_detail_screen.dart';
 import '../ui/widgets.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
@@ -86,44 +84,32 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
     pushBanner?.remove();
     pushBanner = null;
     try {
-      if (message.type == 'LAUGHTER_VIDEO_READY' &&
-          message.resourceId != null) {
-        final video = await controller.api.getVideo(message.resourceId!);
-        if (!mounted) return;
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) =>
-                VideoDetailScreen(controller: controller, video: video),
-          ),
-        );
-      } else if (message.type == 'ANNIVERSARY') {
-        // 기념일 푸시는 그 일정이 있는 캘린더로 보낸다.
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => ContentCalendarScreen(controller: controller),
-          ),
-        );
-      } else if (message.type == 'WEEKLY_REPORT') {
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => LaughReportContentScreen(controller: controller),
-          ),
-        );
-      } else if (message.type == 'INVITATION_RECEIVED') {
-        await controller.refreshMyInvitations();
-        if (!mounted) return;
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => InvitationInboxScreen(controller: controller),
-          ),
-        );
-      } else {
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => ContentNotificationsScreen(controller: controller),
-          ),
-        );
+      if (message.type == 'LAUGHTER_VIDEO_READY') {
+        // 새 영상이 저장됐다는 알림이다. 홈의 '오늘의 웃음'과 '최근 저장된
+        // 추억'이 그 영상을 아직 모르므로 함께 새로 받는다 — 상세를 닫고
+        // 돌아왔을 때 방금 본 영상이 목록에 없으면 사라진 것처럼 보인다.
+        // 화면 전환을 붙잡지 않게 기다리지 않는다.
+        unawaited(controller.refreshHome(force: true));
       }
+      // 목적지 결정은 알림함과 같은 곳에서 한다. 갈라져 있던 동안 `AI 분석이
+      // 끝났어요`를 알림함에서 누르면 그 영상 상세가 열리는데 푸시로 누르면
+      // 알림함만 열려, 사용자가 목록에서 같은 알림을 한 번 더 찾아 눌러야 했다.
+      // 만화 완성·대사 준비·편집본 댓글도 같은 구멍에 빠져 있었다.
+      await openNotificationTarget(
+        navigator.context,
+        controller: controller,
+        type: message.type,
+        resourceId: message.resourceId,
+        // 푸시로 들어온 길에는 탭을 바꿔 줄 수단이 없다. 갈 곳을 모르는
+        // 알림은 알림함으로 보낸다 — 아무 일도 일어나지 않는 것보다 낫다.
+        onOpenDevices: () => unawaited(
+          navigator.push<void>(
+            MaterialPageRoute(
+              builder: (_) => ContentNotificationsScreen(controller: controller),
+            ),
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       await navigator.push<void>(
@@ -225,6 +211,14 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
     title: '빵긋',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
+    // 화면 대부분이 고정 px 치수로 짜여 있어 아주 큰 시스템 글자 배율에서는
+    // 글자가 잘린다. 1.3배까지는 기기 설정을 그대로 따르고 그 위만 묶는다 —
+    // 가족이 함께 쓰는 앱이라 큰 글씨 수요를 아예 막지는 않는다. 개별 화면이
+    // 더 좁으면 그 화면에서 다시 조인다(예: 홈의 '오늘의 기록' 카드).
+    builder: (context, child) => MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: child!,
+    ),
     home: AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
@@ -262,12 +256,7 @@ class _PushBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emoji = switch (message.type) {
-      'INVITATION_RECEIVED' => '❤️',
-      'INVITATION_ACCEPTED' => '🤝',
-      'LAUGHTER_VIDEO_READY' => '📷',
-      _ => '🔔',
-    };
+    final visual = notificationVisualFor(message.type);
     return Positioned(
       top: MediaQuery.paddingOf(context).top + 10,
       left: 14,
@@ -298,10 +287,13 @@ class _PushBanner extends StatelessWidget {
                   height: 48,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFEFE7),
+                    color: visual.background,
                     borderRadius: BorderRadius.circular(15),
                   ),
-                  child: Text(emoji, style: const TextStyle(fontSize: 25)),
+                  child: Text(
+                    visual.emoji,
+                    style: const TextStyle(fontSize: 25),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -309,10 +301,13 @@ class _PushBanner extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '빵긋',
+                      // 눈썹에 앱 이름('빵긋')을 고정해 두면 어떤 알림이든
+                      // 같은 줄이 뜬다 — 배너는 한 번에 하나만 보이므로 그
+                      // 한 줄이 갈래를 말해 주는 쪽이 쓸모 있다.
+                      Text(
+                        visual.category,
                         style: TextStyle(
-                          color: AppColors.coral,
+                          color: visual.accent,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                         ),

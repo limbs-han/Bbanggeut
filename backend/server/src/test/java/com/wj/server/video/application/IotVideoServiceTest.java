@@ -41,6 +41,12 @@ class IotVideoServiceTest {
     private DeviceEventService deviceEventService;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private com.wj.server.device.persistence.DeviceMapper deviceMapper;
+    @Mock
+    private com.wj.server.audit.application.AuditService auditService;
+    @Mock
+    private VideoThumbnailService thumbnails;
 
     private IotVideoService service;
 
@@ -49,7 +55,8 @@ class IotVideoServiceTest {
         service = new IotVideoService(
             videoMapper, objectStorageService,
             new SubscriptionProperties(365, java.time.Duration.ofDays(30)),
-            deviceEventService, notificationService);
+            deviceEventService, notificationService, deviceMapper, auditService,
+            thumbnails);
     }
 
     @Test
@@ -65,6 +72,55 @@ class IotVideoServiceTest {
         verify(objectStorageService, never()).createUploadUrl(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * 감지를 끄면 서버가 막는다. 영상 행을 만들기 전에 막아야 한다 — 뒤에서
+     * 막으면 꺼진 동안에도 UPLOADING 행이 쌓이고 sweep 워커가 그것을 치운다.
+     */
+    @Test
+    void uploadIsRefusedWhileDetectionIsOff() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(deviceMapper.findDetectionEnabled(DEVICE_ID)).thenReturn(Optional.of(false));
+
+        assertThatThrownBy(() -> service.createUploadUrl(DEVICE_ID, EVENT_ID, request(100)))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("DETECTION_DISABLED");
+
+        verify(videoMapper, never()).findByDeviceEvent(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        // "그날 왜 아무것도 안 찍혔나"를 나중에 설명할 수 있어야 한다.
+        verify(auditService).denied(
+            DEVICE_ID, null, "IOT_VIDEO_UPLOAD", "DEVICE", DEVICE_ID, "DETECTION_DISABLED");
+    }
+
+    /**
+     * 409여야 한다. 기기 업로더는 403·409만 terminal로 보고 재시도하지 않는다 —
+     * 429나 5xx면 재시도 큐에 쌓였다가 다시 켠 순간 밀린 것이 한꺼번에 들어온다.
+     */
+    @Test
+    void theRefusalIsTerminalForTheDeviceUploader() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(deviceMapper.findDetectionEnabled(DEVICE_ID)).thenReturn(Optional.of(false));
+
+        assertThatThrownBy(() -> service.createUploadUrl(DEVICE_ID, EVENT_ID, request(100)))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).status())
+            .isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+    }
+
+    /** 기기 행을 못 읽으면 막지 않는다 — 스위치를 못 읽었다고 녹화를 잃지 않는다. */
+    @Test
+    void anUnreadableSwitchDoesNotBlockTheUpload() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(deviceMapper.findDetectionEnabled(DEVICE_ID)).thenReturn(Optional.empty());
+        when(videoMapper.findByDeviceEvent(DEVICE_ID, EVENT_ID))
+            .thenReturn(Optional.of(video("READY")));
+
+        var response = service.createUploadUrl(DEVICE_ID, EVENT_ID, request(100));
+
+        assertThat(response.alreadyCompleted()).isTrue();
     }
 
     @Test
@@ -118,7 +174,7 @@ class IotVideoServiceTest {
     @Test
     void completedLaughterVideoNotifiesDeviceMembersIdempotently() {
         VideoRow laughterVideo = new VideoRow(
-            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", EVENT_ID, "웃음 영상", null,
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", EVENT_ID, "웃음 영상",
             "video/mp4", 100L, CHECKSUM, 1000L,
             Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
             "private/device/video.mp4", "READY", false,
@@ -130,8 +186,49 @@ class IotVideoServiceTest {
             DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
 
         assertThat(response.eventTypes()).containsExactly("LAUGHTER", "CLAP");
-        verify(notificationService).laughterVideoReady(
-            DEVICE_ID, VIDEO_ID, laughterVideo.title());
+        // 웃음과 박수가 같이 잡혔으면 대표 유형인 웃음으로 알린다.
+        verify(notificationService).videoArrived(
+            DEVICE_ID, VIDEO_ID, "웃음 영상이 도착했어요", laughterVideo.title());
+    }
+
+    /**
+     * 박수만으로 잡힌 영상도 알린다. 예전에는 LAUGHTER가 없으면 알림도
+     * 알림함 행도 만들어지지 않아서, 영상이 도착해도 아무 말이 없었다.
+     */
+    @Test
+    void completedClapOnlyVideoAlsoNotifiesWithItsOwnHeadline() {
+        VideoRow clapVideo = new VideoRow(
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "CLAP", EVENT_ID, "박수 영상",
+            "video/mp4", 100L, CHECKSUM, 1000L,
+            Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
+            "private/device/video.mp4", "READY", false,
+            Instant.parse("2026-07-17T10:00:02Z"), "CLAP");
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
+            .thenReturn(Optional.of(clapVideo));
+
+        service.complete(DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
+
+        verify(notificationService).videoArrived(
+            DEVICE_ID, VIDEO_ID, "박수 소리가 담긴 영상이 도착했어요", clapVideo.title());
+    }
+
+    /** 사람이 올린 영상·편집본은 알리지 않는다 — 올린 사람은 이미 알고 있다. */
+    @Test
+    void userUploadedVideoIsNotAnnouncedAsAnArrival() {
+        VideoRow uploaded = new VideoRow(
+            VIDEO_ID, DEVICE_ID, "USER_UPLOAD", "USER_UPLOAD", EVENT_ID, "직접 올린 영상",
+            "video/mp4", 100L, CHECKSUM, 1000L,
+            Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
+            "private/device/video.mp4", "READY", false,
+            Instant.parse("2026-07-17T10:00:02Z"), "USER_UPLOAD");
+        when(videoMapper.findOwnedVideo(DEVICE_ID, VIDEO_ID))
+            .thenReturn(Optional.of(uploaded));
+
+        service.complete(DEVICE_ID, EVENT_ID, new IotUploadCompleteRequest(VIDEO_ID, null));
+
+        verify(notificationService, never()).videoArrived(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -221,9 +318,71 @@ class IotVideoServiceTest {
             .isInstanceOf(ApiException.class)
             .extracting(exception -> ((ApiException) exception).code())
             .isEqualTo("VIDEO_STATE_CONFLICT");
-        verify(notificationService, never()).laughterVideoReady(
+        verify(notificationService, never()).videoArrived(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * 2026-08-06 17:38에 손으로 부른 curl 하나가 title에 "웃음"을 넣었고, 그
+     * 알림만 본문이 "웃음"으로 떴다. 기기가 뭐라고 부르든 저장되는 이름은
+     * 서버가 정한다.
+     */
+    @Test
+    void detectionUploadIsStoredUnderTheNameTheServerChose() {
+        VideoRow stored = new VideoRow(
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "LAUGHTER", EVENT_ID, "웃음이 담긴 순간",
+            "video/mp4", 100L, CHECKSUM, 1000L,
+            Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
+            "private/device/video.mp4", "UPLOADING", false,
+            Instant.parse("2026-07-17T10:00:02Z"), "LAUGHTER");
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(videoMapper.findByDeviceEvent(DEVICE_ID, EVENT_ID))
+            .thenReturn(Optional.empty(), Optional.of(stored));
+        when(objectStorageService.createUploadUrl(
+            "private/device/video.mp4", "video/mp4", CHECKSUM))
+            .thenReturn(new ObjectStorageService.PresignedUpload(
+                "https://storage.example/upload", java.util.Map.of(),
+                Instant.parse("2026-07-17T10:15:00Z")));
+
+        service.createUploadUrl(DEVICE_ID, EVENT_ID, new IotUploadUrlRequest(
+            EVENT_ID, "LAUGHTER", "웃음", Instant.parse("2026-07-17T10:00:00Z"),
+            Instant.parse("2026-07-17T10:00:01Z"), 1000, "video/mp4", 100, CHECKSUM,
+            List.of("LAUGHTER")));
+
+        verify(videoMapper).insertIotVideo(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(DEVICE_ID),
+            org.mockito.ArgumentMatchers.eq("LAUGHTER"),
+            org.mockito.ArgumentMatchers.eq("LAUGHTER"),
+            org.mockito.ArgumentMatchers.eq(EVENT_ID),
+            org.mockito.ArgumentMatchers.eq("웃음이 담긴 순간"),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * 제목이 다르다고 재시도를 막으면, 옛 스크립트가 올려 둔 행을 다시 올릴 때
+     * 전부 409가 된다. 같은 영상인지는 체크섬과 촬영 구간이 판정한다.
+     */
+    @Test
+    void retryIsNotBlockedJustBecauseTheDeviceSentADifferentName() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(videoMapper.findByDeviceEvent(DEVICE_ID, EVENT_ID))
+            .thenReturn(Optional.of(video("UPLOADING")));
+        when(objectStorageService.createUploadUrl(
+            "private/device/video.mp4", "video/mp4", CHECKSUM))
+            .thenReturn(new ObjectStorageService.PresignedUpload(
+                "https://storage.example/upload", java.util.Map.of(),
+                Instant.parse("2026-07-17T10:15:00Z")));
+
+        var response = service.createUploadUrl(DEVICE_ID, EVENT_ID, new IotUploadUrlRequest(
+            EVENT_ID, "TOUCH", "기기가 예전에 쓰던 이름",
+            Instant.parse("2026-07-17T10:00:00Z"),
+            Instant.parse("2026-07-17T10:00:01Z"), 1000, "video/mp4", 100, CHECKSUM));
+
+        assertThat(response.uploadUrl()).isEqualTo("https://storage.example/upload");
     }
 
     private IotUploadUrlRequest request(long size) {
@@ -234,7 +393,7 @@ class IotVideoServiceTest {
 
     private VideoRow video(String status) {
         return new VideoRow(
-            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "TOUCH", EVENT_ID, "영상", null,
+            VIDEO_ID, DEVICE_ID, "IOT_CAPTURE", "TOUCH", EVENT_ID, "영상",
             "video/mp4", 100L, CHECKSUM, 1000L,
             Instant.parse("2026-07-17T10:00:00Z"), Instant.parse("2026-07-17T10:00:01Z"),
             "private/device/video.mp4", status, false, Instant.parse("2026-07-17T10:00:02Z"));

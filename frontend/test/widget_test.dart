@@ -237,7 +237,7 @@ void main() {
     expect(navigation, findsOneWidget);
     expect(tester.widget<NavigationBar>(navigation).selectedIndex, 2);
     expect(api.streamCreationCount, 0);
-    for (final label in ['홈', '캘린더', '추억', '가족', '설정']) {
+    for (final label in ['홈', '캘린더', '추억', '커뮤니티', '설정']) {
       expect(
         find.descendant(of: navigation, matching: find.text(label)),
         findsOneWidget,
@@ -260,7 +260,11 @@ void main() {
     expect(find.text('전체 추억'), findsOneWidget);
     expect(find.text('웃음 감지'), findsOneWidget);
     expect(find.text('편집 완료'), findsOneWidget);
-    expect(find.text('최신순'), findsOneWidget);
+    expect(find.text('만화'), findsOneWidget);
+    // 정렬은 버튼 하나로 접혔다 — '최신순'·'오래된 순' 글자 버튼 둘이 좁은
+    // 화면에서 카테고리 칩을 밀어냈다. 지금 값은 계속 보인다.
+    expect(find.byKey(const ValueKey('memory-sort-button')), findsOneWidget);
+    expect(find.text('최신'), findsOneWidget);
 
     // 한 번 펼친 탭은 다른 탭으로 옮겨도 남아 있다 — 스크롤 위치와 상태를
     // 지키려고 IndexedStack을 쓰는 것이므로 그 성질은 그대로여야 한다.
@@ -326,7 +330,7 @@ void main() {
     final navigation = find.byKey(const ValueKey('main-bottom-navigation'));
     int selectedTab() => tester.widget<NavigationBar>(navigation).selectedIndex;
 
-    for (final tab in ['캘린더', '추억', '가족', '설정']) {
+    for (final tab in ['캘린더', '추억', '커뮤니티', '설정']) {
       await tester.tap(
         find.descendant(of: navigation, matching: find.text(tab)),
       );
@@ -424,26 +428,17 @@ void main() {
     );
 
     expect(find.text('오늘의 추억  🌱'), findsOneWidget);
-    expect(find.text('등록된 메모가 없습니다'), findsOneWidget);
-    expect(find.text('메모를 남겨보세요!'), findsOneWidget);
     expect(find.text('갤러리에 저장'), findsOneWidget);
-    expect(find.byType(Image), findsWidgets);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('empty-memory-memo-action')),
-        matching: find.byIcon(Icons.edit_rounded),
-      ),
-      findsNothing,
-    );
 
-    await tester.tap(find.text('메모를 남겨보세요!'));
-    await tester.pumpAndSettle();
-    expect(find.text('추억 기록하기'), findsOneWidget);
-    expect(find.byKey(const Key('memory-title-input')), findsOneWidget);
-    expect(find.byKey(const Key('memory-memo-input')), findsOneWidget);
-    expect(find.byKey(const Key('memory-metadata-save')), findsOneWidget);
-    await tester.tap(find.byTooltip('닫기'));
-    await tester.pumpAndSettle();
+    // 메모 기능은 걷어냈다. 되살아나면 여기서 잡힌다.
+    // (마스코트 그림은 메모 상자에 붙어 있던 장식이라 함께 사라졌다 —
+    //  그래서 이 화면에 Image가 있는지 보던 단정도 뺐다.)
+    expect(find.text('등록된 메모가 없습니다'), findsNothing);
+    expect(find.text('메모를 남겨보세요!'), findsNothing);
+
+    // 이 컨트롤러는 금고를 소유하지 않는다 — 원본 영상의 제목은 OWNER만
+    // 바꾸므로 수정 버튼이 보이지 않아야 한다.
+    expect(find.byTooltip('제목 수정'), findsNothing);
 
     final editButton = find.widgetWithText(FilledButton, '영상 편집하기');
     await tester.ensureVisible(editButton);

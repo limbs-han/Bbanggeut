@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.SubscriptionProperties;
+import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.iot.event.DeviceEventService;
 import com.wj.server.notification.application.NotificationService;
 import com.wj.server.storage.ObjectStorageService;
@@ -36,19 +38,55 @@ public class IotVideoService {
     private final SubscriptionProperties subscriptionProperties;
     private final DeviceEventService deviceEventService;
     private final NotificationService notificationService;
+    private final DeviceMapper deviceMapper;
+    private final AuditService auditService;
+    private final VideoThumbnailService thumbnails;
 
     public IotVideoService(
         VideoMapper videoMapper,
         ObjectStorageService objectStorageService,
         SubscriptionProperties subscriptionProperties,
         DeviceEventService deviceEventService,
-        NotificationService notificationService
+        NotificationService notificationService,
+        DeviceMapper deviceMapper,
+        AuditService auditService,
+        VideoThumbnailService thumbnails
     ) {
+        this.thumbnails = thumbnails;
         this.videoMapper = videoMapper;
         this.objectStorageService = objectStorageService;
         this.subscriptionProperties = subscriptionProperties;
         this.deviceEventService = deviceEventService;
         this.notificationService = notificationService;
+        this.deviceMapper = deviceMapper;
+        this.auditService = auditService;
+    }
+
+    /**
+     * 감지가 꺼진 기기의 업로드를 막는다. 영상 행을 만들기 **전에** 본다 —
+     * 뒤에서 막으면 꺼진 동안에도 UPLOADING 행이 쌓이고, 그것을 청소하는
+     * sweep 워커가 매번 돌아야 한다.
+     *
+     * <p><b>왜 409인가</b>: 기기의 업로더는 403·409를 terminal로 보고 재시도하지
+     * 않는다({@code TERMINAL_HTTP_STATUSES}). 429나 5xx로 돌려주면 재시도 큐에
+     * 쌓였다가 감지를 다시 켠 순간 밀린 것이 한꺼번에 들어온다 — 끄고 있던
+     * 동안의 영상이 뒤늦게 전부 저장되면 끈 의미가 없다.
+     *
+     * <p>이것은 <b>서버 측 차단</b>이다. 기기는 여전히 찍고 올리려 시도한다.
+     * 기기까지 멈추게 하려면 MQTT 명령과 펌웨어가 필요하고, 그것은 기기 팀과
+     * 맞춰야 한다.
+     */
+    private void requireDetectionEnabled(UUID deviceId) {
+        if (deviceMapper.findDetectionEnabled(deviceId).orElse(true)) {
+            return;
+        }
+        // 남긴다. "그날 왜 아무것도 안 찍혔나"를 나중에 설명할 수 있어야 한다.
+        // 행위자는 사람이 아니라 기기라 actorUserId가 없다.
+        auditService.denied(
+            deviceId, null, "IOT_VIDEO_UPLOAD", "DEVICE", deviceId, "DETECTION_DISABLED");
+        throw new ApiException(
+            HttpStatus.CONFLICT, "DETECTION_DISABLED",
+            "이 카메라는 지금 감지가 꺼져 있습니다.");
     }
 
     @Transactional
@@ -70,6 +108,7 @@ public class IotVideoService {
         if (!videoMapper.isClaimedDevice(deviceId)) {
             throw new ApiException(HttpStatus.CONFLICT, "DEVICE_NOT_CLAIMED", "등록이 완료된 기기만 영상을 업로드할 수 있습니다.");
         }
+        requireDetectionEnabled(deviceId);
 
         VideoRow video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
             .orElseGet(() -> createVideo(deviceId, request, eventTypes));
@@ -116,7 +155,7 @@ public class IotVideoService {
             deviceEventService.linkUpload(
                 deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
                 video.capturedStartAt(), video.id(), "READY");
-            notifyLaughterVideo(video);
+            notifyVideoArrived(video);
             return toResponse(video);
         }
         if (!"UPLOADING".equals(video.status())) {
@@ -157,29 +196,33 @@ public class IotVideoService {
         deviceEventService.linkUpload(
             deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
             video.capturedStartAt(), video.id(), "READY");
-        if (hasLaughterEvent(completed)) {
-            notificationService.laughterVideoReady(
-                completed.deviceId(), completed.id(), completed.title());
-        }
+        notifyVideoArrived(completed);
+        // 목록에 쓸 미리보기를 뒤에서 만들게 맡긴다. 실패해도 업로드는 이미
+        // 끝난 것이고, 그림이 없으면 앱이 예전처럼 기기에서 뽑는다.
+        thumbnails.requestAsync(completed);
         return toResponse(completed);
     }
 
     /**
-     * 웃음이 잡힌 영상인가. 대표 유형(triggerType)이 CLAP 등 다른 것이어도
-     * 다중 이벤트 목록에 LAUGHTER가 있으면 웃음 영상이다 — 대표 유형만 보면
-     * V33 이후의 다중 이벤트 영상이 알림 없이 지나간다.
+     * 기기가 스스로 잡아 담은 영상이 도착했다고 알린다.
+     *
+     * <p><b>왜 웃음만 알리지 않는가</b>: 예전에는 이벤트 목록에 LAUGHTER가
+     * 있을 때만 알렸다. 그래서 박수(CLAP)로 잡힌 영상은 저장은 되는데 알림도
+     * 알림함의 행도 만들어지지 않았고, 사용자에게는 "영상이 도착했는데 아무
+     * 말이 없다"로 보였다 — 실서버에서 CLAP 영상 세 건이 연달아 그렇게
+     * 지나갔다. 감지로 담긴 영상이면 알리고, 무엇 때문에 담겼는지는 제목이
+     * 말해 준다. 사람이 직접 올린 영상·편집본은 여전히 알리지 않는다(올린
+     * 사람은 이미 알고, 가족에게는 별도 통로가 있다).
      */
-    private static boolean hasLaughterEvent(VideoRow video) {
-        return VideoEventTypes
-            .fromCsv(video.eventTypesCsv(), video.triggerType())
-            .contains("LAUGHTER");
-    }
-
-    private void notifyLaughterVideo(VideoRow video) {
-        if (hasLaughterEvent(video)) {
-            notificationService.laughterVideoReady(
-                video.deviceId(), video.id(), video.title());
+    private void notifyVideoArrived(VideoRow video) {
+        List<String> eventTypes = VideoEventTypes.fromCsv(
+            video.eventTypesCsv(), video.triggerType());
+        if (!VideoEventTypes.isDetection(eventTypes)) {
+            return;
         }
+        notificationService.videoArrived(
+            video.deviceId(), video.id(),
+            VideoEventTypes.arrivalHeadline(eventTypes), video.title());
     }
 
     private VideoRow createVideo(
@@ -191,7 +234,7 @@ public class IotVideoService {
         String storageKey = "private/" + deviceId + "/events/" + videoId + ".mp4";
         int inserted = videoMapper.insertIotVideo(
             videoId, deviceId, request.triggerType(), VideoEventTypes.toCsv(eventTypes),
-            request.sourceEventId(), request.title().trim(),
+            request.sourceEventId(), storedTitle(eventTypes, request.title()),
             storageKey, request.contentType(), request.sizeBytes(), request.checksumSha256(),
             request.durationMs(), request.capturedStartAt(), request.capturedEndAt());
         return videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
@@ -206,6 +249,24 @@ public class IotVideoService {
             });
     }
 
+    /**
+     * 감지 영상의 제목은 서버가 정한다({@link VideoEventTypes#arrivalTitle}).
+     * 기기가 보낸 제목은 사람이 올린 영상에서만 쓴다.
+     */
+    private static String storedTitle(List<String> eventTypes, String requested) {
+        String canonical = VideoEventTypes.arrivalTitle(eventTypes);
+        return canonical != null ? canonical : requested.trim();
+    }
+
+    /**
+     * 같은 이벤트 ID로 다른 영상을 올리려는 것인지 본다.
+     *
+     * <p><b>제목은 보지 않는다.</b> 감지 영상의 제목은 이제 서버가 정하므로
+     * 기기가 보낸 문자열과 저장된 값이 다른 것이 정상이다. 예전 스크립트가
+     * 올려 둔 행을 재시도할 때도 마찬가지다 — 제목까지 견주면 그 재시도가
+     * 전부 409가 된다. 같은 영상인지는 체크섬·크기·길이·촬영 구간·유형이
+     * 이미 판정하고, 제목은 거기에 아무것도 보태지 않는다.
+     */
     private void verifySameUpload(
         VideoRow video,
         IotUploadUrlRequest request,
@@ -213,7 +274,6 @@ public class IotVideoService {
     ) {
         if (!video.triggerType().equals(request.triggerType())
             || !video.eventTypesCsv().equals(VideoEventTypes.toCsv(eventTypes))
-            || !video.title().equals(request.title().trim())
             || !video.contentType().equals(request.contentType())
             || video.sizeBytes() != request.sizeBytes()
             || video.durationMs() != request.durationMs()
@@ -289,7 +349,7 @@ public class IotVideoService {
     private VideoResponse toResponse(VideoRow video) {
         return new VideoResponse(
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
-            video.sourceEventId(), video.title(), null, video.contentType(), video.sizeBytes(),
+            video.sourceEventId(), video.title(), video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
             video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
             VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));

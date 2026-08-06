@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/models.dart';
 import 'device_registration_screen.dart';
 import 'family_management_cards.dart';
 import 'invitation_inbox_screen.dart';
@@ -165,6 +166,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ),
+                    // 카메라가 있고 OWNER일 때만. 스위치는 그 카메라 하나에만
+                    // 걸리고, 서버도 OWNER만 받아 준다.
+                    if (device != null && isOwner) ...[
+                      const SizedBox(height: 18),
+                      const _GroupLabel('감지'),
+                      SoftCard(
+                        padding: EdgeInsets.zero,
+                        child: _DetectionSwitchRow(
+                          controller: controller,
+                          device: device,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 18),
                     const _GroupLabel('알림 설정'),
                     SoftCard(
@@ -518,21 +532,163 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _withdraw(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('정말 탈퇴할까요?'),
-        content: const Text(
-          '소유 중인 Vault가 있다면 탈퇴할 수 없습니다. 먼저 다른 구성원에게 소유권을 이전해 주세요.',
+      barrierColor: Colors.black.withValues(alpha: 0.58),
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        backgroundColor: const Color(0xFFFFFBF5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton.filled(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFEEDF),
+                      foregroundColor: const Color(0xFF72513A),
+                    ),
+                    icon: const Icon(Icons.close_rounded, size: 27),
+                    tooltip: '닫기',
+                  ),
+                ),
+                Transform.translate(
+                  offset: const Offset(0, -20),
+                  child: Image.asset(
+                    'assets/images/withdrawal_mascot.png',
+                    height: 205,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                Transform.translate(
+                  offset: const Offset(0, -10),
+                  child: const Text(
+                    '정말 탈퇴할까요?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF6C4A33),
+                      fontSize: 29,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text.rich(
+                  TextSpan(
+                    style: const TextStyle(
+                      color: Color(0xFF74543D),
+                      fontSize: 15,
+                      height: 1.65,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    children: [
+                      const TextSpan(text: '소유 중인 기기들 중 '),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: _OwnerBadge(),
+                      ),
+                      const TextSpan(
+                        text: ' 에 해당하시는\n기기가 있다면 탈퇴할 수 없습니다.\n먼저 ',
+                      ),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: _OwnerBadge(),
+                      ),
+                      const TextSpan(text: ' 를 다른 구성원에게 이전해 주세요.'),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3DF),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFF3D2A3)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: Color(0xFFE49B2F),
+                        size: 30,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '탈퇴 시 계정 정보와 연결된 데이터는\n복구할 수 없어요.',
+                          style: TextStyle(
+                            color: Color(0xFF74543D),
+                            fontSize: 14,
+                            height: 1.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF6F55),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(58),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text(
+                          '탈퇴하기',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFEEDF),
+                          foregroundColor: const Color(0xFF6C4A33),
+                          minimumSize: const Size.fromHeight(58),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: const Text(
+                          '취소',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('탈퇴'),
-          ),
-        ],
       ),
     );
     if (confirmed == true) {
@@ -809,6 +965,71 @@ class _RenameDeviceDialogState extends State<_RenameDeviceDialog> {
   }
 }
 
+/// 감지 스위치.
+///
+/// 끄면 **서버가** 이 카메라의 영상 업로드를 거절한다. 카메라 자체는 계속 찍고
+/// 올리려 시도하므로, 그 사실을 숨기지 않고 문구로 적는다 — "껐으니 카메라도
+/// 멈췄다"고 믿으면 사생활 판단이 어긋난다.
+class _DetectionSwitchRow extends StatefulWidget {
+  const _DetectionSwitchRow({required this.controller, required this.device});
+
+  final AppController controller;
+  final DeviceSummary device;
+
+  @override
+  State<_DetectionSwitchRow> createState() => _DetectionSwitchRowState();
+}
+
+class _DetectionSwitchRowState extends State<_DetectionSwitchRow> {
+  bool _saving = false;
+
+  Future<void> _toggle(bool next) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final ok = await widget.controller.updateSelectedDevice(
+      detectionEnabled: next,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!ok) {
+      showAppSnack(
+        context,
+        widget.controller.errorMessage ?? '감지 설정을 바꾸지 못했어요.',
+        error: true,
+      );
+      return;
+    }
+    showAppSnack(
+      context,
+      next ? '이제 웃음을 다시 저장해요.' : '감지를 껐어요. 새 영상이 저장되지 않아요.',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final on = widget.device.detectionEnabled;
+    return SwitchListTile.adaptive(
+      key: const ValueKey('detection-switch'),
+      value: on,
+      onChanged: _saving ? null : _toggle,
+      secondary: Icon(
+        on ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+        color: on ? AppColors.coral : AppColors.muted,
+      ),
+      title: Text(
+        '${widget.device.name} 감지',
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      subtitle: Text(
+        on
+            ? '웃음이 잡히면 영상으로 저장해요.'
+            : '새 영상이 저장되지 않아요. 카메라는 켜져 있고 실시간 보기는 그대로예요.',
+        style: const TextStyle(fontSize: 12, color: AppColors.muted),
+      ),
+    );
+  }
+}
+
 class _GroupLabel extends StatelessWidget {
   const _GroupLabel(this.label);
   final String label;
@@ -886,5 +1107,27 @@ class _SettingRow extends StatelessWidget {
             ],
           ),
     onTap: onTap,
+  );
+}
+
+class _OwnerBadge extends StatelessWidget {
+  const _OwnerBadge();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+    decoration: BoxDecoration(
+      color: AppColors.sageSoft,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: const Text(
+      'OWNER',
+      style: TextStyle(
+        color: AppColors.sageDark,
+        fontSize: 12,
+        height: 1.35,
+        fontWeight: FontWeight.w900,
+      ),
+    ),
   );
 }

@@ -21,6 +21,8 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
+import struct
 import subprocess
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
@@ -60,6 +62,10 @@ FRAME_BASE64_BUDGET = 72_000
 # 320폭 q8은 장당 14KB로 5장이 71KB(통과). 그래서 작게 보낸다.
 FRAME_WIDTH = 320
 FRAME_QUALITY = "8"
+
+# 완성 만화를 앱에 보낼 때의 JPEG 품질(ffmpeg -q:v, 2~31이며 낮을수록 좋다).
+# [normalize_square_image]가 왜 PNG를 버렸는지 설명한다.
+PANEL_QUALITY = os.environ.get("COMIC_PANEL_QUALITY", "4")
 
 DEFAULT_STYLE = "soft webtoon"
 
@@ -195,6 +201,32 @@ def _run(command: Sequence[str], stdin: bytes | None = None) -> bytes:
     return done.stdout
 
 
+def _run_capturing_stderr(
+    command: Sequence[str], stdin: bytes | None = None
+) -> tuple[bytes, str]:
+    """[_run]과 같지만 stderr도 돌려준다.
+
+    `cropdetect` 같은 필터는 결과를 stdout이 아니라 로그로 남긴다 — 그 값을
+    읽어야 하는 호출만 이것을 쓴다.
+    """
+    try:
+        done = subprocess.run(  # noqa: S603 - 인자를 리스트로 넘겨 셸을 거치지 않는다
+            list(command),
+            input=stdin,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+    except FileNotFoundError as failure:
+        raise ComicError(
+            f"{command[0]}를 찾을 수 없습니다. 컨테이너에 ffmpeg를 설치해야 합니다."
+        ) from failure
+    except subprocess.CalledProcessError as failure:
+        message = failure.stderr.decode("utf-8", "replace").strip()[-300:]
+        raise ComicError(f"{command[0]} 실패: {message}") from failure
+    return done.stdout, done.stderr.decode("utf-8", "replace")
+
+
 def video_duration_seconds(video_url: str) -> float:
     raw = _run(
         [
@@ -225,6 +257,89 @@ def frame_timestamps(duration: float, count: int = FRAME_COUNT) -> list[float]:
     return [duration * (index + 0.5) / count for index in range(count)]
 
 
+# 만화 칸으로 쓸 프레임의 점수. 편집이 쓰는 eventScore를 그대로 쓰지 않는 이유는
+# 그 값이 소리 중심이기 때문이다 — 화면 밖에서 크게 웃는 순간은 자동 컷에는 맞지만
+# 만화 칸으로는 빈 방 사진이 된다. 얼굴이 보이고 흐리지 않은 쪽으로 기울인다.
+_PANEL_VISUAL_FLOOR = 0.55
+
+
+def panel_score(window: Mapping[str, Any]) -> float:
+    """구간 하나가 만화 칸으로 얼마나 쓸 만한가. 0~1."""
+    features = window.get("features") or {}
+    visual = (
+        0.5 * float(features.get("facePresence", 0.0))
+        + 0.3 * float(features.get("faceProminence", 0.0))
+        + 0.2 * float(features.get("visualQuality", 0.0))
+    )
+    event = float(window.get("eventScore", 0.0))
+    return event * (_PANEL_VISUAL_FLOOR + (1 - _PANEL_VISUAL_FLOOR) * min(1.0, visual))
+
+
+def _window_center_seconds(window: Mapping[str, Any]) -> float | None:
+    try:
+        start = int(window["startMs"])
+        end = int(window["endMs"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (start + end) / 2000
+
+
+def panel_timestamps(
+    timeline: Sequence[Mapping[str, Any]],
+    duration: float,
+    count: int = FRAME_COUNT,
+) -> list[float]:
+    """점수 타임라인에서 만화 칸으로 쓸 시각을 고른다. 시간 순으로 돌려준다.
+
+    **왜 등분이 아닌가**: [frame_timestamps]는 영상을 count등분해 가운데를 뽑는다.
+    내용을 전혀 보지 않아서, 웃음이 3초에 터져도 6·18·30초를 가져간다. 편집(자동
+    컷·줌)은 이미 같은 분석에서 나온 타임라인으로 순간을 고르고 있는데 만화만
+    쓰지 않았다.
+
+    **왜 간격을 두는가**: 점수만 보면 상위 다섯이 같은 2초 안에 몰린다. 웃음
+    한 번이 여러 구간에 걸치기 때문이다. 그러면 네 칸이 거의 같은 그림이 되어
+    기승전결이 사라진다. 최소 간격을 두고 고른 뒤 시간 순으로 되돌린다.
+
+    타임라인이 없거나 쓸 구간이 없으면 등분으로 되돌아간다 — 분석을 아직 돌리지
+    않은 영상도 만화는 만들 수 있어야 한다.
+    """
+    if duration <= 0 or count <= 0:
+        return []
+    # 앞뒤 가장자리는 검은 화면이거나 흔들린다. visualQuality가 걸러 주기는 하나
+    # 영상 분석 없이 소리만으로 만든 타임라인에는 그 값이 없다.
+    # 경계를 포함하지 않는다. 구간이 1초씩이면 첫 구간의 가운데가 정확히 0.5초라,
+    # 여기서 등호를 허용하면 걸러 내려던 첫 프레임이 그대로 통과한다.
+    margin = min(0.5, duration * 0.05)
+    windows = [
+        (at, panel_score(window))
+        for window in timeline
+        if (at := _window_center_seconds(window)) is not None
+        and margin < at < duration - margin
+    ]
+    if not windows:
+        return frame_timestamps(duration, count)
+
+    # 점수가 같으면 앞선 순간을 고른다 — 같은 입력에 같은 만화가 나와야 한다.
+    ranked = sorted(windows, key=lambda pair: (-pair[1], pair[0]))
+    min_gap = duration / (count * 2)
+    picked: list[float] = []
+    for at, _ in ranked:
+        if all(abs(at - other) >= min_gap for other in picked):
+            picked.append(at)
+        if len(picked) == count:
+            break
+    # 짧은 영상은 간격을 지키다 개수를 못 채운다. 남은 자리는 점수 순으로 메운다 —
+    # 비슷한 칸이라도 프레임이 적은 것보다 낫다(인물표가 흔들린다).
+    if len(picked) < count:
+        for at, _ in ranked:
+            if at not in picked:
+                picked.append(at)
+            if len(picked) == count:
+                break
+    picked.sort()
+    return picked
+
+
 def fit_frame_budget(
     frames: Sequence[bytes], budget: int = FRAME_BASE64_BUDGET
 ) -> list[bytes]:
@@ -244,16 +359,29 @@ def fit_frame_budget(
     return kept
 
 
-def extract_frames(video_url: str, count: int = FRAME_COUNT) -> list[bytes]:
+def extract_frames(
+    video_url: str,
+    count: int = FRAME_COUNT,
+    timeline: Sequence[Mapping[str, Any]] | None = None,
+) -> list[bytes]:
     """원본에서 JPEG 프레임 몇 장을 뽑는다. presigned URL을 그대로 먹인다.
 
     개수는 [FRAME_LIMIT]으로, 크기는 [FRAME_BASE64_BUDGET]으로 자른다. 둘 다
     필요한 이유는 GMS가 **요청 크기**에서 끊는데 장당 크기가 영상에 따라 배로
     달라지기 때문이다 — 개수만 막으면 어떤 영상에서는 그대로 400이 된다.
+
+    `timeline`(편집 분석이 남긴 점수 타임라인)을 주면 무슨 일이 일어난 순간에서
+    뽑는다. 없으면 등분한다.
     """
     frames: list[bytes] = []
     count = max(1, min(FRAME_LIMIT, count))
-    for at in frame_timestamps(video_duration_seconds(video_url), count):
+    duration = video_duration_seconds(video_url)
+    moments = (
+        frame_timestamps(duration, count)
+        if not timeline
+        else panel_timestamps(timeline, duration, count)
+    )
+    for at in moments:
         # -ss를 -i 앞에 두면 빠른 탐색이다. 뒤에 두면 앞부터 디코딩한다.
         jpeg = _run(
             [
@@ -373,12 +501,19 @@ def build_script(
     *,
     count: int = FRAME_COUNT,
     frames: Sequence[bytes] | None = None,
+    timeline: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """프레임 + 자막 → 4컷 구성과 인물·배경 시트.
 
     `frames`를 주면 추출을 건너뛴다 — 테스트와 재시도용이다.
+    `timeline`은 편집 분석이 남긴 점수 타임라인이다 — 주면 그 영상에서 실제로
+    무슨 일이 일어난 순간을 프레임으로 쓴다.
     """
-    images = list(frames) if frames is not None else extract_frames(video_url, count)
+    images = (
+        list(frames)
+        if frames is not None
+        else extract_frames(video_url, count, timeline)
+    )
     spoken = lines_to_text(lines) or "(대사 기록이 없다 — 프레임만 보고 짜라.)"
     parts: list[dict[str, Any]] = [
         {"text": f"{SCRIPT_PROMPT}\n\n대사 기록\n{spoken}"}
@@ -432,7 +567,13 @@ def build_image_prompt(
     blocks = [
         f"A single square image: a 4-panel comic in {style} style, 2x2 grid "
         "with thin white gutters. Reading order: top-left (1), top-right (2), "
-        "bottom-left (3), bottom-right (4)."
+        "bottom-left (3), bottom-right (4). "
+        # 앱이 칸을 그림의 4등분으로 잡고 자막을 앉히므로, 격자 바깥에 여백이
+        # 있으면 자막이 칸 중심에서 밀린다. 지켜지지 않을 때를 대비해 서버가
+        # 받은 그림에서 테두리를 실제로 잘라내지만(normalize_square_image),
+        # 애초에 안 그리게 하는 것이 낫다.
+        "The 2x2 grid must fill the entire image edge to edge: no outer border, "
+        "no margin, no frame, no matting around the four panels."
     ]
     if characters:
         rows = "\n".join(
@@ -473,14 +614,144 @@ def _first_image(payload: Mapping[str, Any]) -> bytes:
     )
 
 
-def normalize_square_png(data: bytes) -> bytes:
-    """PNG·정사각으로 맞춘다.
+"""자막 띠가 칸 가운데에 앉으려면 2x2 격자가 그림 전체를 채워야 한다.
 
-    앱은 base64 PNG만 받고, 2x2 격자를 전제로 자막을 얹는다. 정사각이 아니면
-    `BoxFit.contain`이 위아래 여백을 만들어 자막 네 개가 전부 칸을 벗어난다.
-    모델 출력을 믿지 않고 여기서 한 번 맞춘다 — 이미 정사각 PNG면 그대로 다시
-    쓰는 셈이라 비용이 없다.
+앱은 칸을 그림의 수학적 4등분으로 잡고 그 가운데에 띠를 앉힌다
+(`panel_subtitle.dart`). 그런데 격자를 그리는 것은 모델이고, 모델은 2x2 바깥에
+흰 테두리를 함께 그린다 — 실측(1024x1024 만화)에서 사면 40~42px이었다. 그러면
+왼쪽 칸의 실제 중심은 272px인데 앱은 256px(25%)에 띠를 앉혀 16px이 바깥으로
+밀린다. 좌우가 서로 반대 방향으로 밀리므로 눈에는 "가운데가 아니라 옆으로
+빗겨난" 것으로 보인다.
+
+프롬프트로 "테두리를 그리지 마라"고 해도 픽셀 단위로는 지켜지지 않는다. 받은
+그림에서 테두리를 실제로 재서 잘라내는 것이 유일하게 확실한 방법이다.
+"""
+
+# cropdetect가 stderr에 남기는 값. `crop=w:h:x:y` 형태다.
+_CROP_LINE = re.compile(r"crop=(\d+):(\d+):(\d+):(\d+)")
+
+# 한 변에서 이만큼 넘게 잘라내려 하면 테두리 검출을 믿지 않는다. 밝은 화풍의
+# 만화는 칸 내용까지 테두리로 오인될 수 있는데, 그때 잘라 버리면 그림이
+# 망가진다 — 띠가 조금 빗겨나는 것보다 나쁘다.
+_MAX_TRIM_RATIO = 0.2
+
+
+def parse_crop_box(stderr: str) -> tuple[int, int, int, int] | None:
+    """cropdetect 출력에서 마지막 `crop=w:h:x:y`를 뽑는다. 없으면 None."""
+    matches = _CROP_LINE.findall(stderr)
+    if not matches:
+        return None
+    width, height, left, top = (int(value) for value in matches[-1])
+    return width, height, left, top
+
+
+def crop_box_is_trustworthy(
+    box: tuple[int, int, int, int], width: int, height: int
+) -> bool:
+    """검출한 내용 영역을 믿을 수 있는가.
+
+    잘라낼 양이 너무 많거나(밝은 화풍을 테두리로 오인) 값이 앞뒤가 맞지 않으면
+    믿지 않는다. 검출이 틀렸을 때 원본을 그대로 쓰는 쪽이 안전하다.
     """
+    box_width, box_height, left, top = box
+    if box_width <= 0 or box_height <= 0:
+        return False
+    if left < 0 or top < 0:
+        return False
+    if left + box_width > width or top + box_height > height:
+        return False
+    trimmed_x = width - box_width
+    trimmed_y = height - box_height
+    return (
+        trimmed_x <= width * _MAX_TRIM_RATIO
+        and trimmed_y <= height * _MAX_TRIM_RATIO
+    )
+
+
+def png_size(data: bytes) -> tuple[int, int] | None:
+    """PNG의 가로·세로. PNG가 아니거나 너무 짧으면 None.
+
+    IHDR은 항상 파일 앞머리 고정 위치에 있어 헤더만 읽으면 된다 — 이미지
+    라이브러리를 서비스 의존성에 넣지 않으려고 직접 읽는다(Pillow·numpy는
+    분석 전용 의존성이라 이 경로에 없을 수 있다).
+    """
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    return int(width), int(height)
+
+
+def _detect_content_box(data: bytes) -> tuple[int, int, int, int] | None:
+    """흰 테두리를 뺀 내용 영역. 검출하지 못하거나 믿을 수 없으면 None.
+
+    `cropdetect`는 **어두운** 테두리를 찾으므로 `negate`로 뒤집어 흰 테두리를
+    검은 테두리로 만든 뒤 잰다. 검출은 최선 노력이다 — 실패하면 자르지 않는다.
+    """
+    size = png_size(data)
+    try:
+        _, stderr = _run_capturing_stderr(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "info",
+                "-i",
+                "pipe:0",
+                "-vf",
+                # limit=24: 뒤집은 뒤 24 이하(=원본에서 231 이상 밝음)를 테두리로 본다.
+                # round=2: 짝수로 맞춰 크로마 서브샘플링과 어긋나지 않게 한다.
+                # **skip=0이 없으면 아무것도 검출되지 않는다** — cropdetect는 기본으로
+                # 앞 2프레임을 건너뛰는데(skip=2) 정지 이미지에는 프레임이 하나뿐이라
+                # 그 하나가 건너뛰어진다. 실서버 만화에서 이것 때문에 조용히
+                # 검출 실패했고, 자르지 않은 그림이 그대로 나갔다.
+                "negate,cropdetect=limit=24:round=2:skip=0:reset=0",
+                "-frames:v",
+                "1",
+                "-f",
+                "null",
+                "-",
+            ],
+            stdin=data,
+        )
+    except ComicError:
+        return None
+    box = parse_crop_box(stderr)
+    if box is None or size is None:
+        return None
+    return box if crop_box_is_trustworthy(box, *size) else None
+
+
+def normalize_square_image(data: bytes) -> bytes:
+    """모델이 그린 외곽 테두리를 잘라내고, 정사각으로 맞추고, JPEG으로 인코딩한다.
+
+    **왜 정사각인가**: 앱은 2x2 격자를 전제로 자막을 얹는다. 정사각이 아니면
+    `BoxFit.contain`이 위아래 여백을 만들어 자막 네 개가 전부 칸을 벗어난다.
+    모델 출력을 믿지 않고 여기서 한 번 맞춘다.
+
+    테두리를 자른 뒤에도 정사각으로 다시 채운다. 실측에서 사면 여백이 거의
+    같아(40·41·42·42) 자른 결과가 이미 정사각에 가깝고, 채우는 양은 1~2px이라
+    칸 중심을 흩뜨리지 않는다. 늘려서 억지로 정사각을 만들지 않는 이유는 그림이
+    비틀리기 때문이다.
+
+    **왜 PNG가 아니라 JPEG인가**: 모델이 주는 PNG는 1024x1024인데 2MB가 넘는다
+    (실측 2026-08-06, 운영 MinIO의 만화 일곱 장: 1.33MB~2.12MB, 평균 1.7MB).
+    만화 탭은 화면에 보이는 카드마다 이 파일을 한 장씩 받으므로, 카드 다섯이면
+    모바일 회선으로 10MB다 — 그림이 뜨기까지 오래 걸리고 중간에 실패한다.
+
+    같은 그림을 JPEG q4로 다시 인코딩하면 **171KB**다(같은 1024폭 유지, 실측
+    2.12MB → 12분의 1). 만화는 사진이 아니라 평면 채색이라 이 품질에서 눈에
+    띄는 열화가 없고, 앱은 이 그림 위에 자막 띠를 따로 얹으므로 글자가 뭉갤
+    일도 없다. 해상도를 줄이지 않고 압축만 바꾸는 이유가 이것이다 — 폭을 줄이면
+    '크게 보기'에서 흐려진다.
+
+    자르기·재기는 **들어온 PNG**를 보고 한다([png_size]) — 나가는 형식이
+    바뀌어도 그 경로는 그대로다.
+    """
+    box = _detect_content_box(data)
+    crop = ""
+    if box is not None:
+        box_width, box_height, left, top = box
+        crop = f"crop={box_width}:{box_height}:{left}:{top},"
     return _run(
         [
             "ffmpeg",
@@ -491,11 +762,15 @@ def normalize_square_png(data: bytes) -> bytes:
             "pipe:0",
             "-vf",
             # ffmpeg 필터 문법에서 쉼표는 필터 구분자라 max() 안에서 escape한다.
-            r"pad=w=max(iw\,ih):h=max(iw\,ih):x=(ow-iw)/2:y=(oh-ih)/2:color=white",
+            crop
+            + r"pad=w=max(iw\,ih):h=max(iw\,ih):x=(ow-iw)/2:y=(oh-ih)/2:color=white",
             "-f",
             "image2pipe",
             "-vcodec",
-            "png",
+            "mjpeg",
+            # 2~31, 낮을수록 좋다. 4는 평면 채색에서 열화가 보이지 않는 선이다.
+            "-q:v",
+            PANEL_QUALITY,
             "pipe:1",
         ],
         stdin=data,
@@ -509,7 +784,7 @@ def render_comic(
     setting: str = "",
     style: str = DEFAULT_STYLE,
 ) -> bytes:
-    """4컷 구성 → 2x2 만화 PNG 바이트."""
+    """4컷 구성 → 2x2 만화 JPEG 바이트."""
     payload = _gms(
         IMAGE_MODEL,
         {
@@ -530,7 +805,7 @@ def render_comic(
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         },
     )
-    return normalize_square_png(_first_image(payload))
+    return normalize_square_image(_first_image(payload))
 
 
 def usage_summary(payload: Mapping[str, Any]) -> dict[str, int]:

@@ -11,8 +11,10 @@ import com.wj.server.storage.ObjectStorageService;
 import com.wj.server.video.api.CreateEditUploadRequest;
 import com.wj.server.video.api.CreateVideoCommentRequest;
 import com.wj.server.video.api.EditUploadResponse;
+import com.wj.server.video.api.UpdateVideoCommentRequest;
 import com.wj.server.video.api.VideoCommentResponse;
 import com.wj.server.video.api.VideoResponse;
+import com.wj.server.video.domain.VideoCommentRow;
 import com.wj.server.video.domain.VideoRow;
 import com.wj.server.video.persistence.VideoCommentMapper;
 import com.wj.server.video.persistence.VideoMapper;
@@ -110,8 +112,51 @@ public class EditedVideoService {
         commentMapper.insert(commentId, videoId, userId, body);
         // 작성자를 뺀 금고 구성원에게 알림 + FCM.
         notificationService.editCommentAdded(userId, videoId, commentId.toString(), body);
-        return new VideoCommentResponse(
-            commentId, userId, null, body, Instant.now());
+        return storedComment(commentId, videoId);
+    }
+
+    /**
+     * 댓글은 쓴 사람만 고친다.
+     *
+     * OWNER에게도 열지 않은 이유는 남의 말을 고쳐 쓰는 것과 지우는 것이 다른
+     * 일이기 때문이다. 부적절한 댓글은 {@link #deleteComment}로 지운다.
+     */
+    @Transactional
+    public VideoCommentResponse updateComment(
+        UUID userId, UUID videoId, UUID commentId, UpdateVideoCommentRequest request
+    ) {
+        videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(this::notFound);
+        UUID authorId = commentMapper.findAuthorId(commentId, videoId).orElseThrow(this::notFound);
+        if (!userId.equals(authorId)) {
+            throw new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "자신이 쓴 댓글만 고칠 수 있습니다.");
+        }
+        String body = request.body().strip();
+        if (body.isEmpty()) {
+            throw new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_FAILED", "댓글 내용을 입력해야 합니다.");
+        }
+        if (commentMapper.updateBody(commentId, videoId, body) != 1) {
+            throw notFound();
+        }
+        return storedComment(commentId, videoId);
+    }
+
+    /** 쓴 사람은 자기 댓글을, OWNER는 금고의 어느 댓글이든 지운다. */
+    @Transactional
+    public void deleteComment(UUID userId, UUID videoId, UUID commentId) {
+        videoMapper.findAccessibleVideo(userId, videoId).orElseThrow(this::notFound);
+        UUID authorId = commentMapper.findAuthorId(commentId, videoId).orElseThrow(this::notFound);
+        boolean owner = "OWNER".equals(
+            videoMapper.findActiveRole(userId, videoId).orElseThrow(this::notFound));
+        if (!userId.equals(authorId) && !owner) {
+            throw new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                "자신이 쓴 댓글이거나 OWNER만 삭제할 수 있습니다.");
+        }
+        if (commentMapper.delete(commentId, videoId) != 1) {
+            throw notFound();
+        }
     }
 
     private String normalizedTitle(String requested, String sourceTitle) {
@@ -124,12 +169,20 @@ public class EditedVideoService {
     private VideoResponse toResponse(VideoRow video) {
         return new VideoResponse(
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
-            video.sourceEventId(), video.title(), video.description(), video.contentType(),
+            video.sourceEventId(), video.title(), video.contentType(),
             video.sizeBytes(), video.checksumSha256(), video.durationMs(),
             video.capturedStartAt(), video.capturedEndAt(), video.status(),
             video.favorite(), null, video.createdAt(),
             com.wj.server.video.domain.VideoEventTypes.fromCsv(
                 video.eventTypesCsv(), video.triggerType()));
+    }
+
+    /// 저장된 댓글을 그대로 읽어 응답으로 쓴다 — 이유는 ComicFeedService 참고.
+    private VideoCommentResponse storedComment(UUID commentId, UUID videoId) {
+        VideoCommentRow row = commentMapper.findComment(commentId, videoId)
+            .orElseThrow(this::notFound);
+        return new VideoCommentResponse(
+            row.id(), row.authorId(), row.authorName(), row.body(), row.createdAt());
     }
 
     private ApiException notFound() {

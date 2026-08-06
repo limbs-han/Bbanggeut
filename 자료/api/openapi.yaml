@@ -187,6 +187,32 @@ paths:
           $ref: '#/components/responses/ValidationError'
 
   /api/auth/me:
+    patch:
+      tags: [Auth]
+      operationId: updateMyProfile
+      summary: 내 프로필 수정
+      description: |
+        표시 이름만 바꾼다. 이메일은 로그인 식별자라 이 API로 바꿀 수 없다.
+        앞뒤 공백은 서버가 다듬어 저장한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: 수정된 프로필
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
     delete:
       tags: [Auth]
       operationId: withdrawAccount
@@ -359,7 +385,11 @@ paths:
       tags: [Schedules]
       operationId: listSchedules
       summary: 캘린더 일정 목록
-      description: 로그인 사용자의 일정(기념일)을 날짜 오름차순으로 반환한다.
+      description: |
+        일정은 금고 구성원이 함께 본다. 사용자가 활성 구성원인 모든 금고의
+        일정을 날짜 오름차순으로 반환한다.
+
+        금고가 없던 시절에 적은 일정(`vaultId` 없음)은 적은 사람에게만 보인다.
       responses:
         '200':
           description: 일정 목록
@@ -375,7 +405,12 @@ paths:
       tags: [Schedules]
       operationId: createSchedule
       summary: 캘린더 일정 등록
-      description: 사용자당 최대 200개까지 등록할 수 있다.
+      description: |
+        금고 구성원 누구나 등록한다. 금고당 최대 200개다.
+
+        `vaultId`를 보내면 그 금고의 활성 구성원인지 확인한다. 생략하면 사용자가
+        속한 금고가 하나일 때만 그것으로 정하고, 여러 곳에 속해 있으면 422로
+        되묻는다. 금고가 하나도 없으면 예전처럼 개인 일정이 된다.
       requestBody:
         required: true
         content:
@@ -393,6 +428,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '422':
           $ref: '#/components/responses/ValidationError'
 
@@ -401,6 +438,7 @@ paths:
       tags: [Schedules]
       operationId: updateSchedule
       summary: 캘린더 일정 수정
+      description: 일정을 적은 사람 또는 금고 OWNER만 수정한다.
       parameters:
         - in: path
           name: scheduleId
@@ -425,12 +463,15 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/HiddenNotFound'
     delete:
       tags: [Schedules]
       operationId: deleteSchedule
       summary: 캘린더 일정 삭제
+      description: 일정을 적은 사람 또는 금고 OWNER만 삭제한다.
       parameters:
         - in: path
           name: scheduleId
@@ -1240,8 +1281,16 @@ paths:
     patch:
       tags: [Videos]
       operationId: updateVideo
-      summary: 영상 제목·설명·즐겨찾기 수정
-      description: 해당 기기의 활성 OWNER 또는 MEMBER만 수행할 수 있다.
+      summary: 영상 제목·즐겨찾기 수정
+      description: |
+        필드마다 권한이 다르다.
+
+        - 제목: 기기가 담아 온 원본은 OWNER만 바꾼다(가족 공동의 기록이다).
+          `sourceType=EDIT_OUTPUT`인 편집본은 OWNER와 MEMBER가 바꾼다.
+        - 즐겨찾기: OWNER와 MEMBER 모두 토글한다.
+
+        메모(`description`)는 2026-08-05에 제거했다. DB 칼럼은 무중단 배포 규칙상
+        다음 릴리스에서 지운다.
       requestBody:
         required: true
         content:
@@ -1267,7 +1316,12 @@ paths:
       tags: [Videos]
       operationId: deleteVideo
       summary: 영상 삭제 요청
-      description: 기본 정책에서는 해당 기기의 활성 OWNER만 수행한다.
+      description: |
+        기기가 담아 온 원본은 OWNER만 지운다 — 지우면 가족 모두가 그 기록을 잃는다.
+
+        `sourceType=EDIT_OUTPUT`인 편집본은 만든 사람 또는 OWNER가 지운다.
+        구성원이 만든 편집본을 스스로 치울 수 있어야 하고, 남의 편집본은
+        건드리지 못한다.
       responses:
         '202':
           description: 비동기 삭제 요청 수락
@@ -1330,6 +1384,8 @@ paths:
       description: |
         기기에서 만든 전사문을 보내 4컷 구성(흐름·장면·대사)을 글로 받는다. 서버가 원본에서
         프레임 4~6장을 뽑아 함께 모델에 넣는다. 사용자가 대사를 고친 뒤 `comic/image`를 부른다.
+        구성이 끝나면 요청자에게 `COMIC_SCRIPT_READY` 알림이 간다 — 모델 호출이 20초 가까이 걸려
+        그 사이 화면을 벗어난 사용자가 대사가 준비된 것을 알 수 있어야 한다.
       requestBody:
         required: true
         content:
@@ -1403,6 +1459,309 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Videos]
+      operationId: enqueueComicImage
+      summary: 4컷 만화 그림 만들기(백그라운드)
+      description: |
+        그림 생성을 뒤에서 돌린다. 앱은 202를 받고 화면을 벗어나도 되며, 다 되면 결과가
+        저장되고 `COMIC_READY` 알림이 온다. 진행 상황은 같은 경로의 GET으로 본다.
+
+        동기 경로(POST)는 수십 초를 붙잡아 두므로 화면을 벗어나면 그 시간이 버려졌다.
+        앱은 이 경로를 쓴다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComicImageRequest'
+      responses:
+        '202':
+          description: 작업을 받았다
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: 컷이 4개가 아님·`beat`/`scene` 누락·지원하지 않는 `style`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: |
+            호출 예산 초과(`COMIC_RATE_LIMITED`) 또는 워커의 만화 대기 줄이 가득 찼다.
+            오래 기다린 끝에 실패하게 두지 않고 지금 거절한다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Videos]
+      operationId: getComicImageStatus
+      summary: 4컷 만화 작업 상태
+      description: |
+        만드는 중인지, 다 됐는지, 실패했는지를 하나로 알려 준다. 저장된 그림이 있으면
+        작업 기록이 사라진 뒤에도 `done`으로 답한다 — 서버가 재시작해도 이미 만든 만화는
+        그대로 있다.
+      responses:
+        '200':
+          description: 작업 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/videos/{videoId}/comic:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    patch:
+      tags: [Videos]
+      operationId: updateComicTitle
+      summary: 만화 제목 바꾸기
+      description: |
+        빈 제목을 보내면 붙인 제목을 지우고 원본 영상 제목으로 되돌아간다 — 지울 길이
+        없으면 한번 잘못 붙인 이름을 되돌릴 수 없다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string, maxLength: 200}
+      responses:
+        '200':
+          description: 바뀐 만화
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultComic'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteComic
+      summary: 만화 지우기
+      description: |
+        그림·구성과 좋아요·댓글이 함께 사라진다. **원본 영상은 남는다** — 만화를
+        지우는 것은 그 영상으로 만든 만화를 없애는 일이지 영상을 없애는 일이 아니다.
+
+        만든 사람 또는 금고 OWNER만 지울 수 있다(`VaultComic.canDelete`). 만든 사람을
+        남기기 전(V45 이전)에 만들어진 만화는 만든 사람을 알 수 없어 OWNER만 지운다.
+
+        워커의 저장물을 먼저 지우고 행을 나중에 지운다. 워커 호출이 실패하면 아무것도
+        지워지지 않은 상태라 다시 부르면 되고, 워커만 성공한 경우도 다시 불러 복구된다
+        — 워커의 삭제는 멱등이다.
+      responses:
+        '204':
+          description: 지웠다. 이미 없어도 204다.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 만든 사람도 OWNER도 아니다(`FORBIDDEN_ROLE`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: |
+            아직 그리는 중이다(`COMIC_BUSY`). 기록만 지워도 워커 스레드는 계속 그려서
+            지운 만화가 되살아나므로, 다 만든 뒤에 다시 부른다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/videos/{videoId}/analysis:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    get:
+      tags: [Videos]
+      operationId: getVideoAnalysisStatus
+      summary: 영상 분석 진행 상태
+      description: |
+        AI 자동 컷·줌과 4컷 만화의 장면 선정이 쓰는 영상 분석(소리·움직임·표정)이
+        어디까지 왔는지 알려 준다. 편집 화면과 만화 화면이 "분석 중" 표시를 그리는
+        근거다.
+
+        **분석한 적이 없어도 200이고 `status: NONE`이다** — 404가 아니다. 분석은
+        영상에 반드시 있어야 하는 것이 아니라, 있으면 결과가 좋아지는 것이다.
+
+        분석 결과(JSON 4종)는 여기서 주지 않는다. 영상당 약 700KB라 워커 저장소에
+        두고, 이 API는 상태만 준다.
+      responses:
+        '200':
+          description: 분석 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoAnalysisStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}/comic/like:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    put:
+      tags: [Videos]
+      operationId: likeComic
+      summary: 만화 좋아요
+      description: |
+        같은 사람이 두 번 눌러도 개수가 늘지 않는다 — 앱이 연타하거나 응답을 놓쳐 다시
+        보내도 어긋나지 않아야 한다.
+      responses:
+        '200':
+          description: 누른 뒤의 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicLike'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    delete:
+      tags: [Videos]
+      operationId: unlikeComic
+      summary: 만화 좋아요 취소
+      responses:
+        '200':
+          description: 취소한 뒤의 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicLike'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/videos/{videoId}/comic/comments:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    get:
+      tags: [Videos]
+      operationId: listComicComments
+      summary: 만화 댓글 목록
+      description: |
+        영상 댓글(`/comments`)과 나눠 둔다 — 만화에 단 말과 영상에 단 말은 가리키는
+        대상이 다르다. 한 스레드로 합치면 만화 피드에 영상 얘기가 섞인다.
+      responses:
+        '200':
+          description: 댓글 목록(오래된 순)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VideoComment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    post:
+      tags: [Videos]
+      operationId: addComicComment
+      summary: 만화 댓글 작성
+      description: 작성자는 토큰의 사용자 UUID로 기록한다 — 앱이 보낸 표시 이름을 믿지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '201':
+          description: 작성된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/videos/{videoId}/comic/comments/{commentId}:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+      - in: path
+        name: commentId
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Videos]
+      operationId: updateComicComment
+      summary: 만화 댓글 수정
+      description: 쓴 사람만 고칠 수 있다(영상 댓글과 같은 규칙).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: 수정된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteComicComment
+      summary: 만화 댓글 삭제
+      description: 쓴 사람 또는 금고 OWNER가 삭제한다.
+      responses:
+        '204':
+          description: 삭제됨
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
 
   /api/iot/registration-codes:
     post:
@@ -1445,6 +1804,11 @@ paths:
         MVP는 최대 500 MiB의 단일 PUT만 지원한다. 응답의 `requiredHeaders`를 PUT 요청에 그대로
         포함해야 한다. 저장소가 체크섬 헤더를 지원하면 `x-amz-checksum-sha256`을 사용하고,
         그렇지 않으면 서명된 `x-amz-meta-sha256` 메타데이터를 사용한다.
+
+        **감지가 꺼진 카메라는 `409 DETECTION_DISABLED`로 거절한다**
+        (`DeviceSummary.detectionEnabled`). 이 거절은 terminal이다 — 기기는
+        재시도하지 말고 그 클립을 버려야 한다. 재시도 큐에 쌓아 두면 감지를 다시
+        켠 순간 꺼져 있던 동안의 영상이 한꺼번에 저장되어, 끈 의미가 사라진다.
       security:
         - DeviceBearerAuth: []
       parameters:
@@ -1894,6 +2258,32 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/vaults/{vaultId}/comics:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Videos]
+      operationId: listVaultComics
+      summary: 금고의 만화 목록
+      description: |
+        추억 탭의 만화 피드가 이 목록을 그린다. 제목·좋아요 수·내가 눌렀는지·댓글 수를
+        함께 세어 주므로 만화마다 따로 묻지 않는다 — 피드가 스무 장이면 왕복이 예순
+        번이 된다.
+
+        누가 만들었는지는 보지 않는다. 만화는 금고에 속하므로 가족 누구에게나 보여야
+        한다. 금고 구성원이 아니면 빈 목록이다.
+      responses:
+        '200':
+          description: 금고의 만화 목록(최신순)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VaultComic'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/vaults/{vaultId}/edits:
     parameters:
       - $ref: '#/components/parameters/VaultId'
@@ -1975,6 +2365,156 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /api/videos/{videoId}/comments/{commentId}:
+    parameters:
+      - in: path
+        name: videoId
+        required: true
+        schema: {type: string, format: uuid}
+      - in: path
+        name: commentId
+        required: true
+        schema: {type: string, format: uuid}
+    patch:
+      tags: [Videos]
+      operationId: updateVideoComment
+      summary: 영상 댓글 수정
+      description: |
+        쓴 사람만 고칠 수 있다. OWNER에게도 열지 않는다 — 남의 말을 고쳐 쓰는
+        것과 지우는 것은 다른 일이다. 부적절한 댓글은 삭제로 처리한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 500}
+      responses:
+        '200':
+          description: 수정된 댓글
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoComment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteVideoComment
+      summary: 영상 댓글 삭제
+      description: 쓴 사람 또는 금고 OWNER가 삭제한다.
+      responses:
+        '204':
+          description: 삭제됨
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/vaults/{vaultId}/places:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    get:
+      tags: [Vaults]
+      operationId: getVaultPlaceLayout
+      summary: 금고 장소 배치와 내 기기 순서
+      description: |
+        `places`와 `devicePlaces`는 금고 공통이다 — 장소 이름과 기기가 어느 장소에
+        있는지는 집의 사실이라 가족이 함께 본다.
+
+        `deviceOrder`는 부른 사람의 것이다 — 기기를 어떤 순서로 볼지는 보기
+        취향이라 사람마다 둔다.
+
+        지금 어느 장소를 보고 있는지는 화면 상태라 서버에 두지 않는다.
+      responses:
+        '200':
+          description: 배치와 순서
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+    put:
+      tags: [Vaults]
+      operationId: replaceVaultPlaceLayout
+      summary: 금고 장소 배치 저장
+      description: |
+        장소 이름과 기기 배정을 통째로 갈아 끼운다. 금고 구성원 누구나 할 수 있다 —
+        홈캠을 안방으로 옮긴 사람이 그 사실을 적을 수 있어야 하고, 잘못 적어도
+        되돌리기 쉬운 데이터다.
+
+        앱이 한 화면에서 장소 추가와 기기 이동을 함께 하므로 항목별로 나누지 않는다.
+        목록에 없는 장소로 보낸 배정과 금고에 없는 기기는 조용히 버린다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlaceLayoutRequest'
+      responses:
+        '200':
+          description: 저장된 배치
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/vaults/{vaultId}/device-order:
+    parameters:
+      - $ref: '#/components/parameters/VaultId'
+    put:
+      tags: [Vaults]
+      operationId: replaceDeviceOrder
+      summary: 내 기기 순서 저장
+      description: 부른 사람에게만 적용된다. 다른 구성원 화면의 순서는 그대로다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceIds]
+              properties:
+                deviceIds:
+                  type: array
+                  items: {type: string, format: uuid}
+      responses:
+        '200':
+          description: 저장된 배치와 순서
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceLayout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
   /api/vaults/{vaultId}/event-stats:
     parameters:
       - $ref: '#/components/parameters/VaultId'
@@ -2016,6 +2556,110 @@ paths:
         '422':
           $ref: '#/components/responses/ValidationError'
 
+  /api/families/{familyId}/laugh-memories/random:
+    get:
+      summary: 웃음 뽑기 - 최근 웃음 영상 무작위 조회
+      description: >-
+        최근 days일(기본 3일 = 72시간) 안에 저장된 해당 가족의 웃음 영상 중 하나를 무작위로 돌려준다.
+        삭제·만료·재생 불가 영상과 다른 가족의 영상은 후보에서 제외된다.
+        꺼낼 영상이 없는 것은 오류가 아니라 정상 상태이므로 404가 아니라 200 + hasMemory=false로 응답한다.
+        excludeIds로 이번 화면에서 이미 본 영상을 제외할 수 있고, 모든 후보가 제외되면 제외를 풀고 다시 고른다.
+      parameters:
+        - $ref: '#/components/parameters/FamilyId'
+        - name: days
+          in: query
+          description: 후보 기간(일). 기본 3, 최대 7.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 7
+            default: 3
+        - name: excludeIds
+          in: query
+          description: 이번 화면에서 이미 본 영상 ID. 쉼표로 구분한다.
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+      responses:
+        '200':
+          description: 뽑힌 웃음 영상 또는 빈 결과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughDrawResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/laugh-memories/{memoryId}:
+    get:
+      summary: 웃음 뽑기 - 뽑은 영상 단건 조회
+      description: >-
+        앱이 기기에 적어 둔 "오늘 뽑은 영상" ID로 결과 화면을 되살릴 때 부른다.
+        구성원이 아니거나 영상이 삭제·만료돼 재생할 수 없으면 존재 여부를 숨기고 404를 돌려준다.
+      parameters:
+        - name: memoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 뽑힌 웃음 영상과 반응
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughMemory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+
+  /api/laugh-memories/{memoryId}/reaction:
+    put:
+      summary: 웃음 뽑기 - 이모지 반응 등록·변경
+      description: >-
+        로그인 사용자의 반응을 남기거나 바꾼다. 사용자 한 명당 영상 하나에 반응 하나만 존재하며,
+        같은 반응을 다시 보내도 개수는 늘지 않는다. 반응 취소는 지원하지 않는다.
+      parameters:
+        - name: memoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reactionType]
+              properties:
+                reactionType:
+                  type: string
+                  enum: [FUNNY, MISS_THIS, GOOD_SAVE, EMBARRASSING, AGAIN]
+      responses:
+        '200':
+          description: 반영된 반응 개수와 내 반응
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaughMemory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: 삭제·만료된 영상에는 반응할 수 없다 (VIDEO_NOT_READY)
+        '422':
+          $ref: '#/components/responses/ValidationError'
 components:
   securitySchemes:
     UserBearerAuth:
@@ -2030,6 +2674,14 @@ components:
       description: IoT 기기 전용 운영 자격 증명. 사용자 JWT와 상호 대체할 수 없다.
 
   parameters:
+    FamilyId:
+      name: familyId
+      in: path
+      required: true
+      description: 선택된 Memory Vault ID
+      schema:
+        type: string
+        format: uuid
     DeviceId:
       name: deviceId
       in: path
@@ -2216,6 +2868,16 @@ components:
           type: string
           maxLength: 60
 
+    UpdateProfileRequest:
+      type: object
+      required: [displayName]
+      additionalProperties: false
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 60
+
     SignUpRequest:
       type: object
       required: [email, password, displayName]
@@ -2354,6 +3016,19 @@ components:
           type: string
           format: date-time
           nullable: true
+        detectionEnabled:
+          type: boolean
+          default: true
+          description: |
+            감지·저장 스위치. `false`면 서버가 이 카메라의 영상 업로드를
+            `409 DETECTION_DISABLED`로 거절한다.
+
+            **서버 측 차단이다.** 카메라는 여전히 찍고 올리려 시도하고, 실시간
+            보기도 그대로 된다. 카메라 자체를 멈추려면 기기 펌웨어가 필요하다.
+
+            409를 쓰는 이유: 기기 업로더가 403·409만 terminal로 보고 재시도하지
+            않는다. 429나 5xx로 돌려주면 재시도 큐에 쌓였다가 감지를 다시 켠
+            순간 밀린 것이 한꺼번에 들어온다.
 
     Device:
       allOf:
@@ -2414,6 +3089,11 @@ components:
           type: integer
           minimum: 1
           maximum: 3650
+        detectionEnabled:
+          type: boolean
+          description: |
+            감지·저장 스위치를 켜고 끈다. 금고 OWNER만 바꿀 수 있다.
+            준 필드만 바뀐다 — 이 값을 빼면 지금 설정이 그대로 유지된다.
 
     DeviceStatus:
       type: object
@@ -2444,7 +3124,7 @@ components:
 
     HomeSummary:
       type: object
-      required: [deviceId, date, timeZone, captureCount, savedCount, memoCount]
+      required: [deviceId, date, timeZone, captureCount, savedCount]
       description: 홈 대시보드용 오늘 요약 집계. 현재 데이터 모델에서는 captureCount와 savedCount가 같은 값이며, edge가 원시 이벤트 수를 별도로 보고하면 분리된다.
       properties:
         deviceId:
@@ -2465,10 +3145,6 @@ components:
           type: integer
           minimum: 0
           description: 오늘 저장된 영상 수
-        memoCount:
-          type: integer
-          minimum: 0
-          description: 오늘 저장된 영상 중 메모(설명)가 작성된 수
         latestHighlight:
           type: object
           allOf:
@@ -2821,10 +3497,6 @@ components:
         title:
           type: string
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         contentType:
           type: string
           example: video/mp4
@@ -2980,10 +3652,6 @@ components:
           type: string
           minLength: 1
           maxLength: 120
-        description:
-          type: string
-          maxLength: 500
-          nullable: true
         isFavorite:
           type: boolean
 
@@ -3059,6 +3727,139 @@ components:
           type: string
           format: byte
           description: 정사각 PNG의 순수 base64. `data:image/png;base64,` 접두어를 붙이지 않는다.
+
+    VaultComic:
+      type: object
+      description: |
+        만화 한 장. 추억 탭의 만화 피드가 이 목록을 그대로 그린다.
+
+        그림 주소는 여기 없다. 만화 PNG는 단기 서명 URL로만 받을 수 있어서 목록에
+        담으면 화면에 보이지도 않는 만화의 URL까지 발급하고 그 사이 만료된다. 앱은
+        화면에 들어온 카드만 `GET /api/videos/{videoId}/comic/image`로 받는다.
+      required:
+        [videoId, title, customTitle, madeAt, likeCount, likedByMe, commentCount,
+         canDelete]
+      properties:
+        videoId:
+          type: string
+          format: uuid
+          description: 원본 영상 id. 만화의 식별자이기도 하다.
+        title:
+          type: string
+          description: 보여 줄 제목. 붙인 제목이 없으면 원본 영상 제목이다.
+        customTitle:
+          type: boolean
+          description: 사용자가 제목을 붙였는가. 제목 고치기 창의 기본값을 가른다.
+        madeAt:
+          type: string
+          format: date-time
+          description: 처음 완성된 시각.
+        likeCount:
+          type: integer
+        likedByMe:
+          type: boolean
+        commentCount:
+          type: integer
+        canDelete:
+          type: boolean
+          description: |
+            지금 보는 사람이 이 만화를 지울 수 있는가 — 만든 사람 또는 금고 OWNER다.
+            **서버가 판정한다.** 앱이 역할로 다시 계산하면 규칙이 두 곳에 생겨
+            서버와 어긋난다. 만든 사람을 남기기 전(V45 이전)에 만들어진 만화는
+            만든 사람을 알 수 없어 OWNER에게만 참이다.
+
+    VideoAnalysisStatus:
+      type: object
+      description: |
+        영상 분석(소리·움직임·표정)의 진행 상태. 결과 JSON 4종은 영상당 약 700KB라
+        워커 저장소에 두고, 이 응답은 상태만 나른다.
+      required: [status, progress]
+      properties:
+        status:
+          type: string
+          enum: [NONE, RUNNING, DONE, FAILED]
+          description: |
+            `NONE`은 분석한 적이 없다는 뜻이고 오류가 아니다. 분석 없이도 만화와
+            자동 컷은 만들어지고, 다만 장면 선정이 규칙 기반으로 떨어진다.
+        stage:
+          type: string
+          enum: [download, audio, yamnet, video, expression]
+          nullable: true
+          description: |
+            지금 단계. 진행 중이 아니면 null이다. 앱이 사람 말로 옮겨 보여 주고,
+            모르는 값은 뭉뚱그린다 — 워커가 단계를 늘려도 영문 코드가 노출되지 않게.
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        error:
+          type: string
+          nullable: true
+          description: 실패 사유. 실패가 아니면 null이다. 500자에서 자른다.
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 끝난 시각. 진행 중이거나 분석한 적이 없으면 null.
+
+    ComicLike:
+      type: object
+      description: |
+        좋아요를 누르거나 취소한 뒤의 상태. 개수를 함께 주는 이유는 앱이 자기 숫자를
+        ±1 하는 것만으로는 그 사이 가족이 누른 것을 반영하지 못하기 때문이다.
+      required: [likeCount, likedByMe]
+      properties:
+        likeCount:
+          type: integer
+        likedByMe:
+          type: boolean
+
+    ComicJob:
+      type: object
+      description: 백그라운드 만화 작업의 상태.
+      required: [videoId, status, queuePosition]
+      properties:
+        videoId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          description: |
+            `none`은 만든 적이 없다는 뜻이고 오류가 아니다.
+          enum: [none, queued, running, done, failed]
+        error:
+          type: string
+          nullable: true
+          description: 실패 사유. 실패가 아니면 null.
+        queuePosition:
+          type: integer
+          minimum: 0
+          description: 대기 순번. 0이면 지금 그리는 중이거나 이미 끝났다.
+        imageUrl:
+          type: string
+          nullable: true
+          description: 다 됐으면 그림을 받을 단기 URL. 아직 없으면 null.
+        savedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 그림을 저장한 시각. 없으면 null.
+        cuts:
+          type: array
+          nullable: true
+          description: |
+            저장해 둔 4컷 구성. 앱이 화면에 다시 들어올 때 구성을 새로 받지 않게 하려고
+            함께 준다 — 그 호출은 과금이고, 새로 받으면 사용자가 고친 대사가 서버 원문으로
+            덮인다. 만든 적이 없으면 null이다.
+
+            그림을 아직 만들지 않았어도(`status: none`) 구성만 있을 수 있다.
+          items:
+            $ref: '#/components/schemas/ComicCut'
 
     SignedUrlResponse:
       type: object
@@ -3242,6 +4043,11 @@ components:
           format: uuid
         type:
           type: string
+          description: >-
+            `LAUGHTER_VIDEO_READY`는 기기가 스스로 감지해 담은 영상이 도착했다는 뜻이며 웃음 전용이 아니다.
+            박수·호출·직접 촬영으로 담긴 영상도 이 타입으로 오고, 무엇 때문에 담겼는지는 `title`이 말해 준다.
+            사람이 직접 올린 영상과 편집본은 이 알림을 만들지 않는다.
+            `COMIC_SCRIPT_READY`는 4컷 만화 1단계(대사 구성) 완료, `COMIC_READY`는 2단계(그림) 완료다.
           enum:
             - INVITATION_RECEIVED
             - INVITATION_ACCEPTED
@@ -3250,6 +4056,8 @@ components:
             - EDIT_COMMENT_ADDED
             - ANNIVERSARY
             - WEEKLY_REPORT
+            - COMIC_SCRIPT_READY
+            - COMIC_READY
         title:
           type: string
         body:
@@ -3397,14 +4205,60 @@ components:
           type: string
           maxLength: 16
           default: '❤️'
+        vaultId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            일정을 넣을 금고. 생략하면 사용자가 속한 금고가 하나일 때만 그것으로
+            정하고, 여러 곳에 속해 있으면 422로 되묻는다.
+
+    PlaceLayout:
+      type: object
+      required: [places, devicePlaces, deviceOrder]
+      properties:
+        places:
+          type: array
+          description: 금고 공통 장소 이름(정렬 순서 그대로)
+          items: {type: string, maxLength: 15}
+        devicePlaces:
+          type: object
+          description: 금고 공통 — 기기 id를 장소 이름에 매핑
+          additionalProperties: {type: string, maxLength: 15}
+        deviceOrder:
+          type: array
+          description: 부른 사람만의 기기 순서. 비어 있으면 서버 기본 순서를 쓴다
+          items: {type: string, format: uuid}
+
+    UpdatePlaceLayoutRequest:
+      type: object
+      required: [places, devicePlaces]
+      properties:
+        places:
+          type: array
+          maxItems: 20
+          items: {type: string, minLength: 1, maxLength: 15}
+        devicePlaces:
+          type: object
+          additionalProperties: {type: string, maxLength: 15}
 
     Schedule:
       type: object
-      required: [id, title, date, memo, yearly, emoji]
+      required: [id, authorId, title, date, memo, yearly, emoji]
       properties:
         id:
           type: string
           format: uuid
+        authorId:
+          type: string
+          format: uuid
+          description: |
+            이 일정을 적은 사람. 앱이 "내가 적은 일정인가"를 보고 수정·삭제
+            버튼을 가리는 데 쓴다. 서버도 같은 규칙으로 거른다.
+        authorName:
+          type: string
+          nullable: true
+          description: 적은 사람의 표시 이름. 서버가 `users`에서 조인해 준다.
         title:
           type: string
         date:
@@ -3448,3 +4302,76 @@ components:
           nullable: true
         hasNext:
           type: boolean
+
+    LaughReactionType:
+      type: string
+      description: 웃음 뽑기 이모지 반응 종류.
+      enum: [FUNNY, MISS_THIS, GOOD_SAVE, EMBARRASSING, AGAIN]
+
+    LaughReactionMember:
+      type: object
+      description: 반응을 남긴 구성원 한 명. 반응이 없는 구성원은 담기지 않는다.
+      required: [memberId, displayName, reactionType, isMe]
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        reactionType:
+          $ref: '#/components/schemas/LaughReactionType'
+        isMe:
+          type: boolean
+          description: >-
+            로그인 사용자 본인의 반응인지. 프로필 사진은 서버가 알지 못하므로
+            앱이 이름 첫 글자로 아바타를 그리고 본인 것만 기기 아바타로 바꾼다.
+
+    LaughMemory:
+      type: object
+      description: 뽑힌 웃음 영상 한 건과 그 반응.
+      required: [video, reactionCounts, familyReactions]
+      properties:
+        video:
+          $ref: '#/components/schemas/Video'
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 보관 만료 시각(retention_until). 보관 정책이 없으면 null.
+        reactionCounts:
+          type: object
+          description: 반응 종류별 개수. 키는 LaughReactionType 값이다.
+          additionalProperties:
+            type: integer
+            minimum: 0
+        myReaction:
+          type: string
+          nullable: true
+          description: 로그인 사용자가 남긴 반응. 남기지 않았으면 null.
+          allOf:
+            - $ref: '#/components/schemas/LaughReactionType'
+        familyReactions:
+          type: array
+          description: 반응을 남긴 구성원 목록. 반응이 없으면 빈 배열.
+          items:
+            $ref: '#/components/schemas/LaughReactionMember'
+
+    LaughDrawResult:
+      type: object
+      description: >-
+        웃음 뽑기 결과. 꺼낼 영상이 없는 것은 오류가 아니라 정상 상태이므로
+        404가 아니라 200 + hasMemory=false로 응답한다.
+      required: [hasMemory]
+      properties:
+        hasMemory:
+          type: boolean
+          description: 뽑을 영상이 있었는지. false면 memory가 null이고 message가 채워진다.
+        memory:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LaughMemory'
+        message:
+          type: string
+          nullable: true
+          description: 빈 결과일 때 앱이 그대로 보여 줄 안내 문구.

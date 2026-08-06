@@ -49,11 +49,10 @@ public class HomeSummaryService {
         // capture and saved share one query; they diverge once the edge reports
         // raw event counts separately.
         long saved = mapper.countReadyVideos(deviceId, from, to);
-        long memo = mapper.countReadyVideosWithMemo(deviceId, from, to);
         VideoResponse highlight = mapper.findLatestHighlight(userId, deviceId)
             .map(this::toResponse)
             .orElse(null);
-        return new HomeSummaryResponse(deviceId, today, zone.getId(), saved, saved, memo, highlight);
+        return new HomeSummaryResponse(deviceId, today, zone.getId(), saved, saved, highlight);
     }
 
     private ZoneId parseZone(String value) {
@@ -67,7 +66,7 @@ public class HomeSummaryService {
     private VideoResponse toResponse(VideoRow video) {
         return new VideoResponse(
             video.id(), video.deviceId(), video.sourceType(), video.triggerType(),
-            video.sourceEventId(), video.title(), video.description(), video.contentType(), video.sizeBytes(),
+            video.sourceEventId(), video.title(), video.contentType(), video.sizeBytes(),
             video.checksumSha256(), video.durationMs(), video.capturedStartAt(),
             video.capturedEndAt(), video.status(), video.favorite(), null, video.createdAt(),
             VideoEventTypes.fromCsv(video.eventTypesCsv(), video.triggerType()));

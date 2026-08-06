@@ -9,9 +9,11 @@ import '../app/app_theme.dart';
 import '../core/models.dart';
 import '../core/video_gallery_saver.dart';
 import '../core/video_source_cache.dart';
+import '../editor/edit_recommendation_client.dart';
 import '../features/comic/comic_screen.dart';
 import 'local_edit_screen.dart';
 import 'media_player_surface.dart';
+import 'video_comments_section.dart';
 import 'widgets.dart';
 
 class ContentVideoDetailScreen extends StatefulWidget {
@@ -48,11 +50,67 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   bool _hasPlayed = false;
   Timer? _idlePrefetchTimer;
 
+  /// 저장해 둔 편집 초안이 있는가. 버튼 문구와 '초안 삭제'를 가른다.
+  bool _hasDraft = false;
+  bool _discardingDraft = false;
+  final _editClient = EditRecommendationClient();
+
   @override
   void initState() {
     super.initState();
     _video = widget.video;
     _loadPlayer();
+    _loadDraftState();
+  }
+
+  /// 초안이 있는지 조용히 확인한다. 실패하면 없는 것으로 둔다 — 편집 자체는
+  /// 초안이 있든 없든 되므로 오류를 띄울 이유가 없다.
+  Future<void> _loadDraftState() async {
+    if (!EditRecommendationClient.networkAllowed) return;
+    try {
+      final draft = await _editClient.loadDraft(_video.id);
+      if (mounted) setState(() => _hasDraft = draft != null);
+    } catch (_) {
+      // 초안 유무를 모르면 없는 쪽으로 둔다.
+    }
+  }
+
+  Future<void> _discardDraft() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const ValueKey('discard-draft-dialog'),
+        title: const Text('편집 초안을 지울까요?'),
+        content: const Text(
+          '저장해 둔 편집이 사라져요. 원본 영상과 이미 완성한 편집본은 그대로 있어요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('지우기'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _discardingDraft = true);
+    try {
+      await _editClient.deleteDraft(_video.id);
+      if (!mounted) return;
+      setState(() {
+        _hasDraft = false;
+        _discardingDraft = false;
+      });
+      showAppSnack(context, '편집 초안을 지웠어요.');
+    } catch (failure) {
+      if (!mounted) return;
+      setState(() => _discardingDraft = false);
+      showAppSnack(context, '초안을 지우지 못했어요: $failure', error: true);
+    }
   }
 
   Future<void> _loadPlayer() async {
@@ -133,29 +191,22 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   }
 
   Future<void> _editMetadata() async {
-    final draft = await showDialog<_VideoMetadataDraft>(
+    final title = await showDialog<String>(
       context: context,
-      builder: (_) => _MetadataEditorDialog(
-        initialTitle: _video.title,
-        initialMemo: _video.description ?? '',
-      ),
+      builder: (_) => _TitleEditorDialog(initialTitle: _video.title),
     );
-    if (draft != null) {
-      try {
-        await widget.controller.api.updateVideo(
-          _video.id,
-          title: draft.title,
-          description: draft.memo,
-        );
-        final refreshed = await widget.controller.api.getVideo(_video.id);
-        await widget.controller.refreshDeviceData();
-        if (mounted) {
-          setState(() => _video = refreshed);
-          showAppSnack(context, '제목과 메모를 저장했습니다.');
-        }
-      } catch (failure) {
-        if (mounted) showAppSnack(context, '$failure', error: true);
-      }
+    if (title == null) return;
+    final ok = await widget.controller.renameVideo(_video, title);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _video = _video.copyWith(title: title));
+      showAppSnack(context, '제목을 저장했습니다.');
+    } else {
+      showAppSnack(
+        context,
+        widget.controller.errorMessage ?? '제목을 저장하지 못했어요.',
+        error: true,
+      );
     }
   }
 
@@ -211,6 +262,8 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
     // 돌아오면 다시 만든다. 편집기가 원본을 받아 뒀으므로 이번에는
     // 네트워크 없이 캐시 파일로 열린다.
     if (mounted) await _loadPlayer();
+    // 편집기는 나올 때 초안을 저장한다. 방금 생겼을 수 있으니 다시 본다.
+    if (mounted) await _loadDraftState();
   }
 
   Future<void> _deleteVideo() async {
@@ -277,20 +330,25 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                       color: AppColors.coral,
                     ),
                   ),
-                  IconButton(
-                    tooltip: '영상 삭제',
-                    onPressed: _deleting ? null : _deleteVideo,
-                    iconSize: 30,
-                    icon: _deleting
-                        ? const SizedBox.square(
-                            dimension: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(
-                            Icons.delete_outline_rounded,
-                            color: AppColors.coral,
-                          ),
-                  ),
+                  // 목록 카드와 같은 기준으로 가린다. 서버는 원본을 OWNER만,
+                  // 편집본을 OWNER 또는 만든 사람만 지우게 한다
+                  // (VideoCommandService.delete). 여기만 조건 없이 버튼을
+                  // 띄우고 있어서 MEMBER가 누르면 403을 받았다.
+                  if (canManageVideo(_video, isOwner: widget.controller.isOwner))
+                    IconButton(
+                      tooltip: '영상 삭제',
+                      onPressed: _deleting ? null : _deleteVideo,
+                      iconSize: 30,
+                      icon: _deleting
+                          ? const SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.delete_outline_rounded,
+                              color: AppColors.coral,
+                            ),
+                    ),
                 ],
               ),
             ),
@@ -319,7 +377,14 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
               ),
             ),
             const SizedBox(height: 18),
-            _MemoryDetailCard(video: _video, onEdit: _editMetadata),
+            _MemoryDetailCard(
+              video: _video,
+              onEdit: _editMetadata,
+              canRename: canManageVideo(
+                _video,
+                isOwner: widget.controller.isOwner,
+              ),
+            ),
             const SizedBox(height: 18),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
@@ -351,16 +416,36 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
               LinearProgressIndicator(value: _saveProgress),
             ],
             const SizedBox(height: 12),
+            // 편집 기록이 있으면 "이어서"라고 말해 준다. 예전에는 초안이 있어도
+            // 같은 '영상 편집하기'였고, 초안은 '편집 중' 탭에서만 보였다 —
+            // 여기서 눌러도 이어서 열리는데 그걸 알 길이 없었다.
             FilledButton.icon(
+              key: const ValueKey('open-editor'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(62),
                 elevation: 5,
                 shadowColor: const Color(0x55F47B61),
               ),
               onPressed: _openEditor,
-              icon: const Icon(Icons.content_cut_rounded, size: 27),
-              label: const Text('영상 편집하기'),
+              icon: Icon(
+                _hasDraft ? Icons.edit_note_rounded : Icons.content_cut_rounded,
+                size: 27,
+              ),
+              label: Text(_hasDraft ? '이어서 편집하기' : '영상 편집하기'),
             ),
+            if (_hasDraft) ...[
+              const SizedBox(height: 6),
+              // 초안을 버릴 길. 없으면 잘못 저장한 편집을 이어서 여는 것 말고는
+              // 방법이 없어서, 원본부터 다시 시작하려면 편집기에서 되돌리기를
+              // 끝까지 눌러야 했다.
+              TextButton.icon(
+                key: const ValueKey('discard-draft'),
+                onPressed: _discardingDraft ? null : _discardDraft,
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                style: TextButton.styleFrom(foregroundColor: AppColors.muted),
+                label: Text(_discardingDraft ? '지우는 중' : '편집 초안 삭제'),
+              ),
+            ],
             const SizedBox(height: 12),
             // 처리가 끝나기 전에는 전사문이 없어 만화를 만들 수 없다.
             OutlinedButton.icon(
@@ -377,6 +462,16 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
               ),
             ),
+            const Divider(height: 28),
+            // 원본에도 가족 댓글을 남긴다. 백엔드는 원본과 편집본을 구별하지
+            // 않으므로(둘 다 videos 행 + video_comments) 편집본 화면과 같은
+            // 위젯을 쓴다. 바깥이 ListView라 안에서 또 스크롤하지 않는다.
+            VideoCommentsSection(
+              api: widget.controller.api,
+              videoId: _video.id,
+              myUserId: widget.controller.user?.id,
+              isOwner: widget.controller.isOwner,
+            ),
           ],
         ),
       ),
@@ -385,15 +480,20 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
 }
 
 class _MemoryDetailCard extends StatelessWidget {
-  const _MemoryDetailCard({required this.video, required this.onEdit});
+  const _MemoryDetailCard({
+    required this.video,
+    required this.onEdit,
+    required this.canRename,
+  });
 
   final VideoMemory video;
   final VoidCallback onEdit;
 
+  /// 원본 영상의 제목은 OWNER만 바꾼다. 못 바꾸는 사람에게는 버튼을 감춘다.
+  final bool canRename;
+
   @override
   Widget build(BuildContext context) {
-    final memo = video.description?.trim();
-    final hasMemo = memo?.isNotEmpty == true;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
       decoration: BoxDecoration(
@@ -432,23 +532,24 @@ class _MemoryDetailCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  video.title,
+                  videoDisplayTitle(video),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
               ),
-              const SizedBox(width: 10),
-              IconButton.outlined(
-                tooltip: '제목과 메모 수정',
-                onPressed: onEdit,
-                style: IconButton.styleFrom(
-                  foregroundColor: AppColors.coralDark,
-                  side: const BorderSide(color: Color(0xFFFFD5C5)),
-                  minimumSize: const Size.square(48),
+              if (canRename) const SizedBox(width: 10),
+              if (canRename)
+                IconButton.outlined(
+                  tooltip: '제목 수정',
+                  onPressed: onEdit,
+                  style: IconButton.styleFrom(
+                    foregroundColor: AppColors.coralDark,
+                    side: const BorderSide(color: Color(0xFFFFD5C5)),
+                    minimumSize: const Size.square(48),
+                  ),
+                  icon: const Icon(Icons.edit_rounded),
                 ),
-                icon: const Icon(Icons.edit_rounded),
-              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -466,102 +567,29 @@ class _MemoryDetailCard extends StatelessWidget {
               VideoEventTypePills(video: video),
             ],
           ),
-          const Divider(height: 30),
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(minHeight: 156),
-            padding: const EdgeInsets.fromLTRB(22, 20, 118, 20),
-            decoration: BoxDecoration(
-              color: const Color(0xA6FFFDF8),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFF0D9C8)),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hasMemo ? memo! : '등록된 메모가 없습니다',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.ink,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (!hasMemo) ...[
-                      const SizedBox(height: 18),
-                      InkWell(
-                        key: const Key('empty-memory-memo-action'),
-                        onTap: onEdit,
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '메모를 남겨보세요!',
-                              style: TextStyle(
-                                color: AppColors.coral,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                Positioned(
-                  right: -106,
-                  bottom: -20,
-                  child: IgnorePointer(
-                    child: Image.asset(
-                      'assets/images/memory_peek_mascot.png',
-                      width: 140,
-                      height: 104,
-                      fit: BoxFit.contain,
-                      cacheWidth: decodePixels(context, 140),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _VideoMetadataDraft {
-  const _VideoMetadataDraft({required this.title, required this.memo});
-
-  final String title;
-  final String memo;
-}
-
-class _MetadataEditorDialog extends StatefulWidget {
-  const _MetadataEditorDialog({
-    required this.initialTitle,
-    required this.initialMemo,
-  });
+class _TitleEditorDialog extends StatefulWidget {
+  const _TitleEditorDialog({required this.initialTitle});
 
   final String initialTitle;
-  final String initialMemo;
 
   @override
-  State<_MetadataEditorDialog> createState() => _MetadataEditorDialogState();
+  State<_TitleEditorDialog> createState() => _TitleEditorDialogState();
 }
 
-class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
+class _TitleEditorDialogState extends State<_TitleEditorDialog> {
   late final TextEditingController _title;
-  late final TextEditingController _memo;
 
   @override
   void initState() {
     super.initState();
     _title = TextEditingController(text: widget.initialTitle)
       ..addListener(_refresh);
-    _memo = TextEditingController(text: widget.initialMemo);
   }
 
   void _refresh() => setState(() {});
@@ -571,17 +599,13 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
     _title
       ..removeListener(_refresh)
       ..dispose();
-    _memo.dispose();
     super.dispose();
   }
 
   void _save() {
     final title = _title.text.trim();
     if (title.isEmpty) return;
-    Navigator.pop(
-      context,
-      _VideoMetadataDraft(title: title, memo: _memo.text.trim()),
-    );
+    Navigator.pop(context, title);
   }
 
   @override
@@ -627,7 +651,7 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '추억 기록하기',
+                        '추억 제목 바꾸기',
                         style: TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.w900,
@@ -636,7 +660,7 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        '오늘의 순간을 따뜻한 글로 남겨보세요.',
+                        '이 순간을 부를 이름을 정해 보세요.',
                         style: TextStyle(fontSize: 12, color: AppColors.muted),
                       ),
                     ],
@@ -662,39 +686,20 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
               ),
             ),
             const SizedBox(height: 4),
-            Stack(
-              children: [
-                TextField(
-                  key: const Key('memory-memo-input'),
-                  controller: _memo,
-                  minLines: 6,
-                  maxLines: 8,
-                  maxLength: 500,
-                  textAlignVertical: TextAlignVertical.top,
-                  decoration: const InputDecoration(
-                    labelText: '메모',
-                    hintText: '그때의 표정, 대화, 기분을 자유롭게 적어보세요.',
-                    alignLabelWithHint: true,
-                    contentPadding: EdgeInsets.fromLTRB(18, 22, 18, 72),
+            Align(
+              alignment: Alignment.centerRight,
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: .92,
+                  child: Image.asset(
+                    'assets/images/memory_peek_mascot.png',
+                    width: 104,
+                    height: 78,
+                    fit: BoxFit.contain,
+                    cacheWidth: decodePixels(context, 104),
                   ),
                 ),
-                Positioned(
-                  right: 8,
-                  bottom: 10,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: .92,
-                      child: Image.asset(
-                        'assets/images/memory_peek_mascot.png',
-                        width: 104,
-                        height: 78,
-                        fit: BoxFit.contain,
-                        cacheWidth: decodePixels(context, 104),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -712,7 +717,7 @@ class _MetadataEditorDialogState extends State<_MetadataEditorDialog> {
                     key: const Key('memory-metadata-save'),
                     onPressed: _title.text.trim().isEmpty ? null : _save,
                     icon: const Icon(Icons.favorite_rounded, size: 19),
-                    label: const Text('추억 저장하기'),
+                    label: const Text('제목 저장하기'),
                   ),
                 ),
               ],

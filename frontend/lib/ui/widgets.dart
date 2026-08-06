@@ -363,6 +363,56 @@ String durationLabel(int? durationMs) {
 final _koreanClock = DateFormat('a h:mm', 'ko');
 final _clock = DateFormat('HH:mm');
 final _dayClock = DateFormat('M월 d일 HH:mm');
+final _titleClock = DateFormat('M월 d일(E) a h:mm', 'ko');
+
+/// 기기가 이벤트 종류만 보고 붙이는 기본 제목들.
+///
+/// 웃음 클립 스무 개의 제목이 스무 번 같은 문구라 목록에서 영상을 구분할 수
+/// 없었다. 이 목록에 있는 제목은 화면에서 날짜·시각·종류를 담은 제목으로
+/// 바꿔 그린다.
+///
+/// 사용자가 직접 붙인 이름은 이 목록에 없으므로 그대로 나간다 — 제목은 상세
+/// 화면에서 편집할 수 있고, 자동 생성이 그걸 덮으면 사용자가 지은 이름이
+/// 사라진다.
+///
+/// 기기 쪽 원본은 `ai/yolo/segment_clip_uploader.py`의 `EVENT_TITLES`와
+/// `MIXED_EVENT_TITLES`다. 거기서 새 문구가 생기면 여기에도 더해야 한다.
+/// 빠뜨려도 고장은 아니고 그 종류만 예전처럼 고정 제목으로 보인다.
+const deviceDefaultVideoTitles = <String>{
+  '웃음이 담긴 순간',
+  '박수가 시작된 순간',
+  '카메라를 부른 순간',
+  '웃음과 박수가 함께 포착됐어요',
+  '이름 없는 추억',
+};
+
+/// 제목 수정·삭제 버튼을 띄울지.
+///
+/// 기기가 담아 온 원본은 가족 공동의 기록이라 이름을 정하고 지우는 것은
+/// OWNER만 한다. 편집본은 만든 구성원의 결과물이므로 구성원에게도 띄운다.
+///
+/// 편집본 삭제는 서버에서 "만든 사람 또는 OWNER"로 한 번 더 걸러진다. 앱은
+/// 누가 만들었는지 모르므로(응답에 없다) 버튼을 띄우고 판정을 서버에 맡긴다 —
+/// 남의 편집본이면 서버가 이유를 담아 거절한다. 반대로 원본은 역할만 보고
+/// 가릴 수 있으니, 눌러 봐야 403이 오는 버튼을 미리 감춘다.
+bool canManageVideo(VideoMemory video, {required bool isOwner}) =>
+    isOwner || video.sourceType == 'EDIT_OUTPUT';
+
+/// 목록·상세에 보여줄 제목. 저장된 제목은 건드리지 않는다.
+///
+/// [includeDate]를 끄면 시각과 종류만 남는다. 날짜가 이미 화면 맥락인 자리
+/// (달력에서 고른 날의 목록)에서 날짜를 한 번 더 적으면 좁은 한 줄을 낭비한다.
+String videoDisplayTitle(VideoMemory video, {bool includeDate = true}) {
+  final stored = video.title.trim();
+  if (stored.isNotEmpty && !deviceDefaultVideoTitles.contains(stored)) {
+    return stored;
+  }
+  final kinds = video.effectiveEventTypes.map(triggerLabel).join('·');
+  final at = video.capturedStartAt ?? video.createdAt;
+  if (at == null) return kinds.isEmpty ? stored : kinds;
+  final when = includeDate ? _titleClock.format(at) : _koreanClock.format(at);
+  return kinds.isEmpty ? when : '$when · $kinds';
+}
 
 String memoryDate(DateTime? date) {
   if (date == null) return '시간 정보 없음';
@@ -404,15 +454,28 @@ class MemoryThumbnail extends StatelessWidget {
     return (math.max(width, height * 16 / 9) * ratio).round();
   }
 
-  Widget _fallback(BuildContext context) => video.thumbnailUrl != null
-      ? Image.network(
-          video.thumbnailUrl!,
-          fit: BoxFit.cover,
-          cacheWidth: _decodeWidth(context),
-          errorBuilder: (_, _, _) =>
-              const FamilyReferenceImage(borderRadius: 0),
-        )
-      : const FamilyReferenceImage(borderRadius: 0);
+  /// 서버가 만들어 둔 미리보기. 없거나 실패하면 [onMissing]으로 넘어간다.
+  ///
+  /// **왜 이것을 먼저 쓰는가**: 예전에는 기기가 원본을 열어 프레임을 뽑는 쪽이
+  /// 먼저였고, 이 값은 그게 실패했을 때의 대체였다(그런데 서버가 늘 null을
+  /// 보내서 한 번도 쓰이지 않았다). 기기가 뽑으려면 원본 MP4를 받아야 하는데
+  /// 실측(2026-08-06, 운영 로그) 한 장에 **6.5MB**다. 서버가 만든 JPEG은 그
+  /// 300분의 1이라, 있으면 이쪽이 언제나 낫다.
+  Widget _serverThumbnail(BuildContext context, Widget Function() onMissing) {
+    final url = video.thumbnailUrl;
+    if (url == null) return onMissing();
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      cacheWidth: _decodeWidth(context),
+      // 아직 안 만들어진 영상은 404다. 그때만 기기에서 뽑는 예전 길로 간다 —
+      // 서버가 URL을 줄 때 존재를 확인하지 않기 때문에 정상 경로다.
+      errorBuilder: (_, _, _) => onMissing(),
+    );
+  }
+
+  Widget _fallback(BuildContext context) =>
+      const FamilyReferenceImage(borderRadius: 0);
 
   Widget _frame(BuildContext context, String path) => Image.file(
     File(path),
@@ -425,26 +488,29 @@ class MemoryThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 이미 뽑아 둔 프레임이 있으면 [FutureBuilder]를 태우지 않는다.
-    // 스크롤을 되돌릴 때마다 한 프레임 대체 이미지가 스쳤고, 그 대체 이미지가
-    // 원격 썸네일이면 스크롤 도중에 네트워크 요청까지 새로 나갔다.
-    final ready = VideoThumbnailCache.readyPath(video.id);
+    // 기기에서 뽑는 길. 서버 그림이 없을 때만 탄다.
+    //
+    // 이미 뽑아 둔 프레임이 있으면 [FutureBuilder]를 태우지 않는다. 스크롤을
+    // 되돌릴 때마다 한 프레임 대체 이미지가 스쳤고, 그 대체 이미지가 원격
+    // 썸네일이면 스크롤 도중에 네트워크 요청까지 새로 나갔다.
+    Widget extractOnDevice() {
+      final ready = VideoThumbnailCache.readyPath(video.id);
+      if (ready != null) return _frame(context, ready);
+      return FutureBuilder<String?>(
+        future: VideoThumbnailCache.frameAtOneMinute(api, video),
+        builder: (context, snapshot) {
+          final path = snapshot.data;
+          return path == null ? _fallback(context) : _frame(context, path);
+        },
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(13),
       child: SizedBox(
         width: width,
         height: height,
-        child: ready != null
-            ? _frame(context, ready)
-            : FutureBuilder<String?>(
-                future: VideoThumbnailCache.frameAtOneMinute(api, video),
-                builder: (context, snapshot) {
-                  final path = snapshot.data;
-                  return path == null
-                      ? _fallback(context)
-                      : _frame(context, path);
-                },
-              ),
+        child: _serverThumbnail(context, extractOnDevice),
       ),
     );
   }
@@ -487,7 +553,7 @@ class MemoryTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  video.title,
+                  videoDisplayTitle(video),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
@@ -602,6 +668,83 @@ Future<MemoryConnectionChoice?> showMemoryConnectionChoice(
     ),
   );
   return confirmed == true ? choice : null;
+}
+
+/// 제목을 고치는 작은 입력 창. 만화와 편집본이 같은 것을 쓴다.
+///
+/// **빈 값으로 확인해도 취소가 아니다.** 만화는 빈 제목을 "붙인 제목을 지우고
+/// 영상 제목으로 되돌린다"로 쓰므로, 지울 길을 없애면 한번 잘못 붙인 이름을
+/// 되돌릴 수 없다. 취소는 null이고, 빈 문자열은 지우기다.
+/// 제목을 물어보는 창. 취소하면 null, 저장하면 입력한 글이다.
+///
+/// **왜 컨트롤러를 창 위젯이 들고 있는가**: 예전에는 이 함수가
+/// `TextEditingController`를 만들고 `finally`에서 버렸다. `showDialog`의
+/// Future는 라우트를 pop하는 **순간** 끝나지만 창은 닫히는 애니메이션 동안
+/// 아직 화면에 살아 있다. 그 사이에 컨트롤러를 버리면 살아 있는 TextField가
+/// 죽은 컨트롤러를 붙잡은 채 정리되어 프레임 어서션으로 터졌다
+/// (`_dependents.isEmpty`, 빨간 화면). 컨트롤러를 쓰는 위젯이 직접 들고
+/// 자기 dispose에서 버리면 수명이 정확히 맞는다.
+Future<String?> promptForTitle(
+  BuildContext context, {
+  required String title,
+  String initial = '',
+  String? hint,
+}) => showDialog<String>(
+  context: context,
+  builder: (_) => _TitlePromptDialog(title: title, initial: initial, hint: hint),
+);
+
+class _TitlePromptDialog extends StatefulWidget {
+  const _TitlePromptDialog({
+    required this.title,
+    required this.initial,
+    required this.hint,
+  });
+
+  final String title;
+  final String initial;
+  final String? hint;
+
+  @override
+  State<_TitlePromptDialog> createState() => _TitlePromptDialogState();
+}
+
+class _TitlePromptDialogState extends State<_TitlePromptDialog> {
+  late final TextEditingController _field = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    key: const Key('title-prompt-dialog'),
+    title: Text(widget.title),
+    content: TextField(
+      key: const Key('title-prompt-field'),
+      controller: _field,
+      autofocus: true,
+      maxLength: 60,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (value) => Navigator.pop(context, value),
+      decoration: InputDecoration(hintText: widget.hint ?? '새 제목'),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('취소'),
+      ),
+      FilledButton(
+        key: const Key('title-prompt-save'),
+        onPressed: () => Navigator.pop(context, _field.text),
+        child: const Text('저장'),
+      ),
+    ],
+  );
 }
 
 Future<bool> confirmVideoDeletion(BuildContext context) async =>

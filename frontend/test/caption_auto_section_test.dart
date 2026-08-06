@@ -21,10 +21,20 @@ import 'package:william_james_app/features/stt/transcript_store.dart';
 class _MemoryStore extends TranscriptStore {
   _MemoryStore(VideoTranscriber transcriber)
     : super(
-        transcriber: transcriber,
+        transcriber: (path, [onProgress]) {
+          _captured = onProgress;
+          return transcriber(path, onProgress);
+        },
         // root는 쓰이지 않는다 — read/write를 덮어썼다.
         root: () async => Directory.systemTemp,
       );
+
+  /// 대역 전사기가 받은 진행률 통로. 제품 코드와 **같은 길**로 흘려보내려고
+  /// 잡아 둔다 — 저장소에 테스트 전용 구멍을 뚫는 대신 실제 콜백을 쓴다.
+  static TranscribeProgress? _captured;
+
+  void report(TranscriptStage stage, int percent) =>
+      _captured!(stage, percent);
 
   List<CaptionLine>? _saved;
 
@@ -35,11 +45,18 @@ class _MemoryStore extends TranscriptStore {
   Future<void> write(String videoId, List<CaptionLine> lines) async {
     _saved = lines;
   }
+
+  // read·write와 같은 층이다. 이것을 안 덮으면 다시 만들기가 진짜 파일을
+  // 만지러 가서, 가짜 시계에 걸린 위젯 테스트가 끝나지 않는다.
+  @override
+  Future<void> clear(String videoId) async {
+    _saved = null;
+  }
 }
 
 void main() {
   Future<CaptionController> readyWith(List<CaptionLine> lines) async {
-    final store = _MemoryStore((_) async => lines);
+    final store = _MemoryStore((_, [_]) async => lines);
     final controller = CaptionController(store: store);
     controller.start('v1', '/video/v1.mp4');
     await store.pending;
@@ -194,7 +211,7 @@ void main() {
 
     // Completer로 붙잡는다 — 타이머를 쓰면 가짜 시계에 걸려 진행되지 않는다.
     final gate = Completer<List<CaptionLine>>();
-    final store = _MemoryStore((_) => gate.future);
+    final store = _MemoryStore((_, [_]) => gate.future);
     final controller = CaptionController(store: store);
     addTearDown(controller.dispose);
     controller.start('v1', '/video/v1.mp4');
@@ -258,7 +275,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final gate = Completer<List<CaptionLine>>();
-    final store = _MemoryStore((_) => gate.future);
+    final store = _MemoryStore((_, [_]) => gate.future);
     final controller = CaptionController(store: store);
     addTearDown(controller.dispose);
     controller.start('v1', '/video/v1.mp4');
@@ -310,7 +327,7 @@ void main() {
 
   testWidgets('자동 자막 취소 버튼은 기존 취소 콜백을 그대로 호출한다', (tester) async {
     final gate = Completer<List<CaptionLine>>();
-    final store = _MemoryStore((_) => gate.future);
+    final store = _MemoryStore((_, [_]) => gate.future);
     final controller = CaptionController(store: store);
     addTearDown(controller.dispose);
     controller.start('v1', '/video/v1.mp4');
@@ -329,27 +346,72 @@ void main() {
     await store.pending;
   });
 
-  testWidgets('생성 중에는 항상 퍼센트를 표시하고 기존 다운로드 진행률을 갱신한다', (tester) async {
+  // **퍼센트를 짐작하지 않는다.** 예전에는 예상 시간으로 숫자를 만들어 늘 무언가
+  // 보여 줬는데, 예상보다 오래 걸리면 95%에 붙어 멈춘 것처럼 보였고 시트를
+  // 닫았다 열면 1%부터 다시 셌다. 이제 셀 근거가 있을 때만 숫자가 나온다 —
+  // 모델 내려받기는 바이트, 대사 인식은 엔진에 먹인 오디오 양이다.
+  testWidgets('셀 근거가 있는 동안만 퍼센트를 보여 준다', (tester) async {
     final gate = Completer<List<CaptionLine>>();
-    final store = _MemoryStore((_) => gate.future);
+    final store = _MemoryStore((_, [_]) => gate.future);
     final controller = CaptionController(store: store);
     addTearDown(controller.dispose);
     addTearDown(() => mlkitDownloadPercent.value = null);
     controller.start('v1', '/video/v1.mp4');
-    await pumpSection(tester, controller, estimateSeconds: 48);
+    await pumpSection(tester, controller);
     await tester.pump();
-    expect(find.text('자동 자막 생성 중 · 1%'), findsOneWidget);
+    // 소리를 뽑는 단계에는 진행률이 없다. 숫자 없이 띠만 흐른다.
+    expect(find.text('자동 자막 생성 중'), findsOneWidget);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byKey(const ValueKey('auto-caption-bar')),
+          )
+          .value,
+      isNull,
+    );
 
     mlkitDownloadPercent.value = 62;
     await tester.pump();
     expect(find.text('자동 자막 생성 중 · 62%'), findsOneWidget);
 
-    mlkitDownloadPercent.value = 67;
+    mlkitDownloadPercent.value = null;
+    store.report(TranscriptStage.recognizing, 42);
     await tester.pump();
-    expect(find.text('자동 자막 생성 중 · 67%'), findsOneWidget);
+    expect(find.text('자동 자막 생성 중 · 42%'), findsOneWidget);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byKey(const ValueKey('auto-caption-bar')),
+          )
+          .value,
+      closeTo(0.42, 0.001),
+    );
     expect(find.byType(AnimatedCaptionWaveform), findsOneWidget);
 
-    mlkitDownloadPercent.value = null;
+    gate.complete(const []);
+    await store.pending;
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('시트를 닫았다 열어도 퍼센트가 이어진다', (tester) async {
+    final gate = Completer<List<CaptionLine>>();
+    final store = _MemoryStore((_, [_]) => gate.future);
+    final controller = CaptionController(store: store);
+    addTearDown(controller.dispose);
+    controller.start('v1', '/video/v1.mp4');
+    await pumpSection(tester, controller);
+    await tester.pump();
+    store.report(TranscriptStage.recognizing, 73);
+    await tester.pump();
+    expect(find.text('자동 자막 생성 중 · 73%'), findsOneWidget);
+
+    // 시트를 닫는다 — 위젯이 사라져도 세는 주체는 작업이다.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await pumpSection(tester, controller);
+    await tester.pump();
+    expect(find.text('자동 자막 생성 중 · 73%'), findsOneWidget);
+
     gate.complete(const []);
     await store.pending;
     await tester.pumpAndSettle();

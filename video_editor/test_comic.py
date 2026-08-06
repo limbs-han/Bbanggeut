@@ -15,6 +15,7 @@ import base64
 import unittest
 
 from video_editor import comic
+from video_editor.comic_jobs import ComicJob, ComicJobManager
 
 
 def _payload(text: str) -> dict:
@@ -265,5 +266,184 @@ class FrameBudgetTest(unittest.TestCase):
         )
 
 
+def _window(
+    start_ms: int,
+    event: float,
+    *,
+    face: float = 1.0,
+    quality: float = 1.0,
+    bin_ms: int = 1_000,
+) -> dict:
+    return {
+        "startMs": start_ms,
+        "endMs": start_ms + bin_ms,
+        "eventScore": event,
+        "features": {
+            "facePresence": face,
+            "faceProminence": face,
+            "visualQuality": quality,
+        },
+    }
+
+
+class PanelTimestampTest(unittest.TestCase):
+    """만화 칸으로 쓸 프레임을 점수 타임라인에서 고른다.
+
+    등분으로 뽑던 동안에는 웃음이 3초에 터져도 6·18·30초를 가져갔다. 편집(자동
+    컷·줌)이 이미 같은 분석을 쓰고 있는데 만화만 쓰지 않았다.
+    """
+
+    def test_picks_the_high_scoring_moments(self) -> None:
+        timeline = [_window(index * 1_000, 0.1) for index in range(20)]
+        timeline[4]["eventScore"] = 0.9
+        timeline[14]["eventScore"] = 0.8
+
+        picked = comic.panel_timestamps(timeline, duration=20.0, count=2)
+
+        self.assertEqual([4.5, 14.5], picked)
+
+    def test_returns_moments_in_time_order(self) -> None:
+        """점수 순으로 돌려주면 기승전결이 뒤집힌 만화가 나온다."""
+        timeline = [_window(index * 1_000, 0.1) for index in range(20)]
+        timeline[15]["eventScore"] = 0.9
+        timeline[3]["eventScore"] = 0.7
+
+        picked = comic.panel_timestamps(timeline, duration=20.0, count=2)
+
+        self.assertEqual(sorted(picked), picked)
+
+    def test_spreads_picks_so_four_panels_are_not_the_same_second(self) -> None:
+        """웃음 한 번이 여러 구간에 걸친다. 간격이 없으면 네 칸이 같은 그림이다."""
+        timeline = [_window(index * 1_000, 0.1) for index in range(40)]
+        for index in (10, 11, 12, 13):
+            timeline[index]["eventScore"] = 0.9
+
+        picked = comic.panel_timestamps(timeline, duration=40.0, count=4)
+
+        gaps = [later - earlier for earlier, later in zip(picked, picked[1:])]
+        self.assertTrue(all(gap >= 5.0 for gap in gaps), picked)
+
+    def test_prefers_a_visible_face_over_a_loud_empty_room(self) -> None:
+        """eventScore는 소리 중심이다. 화면 밖 웃음은 만화 칸으로 빈 방 사진이다."""
+        timeline = [_window(index * 1_000, 0.1) for index in range(20)]
+        timeline[4] = _window(4_000, 0.62, face=0.0, quality=0.0)
+        timeline[14] = _window(14_000, 0.55, face=1.0, quality=1.0)
+
+        picked = comic.panel_timestamps(timeline, duration=20.0, count=1)
+
+        self.assertEqual([14.5], picked)
+
+    def test_falls_back_to_even_spacing_without_a_timeline(self) -> None:
+        """분석을 아직 안 돌린 영상도 만화는 만들 수 있어야 한다."""
+        self.assertEqual(
+            comic.frame_timestamps(20.0, 4),
+            comic.panel_timestamps([], duration=20.0, count=4),
+        )
+
+    def test_short_clip_still_fills_every_panel(self) -> None:
+        """간격을 지키다 개수를 못 채우면 프레임이 모자라 인물표가 흔들린다."""
+        timeline = [_window(index * 1_000, 0.5) for index in range(4)]
+
+        picked = comic.panel_timestamps(timeline, duration=4.0, count=4)
+
+        self.assertEqual(4, len(picked))
+        self.assertEqual(sorted(set(picked)), picked)
+
+    def test_skips_the_black_edges_of_the_clip(self) -> None:
+        """클립 앞뒤는 검은 화면이거나 흔들린다 — 등분이 피하던 것과 같은 이유."""
+        timeline = [_window(index * 1_000, 0.1) for index in range(20)]
+        timeline[0]["eventScore"] = 1.0
+        timeline[19]["eventScore"] = 1.0
+
+        picked = comic.panel_timestamps(timeline, duration=20.0, count=1)
+
+        self.assertNotIn(0.5, picked)
+        self.assertNotIn(19.5, picked)
+
+
+class DiscardTest(unittest.TestCase):
+    """만화 삭제가 그리는 중인 작업과 부딪히는 자리."""
+
+    def _manager(self) -> ComicJobManager:
+        return ComicJobManager(render=lambda *_: None)
+
+    def test_discard_removes_a_finished_job(self) -> None:
+        manager = self._manager()
+        manager._jobs["v1"] = ComicJob(video_id="v1", status="done")
+
+        self.assertTrue(manager.discard("v1"))
+        self.assertIsNone(manager.get("v1"))
+
+    def test_discard_refuses_while_the_worker_is_drawing(self) -> None:
+        """기록만 지우면 작업자가 다 그린 뒤 panel.jpg를 다시 써서 되살아난다."""
+        manager = self._manager()
+        manager._jobs["v1"] = ComicJob(video_id="v1", status="running")
+
+        self.assertFalse(manager.discard("v1"))
+        self.assertIsNotNone(manager.get("v1"))
+
+    def test_discarding_a_job_that_never_existed_succeeds(self) -> None:
+        """만든 적 없는 만화를 지우라고 해도 사용자가 원한 상태는 이미 이뤄졌다."""
+        self.assertTrue(self._manager().discard("v-none"))
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class OuterMarginTrimTest(unittest.TestCase):
+    """모델이 2x2 바깥에 그린 흰 테두리를 잘라내는 판단 로직.
+
+    앱은 칸을 그림의 수학적 4등분으로 잡고 그 가운데에 자막 띠를 앉힌다.
+    테두리가 있으면 왼쪽 칸의 실제 중심이 오른쪽으로 밀리는데 띠는 25%에
+    그대로 앉아, 좌우 띠가 서로 반대 방향으로 빗겨난다. 실측(1024x1024)에서
+    사면 40~42px이었고 그때 어긋남이 16px이었다.
+
+    ffmpeg 없이 검증할 수 있는 부분만 본다 — 검출값 파싱과 믿을지 말지의 판단.
+    """
+
+    def test_parses_last_crop_line(self) -> None:
+        # cropdetect는 프레임마다 한 줄씩 남긴다. 마지막 값이 가장 정확하다.
+        stderr = (
+            "[Parsed_cropdetect_1 @ 0x1] x1:20 x2:1000 crop=944:940:40:42\n"
+            "[Parsed_cropdetect_1 @ 0x1] x1:20 x2:1000 crop=944:942:40:41\n"
+        )
+        self.assertEqual((944, 942, 40, 41), comic.parse_crop_box(stderr))
+
+    def test_no_crop_line_is_none(self) -> None:
+        self.assertIsNone(comic.parse_crop_box("ffmpeg version 7.0\n"))
+
+    def test_measured_real_margin_is_trusted(self) -> None:
+        # 실서버 만화의 실측값이다. 이것을 믿지 못하면 고치는 의미가 없다.
+        self.assertTrue(comic.crop_box_is_trustworthy((944, 942, 40, 41), 1024, 1024))
+
+    def test_trimming_too_much_is_not_trusted(self) -> None:
+        # 밝은 화풍이면 칸 내용까지 테두리로 오인될 수 있다. 그때 잘라 버리면
+        # 그림이 망가진다 — 띠가 조금 빗겨나는 것보다 나쁘다.
+        self.assertFalse(comic.crop_box_is_trustworthy((500, 500, 262, 262), 1024, 1024))
+
+    def test_box_outside_the_image_is_not_trusted(self) -> None:
+        self.assertFalse(comic.crop_box_is_trustworthy((1000, 1000, 40, 40), 1024, 1024))
+        self.assertFalse(comic.crop_box_is_trustworthy((0, 940, 40, 42), 1024, 1024))
+        self.assertFalse(comic.crop_box_is_trustworthy((944, 940, -1, 42), 1024, 1024))
+
+    def test_reads_png_size_without_an_image_library(self) -> None:
+        # Pillow·numpy는 분석 전용 의존성이라 이 경로에 없을 수 있다.
+        header = (
+            b"\x89PNG\r\n\x1a\n"
+            + b"\x00\x00\x00\rIHDR"
+            + (1024).to_bytes(4, "big")
+            + (768).to_bytes(4, "big")
+            + b"\x08\x06\x00\x00\x00"
+        )
+        self.assertEqual((1024, 768), comic.png_size(header))
+
+    def test_non_png_has_no_size(self) -> None:
+        self.assertIsNone(comic.png_size(b"not a png"))
+        self.assertIsNone(comic.png_size(b""))
+
+    def test_prompt_forbids_the_outer_frame(self) -> None:
+        # 서버가 잘라내기는 하지만, 애초에 안 그리게 하는 것이 낫다.
+        prompt = comic.build_image_prompt(CUTS)
+        self.assertIn("no outer border", prompt)
+        self.assertIn("edge to edge", prompt)

@@ -25,6 +25,23 @@ class CaptionController extends ChangeNotifier {
 
   TranscriptJobState? get status => _job?.value;
 
+  /// 전사 진행률(0~99). 도는 중이 아니거나 아직 모르면 null.
+  ///
+  /// 작업이 세는 값이라 시트를 닫았다 열어도 이어진다 — 화면이 세던 동안에는
+  /// 다시 열 때마다 1%부터 시작했다.
+  int? get percent {
+    final state = status;
+    if (state is! TranscriptRunning) return null;
+    if (state.stage == TranscriptStage.audio || state.percent <= 0) return null;
+    return state.percent;
+  }
+
+  /// 지금 어느 단계인가. 도는 중이 아니면 null.
+  TranscriptStage? get stage {
+    final state = status;
+    return state is TranscriptRunning ? state.stage : null;
+  }
+
   /// 사용자가 자막을 고쳤는가. 화면이 이 값을 편집 상태의 `hasUnsavedChanges`에
   /// 반영한다 — 전사 결과가 들어온 것만으로는 켜지지 않아야 한다(화면을 열자마자
   /// 폐기 경고가 뜨면 안 된다).
@@ -35,6 +52,21 @@ class CaptionController extends ChangeNotifier {
     if (_job != null) return;
     _videoId = videoId;
     _job = _store.ensure(videoId, videoPath)..addListener(_onJobChanged);
+    _onJobChanged();
+  }
+
+  /// 캐시를 버리고 처음부터 다시 전사한다. 사용자가 "다시 만들기"를 고른
+  /// 때만 부른다.
+  ///
+  /// [start]로는 안 된다 — 한 번 잡은 작업이 있으면 그대로 돌아 나가기
+  /// 때문이다. 여기서는 듣던 작업을 놓고, 손으로 고친 줄도 함께 버린다.
+  /// 버리는 것이 곧 사용자가 고른 것이다(대화상자가 그렇게 알린다).
+  void restart(String videoId, String videoPath) {
+    _job?.removeListener(_onJobChanged);
+    _videoId = videoId;
+    _lines = <CaptionLine>[];
+    _hasUserEdits = false;
+    _job = _store.restart(videoId, videoPath)..addListener(_onJobChanged);
     _onJobChanged();
   }
 
@@ -63,9 +95,15 @@ class CaptionController extends ChangeNotifier {
       // 기다리지도, 실패로 죽지도 않는다 — 저장이 안 돼도 메모리 수정은
       // 유지되고 내보내기에는 그대로 반영된다. 잡지 않으면 fire-and-forget
       // Future의 예외가 잡히지 않은 비동기 오류로 터진다.
-      pendingWrite = _store.write(videoId, _lines).catchError((Object error) {
-        debugPrint('[stt] 자막 수정을 저장하지 못했습니다($videoId): $error');
-      });
+      //
+      // 서버에도 올린다. 자막을 고치는 일은 "이 영상에서 무슨 말이 나왔는지"를
+      // 바로잡는 일이라, 가족 모두에게 바로잡힌 것이 맞다.
+      pendingWrite = _store
+          .write(videoId, _lines)
+          .then((_) => _store.publish(videoId, _lines))
+          .catchError((Object error) {
+            debugPrint('[stt] 자막 수정을 저장하지 못했습니다($videoId): $error');
+          });
     }
     notifyListeners();
   }

@@ -1,5 +1,10 @@
 logLevel: info
 
+# 운영과 같은 값(deploy/mediamtx.yml 참고). 기본값 10초로 두면 로컬에서는
+# 재연결 유예를 재현할 수 없다 — 끊김이 유예에 들기도 전에 MediaMTX가
+# 퍼블리셔를 먼저 잘라 버린다.
+readTimeout: 30s
+
 rtsp: true
 rtspAddress: :8554
 rtmp: false
@@ -14,17 +19,14 @@ webrtcLocalUDPAddress: :8189
 webrtcLocalTCPAddress: :8189
 srt: false
 playback: false
-# 데모는 DEMO_MODE_ENABLED로 돌아가 MQTT를 건너뛴다. 그래서 기기 역할을 맡은
-# 노트북에 START_TALKBACK이 오지 않는다. 대신 start-talkback-speaker.ps1이 이
-# API로 talkback 경로가 열리는지 감시한다. loopback에만 노출한다.
+# 관리 API로 게시 중인 경로를 확인할 수 있어야 유령 세션을 정리할 수 있다
+# (StreamMediaReconcileWorker). 운영 설정과 마찬가지로 loopback에만 노출한다.
 api: yes
 apiAddress: 127.0.0.1:9997
 metrics: false
 pprof: false
 
 paths:
-  demo-live:
-    source: publisher
   # 양방향 오디오는 talkback/{streamId}로 들어온다. streamId는 세션마다 달라
   # 미리 선언할 수 없다. 운영 설정도 같은 이유로 all_others를 쓴다.
   all_others:

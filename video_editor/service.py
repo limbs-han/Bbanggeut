@@ -7,6 +7,7 @@ import json
 import math
 import os
 import tempfile
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -18,13 +19,22 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import backend_access, backend_events
 from . import comic
 from .adaptive_cli import build_adaptive_recipe
-from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
+from .adaptive_selector import build_timeline
+from .analysis_jobs import (
+    ANALYSIS_KINDS,
+    AnalysisJobManager,
+    AnalysisQueueFull,
+    analysis_ready,
+)
+from .comic_jobs import ComicJobManager, ComicQueueFull
+from .thumbnails import extract_thumbnail
 
 
 FIXTURE_ROOT = Path(
@@ -302,6 +312,16 @@ class RecipeStore:
             ContentType="application/json",
         )
 
+    def put_bytes(self, key: str, body: bytes, content_type: str) -> None:
+        """그림처럼 JSON이 아닌 것을 그대로 넣는다."""
+        self.ensure_bucket()
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=body,
+            ContentType=content_type,
+        )
+
     def get_json(self, key: str) -> dict[str, Any] | None:
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
@@ -315,6 +335,10 @@ class RecipeStore:
         except ClientError:
             return None
         return response["Body"], int(response["ContentLength"])
+
+    def delete(self, key: str) -> None:
+        """없는 키를 지워도 조용히 넘어간다 — S3의 DELETE는 멱등이다."""
+        self.client.delete_object(Bucket=self.bucket, Key=key)
 
     def list_keys(self, prefix: str) -> list[dict[str, Any]]:
         self.ensure_bucket()
@@ -377,7 +401,52 @@ jobs = AnalysisJobManager(
     on_done=lambda job: backend_events.analysis_ready(
         job.video_id, job.requested_by
     ),
+    # 진행 상태를 백엔드가 들게 한다. 예전에는 이 관리자의 메모리에만 있어서,
+    # 워커를 재배포하면 진행 중이던 분석이 "분석한 적 없음"으로 보였다.
+    on_start=lambda job: backend_events.analysis_started(
+        job.video_id, job.stage, job.requested_by
+    ),
+    on_progress=lambda job: backend_events.analysis_progress(
+        job.video_id, job.stage, job.progress
+    ),
+    on_failed=lambda job: backend_events.analysis_failed(
+        job.video_id, job.error or "", job.requested_by
+    ),
 )
+
+
+def _is_backend_service_call(http_request: Request | None) -> bool:
+    """백엔드가 사람 없이 부른 호출인가.
+
+    **왜 사용자 토큰으로는 안 되나**: 목록 썸네일은 영상이 READY가 된 순간
+    백엔드가 스스로 만들라고 시킨다. 그 시점에는 청한 사람이 없다 — 기기가
+    업로드를 끝냈을 뿐이다. 백필도 마찬가지로 사람 없이 돈다.
+
+    그래서 `iss=wj-server` + `typ=editor-service` 서비스 토큰을 따로 받는다.
+    이 토큰은 백엔드만 만들 수 있고(같은 EDITOR_JWT_SECRET), 금고 범위를 보지
+    않는다 — 대신 **어느 영상을 읽을지는 백엔드가 서명한 URL이 정한다.** 워커는
+    받은 URL을 읽어 편집 버킷에 쓸 뿐이라 이 경로로 남의 영상을 꺼낼 수 없다.
+    """
+    if EDITOR_JWT_SECRET is None:
+        return False
+    header = (
+        http_request.headers.get("authorization")
+        if http_request is not None
+        else None
+    )
+    if not header or not header.lower().startswith("bearer "):
+        return False
+    try:
+        claims = jwt.decode(
+            header[len("bearer ") :].strip(),
+            EDITOR_JWT_SECRET,
+            algorithms=["HS256"],
+            issuer="wj-server",
+            options={"require": ["exp", "iss"]},
+        )
+    except jwt.PyJWTError:
+        return False
+    return claims.get("typ") == "editor-service"
 
 
 def _require_video_access(http_request: Request | None, video_id: str) -> None:
@@ -525,8 +594,16 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
     _require_video_access(request, video_id)
     running = jobs.get(video_id)
     if running is not None and running.status == "running":
-        return JSONResponse(status_code=202, content=running.snapshot())
+        return JSONResponse(
+            status_code=202,
+            content=running.snapshot(position=jobs.position(video_id)),
+        )
     if _load_cached_analyses(video_id) is not None:
+        # 이미 분석해 둔 영상이다. 백엔드에도 그렇게 남긴다 — V46 이전에 분석한
+        # 영상은 상태 행이 없어서, 알려 주지 않으면 앱이 영원히 "분석한 적 없음"을
+        # 본다. userId는 비운다: 상태만 남기고 알림은 보내지 않는다(사용자가 청한
+        # 적 없는 "분석 완료" 알림이 뜨면 그게 더 이상하다).
+        backend_events.analysis_ready(video_id, None)
         return JSONResponse(
             content={"videoId": video_id, "status": "done", "progress": 1.0}
         )
@@ -550,19 +627,31 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
                 status_code=422,
                 detail="sourceUrl은 허용된 호스트의 https 주소여야 합니다",
             )
-        job = jobs.submit(
-            video_id,
-            video_path,
-            source_url=source_url,
-            requested_by=_token_subject(request),
-        )
+        try:
+            job = jobs.submit(
+                video_id,
+                video_path,
+                source_url=source_url,
+                requested_by=_token_subject(request),
+            )
+        except AnalysisQueueFull as failure:
+            # 429다. 5분짜리 서명 URL을 든 채 줄 끝에 세워 두면 차례가 왔을 때
+            # 이미 만료되어 있다 — 기다리게 하는 대신 지금 거절한다.
+            raise HTTPException(status_code=429, detail=str(failure)) from failure
     else:
         data = await request.body()
         if not data:
             raise HTTPException(status_code=422, detail="empty body")
         video_path.write_bytes(data)
-        job = jobs.submit(video_id, video_path, requested_by=_token_subject(request))
-    return JSONResponse(status_code=202, content=job.snapshot())
+        try:
+            job = jobs.submit(
+                video_id, video_path, requested_by=_token_subject(request)
+            )
+        except AnalysisQueueFull as failure:
+            raise HTTPException(status_code=429, detail=str(failure)) from failure
+    return JSONResponse(
+        status_code=202, content=job.snapshot(position=jobs.position(video_id))
+    )
 
 
 @app.get("/v1/edit-analyses/{video_id}")
@@ -570,7 +659,7 @@ def analysis_status(video_id: str, http_request: Request = None) -> dict[str, An
     _require_video_access(http_request, video_id)
     job = jobs.get(video_id)
     if job is not None:
-        return job.snapshot()
+        return job.snapshot(position=jobs.position(video_id))
     if _load_cached_analyses(video_id) is not None:
         return {"videoId": video_id, "status": "done", "progress": 1.0}
     return {"videoId": video_id, "status": "none", "progress": 0.0}
@@ -636,6 +725,80 @@ def load_project(video_id: str, http_request: Request = None) -> dict[str, Any]:
     return payload
 
 
+@app.delete("/v1/edit-projects/{video_id}", status_code=204)
+def delete_project(video_id: str, http_request: Request = None) -> Response:
+    """저장한 초안을 버린다. 사용자가 "편집 초안 삭제"를 고른 때만 부른다.
+
+    **최신 초안(latest.json)만 지운다.** 개정본(user-v3.json 등)은 남긴다 —
+    되돌릴 길을 통째로 없애면 잘못 누른 삭제를 복구할 수 없고, 보관 만료가
+    원본과 함께 정리한다.
+
+    없는 초안을 지우라고 해도 204다. 목록을 보고 눌렀는데 그 사이 다른 가족이
+    지웠다면 사용자가 원한 상태(초안 없음)가 이미 이뤄진 것이라, 오류로
+    돌려주면 화면이 지워지지 않은 것처럼 보인다.
+    """
+    _require_video_access(http_request, video_id)
+    try:
+        store.delete(f"edit-projects/{video_id}/latest.json")
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(status_code=503, detail=f"MinIO 삭제 실패: {failure}") from failure
+    return Response(status_code=204)
+
+
+# ── AI 자막(전사문) 보관 ────────────────────────────────────────────────
+#
+# **왜 서버에 두는가**: 전사는 폰에만 캐시됐다. 그래서 같은 영상을 가족 각자가
+# 자기 폰에서 다시 돌렸고(같은 결과에 같은 시간), 앱을 다시 깔면 전부 날아갔다.
+# 결과는 영상에만 달린 값이라 한 번 만들면 모두가 쓸 수 있다.
+#
+# 한 사람이 고친 대사도 함께 남는다 — 자막을 고치는 일은 "이 영상에서 무슨 말이
+# 나왔는지"를 바로잡는 일이므로 가족 모두에게 바로잡힌 것이 맞다.
+
+
+class TranscriptSaveRequest(BaseModel):
+    lines: list[dict[str, Any]] = Field(default_factory=list)
+    """`{startMs, endMs, text}` 목록. 앱의 CaptionLine과 같은 모양이다."""
+
+
+def _transcript_key(video_id: str) -> str:
+    return f"transcripts/{video_id}.json"
+
+
+@app.put("/v1/transcripts/{video_id}")
+def save_transcript(
+    video_id: str, request: TranscriptSaveRequest, http_request: Request = None
+) -> dict[str, Any]:
+    """전사문을 남긴다. 빈 목록은 저장하지 않는다.
+
+    빈 것을 저장하면 다음에 "캐시 적중(내용 없음)"으로 읽혀 재시도가 영구히
+    막힌다 — 앱의 로컬 캐시에서 이미 겪은 함정이다(`TranscriptStore._run`).
+    """
+    _require_video_access(http_request, video_id)
+    lines = [line for line in request.lines if str(line.get("text") or "").strip()]
+    if not lines:
+        raise HTTPException(status_code=422, detail="빈 전사문은 저장하지 않습니다.")
+    payload = {
+        "videoId": video_id,
+        "lines": lines,
+        "savedAt": datetime.now().astimezone().isoformat(),
+    }
+    try:
+        store.put(_transcript_key(video_id), payload)
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(status_code=503, detail=f"MinIO 저장 실패: {failure}") from failure
+    return {"videoId": video_id, "lines": len(lines), "savedAt": payload["savedAt"]}
+
+
+@app.get("/v1/transcripts/{video_id}")
+def load_transcript(video_id: str, http_request: Request = None) -> dict[str, Any]:
+    """저장된 전사문. 없으면 404 — 앱이 그때 자기 기기에서 만든다."""
+    _require_video_access(http_request, video_id)
+    payload = store.get_json(_transcript_key(video_id))
+    if payload is None:
+        raise HTTPException(status_code=404, detail="no saved transcript")
+    return payload
+
+
 # ── 편집 완성본과 댓글은 백엔드로 이전됐다 ─────────────────────────────
 #
 # 완성본 MP4·메타·댓글을 이 서비스가 MinIO JSON으로 들고 있었더니, 권한을 매
@@ -685,6 +848,121 @@ def _comic_sheet_key(video_id: str) -> str:
     return f"comic/{video_id}/sheet.json"
 
 
+def _comic_panel_key(video_id: str) -> str:
+    """지금 쓰는 그림 키. JPEG인 이유는 [comic.normalize_square_image] 참고."""
+    return f"comic/{video_id}/panel.jpg"
+
+
+def _comic_legacy_panel_key(video_id: str) -> str:
+    """JPEG으로 바꾸기 전에 만든 만화. 다시 만들지 않는 한 그대로 남아 있다."""
+    return f"comic/{video_id}/panel.png"
+
+
+def _comic_saved_key(video_id: str) -> str:
+    """그림과 함께 남긴 구성·저장 시각. 그림이 있다는 증거로도 쓴다."""
+    return f"comic/{video_id}/panel.json"
+
+
+def _comic_stored_panel_key(video_id: str, saved: Mapping[str, Any] | None) -> str:
+    """이 만화의 그림이 실제로 놓인 키.
+
+    `panelKey`는 JPEG 전환 때 넣었다. 없는 저장본은 그 전에 만든 것이므로
+    PNG 자리를 본다 — 옛 만화 일곱 장을 다시 그리게 만들 이유가 없다.
+    """
+    stored = (saved or {}).get("panelKey")
+    return str(stored) if stored else _comic_legacy_panel_key(video_id)
+
+
+def _comic_script_key(video_id: str) -> str:
+    return f"comic/{video_id}/script.json"
+
+
+def _comic_frame_timeline(video_id: str) -> list[dict[str, Any]] | None:
+    """만화가 프레임을 고를 점수 타임라인. 분석이 없으면 None.
+
+    **왜 분석을 다시 돌리지 않나**: 편집(AI 자동 컷·줌)이 이미 같은 영상을 분석해
+    `edit-analyses/{video_id}/*.json`에 남겨 두었다. 소리(yamnet·audio)와 영상
+    (video·expression) 네 종이 다 있어야 타임라인을 만들 수 있고, 하나라도 없으면
+    `_load_cached_analyses`가 None을 준다. 그때는 만화가 등분으로 되돌아간다 —
+    분석을 아직 안 돌린 영상이라고 만화를 못 만들 이유는 없다.
+    """
+    try:
+        analyses = _load_cached_analyses(video_id)
+    except (BotoCoreError, ClientError, OSError):
+        return None
+    if analyses is None:
+        return None
+    try:
+        return build_timeline(
+            analyses["yamnet"], analyses["audio"], analyses.get("video")
+        )
+    except (KeyError, TypeError, ValueError):
+        # 분석 파일이 예전 판이라 모양이 다를 수 있다. 만화를 막을 일은 아니다.
+        return None
+
+
+def _render_and_store_comic(
+    video_id: str, cuts: list[dict[str, Any]], style: str | None
+) -> bytes:
+    """만화 한 장을 그려 MinIO에 남기고 그 바이트를 돌려준다.
+
+    동기 경로(POST)와 백그라운드 작업이 함께 쓴다 — 그림을 만드는 방법이 두
+    벌이면 한쪽만 고치는 일이 생긴다.
+    """
+    # 시트는 있으면 좋고 없으면 없는 대로 간다. MinIO가 죽었다고 그림까지
+    # 못 만들 이유가 없다 — `get_json`은 ClientError만 잡아서 연결 오류
+    # (BotoCoreError)는 그대로 올라온다.
+    try:
+        sheet = store.get_json(_comic_sheet_key(video_id)) or {}
+    except (BotoCoreError, ClientError, OSError):
+        sheet = {}
+
+    panel = comic.render_comic(
+        cuts,
+        characters=sheet.get("characters") or [],
+        setting=str(sheet.get("setting") or ""),
+        style=style,
+    )
+
+    # 저장은 최선 노력이다. 저장에 실패해도 방금 만든 그림을 버리지 않는다 —
+    # 동기 경로는 응답으로 돌려주고, 백그라운드 경로는 아래에서 예외로 잡아
+    # 상태에 남긴다.
+    panel_key = _comic_panel_key(video_id)
+    store.put_bytes(panel_key, panel, "image/jpeg")
+    store.put(
+        _comic_saved_key(video_id),
+        {
+            "videoId": video_id,
+            "cuts": cuts,
+            "style": style,
+            # 어느 키에 그림을 놓았는지 함께 남긴다. 이것이 없으면 상태 조회가
+            # JPEG인지 옛 PNG인지 알아내려고 MinIO를 두 번 더 두드려야 한다.
+            "panelKey": panel_key,
+            "savedAt": datetime.now().astimezone().isoformat(),
+        },
+    )
+    # 같은 영상을 다시 그렸다면 옛 PNG가 남아 있다. 지우지 않으면 아무도 읽지
+    # 않는 2MB가 금고마다 쌓인다.
+    try:
+        store.delete(_comic_legacy_panel_key(video_id))
+    except (BotoCoreError, ClientError, OSError):
+        pass
+    return panel
+
+
+def _render_comic_job(
+    video_id: str, cuts: list[dict[str, Any]], style: str | None
+) -> None:
+    """백그라운드 작업자가 부르는 진입점. 그림 자체는 버리고 저장만 남긴다."""
+    _render_and_store_comic(video_id, cuts, style)
+
+
+comic_jobs = ComicJobManager(
+    render=_render_comic_job,
+    on_done=lambda job: backend_events.comic_ready(job.video_id, job.requested_by),
+)
+
+
 @app.post("/v1/comic/{video_id}/script")
 def comic_script(
     video_id: str, request: ComicScriptRequest, http_request: Request = None
@@ -700,6 +978,7 @@ def comic_script(
             request.video_url,
             request.lines,
             count=request.frame_count or comic.FRAME_COUNT,
+            timeline=_comic_frame_timeline(video_id),
         )
     except comic.ComicContractError as failure:
         raise HTTPException(status_code=422, detail=str(failure)) from failure
@@ -715,11 +994,25 @@ def comic_script(
                 "savedAt": datetime.now().astimezone().isoformat(),
             },
         )
+        # 구성도 남긴다. 이걸 저장하지 않으면 앱이 화면에 들어올 때마다 구성을
+        # 처음부터 다시 받는다 — 뒤로 갔다 오면 사용자가 고친 대사가 사라지고
+        # Gemini 호출료가 다시 든다. 실제로 그렇게 동작하고 있었다.
+        store.put(
+            _comic_script_key(video_id),
+            {
+                "cuts": script["cuts"],
+                "savedAt": datetime.now().astimezone().isoformat(),
+            },
+        )
     except (BotoCoreError, ClientError, OSError):
         # 시트를 못 남겨도 구성은 돌려준다 — 2단계가 시트 없이 조립하면 품질만
         # 떨어지고, 여기서 502를 주면 이미 쓴 구성 호출값을 버리게 된다.
         pass
 
+    # 대사가 준비됐다고 알린다. 응답을 기다리는 사용자에게는 알림이 겹쳐
+    # 보이지만, 20초 사이에 화면을 벗어난 사용자에게는 이것이 유일한 통로다 —
+    # 알림 본문이 "고칠 곳을 확인하고 그림을 만들어 보세요"인 이유이기도 하다.
+    backend_events.comic_script_ready(video_id, _token_subject(http_request))
     return {"cuts": script["cuts"]}
 
 
@@ -727,28 +1020,193 @@ def comic_script(
 def comic_image(
     video_id: str, request: ComicImageRequest, http_request: Request = None
 ) -> dict[str, Any]:
-    """2단계 — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 PNG다.
+    """2단계(동기) — 고친 구성으로 2x2 만화 한 장. 응답은 순수 base64 JPEG다.
 
-    `data:image/png;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
+    `data:image/jpeg;base64,` 접두어를 붙이면 앱의 `base64Decode`가 터진다.
+    앱은 바이트를 `Image.memory`에 그대로 넘기고 그쪽이 형식을 알아보므로,
+    PNG에서 JPEG으로 바뀌어도 앱을 고칠 것이 없다.
+
+    앱은 백그라운드 경로(PUT)를 쓴다. 이 경로는 화면을 벗어나지 않고 곧바로
+    결과를 보려는 호출(재시도·도구)을 위해 남겨 둔다 — 그림 만드는 방법은
+    `_render_and_store_comic` 한 곳이므로 결과는 양쪽이 같고 저장도 같이 된다.
     """
     _require_video_access(http_request, video_id)
-    # 시트는 있으면 좋고 없으면 없는 대로 간다. MinIO가 죽었다고 그림까지
-    # 못 만들 이유가 없다 — `get_json`은 ClientError만 잡아서 연결 오류
-    # (BotoCoreError)는 그대로 올라온다.
     try:
-        sheet = store.get_json(_comic_sheet_key(video_id)) or {}
-    except (BotoCoreError, ClientError, OSError):
-        sheet = {}
-
-    try:
-        png = comic.render_comic(
-            request.cuts,
-            characters=sheet.get("characters") or [],
-            setting=str(sheet.get("setting") or ""),
-            style=request.style,
-        )
+        png = _render_and_store_comic(video_id, request.cuts, request.style)
     except comic.ComicContractError as failure:
         raise HTTPException(status_code=422, detail=str(failure)) from failure
     except comic.ComicError as failure:
         raise HTTPException(status_code=502, detail=str(failure)) from failure
+    # 이 경로로 만든 만화도 알림을 남긴다. 알림 행이 "이 금고의 어떤 영상에
+    # 만화가 있는가"의 기록이기도 해서(백엔드가 목록 배지에 쓴다), 한쪽 경로만
+    # 알림을 보내면 동기로 만든 만화는 목록에서 배지가 빠진다.
+    backend_events.comic_ready(video_id, _token_subject(http_request))
     return {"image": base64.b64encode(png).decode()}
+
+
+@app.put("/v1/comic/{video_id}/image")
+def comic_image_enqueue(
+    video_id: str, request: ComicImageRequest, http_request: Request = None
+) -> JSONResponse:
+    """2단계(백그라운드) — 그림을 뒤에서 만든다. 202를 주고 곧 돌려보낸다.
+
+    Gemini 이미지 호출이 수십 초라 화면을 붙잡아 둘 이유가 없다. 끝나면
+    MinIO에 남고 백엔드 알림(COMIC_READY)이 나간다. 앱은 GET으로 상태를
+    확인하거나 알림을 받고 추억 탭에서 다시 본다.
+    """
+    _require_video_access(http_request, video_id)
+    try:
+        job, position = comic_jobs.submit(
+            video_id,
+            request.cuts,
+            request.style,
+            requested_by=_token_subject(http_request),
+        )
+    except ComicQueueFull as failure:
+        # 오래 기다린 끝에 실패하게 두지 않고 지금 거절한다.
+        raise HTTPException(status_code=429, detail=str(failure)) from failure
+    return JSONResponse(status_code=202, content=job.snapshot(position=position))
+
+
+@app.get("/v1/comic/{video_id}/image")
+def comic_image_status(
+    video_id: str, http_request: Request = None
+) -> dict[str, Any]:
+    """만화 작업 상태와, 다 됐으면 그림을 받을 presigned URL.
+
+    앱이 화면을 다시 열었을 때 이 하나로 "만드는 중 / 다 됨 / 실패"를 가른다.
+    저장된 그림이 있으면 작업 기록이 사라진 뒤에도 done으로 답한다 — 서버가
+    재시작해도 이미 만든 만화는 그대로 있다.
+    """
+    _require_video_access(http_request, video_id)
+    tracked = comic_jobs.get(video_id)
+    url = None
+    try:
+        saved = store.get_json(_comic_saved_key(video_id))
+    except (BotoCoreError, ClientError, OSError):
+        saved = None
+    if saved is not None:
+        url = store.presign_get(_comic_stored_panel_key(video_id, saved))
+
+    # 저장해 둔 구성. 이것을 함께 주면 앱이 화면에 다시 들어올 때 구성을 새로
+    # 받지 않는다 — 그 호출은 Gemini 과금이고, 새로 받으면 사용자가 고친 대사도
+    # 서버 원문으로 덮인다. 그림을 아직 만들지 않은 영상에도 있을 수 있다.
+    try:
+        script = store.get_json(_comic_script_key(video_id))
+    except (BotoCoreError, ClientError, OSError):
+        script = None
+    # 그림을 만들 때 보낸 구성이 가장 최신이다(사용자가 고친 대사가 들어 있다).
+    cuts = (saved or {}).get("cuts") or (script or {}).get("cuts")
+
+    if tracked is not None:
+        job, position = tracked
+        snapshot = job.snapshot(position=position)
+        # 작업이 실패했더라도 예전에 만든 그림이 있으면 그것은 그대로 준다 —
+        # 재시도가 실패했다고 어제 만든 만화를 감출 이유가 없다.
+        snapshot["imageUrl"] = url
+        snapshot["savedAt"] = (saved or {}).get("savedAt")
+        snapshot["cuts"] = cuts
+        return snapshot
+    if saved is not None:
+        return {
+            "videoId": video_id,
+            "status": "done",
+            "error": None,
+            "queuePosition": 0,
+            "imageUrl": url,
+            "savedAt": saved.get("savedAt"),
+            "cuts": cuts,
+        }
+    return {
+        "videoId": video_id,
+        # 그림은 없지만 구성은 있을 수 있다. 그 경우도 status는 none이고, 앱은
+        # cuts를 보고 구성 화면부터 다시 이어 간다.
+        "status": "none",
+        "error": None,
+        "queuePosition": 0,
+        "imageUrl": None,
+        "savedAt": None,
+        "cuts": cuts,
+    }
+
+
+class ThumbnailRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    video_url: str = Field(alias="videoUrl", min_length=1)
+    """원본 presigned URL. ffmpeg가 그대로 읽는다 — 우리가 내려받지 않는다."""
+
+    duration_ms: int | None = Field(default=None, alias="durationMs", ge=0)
+    """길이를 알면 가운데를 집는다. 모르면 앞쪽으로 물러선다."""
+
+
+def _thumbnail_key(video_id: str) -> str:
+    """디렉터리 한 겹을 두는 이유: 백엔드가 영상을 지울 때 `thumbnails/{id}/`를
+    접두어로 통째로 지운다(ObjectStorageService.EDIT_DATA_PREFIXES). 파일을
+    바로 두면 그 정리에 걸리지 않아 지운 영상의 그림만 버킷에 남는다.
+    """
+    return f"thumbnails/{video_id}/frame.jpg"
+
+
+@app.put("/v1/videos/{video_id}/thumbnail")
+def put_thumbnail(
+    video_id: str, request: ThumbnailRequest, http_request: Request = None
+) -> dict[str, Any]:
+    """목록용 미리보기 한 장을 만들어 편집 버킷에 남긴다.
+
+    왜 서버가 만드는지는 [thumbnails] 모듈 설명에 있다 — 요약하면 앱이 만들면
+    한 장에 6.5MB를 받는다.
+
+    같은 영상에 다시 불러도 안전하다(덮어쓴다). 백필이 그 점에 기대어 실패한
+    것만 다시 돌린다.
+    """
+    # 백엔드가 사람 없이 부르는 경로다(업로드 완료 직후·백필). 사용자 토큰도
+    # 받는다 — 앱이 자기 영상의 그림을 다시 만들게 할 여지를 남긴다.
+    if not _is_backend_service_call(http_request):
+        _require_video_access(http_request, video_id)
+    try:
+        jpeg = extract_thumbnail(request.video_url, request.duration_ms)
+    except comic.ComicError as failure:
+        raise HTTPException(status_code=502, detail=str(failure)) from failure
+
+    key = _thumbnail_key(video_id)
+    try:
+        store.put_bytes(key, jpeg, "image/jpeg")
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(
+            status_code=503, detail=f"MinIO 저장 실패: {failure}"
+        ) from failure
+    print(f"[thumbnail] {video_id} bytes={len(jpeg)}", flush=True)
+    return {"videoId": video_id, "key": key, "bytes": len(jpeg)}
+
+
+@app.delete("/v1/comic/{video_id}", status_code=204)
+def delete_comic(video_id: str, http_request: Request = None) -> Response:
+    """만화를 통째로 버린다 — 그림, 구성, 인물·배경 시트까지.
+
+    **왜 구성까지 지우나**: 구성만 남기면 앱이 상태를 물었을 때 `cuts`가 그대로
+    와서, 지운 만화가 "그림 없는 만화"로 목록에 되살아난다. 지운다는 말은 그
+    영상에 만화가 없던 상태로 되돌린다는 뜻이다.
+
+    없는 것을 지우라고 해도 204다 — 목록을 보고 눌렀는데 그 사이 다른 가족이
+    지웠다면 사용자가 원한 상태가 이미 이뤄진 것이다(초안 삭제와 같은 판단).
+    """
+    _require_video_access(http_request, video_id)
+    if not comic_jobs.discard(video_id):
+        raise HTTPException(
+            status_code=409,
+            detail="만화를 만드는 중입니다. 다 만든 뒤에 지울 수 있습니다.",
+        )
+    try:
+        for key in (
+            _comic_panel_key(video_id),
+            # 옛 PNG도 함께 지운다 — 남기면 지운 만화의 그림만 버킷에 살아남는다.
+            _comic_legacy_panel_key(video_id),
+            _comic_saved_key(video_id),
+            _comic_script_key(video_id),
+            _comic_sheet_key(video_id),
+        ):
+            store.delete(key)
+    except (BotoCoreError, ClientError, OSError) as failure:
+        raise HTTPException(status_code=503, detail=f"MinIO 삭제 실패: {failure}") from failure
+    return Response(status_code=204)

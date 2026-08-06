@@ -88,7 +88,7 @@ class VideoQueryServiceTest {
     private VideoRow video(UUID deviceId, Instant createdAt, String status) {
         return new VideoRow(
             UUID.randomUUID(), deviceId, "IOT_CAPTURE", "TOUCH", UUID.randomUUID().toString(),
-            "영상", null, "video/mp4", 100L, "a".repeat(64), 1000L,
+            "영상", "video/mp4", 100L, "a".repeat(64), 1000L,
             createdAt.minusSeconds(1), createdAt, "private/video.mp4", status, false, createdAt);
     }
 }

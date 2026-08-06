@@ -4,11 +4,8 @@ import 'package:intl/intl.dart';
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
 import '../core/models.dart';
-import 'content_calendar_screen.dart';
-import 'edited_video_screen.dart';
-import 'invitation_inbox_screen.dart';
-import 'laugh_report_content_screen.dart';
-import 'video_detail_screen.dart';
+import '../core/notification_visuals.dart';
+import 'notification_routing.dart';
 import 'widgets.dart';
 
 class ContentNotificationsScreen extends StatefulWidget {
@@ -89,76 +86,16 @@ class _ContentNotificationsScreenState
     }
 
     if (!mounted) return;
-    if (item.type == 'EDIT_COMMENT_ADDED' && item.resourceId != null) {
-      await Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EditedVideoScreen(
-            api: widget.controller.api,
-            videoId: item.resourceId!,
-            title: '',
-          ),
-        ),
-      );
-      return;
-    }
-    // 분석 완료는 웃음 영상 도착과 같은 목적지다 — 영상 상세에서 편집하기를
-    // 누르면 이미 분석돼 있어 AI 컷이 바로 열린다.
-    if ((item.type == 'LAUGHTER_VIDEO_READY' ||
-            item.type == 'EDIT_ANALYSIS_READY') &&
-        item.resourceId != null) {
-      try {
-        final matches = widget.controller.videos.where(
-          (candidate) => candidate.id == item.resourceId,
-        );
-        final video = matches.isNotEmpty
-            ? matches.first
-            : await widget.controller.api.getVideo(item.resourceId!);
-        if (!mounted) return;
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                VideoDetailScreen(controller: widget.controller, video: video),
-          ),
-        );
-      } catch (failure) {
-        if (mounted) showAppSnack(context, '$failure', error: true);
-      }
-      return;
-    }
-
-    // 주기 리포트 알림은 각자의 화면으로 — 기념일은 캘린더, 주간 리포트는
-    // 웃음 리포트다.
-    if (item.type == 'ANNIVERSARY' || item.type == 'WEEKLY_REPORT') {
-      await Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => item.type == 'ANNIVERSARY'
-              ? ContentCalendarScreen(controller: widget.controller)
-              : LaughReportContentScreen(controller: widget.controller),
-        ),
-      );
-      return;
-    }
-
-    if (item.type == 'INVITATION_RECEIVED') {
-      await widget.controller.refreshMyInvitations();
-      if (!mounted) return;
-      if (widget.onOpenInvitations != null) {
-        widget.onOpenInvitations!();
-      } else {
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                InvitationInboxScreen(controller: widget.controller),
-          ),
-        );
-      }
-      return;
-    }
-    widget.onOpenDevices?.call();
+    // 목적지 결정은 여기 두지 않는다 — 푸시를 눌렀을 때 도는 쪽(app.dart)과
+    // 갈라져 있던 동안 같은 알림이 어디서 눌렀느냐에 따라 다른 곳으로 갔다.
+    await openNotificationTarget(
+      context,
+      controller: widget.controller,
+      type: item.type,
+      resourceId: item.resourceId,
+      onOpenInvitations: widget.onOpenInvitations,
+      onOpenDevices: widget.onOpenDevices,
+    );
   }
 
   @override
@@ -267,7 +204,7 @@ class _ContentNotificationsScreenState
         separatorBuilder: (_, _) => const SizedBox(height: 9),
         itemBuilder: (_, index) {
           final item = items[index];
-          final visual = _visualFor(item.type);
+          final visual = notificationVisualFor(item.type);
           return SoftCard(
             color: item.isRead ? AppColors.surface : const Color(0xFFFFFBF6),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -295,6 +232,19 @@ class _ContentNotificationsScreenState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // 갈래를 먼저 알려 주는 라벨. 제목이 비슷한 알림
+                        // ('...이 도착했어요'가 여럿이다)을 훑어 읽을 때
+                        // 이모지 하나만으로는 갈라지지 않았다.
+                        Text(
+                          visual.category,
+                          style: TextStyle(
+                            color: visual.accent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 1),
                         Text(
                           item.title,
                           style: TextStyle(
@@ -306,6 +256,8 @@ class _ContentNotificationsScreenState
                         const SizedBox(height: 2),
                         Text(
                           item.body,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: AppColors.inkSoft,
                             fontSize: 12,
@@ -345,11 +297,3 @@ class _ContentNotificationsScreenState
   }
 }
 
-({String emoji, Color background}) _visualFor(String type) => switch (type) {
-  'INVITATION_RECEIVED' => (emoji: '❤️', background: const Color(0xFFFFEAE6)),
-  'INVITATION_ACCEPTED' => (emoji: '🤝', background: const Color(0xFFFFEAE6)),
-  'LAUGHTER_VIDEO_READY' => (emoji: '📷', background: AppColors.sageSoft),
-  'EDIT_ANALYSIS_READY' => (emoji: '✨', background: AppColors.sageSoft),
-  'EDIT_COMMENT_ADDED' => (emoji: '💬', background: AppColors.yellowSoft),
-  _ => (emoji: '🔔', background: AppColors.yellowSoft),
-};
