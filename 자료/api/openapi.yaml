@@ -1553,6 +1553,70 @@ paths:
           $ref: '#/components/responses/HiddenNotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Videos]
+      operationId: deleteComic
+      summary: 만화 지우기
+      description: |
+        그림·구성과 좋아요·댓글이 함께 사라진다. **원본 영상은 남는다** — 만화를
+        지우는 것은 그 영상으로 만든 만화를 없애는 일이지 영상을 없애는 일이 아니다.
+
+        만든 사람 또는 금고 OWNER만 지울 수 있다(`VaultComic.canDelete`). 만든 사람을
+        남기기 전(V45 이전)에 만들어진 만화는 만든 사람을 알 수 없어 OWNER만 지운다.
+
+        워커의 저장물을 먼저 지우고 행을 나중에 지운다. 워커 호출이 실패하면 아무것도
+        지워지지 않은 상태라 다시 부르면 되고, 워커만 성공한 경우도 다시 불러 복구된다
+        — 워커의 삭제는 멱등이다.
+      responses:
+        '204':
+          description: 지웠다. 이미 없어도 204다.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 만든 사람도 OWNER도 아니다(`FORBIDDEN_ROLE`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
+        '409':
+          description: |
+            아직 그리는 중이다(`COMIC_BUSY`). 기록만 지워도 워커 스레드는 계속 그려서
+            지운 만화가 되살아나므로, 다 만든 뒤에 다시 부른다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/videos/{videoId}/analysis:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    get:
+      tags: [Videos]
+      operationId: getVideoAnalysisStatus
+      summary: 영상 분석 진행 상태
+      description: |
+        AI 자동 컷·줌과 4컷 만화의 장면 선정이 쓰는 영상 분석(소리·움직임·표정)이
+        어디까지 왔는지 알려 준다. 편집 화면과 만화 화면이 "분석 중" 표시를 그리는
+        근거다.
+
+        **분석한 적이 없어도 200이고 `status: NONE`이다** — 404가 아니다. 분석은
+        영상에 반드시 있어야 하는 것이 아니라, 있으면 결과가 좋아지는 것이다.
+
+        분석 결과(JSON 4종)는 여기서 주지 않는다. 영상당 약 700KB라 워커 저장소에
+        두고, 이 API는 상태만 준다.
+      responses:
+        '200':
+          description: 분석 상태
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoAnalysisStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/HiddenNotFound'
 
   /api/videos/{videoId}/comic/like:
     parameters:
@@ -3647,7 +3711,9 @@ components:
         그림 주소는 여기 없다. 만화 PNG는 단기 서명 URL로만 받을 수 있어서 목록에
         담으면 화면에 보이지도 않는 만화의 URL까지 발급하고 그 사이 만료된다. 앱은
         화면에 들어온 카드만 `GET /api/videos/{videoId}/comic/image`로 받는다.
-      required: [videoId, title, customTitle, madeAt, likeCount, likedByMe, commentCount]
+      required:
+        [videoId, title, customTitle, madeAt, likeCount, likedByMe, commentCount,
+         canDelete]
       properties:
         videoId:
           type: string
@@ -3669,6 +3735,52 @@ components:
           type: boolean
         commentCount:
           type: integer
+        canDelete:
+          type: boolean
+          description: |
+            지금 보는 사람이 이 만화를 지울 수 있는가 — 만든 사람 또는 금고 OWNER다.
+            **서버가 판정한다.** 앱이 역할로 다시 계산하면 규칙이 두 곳에 생겨
+            서버와 어긋난다. 만든 사람을 남기기 전(V45 이전)에 만들어진 만화는
+            만든 사람을 알 수 없어 OWNER에게만 참이다.
+
+    VideoAnalysisStatus:
+      type: object
+      description: |
+        영상 분석(소리·움직임·표정)의 진행 상태. 결과 JSON 4종은 영상당 약 700KB라
+        워커 저장소에 두고, 이 응답은 상태만 나른다.
+      required: [status, progress]
+      properties:
+        status:
+          type: string
+          enum: [NONE, RUNNING, DONE, FAILED]
+          description: |
+            `NONE`은 분석한 적이 없다는 뜻이고 오류가 아니다. 분석 없이도 만화와
+            자동 컷은 만들어지고, 다만 장면 선정이 규칙 기반으로 떨어진다.
+        stage:
+          type: string
+          enum: [download, audio, yamnet, video, expression]
+          nullable: true
+          description: |
+            지금 단계. 진행 중이 아니면 null이다. 앱이 사람 말로 옮겨 보여 주고,
+            모르는 값은 뭉뚱그린다 — 워커가 단계를 늘려도 영문 코드가 노출되지 않게.
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        error:
+          type: string
+          nullable: true
+          description: 실패 사유. 실패가 아니면 null이다. 500자에서 자른다.
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 끝난 시각. 진행 중이거나 분석한 적이 없으면 null.
 
     ComicLike:
       type: object
