@@ -14,6 +14,7 @@ import com.wj.server.video.domain.VideoRow;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -66,6 +67,13 @@ public class VideoThumbnailService {
     private final ExecutorService executor;
     private final Clock clock;
 
+    /**
+     * 생성자가 둘이므로 스프링이 쓸 쪽을 표시해야 한다. 빠뜨리면 컨텍스트가
+     * "No default constructor found"로 뜨고 배포가 롤백된다 — 2026-08-06
+     * master 배포를 실제로 그렇게 깼다. 아래 것은 테스트가 실행자·시계를
+     * 넣으려고 쓰는 패키지 전용 생성자다({@code LiveTokenService}와 같은 꼴).
+     */
+    @Autowired
     public VideoThumbnailService(
         ObjectStorageService objectStorageService,
         JwtEncoder encoder,
