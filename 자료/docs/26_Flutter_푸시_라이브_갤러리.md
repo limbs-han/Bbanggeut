@@ -22,15 +22,44 @@ Flutter 앱은 Firebase Cloud Messaging 토큰을 발급받아 다음 기존 API
 끄고 앱 내부의 크림·핑크 알림 카드 하나만 표시한다. 백그라운드와 종료
 상태에서는 서버가 보낸 notification payload를 OS가 표시한다.
 
-알림 payload의 `type`과 `resourceId`를 사용한다.
+### 알림을 누르면 어디로 가는가
 
-- `INVITATION_RECEIVED`: 받은 초대함으로 이동하고 목록을 다시 조회한다.
-- `LAUGHTER_VIDEO_READY`: 서버에서 영상 상세를 조회한 뒤 상세 화면으로
-  이동한다. 웃음 전용이 아니다 — 박수·호출·직접 촬영으로 담긴 영상도 이
-  타입으로 오며, 무엇 때문에 담겼는지는 알림 제목이 말해 준다.
-- `COMIC_SCRIPT_READY`·`COMIC_READY`: 만화 화면으로 곧장 간다. 대사 준비와
-  그림 완성이 같은 목적지인 이유는, 만화 화면이 저장된 구성을 읽어 대사
-  편집으로 이어 주기 때문이다.
+목적지 결정은 `core/notification_destination.dart`의 순수 함수 하나에 있다.
+알림함 목록과 푸시 처리(`app.dart`)가 **같은 함수**를 읽는다.
+
+| 알림 종류 | 목적지 |
+| --- | --- |
+| `LAUGHTER_VIDEO_READY` | 그 영상 상세 |
+| `EDIT_ANALYSIS_READY` | 그 영상 상세 |
+| `COMIC_SCRIPT_READY` | 만화 화면 |
+| `COMIC_READY` | 만화 화면 |
+| `EDIT_COMMENT_ADDED` | 그 편집본 화면 |
+| `INVITATION_RECEIVED` | 받은 초대함 |
+| `INVITATION_ACCEPTED` | 가족 화면 |
+| `ANNIVERSARY` | 캘린더 |
+| `WEEKLY_REPORT` | 웃음 리포트 |
+| 그 외·리소스 없음 | 부르는 쪽의 기본 경로 |
+
+`LAUGHTER_VIDEO_READY`는 웃음 전용이 아니다 — 박수·호출·직접 촬영으로 담긴
+영상도 이 타입으로 오며, 무엇 때문에 담겼는지는 알림 제목이 말해 준다.
+
+대사 준비와 그림 완성이 같은 목적지인 이유는, 만화 화면이 저장된 구성을 읽어
+대사 편집으로 이어 주기 때문이다.
+
+**왜 함수 하나로 모았나**: 결정이 두 벌 있었다. 푸시 쪽은 웃음 영상·기념일·
+주간 리포트·초대만 알고 나머지는 전부 알림함으로 떨어뜨려서, `AI 분석이
+끝났어요`를 알림함에서 누르면 그 영상 상세가 열리는데 푸시로 누르면 알림함만
+열렸다 — 사용자는 목록에서 같은 알림을 한 번 더 찾아 눌러야 했다. 만화 완성·
+대사 준비·편집본 댓글도 같은 구멍에 빠져 있었다.
+
+합치면서 `INVITATION_ACCEPTED`가 목적지 없이 기본 경로로 떨어지던 것도
+드러났다. 그 기본 경로가 **기기 등록 화면**이라, "가족이 됐어요"를 누르면
+카메라를 등록하라는 화면이 열리고 있었다.
+
+`notification_destination_test.dart`가 종류별 목적지를 고정하고, 시각
+(`notification_visuals.dart`)이 정의된 종류에 목적지가 빠졌는지도 대조한다 —
+이모지만 더하고 갈 곳을 빠뜨리면 사용자는 눌렀는데 아무 일도 일어나지 않는
+것을 본다. `INVITATION_ACCEPTED`를 잡아낸 것이 이 대조다.
 
 알림 센터는 `GET /api/notifications`의 실제 응답을 사용하고, 개별 읽음과
 모두 읽음 API를 호출한다.
