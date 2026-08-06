@@ -88,6 +88,11 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
     try {
       if (message.type == 'LAUGHTER_VIDEO_READY' &&
           message.resourceId != null) {
+        // 새 웃음이 저장됐다는 알림이다. 홈의 '오늘의 웃음'과 '최근 저장된
+        // 추억'이 그 영상을 아직 모르므로 함께 새로 받는다 — 상세를 닫고
+        // 돌아왔을 때 방금 본 영상이 목록에 없으면 사라진 것처럼 보인다.
+        // 화면 전환을 붙잡지 않게 기다리지 않는다.
+        unawaited(controller.refreshHome(force: true));
         final video = await controller.api.getVideo(message.resourceId!);
         if (!mounted) return;
         await navigator.push<void>(
