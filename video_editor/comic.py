@@ -21,6 +21,8 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
+import struct
 import subprocess
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
@@ -193,6 +195,32 @@ def _run(command: Sequence[str], stdin: bytes | None = None) -> bytes:
         message = failure.stderr.decode("utf-8", "replace").strip()[-300:]
         raise ComicError(f"{command[0]} 실패: {message}") from failure
     return done.stdout
+
+
+def _run_capturing_stderr(
+    command: Sequence[str], stdin: bytes | None = None
+) -> tuple[bytes, str]:
+    """[_run]과 같지만 stderr도 돌려준다.
+
+    `cropdetect` 같은 필터는 결과를 stdout이 아니라 로그로 남긴다 — 그 값을
+    읽어야 하는 호출만 이것을 쓴다.
+    """
+    try:
+        done = subprocess.run(  # noqa: S603 - 인자를 리스트로 넘겨 셸을 거치지 않는다
+            list(command),
+            input=stdin,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+    except FileNotFoundError as failure:
+        raise ComicError(
+            f"{command[0]}를 찾을 수 없습니다. 컨테이너에 ffmpeg를 설치해야 합니다."
+        ) from failure
+    except subprocess.CalledProcessError as failure:
+        message = failure.stderr.decode("utf-8", "replace").strip()[-300:]
+        raise ComicError(f"{command[0]} 실패: {message}") from failure
+    return done.stdout, done.stderr.decode("utf-8", "replace")
 
 
 def video_duration_seconds(video_url: str) -> float:
@@ -535,7 +563,13 @@ def build_image_prompt(
     blocks = [
         f"A single square image: a 4-panel comic in {style} style, 2x2 grid "
         "with thin white gutters. Reading order: top-left (1), top-right (2), "
-        "bottom-left (3), bottom-right (4)."
+        "bottom-left (3), bottom-right (4). "
+        # 앱이 칸을 그림의 4등분으로 잡고 자막을 앉히므로, 격자 바깥에 여백이
+        # 있으면 자막이 칸 중심에서 밀린다. 지켜지지 않을 때를 대비해 서버가
+        # 받은 그림에서 테두리를 실제로 잘라내지만(normalize_square_png),
+        # 애초에 안 그리게 하는 것이 낫다.
+        "The 2x2 grid must fill the entire image edge to edge: no outer border, "
+        "no margin, no frame, no matting around the four panels."
     ]
     if characters:
         rows = "\n".join(
@@ -576,14 +610,131 @@ def _first_image(payload: Mapping[str, Any]) -> bytes:
     )
 
 
+"""자막 띠가 칸 가운데에 앉으려면 2x2 격자가 그림 전체를 채워야 한다.
+
+앱은 칸을 그림의 수학적 4등분으로 잡고 그 가운데에 띠를 앉힌다
+(`panel_subtitle.dart`). 그런데 격자를 그리는 것은 모델이고, 모델은 2x2 바깥에
+흰 테두리를 함께 그린다 — 실측(1024x1024 만화)에서 사면 40~42px이었다. 그러면
+왼쪽 칸의 실제 중심은 272px인데 앱은 256px(25%)에 띠를 앉혀 16px이 바깥으로
+밀린다. 좌우가 서로 반대 방향으로 밀리므로 눈에는 "가운데가 아니라 옆으로
+빗겨난" 것으로 보인다.
+
+프롬프트로 "테두리를 그리지 마라"고 해도 픽셀 단위로는 지켜지지 않는다. 받은
+그림에서 테두리를 실제로 재서 잘라내는 것이 유일하게 확실한 방법이다.
+"""
+
+# cropdetect가 stderr에 남기는 값. `crop=w:h:x:y` 형태다.
+_CROP_LINE = re.compile(r"crop=(\d+):(\d+):(\d+):(\d+)")
+
+# 한 변에서 이만큼 넘게 잘라내려 하면 테두리 검출을 믿지 않는다. 밝은 화풍의
+# 만화는 칸 내용까지 테두리로 오인될 수 있는데, 그때 잘라 버리면 그림이
+# 망가진다 — 띠가 조금 빗겨나는 것보다 나쁘다.
+_MAX_TRIM_RATIO = 0.2
+
+
+def parse_crop_box(stderr: str) -> tuple[int, int, int, int] | None:
+    """cropdetect 출력에서 마지막 `crop=w:h:x:y`를 뽑는다. 없으면 None."""
+    matches = _CROP_LINE.findall(stderr)
+    if not matches:
+        return None
+    width, height, left, top = (int(value) for value in matches[-1])
+    return width, height, left, top
+
+
+def crop_box_is_trustworthy(
+    box: tuple[int, int, int, int], width: int, height: int
+) -> bool:
+    """검출한 내용 영역을 믿을 수 있는가.
+
+    잘라낼 양이 너무 많거나(밝은 화풍을 테두리로 오인) 값이 앞뒤가 맞지 않으면
+    믿지 않는다. 검출이 틀렸을 때 원본을 그대로 쓰는 쪽이 안전하다.
+    """
+    box_width, box_height, left, top = box
+    if box_width <= 0 or box_height <= 0:
+        return False
+    if left < 0 or top < 0:
+        return False
+    if left + box_width > width or top + box_height > height:
+        return False
+    trimmed_x = width - box_width
+    trimmed_y = height - box_height
+    return (
+        trimmed_x <= width * _MAX_TRIM_RATIO
+        and trimmed_y <= height * _MAX_TRIM_RATIO
+    )
+
+
+def png_size(data: bytes) -> tuple[int, int] | None:
+    """PNG의 가로·세로. PNG가 아니거나 너무 짧으면 None.
+
+    IHDR은 항상 파일 앞머리 고정 위치에 있어 헤더만 읽으면 된다 — 이미지
+    라이브러리를 서비스 의존성에 넣지 않으려고 직접 읽는다(Pillow·numpy는
+    분석 전용 의존성이라 이 경로에 없을 수 있다).
+    """
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    return int(width), int(height)
+
+
+def _detect_content_box(data: bytes) -> tuple[int, int, int, int] | None:
+    """흰 테두리를 뺀 내용 영역. 검출하지 못하거나 믿을 수 없으면 None.
+
+    `cropdetect`는 **어두운** 테두리를 찾으므로 `negate`로 뒤집어 흰 테두리를
+    검은 테두리로 만든 뒤 잰다. 검출은 최선 노력이다 — 실패하면 자르지 않는다.
+    """
+    size = png_size(data)
+    try:
+        _, stderr = _run_capturing_stderr(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "info",
+                "-i",
+                "pipe:0",
+                "-vf",
+                # limit=24: 뒤집은 뒤 24 이하(=원본에서 231 이상 밝음)를 테두리로 본다.
+                # round=2: 짝수로 맞춰 크로마 서브샘플링과 어긋나지 않게 한다.
+                # **skip=0이 없으면 아무것도 검출되지 않는다** — cropdetect는 기본으로
+                # 앞 2프레임을 건너뛰는데(skip=2) 정지 이미지에는 프레임이 하나뿐이라
+                # 그 하나가 건너뛰어진다. 실서버 만화에서 이것 때문에 조용히
+                # 검출 실패했고, 자르지 않은 그림이 그대로 나갔다.
+                "negate,cropdetect=limit=24:round=2:skip=0:reset=0",
+                "-frames:v",
+                "1",
+                "-f",
+                "null",
+                "-",
+            ],
+            stdin=data,
+        )
+    except ComicError:
+        return None
+    box = parse_crop_box(stderr)
+    if box is None or size is None:
+        return None
+    return box if crop_box_is_trustworthy(box, *size) else None
+
+
 def normalize_square_png(data: bytes) -> bytes:
-    """PNG·정사각으로 맞춘다.
+    """PNG·정사각으로 맞추고, 모델이 그린 외곽 테두리를 잘라낸다.
 
     앱은 base64 PNG만 받고, 2x2 격자를 전제로 자막을 얹는다. 정사각이 아니면
     `BoxFit.contain`이 위아래 여백을 만들어 자막 네 개가 전부 칸을 벗어난다.
     모델 출력을 믿지 않고 여기서 한 번 맞춘다 — 이미 정사각 PNG면 그대로 다시
     쓰는 셈이라 비용이 없다.
+
+    테두리를 자른 뒤에도 정사각으로 다시 채운다. 실측에서 사면 여백이 거의
+    같아(40·41·42·42) 자른 결과가 이미 정사각에 가깝고, 채우는 양은 1~2px이라
+    칸 중심을 흩뜨리지 않는다. 늘려서 억지로 정사각을 만들지 않는 이유는 그림이
+    비틀리기 때문이다.
     """
+    box = _detect_content_box(data)
+    crop = ""
+    if box is not None:
+        box_width, box_height, left, top = box
+        crop = f"crop={box_width}:{box_height}:{left}:{top},"
     return _run(
         [
             "ffmpeg",
@@ -594,7 +745,8 @@ def normalize_square_png(data: bytes) -> bytes:
             "pipe:0",
             "-vf",
             # ffmpeg 필터 문법에서 쉼표는 필터 구분자라 max() 안에서 escape한다.
-            r"pad=w=max(iw\,ih):h=max(iw\,ih):x=(ow-iw)/2:y=(oh-ih)/2:color=white",
+            crop
+            + r"pad=w=max(iw\,ih):h=max(iw\,ih):x=(ow-iw)/2:y=(oh-ih)/2:color=white",
             "-f",
             "image2pipe",
             "-vcodec",
