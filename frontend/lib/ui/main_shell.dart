@@ -78,14 +78,25 @@ class _MainShellState extends State<MainShell>
       refresh.catchError((_) {});
     } else if (_presenceTabs.contains(value)) {
       widget.controller.refreshPresence().catchError((_) {});
+      if (value == _homeTab) _refreshHome();
     }
     if (mounted) setState(() => index = value);
+  }
+
+  /// 홈이 보여 주는 숫자를 다시 받는다.
+  ///
+  /// presence만으로는 모자란다 — 그것은 카메라가 켜져 있는가만 새로 받고,
+  /// '오늘의 웃음'과 '최근 저장된 추억'은 그대로 둔다. 알림을 보고 들어온
+  /// 사람이 보는 것이 바로 그 숫자다. 겹쳐 부르는 것은 컨트롤러가 막는다.
+  void _refreshHome() {
+    widget.controller.refreshHome().catchError((_) {});
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _presenceTabs.contains(index)) {
       widget.controller.refreshPresence().catchError((_) {});
+      if (index == _homeTab) _refreshHome();
     }
   }
 
@@ -131,9 +142,13 @@ class _MainShellState extends State<MainShell>
   }
 
   /// 위를 덮던 화면이 걷혔다.
+  ///
+  /// 알림으로 열린 영상 상세를 닫고 돌아오는 길이 여기다. 그 사이에 웃음이
+  /// 하나 더 저장됐을 수 있으므로 홈 숫자를 다시 받는다.
   @override
   void didPopNext() {
     if (mounted) setState(() => _coveredByRoute = false);
+    if (index == _homeTab) _refreshHome();
   }
 
   @override
