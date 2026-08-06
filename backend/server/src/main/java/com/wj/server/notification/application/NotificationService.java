@@ -63,11 +63,16 @@ public class NotificationService {
         }
     }
 
+    /**
+     * 감지로 담긴 영상이 도착했다 — 기기를 공유하는 가족 전원에게 알린다.
+     * {@code headline}이 감지 유형(웃음·박수·호출·직접)을 말해 준다.
+     */
     @Transactional
-    public void laughterVideoReady(UUID deviceId, UUID videoId, String title) {
-        int inserted = mapper.insertLaughterVideoNotifications(deviceId, videoId, title);
+    public void videoArrived(UUID deviceId, UUID videoId, String headline, String title) {
+        int inserted = mapper.insertVideoArrivedNotifications(
+            deviceId, videoId, headline, title);
         if (inserted > 0) {
-            pushDispatcher.laughterVideoReady(deviceId, videoId, title);
+            pushDispatcher.videoArrived(deviceId, videoId, headline, title);
         }
     }
 
@@ -92,6 +97,24 @@ public class NotificationService {
         int inserted = mapper.insertComicReadyNotification(userId, videoId);
         if (inserted > 0) {
             pushDispatcher.comicReady(userId, videoId);
+        }
+    }
+
+    /**
+     * 만화 대사 구성 완료 — 만들기를 누른 사람에게만 알린다.
+     *
+     * <p>1단계는 동기 응답이지만 Gemini 호출이라 20초 가까이 걸린다. 그 사이
+     * 화면을 벗어나면 대사가 준비된 것을 알 방법이 없어 처음부터 다시
+     * 부르게 됐다 — 호출료가 두 번 든다.
+     */
+    @Transactional
+    public void comicScriptReady(UUID userId, UUID videoId) {
+        if (userId == null) {
+            return;
+        }
+        int inserted = mapper.insertComicScriptReadyNotification(userId, videoId);
+        if (inserted > 0) {
+            pushDispatcher.comicScriptReady(userId, videoId);
         }
     }
 

@@ -394,6 +394,65 @@ class TranscriptStoreTest(unittest.TestCase):
             self.assertEqual(payload, service.load_transcript("v1"))
 
 
+class ComicScriptNotificationTest(unittest.TestCase):
+    """1단계가 끝나면 요청자에게 알림이 나가야 한다.
+
+    구성은 동기 응답이지만 모델 호출이 20초 가까이 걸린다. 그 사이 화면을
+    벗어난 사용자에게는 알림이 대사가 준비된 것을 아는 유일한 통로다.
+    """
+
+    def _request(self, subject: str | None):
+        token = (
+            jwt.encode({"sub": subject}, "test-only", algorithm="HS256")
+            if subject is not None
+            else None
+        )
+        headers = {"authorization": f"Bearer {token}"} if token else {}
+        return mock.Mock(headers=headers)
+
+    def _script_request(self):
+        return service.ComicScriptRequest(
+            videoUrl="https://storage.example/v1.mp4",
+            lines=[{"startMs": 0, "endMs": 1000, "text": "하하"}],
+        )
+
+    def test_notifies_requester_after_script_is_built(self) -> None:
+        script = {"cuts": [{"caption": "하하"}], "characters": [], "setting": {}}
+        with mock.patch.object(service.backend_access, "can_access_video", return_value=True), \
+             mock.patch.object(service.comic, "build_script", return_value=script), \
+             mock.patch.object(service.store, "put"), \
+             mock.patch.object(service.backend_events, "comic_script_ready") as notified:
+            response = service.comic_script(
+                "v1", self._script_request(), self._request("user-1"))
+
+        self.assertEqual(script["cuts"], response["cuts"])
+        notified.assert_called_once_with("v1", "user-1")
+
+    def test_storage_failure_still_notifies(self) -> None:
+        # 시트를 못 남겨도 대사는 손에 들어왔다 — 알리지 않으면 화면을 벗어난
+        # 사용자는 실패한 줄 알고 처음부터 다시 부른다.
+        script = {"cuts": [{"caption": "하하"}], "characters": [], "setting": {}}
+        with mock.patch.object(service.backend_access, "can_access_video", return_value=True), \
+             mock.patch.object(service.comic, "build_script", return_value=script), \
+             mock.patch.object(service.store, "put", side_effect=OSError("disk")), \
+             mock.patch.object(service.backend_events, "comic_script_ready") as notified:
+            service.comic_script("v1", self._script_request(), self._request("user-1"))
+
+        notified.assert_called_once_with("v1", "user-1")
+
+    def test_failed_script_does_not_notify(self) -> None:
+        with mock.patch.object(service.backend_access, "can_access_video", return_value=True), \
+             mock.patch.object(
+                 service.comic, "build_script",
+                 side_effect=service.comic.ComicError("gemini down")), \
+             mock.patch.object(service.backend_events, "comic_script_ready") as notified:
+            with self.assertRaises(HTTPException) as caught:
+                service.comic_script("v1", self._script_request(), self._request("user-1"))
+
+        self.assertEqual(502, caught.exception.status_code)
+        notified.assert_not_called()
+
+
 class DeleteDraftTest(unittest.TestCase):
     def test_deletes_latest_draft_only(self) -> None:
         with mock.patch.object(service.store, "delete") as removed:

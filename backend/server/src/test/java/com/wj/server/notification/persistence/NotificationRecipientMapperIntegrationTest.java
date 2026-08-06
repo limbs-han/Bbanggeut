@@ -155,8 +155,8 @@ class NotificationRecipientMapperIntegrationTest {
         try (var session = sessionFactory().openSession()) {
             NotificationMapper mapper = session.getMapper(NotificationMapper.class);
 
-            int inserted = mapper.insertLaughterVideoNotifications(
-                DEVICE_ID, VIDEO_ID, "웃음 영상");
+            int inserted = mapper.insertVideoArrivedNotifications(
+                DEVICE_ID, VIDEO_ID, "웃음 영상이 도착했어요", "웃음 영상");
             session.commit();
 
             assertThat(inserted).isEqualTo(2);
@@ -177,9 +177,11 @@ class NotificationRecipientMapperIntegrationTest {
         try (var session = sessionFactory().openSession()) {
             NotificationMapper mapper = session.getMapper(NotificationMapper.class);
 
-            assertThat(mapper.insertLaughterVideoNotifications(DEVICE_ID, videoId, "웃음 영상"))
+            assertThat(mapper.insertVideoArrivedNotifications(
+                DEVICE_ID, videoId, "웃음 영상이 도착했어요", "웃음 영상"))
                 .isEqualTo(2);
-            assertThat(mapper.insertLaughterVideoNotifications(DEVICE_ID, videoId, "웃음 영상"))
+            assertThat(mapper.insertVideoArrivedNotifications(
+                DEVICE_ID, videoId, "웃음 영상이 도착했어요", "웃음 영상"))
                 .isZero();
             session.commit();
 
@@ -197,8 +199,8 @@ class NotificationRecipientMapperIntegrationTest {
         try (var session = sessionFactory().openSession()) {
             NotificationMapper mapper = session.getMapper(NotificationMapper.class);
 
-            assertThat(mapper.insertLaughterVideoNotifications(
-                UNBOUND_DEVICE_ID, videoId, "웃음 영상")).isZero();
+            assertThat(mapper.insertVideoArrivedNotifications(
+                UNBOUND_DEVICE_ID, videoId, "웃음 영상이 도착했어요", "웃음 영상")).isZero();
             session.commit();
         }
     }

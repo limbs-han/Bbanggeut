@@ -1,5 +1,10 @@
 logLevel: info
 
+# 운영과 같은 값(deploy/mediamtx.yml 참고). 기본값 10초로 두면 로컬에서는
+# 재연결 유예를 재현할 수 없다 — 끊김이 유예에 들기도 전에 MediaMTX가
+# 퍼블리셔를 먼저 잘라 버린다.
+readTimeout: 30s
+
 rtsp: true
 rtspAddress: :8554
 rtmp: false
