@@ -52,9 +52,13 @@ class _ComicScreenState extends State<ComicScreen> {
   /// 화면을 PNG로 뜰 때 쓰는 경계.
   final _canvasKey = GlobalKey();
 
-  /// 대사 입력칸은 화면이 소유한다 — 다이얼로그마다 만들어 닫힌 직후 dispose하면
+  /// 컷마다 하나씩. 입력칸은 화면이 소유한다 — 만들어 쓰고 곧바로 dispose하면
   /// 리빌드가 죽은 컨트롤러를 만져 화면이 빈다(자막 작업에서 겪었다).
-  final _dialogueField = TextEditingController();
+  final _dialogueFields = <int, TextEditingController>{};
+
+  /// 입력칸을 맞춰 둔 구성. 같은 목록이면 다시 채우지 않는다 — 타자를 칠 때마다
+  /// `text`를 덮으면 커서가 맨 뒤로 튄다.
+  List<ComicCut>? _fieldsBoundTo;
 
   late final ComicController _controller =
       widget.controller ??
@@ -85,46 +89,39 @@ class _ComicScreenState extends State<ComicScreen> {
   }
 
   void _onChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    _bindDialogueFields();
+    setState(() {});
+  }
+
+  /// 구성이 새로 왔을 때만 입력칸을 채운다.
+  ///
+  /// 타자 한 글자가 [ComicController.editDialogue] → notifyListeners → 여기로
+  /// 돌아온다. 그때도 채우면 매 글자마다 커서가 맨 뒤로 튀어 글을 고칠 수 없다.
+  /// 구성이 새로 오는 경우(처음 받기·다시 만들기)에는 목록 인스턴스가 바뀌므로
+  /// 그것으로 가른다.
+  void _bindDialogueFields() {
+    final cuts = _controller.cuts;
+    if (identical(_fieldsBoundTo, cuts)) return;
+    _fieldsBoundTo = cuts;
+    for (var index = 0; index < cuts.length; index++) {
+      final field = _dialogueFields.putIfAbsent(
+        index,
+        TextEditingController.new,
+      );
+      final text = cuts[index].dialogue ?? '';
+      if (field.text != text) field.text = text;
+    }
   }
 
   @override
   void dispose() {
     _controller.removeListener(_onChanged);
     if (widget.controller == null) _controller.dispose();
-    _dialogueField.dispose();
+    for (final field in _dialogueFields.values) {
+      field.dispose();
+    }
     super.dispose();
-  }
-
-  Future<void> _editDialogue(int index) async {
-    _dialogueField.text = _controller.cuts[index].dialogue ?? '';
-    final text = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('${index + 1}컷 대사'),
-        content: TextField(
-          key: const ValueKey('comic-dialogue-field'),
-          controller: _dialogueField,
-          autofocus: true,
-          // 자막 편집칸(caption_auto_section)과 같은 40자다. 같은 성격의 글을 담는데
-          // 두 화면이 다른 길이를 쓰면 한쪽에서 고친 대사가 다른 쪽에서 잘린다.
-          maxLength: 40,
-          decoration: const InputDecoration(hintText: '들린 그대로 적어 주세요'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, _dialogueField.text),
-            child: const Text('넣기'),
-          ),
-        ],
-      ),
-    );
-    if (text == null || !mounted) return;
-    _controller.editDialogue(index, text);
   }
 
   /// 자막이 얹힌 화면 그대로를 PNG 파일로 뜬다.
@@ -283,35 +280,72 @@ class _ComicScreenState extends State<ComicScreen> {
     ],
   );
 
+  /// 대사 고치기 화면.
+  ///
+  /// **왜 목록에서 바로 고치나**: 예전에는 줄을 누르면 기본 `AlertDialog`가
+  /// 떠서 한 컷씩 고치고 '넣기'를 눌러 닫았다. 네 컷이면 네 번을 열고 닫아야
+  /// 했고, 고치는 동안 나머지 세 줄이 보이지 않아 이야기가 이어지는지 알 수
+  /// 없었다. 대사 넉 줄은 한 화면에 다 들어가는 분량이라 굳이 감출 이유가
+  /// 없다 — 네 칸을 함께 펼쳐 두고 그 자리에서 고친다.
   Widget _cutList(List<ComicCut> cuts, {String? error}) => Column(
     children: [
       if (error != null)
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(error, style: const TextStyle(color: AppColors.coral)),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: SoftCard(
+            color: AppColors.coralSoft,
+            borderColor: AppColors.coral,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  size: 18,
+                  color: AppColors.coralDark,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    error,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkSoft,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       Expanded(
-        child: ListView.builder(
-          itemCount: cuts.length,
-          itemBuilder: (_, index) => ListTile(
-            key: ValueKey('comic-cut-$index'),
-            leading: Text('${index + 1}컷'),
-            title: Text(cuts[index].dialogue ?? '(대사 없음)'),
-            subtitle: Text(cuts[index].scene),
-            trailing: const Icon(Icons.edit_rounded, size: 18),
-            onTap: () => _editDialogue(index),
-          ),
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+          itemCount: cuts.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (_, index) => index == 0
+              ? const _CutListHeader()
+              : _CutDialogueCard(
+                  key: ValueKey('comic-cut-${index - 1}'),
+                  index: index - 1,
+                  cut: cuts[index - 1],
+                  field: _dialogueFields[index - 1] ??= TextEditingController(
+                    text: cuts[index - 1].dialogue ?? '',
+                  ),
+                  onChanged: (text) =>
+                      _controller.editDialogue(index - 1, text),
+                ),
         ),
       ),
       Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
         child: SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
             key: const ValueKey('comic-make-image'),
             onPressed: _controller.makeImage,
             icon: const Icon(Icons.auto_awesome_rounded),
-            label: Text(error == null ? '그림 만들기' : '다시 만들기'),
+            label: Text(error == null ? '이 대사로 그림 만들기' : '다시 만들기'),
           ),
         ),
       ),
@@ -417,6 +451,149 @@ class _ComicScreenState extends State<ComicScreen> {
         ),
       ),
     ],
+  );
+}
+
+/// 대사 목록 맨 위에 붙는 안내.
+///
+/// 사용자가 이 화면에서 해야 하는 일이 "틀린 곳만 고치기"라는 것을 먼저
+/// 말해 준다 — 예전에는 아무 설명 없이 줄만 넉 개 있어서, 네 줄을 다 새로
+/// 써야 하는 줄 알고 부담스러워하는 반응이 있었다.
+class _CutListHeader extends StatelessWidget {
+  const _CutListHeader();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('대사를 확인해 주세요', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        const Text(
+          'AI가 들은 대로 적어 뒀어요. 틀린 곳만 고치면 돼요.',
+          style: TextStyle(fontSize: 12, color: AppColors.muted),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 컷 하나 — 순번 배지, 장면 설명, 그 자리에서 고치는 대사 칸.
+class _CutDialogueCard extends StatelessWidget {
+  const _CutDialogueCard({
+    super.key,
+    required this.index,
+    required this.cut,
+    required this.field,
+    required this.onChanged,
+  });
+
+  final int index;
+  final ComicCut cut;
+  final TextEditingController field;
+  final ValueChanged<String> onChanged;
+
+  /// 컷마다 다른 배지 색. 넉 장이 그림 격자의 좌상·우상·좌하·우하 순서라,
+  /// 색이 다르면 어느 칸을 고치는 중인지 눈으로 짚을 수 있다.
+  static const _badgeColors = [
+    AppColors.coralSoft,
+    AppColors.yellowSoft,
+    AppColors.sageSoft,
+    AppColors.pinkSoft,
+  ];
+
+  @override
+  Widget build(BuildContext context) => SoftCard(
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                color: _badgeColors[index % _badgeColors.length],
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '${index + 1}컷',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.ink,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                cut.beat,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.muted,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // 장면 설명은 읽기 전용 맥락이다 — 이 컷이 어떤 그림인지 알아야 대사가
+        // 맞는지 판단할 수 있다. 고치는 대상은 아래 대사 칸뿐이다.
+        Text(
+          cut.scene,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 12,
+            height: 1.35,
+            color: AppColors.inkSoft,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          key: ValueKey('comic-dialogue-field-$index'),
+          controller: field,
+          onChanged: onChanged,
+          // 자막 편집칸(caption_auto_section)과 같은 40자다. 같은 성격의 글을
+          // 담는데 두 화면이 다른 길이를 쓰면 한쪽에서 고친 대사가 다른 쪽에서
+          // 잘린다.
+          maxLength: 40,
+          maxLines: 2,
+          minLines: 1,
+          textInputAction: TextInputAction.next,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          decoration: InputDecoration(
+            isDense: true,
+            // 비워 두면 그 컷은 대사 없이 그린다. 예전 목록은 '(대사 없음)'을
+            // 제목 자리에 적어서, 그것이 실제 대사인지 빈 상태인지 헷갈렸다.
+            hintText: '비워 두면 대사 없이 그려요',
+            hintStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              color: AppColors.muted,
+            ),
+            suffixIcon: field.text.isEmpty
+                ? null
+                : IconButton(
+                    key: ValueKey('comic-dialogue-clear-$index'),
+                    tooltip: '대사 지우기',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    color: AppColors.muted,
+                    onPressed: () {
+                      field.clear();
+                      onChanged('');
+                    },
+                  ),
+          ),
+        ),
+      ],
+    ),
   );
 }
 

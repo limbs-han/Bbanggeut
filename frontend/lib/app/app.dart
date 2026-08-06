@@ -4,6 +4,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/notification_visuals.dart';
 import '../core/push_notification_service.dart';
 import '../ui/auth_screen.dart';
 import '../ui/content_calendar_screen.dart';
@@ -275,12 +276,7 @@ class _PushBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emoji = switch (message.type) {
-      'INVITATION_RECEIVED' => '❤️',
-      'INVITATION_ACCEPTED' => '🤝',
-      'LAUGHTER_VIDEO_READY' => '📷',
-      _ => '🔔',
-    };
+    final visual = notificationVisualFor(message.type);
     return Positioned(
       top: MediaQuery.paddingOf(context).top + 10,
       left: 14,
@@ -311,10 +307,13 @@ class _PushBanner extends StatelessWidget {
                   height: 48,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFEFE7),
+                    color: visual.background,
                     borderRadius: BorderRadius.circular(15),
                   ),
-                  child: Text(emoji, style: const TextStyle(fontSize: 25)),
+                  child: Text(
+                    visual.emoji,
+                    style: const TextStyle(fontSize: 25),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -322,10 +321,13 @@ class _PushBanner extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '빵긋',
+                      // 눈썹에 앱 이름('빵긋')을 고정해 두면 어떤 알림이든
+                      // 같은 줄이 뜬다 — 배너는 한 번에 하나만 보이므로 그
+                      // 한 줄이 갈래를 말해 주는 쪽이 쓸모 있다.
+                      Text(
+                        visual.category,
                         style: TextStyle(
-                          color: AppColors.coral,
+                          color: visual.accent,
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
                         ),

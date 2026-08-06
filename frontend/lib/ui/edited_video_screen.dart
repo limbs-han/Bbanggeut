@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../app/app_theme.dart';
 import '../core/api_client.dart';
+import 'media_player_surface.dart';
 import 'video_comments_section.dart';
 import 'widgets.dart';
 
@@ -166,25 +167,16 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
                       )
                     : player == null
                     ? const Center(child: CircularProgressIndicator())
-                    : GestureDetector(
-                        onTap: () => setState(() {
-                          player.value.isPlaying
-                              ? player.pause()
-                              : player.play();
-                        }),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            VideoPlayer(player),
-                            if (!player.value.isPlaying)
-                              const Icon(
-                                Icons.play_circle_fill_rounded,
-                                size: 64,
-                                color: Colors.white70,
-                              ),
-                          ],
-                        ),
-                      ),
+                    // 원본 상세 화면과 같은 재생 표면을 쓴다.
+                    //
+                    // 예전에는 여기만 손으로 만든 `VideoPlayer` + 눌러서
+                    // 재생·정지였다. 진행 바가 없어서 편집한 영상은 처음부터
+                    // 끝까지 보는 수밖에 없었다 — 몇 분 몇 초로 옮기거나
+                    // 10초를 되감을 방법이 아예 없었고, 남은 길이도 알 수
+                    // 없었다. `MediaPlayerSurface`는 탐색 바·시각 표시·
+                    // ±10초·전체화면을 이미 갖고 있으므로 편집본이 원본과
+                    // 다르게 동작할 이유가 없다.
+                    : MediaPlayerSurface(controller: player),
               ),
             ),
             Padding(

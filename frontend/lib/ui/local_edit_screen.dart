@@ -234,9 +234,8 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
 
     previousProjectController?.dispose();
     await previousPreview?.dispose();
-    // 전사는 여기서 시작하지 않는다 — 오디오를 처음부터 끝까지 훑는 일이라
-    // 편집 진입·재생과 CPU를 다툰다. AI자막 탭을 눌렀을 때만
-    // [_startAutoCaptions]가 돈다.
+    // 원본이 손에 들어왔으니 전사를 바로 시작한다.
+    unawaited(_warmAutoCaptions());
     // 썸네일은 편집에 필수 데이터가 아니다. 편집 화면을 먼저 열고 준비되는
     // 순서대로 타임라인에 채워 긴 네이티브 추출 작업이 진입을 막지 않게 한다.
     unawaited(_loadThumbnails());
@@ -334,7 +333,36 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     }
   }
 
-  /// AI자막 탭을 눌렀을 때만 전사를 시작한다.
+  /// 원본이 준비된 직후 전사를 미리 시작한다.
+  ///
+  /// **왜 탭을 기다리지 않는가**: 예전에는 AI자막 탭을 누른 순간에만 돌렸다.
+  /// 오디오를 처음부터 끝까지 훑는 일이라 편집 진입·재생과 CPU를 다투는 것이
+  /// 이유였는데, 정작 사용자는 탭을 누른 뒤 전사가 끝나기를 처음부터 기다렸다 —
+  /// 아낀 CPU가 고스란히 대기 시간으로 옮겨갔을 뿐이다. 편집 화면을 먼저 열고
+  /// 그 뒤에 시작하므로 진입은 여전히 막히지 않고, 사용자가 자막 탭에 도달할
+  /// 때쯤에는 상당히 진행돼 있거나 이미 끝나 있다.
+  ///
+  /// **마이크 권한이 아직 없으면 시작하지 않는다.** 전사는 안에서
+  /// `prepareMlKit`이 권한을 묻는데(파일 입력인데도 ML Kit이 요구한다), 편집
+  /// 화면을 열자마자 아무 맥락 없이 권한 대화상자가 뜨면 사용자는 무엇 때문에
+  /// 묻는지 알 수 없다. 권한이 이미 있는 기기 — 한 번 써 본 기기 — 에서는 바로
+  /// 시작하고, 아직 없으면 자막 탭이 맥락과 함께 묻는 기존 길을 그대로 남긴다.
+  Future<void> _warmAutoCaptions() async {
+    if (_sourcePath == null) return;
+    try {
+      final readiness = await MlKitTranscriber().readiness();
+      if (readiness == MlKitReadiness.needsPermission) return;
+    } catch (_) {
+      // 상태를 물어볼 수 없는 기기라면 미리 시작하지 않는다 — 판단은 자막
+      // 탭에 맡긴다. 여기서 실패해도 편집은 그대로 이어져야 한다.
+      return;
+    }
+    if (!mounted) return;
+    _startAutoCaptions();
+  }
+
+  /// 전사를 시작한다. [_warmAutoCaptions]와 AI자막 탭 둘 다에서 부른다 —
+  /// 앞선 호출이 이미 돌고 있으면 뒤 호출은 그냥 돌아간다.
   ///
   /// [redo]면 캐시(메모리·파일)를 버리고 처음부터 다시 돌린다 — 사용자가
   /// "다시 만들기"를 고른 때다. 그냥 [CaptionController.start]를 다시 부르면
@@ -1191,7 +1219,9 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     await MlKitTranscriber().requestMicrophone();
     if (!mounted) return;
 
-    // 전사는 이 버튼을 눌렀을 때만 시작한다 — 편집 진입과 CPU를 다투지 않는다.
+    // 대개는 [_warmAutoCaptions]가 편집 진입 때 이미 시작해 뒀고, 그러면 이
+    // 호출은 곧바로 돌아간다. 권한이 없어 미리 시작하지 못했을 때 — 바로
+    // 위에서 방금 물어본 경우다 — 여기서 처음 돈다.
     _startAutoCaptions(redo: redo);
     _captionSheetOpen = true;
     var reviewed = false;
