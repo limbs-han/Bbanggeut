@@ -7,14 +7,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/notification_visuals.dart';
 import '../core/push_notification_service.dart';
 import '../ui/auth_screen.dart';
-import '../ui/content_calendar_screen.dart';
 import '../ui/content_notifications_screen.dart';
 import '../ui/device_registration_screen.dart';
-import '../ui/invitation_inbox_screen.dart';
-import '../ui/laugh_report_content_screen.dart';
 import '../ui/main_shell.dart';
+import '../ui/notification_routing.dart';
 import '../ui/onboarding_screen.dart';
-import '../ui/video_detail_screen.dart';
 import '../ui/widgets.dart';
 import 'app_controller.dart';
 import 'app_theme.dart';
@@ -87,49 +84,32 @@ class _WilliamJamesAppState extends State<WilliamJamesApp> {
     pushBanner?.remove();
     pushBanner = null;
     try {
-      if (message.type == 'LAUGHTER_VIDEO_READY' &&
-          message.resourceId != null) {
-        // 새 웃음이 저장됐다는 알림이다. 홈의 '오늘의 웃음'과 '최근 저장된
+      if (message.type == 'LAUGHTER_VIDEO_READY') {
+        // 새 영상이 저장됐다는 알림이다. 홈의 '오늘의 웃음'과 '최근 저장된
         // 추억'이 그 영상을 아직 모르므로 함께 새로 받는다 — 상세를 닫고
         // 돌아왔을 때 방금 본 영상이 목록에 없으면 사라진 것처럼 보인다.
         // 화면 전환을 붙잡지 않게 기다리지 않는다.
         unawaited(controller.refreshHome(force: true));
-        final video = await controller.api.getVideo(message.resourceId!);
-        if (!mounted) return;
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) =>
-                VideoDetailScreen(controller: controller, video: video),
-          ),
-        );
-      } else if (message.type == 'ANNIVERSARY') {
-        // 기념일 푸시는 그 일정이 있는 캘린더로 보낸다.
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => ContentCalendarScreen(controller: controller),
-          ),
-        );
-      } else if (message.type == 'WEEKLY_REPORT') {
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => LaughReportContentScreen(controller: controller),
-          ),
-        );
-      } else if (message.type == 'INVITATION_RECEIVED') {
-        await controller.refreshMyInvitations();
-        if (!mounted) return;
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => InvitationInboxScreen(controller: controller),
-          ),
-        );
-      } else {
-        await navigator.push<void>(
-          MaterialPageRoute(
-            builder: (_) => ContentNotificationsScreen(controller: controller),
-          ),
-        );
       }
+      // 목적지 결정은 알림함과 같은 곳에서 한다. 갈라져 있던 동안 `AI 분석이
+      // 끝났어요`를 알림함에서 누르면 그 영상 상세가 열리는데 푸시로 누르면
+      // 알림함만 열려, 사용자가 목록에서 같은 알림을 한 번 더 찾아 눌러야 했다.
+      // 만화 완성·대사 준비·편집본 댓글도 같은 구멍에 빠져 있었다.
+      await openNotificationTarget(
+        navigator.context,
+        controller: controller,
+        type: message.type,
+        resourceId: message.resourceId,
+        // 푸시로 들어온 길에는 탭을 바꿔 줄 수단이 없다. 갈 곳을 모르는
+        // 알림은 알림함으로 보낸다 — 아무 일도 일어나지 않는 것보다 낫다.
+        onOpenDevices: () => unawaited(
+          navigator.push<void>(
+            MaterialPageRoute(
+              builder: (_) => ContentNotificationsScreen(controller: controller),
+            ),
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       await navigator.push<void>(

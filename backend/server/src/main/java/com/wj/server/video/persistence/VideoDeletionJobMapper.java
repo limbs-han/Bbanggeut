@@ -11,12 +11,22 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface VideoDeletionJobMapper {
+    /**
+     * 처리할 작업을 집어 온다.
+     *
+     * <p>{@code attempts < maxAttempts}로 막는 것이 재시도 상한이다. 상한이
+     * 없던 동안 실서버의 삭제 작업 두 건이 각각 485회·470회까지 돌면서 5분마다
+     * 같은 경고를 남겼다 — 권한이 없어 절대 성공할 수 없는 작업이었는데, 워커는
+     * 그것을 일시 장애와 구분하지 못했다. 상한을 넘긴 행은 여기서 더 이상
+     * 집히지 않고 {@code status='RETRY', attempts >= 상한}으로 남아 조회된다.
+     */
     @Select("""
         WITH candidates AS (
             SELECT id
               FROM video_deletion_jobs
-             WHERE (status IN ('PENDING', 'RETRY') AND next_attempt_at <= now())
-                OR (status = 'PROCESSING' AND locked_at < now() - interval '5 minutes')
+             WHERE attempts < #{maxAttempts}
+               AND ((status IN ('PENDING', 'RETRY') AND next_attempt_at <= now())
+                 OR (status = 'PROCESSING' AND locked_at < now() - interval '5 minutes'))
              ORDER BY next_attempt_at, id
              FOR UPDATE SKIP LOCKED
              LIMIT #{limit}
@@ -31,7 +41,10 @@ public interface VideoDeletionJobMapper {
           FROM claimed c
           JOIN videos v ON v.id = c.video_id
         """)
-    List<VideoDeletionJob> claim(@Param("limit") int limit);
+    List<VideoDeletionJob> claim(
+        @Param("limit") int limit,
+        @Param("maxAttempts") int maxAttempts
+    );
 
     @Update("""
         UPDATE videos
