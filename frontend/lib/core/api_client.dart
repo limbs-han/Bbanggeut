@@ -923,6 +923,13 @@ class ApiClient {
   Future<void> deleteComic(String videoId) async =>
       _delete('/api/videos/$videoId/comic');
 
+  /// 영상 분석(소리·움직임·표정)의 진행 상태.
+  ///
+  /// 편집 워커에 직접 묻지 않는다 — 워커는 상태를 메모리에만 들어서 재배포하면
+  /// 진행 중이던 분석이 사라져 보였다. 분석한 적이 없어도 200이고 NONE이다.
+  Future<VideoAnalysis> videoAnalysis(String videoId) async =>
+      VideoAnalysis.fromJson(await _get('/api/videos/$videoId/analysis'));
+
   /// presigned URL에서 바이트를 그대로 받는다.
   ///
   /// 서명이 URL 안에 있으므로 **Bearer 헤더를 붙이면 안 된다** — MinIO는 서명과

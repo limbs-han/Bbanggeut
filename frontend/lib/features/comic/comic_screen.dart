@@ -20,6 +20,7 @@ import '../../core/api_client.dart';
 import '../../core/models.dart';
 import '../../core/video_source_cache.dart';
 import '../../ui/widgets.dart';
+import '../analysis/analysis_notice.dart';
 import 'comic_controller.dart';
 import 'comic_gateway.dart';
 import 'comic_script.dart';
@@ -192,6 +193,11 @@ class _ComicScreenState extends State<ComicScreen> {
       child: Column(
         children: [
           if (!comicServerReady) const _SampleNotice(),
+          // 분석이 끝난 뒤에 만들면 만화 칸이 실제로 무슨 일이 있었던 순간에서
+          // 나온다. 진행 중이면 프레임을 등분해 뽑으므로, 알려 주고 기다릴
+          // 기회를 준다 — 예전에는 아무 표시가 없어서 사용자가 그 결과를 "AI가
+          // 원래 이 정도"로 받아들였다.
+          AnalysisNoticeBar(api: widget.api, videoId: widget.video.id),
           Expanded(child: _body()),
         ],
       ),
