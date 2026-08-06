@@ -40,6 +40,7 @@ public class IotVideoService {
     private final NotificationService notificationService;
     private final DeviceMapper deviceMapper;
     private final AuditService auditService;
+    private final VideoThumbnailService thumbnails;
 
     public IotVideoService(
         VideoMapper videoMapper,
@@ -48,8 +49,10 @@ public class IotVideoService {
         DeviceEventService deviceEventService,
         NotificationService notificationService,
         DeviceMapper deviceMapper,
-        AuditService auditService
+        AuditService auditService,
+        VideoThumbnailService thumbnails
     ) {
+        this.thumbnails = thumbnails;
         this.videoMapper = videoMapper;
         this.objectStorageService = objectStorageService;
         this.subscriptionProperties = subscriptionProperties;
@@ -194,6 +197,9 @@ public class IotVideoService {
             deviceId, parseEventId(video.sourceEventId()), video.triggerType(),
             video.capturedStartAt(), video.id(), "READY");
         notifyVideoArrived(completed);
+        // 목록에 쓸 미리보기를 뒤에서 만들게 맡긴다. 실패해도 업로드는 이미
+        // 끝난 것이고, 그림이 없으면 앱이 예전처럼 기기에서 뽑는다.
+        thumbnails.requestAsync(completed);
         return toResponse(completed);
     }
 

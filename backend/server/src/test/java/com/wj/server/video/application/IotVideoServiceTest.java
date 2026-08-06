@@ -45,6 +45,8 @@ class IotVideoServiceTest {
     private com.wj.server.device.persistence.DeviceMapper deviceMapper;
     @Mock
     private com.wj.server.audit.application.AuditService auditService;
+    @Mock
+    private VideoThumbnailService thumbnails;
 
     private IotVideoService service;
 
@@ -53,7 +55,8 @@ class IotVideoServiceTest {
         service = new IotVideoService(
             videoMapper, objectStorageService,
             new SubscriptionProperties(365, java.time.Duration.ofDays(30)),
-            deviceEventService, notificationService, deviceMapper, auditService);
+            deviceEventService, notificationService, deviceMapper, auditService,
+            thumbnails);
     }
 
     @Test

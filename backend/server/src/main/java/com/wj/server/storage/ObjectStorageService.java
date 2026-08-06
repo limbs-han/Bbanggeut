@@ -9,6 +9,7 @@ import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.StorageProperties;
@@ -147,7 +148,45 @@ public class ObjectStorageService {
 
     /** 편집 서버(editor-api)가 이 영상에 대해 만든 부산물의 버킷 내 위치. */
     private static final String[] EDIT_DATA_PREFIXES =
-        {"edit-analyses/", "edit-projects/", "edited-videos/"};
+        {"edit-analyses/", "edit-projects/", "edited-videos/", "thumbnails/"};
+
+    /**
+     * 목록용 미리보기 그림의 편집 버킷 내 위치. editor-api가 같은 규칙으로
+     * 쓴다({@code video_editor/service.py}의 {@code _thumbnail_key}) — 규칙이
+     * 어긋나면 그림은 만들어지는데 아무도 못 읽는다.
+     *
+     * <p>파일을 바로 두지 않고 디렉터리를 한 겹 두는 이유는 {@link
+     * #EDIT_DATA_PREFIXES} 기반 삭제에 걸리게 하기 위해서다.
+     */
+    public static String thumbnailKey(UUID videoId) {
+        return "thumbnails/" + videoId + "/frame.jpg";
+    }
+
+    /**
+     * 미리보기 그림을 받을 단기 URL. 편집 버킷이 설정돼 있지 않으면 null이다.
+     *
+     * <p><b>있는지 확인하지 않는다.</b> 서명은 네트워크 없이 계산만 하는 일이라
+     * 목록 스무 건에 스무 번 해도 공짜지만, 존재 확인은 건마다 MinIO 왕복이라
+     * 목록 응답이 그만큼 느려진다. 아직 그림이 없는 영상의 URL은 404가 되고,
+     * 앱은 그때 예전처럼 기기에서 프레임을 뽑는다 — 느려질 뿐 깨지지 않는다.
+     */
+    public String createThumbnailReadUrl(UUID videoId) {
+        String bucket = properties.editBucket();
+        if (bucket == null || bucket.isBlank()) {
+            return null;
+        }
+        try {
+            return presignClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                .method(Http.Method.GET)
+                .bucket(bucket)
+                .object(thumbnailKey(videoId))
+                .expiry(Math.toIntExact(properties.readUrlTtl().toSeconds()), TimeUnit.SECONDS)
+                .build());
+        } catch (Exception exception) {
+            // 목록을 통째로 못 그리게 만들 값이 아니다. 없으면 앱이 예전 경로로 간다.
+            return null;
+        }
+    }
 
     /**
      * 원본이 삭제된 영상의 편집 부산물(분석 캐시·초안·편집본·댓글)을 편집
