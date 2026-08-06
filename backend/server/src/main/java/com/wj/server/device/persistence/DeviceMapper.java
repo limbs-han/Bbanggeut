@@ -63,7 +63,7 @@ public interface DeviceMapper {
     @Select("""
         SELECT d.id, d.name, d.model, d.status, m.role AS my_role,
                d.retention_days, d.last_seen_at, d.serial_number,
-               d.firmware_version, d.claimed_at
+               d.firmware_version, d.claimed_at, d.detection_enabled
           FROM devices d
           JOIN device_bindings b ON b.device_id = d.id AND b.status = 'ACTIVE'
           JOIN vault_memberships m ON m.vault_id = b.vault_id
@@ -76,7 +76,7 @@ public interface DeviceMapper {
     @Select("""
         SELECT d.id, d.name, d.model, d.status, m.role AS my_role,
                d.retention_days, d.last_seen_at, d.serial_number,
-               d.firmware_version, d.claimed_at
+               d.firmware_version, d.claimed_at, d.detection_enabled
           FROM devices d
           JOIN device_bindings b ON b.device_id = d.id AND b.status = 'ACTIVE'
           JOIN vault_memberships m ON m.vault_id = b.vault_id
@@ -93,7 +93,7 @@ public interface DeviceMapper {
     @Select("""
         SELECT d.id, d.name, d.model, d.status, m.role AS my_role,
                d.retention_days, d.last_seen_at, d.serial_number,
-               d.firmware_version, d.claimed_at
+               d.firmware_version, d.claimed_at, d.detection_enabled
           FROM devices d
           JOIN device_bindings b ON b.device_id = d.id AND b.status = 'ACTIVE'
           JOIN vault_memberships m ON m.vault_id = b.vault_id
@@ -110,6 +110,8 @@ public interface DeviceMapper {
         UPDATE devices
            SET name = CASE WHEN #{namePresent} THEN #{name} ELSE name END,
                retention_days = CASE WHEN #{retentionDaysPresent} THEN #{retentionDays} ELSE retention_days END,
+               detection_enabled = CASE WHEN #{detectionEnabledPresent}
+                   THEN #{detectionEnabled} ELSE detection_enabled END,
                updated_at = now()
          WHERE id = #{deviceId} AND status != 'REVOKED'
         """)
@@ -118,8 +120,19 @@ public interface DeviceMapper {
         @Param("namePresent") boolean namePresent,
         @Param("name") String name,
         @Param("retentionDaysPresent") boolean retentionDaysPresent,
-        @Param("retentionDays") Integer retentionDays
+        @Param("retentionDays") Integer retentionDays,
+        @Param("detectionEnabledPresent") boolean detectionEnabledPresent,
+        @Param("detectionEnabled") Boolean detectionEnabled
     );
+
+    /**
+     * 이 기기가 지금 감지를 받는가. 업로드 경로가 부른다.
+     *
+     * <p>기기 행이 없거나 폐기됐으면 비어 있다 — 부르는 쪽이 그 경우를 이미
+     * 다른 오류로 가르므로 여기서 참·거짓으로 뭉개지 않는다.
+     */
+    @Select("SELECT detection_enabled FROM devices WHERE id = #{deviceId}")
+    Optional<Boolean> findDetectionEnabled(@Param("deviceId") UUID deviceId);
 
     @Update("""
         UPDATE devices

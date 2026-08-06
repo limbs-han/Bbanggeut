@@ -41,6 +41,10 @@ class IotVideoServiceTest {
     private DeviceEventService deviceEventService;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private com.wj.server.device.persistence.DeviceMapper deviceMapper;
+    @Mock
+    private com.wj.server.audit.application.AuditService auditService;
 
     private IotVideoService service;
 
@@ -49,7 +53,7 @@ class IotVideoServiceTest {
         service = new IotVideoService(
             videoMapper, objectStorageService,
             new SubscriptionProperties(365, java.time.Duration.ofDays(30)),
-            deviceEventService, notificationService);
+            deviceEventService, notificationService, deviceMapper, auditService);
     }
 
     @Test
@@ -65,6 +69,55 @@ class IotVideoServiceTest {
         verify(objectStorageService, never()).createUploadUrl(
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * 감지를 끄면 서버가 막는다. 영상 행을 만들기 전에 막아야 한다 — 뒤에서
+     * 막으면 꺼진 동안에도 UPLOADING 행이 쌓이고 sweep 워커가 그것을 치운다.
+     */
+    @Test
+    void uploadIsRefusedWhileDetectionIsOff() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(deviceMapper.findDetectionEnabled(DEVICE_ID)).thenReturn(Optional.of(false));
+
+        assertThatThrownBy(() -> service.createUploadUrl(DEVICE_ID, EVENT_ID, request(100)))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).code())
+            .isEqualTo("DETECTION_DISABLED");
+
+        verify(videoMapper, never()).findByDeviceEvent(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        // "그날 왜 아무것도 안 찍혔나"를 나중에 설명할 수 있어야 한다.
+        verify(auditService).denied(
+            DEVICE_ID, null, "IOT_VIDEO_UPLOAD", "DEVICE", DEVICE_ID, "DETECTION_DISABLED");
+    }
+
+    /**
+     * 409여야 한다. 기기 업로더는 403·409만 terminal로 보고 재시도하지 않는다 —
+     * 429나 5xx면 재시도 큐에 쌓였다가 다시 켠 순간 밀린 것이 한꺼번에 들어온다.
+     */
+    @Test
+    void theRefusalIsTerminalForTheDeviceUploader() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(deviceMapper.findDetectionEnabled(DEVICE_ID)).thenReturn(Optional.of(false));
+
+        assertThatThrownBy(() -> service.createUploadUrl(DEVICE_ID, EVENT_ID, request(100)))
+            .isInstanceOf(ApiException.class)
+            .extracting(exception -> ((ApiException) exception).status())
+            .isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+    }
+
+    /** 기기 행을 못 읽으면 막지 않는다 — 스위치를 못 읽었다고 녹화를 잃지 않는다. */
+    @Test
+    void anUnreadableSwitchDoesNotBlockTheUpload() {
+        when(videoMapper.isClaimedDevice(DEVICE_ID)).thenReturn(true);
+        when(deviceMapper.findDetectionEnabled(DEVICE_ID)).thenReturn(Optional.empty());
+        when(videoMapper.findByDeviceEvent(DEVICE_ID, EVENT_ID))
+            .thenReturn(Optional.of(video("READY")));
+
+        var response = service.createUploadUrl(DEVICE_ID, EVENT_ID, request(100));
+
+        assertThat(response.alreadyCompleted()).isTrue();
     }
 
     @Test

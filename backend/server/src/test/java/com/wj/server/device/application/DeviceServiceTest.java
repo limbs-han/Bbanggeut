@@ -76,7 +76,7 @@ class DeviceServiceTest {
             codeId, deviceId, NOW.plusSeconds(30), null, "UNCLAIMED");
         DeviceViewRow claimed = new DeviceViewRow(
             deviceId, "거실", "WJ-DEV-01", "OFFLINE", "OWNER", 30,
-            null, "WJ-0001", null, NOW);
+            null, "WJ-0001", null, NOW, true);
         SlidingWindowRateLimiter.Reservation reservation =
             new SlidingWindowRateLimiter.Reservation(
                 "rl:claim:user:" + userId, "rl:claim:ip:test", "member-id");
@@ -166,7 +166,7 @@ class DeviceServiceTest {
         DeviceViewRow before = view(deviceId, "Before", "OFFLINE", "OWNER");
         DeviceViewRow after = new DeviceViewRow(
             deviceId, "After", "WJ-DEV-01", "OFFLINE", "OWNER", 90,
-            null, "WJ-0001", null, NOW);
+            null, "WJ-0001", null, NOW, true);
         UpdateDeviceRequest request = new UpdateDeviceRequest();
         request.setName("  After  ");
         request.setRetentionDays(90);
@@ -175,7 +175,7 @@ class DeviceServiceTest {
 
         var response = deviceService.update(userId, deviceId, request);
 
-        verify(deviceMapper).updateSettings(deviceId, true, "After", true, 90);
+        verify(deviceMapper).updateSettings(deviceId, true, "After", true, 90, false, null);
         assertThat(response.name()).isEqualTo("After");
         assertThat(response.retentionDays()).isEqualTo(90);
     }
@@ -193,6 +193,7 @@ class DeviceServiceTest {
             .isInstanceOf(ApiException.class)
             .satisfies(exception -> assertThat(((ApiException) exception).status().value()).isEqualTo(403));
         verify(deviceMapper, never()).updateSettings(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean(),
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean(),
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean(),
             org.mockito.ArgumentMatchers.any());
@@ -322,6 +323,6 @@ class DeviceServiceTest {
     private DeviceViewRow view(UUID deviceId, String name, String status, String role) {
         return new DeviceViewRow(
             deviceId, name, "WJ-DEV-01", status, role, 30,
-            null, "WJ-0001", null, NOW);
+            null, "WJ-0001", null, NOW, true);
     }
 }

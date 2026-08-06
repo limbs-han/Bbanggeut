@@ -26,7 +26,12 @@ from . import backend_access, backend_events
 from . import comic
 from .adaptive_cli import build_adaptive_recipe
 from .adaptive_selector import build_timeline
-from .analysis_jobs import ANALYSIS_KINDS, AnalysisJobManager, analysis_ready
+from .analysis_jobs import (
+    ANALYSIS_KINDS,
+    AnalysisJobManager,
+    AnalysisQueueFull,
+    analysis_ready,
+)
 from .comic_jobs import ComicJobManager, ComicQueueFull
 
 
@@ -553,7 +558,10 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
     _require_video_access(request, video_id)
     running = jobs.get(video_id)
     if running is not None and running.status == "running":
-        return JSONResponse(status_code=202, content=running.snapshot())
+        return JSONResponse(
+            status_code=202,
+            content=running.snapshot(position=jobs.position(video_id)),
+        )
     if _load_cached_analyses(video_id) is not None:
         # 이미 분석해 둔 영상이다. 백엔드에도 그렇게 남긴다 — V46 이전에 분석한
         # 영상은 상태 행이 없어서, 알려 주지 않으면 앱이 영원히 "분석한 적 없음"을
@@ -583,19 +591,31 @@ async def request_analysis(video_id: str, request: Request) -> JSONResponse:
                 status_code=422,
                 detail="sourceUrl은 허용된 호스트의 https 주소여야 합니다",
             )
-        job = jobs.submit(
-            video_id,
-            video_path,
-            source_url=source_url,
-            requested_by=_token_subject(request),
-        )
+        try:
+            job = jobs.submit(
+                video_id,
+                video_path,
+                source_url=source_url,
+                requested_by=_token_subject(request),
+            )
+        except AnalysisQueueFull as failure:
+            # 429다. 5분짜리 서명 URL을 든 채 줄 끝에 세워 두면 차례가 왔을 때
+            # 이미 만료되어 있다 — 기다리게 하는 대신 지금 거절한다.
+            raise HTTPException(status_code=429, detail=str(failure)) from failure
     else:
         data = await request.body()
         if not data:
             raise HTTPException(status_code=422, detail="empty body")
         video_path.write_bytes(data)
-        job = jobs.submit(video_id, video_path, requested_by=_token_subject(request))
-    return JSONResponse(status_code=202, content=job.snapshot())
+        try:
+            job = jobs.submit(
+                video_id, video_path, requested_by=_token_subject(request)
+            )
+        except AnalysisQueueFull as failure:
+            raise HTTPException(status_code=429, detail=str(failure)) from failure
+    return JSONResponse(
+        status_code=202, content=job.snapshot(position=jobs.position(video_id))
+    )
 
 
 @app.get("/v1/edit-analyses/{video_id}")
@@ -603,7 +623,7 @@ def analysis_status(video_id: str, http_request: Request = None) -> dict[str, An
     _require_video_access(http_request, video_id)
     job = jobs.get(video_id)
     if job is not None:
-        return job.snapshot()
+        return job.snapshot(position=jobs.position(video_id))
     if _load_cached_analyses(video_id) is not None:
         return {"videoId": video_id, "status": "done", "progress": 1.0}
     return {"videoId": video_id, "status": "none", "progress": 0.0}

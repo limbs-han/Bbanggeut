@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.wj.server.audit.application.AuditService;
 import com.wj.server.common.api.ApiException;
 import com.wj.server.config.SubscriptionProperties;
+import com.wj.server.device.persistence.DeviceMapper;
 import com.wj.server.iot.event.DeviceEventService;
 import com.wj.server.notification.application.NotificationService;
 import com.wj.server.storage.ObjectStorageService;
@@ -36,19 +38,52 @@ public class IotVideoService {
     private final SubscriptionProperties subscriptionProperties;
     private final DeviceEventService deviceEventService;
     private final NotificationService notificationService;
+    private final DeviceMapper deviceMapper;
+    private final AuditService auditService;
 
     public IotVideoService(
         VideoMapper videoMapper,
         ObjectStorageService objectStorageService,
         SubscriptionProperties subscriptionProperties,
         DeviceEventService deviceEventService,
-        NotificationService notificationService
+        NotificationService notificationService,
+        DeviceMapper deviceMapper,
+        AuditService auditService
     ) {
         this.videoMapper = videoMapper;
         this.objectStorageService = objectStorageService;
         this.subscriptionProperties = subscriptionProperties;
         this.deviceEventService = deviceEventService;
         this.notificationService = notificationService;
+        this.deviceMapper = deviceMapper;
+        this.auditService = auditService;
+    }
+
+    /**
+     * 감지가 꺼진 기기의 업로드를 막는다. 영상 행을 만들기 **전에** 본다 —
+     * 뒤에서 막으면 꺼진 동안에도 UPLOADING 행이 쌓이고, 그것을 청소하는
+     * sweep 워커가 매번 돌아야 한다.
+     *
+     * <p><b>왜 409인가</b>: 기기의 업로더는 403·409를 terminal로 보고 재시도하지
+     * 않는다({@code TERMINAL_HTTP_STATUSES}). 429나 5xx로 돌려주면 재시도 큐에
+     * 쌓였다가 감지를 다시 켠 순간 밀린 것이 한꺼번에 들어온다 — 끄고 있던
+     * 동안의 영상이 뒤늦게 전부 저장되면 끈 의미가 없다.
+     *
+     * <p>이것은 <b>서버 측 차단</b>이다. 기기는 여전히 찍고 올리려 시도한다.
+     * 기기까지 멈추게 하려면 MQTT 명령과 펌웨어가 필요하고, 그것은 기기 팀과
+     * 맞춰야 한다.
+     */
+    private void requireDetectionEnabled(UUID deviceId) {
+        if (deviceMapper.findDetectionEnabled(deviceId).orElse(true)) {
+            return;
+        }
+        // 남긴다. "그날 왜 아무것도 안 찍혔나"를 나중에 설명할 수 있어야 한다.
+        // 행위자는 사람이 아니라 기기라 actorUserId가 없다.
+        auditService.denied(
+            deviceId, null, "IOT_VIDEO_UPLOAD", "DEVICE", deviceId, "DETECTION_DISABLED");
+        throw new ApiException(
+            HttpStatus.CONFLICT, "DETECTION_DISABLED",
+            "이 카메라는 지금 감지가 꺼져 있습니다.");
     }
 
     @Transactional
@@ -70,6 +105,7 @@ public class IotVideoService {
         if (!videoMapper.isClaimedDevice(deviceId)) {
             throw new ApiException(HttpStatus.CONFLICT, "DEVICE_NOT_CLAIMED", "등록이 완료된 기기만 영상을 업로드할 수 있습니다.");
         }
+        requireDetectionEnabled(deviceId);
 
         VideoRow video = videoMapper.findByDeviceEvent(deviceId, request.sourceEventId())
             .orElseGet(() -> createVideo(deviceId, request, eventTypes));

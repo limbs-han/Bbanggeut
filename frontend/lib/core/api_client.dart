@@ -545,14 +545,23 @@ class ApiClient {
       (await _getList(
         '/api/vaults/$vaultId/members',
       )).map(DeviceMember.fromJson).toList();
+  /// 카메라 설정을 고친다. **준 값만 바뀐다** — 서버가 필드 존재 여부로 가른다.
+  ///
+  /// [detectionEnabled]가 false면 서버가 그 카메라의 영상 업로드를 거절한다.
+  /// 카메라 자체는 계속 찍고 올리려 시도하고, 서버가 409로 돌려보낸다.
   Future<DeviceSummary> updateDevice(
     String deviceId, {
     String? name,
     int? retentionDays,
+    bool? detectionEnabled,
   }) async => DeviceSummary.fromJson(
     await _patchMap(
       '/api/devices/$deviceId',
-      data: {'name': ?name, 'retentionDays': ?retentionDays},
+      data: {
+        'name': ?name,
+        'retentionDays': ?retentionDays,
+        'detectionEnabled': ?detectionEnabled,
+      },
     ),
   );
   Future<Invitation> createInvitation(

@@ -156,6 +156,6 @@ class SubscriptionServiceTest {
     private DeviceViewRow view(UUID deviceId, String role) {
         return new DeviceViewRow(
             deviceId, "거실", "WJ-DEV-01", "OFFLINE", role, 30,
-            null, "WJ-0001", null, NOW);
+            null, "WJ-0001", null, NOW, true);
     }
 }

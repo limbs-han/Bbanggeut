@@ -749,6 +749,38 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// 홈이 보여 주는 값을 다시 받는다 — 오늘의 웃음, 최근 저장된 추억, 리포트 수.
+  ///
+  /// **왜 필요한가**: 홈 탭에 들어오거나 앱을 다시 열 때 [refreshPresence]만
+  /// 불렀다. 그것은 금고와 기기 목록(카메라가 켜져 있는가)만 새로 받고 요약은
+  /// 건드리지 않는다. 그래서 "웃음이 저장됐어요" 알림을 보고 들어와도 '오늘의
+  /// 웃음' 숫자가 그대로였다 — 캘린더 탭을 한 번 들렀다 오거나 앱을 껐다 켜야
+  /// 바뀌었다.
+  ///
+  /// 짧은 간격으로 겹쳐 부르지 않는다. 알림을 열고 상세를 닫고 앱이 다시
+  /// 활성화되는 것이 몇 백 밀리초 안에 잇따라 일어나서, 막지 않으면 같은
+  /// 여섯 번의 요청이 세 벌 나간다.
+  Future<void> refreshHome({bool force = false}) async {
+    if (!authenticated || selectedDevice == null) return;
+    final now = DateTime.now();
+    final last = _lastHomeRefresh;
+    if (!force &&
+        last != null &&
+        now.difference(last) < _homeRefreshInterval) {
+      return;
+    }
+    _lastHomeRefresh = now;
+    try {
+      await refreshDeviceData();
+    } catch (_) {
+      // 홈 새로고침은 최선 노력이다. 실패하면 마지막으로 받은 값을 그대로 둔다 —
+      // 숫자를 지우면 "0으로 줄었다"로 읽힌다.
+    }
+  }
+
+  static const _homeRefreshInterval = Duration(seconds: 10);
+  DateTime? _lastHomeRefresh;
+
   Future<void> refreshDeviceData() async {
     if (devHomeCam) {
       notifyListeners();
@@ -869,13 +901,21 @@ class AppController extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> updateSelectedDevice({String? name, int? retentionDays}) async =>
+  /// [detectionEnabled]를 false로 주면 서버가 이 카메라의 영상 업로드를
+  /// 거절한다. 카메라는 계속 찍고 올리려 시도한다 — 펌웨어를 바꾸지 않는
+  /// 서버 측 차단이다.
+  Future<bool> updateSelectedDevice({
+    String? name,
+    int? retentionDays,
+    bool? detectionEnabled,
+  }) async =>
       _guard(() async {
         final device = requireSelectedDevice('기기 설정을 바꿀 수 없어요.');
         final updated = await api.updateDevice(
           device.id,
           name: name,
           retentionDays: retentionDays,
+          detectionEnabled: detectionEnabled,
         );
         devices = devices
             .map((item) => item.id == updated.id ? updated : item)
