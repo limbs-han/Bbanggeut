@@ -182,6 +182,23 @@ void main() {
     expect(find.byKey(const ValueKey('comic-make-image')), findsOneWidget);
   });
 
+  /// 장면 설명을 두 줄로 묶고 말줄임표를 붙였더니 모델이 쓰는 "누가 무엇을
+  /// 하고 있고, 그 뒤에서 누가 무엇을 한다" 꼴 문장이 늘 뒷절째로 잘렸다.
+  /// 이 화면은 그림이 어떻게 나올지 보고 대사를 판단하라고 있는 것이라,
+  /// 잘리면 존재 이유가 없어진다.
+  testWidgets('장면 설명을 자르지 않고 다 보여 준다', (tester) async {
+    await pump(tester, build(saved: _lines()));
+
+    for (final text in tester.widgetList<Text>(find.textContaining('장면'))) {
+      expect(text.maxLines, isNull, reason: '장면 설명에 줄 수 상한이 없어야 한다');
+      expect(text.overflow, isNot(TextOverflow.ellipsis));
+    }
+    // 컷 대목(beat)도 마찬가지다 — 잘리면 무슨 대목인지가 사라진다.
+    for (final text in tester.widgetList<Text>(find.textContaining('컷0'))) {
+      expect(text.overflow, isNot(TextOverflow.ellipsis));
+    }
+  });
+
   testWidgets('대사를 눌러 고치면 목록에 반영된다', (tester) async {
     await pump(tester, build(saved: _lines()));
 

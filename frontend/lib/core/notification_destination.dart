@@ -59,3 +59,21 @@ NotificationDestination notificationDestinationFor(
   'INVITATION_ACCEPTED' => NotificationDestination.family,
   _ => NotificationDestination.fallback,
 };
+
+/// 목적지 아래에 미리 깔아 둘 화면. 뒤로가기가 여기로 떨어진다. 없으면 null.
+///
+/// **왜 만화 아래에 영상 상세를 까나**: 알림으로 만화에 들어온 사람은 만화만
+/// 보고 나가지 않는다 — 어떤 장면으로 만들었는지, 대사가 맞는지 원본이
+/// 궁금해진다. 그런데 뒤로 가면 알림함이나 홈으로 튕겨서, 그 영상을 다시
+/// 보려면 추억 탭에서 처음부터 뒤져야 했다. 상세를 아래에 깔아 두면
+/// 뒤로가기가 곧 "원본 보기"가 되고, 한 번 더 누르면 원래 있던 곳으로
+/// 돌아간다.
+///
+/// 목적지 자체와 마찬가지로 **결정만** 여기서 한다. 화면을 만드는 것은
+/// `ui/notification_routing.dart`다.
+NotificationDestination? notificationBeneathFor(
+  NotificationDestination destination,
+) => switch (destination) {
+  NotificationDestination.comic => NotificationDestination.videoDetail,
+  _ => null,
+};
