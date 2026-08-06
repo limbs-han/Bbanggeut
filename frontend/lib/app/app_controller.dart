@@ -869,13 +869,21 @@ class AppController extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> updateSelectedDevice({String? name, int? retentionDays}) async =>
+  /// [detectionEnabled]를 false로 주면 서버가 이 카메라의 영상 업로드를
+  /// 거절한다. 카메라는 계속 찍고 올리려 시도한다 — 펌웨어를 바꾸지 않는
+  /// 서버 측 차단이다.
+  Future<bool> updateSelectedDevice({
+    String? name,
+    int? retentionDays,
+    bool? detectionEnabled,
+  }) async =>
       _guard(() async {
         final device = requireSelectedDevice('기기 설정을 바꿀 수 없어요.');
         final updated = await api.updateDevice(
           device.id,
           name: name,
           retentionDays: retentionDays,
+          detectionEnabled: detectionEnabled,
         );
         devices = devices
             .map((item) => item.id == updated.id ? updated : item)

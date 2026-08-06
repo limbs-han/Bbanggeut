@@ -165,7 +165,8 @@ public class DeviceService {
         deviceMapper.updateSettings(
             deviceId,
             request.namePresent(), request.namePresent() ? request.name().trim() : null,
-            request.retentionDaysPresent(), request.retentionDays());
+            request.retentionDaysPresent(), request.retentionDays(),
+            request.detectionEnabledPresent(), request.detectionEnabled());
         vaultMapper.updateRetentionForDevice(
             deviceId, request.retentionDaysPresent(), request.retentionDays());
         DeviceResponse response = deviceMapper.findAccessibleDevice(userId, deviceId)
@@ -277,7 +278,7 @@ public class DeviceService {
             storeAvailable && snapshot != null ? snapshot.lastSeenAt() : row.lastSeenAt();
         return new DeviceSummaryResponse(
             row.id(), row.name(), row.model(), status, row.myRole(),
-            row.retentionDays(), lastSeenAt);
+            row.retentionDays(), lastSeenAt, row.detectionEnabled());
     }
 
     private DeviceResponse toCurrentDeviceResponse(DeviceViewRow row) {
@@ -294,7 +295,7 @@ public class DeviceService {
         return new DeviceResponse(
             row.id(), row.name(), row.model(), status, row.myRole(),
             row.retentionDays(), lastSeenAt, row.serialNumber(),
-            firmwareVersion, row.claimedAt());
+            firmwareVersion, row.claimedAt(), row.detectionEnabled());
     }
 
     private ApiException claimRejected() {

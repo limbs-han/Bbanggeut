@@ -13,6 +13,8 @@ public record DeviceViewRow(
     Instant lastSeenAt,
     String serialNumber,
     String firmwareVersion,
-    Instant claimedAt
+    Instant claimedAt,
+    /** 감지·저장 스위치. false면 서버가 이 기기의 영상 업로드를 거절한다. */
+    boolean detectionEnabled
 ) {
 }

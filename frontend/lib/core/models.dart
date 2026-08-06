@@ -157,6 +157,7 @@ class DeviceSummary {
     required this.myRole,
     required this.retentionDays,
     this.lastSeenAt,
+    this.detectionEnabled = true,
   });
   final String id;
   final String name;
@@ -165,6 +166,13 @@ class DeviceSummary {
   final String myRole;
   final int retentionDays;
   final DateTime? lastSeenAt;
+
+  /// 감지·저장 스위치. false면 서버가 이 카메라의 영상 업로드를 거절한다.
+  ///
+  /// 기본값이 true인 이유: 이 값을 주지 않는 옛 서버에 붙었을 때 "꺼져 있다"로
+  /// 보이면, 실제로는 저장되고 있는데 화면만 꺼진 것처럼 보인다.
+  final bool detectionEnabled;
+
   bool get isOnline => status == 'ONLINE';
   bool get isOwner => normalizeRole(myRole) == 'OWNER';
   bool get canEditVideos => isOwner || myRole.trim().toUpperCase() == 'EDITOR';
@@ -176,6 +184,18 @@ class DeviceSummary {
     myRole: normalizeRole(json['myRole']),
     retentionDays: (json['retentionDays'] as num?)?.toInt() ?? 30,
     lastSeenAt: parseDate(json['lastSeenAt']),
+    detectionEnabled: json['detectionEnabled'] as bool? ?? true,
+  );
+
+  DeviceSummary copyWith({bool? detectionEnabled}) => DeviceSummary(
+    id: id,
+    name: name,
+    model: model,
+    status: status,
+    myRole: myRole,
+    retentionDays: retentionDays,
+    lastSeenAt: lastSeenAt,
+    detectionEnabled: detectionEnabled ?? this.detectionEnabled,
   );
 }
 

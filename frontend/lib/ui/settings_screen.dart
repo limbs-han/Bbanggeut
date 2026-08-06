@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../app/app_controller.dart';
 import '../app/app_theme.dart';
+import '../core/models.dart';
 import 'device_registration_screen.dart';
 import 'family_management_cards.dart';
 import 'invitation_inbox_screen.dart';
@@ -165,6 +166,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     ),
+                    // 카메라가 있고 OWNER일 때만. 스위치는 그 카메라 하나에만
+                    // 걸리고, 서버도 OWNER만 받아 준다.
+                    if (device != null && isOwner) ...[
+                      const SizedBox(height: 18),
+                      const _GroupLabel('감지'),
+                      SoftCard(
+                        padding: EdgeInsets.zero,
+                        child: _DetectionSwitchRow(
+                          controller: controller,
+                          device: device,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 18),
                     const _GroupLabel('알림 설정'),
                     SoftCard(
@@ -946,6 +960,71 @@ class _RenameDeviceDialogState extends State<_RenameDeviceDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 감지 스위치.
+///
+/// 끄면 **서버가** 이 카메라의 영상 업로드를 거절한다. 카메라 자체는 계속 찍고
+/// 올리려 시도하므로, 그 사실을 숨기지 않고 문구로 적는다 — "껐으니 카메라도
+/// 멈췄다"고 믿으면 사생활 판단이 어긋난다.
+class _DetectionSwitchRow extends StatefulWidget {
+  const _DetectionSwitchRow({required this.controller, required this.device});
+
+  final AppController controller;
+  final DeviceSummary device;
+
+  @override
+  State<_DetectionSwitchRow> createState() => _DetectionSwitchRowState();
+}
+
+class _DetectionSwitchRowState extends State<_DetectionSwitchRow> {
+  bool _saving = false;
+
+  Future<void> _toggle(bool next) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final ok = await widget.controller.updateSelectedDevice(
+      detectionEnabled: next,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!ok) {
+      showAppSnack(
+        context,
+        widget.controller.errorMessage ?? '감지 설정을 바꾸지 못했어요.',
+        error: true,
+      );
+      return;
+    }
+    showAppSnack(
+      context,
+      next ? '이제 웃음을 다시 저장해요.' : '감지를 껐어요. 새 영상이 저장되지 않아요.',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final on = widget.device.detectionEnabled;
+    return SwitchListTile.adaptive(
+      key: const ValueKey('detection-switch'),
+      value: on,
+      onChanged: _saving ? null : _toggle,
+      secondary: Icon(
+        on ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+        color: on ? AppColors.coral : AppColors.muted,
+      ),
+      title: Text(
+        '${widget.device.name} 감지',
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      subtitle: Text(
+        on
+            ? '웃음이 잡히면 영상으로 저장해요.'
+            : '새 영상이 저장되지 않아요. 카메라는 켜져 있고 실시간 보기는 그대로예요.',
+        style: const TextStyle(fontSize: 12, color: AppColors.muted),
       ),
     );
   }
