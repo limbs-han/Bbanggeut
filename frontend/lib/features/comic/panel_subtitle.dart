@@ -37,6 +37,22 @@ const _bandAlignment = Alignment(0, _subtitleY);
 Alignment panelAlignment(int cutIndex) =>
     Alignment(cutIndex % 2 == 1 ? 1 : -1, cutIndex >= 2 ? 1 : -1);
 
+/// 만화 바깥 테두리의 두께. 그림 한 변에 대한 비율이다.
+///
+/// **왜 앱이 그리나**: 예전에는 모델이 2x2 격자 바깥에 흰 테두리를 함께 그렸고,
+/// 그것이 "만화답게" 보이게 하는 요소였다. 그런데 앱은 칸을 그림의 수학적
+/// 4등분으로 잡고 자막을 앉히므로, 그림 안에 테두리가 있으면 칸 중심이 어긋난다
+/// — 실측(1024px 만화)에서 사면 40~42px이라 왼쪽 칸 중심이 16px 밀렸다. 그래서
+/// 서버가 받은 그림에서 테두리를 잘라낸다(`comic.normalize_square_image`).
+///
+/// 잘라내고 나니 이번에는 만화 느낌이 사라졌다. 둘 다 가지려면 **테두리를 그림
+/// 밖에 두면 된다** — 자막 계산은 그림만 보고, 테두리는 그 바깥을 감싼다.
+/// 모델이 그리던 것보다 나은 점도 있다: 모델의 테두리는 40·41·42·42로 사면이
+/// 제각각이었는데 이것은 늘 같다.
+///
+/// 4%는 잘라낸 두께(1024px에 40~42px)를 그대로 되살린 값이다.
+const comicFrameRatio = 0.04;
+
 class ComicCanvas extends StatelessWidget {
   const ComicCanvas({super.key, required this.image, required this.cuts});
 
@@ -46,49 +62,62 @@ class ComicCanvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AspectRatio(
     aspectRatio: 1,
-    child: Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.memory(image, fit: BoxFit.contain),
-        for (var index = 0; index < cuts.length; index++)
-          if (cuts[index].dialogue case final line?)
-            // 칸(그림의 1/4)을 먼저 잘라내고 그 안에서만 띠를 앉힌다 —
-            // _bandAlignment 주석의 이유로 칸 밖 좌표를 쓰지 않는다.
-            FractionallySizedBox(
-              widthFactor: 0.5,
-              heightFactor: 0.5,
-              alignment: panelAlignment(index),
-              child: Align(
-                alignment: _bandAlignment,
-                child: FractionallySizedBox(
-                  widthFactor: _subtitleWidth,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      borderRadius: BorderRadius.circular(4),
+    // 흰 테두리는 **그림 밖**이다. 안쪽(그림+자막)만 정사각으로 남기므로 칸을
+    // 4등분하는 아래 계산이 테두리 두께와 무관하다 — [comicFrameRatio] 참고.
+    child: ColoredBox(
+      color: Colors.white,
+      child: Center(
+        child: FractionallySizedBox(
+          widthFactor: 1 - comicFrameRatio * 2,
+          heightFactor: 1 - comicFrameRatio * 2,
+          child: _panels(),
+        ),
+      ),
+    ),
+  );
+
+  Widget _panels() => Stack(
+    fit: StackFit.expand,
+    children: [
+      Image.memory(image, fit: BoxFit.contain),
+      for (var index = 0; index < cuts.length; index++)
+        if (cuts[index].dialogue case final line?)
+          // 칸(그림의 1/4)을 먼저 잘라내고 그 안에서만 띠를 앉힌다 —
+          // _bandAlignment 주석의 이유로 칸 밖 좌표를 쓰지 않는다.
+          FractionallySizedBox(
+            widthFactor: 0.5,
+            heightFactor: 0.5,
+            alignment: panelAlignment(index),
+            child: Align(
+              alignment: _bandAlignment,
+              child: FractionallySizedBox(
+                widthFactor: _subtitleWidth,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.62),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      child: Text(
-                        // 영화 자막에서 화자가 바뀜을 나타내는 관례다.
-                        '- $line',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
-                        ),
+                    child: Text(
+                      // 영화 자막에서 화자가 바뀜을 나타내는 관례다.
+                      '- $line',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        shadows: [Shadow(color: Colors.black, blurRadius: 2)],
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-      ],
-    ),
+          ),
+    ],
   );
 }
