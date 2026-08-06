@@ -102,7 +102,11 @@ app:
     # 운영은 배포 스크립트가 http://127.0.0.1:9997 을 채운다.
     api-base-url: ${MEDIAMTX_API_BASE_URL:}
     path-prefix: live
+    # 대사 주기는 15초다. 2회(30초) 미확인이면 세션을 죽이지 않고 재연결
+    # 대기로 내리고, 8회(120초)까지 미디어가 돌아오지 않으면 실패로 확정한다.
+    # 120초는 모바일망이 기지국을 옮기며 재접속하는 시간을 덮으라는 값이다.
     misses-before-failure: 2
+    misses-before-give-up: 8
   stream:
     viewer-ttl: ${STREAM_VIEWER_TTL:45s}
     idle-timeout: ${STREAM_IDLE_TIMEOUT:60s}

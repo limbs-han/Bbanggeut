@@ -947,6 +947,10 @@ def comic_script(
         # 떨어지고, 여기서 502를 주면 이미 쓴 구성 호출값을 버리게 된다.
         pass
 
+    # 대사가 준비됐다고 알린다. 응답을 기다리는 사용자에게는 알림이 겹쳐
+    # 보이지만, 20초 사이에 화면을 벗어난 사용자에게는 이것이 유일한 통로다 —
+    # 알림 본문이 "고칠 곳을 확인하고 그림을 만들어 보세요"인 이유이기도 하다.
+    backend_events.comic_script_ready(video_id, _token_subject(http_request))
     return {"cuts": script["cuts"]}
 
 

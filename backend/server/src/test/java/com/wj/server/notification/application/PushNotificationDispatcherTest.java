@@ -38,7 +38,7 @@ class PushNotificationDispatcherTest {
 
         TransactionSynchronizationManager.initSynchronization();
         try {
-            dispatcher.laughterVideoReady(deviceId, videoId, "웃음 영상");
+            dispatcher.videoArrived(deviceId, videoId, "웃음 영상이 도착했어요", "웃음 영상");
             verify(gateway, never()).send(any(), any());
 
             var synchronizations = TransactionSynchronizationManager.getSynchronizations();

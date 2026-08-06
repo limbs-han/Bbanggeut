@@ -1384,6 +1384,8 @@ paths:
       description: |
         기기에서 만든 전사문을 보내 4컷 구성(흐름·장면·대사)을 글로 받는다. 서버가 원본에서
         프레임 4~6장을 뽑아 함께 모델에 넣는다. 사용자가 대사를 고친 뒤 `comic/image`를 부른다.
+        구성이 끝나면 요청자에게 `COMIC_SCRIPT_READY` 알림이 간다 — 모델 호출이 20초 가까이 걸려
+        그 사이 화면을 벗어난 사용자가 대사가 준비된 것을 알 수 있어야 한다.
       requestBody:
         required: true
         content:
@@ -4041,6 +4043,11 @@ components:
           format: uuid
         type:
           type: string
+          description: >-
+            `LAUGHTER_VIDEO_READY`는 기기가 스스로 감지해 담은 영상이 도착했다는 뜻이며 웃음 전용이 아니다.
+            박수·호출·직접 촬영으로 담긴 영상도 이 타입으로 오고, 무엇 때문에 담겼는지는 `title`이 말해 준다.
+            사람이 직접 올린 영상과 편집본은 이 알림을 만들지 않는다.
+            `COMIC_SCRIPT_READY`는 4컷 만화 1단계(대사 구성) 완료, `COMIC_READY`는 2단계(그림) 완료다.
           enum:
             - INVITATION_RECEIVED
             - INVITATION_ACCEPTED
@@ -4049,6 +4056,8 @@ components:
             - EDIT_COMMENT_ADDED
             - ANNIVERSARY
             - WEEKLY_REPORT
+            - COMIC_SCRIPT_READY
+            - COMIC_READY
         title:
           type: string
         body:

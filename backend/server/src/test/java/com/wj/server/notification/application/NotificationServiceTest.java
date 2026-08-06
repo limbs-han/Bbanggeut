@@ -39,29 +39,47 @@ class NotificationServiceTest {
     }
 
     @Test
-    void laughterNotificationTargetsAllActiveMembershipsThroughMapper() {
+    void videoArrivalNotificationTargetsAllActiveMembershipsThroughMapper() {
         UUID deviceId = UUID.randomUUID();
         UUID videoId = UUID.randomUUID();
+        String headline = "웃음 영상이 도착했어요";
 
-        when(mapper.insertLaughterVideoNotifications(deviceId, videoId, "웃음 영상"))
+        when(mapper.insertVideoArrivedNotifications(deviceId, videoId, headline, "웃음 영상"))
             .thenReturn(2);
 
         new NotificationService(mapper, pushDispatcher)
-            .laughterVideoReady(deviceId, videoId, "웃음 영상");
+            .videoArrived(deviceId, videoId, headline, "웃음 영상");
 
-        verify(mapper).insertLaughterVideoNotifications(deviceId, videoId, "웃음 영상");
-        verify(pushDispatcher).laughterVideoReady(deviceId, videoId, "웃음 영상");
+        verify(mapper).insertVideoArrivedNotifications(deviceId, videoId, headline, "웃음 영상");
+        verify(pushDispatcher).videoArrived(deviceId, videoId, headline, "웃음 영상");
+    }
+
+    /** 감지 유형이 정한 제목이 알림함과 푸시에 그대로 실려야 한다. */
+    @Test
+    void videoArrivalNotificationCarriesTheEventSpecificHeadline() {
+        UUID deviceId = UUID.randomUUID();
+        UUID videoId = UUID.randomUUID();
+        String headline = "박수 소리가 담긴 영상이 도착했어요";
+
+        when(mapper.insertVideoArrivedNotifications(deviceId, videoId, headline, "박수 영상"))
+            .thenReturn(3);
+
+        new NotificationService(mapper, pushDispatcher)
+            .videoArrived(deviceId, videoId, headline, "박수 영상");
+
+        verify(pushDispatcher).videoArrived(deviceId, videoId, headline, "박수 영상");
     }
 
     @Test
     void duplicateNotificationDoesNotSendPushAgain() {
         UUID deviceId = UUID.randomUUID();
         UUID videoId = UUID.randomUUID();
-        when(mapper.insertLaughterVideoNotifications(deviceId, videoId, "웃음 영상"))
+        String headline = "웃음 영상이 도착했어요";
+        when(mapper.insertVideoArrivedNotifications(deviceId, videoId, headline, "웃음 영상"))
             .thenReturn(0);
 
         new NotificationService(mapper, pushDispatcher)
-            .laughterVideoReady(deviceId, videoId, "웃음 영상");
+            .videoArrived(deviceId, videoId, headline, "웃음 영상");
 
         verifyNoInteractions(pushDispatcher);
     }
