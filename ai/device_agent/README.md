@@ -355,6 +355,33 @@ resource checks pass, switch from `wj-edge-ai-mvp` to
 `wj-edge-ai-recording`. The installer prints the exact rollback commands; the
 original UDP consumers remain available throughout.
 
+### 부팅 직후 시계 점프와 `wj-media-clock-guard`
+
+젯슨에는 RTC 배터리가 없습니다. 부팅하면 커널 시계가 1970년에서 시작하고,
+`systemd-timesyncd`가 마지막으로 기록해 둔 시각으로 일단 되돌려 놓습니다. 그
+값은 지난번 종료 시각이지 지금 시각이 아니므로, 미디어 서비스는 틀린 시계 위에서
+올라오고 잠시 뒤 실제 NTP가 붙으면서 시계가 몇 시간을 한 번에 건너뜁니다.
+
+`media-source.sh`는 `-timestamps abs`와 `-copyts`로 벽시계를 그대로 PTS에
+싣습니다. 이벤트 클립을 녹화 구간에서 잘라내려면 그 성질이 필요하므로
+(`tests/test_media_source.py`가 이를 고정합니다) 플래그를 뺄 수 없습니다. 대신
+점프가 스트림을 깨뜨리므로, 점프가 끝난 뒤 체인을 다시 세웁니다.
+
+`wj-media-clock-guard`는 `/run/systemd/timesync/synchronized`가 생길 때까지
+기다린 뒤, 벽시계와 단조 시계가 벌어진 폭이 임계값(기본 5초)을 넘으면
+`wj-media-source` → `wj-mediamtx-local` → `wj-local-recording` →
+`wj-edge-ai-recording` 순으로 재시작합니다. 점프가 없으면 아무것도 하지 않습니다.
+
+`systemd-time-wait-sync`로 부팅을 막지 않는 이유는 그 유닛이 `sysinit.target`을
+붙잡기 때문입니다. 인터넷 없이 부팅하면 미디어가 영영 올라오지 않는데, 홈캠에서는
+그쪽이 더 나쁜 고장입니다. 서비스는 곧바로 띄우고 동기화가 확인되면 다시 세웁니다.
+기본 대기 상한은 15분이며, 그 안에 동기화가 없으면 아무것도 재시작하지 않습니다.
+
+```bash
+sudo systemctl enable --now wj-media-clock-guard
+journalctl -u wj-media-clock-guard -b --no-pager
+```
+
 ## Raspberry Pi 설치
 
 운영 Raspberry Pi에서는 하나의 프로세스만 카메라를 계속 점유하고, 기기

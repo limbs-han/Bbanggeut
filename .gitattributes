@@ -1,4 +1,6 @@
 *.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
 ci/load/*.py text eol=lf
 Jenkinsfile text eol=lf
 Dockerfile* text eol=lf

@@ -12,7 +12,11 @@ ExecStart=/opt/william-james/device-agent/media-source.sh
 SuccessExitStatus=255
 Restart=always
 RestartSec=3
-TimeoutStopSec=10
+# tee 로 네 갈래를 물고 있는 ffmpeg 는 SIGTERM 뒤 정리에 10초를 넘길 때가 있다.
+# 상한을 넘겨 SIGKILL 이 나가면 ALSA 가 장치를 늦게 반납해서, 이어지는 기동이
+# "Device or resource busy" 로 죽는다. media-source.sh 의 오디오 대기와 함께
+# 그 경합을 막는다.
+TimeoutStopSec=30
 KillMode=control-group
 NoNewPrivileges=true
 PrivateTmp=true

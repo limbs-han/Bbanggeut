@@ -164,6 +164,25 @@ class StreamManagerTest(unittest.TestCase):
         output_format_index = command.index("-f", command.index("-tls_verify"))
         self.assertLess(command.index("-tls_verify"), output_format_index)
 
+    def test_publish_stderr_reaches_the_journal(self):
+        # stderr 를 버리면 송출 실패의 원인이 저널에서 사라진다. 상속만이
+        # ffmpeg 의 오류를 유닛 로그로 보낸다.
+        captured: dict = {}
+
+        def factory(command, **kwargs):
+            captured.update(kwargs)
+            return FakeProcess()
+
+        manager = StreamManager(config(), factory)
+        manager.start(
+            "88888888-8888-4888-8888-888888888888",
+            datetime(2030, 1, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertIn("stderr", captured)
+        self.assertIsNone(captured["stderr"])
+        self.assertIs(captured["stdin"], subprocess.DEVNULL)
+
 
 if __name__ == "__main__":
     unittest.main()
