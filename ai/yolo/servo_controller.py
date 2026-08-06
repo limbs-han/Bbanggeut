@@ -2,8 +2,10 @@
 
 The controller keeps camera-space positions separate from raw servo pulses:
 
-* PAN defaults to -80 through +80 degrees; TILT defaults to -50 through +80
+* PAN defaults to -90 through +90 degrees; TILT defaults to -50 through +80
   degrees to avoid driving the installed linkage into its mechanical stop.
+  The pulse guard spans the full SG90 range, so these angle limits — not the
+  guard — are what keeps the linkage off its stops.
 * Pulse direction and calibration remain deployment settings because linkage
   orientation and individual SG90 endpoints vary.
 * The last commanded position is restored before the first hardware pulse so
@@ -669,9 +671,13 @@ class ServoController:
 
         Used after the servo power rail is switched on, so the controller
         never accumulates commands the servo cannot physically follow.
+
+        Refused while no startup position was restored. The held position is
+        then only an assumed PARK, and arming would track away from an angle
+        the linkage may not actually be sitting at.
         """
         with self._lock:
-            if self.output_armed:
+            if self.output_armed or not self.startup_position_restored:
                 return False
             self.output_armed = True
             self.target_pan_deg = self.current_pan_deg
@@ -680,6 +686,9 @@ class ServoController:
             return True
 
     def request_home(self) -> None:
+        # The state is named HOME on the wire, but the axes move to park_deg.
+        # home_deg is only the pulse calibration reference and stays at
+        # logical 0 degrees; PARK is where the linkage rests safely.
         with self._lock:
             if not self.output_armed:
                 return
@@ -688,6 +697,7 @@ class ServoController:
             self.target_tilt_deg = self.tilt.park_deg
 
     def is_at_home(self) -> bool:
+        # Named for the HOME state; compares against PARK, as request_home does.
         with self._lock:
             return (
                 abs(self.current_pan_deg - self.pan.park_deg) < 0.001
@@ -841,12 +851,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pan-min-deg",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MIN_DEG", "-80")),
+        default=float(os.getenv("SERVO_PAN_MIN_DEG", "-90")),
     )
     parser.add_argument(
         "--pan-max-deg",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MAX_DEG", "80")),
+        default=float(os.getenv("SERVO_PAN_MAX_DEG", "90")),
     )
     parser.add_argument(
         "--tilt-min-deg",
@@ -903,15 +913,19 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=float(os.getenv("SERVO_TILT_PULSE_US_PER_DEGREE", "5.555556")),
     )
+    # The SG90 datasheet range. It is a hardware backstop against pulses the
+    # servo cannot accept, not a travel limit: at the default scale it admits
+    # +-180 degrees. The per-axis *_MIN_DEG/*_MAX_DEG values are what keep the
+    # linkage off its mechanical stops.
     parser.add_argument(
         "--minimum-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_MINIMUM_PULSE_US", "1000")),
+        default=float(os.getenv("SERVO_MINIMUM_PULSE_US", "500")),
     )
     parser.add_argument(
         "--maximum-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_MAXIMUM_PULSE_US", "2000")),
+        default=float(os.getenv("SERVO_MAXIMUM_PULSE_US", "2500")),
     )
     parser.add_argument(
         "--pan-pulse-direction",
@@ -949,6 +963,17 @@ def parse_args() -> argparse.Namespace:
         "--message-timeout",
         type=float,
         default=float(os.getenv("SERVO_MESSAGE_TIMEOUT_SECONDS", "0.75")),
+    )
+    parser.add_argument(
+        "--nominal-message-interval",
+        type=float,
+        default=float(
+            os.getenv("SERVO_NOMINAL_MESSAGE_INTERVAL_SECONDS", "0.1")
+        ),
+        help=(
+            "Gap assumed for the first framing target, before a real interval "
+            "can be measured. Match the publisher's command interval."
+        ),
     )
     parser.add_argument(
         "--control-hz",
@@ -999,6 +1024,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--control-hz and --status-interval must be positive")
     if args.message_timeout <= 0:
         parser.error("--message-timeout must be positive")
+    if args.nominal_message_interval <= 0:
+        parser.error("--nominal-message-interval must be positive")
     if (
         args.state_max_age <= 0
         or args.state_save_interval <= 0
@@ -1070,6 +1097,7 @@ def run(args: argparse.Namespace) -> None:
         output=output,
         expected_device_id=args.device_id,
         message_timeout_seconds=args.message_timeout,
+        nominal_message_interval_seconds=args.nominal_message_interval,
         initial_position=restored_position,
         output_armed=(
             not args.enable_hardware
@@ -1178,8 +1206,15 @@ def run(args: argparse.Namespace) -> None:
                 "Servo armed: following targets from "
                 f"pan={pan_deg:+.2f}deg tilt={tilt_deg:+.2f}deg"
             )
-        else:
+        elif controller.output_armed:
             print("Servo armed already; SIGUSR1 ignored")
+        else:
+            print(
+                "Servo arm refused: no startup position was restored, so the "
+                "controller does not know where the linkage is. Check the "
+                f"physical angles, write a valid state file at {args.state_file} "
+                "and restart, or restart with SERVO_STARTUP_POSITION=park."
+            )
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)

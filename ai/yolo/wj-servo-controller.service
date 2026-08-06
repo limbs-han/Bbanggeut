@@ -18,7 +18,10 @@ WorkingDirectory=/home/ssafy/ai/yolo
 ExecStart=/home/ssafy/venvs/yolo/bin/python -u /home/ssafy/ai/yolo/servo_controller.py
 Restart=always
 RestartSec=2
-TimeoutStopSec=5
+# Shutdown parks both axes under the speed limit before the outputs go off.
+# TILT spans -50..+80 at 40deg/s, so the move alone can take 3.25s; 5s left no
+# room for the MQTT teardown, the state save and the channel disable.
+TimeoutStopSec=10
 NoNewPrivileges=true
 PrivateTmp=true
 

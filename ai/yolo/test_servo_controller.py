@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import io
 import os
 from pathlib import Path
 import sys
@@ -184,16 +185,36 @@ class FramingTargetValidationTests(unittest.TestCase):
 
 
 class AxisConfigurationTests(unittest.TestCase):
-    def test_defaults_limit_both_axes_to_80_degrees_from_home(self) -> None:
+    def test_defaults_limit_pan_to_90_and_tilt_to_the_mount_stop(self) -> None:
         with (
             patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
             patch.object(sys, "argv", ["servo_controller.py"]),
         ):
             pan, tilt = build_axis_configs(parse_args())
 
-        self.assertEqual((pan.minimum_deg, pan.maximum_deg), (-80.0, 80.0))
+        self.assertEqual((pan.minimum_deg, pan.maximum_deg), (-90.0, 90.0))
         self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (-50.0, 80.0))
         self.assertEqual((pan.park_deg, tilt.park_deg), (0.0, -50.0))
+        self.assertEqual(
+            (pan.minimum_pulse_us, pan.maximum_pulse_us),
+            (500.0, 2500.0),
+        )
+
+    def test_pan_90_does_not_fit_the_old_narrow_pulse_guard(self) -> None:
+        # PAN +-90 lands exactly on 1000 and 2000us, and the rounding of
+        # 5.555556us per degree pushes it just outside. The guard was widened
+        # to the SG90 datasheet range for this reason.
+        environment = {
+            "DEVICE_ID": DEVICE_ID,
+            "SERVO_MINIMUM_PULSE_US": "1000",
+            "SERVO_MAXIMUM_PULSE_US": "2000",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+            self.assertRaises(ValueError),
+        ):
+            build_axis_configs(parse_args())
 
     def test_startup_position_defaults_to_park(self) -> None:
         with (
@@ -227,6 +248,31 @@ class AxisConfigurationTests(unittest.TestCase):
             patch.object(sys, "argv", ["servo_controller.py"]),
         ):
             self.assertEqual(parse_args().startup_position, "persisted")
+
+    def test_nominal_message_interval_defaults_to_the_publisher_rate(
+        self,
+    ) -> None:
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertAlmostEqual(
+                parse_args().nominal_message_interval,
+                0.1,
+            )
+
+    def test_nominal_message_interval_must_be_positive(self) -> None:
+        environment = {
+            "DEVICE_ID": DEVICE_ID,
+            "SERVO_NOMINAL_MESSAGE_INTERVAL_SECONDS": "0",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+            patch.object(sys, "stderr", io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            parse_args()
 
     def test_tilt_supports_symmetric_limits_around_home(self) -> None:
         environment = {
@@ -473,6 +519,52 @@ class ServoControllerTests(unittest.TestCase):
 
         self.assertTrue(controller.tick(10.1))
         self.assertEqual(output.positions, [(0.0, -50.0)])
+
+    def test_arm_is_refused_when_no_startup_position_was_restored(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            output_armed=False,
+        )
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        self.assertFalse(controller.arm())
+
+        self.assertFalse(controller.output_armed)
+        self.assertEqual(controller.mode, "STARTUP_WAITING")
+        self.assertFalse(controller.tick(10.1))
+        self.assertEqual(output.positions, [])
+
+    def test_park_startup_still_arms_because_the_position_is_known(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis(
+                "TILT",
+                channel=1,
+                minimum=-80.0,
+                maximum=80.0,
+                park=-50.0,
+            ),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(0.0, -50.0),
+            output_armed=False,
+        )
+
+        self.assertTrue(controller.startup_position_restored)
+        self.assertTrue(controller.arm())
+        self.assertTrue(controller.output_armed)
+        self.assertEqual(controller.mode, "HOLD")
 
     def test_first_pulse_exactly_restores_saved_position(self) -> None:
         output = RecordingOutput()
