@@ -22,7 +22,10 @@ import 'comic_script.dart';
 /// 서버가 없던 동안에는 기본이 견본이었다. 이제 백엔드 게이트웨이(API-71·72)와
 /// 만화 워커가 있으므로 뒤집었다 — 빌드할 때마다 인자를 붙여야 하는 쪽이
 /// 위험하다. 붙이는 걸 잊으면 오류가 아니라 **가짜 만화가 그대로 출고된다.**
-const comicServerReady = bool.fromEnvironment('COMIC_SERVER', defaultValue: true);
+const comicServerReady = bool.fromEnvironment(
+  'COMIC_SERVER',
+  defaultValue: true,
+);
 
 /// 기본 화풍. 화면에 고르는 UI를 두지 않는다(설계의 "하지 않는 것").
 const comicDefaultStyle = 'webtoon';
@@ -111,7 +114,10 @@ class HttpComicGateway implements ComicGateway {
   final ApiClient api;
 
   @override
-  Future<List<ComicCut>> script(String videoId, List<CaptionLine> lines) async =>
+  Future<List<ComicCut>> script(
+    String videoId,
+    List<CaptionLine> lines,
+  ) async =>
       parseComicCuts(await api.createComicScript(videoId, linesToJson(lines)));
 
   @override
@@ -167,15 +173,8 @@ class FakeComicGateway implements ComicGateway {
       scene: '아이가 손을 뒤로 감추며 아니라고 하는 순간',
       dialogue: '안 만졌는데요',
     ),
-    ComicCut(
-      beat: '절정',
-      scene: '탁자 위 물건이 바닥에 흩어져 있고 세 사람이 눈을 크게 뜨고 보는 순간',
-    ),
-    ComicCut(
-      beat: '여운',
-      scene: '온 가족이 마주 보며 크게 웃는 순간',
-      dialogue: '안 만졌다면서',
-    ),
+    ComicCut(beat: '절정', scene: '탁자 위 물건이 바닥에 흩어져 있고 세 사람이 눈을 크게 뜨고 보는 순간'),
+    ComicCut(beat: '여운', scene: '온 가족이 마주 보며 크게 웃는 순간', dialogue: '안 만졌다면서'),
   ];
 
   /// 2x2로 나뉜 색 블록. 자막을 얹을 칸이 보이면 화면 작업에 충분하다.

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:william_james_app/editor/editor_ar_effects.dart';
 import 'package:william_james_app/editor/editor_project.dart';
 import 'package:william_james_app/editor/editor_project_controller.dart';
+import 'package:william_james_app/editor/editor_tokens.dart';
 import 'package:william_james_app/editor/editor_trim_bar.dart';
 import 'package:william_james_app/editor/editor_workspace.dart';
 import 'package:william_james_app/editor/edit_recommendation_client.dart';
@@ -28,10 +29,11 @@ void main() {
     ValueChanged<EditorLook>? onLookSelected,
     VoidCallback? onAiCaption,
     ValueChanged<EditorZoomSegment>? onZoomChanged,
-    ValueChanged<String>? onTextEdit,
     VoidCallback? onText,
     bool directCaptionAddMode = false,
     VoidCallback? onDirectCaptionAddMode,
+    ValueChanged<String>? onEditCaption,
+    ValueChanged<String>? onDeleteCaption,
     VoidCallback? onPlayRange,
     ValueChanged<String>? onBlocked,
     List<String> thumbnails = const [],
@@ -70,8 +72,8 @@ void main() {
         onText: onText ?? () {},
         directCaptionAddMode: directCaptionAddMode,
         onDirectCaptionAddMode: onDirectCaptionAddMode,
-        onTextEdit: onTextEdit ?? (_) {},
-        onTextRemove: (_) {},
+        onEditCaption: onEditCaption,
+        onDeleteCaption: onDeleteCaption,
         onVolumeChanged: (_) {},
         onMutedChanged: (_) {},
         onStickerSelected: onStickerSelected ?? (_) {},
@@ -165,6 +167,65 @@ void main() {
 
   /// 갤럭시 S24+ 기준. 논리 411×891dp에서 상태바·제스처바를 뺀 안쪽이다.
   const galaxyS24Plus = Size(411, 840);
+
+  // 자막 판은 눈금 판과 카드 줄을 함께 세운다. 세로가 짧은 기기에서 그 둘이
+  // 미리보기를 파고들지 않는지, 겹친 자막까지 넣고 크기마다 확인한다.
+  for (final size in const [
+    Size(360, 660),
+    Size(360, 740),
+    galaxyS24Plus,
+    Size(412, 915),
+  ]) {
+    testWidgets(
+      '${size.width.toInt()}×${size.height.toInt()}에서 자막 판과 카드 줄이 넘치지 않는다',
+      (tester) async {
+        tester.view
+          ..physicalSize = size
+          ..devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final controller = newController()..selectTool(EditorTool.text);
+        addTearDown(controller.dispose);
+        controller.applyTranscriptCaptions([
+          (startMs: 1000, endMs: 7000, text: '안녕'),
+          (startMs: 2000, endMs: 6000, text: '아 진짜 신기해'),
+          (startMs: 3000, endMs: 6000, text: '지금 뭐 해?'),
+          (startMs: 3500, endMs: 6500, text: '여기 봐봐'),
+          (startMs: 4000, endMs: 7000, text: '웃어봐'),
+        ]);
+        controller.addTextLayer(
+          text: '아주 긴 자막 문장이 들어와도 카드가 넘치지 않아야 해요',
+          startMs: 8000,
+          endMs: 11000,
+        );
+
+        await tester.pumpWidget(
+          workspace(controller, onSeek: controller.setPlayhead),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull, reason: '자막 판이 넘쳤다');
+        expect(find.byKey(const Key('editor-caption-cards')), findsOneWidget);
+        // 미리보기는 어느 크기에서도 최소 높이(화면의 32%)를 지킨다.
+        expect(
+          tester.getSize(find.byType(VideoPreviewWorkspace)).height,
+          greaterThanOrEqualTo(size.height * 0.32),
+        );
+
+        // 배율을 끝까지 올려도, 카드 줄을 끝까지 넘겨도 그대로다.
+        for (var tap = 0; tap < 5; tap++) {
+          await tester.tap(find.byKey(const Key('editor-caption-zoom-in')));
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        await tester.drag(
+          find.byKey(const Key('editor-caption-cards')),
+          const Offset(-800, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '배율·카드 줄에서 넘쳤다');
+      },
+    );
+  }
 
   testWidgets('S24+에서 미리보기가 어느 탭에서도 화면의 절반을 넘게 쓴다', (tester) async {
     tester.view
@@ -300,7 +361,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('하단 네비는 클립 도구 다섯에 전체 도구 둘을 구분선 너머에 둔다', (tester) async {
+  testWidgets('하단 네비는 도구 일곱 개가 너비를 똑같이 나눠 쓴다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -310,7 +371,7 @@ void main() {
 
     await tester.pumpWidget(workspace(controller));
 
-    for (final tool in const [
+    const navTools = [
       EditorTool.cut,
       EditorTool.ratio,
       EditorTool.zoom,
@@ -318,15 +379,22 @@ void main() {
       EditorTool.sticker,
       EditorTool.audio,
       EditorTool.effect,
-    ]) {
+    ];
+    for (final tool in navTools) {
       expect(
         find.byKey(Key('editor-nav-${tool.name}')),
         findsOneWidget,
         reason: '${tool.name} 탭이 없다',
       );
     }
-    // 오디오·효과는 영상 전체에 걸리는 도구라 구분선 오른쪽에 있다.
-    expect(find.byKey(const Key('editor-nav-divider')), findsOneWidget);
+    // 구분선은 걷어냈다 — 한 줄이 두 덩이로 읽히면 아래 줄이 위 타임라인보다
+    // 먼저 눈에 들어온다.
+    expect(find.byKey(const Key('editor-nav-divider')), findsNothing);
+    final widths = {
+      for (final tool in navTools)
+        tester.getSize(find.byKey(Key('editor-nav-${tool.name}'))).width,
+    };
+    expect(widths.length, 1, reason: '탭 폭이 서로 다르다');
     // AI 자막은 자막 탭의 버튼으로, AR은 스티커 탭의 줄로 들어갔다.
     expect(find.byKey(const Key('editor-nav-aiCaption')), findsNothing);
     expect(find.byKey(const Key('editor-nav-ar')), findsNothing);
@@ -661,6 +729,10 @@ void main() {
       find.byKey(const Key('editor-open-text-sheet')).hitTestable(),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const Key('editor-open-ai-caption')).hitTestable(),
+      findsOneWidget,
+    );
     expect(find.text('직접 자막').hitTestable(), findsOneWidget);
     expect(find.text('자동 자막').hitTestable(), findsOneWidget);
 
@@ -716,7 +788,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('이 위치에 자막 추가'), findsOneWidget);
-    expect(find.byKey(const Key('editor-caption-start-handle')), findsNothing);
+    // 추가 카드가 줄 칸을 차지하는 동안에는 자막 줄이 서지 않는다.
+    expect(find.byKey(const Key('editor-caption-rows')), findsNothing);
 
     await tester.tap(
       find
@@ -750,17 +823,25 @@ void main() {
     await tester.pumpWidget(workspace(controller));
     await tester.pumpAndSettle();
 
+    // 재는 기준은 **앱이 실제로 쓰는 칸**(SafeArea 안쪽 835dp)이다.
+    //
+    // 물리 높이 891dp에는 상태바 32dp와 제스처바 24dp가 들어 있는데, 거기에는
+    // 어느 탭도 그리지 않는다. 이 파일의 다른 S24+ 검사들도 안쪽 높이(840dp)를
+    // 기준으로 절반을 따진다 — 같은 잣대를 쓴다.
+    const usableHeight = 891 - 32 - 24;
     final preview = tester.getSize(find.byType(VideoPreviewWorkspace)).height;
     expect(
       preview,
-      greaterThanOrEqualTo(891 * 0.5),
+      greaterThanOrEqualTo(usableHeight * 0.5),
       reason: '자막이 있는 자막 탭에서 미리보기가 절반 밑으로 눌렸다 (${preview}dp)',
     );
-    // 눈금 세 줄이 다 서 있어야 한다 — 미리보기를 키우려고 접으면 안 된다.
+    // 판의 세 조각이 다 서 있어야 한다 — 미리보기를 키우려고 접으면 안 된다.
+    // 예전에는 직접·AI 두 레인이 따로 있었지만, 지금은 겹치는 자막만 아래로
+    // 쌓이는 줄 칸 하나가 그 자리를 대신한다.
     for (final key in const [
       'editor-caption-video-track',
-      'editor-caption-direct-track',
-      'editor-caption-ai-track',
+      'editor-caption-rows',
+      'editor-caption-cards',
     ]) {
       expect(find.byKey(Key(key)), findsOneWidget, reason: '$key가 사라졌다');
     }
@@ -810,10 +891,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull, reason: '자막이 있는 탭이 넘쳤다');
 
-    for (final key in const [
+    // 손잡이 키에는 자막 id가 붙는다 — 고른 자막 하나에만 서기 때문이다.
+    final selectedId = controller.project.selectedLayerId;
+    for (final key in [
       'editor-caption-track-timeline',
-      'editor-caption-start-handle',
-      'editor-caption-end-handle',
+      'editor-caption-start-handle-$selectedId',
+      'editor-caption-end-handle-$selectedId',
       'editor-open-text-sheet',
       'editor-open-ai-caption',
     ]) {
@@ -870,8 +953,9 @@ void main() {
 
     // 영상 레인과 자막 손잡이는 그대로 있다.
     expect(find.byKey(const Key('editor-caption-video-track')), findsOneWidget);
+    final layerId = controller.project.textLayers.single.id;
     expect(
-      find.byKey(const Key('editor-caption-start-handle')),
+      find.byKey(Key('editor-caption-start-handle-$layerId')),
       findsOneWidget,
     );
 
@@ -908,8 +992,10 @@ void main() {
 
     // 끝 손잡이를 클립 밖으로 한참 끈다.
     final gesture = await tester.startGesture(
-      tester.getCenter(find.byKey(const Key('editor-caption-end-handle'))),
+      tester.getCenter(find.byKey(Key('editor-caption-end-handle-$id'))),
     );
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
     await gesture.moveBy(const Offset(400, 0));
     await tester.pump();
     await gesture.up();
@@ -938,17 +1024,23 @@ void main() {
     await tester.pumpWidget(workspace(controller));
     await tester.pumpAndSettle();
 
-    final startHandle = find.byKey(const Key('editor-caption-start-handle'));
-    // 보이는 손잡이는 10dp지만 눌리는 자리는 44dp다.
-    expect(tester.getSize(startHandle).width, 44);
+    final startHandle = find.byKey(Key('editor-caption-start-handle-$id'));
+    // 보이는 마개는 6dp지만 눌리는 자리는 26dp다. 44dp까지 넓히면 두 손잡이가
+    // 서로 겹쳐, 짧은 자막을 통째로 옮기는 손짓이 아예 잡히지 않는다.
+    expect(tester.getSize(startHandle).width, 26);
 
     final timeline = find.byKey(const Key('editor-caption-track-timeline'));
-    // 라벨 54dp와 오른쪽 여백 8dp를 뺀 것이 눈금의 실제 폭이다.
-    final trackWidth = tester.getSize(timeline).width - 54 - 8;
-    final msPerPx = 12000 / trackWidth;
+    // 눈금은 판 폭을 그대로 쓴다 — 왼쪽 라벨 칸이 없다.
+    final msPerPx = 12000 / tester.getSize(timeline).width;
 
     // 재생 위치 100ms 앞까지만 끌어도 딱 붙어야 한다.
+    //
+    // 첫 20dp는 "끌기"로 인정받는 데 쓰인다(kDragSlopDefault). 한 번에 밀면
+    // 그 거리가 통째로 슬롭에 먹혀 손잡이가 제자리에 선다 — 실제 손가락도
+    // 같은 순서로 움직인다.
     final gesture = await tester.startGesture(tester.getCenter(startHandle));
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
     await gesture.moveBy(Offset((2900 - 2000) / msPerPx, 0));
     await tester.pump();
 
@@ -977,12 +1069,13 @@ void main() {
     await tester.pumpAndSettle();
 
     final timeline = find.byKey(const Key('editor-caption-track-timeline'));
-    final trackWidth = tester.getSize(timeline).width - 54 - 8;
-    final msPerPx = 12000 / trackWidth;
+    final msPerPx = 12000 / tester.getSize(timeline).width;
 
     final gesture = await tester.startGesture(
-      tester.getCenter(find.byKey(const Key('editor-caption-start-handle'))),
+      tester.getCenter(find.byKey(Key('editor-caption-start-handle-$id'))),
     );
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
     await gesture.moveBy(Offset((4000 - 2000) / msPerPx, 0));
     await tester.pump();
     await gesture.up();
@@ -1410,32 +1503,38 @@ void main() {
     expect(find.byKey(Key('editor-zoom-scene-$zoomId')), findsOneWidget);
   });
 
-  testWidgets('기존 텍스트를 목록에서 다시 수정할 수 있다', (tester) async {
+  // 고치기·지우기는 영상 위 글자 상자로 옮겼다. 자막 막대에는 길이 손잡이만
+  // 남는다 — 좁은 막대에 아이콘 넷이 들어가면 길이를 잡을 자리가 없다.
+  testWidgets('자막 막대에는 연필도 휴지통도 없다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final controller = newController();
     addTearDown(controller.dispose);
-    controller.addTextLayer(text: '다시 고칠 문구');
+    controller.addTextLayer(text: '다시 고칠 문구', startMs: 1000, endMs: 6000);
     controller.selectTool(EditorTool.text);
-    String? editedId;
 
-    await tester.pumpWidget(
-      workspace(controller, onTextEdit: (id) => editedId = id),
-    );
-    // 자막 카드 전체를 누르면 기존과 같이 내용 수정으로 들어간다.
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
     final layerId = controller.project.textLayers.single.id;
-    final editCard = find.byKey(Key('editor-edit-text-$layerId'));
+    expect(controller.project.selectedLayerId, layerId);
+    expect(find.byKey(Key('editor-caption-segment-$layerId')), findsOneWidget);
+    expect(find.byKey(Key('editor-edit-text-$layerId')), findsNothing);
+    expect(find.byKey(Key('editor-caption-remove-$layerId')), findsNothing);
+    // 대신 길이 손잡이는 그대로 있다.
     expect(
-      find.descendant(of: editCard, matching: find.text('직접')),
+      find.byKey(Key('editor-caption-start-handle-$layerId')),
       findsOneWidget,
     );
-    await tester.tap(editCard);
-    expect(editedId, layerId);
+    expect(
+      find.byKey(Key('editor-caption-end-handle-$layerId')),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('자막 타임라인은 직접·AI를 나누고 손잡이로 길이를 바꾼다', (tester) async {
+  testWidgets('겹치지 않는 자막은 한 줄을 나눠 쓰고, 순번마다 색이 갈린다', (tester) async {
     tester.view
       ..physicalSize = const Size(411, 890)
       ..devicePixelRatio = 1;
@@ -1459,19 +1558,31 @@ void main() {
       workspace(controller, onSeek: controller.setPlayhead),
     );
 
-    expect(
-      find.byKey(const Key('editor-caption-direct-track')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('editor-caption-ai-track')), findsOneWidget);
     final directSegment = find.byKey(Key('editor-caption-segment-$directId'));
     final aiSegment = find.byKey(Key('editor-caption-segment-$aiId'));
     expect(directSegment, findsOneWidget);
     expect(aiSegment, findsOneWidget);
+    // 앞뒤로 떨어져 있으니 한 줄을 나눠 쓴다 — 자막마다 줄을 하나씩 주면
+    // 안 겹치는 자막 스무 개가 스무 줄이 된다.
+    expect(tester.getCenter(directSegment).dy, tester.getCenter(aiSegment).dy);
+    // 길이 손잡이는 **고른 줄에만** 붙는다.
     expect(
-      tester.getCenter(directSegment).dy,
-      isNot(tester.getCenter(aiSegment).dy),
+      find.byKey(Key('editor-caption-start-handle-$directId')),
+      findsOneWidget,
     );
+    expect(
+      find.byKey(Key('editor-caption-end-handle-$directId')),
+      findsOneWidget,
+    );
+    expect(find.byKey(Key('editor-caption-start-handle-$aiId')), findsNothing);
+    // 얇은 막대라 제 색을 거의 그대로 쓴다. 색은 순번에서 나오므로 이웃한
+    // 둘은 늘 다르다. 고른 것만 온전한 원색이다.
+    final directFill = _barFillColor(tester, directSegment);
+    final aiFill = _barFillColor(tester, aiSegment);
+    expect(directFill.withValues(alpha: 1), EditorCaptionTokens.colorAt(0));
+    expect(aiFill.withValues(alpha: 1), isNot(directFill.withValues(alpha: 1)));
+    expect(directFill.a, 1);
+    expect(aiFill.a, lessThan(1));
 
     final playheadBefore = controller.project.playheadMs;
     await tester.drag(
@@ -1481,12 +1592,14 @@ void main() {
     await tester.pump();
     expect(controller.project.playheadMs, greaterThan(playheadBefore));
 
+    // 봉에서 멀찍이 끈다 — 가까이 두면 자석이 봉에 붙여 버려, 손잡이가
+    // 움직였는지 자석이 잡았는지를 이 검사로는 가릴 수 없다.
     final before = controller.project.textLayers.firstWhere(
       (layer) => layer.id == directId,
     );
     await tester.drag(
-      find.byKey(const Key('editor-caption-start-handle')),
-      const Offset(32, 0),
+      find.byKey(Key('editor-caption-start-handle-$directId')),
+      const Offset(70, 0),
     );
     await tester.pump();
     final after = controller.project.textLayers.firstWhere(
@@ -1495,11 +1608,719 @@ void main() {
     expect(after.startMs, greaterThan(before.startMs));
     expect(after.endMs, before.endMs);
 
+    // 다른 줄을 누르면 그 줄이 고른 줄이 되고, 손잡이가 그리로 옮겨 간다.
     await tester.tap(aiSegment);
     await tester.pump();
     expect(controller.project.selectedLayerId, aiId);
+    // 고른 자리가 옮겨 간다 — 둘째 줄이 진해지고 첫 줄은 다시 옅어진다.
+    expect(
+      _barFillColor(tester, aiSegment).withValues(alpha: 1),
+      aiFill.withValues(alpha: 1),
+    );
+    expect(_barFillColor(tester, aiSegment).a, greaterThan(aiFill.a));
+    expect(_barFillColor(tester, directSegment).a, lessThan(directFill.a));
+    expect(
+      find.byKey(Key('editor-caption-start-handle-$aiId')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(Key('editor-caption-start-handle-$directId')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('자막이 없으면 만드는 두 갈래만, 하나 생기면 자막 판이 그 자리를 넘겨받는다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    // 아직 손댈 자막이 없다 — 눈금도 줄 칸도 띄우지 않는다.
+    expect(find.textContaining('자막 ·').hitTestable(), findsOneWidget);
+    expect(
+      find.byKey(const Key('editor-caption-track-timeline')),
+      findsNothing,
+    );
+
+    controller.addTextLayer(text: '안녕', startMs: 1000, endMs: 4000);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 하나 생기면 자막 판이 서고, 만드는 두 갈래는 큰 카드에서 자막 카드 줄
+    // 머리의 단추 둘로 줄어든다 — 같은 자리에 계속 있으니 찾아 헤맬 일이 없다.
+    expect(
+      find.byKey(const Key('editor-caption-track-timeline')),
+      findsOneWidget,
+    );
+    expect(find.text('프레임 타임라인').hitTestable(), findsOneWidget);
+    expect(find.text('자막 · 이 클립의 자막').hitTestable(), findsOneWidget);
+    expect(find.text('직접 자막'), findsNothing);
+    expect(
+      find.byKey(const Key('editor-open-text-sheet')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('editor-open-ai-caption')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('최소 폭을 넘는 자막은 막대 폭이 곧 길이다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller
+      ..addTextLayer(text: '짧은 자막', startMs: 1000, endMs: 6000)
+      ..addTextLayer(text: '긴 자막', startMs: 1500, endMs: 11500);
+    final shortId = controller.project.textLayers.first.id;
+    final longId = controller.project.textLayers.last.id;
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    final shortBar = find.byKey(Key('editor-caption-segment-$shortId'));
+    final longBar = find.byKey(Key('editor-caption-segment-$longId'));
+    // 5초짜리와 10초짜리가 같은 폭으로 보이면 안 된다.
+    expect(
+      tester.getRect(longBar).width,
+      greaterThan(tester.getRect(shortBar).width * 1.7),
+    );
+    // **그려지는 막대**도 같은 폭이다. 손가락 자리만 넓고 색 막대는 폭 0으로
+    // 접혀 점처럼 보인 적이 있어, 칠해지는 네모를 직접 재 둔다.
+    final shortPaint = _barRect(tester, shortBar);
+    final longPaint = _barRect(tester, longBar);
+    expect(shortPaint.width, moreOrLessEquals(tester.getRect(shortBar).width));
+    expect(longPaint.width, greaterThan(shortPaint.width * 1.7));
+    // 그리고 가로로 눕는다 — 폭이 두께보다 훨씬 크다.
+    expect(shortPaint.width, greaterThan(shortPaint.height * 2));
+    expect(shortPaint.height, moreOrLessEquals(4, epsilon: 0.01));
+    // 글자는 막대가 아니라 아래 자막 카드가 말한다 — 막대는 길이와 색만
+    // 말하므로 짧은 자막이 글자 때문에 부풀지 않는다.
+    expect(
+      find.descendant(of: shortBar, matching: find.text('짧은 자막')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(Key('editor-caption-card-$shortId')),
+        matching: find.text('짧은 자막'),
+      ),
+      findsOneWidget,
+    );
+
+    controller.selectLayer(shortId);
+    await tester.pump();
+    final before = tester.getRect(shortBar).width;
+    await tester.drag(
+      find.byKey(Key('editor-caption-end-handle-$shortId')),
+      const Offset(60, 0),
+    );
+    await tester.pump();
+
+    // 손잡이를 끌면 자막 길이와 막대 폭이 함께 는다.
+    expect(
+      controller.project.textLayers
+          .firstWhere((layer) => layer.id == shortId)
+          .endMs,
+      greaterThan(6500),
+    );
+    expect(tester.getRect(shortBar).width, greaterThan(before + 20));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('자막 손잡이는 재생 봉과 이웃 자막 끝에 달라붙는다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller
+      ..addTextLayer(text: '앞 자막', startMs: 1000, endMs: 4000)
+      ..addTextLayer(text: '뒤 자막', startMs: 8000, endMs: 10000)
+      ..setPlayhead(6000);
+    final movingId = controller.project.textLayers.first.id;
+    // 손잡이는 고른 줄에만 붙는다 — 끌기 전에 먼저 고른다.
+    controller.selectLayer(movingId);
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    // 손가락은 6005ms쯤에서 멈추지만 자석이 재생 봉(6000ms)에 딱 붙인다.
+    final endHandle = find.byKey(Key('editor-caption-end-handle-$movingId'));
+    await tester.drag(endHandle, const Offset(80, 0));
+    await tester.pump();
+    expect(
+      controller.project.textLayers.firstWhere((l) => l.id == movingId).endMs,
+      6000,
+    );
+
+    // 한 번 더 끌면 이번에는 뒤 자막의 시작(8000ms)에 붙는다.
+    await tester.drag(endHandle, const Offset(80, 0));
+    await tester.pump();
+    expect(
+      controller.project.textLayers.firstWhere((l) => l.id == movingId).endMs,
+      8000,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  // 실기기(S24+)에서 자막 판이 깨지지 않는지 몰아서 확인한다. 긴 영상,
+  // 아주 짧은 자막, 아주 긴 글, 겹치는 무더기, 배율을 끝까지 올린 상태까지.
+  testWidgets('S24+ 자막 판은 어떤 자막 더미에서도 깨지지 않는다', (tester) async {
+    tester.view
+      ..physicalSize = galaxyS24Plus
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/source.mp4',
+        sourceDurationMs: 180000,
+        sourceSize: const EditorSourceSize(width: 1920, height: 1080),
+      ),
+    )..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      for (var index = 0; index < 40; index++)
+        (
+          startMs: index * 4000,
+          // 0.2초짜리부터 40초짜리까지 섞고, 뒤로 갈수록 서로 겹친다.
+          endMs: index * 4000 + (index.isEven ? 200 : 3000 + index * 900),
+          text: index.isEven ? '짧' : '아주 긴 자막 문장이 들어와도 네모가 넘치지 않아야 해요 $index',
+        ),
+    ]);
+    controller.addTextLayer(text: '직접 넣은 자막', startMs: 0, endMs: 180000);
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '1배율에서 넘쳤다');
+
+    // 배율을 끝까지 올린다.
+    for (var tap = 0; tap < 6; tap++) {
+      await tester.tap(find.byKey(const Key('editor-caption-zoom-in')));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '최대 배율에서 넘쳤다');
+
+    // 자막 카드 줄을 끝까지 넘겼다 되돌린다.
+    final cards = find.byKey(const Key('editor-caption-cards'));
+    await tester.drag(cards, const Offset(-2000, 0));
+    await tester.pump();
+    await tester.drag(cards, const Offset(2000, 0));
+    await tester.pump();
+    expect(tester.takeException(), isNull, reason: '카드 줄을 넘기다 넘쳤다');
+
+    // 미리보기는 여전히 화면의 절반을 넘게 쓴다. 자막 카드 줄이 새로 자리를
+    // 잡았지만, 막대가 얇아져 줄 칸이 그만큼 줄었다.
+    expect(
+      tester.getSize(find.byType(VideoPreviewWorkspace)).height,
+      greaterThan(galaxyS24Plus.height * 0.5),
+    );
+  });
+
+  testWidgets('겹치는 자막은 아래 줄로 밀린다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 5000, text: '먼저 뜨는 자막'),
+      (startMs: 3000, endMs: 7000, text: '겹쳐 뜨는 자막'),
+      (startMs: 8000, endMs: 11000, text: '한참 뒤 자막'),
+    ]);
+    final ids = controller.project.textLayers.map((layer) => layer.id).toList();
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    Offset centerOf(String id) =>
+        tester.getCenter(find.byKey(Key('editor-caption-segment-$id')));
+    // 겹치는 둘은 위아래로 갈라서고, 뒤에 떨어져 있는 것은 첫 줄로 돌아온다.
+    expect(centerOf(ids[0]).dy, isNot(centerOf(ids[1]).dy));
+    expect(centerOf(ids[2]).dy, centerOf(ids[0]).dy);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('셋 이상 겹친 자막은 +N 배지로 접히고 배지를 누르면 시트가 펼친다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    // 사진과 같은 상황 — 같은 자리에 자막 다섯이 겹친다.
+    controller.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 7000, text: '안녕'),
+      (startMs: 2000, endMs: 6000, text: '아 진짜 신기해'),
+      (startMs: 3000, endMs: 6000, text: '지금 뭐 해?'),
+      (startMs: 3500, endMs: 6500, text: '네 번째'),
+      (startMs: 4000, endMs: 7000, text: '다섯 번째'),
+    ]);
+    final ids = controller.project.textLayers.map((layer) => layer.id).toList();
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    await tester.pumpAndSettle();
+
+    final strip = find.byKey(const Key('editor-caption-video-track'));
+    final stripBefore = tester.getRect(strip);
+    // 막대는 세 줄까지만 그린다. 나머지 둘은 배지 하나로 접힌다.
+    expect(find.byKey(Key('editor-caption-segment-${ids[0]}')), findsOneWidget);
+    expect(find.byKey(Key('editor-caption-segment-${ids[1]}')), findsOneWidget);
+    expect(find.byKey(Key('editor-caption-segment-${ids[2]}')), findsOneWidget);
+    expect(find.byKey(Key('editor-caption-segment-${ids[3]}')), findsNothing);
+    expect(find.byKey(Key('editor-caption-segment-${ids[4]}')), findsNothing);
+    expect(find.text('+2'), findsOneWidget);
+
+    // 배지는 **마지막 줄 아래 빈 칸**에 선다. 줄 위에 얹으면 그 자리의 막대가
+    // 숫자를 덮어, 정작 몇 줄이 더 있는지를 읽을 수 없다.
+    final badge = find.ancestor(
+      of: find.text('+2'),
+      matching: find.byType(GestureDetector),
+    );
+    final badgeRect = tester.getRect(badge.first);
+    for (final id in ids) {
+      final bar = find.byKey(Key('editor-caption-segment-$id'));
+      if (bar.evaluate().isEmpty) continue;
+      expect(
+        badgeRect.top,
+        greaterThanOrEqualTo(tester.getRect(bar).bottom),
+        reason: '배지가 막대를 덮는다',
+      );
+    }
+    // 접힌 덩이가 끝나는 자리에 걸친다 — 해당 막대의 오른쪽 아래다.
+    expect(
+      badgeRect.center.dx,
+      moreOrLessEquals(
+        tester
+            .getRect(find.byKey(Key('editor-caption-segment-${ids[0]}')))
+            .right,
+        epsilon: 12,
+      ),
+    );
+    // 알갱이는 작아도 겨누기 쉬워야 한다.
+    expect(badgeRect.width, greaterThanOrEqualTo(44));
+    expect(badgeRect.height, greaterThanOrEqualTo(18));
+
+    // 프레임 띠와 눈금은 제자리다 — "지금 어디"가 흔들리지 않는다.
+    expect(tester.getRect(strip), stripBefore);
+
+    await tester.tap(find.text('+2'));
+    await tester.pumpAndSettle();
+
+    // 접힌 자막만이 아니라 그 시점에 떠 있는 자막 전부가 시트에 선다.
+    expect(find.text('현재 시점 자막 5개'), findsOneWidget);
+    expect(find.text('다섯 번째'), findsOneWidget);
+    // 시트는 미리보기를 덮지 않는다 — 자막 판 위로 올라오지 않는다.
+    final sheet = tester.getRect(
+      find.byKey(const Key('editor-caption-overlap-rows')),
+    );
+    expect(
+      sheet.top,
+      greaterThan(tester.getRect(find.byType(VideoPreviewWorkspace)).bottom),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('막대와 자막 카드는 서로를 가리킨다', (tester) async {
+    tester.view
+      ..physicalSize = galaxyS24Plus
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      for (var index = 0; index < 8; index++)
+        (startMs: index * 1200, endMs: index * 1200 + 900, text: '자막 $index'),
+    ]);
+    final ids = controller.project.textLayers.map((layer) => layer.id).toList();
+    String? editRequested;
+
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        onSeek: controller.setPlayhead,
+        onEditCaption: (id) => editRequested = id,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 카드 줄은 자막마다 한 장, 번호와 글이 함께 선다.
+    expect(find.byKey(const Key('editor-caption-cards')), findsOneWidget);
+    expect(find.text('8개'), findsOneWidget);
+
+    // 두 장이 온전히 서고 셋째가 화면 밖으로 반쯤 잘린다 — "옆으로 더
+    // 있다"가 스크롤바 없이 읽혀야 한다.
+    final strip = tester.getRect(find.byKey(const Key('editor-caption-cards')));
+    final visible = [
+      for (var index = 0; index < 8; index++)
+        find.byKey(Key('editor-caption-card-${ids[index]}')),
+    ].where((card) => card.evaluate().isNotEmpty).toList();
+    expect(visible.length, greaterThanOrEqualTo(3));
+    expect(tester.getRect(visible[1]).right, lessThanOrEqualTo(strip.right));
+    expect(tester.getRect(visible[2]).right, greaterThan(strip.right));
+
+    // 뒤쪽 막대를 누르면 그 카드가 줄 가운데로 흘러온다 — 처음에는 화면
+    // 밖이라 그려지지도 않은 카드다.
+    final farCard = find.byKey(Key('editor-caption-card-${ids[4]}'));
+    expect(farCard, findsNothing);
+    await tester.tap(find.byKey(Key('editor-caption-segment-${ids[4]}')));
+    await tester.pumpAndSettle();
+
+    expect(controller.project.selectedLayerId, ids[4]);
+    expect(farCard, findsOneWidget);
+    final viewport = tester.getRect(
+      find.byKey(const Key('editor-caption-cards')),
+    );
+    expect(
+      tester.getRect(farCard).center.dx,
+      moreOrLessEquals(viewport.center.dx, epsilon: 2),
+    );
+
+    // 거꾸로 옆 카드를 누르면 그 막대가 고른 막대가 된다 — 테두리도 그림자도
+    // 두르지 않고, 조금 두꺼워지는 것만으로 알린다.
+    final thinBefore = _barRect(
+      tester,
+      find.byKey(Key('editor-caption-segment-${ids[5]}')),
+    ).height;
+    await tester.tap(find.byKey(Key('editor-caption-card-${ids[5]}')));
+    await tester.pumpAndSettle();
+    expect(controller.project.selectedLayerId, ids[5]);
+    final segment = find.byKey(Key('editor-caption-segment-${ids[5]}'));
+    final decoration =
+        tester
+                .widget<DecoratedBox>(
+                  find
+                      .descendant(
+                        of: segment,
+                        matching: find.byType(DecoratedBox),
+                      )
+                      .first,
+                )
+                .decoration
+            as BoxDecoration;
+    expect(decoration.border, isNull);
+    expect(decoration.boxShadow, isNull);
+    expect(_barRect(tester, segment).height, greaterThan(thinBefore));
+
+    // 고른 카드에만 연필이 선다.
+    expect(find.byKey(Key('editor-caption-card-edit-${ids[4]}')), findsNothing);
+    await tester.tap(find.byKey(Key('editor-caption-card-edit-${ids[5]}')));
+    expect(editRequested, ids[5]);
+
+    // 맨 끝 자막은 줄 끝이라 가운데로는 못 오지만, 적어도 보이는 자리까지는
+    // 온다.
+    await tester.tap(find.byKey(Key('editor-caption-segment-${ids.last}')));
+    await tester.pumpAndSettle();
+    final lastCard = find.byKey(Key('editor-caption-card-${ids.last}'));
+    expect(lastCard, findsOneWidget);
+    expect(tester.getRect(lastCard).right, lessThanOrEqualTo(viewport.right));
+    expect(tester.takeException(), isNull);
+  });
+
+  // 자막 카드에는 새 카드가 서는데 위 타임라인에는 막대가 나타나지 않았다.
+  // AI 자막이 이미 세 층을 다 채워 놓은 자리에 얹으면, 시작 시각 순으로만
+  // 담던 줄 나누기가 직접 자막을 넷째 층으로 밀어 +N 배지 안으로 접었다.
+  testWidgets('직접 추가한 자막은 자막이 빽빽해도 그 자리에서 막대로 선다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    // 같은 자리에 여덟 개가 겹친다 — 보이는 세 층이 이미 꽉 찬 상태다.
+    controller.applyTranscriptCaptions([
+      for (var index = 0; index < 8; index++)
+        (
+          startMs: 1000 + index * 200,
+          endMs: 6000 + index * 300,
+          text: 'AI 자막 $index',
+        ),
+    ]);
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('+'), findsWidgets, reason: '접힌 층이 없다');
+
+    controller.addTextLayer(text: '직접 넣은 자막', startMs: 2000, endMs: 7000);
+    await tester.pumpAndSettle();
+
+    final directId = controller.project.textLayers.last.id;
+    final bar = find.byKey(Key('editor-caption-segment-$directId'));
+    // 화면을 다시 열지 않아도 그 자리에서 바로 선다. 접힌 층(+N 배지)에
+    // 들어가 있으면 이 막대는 아예 그려지지 않는다.
+    expect(bar, findsOneWidget, reason: '직접 자막 막대가 타임라인에 없다');
+    expect(find.byKey(Key('editor-caption-card-$directId')), findsOneWidget);
+
+    // 시간을 고치면 막대의 자리와 길이가 함께 따라간다.
+    final before = _barRect(tester, bar);
+    controller.updateTextLayerRangeGesture(directId, 5000, 11500);
+    await tester.pump();
+    final after = _barRect(tester, bar);
+    expect(after.left, greaterThan(before.left));
+    expect(after.width, greaterThan(before.width));
+
+    // 지우면 막대와 카드가 함께 사라진다.
+    controller.removeLayer(directId);
+    await tester.pumpAndSettle();
+    expect(bar, findsNothing);
+    expect(find.byKey(Key('editor-caption-card-$directId')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 배지가 답하는 물음은 "여기 자막이 몇 개 더 있나"가 아니라 "몇 **줄**이 더
+  // 있나"다. 세 줄까지는 막대가 그대로 보이니 셀 것이 없고, 네 번째 줄부터
+  // 한 줄에 하나씩 센다.
+  for (final (overlapping, badge) in const [(3, null), (4, '+1'), (5, '+2')]) {
+    testWidgets('$overlapping줄이 겹치면 배지는 ${badge ?? '서지 않는다'}', (tester) async {
+      tester.view
+        ..physicalSize = const Size(411, 890)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = newController()..selectTool(EditorTool.text);
+      addTearDown(controller.dispose);
+      // 같은 자리에 겹쳐 세우면 자막 하나가 줄 하나를 차지한다.
+      controller.applyTranscriptCaptions([
+        for (var index = 0; index < overlapping; index++)
+          (startMs: 1000, endMs: 6000, text: '겹친 자막 $index'),
+      ]);
+
+      await tester.pumpWidget(
+        workspace(controller, onSeek: controller.setPlayhead),
+      );
+      await tester.pumpAndSettle();
+
+      if (badge == null) {
+        expect(find.textContaining('+'), findsNothing, reason: '안 접혔는데 배지가 섰다');
+      } else {
+        expect(find.text(badge), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  // 클립을 나눈 뒤 앞 클립을 골라 둔 채 재생 위치만 뒤 클립으로 옮겨 자막을
+  // 만들면, 자막은 뒤 클립에 붙는데 자막 판은 앞 클립을 펼치고 있었다 —
+  // 막대도 카드도 나타나지 않던 정체다.
+  testWidgets('다른 클립의 재생 위치에 만든 자막도 그 자리에서 바로 보인다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/source.mp4',
+        sourceDurationMs: 120000,
+        sourceSize: const EditorSourceSize(width: 1920, height: 1080),
+      ),
+    )..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      for (var index = 0; index < 21; index++)
+        (startMs: index * 5000, endMs: index * 5000 + 2000, text: '자막 $index'),
+    ]);
+    // 클립을 둘로 나누고, 앞 클립을 고른 채 재생 위치만 뒤 클립으로 옮긴다.
+    expect(controller.splitAt(60000), isTrue);
+    controller.selectClip(controller.project.clips.first.id);
+    controller.setPlayhead(80000);
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    await tester.pumpAndSettle();
+
+    controller.addTextLayer(text: '뒤 클립 자막', startMs: 80000, endMs: 83000);
+    await tester.pumpAndSettle();
+
+    final layer = controller.project.textLayers.last;
+    expect(layer.clipId, controller.project.clips.last.id);
+    expect(
+      find.byKey(Key('editor-caption-segment-${layer.id}')),
+      findsOneWidget,
+      reason: '다른 클립에 만든 자막의 막대가 없다',
+    );
+    expect(
+      find.byKey(Key('editor-caption-card-${layer.id}')),
+      findsOneWidget,
+      reason: '다른 클립에 만든 자막의 카드가 없다',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  // 막대는 4dp고 줄 사이는 10dp다. 그 실선을 정확히 겨누라고 하면 열 번에
+  // 서너 번은 헛손질이 된다 — 그림은 촘촘한 채로 손끝만 넉넉해야 한다.
+  testWidgets('막대를 살짝 빗나가게 눌러도 가장 가까운 자막이 골라진다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller
+      ..addTextLayer(text: '앞 자막', startMs: 1000, endMs: 3000)
+      ..addTextLayer(text: '뒤 자막', startMs: 5000, endMs: 7000);
+    final ids = controller.project.textLayers.map((layer) => layer.id).toList();
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    await tester.pumpAndSettle();
+
+    // 겹치지 않으니 한 줄을 나눠 쓴다. 지금 골라진 것은 나중에 넣은 뒤 자막이다.
+    expect(controller.project.selectedLayerId, ids[1]);
+    final target = find.byKey(Key('editor-caption-segment-${ids[0]}'));
+    final bar = tester.getRect(target);
+
+    // 막대에서 8dp 아래 — 막대 밖, 줄과 줄 사이의 빈 자리다.
+    await tester.tapAt(Offset(bar.center.dx, bar.center.dy + 8));
+    await tester.pump();
+    expect(controller.project.selectedLayerId, ids[0], reason: '빗나간 손끝이 버려졌다');
+
+    // 너무 멀면 아무것도 고르지 않는다 — 빈 곳을 눌렀는데 엉뚱한 자막이
+    // 골라지면 그게 더 나쁘다.
+    controller.selectLayer(ids[1]);
+    await tester.pumpAndSettle();
+    await tester.tapAt(Offset(bar.center.dx - 60, bar.center.dy));
+    await tester.pump();
+    expect(controller.project.selectedLayerId, ids[1]);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 확대해 놓으면 프레임 띠의 가로 끌기는 띠를 옆으로 넘기는 데 쓰인다.
+  // 그래서 예전에는 봉을 옮길 길이 "봉 자체를 정확히 집는 것" 하나뿐이었다.
+  testWidgets('재생 봉은 눈금 줄 어디서나 끌리고 자막 끝에 달라붙는다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller
+      ..addTextLayer(text: '자막 하나', startMs: 3000, endMs: 6000)
+      ..setPlayhead(0);
+
+    await tester.pumpWidget(
+      workspace(controller, onSeek: controller.setPlayhead),
+    );
+    await tester.pumpAndSettle();
+
+    // 눈금 줄을 끌면 봉이 따라온다. 3000ms 언저리에서 손을 떼면 자석이
+    // 자막의 시작에 딱 붙인다.
+    final ruler = find.byKey(const Key('editor-caption-ruler-scrub'));
+    expect(ruler, findsOneWidget);
+    await tester.drag(ruler, const Offset(120, 0));
+    await tester.pump();
+    expect(controller.project.playheadMs, 3000, reason: '자막 시작에 붙지 않았다');
+
+    // 배율을 올려도 눈금 줄은 그대로 봉을 끄는 자리다. 이때 띠는 화면보다
+    // 넓으므로 보이는 자리를 짚어 끈다.
+    controller.setPlayhead(0);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('editor-caption-zoom-in')));
+    await tester.pumpAndSettle();
+    final visible = tester.getRect(ruler);
+    await tester.dragFrom(
+      Offset(visible.left + 40, visible.center.dy),
+      const Offset(40, 0),
+    );
+    await tester.pump();
+    expect(controller.project.playheadMs, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('막대 색은 순번마다 돈다 — 이웃한 자막은 늘 다른 색이다', (tester) async {
+    tester.view
+      ..physicalSize = const Size(411, 890)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.text);
+    addTearDown(controller.dispose);
+    controller.applyTranscriptCaptions([
+      (startMs: 0, endMs: 900, text: 'AI 하나'),
+      (startMs: 1000, endMs: 1900, text: 'AI 둘'),
+      (startMs: 2000, endMs: 2900, text: 'AI 셋'),
+    ]);
+    controller
+      ..addTextLayer(text: '직접 하나', startMs: 3000, endMs: 3900)
+      ..addTextLayer(text: '직접 둘', startMs: 4000, endMs: 4900);
+    final ids = controller.project.textLayers.map((layer) => layer.id).toList();
+
+    await tester.pumpWidget(workspace(controller));
+    await tester.pumpAndSettle();
+
+    Color barColorOf(String id) => _barFillColor(
+      tester,
+      find.byKey(Key('editor-caption-segment-$id')),
+    ).withValues(alpha: 1);
+
+    // 만들어진 곳(AI/직접)이 아니라 **순번**이 색을 정한다 — 나란히 선
+    // 막대끼리는 늘 다른 색이라, 어디서 하나가 끝나는지가 보인다.
+    for (var index = 0; index + 1 < ids.length; index++) {
+      expect(
+        barColorOf(ids[index]),
+        isNot(barColorOf(ids[index + 1])),
+        reason: '$index번과 그다음 자막이 같은 색이다',
+      );
+    }
+    // 세 색이 돌아간다 — 셋째 다음은 다시 첫 색이다.
+    expect(barColorOf(ids[3]), barColorOf(ids[0]));
+    expect(barColorOf(ids[4]), barColorOf(ids[1]));
+
+    // 카드 번호도 막대와 같은 색이다. 카드는 고를 때 줄 가운데로 흘러온다.
+    Future<Color> cardNumberOf(String id, int order) async {
+      controller.selectLayer(id);
+      await tester.pumpAndSettle();
+      return _cardNumberColor(tester, id, order);
+    }
+
+    expect(await cardNumberOf(ids[3], 4), barColorOf(ids[3]));
+    expect(await cardNumberOf(ids[0], 1), barColorOf(ids[0]));
+    expect(tester.takeException(), isNull);
   });
 }
+
+/// 자막 카드 앞 칸의 번호 색. 막대와 1:1로 같은 색이어야 한다.
+Color _cardNumberColor(WidgetTester tester, String layerId, int order) {
+  final text = tester.widget<Text>(
+    find.descendant(
+      of: find.byKey(Key('editor-caption-card-$layerId')),
+      matching: find.text('$order'),
+    ),
+  );
+  return text.style!.color!;
+}
+
+/// 자막 막대를 채운 색. 제 색(코랄·주황·올리브)을 투명도로 살짝 깐 것이라,
+/// 색상은 [Color.withValues]로 불투명하게 되돌려 비교한다.
+Color _barFillColor(WidgetTester tester, Finder segment) {
+  final decorated = tester.widget<DecoratedBox>(
+    find.descendant(of: segment, matching: find.byType(DecoratedBox)).first,
+  );
+  return (decorated.decoration as BoxDecoration).color!;
+}
+
+/// 실제로 **칠해지는** 막대의 네모. 손가락 자리([segment])보다 얇고, 폭은
+/// 손가락 자리와 같아야 한다.
+Rect _barRect(WidgetTester tester, Finder segment) => tester.getRect(
+  find.descendant(of: segment, matching: find.byType(DecoratedBox)).first,
+);
 
 Finder _action(String label) =>
     find.ancestor(of: find.text(label), matching: find.byType(TextButton));

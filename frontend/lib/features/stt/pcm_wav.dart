@@ -81,4 +81,3 @@ class PcmWav {
   static String _tag(Uint8List bytes, int offset) =>
       String.fromCharCodes(bytes.sublist(offset, offset + 4));
 }
-

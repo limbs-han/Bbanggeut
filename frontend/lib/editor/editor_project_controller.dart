@@ -1239,6 +1239,14 @@ class EditorProjectController extends ChangeNotifier {
       _project.copyWith(
         textLayers: [..._project.textLayers, layer],
         selectedLayerId: layer.id,
+        // 자막이 붙은 클립이 곧 지금 편집 중인 클립이다.
+        //
+        // **왜 여기서 클립까지 옮기는가**: 자막은 **재생 위치가 속한** 클립에
+        // 붙는데, 고른 클립은 그와 다를 수 있다 — 클립을 나눈 뒤 앞 클립을
+        // 골라 둔 채 재생 위치만 뒤 클립으로 옮겼을 때가 그렇다. 그대로 두면
+        // 자막 판은 여전히 앞 클립을 펼치고 있어서, 방금 만든 자막이 타임라인
+        // 막대에도 자막 카드에도 나타나지 않았다.
+        selectedClipId: layer.clipId ?? _project.selectedClipId,
       ),
     );
   }

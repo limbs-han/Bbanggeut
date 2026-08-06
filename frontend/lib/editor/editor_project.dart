@@ -743,12 +743,7 @@ class EditorFaceSample {
   final double y;
   final double height;
 
-  Map<String, Object> toMap() => {
-    'ms': sourceMs,
-    'x': x,
-    'y': y,
-    'h': height,
-  };
+  Map<String, Object> toMap() => {'ms': sourceMs, 'x': x, 'y': y, 'h': height};
 
   @override
   bool operator ==(Object other) =>
@@ -1049,8 +1044,7 @@ class EditorProject {
       final gapMs = sample.sourceMs - prev.sourceMs;
       // 표본은 250ms 간격이다. 오래 끊겼다 잡히면 그 사이 실제로 움직였을
       // 수 있으니 허용치를 시간에 비례해 (최대 3배까지) 늘린다.
-      final allowed =
-          _faceJumpDistance * (gapMs / 250).clamp(1.0, 3.0);
+      final allowed = _faceJumpDistance * (gapMs / 250).clamp(1.0, 3.0);
       if (gapMs > 1500 || _faceDistance(prev, sample) > allowed) {
         segments.add([sample]);
       } else {

@@ -99,7 +99,10 @@ void main() {
 
     test('무음은 판정하지 않고 1(평탄)로 둔다 — 발화로 잡히지 않는다', () {
       // 기하평균/산술평균 비율이라 정확히 1.0이 아니라 1에 수렴한다.
-      expect(spectralFlatness(monoSamples(toneWav(const [0]))), closeTo(1, 1e-9));
+      expect(
+        spectralFlatness(monoSamples(toneWav(const [0]))),
+        closeTo(1, 1e-9),
+      );
     });
   });
 
@@ -194,9 +197,7 @@ void main() {
 
   group('splitIntoLines', () {
     test('짧은 줄은 그대로 둔다', () {
-      final lines = [
-        CaptionLine(startMs: 0, endMs: 2000, text: '안 만졌는데요'),
-      ];
+      final lines = [CaptionLine(startMs: 0, endMs: 2000, text: '안 만졌는데요')];
       final split = splitIntoLines(lines);
       expect(split, hasLength(1));
       expect(split.single.text, '안 만졌는데요');
@@ -214,10 +215,7 @@ void main() {
       ]);
 
       // 한도(20자)를 넘지 않게 낱말 단위로 담는다. 낱말 중간을 자르지 않는다.
-      expect(split.map((l) => l.text), [
-        '엄마가 아이에게 말했어요 그거 만지지',
-        '마 안 만졌는데요',
-      ]);
+      expect(split.map((l) => l.text), ['엄마가 아이에게 말했어요 그거 만지지', '마 안 만졌는데요']);
     });
 
     test('구두점에서도 나눈다', () {
@@ -467,10 +465,8 @@ void main() {
       if (temporary.existsSync()) await temporary.delete(recursive: true);
     });
 
-    TranscriptStore store(VideoTranscriber transcriber) => TranscriptStore(
-      transcriber: transcriber,
-      root: () async => temporary,
-    );
+    TranscriptStore store(VideoTranscriber transcriber) =>
+        TranscriptStore(transcriber: transcriber, root: () async => temporary);
 
     List<CaptionLine> lines() => [
       CaptionLine(startMs: 500, endMs: 2300, text: '그거 만지지 마'),

@@ -192,12 +192,10 @@ void main() {
       'vault-1': ['online-2', 'online-1'],
     });
 
-    final restored = AppController(
-      api: _DeviceOrderApiClient(vault),
-      placeStorage: storage,
-    )
-      ..user = _user
-      ..selectedVault = vault;
+    final restored =
+        AppController(api: _DeviceOrderApiClient(vault), placeStorage: storage)
+          ..user = _user
+          ..selectedVault = vault;
     await restored.loadPlacePreferencesForTesting();
     await restored.refreshVaults();
 

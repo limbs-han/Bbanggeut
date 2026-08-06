@@ -146,7 +146,10 @@ class FastDownloader {
       final nowMs = clock.elapsedMilliseconds;
       if (!force && nowMs - reportedAtMs < _progressIntervalMs) return;
       reportedAtMs = nowMs;
-      onReceiveProgress(total > 0 ? math.min(received, total) : received, total);
+      onReceiveProgress(
+        total > 0 ? math.min(received, total) : received,
+        total,
+      );
     }
 
     Future<void> drain(Stream<List<int>> stream, int offset) async {
@@ -213,10 +216,11 @@ class FastDownloader {
       // 않는다. Future.wait은 기본적으로 전부 끝나기를 기다리므로, 실패한
       // 순간 나머지를 끊어야 통째로 다시 받는 쪽으로 빨리 넘어간다.
       Object? failure;
-      Future<void> guarded(Future<void> task) => task.catchError((Object error) {
-        failure ??= error;
-        if (!segments.isCancelled) segments.cancel();
-      });
+      Future<void> guarded(Future<void> task) =>
+          task.catchError((Object error) {
+            failure ??= error;
+            if (!segments.isCancelled) segments.cancel();
+          });
 
       final tasks = <Future<void>>[guarded(drain(body.stream, 0))];
       for (final range in _remainingRanges(

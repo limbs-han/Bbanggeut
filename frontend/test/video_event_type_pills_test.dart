@@ -17,9 +17,7 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: VideoEventTypePills(video: video),
-        ),
+        home: Scaffold(body: VideoEventTypePills(video: video)),
       ),
     );
 
