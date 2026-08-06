@@ -26,10 +26,8 @@ void main() {
     if (temporary.existsSync()) await temporary.delete(recursive: true);
   });
 
-  TranscriptStore storeWith(VideoTranscriber transcriber) => TranscriptStore(
-    transcriber: transcriber,
-    root: () async => temporary,
-  );
+  TranscriptStore storeWith(VideoTranscriber transcriber) =>
+      TranscriptStore(transcriber: transcriber, root: () async => temporary);
 
   CaptionController controllerWith(VideoTranscriber transcriber) =>
       CaptionController(store: storeWith(transcriber));

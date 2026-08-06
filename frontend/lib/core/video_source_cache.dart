@@ -144,11 +144,7 @@ class VideoSourceCache {
         final name = entity.uri.pathSegments.last;
         if (!name.startsWith('event-') || !name.endsWith('.mp4')) continue;
         final stat = await entity.stat();
-        sources.add((
-          file: entity,
-          modified: stat.modified,
-          size: stat.size,
-        ));
+        sources.add((file: entity, modified: stat.modified, size: stat.size));
       }
 
       // 최근에 쓴 것부터 남긴다.

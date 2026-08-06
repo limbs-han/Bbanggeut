@@ -30,7 +30,10 @@ void main() {
   test('OWNER가 아니면 초대는 실패로 보고된다', () async {
     final controller = AppController()..selectedVault = _memberVault;
 
-    final ok = await controller.createInvitation('someone@example.com', 'MEMBER');
+    final ok = await controller.createInvitation(
+      'someone@example.com',
+      'MEMBER',
+    );
 
     expect(ok, isFalse);
     expect(controller.errorMessage, contains('OWNER'));
@@ -40,7 +43,10 @@ void main() {
   test('금고를 고르지 않았으면 초대는 성공으로 보고되지 않는다', () async {
     final controller = AppController();
 
-    final ok = await controller.createInvitation('someone@example.com', 'MEMBER');
+    final ok = await controller.createInvitation(
+      'someone@example.com',
+      'MEMBER',
+    );
 
     expect(ok, isFalse);
     expect(controller.errorMessage, isNotNull);

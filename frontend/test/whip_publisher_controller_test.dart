@@ -40,7 +40,9 @@ void main() {
       isFalse,
     );
     expect(
-      WhipPublisherController.acceptsAudio('v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n'),
+      WhipPublisherController.acceptsAudio(
+        'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n',
+      ),
       isFalse,
     );
   });
@@ -50,7 +52,9 @@ void main() {
     // DELETE를 401로 막고 발화 권한이 만료까지 남는다.
     final resolved = WhipPublisherController.copyAccessQuery(
       Uri.parse('https://media.example/webrtc/talkback/session/abc'),
-      Uri.parse('https://media.example/webrtc/talkback/s1/whip?token=talk-token'),
+      Uri.parse(
+        'https://media.example/webrtc/talkback/s1/whip?token=talk-token',
+      ),
     );
 
     expect(resolved.queryParameters['token'], 'talk-token');

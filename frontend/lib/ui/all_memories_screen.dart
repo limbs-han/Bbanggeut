@@ -115,12 +115,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     }
     if (_uploadFollowUpCount >= _maxUploadFollowUps) return;
     _uploadFollowUpCount++;
-    _uploadFollowUp = Timer(
-      const Duration(seconds: 5),
-      () {
-        if (mounted) _loadEditorLists();
-      },
-    );
+    _uploadFollowUp = Timer(const Duration(seconds: 5), () {
+      if (mounted) _loadEditorLists();
+    });
   }
 
   VideoMemory? _videoById(String id) {
@@ -454,9 +451,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
                             label: '편집 중',
                             selected: category == MemoryCategory.editing,
                             onPressed: () {
-                              setState(
-                                () => category = MemoryCategory.editing,
-                              );
+                              setState(() => category = MemoryCategory.editing);
                               _loadEditorLists();
                             },
                           ),

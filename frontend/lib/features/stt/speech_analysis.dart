@@ -22,7 +22,8 @@ class SpeechRegion {
   Duration get length => end - start;
 
   @override
-  String toString() => 'SpeechRegion(${start.inMilliseconds}~${end.inMilliseconds}ms)';
+  String toString() =>
+      'SpeechRegion(${start.inMilliseconds}~${end.inMilliseconds}ms)';
 }
 
 /// 스펙트럼 평탄도(Wiener entropy) = 기하평균 / 산술평균.
@@ -130,8 +131,8 @@ List<SpeechRegion> detectSpeechRegions(
   Duration minLength = const Duration(milliseconds: 250),
   Duration mergeGap = const Duration(milliseconds: 200),
 }) {
-  final framesPerWindow =
-      (wav.sampleRate * window.inMicroseconds / 1000000).round();
+  final framesPerWindow = (wav.sampleRate * window.inMicroseconds / 1000000)
+      .round();
   if (framesPerWindow < 8 || wav.frameCount < framesPerWindow) return const [];
 
   final windowCount = wav.frameCount ~/ framesPerWindow;
@@ -143,7 +144,8 @@ List<SpeechRegion> detectSpeechRegions(
     for (var f = 0; f < framesPerWindow; f++) {
       var mixed = 0.0;
       for (var channel = 0; channel < wav.channels; channel++) {
-        mixed += wav.samples[(w * framesPerWindow + f) * wav.channels + channel];
+        mixed +=
+            wav.samples[(w * framesPerWindow + f) * wav.channels + channel];
       }
       mixed = mixed / wav.channels / 32768.0;
       mono[f] = mixed;
@@ -181,9 +183,7 @@ List<SpeechRegion> detectSpeechRegions(
       silence++;
       if (silence > gapWindows || w == windowCount) {
         final end = w - silence + 1;
-        regions.add(
-          SpeechRegion(start: window * start, end: window * end),
-        );
+        regions.add(SpeechRegion(start: window * start, end: window * end));
         start = -1;
         silence = 0;
       }
@@ -247,8 +247,8 @@ PcmWav resample(PcmWav wav, int targetSampleRate) {
 
   if (targetSampleRate == wav.sampleRate && wav.channels == 1) return wav;
 
-  final targetFrames =
-      (wav.frameCount * targetSampleRate / wav.sampleRate).floor();
+  final targetFrames = (wav.frameCount * targetSampleRate / wav.sampleRate)
+      .floor();
   final output = Int16List(targetFrames);
   final ratio = wav.sampleRate / targetSampleRate;
   for (var i = 0; i < targetFrames; i++) {
@@ -259,11 +259,7 @@ PcmWav resample(PcmWav wav, int targetSampleRate) {
     final value = monoAt(low) * (1 - fraction) + monoAt(high) * fraction;
     output[i] = value.round().clamp(-32768, 32767);
   }
-  return PcmWav(
-    samples: output,
-    sampleRate: targetSampleRate,
-    channels: 1,
-  );
+  return PcmWav(samples: output, sampleRate: targetSampleRate, channels: 1);
 }
 
 /// 헤더 없는 원시 16bit 리틀엔디언 PCM.

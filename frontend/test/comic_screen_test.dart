@@ -47,10 +47,7 @@ class _StubGateway implements ComicGateway {
   int imageCalls = 0;
 
   @override
-  Future<List<ComicCut>> script(
-    String videoId,
-    List<CaptionLine> lines,
-  ) async {
+  Future<List<ComicCut>> script(String videoId, List<CaptionLine> lines) async {
     scriptCalls++;
     if (scriptError != null) throw scriptError!;
     return [
@@ -80,13 +77,14 @@ final _video = VideoMemory(
   favorite: false,
 );
 
-Future<void> pump(
-  WidgetTester tester,
-  ComicController controller,
-) async {
+Future<void> pump(WidgetTester tester, ComicController controller) async {
   await tester.pumpWidget(
     MaterialApp(
-      home: ComicScreen(api: ApiClient(), video: _video, controller: controller),
+      home: ComicScreen(
+        api: ApiClient(),
+        video: _video,
+        controller: controller,
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -172,10 +170,7 @@ void main() {
   });
 
   testWidgets('그림이 실패해도 고친 대사가 남고 다시 만들 수 있다', (tester) async {
-    await pump(
-      tester,
-      build(saved: _lines(), imageError: StateError('생성 실패')),
-    );
+    await pump(tester, build(saved: _lines(), imageError: StateError('생성 실패')));
 
     await _editFirstDialogue(tester);
 

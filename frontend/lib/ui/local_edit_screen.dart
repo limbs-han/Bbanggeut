@@ -22,6 +22,7 @@ import '../editor/editor_direct_text_sheet.dart';
 import '../editor/edit_recommendation_client.dart';
 import '../editor/editor_text_style_bar.dart';
 import '../editor/editor_platform.dart';
+import '../editor/editor_tokens.dart';
 import '../editor/editor_workspace.dart';
 import 'widgets.dart';
 
@@ -934,27 +935,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     // 이미 합쳐 둔 AI 자막이 있으면, 다시 만들 때 그것들(자막 탭에서 고친
     // 내용 포함)이 새 결과로 바뀐다는 것을 먼저 알린다.
     if (_projectController?.hasTranscriptCaptions == true) {
-      final proceed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('AI 자막을 다시 만들까요?'),
-          content: const Text(
-            '자막 탭에 있는 AI 자막이 새로 만든 결과로 바뀌어요. '
-            '직접 고친 부분도 함께 바뀌고, 직접 추가한 자막은 그대로예요.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              key: const Key('editor-ai-caption-replace'),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('다시 만들기'),
-            ),
-          ],
-        ),
-      );
+      final proceed = await _confirmAiCaptionRebuild();
       if (proceed != true || !mounted) return;
       // 사용자가 다시 만들기를 골랐다 — 같은 내용이라도 다시 합치도록
       // 서명을 지운다(고쳐 둔 것을 원문으로 되돌리는 것도 요청의 일부다).
@@ -989,6 +970,158 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     }
     setState(() {});
   }
+
+  /// "AI 자막을 다시 만들까요?" 확인 창. 다시 만들기를 골랐을 때만 true.
+  ///
+  /// 무엇이 바뀌고 무엇이 남는지가 이 창의 전부다 — 두 줄을 아이콘과 함께
+  /// 나란히 놓아, 읽지 않고 넘기더라도 색만으로 구분되게 한다.
+  Future<bool?> _confirmAiCaptionRebuild() => showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => Dialog(
+      key: const Key('editor-ai-caption-dialog'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: ColoredBox(
+            color: AppColors.cream,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 10, 10, 0),
+                    child: IconButton(
+                      key: const Key('editor-ai-caption-close'),
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      icon: const Icon(Icons.close_rounded),
+                      color: AppColors.ink,
+                      iconSize: 26,
+                      tooltip: '닫기',
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(26, 2, 26, 26),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text.rich(
+                        const TextSpan(
+                          children: [
+                            TextSpan(text: 'AI 자막을\n'),
+                            TextSpan(
+                              text: '다시 만들',
+                              style: TextStyle(color: AppColors.coralDark),
+                            ),
+                            TextSpan(text: '까요?'),
+                          ],
+                        ),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(dialogContext).textTheme.headlineMedium
+                            ?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        '새로 만들면 기존 AI 자막이 바뀌어요.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.inkSoft,
+                          fontSize: 15,
+                          height: 1.45,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.pinkSoft,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: AppColors.line),
+                        ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _AiCaptionRebuildNote(
+                              icon: Icons.error_outline_rounded,
+                              iconColor: AppColors.sageDark,
+                              text: '직접 수정한 AI 자막도 함께 바뀌어요.',
+                            ),
+                            SizedBox(height: 12),
+                            _AiCaptionRebuildNote(
+                              icon: Icons.check_circle_outline_rounded,
+                              iconColor: AppColors.coralDark,
+                              text: '직접 추가한 자막은 그대로 유지돼요.',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              key: const Key('editor-ai-caption-cancel'),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(58),
+                                foregroundColor: AppColors.coralDark,
+                                side: const BorderSide(
+                                  color: AppColors.coral,
+                                  width: 1.5,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              child: const Text('취소'),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: FilledButton(
+                              key: const Key('editor-ai-caption-replace'),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(58),
+                                backgroundColor: AppColors.coralDark,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, true),
+                              child: const Text('다시 만들기'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
   /// 전사 결과를 **일반 자막 레이어로** 합친다. 실제로 합쳤으면 true.
   ///
@@ -1828,15 +1961,11 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         if (_saving) return;
         setState(() => _directCaptionAddMode = true);
       },
-      onTextEdit: (id) {
-        // 자막 시작으로 옮겨 놓고 바로 그 위에서 고친다.
-        final layer = projectController.project.textLayers
-            .where((item) => item.id == id)
-            .firstOrNull;
-        if (layer != null) unawaited(_seekToPosition(layer.startMs));
-        _startTextEditing(layerId: id);
-      },
-      onTextRemove: (id) {
+      // 자막 카드·겹침 시트의 연필. 영상 위 글자 상자를 두 번 누르는 것과
+      // 같은 길이다.
+      onEditCaption: (id) => _startTextEditing(layerId: id),
+      onDeleteCaption: (id) {
+        if (_saving) return;
         projectController.removeTextLayer(id);
         _editState.markExternalEditApplied();
         setState(() {});
@@ -2118,6 +2247,40 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         ),
       ),
     ),
+  );
+}
+
+/// "다시 만들까요?" 창 안내 상자의 한 줄. 아이콘과 글이 위쪽에서 맞춰져,
+/// 글이 두 줄로 넘어가도 아이콘이 가운데로 떠내려가지 않는다.
+class _AiCaptionRebuildNote extends StatelessWidget {
+  const _AiCaptionRebuildNote({
+    required this.icon,
+    required this.iconColor,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 20, color: iconColor),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: AppColors.inkSoft,
+            fontSize: 14.5,
+            height: 1.4,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    ],
   );
 }
 
@@ -2879,6 +3042,11 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
                 ? Border.all(color: AppColors.coral, width: 1.6)
                 : null,
             borderRadius: BorderRadius.circular(7),
+            // 밝은 장면에서는 코랄 테두리도 배경에 녹는다. 그림자를 옅게
+            // 받쳐야 조작선이 어떤 영상 위에서도 보인다.
+            boxShadow: selected
+                ? const [EditorCaptionTokens.overlayShadow]
+                : null,
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
@@ -2904,9 +3072,18 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
                             : GestureDetector(
                                 key: Key('editor-layer-${widget.layer.id}'),
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () => widget.controller.selectLayer(
-                                  widget.layer.id,
-                                ),
+                                // 한 번 눌러 고르고, 고른 상자를 다시 누르면
+                                // 바로 고친다. 자막 막대에서 연필을 걷어낸
+                                // 뒤로는 여기가 고치러 들어가는 유일한 길이다.
+                                onTap: () {
+                                  if (selected && widget.onDoubleTap != null) {
+                                    widget.onDoubleTap!();
+                                    return;
+                                  }
+                                  widget.controller.selectLayer(
+                                    widget.layer.id,
+                                  );
+                                },
                                 onDoubleTap: widget.onDoubleTap,
                                 onScaleStart: (_) => _beginTransform(),
                                 onScaleUpdate: (details) => _updateTransform(
@@ -2918,17 +3095,11 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
                                 child: box,
                               ),
                       ),
-                      if (selected)
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          child: _LayerHandle(
-                            dimension: _handleSize,
-                            icon: Icons.close_rounded,
-                            background: const Color(0xE6231A14),
-                            onTap: _deleteLayer,
-                          ),
-                        ),
+                      // 지우기는 영상 위에 두지 않는다. 왼쪽 위 X는 "닫기"로
+                      // 읽히는데 실제로는 자막을 지웠고, 되돌리려면 실행
+                      // 취소를 찾아야 했다. 지우는 자리는 자막 카드 줄
+                      // 머리의 휴지통 하나뿐이다 — 무엇이 지워질지 카드로
+                      // 보이는 자리다.
                       if (selected)
                         Positioned(
                           right: 0,
@@ -3038,11 +3209,6 @@ class _EditableLayerOverlayState extends State<_EditableLayerOverlay> {
     widget.controller.endLayerGesture();
     widget.onChanged();
   }
-
-  void _deleteLayer() {
-    widget.controller.selectLayer(widget.layer.id);
-    if (widget.controller.deleteSelectedLayer()) widget.onChanged();
-  }
 }
 
 /// 자식의 중심을 정규화 좌표에 정확히 놓는다.
@@ -3072,7 +3238,6 @@ class _LayerHandle extends StatelessWidget {
     required this.dimension,
     required this.icon,
     required this.background,
-    this.onTap,
     this.onPanStart,
     this.onPanUpdate,
     this.onPanEnd,
@@ -3081,7 +3246,6 @@ class _LayerHandle extends StatelessWidget {
   final double dimension;
   final IconData icon;
   final Color background;
-  final VoidCallback? onTap;
 
   /// 화면 기준 손가락 위치를 그대로 넘긴다. 상자 중심에서의 거리로 크기를
   /// 정하려면 누적 delta가 아니라 절대 좌표가 있어야 한다.
@@ -3092,7 +3256,6 @@ class _LayerHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     behavior: HitTestBehavior.opaque,
-    onTap: onTap,
     onPanStart: onPanStart == null
         ? null
         : (details) => onPanStart!(details.globalPosition),
@@ -3108,6 +3271,8 @@ class _LayerHandle extends StatelessWidget {
         color: background,
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 1.6),
+        // 흰 테두리를 두른 손잡이도 밝은 장면 위에서는 윤곽이 사라진다.
+        boxShadow: const [EditorCaptionTokens.overlayShadow],
       ),
       child: Icon(icon, color: Colors.white, size: dimension * 0.5),
     ),

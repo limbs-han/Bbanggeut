@@ -611,7 +611,9 @@ class _ScopeButton extends StatelessWidget {
         height: 44,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? AppColors.coral : Colors.white.withValues(alpha: .7),
+          color: selected
+              ? AppColors.coral
+              : Colors.white.withValues(alpha: .7),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: selected ? AppColors.coral : const Color(0xFFF0D9C6),

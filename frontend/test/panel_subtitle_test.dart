@@ -13,10 +13,9 @@ import 'package:william_james_app/features/comic/panel_subtitle.dart';
 /// 위젯 테스트에서 쓸 최소 PNG (1x1 흰 점).
 Future<Uint8List> onePixelPng() async {
   final recorder = ui.PictureRecorder();
-  Canvas(recorder).drawRect(
-    const Rect.fromLTWH(0, 0, 1, 1),
-    Paint()..color = Colors.white,
-  );
+  Canvas(
+    recorder,
+  ).drawRect(const Rect.fromLTWH(0, 0, 1, 1), Paint()..color = Colors.white);
   final picture = recorder.endRecording();
   final image = await picture.toImage(1, 1);
   final data = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -105,7 +104,9 @@ void main() {
 
   testWidgets('대사 있는 컷만 자막을 그린다', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(home: ComicCanvas(image: png, cuts: cuts())),
+      MaterialApp(
+        home: ComicCanvas(image: png, cuts: cuts()),
+      ),
     );
     await tester.pump();
 

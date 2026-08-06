@@ -9,11 +9,7 @@
 library;
 
 class CaptionLine {
-  CaptionLine({
-    required this.startMs,
-    required this.endMs,
-    required this.text,
-  });
+  CaptionLine({required this.startMs, required this.endMs, required this.text});
 
   final int startMs;
   final int endMs;

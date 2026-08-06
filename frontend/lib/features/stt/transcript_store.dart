@@ -211,9 +211,7 @@ Future<MlKitReadiness> prepareMlKit(MlKitTranscriber mlkit) async {
 /// (`CaptionController.message` 참조).
 Future<List<CaptionLine>> transcribeVideo(String videoPath) async {
   final temporary = await getTemporaryDirectory();
-  final directory = Directory(
-    '${temporary.path}${Platform.pathSeparator}stt',
-  );
+  final directory = Directory('${temporary.path}${Platform.pathSeparator}stt');
   await directory.create(recursive: true);
   final wavPath = '${directory.path}${Platform.pathSeparator}audio_16k.wav';
 

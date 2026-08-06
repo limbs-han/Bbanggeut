@@ -109,13 +109,9 @@ class LiveEdgeChip extends StatelessWidget {
                 shape: BoxShape.circle,
                 // 켜졌을 때는 빨간 바탕 위의 흰 불, 꺼졌을 때는 어두운
                 // 바탕 위의 식은 빨강 — 한눈에 켜짐/꺼짐이 갈린다.
-                color: atLiveEdge
-                    ? Colors.white
-                    : const Color(0xFF7A4B45),
+                color: atLiveEdge ? Colors.white : const Color(0xFF7A4B45),
                 boxShadow: atLiveEdge
-                    ? const [
-                        BoxShadow(color: Color(0x88FFFFFF), blurRadius: 6),
-                      ]
+                    ? const [BoxShadow(color: Color(0x88FFFFFF), blurRadius: 6)]
                     : const [],
               ),
             ),
@@ -175,7 +171,10 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
   /// 버튼이 살아 있으면 조급한 탭이 _restart()로 이어져 진행 중이던 워밍업을
   /// 매번 처음으로 되돌린다.
   bool get connecting =>
-      !hasPlayback && error == null && !closing && (starting || session != null);
+      !hasPlayback &&
+      error == null &&
+      !closing &&
+      (starting || session != null);
 
   @override
   void initState() {
@@ -316,9 +315,9 @@ class _EmbeddedLivePlayerState extends State<EmbeddedLivePlayer>
         await widget.controller.api.closeTalkback(current.id);
       } catch (_) {}
       if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text(_talkbackMessage(failure))),
-        );
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text(_talkbackMessage(failure))));
       }
     } finally {
       if (mounted) setState(() => talkbackBusy = false);

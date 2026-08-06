@@ -327,7 +327,9 @@ void main() {
     int selectedTab() => tester.widget<NavigationBar>(navigation).selectedIndex;
 
     for (final tab in ['캘린더', '추억', '가족', '설정']) {
-      await tester.tap(find.descendant(of: navigation, matching: find.text(tab)));
+      await tester.tap(
+        find.descendant(of: navigation, matching: find.text(tab)),
+      );
       await tester.pumpAndSettle();
       expect(selectedTab(), isNot(2), reason: '$tab 탭으로 옮겨지지 않았다');
 

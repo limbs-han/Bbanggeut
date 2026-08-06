@@ -73,7 +73,9 @@ class MlKitTranscriber {
   ///
   /// 네트워크가 필요하고 몇 분 걸릴 수 있다. [onProgress]로 0~100이 올라온다 —
   /// 진행 표시가 없으면 멈춘 것처럼 보인다.
-  Future<MlKitReadiness> ensure({void Function(int percent)? onProgress}) async {
+  Future<MlKitReadiness> ensure({
+    void Function(int percent)? onProgress,
+  }) async {
     if (onProgress != null) {
       channel.setMethodCallHandler((call) async {
         if (call.method == 'mlkitDownloadProgress') {

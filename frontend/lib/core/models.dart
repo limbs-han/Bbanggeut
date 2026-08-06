@@ -335,9 +335,8 @@ class VideoMemory {
   final String? thumbnailUrl;
   final DateTime? capturedStartAt;
   final DateTime? createdAt;
-  List<String> get effectiveEventTypes => eventTypes.isEmpty
-      ? List.unmodifiable([triggerType])
-      : eventTypes;
+  List<String> get effectiveEventTypes =>
+      eventTypes.isEmpty ? List.unmodifiable([triggerType]) : eventTypes;
   bool hasEventType(String eventType) =>
       effectiveEventTypes.contains(normalizeVideoTrigger(eventType));
 
@@ -496,7 +495,9 @@ class VaultEventStats {
   final int detectedCount;
   final List<DailyVideoCount> dailyCounts;
   final List<VaultDeviceCount> byDevice;
-  factory VaultEventStats.fromJson(Map<String, dynamic> json) => VaultEventStats(
+  factory VaultEventStats.fromJson(
+    Map<String, dynamic> json,
+  ) => VaultEventStats(
     detectedCount: (json['detectedCount'] as num?)?.toInt() ?? 0,
     dailyCounts: (json['dailyCounts'] as List? ?? const [])
         .map((item) => DailyVideoCount.fromJson(item as Map<String, dynamic>))

@@ -164,8 +164,7 @@ class _EditedVideoScreenState extends State<EditedVideoScreen> {
         child: Column(
           children: [
             AspectRatio(
-              aspectRatio:
-                  player != null && player.value.aspectRatio > 0.1
+              aspectRatio: player != null && player.value.aspectRatio > 0.1
                   ? player.value.aspectRatio
                   : 16 / 9,
               child: ColoredBox(
