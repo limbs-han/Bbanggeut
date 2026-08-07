@@ -211,6 +211,43 @@ class AudioShadowRunnerTests(unittest.TestCase):
         self.assertFalse(gate.observe(0.8, 2.0).triggered)
         self.assertTrue(gate.observe(0.8, 3.0).triggered)
 
+    def test_dominance_is_recorded_while_the_test_is_disabled(self) -> None:
+        # Ratio 0 must not change any decision, but the value still has to be
+        # reported: it is the only way a later sweep gets real data.
+        gate = VirtualEventGate(0.1, 1, 0.0, dominance_ratio=0.0)
+
+        result = gate.observe(0.12, 0.0, top_score=0.9)
+
+        self.assertTrue(result.triggered)
+        self.assertAlmostEqual(result.dominance, 0.12 / 0.9, places=6)
+
+    def test_dominance_rejects_a_window_speech_dominates(self) -> None:
+        # The case a threshold cannot catch: laughter clears the line but the
+        # window belongs to another sound.
+        gate = VirtualEventGate(0.1, 1, 0.0, dominance_ratio=0.3)
+
+        speech_window = gate.observe(0.12, 0.0, top_score=0.9)
+        laughter_window = gate.observe(0.12, 1.0, top_score=0.2)
+
+        self.assertFalse(speech_window.positive)
+        self.assertFalse(speech_window.triggered)
+        self.assertTrue(laughter_window.positive)
+        self.assertTrue(laughter_window.triggered)
+
+    def test_dominance_handles_a_silent_window(self) -> None:
+        # No energy means no meaningful ratio. Dividing by it would crash the
+        # detector on a stretch of silence.
+        gate = VirtualEventGate(0.0, 1, 0.0, dominance_ratio=0.3)
+
+        result = gate.observe(0.0, 0.0, top_score=0.0)
+
+        self.assertEqual(result.dominance, 0.0)
+        self.assertFalse(result.positive)
+
+    def test_dominance_ratio_must_be_a_ratio(self) -> None:
+        with self.assertRaises(ValueError):
+            VirtualEventGate(0.1, 1, 0.0, dominance_ratio=1.5)
+
     def test_event_score_uses_highest_mapped_class(self) -> None:
         score, class_name = event_score(
             [0.1, 0.7, 0.4],
@@ -256,7 +293,8 @@ class AudioShadowRunnerTests(unittest.TestCase):
         # value that over-fires.
         args = parse_args(self._base_argv())
 
-        self.assertEqual(args.laughter_threshold, 0.03)
+        self.assertEqual(args.laughter_threshold, 0.15)
+        self.assertEqual(args.laughter_dominance_ratio, 0.0)
 
     def test_side_effect_arguments_require_operational(self) -> None:
         for extra in (

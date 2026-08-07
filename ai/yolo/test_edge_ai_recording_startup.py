@@ -46,10 +46,13 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
         block = self.script[sensitivity_case:]
         block = block[: block.index("esac")]
 
+        # Values come from the 2026-08-06 window census, not from spreading
+        # three numbers evenly. Changing one without the census is how the
+        # ladder ended up below the speech tail the first time.
         for step, threshold in (
-            ("sensitive", "0.0169"),
-            ("default", "0.03"),
-            ("insensitive", "0.08"),
+            ("sensitive", "0.12"),
+            ("default", "0.15"),
+            ("insensitive", "0.30"),
         ):
             branch = block.index(f"{step})")
             self.assertIn(
@@ -73,6 +76,16 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
 
         self.assertIn("AUDIO_SENSITIVITY must be one of", block)
         self.assertIn("exit 2", block)
+
+    def test_dominance_ratio_ships_disabled_but_is_wired(self) -> None:
+        # Disabled by default so behaviour does not change, but the value has
+        # to reach the runner or no window records its ratio and no sweep can
+        # ever pick an operating point.
+        self.assertIn(': "${AUDIO_SHADOW_LAUGHTER_DOMINANCE:=0.0}"', self.script)
+        self.assertIn(
+            '--laughter-dominance-ratio "$AUDIO_SHADOW_LAUGHTER_DOMINANCE"',
+            self.script,
+        )
 
     def test_clap_requires_two_consecutive_windows(self) -> None:
         # One window separates applause from a door slam only by loudness.

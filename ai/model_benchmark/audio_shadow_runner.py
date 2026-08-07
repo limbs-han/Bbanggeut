@@ -165,6 +165,7 @@ class GateResult:
     positive_windows: int
     triggered: bool
     cooldown_remaining_seconds: float
+    dominance: float = 0.0
 
 
 class VirtualEventGate:
@@ -175,6 +176,7 @@ class VirtualEventGate:
         threshold: float,
         required_windows: int,
         cooldown_seconds: float,
+        dominance_ratio: float = 0.0,
     ) -> None:
         if not 0.0 <= threshold <= 1.0:
             raise ValueError("threshold must be between zero and one")
@@ -182,14 +184,37 @@ class VirtualEventGate:
             raise ValueError("required windows must be positive")
         if cooldown_seconds < 0:
             raise ValueError("cooldown cannot be negative")
+        if not 0.0 <= dominance_ratio <= 1.0:
+            raise ValueError("dominance ratio must be between zero and one")
         self.threshold = threshold
         self.required_windows = required_windows
         self.cooldown_seconds = cooldown_seconds
+        # Ratio of this event's score to the loudest class in the window. A
+        # threshold alone cannot reject a window that speech dominates while
+        # the laughter score sits just above the line: on 2026-08-06 the
+        # median dominance of misfiring speech windows was 0.057, meaning
+        # events went out on evidence worth 6% of the top sound. Zero keeps
+        # the previous behaviour, which is the shipped default until a sweep
+        # picks an operating point from the recorded values.
+        self.dominance_ratio = dominance_ratio
         self.positive_windows = 0
         self.last_event_at: float | None = None
 
-    def observe(self, score: float, now: float) -> GateResult:
+    def observe(
+        self,
+        score: float,
+        now: float,
+        top_score: float | None = None,
+    ) -> GateResult:
+        # A window with no energy has no meaningful ratio; call it zero rather
+        # than dividing by it.
+        if top_score is None or top_score <= 0.0:
+            dominance = 0.0
+        else:
+            dominance = min(1.0, max(0.0, score / top_score))
         positive = score >= self.threshold
+        if positive and self.dominance_ratio > 0.0:
+            positive = dominance >= self.dominance_ratio
         if positive:
             self.positive_windows += 1
         else:
@@ -214,6 +239,7 @@ class VirtualEventGate:
             positive_windows=observed_windows,
             triggered=triggered,
             cooldown_remaining_seconds=cooldown_remaining,
+            dominance=dominance,
         )
 
 
@@ -258,14 +284,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--laughter-threshold",
         type=float,
-        # Field-corrected value, not the dev-set argmax (0.01691491). That
-        # argmax fired on ordinary indoor conversation, which scores 0.072 on
-        # this model. The launcher passes this explicitly; the default only
-        # covers manual runs, and a manual run that can now hold event
-        # authority must not silently pick the value that over-fires.
-        default=0.03,
+        # From the 2026-08-06 census of 112,724 diagnostic windows, not from
+        # eyeballed samples. Every earlier value between 0.0169 and 0.08 was
+        # fitted to a handful of observations and could not stop the tail of
+        # the speech distribution: at 0.08, 98.7% of the 471 firings were
+        # speech. 0.15 passes 0.7% of speech windows and about 90% of laughter
+        # windows. The launcher passes this explicitly; the default only covers
+        # manual runs, which can now hold event authority.
+        default=0.15,
     )
     parser.add_argument("--laughter-consecutive", type=int, default=1)
+    parser.add_argument(
+        "--laughter-dominance-ratio",
+        type=float,
+        # Zero disables the ratio test and keeps the previous behaviour. It
+        # ships disabled because no sweep has picked an operating point yet;
+        # every window records its ratio so one can be chosen from data.
+        default=0.0,
+    )
     parser.add_argument(
         "--clap-threshold",
         type=float,
@@ -350,6 +386,7 @@ def validate_args(args: argparse.Namespace) -> None:
         args.laughter_threshold,
         args.laughter_consecutive,
         args.cooldown_seconds,
+        args.laughter_dominance_ratio,
     )
     VirtualEventGate(
         args.clap_threshold,
@@ -445,6 +482,7 @@ def run(args: argparse.Namespace) -> int:
                     "laughter": {
                         "threshold": args.laughter_threshold,
                         "requiredConsecutiveWindows": args.laughter_consecutive,
+                        "dominanceRatio": args.laughter_dominance_ratio,
                     },
                     "clap": {
                         "threshold": args.clap_threshold,
@@ -477,6 +515,7 @@ def run(args: argparse.Namespace) -> int:
         args.laughter_threshold,
         args.laughter_consecutive,
         args.cooldown_seconds,
+        args.laughter_dominance_ratio,
     )
     clap_gate = VirtualEventGate(
         args.clap_threshold,
@@ -540,6 +579,7 @@ def run(args: argparse.Namespace) -> int:
         f"context={args.context_seconds:.3f}s hop={args.hop_seconds:.3f}s "
         f"laughter={args.laughter_threshold:.8f}/"
         f"{args.laughter_consecutive} "
+        f"dominance={args.laughter_dominance_ratio:.3f} "
         f"clap={args.clap_threshold:.8f}/{args.clap_consecutive} "
         f"trigger={'on' if event_dir is not None else 'off'} "
         f"mqtt={'on' if mqtt_enabled else 'off'} "
@@ -577,9 +617,12 @@ def run(args: argparse.Namespace) -> int:
                 predictor.class_names,
             )
             now = time.monotonic()
-            laughter = laughter_gate.observe(laughter_score, now)
-            clap = clap_gate.observe(clap_score, now)
+            # The loudest class has to be known before the gates run: it is
+            # the denominator of the dominance ratio.
             top_index = int(np.argmax(scores))
+            top_score = float(scores[top_index])
+            laughter = laughter_gate.observe(laughter_score, now, top_score)
+            clap = clap_gate.observe(clap_score, now, top_score)
             window_started_at = detected_at - timedelta(
                 seconds=args.context_seconds
             )
@@ -599,7 +642,12 @@ def run(args: argparse.Namespace) -> int:
                 "inferenceMs": round(float(inference_ms), 3),
                 "rms": round(rms, 6),
                 "topClass": predictor.class_names[top_index],
-                "topScore": round(float(scores[top_index]), 6),
+                "topScore": round(top_score, 6),
+                # Recorded on every window even while the gate is disabled, so
+                # a later sweep can pick a dominance operating point from real
+                # data instead of guessing one.
+                "laughterDominance": round(laughter.dominance, 6),
+                "clapDominance": round(clap.dominance, 6),
                 # The servo dashboard and the stack's readiness probe both read
                 # the YAMNet diagnostics shape. Mirroring the laughter decision
                 # under those key names lets EfficientAT drive them unchanged.
