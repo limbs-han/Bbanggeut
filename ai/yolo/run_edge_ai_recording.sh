@@ -88,7 +88,25 @@ fi
 : "${AUDIO_SHADOW_PRECISION:=fp16}"
 : "${AUDIO_SHADOW_CONTEXT_SECONDS:=10}"
 : "${AUDIO_SHADOW_HOP_SECONDS:=2.5}"
-: "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=0.01691491}"
+# Laughter threshold history (all 2026-08-05, observed on the device):
+#   0.01691491  first value; argmax of a small dev set. Eight significant
+#               digits is an overfitting signal, not precision.
+#   0.0338      doubled.
+#   0.021       moved back between the two.
+#   0.15        raised hard after indoor conversation was seen scoring 0.072.
+#   0.03        current. 0.15 missed too much real laughter.
+# Observed score distribution while running:
+#   silence 0.0003 / indoor close conversation 0.072 (topClass=Speech 0.90)
+#   laughter during clapping 0.030 / clear laughter 0.229~0.293
+# 0.03 sits below the observed conversation score, so conversational false
+# positives can reappear. If they do, ~0.08 is the next candidate: it clears
+# 0.072 while staying under the 0.229 laughter floor. Do not go back to the
+# dev-set argmax; it fired on ordinary speech.
+: "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=0.03}"
+# Consecutive windows is a weak filter here. A 10s window hopping 2.5s shares
+# 7.5s with its neighbour, so one short sound lands in several windows and
+# usually clears the threshold in all of them. Requiring 2 mostly costs 2.5s of
+# latency and drops short laughs.
 : "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"
 : "${AUDIO_SHADOW_CLAP_THRESHOLD:=0.08725224}"
 : "${AUDIO_SHADOW_CLAP_CONSECUTIVE:=1}"

@@ -93,7 +93,7 @@ grep -Fq ': "${AUDIO_EVENT_MODEL:=efficientat}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${AUDIO_EVENT_CLAP_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq ': "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=0.01691491}"' \
+grep -Fq ': "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=0.03}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"

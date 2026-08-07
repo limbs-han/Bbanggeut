@@ -258,7 +258,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--laughter-threshold",
         type=float,
-        default=0.01691491,
+        # Field-corrected value, not the dev-set argmax (0.01691491). That
+        # argmax fired on ordinary indoor conversation, which scores 0.072 on
+        # this model. The launcher passes this explicitly; the default only
+        # covers manual runs, and a manual run that can now hold event
+        # authority must not silently pick the value that over-fires.
+        default=0.03,
     )
     parser.add_argument("--laughter-consecutive", type=int, default=1)
     parser.add_argument(
