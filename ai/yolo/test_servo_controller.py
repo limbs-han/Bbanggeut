@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import io
 import os
 from pathlib import Path
 import sys
@@ -184,24 +185,133 @@ class FramingTargetValidationTests(unittest.TestCase):
 
 
 class AxisConfigurationTests(unittest.TestCase):
-    def test_defaults_limit_both_axes_to_80_degrees_from_home(self) -> None:
+    def test_defaults_limit_pan_to_90_and_tilt_to_the_mount_stop(self) -> None:
         with (
             patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
             patch.object(sys, "argv", ["servo_controller.py"]),
         ):
             pan, tilt = build_axis_configs(parse_args())
 
-        self.assertEqual((pan.minimum_deg, pan.maximum_deg), (-80.0, 80.0))
-        self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (-50.0, 80.0))
-        self.assertEqual((pan.park_deg, tilt.park_deg), (0.0, -50.0))
+        self.assertEqual((pan.minimum_deg, pan.maximum_deg), (-90.0, 90.0))
+        self.assertEqual((tilt.minimum_deg, tilt.maximum_deg), (0.0, 110.0))
+        self.assertEqual((pan.park_deg, tilt.park_deg), (0.0, 0.0))
+        self.assertEqual(
+            (pan.minimum_pulse_us, pan.maximum_pulse_us),
+            (495.0, 2505.0),
+        )
+
+    def test_defaults_park_both_axes_at_the_mounted_zero(self) -> None:
+        # The horns were seated so that these pulses are where the linkage
+        # rests without power. Applying servo power must not move it.
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            pan, tilt = build_axis_configs(parse_args())
+
+        self.assertAlmostEqual(pan.pulse_for_position(pan.park_deg), 1500.0)
+        self.assertAlmostEqual(tilt.pulse_for_position(tilt.park_deg), 611.0)
+
+    def test_defaults_map_logical_degrees_onto_physical_degrees(self) -> None:
+        # 495..2505us spans 180 physical degrees at 11.1111us per degree, so a
+        # logical degree is a physical one. PAN turns right on a falling pulse.
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            pan, tilt = build_axis_configs(parse_args())
+
+        self.assertEqual(pan.pulse_direction, -1)
+        self.assertEqual(tilt.pulse_direction, 1)
+        self.assertAlmostEqual(pan.pulse_for_position(90.0), 500.001)
+        self.assertAlmostEqual(pan.pulse_for_position(-90.0), 2499.999)
+        self.assertAlmostEqual(tilt.pulse_for_position(110.0), 1833.221)
+
+    def test_pan_90_does_not_fit_the_old_narrow_pulse_guard(self) -> None:
+        # PAN +-90 lands exactly on 1000 and 2000us, and the rounding of
+        # 5.555556us per degree pushes it just outside. The guard was widened
+        # to the SG90 datasheet range for this reason.
+        environment = {
+            "DEVICE_ID": DEVICE_ID,
+            "SERVO_MINIMUM_PULSE_US": "1000",
+            "SERVO_MAXIMUM_PULSE_US": "2000",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+            self.assertRaises(ValueError),
+        ):
+            build_axis_configs(parse_args())
+
+    def test_startup_position_defaults_to_park(self) -> None:
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertEqual(parse_args().startup_position, "park")
+
+    def test_start_armed_defaults_to_true(self) -> None:
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertTrue(parse_args().start_armed)
+
+    def test_start_armed_can_be_disabled_for_manual_power_up(self) -> None:
+        environment = {"DEVICE_ID": DEVICE_ID, "SERVO_START_ARMED": "false"}
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertFalse(parse_args().start_armed)
+
+    def test_startup_position_can_use_persisted_state(self) -> None:
+        environment = {
+            "DEVICE_ID": DEVICE_ID,
+            "SERVO_STARTUP_POSITION": "persisted",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertEqual(parse_args().startup_position, "persisted")
+
+    def test_nominal_message_interval_defaults_to_the_publisher_rate(
+        self,
+    ) -> None:
+        with (
+            patch.dict(os.environ, {"DEVICE_ID": DEVICE_ID}, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+        ):
+            self.assertAlmostEqual(
+                parse_args().nominal_message_interval,
+                0.1,
+            )
+
+    def test_nominal_message_interval_must_be_positive(self) -> None:
+        environment = {
+            "DEVICE_ID": DEVICE_ID,
+            "SERVO_NOMINAL_MESSAGE_INTERVAL_SECONDS": "0",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(sys, "argv", ["servo_controller.py"]),
+            patch.object(sys, "stderr", io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            parse_args()
 
     def test_tilt_supports_symmetric_limits_around_home(self) -> None:
+        # The deployed TILT sits at one end of its travel, but nothing in the
+        # axis code assumes that. A mount that can move both ways only needs a
+        # home pulse with room on either side.
         environment = {
             "DEVICE_ID": DEVICE_ID,
             "SERVO_TILT_MIN_DEG": "-20",
             "SERVO_TILT_MAX_DEG": "20",
             "SERVO_TILT_PARK_DEG": "0",
             "SERVO_TILT_PULSE_DIRECTION": "1",
+            "SERVO_TILT_HOME_PULSE_US": "1500",
         }
         with (
             patch.dict(os.environ, environment, clear=False),
@@ -214,8 +324,8 @@ class AxisConfigurationTests(unittest.TestCase):
         self.assertEqual(tilt.park_deg, 0.0)
         self.assertEqual(tilt.maximum_deg, 20.0)
         self.assertEqual(tilt.pulse_direction, 1)
-        self.assertAlmostEqual(tilt.pulse_for_position(-20.0), 1388.88888)
-        self.assertAlmostEqual(tilt.pulse_for_position(20.0), 1611.11112)
+        self.assertAlmostEqual(tilt.pulse_for_position(-20.0), 1277.778)
+        self.assertAlmostEqual(tilt.pulse_for_position(20.0), 1722.222)
 
 
 class PositionPersistenceTests(unittest.TestCase):
@@ -345,8 +455,14 @@ class Pca9685OutputTests(unittest.TestCase):
             for address, register, value in bus.byte_writes
             if address == 0x60 and register == Pca9685ServoOutput.MODE1
         ]
-        self.assertEqual(mode1_writes, [0x11, 0x21, 0xA1])
+        self.assertEqual(mode1_writes, [0x11, 0x21])
         self.assertEqual(mode1_writes[-1] & Pca9685ServoOutput.MODE1_SLEEP, 0)
+        restart_writes = [
+            value
+            for value in mode1_writes
+            if value & Pca9685ServoOutput.MODE1_RESTART
+        ]
+        self.assertEqual(restart_writes, [])
 
 
 class ServoControllerTests(unittest.TestCase):
@@ -384,6 +500,102 @@ class ServoControllerTests(unittest.TestCase):
         self.assertAlmostEqual(self.controller.current_pan_deg, 2.0)
         self.assertAlmostEqual(self.controller.current_tilt_deg, 1.0)
         self.assertEqual(self.controller.mode, "TRACKING")
+
+    def test_disarmed_controller_ignores_targets_until_armed(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(0.0, -50.0),
+            output_armed=False,
+        )
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        self.assertFalse(controller.tick(10.1))
+        self.assertFalse(controller.tick(10.2))
+        self.assertEqual(output.positions, [])
+        self.assertEqual(controller.mode, "STARTUP_WAITING")
+        self.assertEqual(controller.position_snapshot(), (0.0, -50.0))
+
+        self.assertTrue(controller.arm())
+
+        self.assertEqual(controller.mode, "HOLD")
+        self.assertEqual(controller.position_snapshot(), (0.0, -50.0))
+        self.assertFalse(controller.arm())
+
+    def test_arming_follows_targets_from_the_held_position(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(0.0, -50.0),
+            output_armed=False,
+        )
+        controller.arm()
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        self.assertTrue(controller.tick(10.1))
+        self.assertEqual(output.positions, [(0.0, -50.0)])
+
+    def test_arm_is_refused_when_no_startup_position_was_restored(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis("TILT", channel=1, minimum=-80.0, maximum=80.0),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            output_armed=False,
+        )
+        controller.accept_payload(
+            payload(),
+            received_epoch=100.1,
+            received_monotonic=10.0,
+        )
+
+        self.assertFalse(controller.arm())
+
+        self.assertFalse(controller.output_armed)
+        self.assertEqual(controller.mode, "STARTUP_WAITING")
+        self.assertFalse(controller.tick(10.1))
+        self.assertEqual(output.positions, [])
+
+    def test_park_startup_still_arms_because_the_position_is_known(self) -> None:
+        output = RecordingOutput()
+        controller = ServoController(
+            pan=axis("PAN", channel=0, minimum=-80.0, maximum=80.0),
+            tilt=axis(
+                "TILT",
+                channel=1,
+                minimum=-80.0,
+                maximum=80.0,
+                park=-50.0,
+            ),
+            output=output,
+            expected_device_id=DEVICE_ID,
+            message_timeout_seconds=0.75,
+            initial_position=(0.0, -50.0),
+            output_armed=False,
+        )
+
+        self.assertTrue(controller.startup_position_restored)
+        self.assertTrue(controller.arm())
+        self.assertTrue(controller.output_armed)
+        self.assertEqual(controller.mode, "HOLD")
 
     def test_first_pulse_exactly_restores_saved_position(self) -> None:
         output = RecordingOutput()

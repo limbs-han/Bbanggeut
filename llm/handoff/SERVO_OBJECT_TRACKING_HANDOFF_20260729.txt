@@ -83,6 +83,9 @@ SERVO_MAXIMUM_PULSE_US=2000
 
 5. 객체 추적 정책과 최종 시험값
 
+- 이 절은 2026-07-29 시험 기록이다. 현재 기준은 ai/SERVO_PCA9685_RUNBOOK.md
+  를 본다. 아래 MQTT 발행 간격 0.15초도 현재는 0.10초다.
+
 - 추적 대상 클래스: person, cat, dog
 - 추적기: ByteTrack
 - 복수 객체 정책: 전체 그룹 중앙 추적
@@ -118,6 +121,11 @@ SERVO_MAXIMUM_PULSE_US=2000
 6. 조사 중 발견하고 해결한 문제
 
 6.1 PCA9685가 SLEEP 상태로 남는 문제
+
+- 이 절은 2026-07-29 시점 기록이다. 현재 기준은 ai/SERVO_PCA9685_RUNBOOK.md
+  를 본다. 마지막에 RESTART 를 켜는 쪽은 ai/device_agent/servo_test.py 뿐이고,
+  ai/yolo/servo_controller.py 는 RESTART 를 켜지 않는다. 이는 실수가 아니라
+  ai/yolo/test_servo_controller.py 가 고정해 둔 의도적 동작이다.
 
 - 최초 MODE1이 0x11이었다.
 - 기존 주파수 설정은 초기 MODE1의 SLEEP 비트를 다시 복원해 MODE1이
