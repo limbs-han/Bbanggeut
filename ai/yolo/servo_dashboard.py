@@ -9,18 +9,28 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import sys
 import threading
 import time
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Callable
 from urllib.parse import urlparse
+import uuid
+
+# The trigger writer lives with the audio detectors. Importing it keeps the
+# button on the exact format the uploader already consumes; a second writer
+# here would be a second thing to keep in step.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "yamnet"))
+from audio_event_trigger import (  # noqa: E402
+    write_audio_event_trigger as _write_audio_event_trigger,
+)
+
+
+def _isoformat(moment: datetime) -> str:
+    return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def utc_now() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
+    return _isoformat(datetime.now(timezone.utc))
 
 
 class DashboardTelemetry:
@@ -400,6 +410,137 @@ class YamnetDiagnosticsMonitor:
             self._thread.join(timeout=max(1.0, self.poll_seconds * 2))
 
 
+class ManualClipRecorder:
+    """Turn dashboard button presses into ordinary laughter triggers.
+
+    The trigger format carries a moment plus a window, so a press-and-release
+    recording is expressible without any new contract: the moment is the start
+    press and `postSeconds` is however long the user held it. The uploader,
+    backend and app therefore need no change at all.
+
+    The trigger is written on stop, never on start. A trigger that named a
+    window still being recorded would sit in the uploader's scan failing
+    coverage every second until the recording caught up.
+    """
+
+    # The clip carries one second from before the press. Someone reaches for
+    # the button *because* something happened, and the start of the laugh is
+    # in that reach.
+    PRE_SECONDS = 1.0
+    # A double-tap would otherwise ask for a zero-length window, which the
+    # uploader rejects outright.
+    MINIMUM_POST_SECONDS = 5.0
+    # A session nobody stops would grow without limit; nothing in the upload
+    # path caps clip size. Ten minutes is about 190MB at the recorder's
+    # bitrate, which the event budget can absorb.
+    MAXIMUM_POST_SECONDS = 600.0
+    QUICK_POST_SECONDS = 120.0
+
+    def __init__(
+        self,
+        event_dir: Path,
+        *,
+        now: Callable[[], datetime] | None = None,
+        write_trigger: Callable[..., Path] | None = None,
+    ) -> None:
+        self.event_dir = event_dir.expanduser().resolve()
+        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._write_trigger = write_trigger or _write_audio_event_trigger
+        self._lock = threading.Lock()
+        self._started_at: datetime | None = None
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            started_at = self._started_at
+        if started_at is None:
+            return {"recording": False}
+        elapsed = (self._now() - started_at).total_seconds()
+        return {
+            "recording": True,
+            "startedAt": _isoformat(started_at),
+            "elapsedSeconds": round(max(0.0, elapsed), 1),
+            "maximumSeconds": self.MAXIMUM_POST_SECONDS,
+        }
+
+    def start(self) -> dict[str, Any]:
+        with self._lock:
+            if self._started_at is not None:
+                # Report the running session rather than restarting it. A
+                # second press is far more likely to be a double tap than a
+                # request to discard what is already being recorded.
+                already = self._started_at
+                return {
+                    "status": "already-recording",
+                    "startedAt": _isoformat(already),
+                }
+            self._started_at = self._now()
+            return {"status": "recording", "startedAt": _isoformat(self._started_at)}
+
+    def stop(self) -> dict[str, Any]:
+        with self._lock:
+            started_at = self._started_at
+            self._started_at = None
+        if started_at is None:
+            return {"status": "not-recording"}
+        held = (self._now() - started_at).total_seconds()
+        post_seconds = min(
+            self.MAXIMUM_POST_SECONDS,
+            max(self.MINIMUM_POST_SECONDS, held),
+        )
+        return self._write(started_at, post_seconds, "start-stop")
+
+    def capture_quick(self) -> dict[str, Any]:
+        """Record forward from now for the fixed quick-button window."""
+
+        return self._write(self._now(), self.QUICK_POST_SECONDS, "quick")
+
+    def expire_if_overrun(self) -> dict[str, Any] | None:
+        """Finalize a session that has run past the cap, if one has."""
+
+        with self._lock:
+            started_at = self._started_at
+            if started_at is None:
+                return None
+            if (self._now() - started_at).total_seconds() < self.MAXIMUM_POST_SECONDS:
+                return None
+            self._started_at = None
+        return self._write(started_at, self.MAXIMUM_POST_SECONDS, "auto-stop")
+
+    def _write(
+        self,
+        occurred_at: datetime,
+        post_seconds: float,
+        reason: str,
+    ) -> dict[str, Any]:
+        event_id = str(uuid.uuid4())
+        self._write_trigger(
+            self.event_dir,
+            event_id=event_id,
+            # LAUGHTER, not MANUAL. The backend treats MANUAL as something a
+            # person uploaded and stays silent about it; only the detection
+            # types produce the "웃음 영상이 도착했어요" arrival notice.
+            event_type="LAUGHTER",
+            occurred_at=occurred_at,
+            confidence=1.0,
+            class_name="Manual",
+            pre_seconds=self.PRE_SECONDS,
+            post_seconds=post_seconds,
+            metadata={
+                # Marks the trigger as human-made: detector statistics must not
+                # count it, and the uploader must not merge it with a clap.
+                "source": "dashboard-button",
+                "reason": reason,
+            },
+        )
+        return {
+            "status": "captured",
+            "eventId": event_id,
+            "occurredAt": _isoformat(occurred_at),
+            "preSeconds": self.PRE_SECONDS,
+            "postSeconds": round(post_seconds, 1),
+        }
+
+
 class DashboardRequestHandler(BaseHTTPRequestHandler):
     server_version = "WilliamJamesServoDashboard/1.0"
 
@@ -408,10 +549,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         *args: Any,
         telemetry: DashboardTelemetry,
         static_dir: Path,
+        manual_recorder: ManualClipRecorder | None = None,
         **kwargs: Any,
     ) -> None:
         self.telemetry = telemetry
         self.static_dir = static_dir
+        self.manual_recorder = manual_recorder
         super().__init__(*args, **kwargs)
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -438,12 +581,19 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_json(self, payload: dict[str, Any]) -> None:
+        self._send_json_status(HTTPStatus.OK, payload)
+
+    def _send_json_status(
+        self,
+        status: HTTPStatus,
+        payload: dict[str, Any],
+    ) -> None:
         body = json.dumps(
             payload,
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
-        self._send_headers(HTTPStatus.OK, "application/json; charset=utf-8", len(body))
+        self._send_headers(status, "application/json; charset=utf-8", len(body))
         self.wfile.write(body)
 
     def _send_static(self, filename: str, content_type: str) -> None:
@@ -485,7 +635,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         elif path == "/app.js":
             self._send_static("app.js", "text/javascript; charset=utf-8")
         elif path == "/api/state":
-            self._send_json(self.telemetry.snapshot())
+            snapshot = self.telemetry.snapshot()
+            if self.manual_recorder is not None:
+                # Finalizing here rather than on a timer keeps the recorder
+                # free of its own thread: the dashboard page polls state
+                # continuously while anyone is watching.
+                self.manual_recorder.expire_if_overrun()
+                snapshot["manualClip"] = self.manual_recorder.snapshot()
+            self._send_json(snapshot)
         elif path == "/healthz":
             snapshot = self.telemetry.snapshot()
             yamnet = snapshot["yamnet"]
@@ -511,6 +668,37 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._stream_mjpeg()
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        if self.manual_recorder is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        # A form post from another origin would otherwise reach these routes
+        # with no script involved, and the page has no session to check. The
+        # dashboard binds to loopback, so this is a second line, not the only
+        # one.
+        if self.headers.get("X-Requested-With") != "servo-dashboard":
+            self.send_error(HTTPStatus.FORBIDDEN)
+            return
+        actions = {
+            "/api/manual-clip/start": self.manual_recorder.start,
+            "/api/manual-clip/stop": self.manual_recorder.stop,
+            "/api/manual-clip/quick": self.manual_recorder.capture_quick,
+        }
+        action = actions.get(path)
+        if action is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        try:
+            self._send_json(action())
+        except OSError as error:
+            # The event directory can be full or read-only. Say so instead of
+            # letting the handler raise and drop the connection.
+            self._send_json_status(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"status": "failed", "detail": str(error)},
+            )
 
 
 class ServoDashboard:
@@ -558,10 +746,16 @@ class ServoDashboard:
             else None
         )
         static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
+        # Without an event directory there is nowhere to put a trigger, so the
+        # buttons are not offered at all rather than failing when pressed.
+        self.manual_recorder = (
+            ManualClipRecorder(event_dir) if event_dir is not None else None
+        )
         handler = partial(
             DashboardRequestHandler,
             telemetry=self.telemetry,
             static_dir=static_dir,
+            manual_recorder=self.manual_recorder,
         )
         self._http = ThreadingHTTPServer((host, port), handler)
         self._http.daemon_threads = True

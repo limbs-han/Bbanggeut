@@ -19,9 +19,20 @@ def build_audio_event_payload(
     occurred_at: datetime,
     confidence: float,
     class_name: str,
-    clip_seconds: float,
+    clip_seconds: float | None = None,
+    pre_seconds: float | None = None,
+    post_seconds: float | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build a trigger payload.
+
+    Detectors pass `clip_seconds` and get a window centred on the detection.
+    A caller that knows its own window - the dashboard button, which records
+    forward from the moment it was pressed - passes `pre_seconds` and
+    `post_seconds` instead. The uploader has always read the two sides
+    separately; only this writer forced them to be equal.
+    """
+
     normalized_type = event_type.strip().upper()
     if normalized_type not in AUDIO_EVENT_TYPES:
         raise ValueError(
@@ -33,8 +44,28 @@ def build_audio_event_payload(
         raise ValueError("occurred_at must include a timezone")
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("confidence must be between 0 and 1")
-    if clip_seconds <= 0:
-        raise ValueError("clip_seconds must be positive")
+
+    asymmetric = pre_seconds is not None or post_seconds is not None
+    if asymmetric and clip_seconds is not None:
+        raise ValueError(
+            "pass clip_seconds or pre_seconds/post_seconds, not both"
+        )
+    if asymmetric:
+        if pre_seconds is None or post_seconds is None:
+            raise ValueError(
+                "pre_seconds and post_seconds must be given together"
+            )
+    else:
+        if clip_seconds is None:
+            raise ValueError(
+                "clip_seconds or pre_seconds/post_seconds is required"
+            )
+        pre_seconds = clip_seconds
+        post_seconds = clip_seconds
+    # The uploader rejects a non-positive side, so catch it here where the
+    # caller can still see which value it passed.
+    if pre_seconds <= 0 or post_seconds <= 0:
+        raise ValueError("preSeconds and postSeconds must be positive")
 
     payload: dict[str, Any] = {
         "schemaVersion": "1.1",
@@ -45,8 +76,8 @@ def build_audio_event_payload(
         ).replace("+00:00", "Z"),
         "confidence": round(confidence, 6),
         "className": class_name,
-        "preSeconds": clip_seconds,
-        "postSeconds": clip_seconds,
+        "preSeconds": pre_seconds,
+        "postSeconds": post_seconds,
     }
     if metadata:
         payload["metadata"] = metadata

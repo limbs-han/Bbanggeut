@@ -11,9 +11,11 @@ from servo_dashboard import (
     DashboardRequestHandler,
     DashboardTelemetry,
     LaughterEventDirectoryMonitor,
+    ManualClipRecorder,
     ThreadingHTTPServer,
     YamnetDiagnosticsMonitor,
 )
+from datetime import datetime, timedelta, timezone
 from functools import partial
 
 
@@ -264,6 +266,120 @@ class DashboardTelemetryTests(unittest.TestCase):
             telemetry.close()
 
 
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now = self.now + timedelta(seconds=seconds)
+
+
+class ManualClipRecorderTests(unittest.TestCase):
+    def _recorder(self, clock: FakeClock) -> tuple[ManualClipRecorder, list[dict]]:
+        written: list[dict] = []
+
+        def write_trigger(event_dir, **payload):
+            written.append({"eventDir": event_dir, **payload})
+            return Path(event_dir) / f"{payload['event_id']}.trigger.json"
+
+        recorder = ManualClipRecorder(
+            Path(tempfile.gettempdir()) / "wj-manual-clip-test",
+            now=clock,
+            write_trigger=write_trigger,
+        )
+        return recorder, written
+
+    def test_stop_records_the_held_window_forward_from_the_start(self) -> None:
+        clock = FakeClock()
+        recorder, written = self._recorder(clock)
+        started = clock.now
+
+        recorder.start()
+        clock.advance(42.0)
+        result = recorder.stop()
+
+        self.assertEqual(result["status"], "captured")
+        self.assertEqual(len(written), 1)
+        payload = written[0]
+        self.assertEqual(payload["occurred_at"], started)
+        self.assertEqual(payload["pre_seconds"], 1.0)
+        self.assertEqual(payload["post_seconds"], 42.0)
+
+    def test_trigger_is_written_only_on_stop(self) -> None:
+        # A trigger naming a window still being recorded would fail coverage
+        # in the uploader's scan every second until the recording caught up.
+        clock = FakeClock()
+        recorder, written = self._recorder(clock)
+
+        recorder.start()
+        clock.advance(30.0)
+
+        self.assertEqual(written, [])
+
+    def test_event_type_is_laughter_so_the_arrival_notice_fires(self) -> None:
+        # MANUAL would be treated as a human upload and the backend stays
+        # silent about those; only detection types notify.
+        clock = FakeClock()
+        recorder, written = self._recorder(clock)
+
+        recorder.capture_quick()
+
+        self.assertEqual(written[0]["event_type"], "LAUGHTER")
+        self.assertEqual(written[0]["post_seconds"], 120.0)
+        self.assertEqual(written[0]["metadata"]["source"], "dashboard-button")
+
+    def test_double_tap_stop_still_produces_a_usable_window(self) -> None:
+        clock = FakeClock()
+        recorder, written = self._recorder(clock)
+
+        recorder.start()
+        result = recorder.stop()
+
+        self.assertEqual(written[0]["post_seconds"], 5.0)
+        self.assertEqual(result["postSeconds"], 5.0)
+
+    def test_second_start_does_not_discard_the_running_session(self) -> None:
+        clock = FakeClock()
+        recorder, written = self._recorder(clock)
+
+        first = recorder.start()
+        clock.advance(10.0)
+        second = recorder.start()
+        clock.advance(10.0)
+        recorder.stop()
+
+        self.assertEqual(second["status"], "already-recording")
+        self.assertEqual(second["startedAt"], first["startedAt"])
+        self.assertEqual(written[0]["post_seconds"], 20.0)
+
+    def test_a_forgotten_session_is_capped_not_left_running(self) -> None:
+        clock = FakeClock()
+        recorder, written = self._recorder(clock)
+
+        recorder.start()
+        clock.advance(ManualClipRecorder.MAXIMUM_POST_SECONDS + 120.0)
+        expired = recorder.expire_if_overrun()
+
+        self.assertIsNotNone(expired)
+        self.assertEqual(
+            written[0]["post_seconds"],
+            ManualClipRecorder.MAXIMUM_POST_SECONDS,
+        )
+        self.assertFalse(recorder.snapshot()["recording"])
+
+    def test_stop_without_start_writes_nothing(self) -> None:
+        clock = FakeClock()
+        recorder, written = self._recorder(clock)
+
+        result = recorder.stop()
+
+        self.assertEqual(result["status"], "not-recording")
+        self.assertEqual(written, [])
+
+
 class DashboardHttpTests(unittest.TestCase):
     def test_static_dashboard_exposes_yamnet_live_fields(self) -> None:
         static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
@@ -282,6 +398,111 @@ class DashboardHttpTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', html)
             self.assertIn(f'"{element_id}"', script)
         self.assertIn("updateYamnet(payload.yamnet)", script)
+
+    def test_manual_clip_buttons_write_a_real_trigger(self) -> None:
+        telemetry = DashboardTelemetry()
+        static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
+        with tempfile.TemporaryDirectory() as root:
+            event_dir = Path(root) / "events"
+            recorder = ManualClipRecorder(event_dir)
+            handler = partial(
+                DashboardRequestHandler,
+                telemetry=telemetry,
+                static_dir=static_dir,
+                manual_recorder=recorder,
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = server.server_address[1]
+
+            def post(path: str, with_header: bool = True):
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}{path}", method="POST"
+                )
+                if with_header:
+                    request.add_header("X-Requested-With", "servo-dashboard")
+                return urllib.request.urlopen(request, timeout=2)
+
+            try:
+                with post("/api/manual-clip/quick") as response:
+                    captured = json.load(response)
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/state", timeout=2
+                ) as response:
+                    state = json.load(response)
+                with post("/api/manual-clip/start") as response:
+                    json.load(response)
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/state", timeout=2
+                ) as response:
+                    recording_state = json.load(response)
+                with self.assertRaises(urllib.error.HTTPError) as forbidden:
+                    post("/api/manual-clip/stop", with_header=False)
+            finally:
+                server.shutdown()
+                server.server_close()
+                telemetry.close()
+                thread.join(timeout=2)
+
+            triggers = sorted(event_dir.glob("*.trigger.json"))
+            self.assertEqual(len(triggers), 1)
+            payload = json.loads(triggers[0].read_text(encoding="utf-8"))
+
+        self.assertEqual(captured["status"], "captured")
+        self.assertEqual(payload["type"], "LAUGHTER")
+        self.assertEqual(payload["preSeconds"], 1.0)
+        self.assertEqual(payload["postSeconds"], 120.0)
+        self.assertEqual(payload["metadata"]["source"], "dashboard-button")
+        self.assertFalse(state["manualClip"]["recording"])
+        self.assertTrue(recording_state["manualClip"]["recording"])
+        # A cross-origin form post carries no custom header, and the page has
+        # no session to check against.
+        self.assertEqual(forbidden.exception.code, 403)
+
+    def test_manual_clip_routes_are_absent_without_an_event_directory(self) -> None:
+        telemetry = DashboardTelemetry()
+        static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
+        handler = partial(
+            DashboardRequestHandler,
+            telemetry=telemetry,
+            static_dir=static_dir,
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/manual-clip/quick", method="POST"
+            )
+            request.add_header("X-Requested-With", "servo-dashboard")
+            with self.assertRaises(urllib.error.HTTPError) as missing:
+                urllib.request.urlopen(request, timeout=2)
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/state", timeout=2
+            ) as response:
+                state = json.load(response)
+        finally:
+            server.shutdown()
+            server.server_close()
+            telemetry.close()
+            thread.join(timeout=2)
+
+        self.assertEqual(missing.exception.code, 404)
+        self.assertNotIn("manualClip", state)
+
+    def test_static_dashboard_wires_the_manual_clip_controls(self) -> None:
+        static_dir = Path(__file__).resolve().parent / "servo_dashboard_web"
+        html = (static_dir / "index.html").read_text(encoding="utf-8")
+        script = (static_dir / "app.js").read_text(encoding="utf-8")
+
+        for element_id in ("manual-clip", "manual-quick", "manual-toggle", "manual-status"):
+            self.assertIn(f'id="{element_id}"', html)
+            self.assertIn(f'"{element_id}"', script)
+        self.assertIn("updateManualClip(payload.manualClip)", script)
+        self.assertIn('"X-Requested-With": "servo-dashboard"', script)
 
     def test_health_and_state_endpoints(self) -> None:
         telemetry = DashboardTelemetry()

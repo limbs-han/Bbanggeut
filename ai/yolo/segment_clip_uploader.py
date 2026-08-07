@@ -60,6 +60,7 @@ class Trigger:
     pre_seconds: float
     post_seconds: float
     event_type: str = "LAUGHTER"
+    manual: bool = False
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,11 @@ def parse_trigger(path: Path) -> Trigger:
     event_type = str(payload.get("type", "LAUGHTER")).strip().upper()
     if event_type not in EVENT_TITLES:
         raise ValueError(f"unsupported trigger type: {event_type}")
+    metadata = payload.get("metadata")
+    manual = (
+        isinstance(metadata, dict)
+        and str(metadata.get("source", "")) == "dashboard-button"
+    )
     return Trigger(
         path=path,
         event_id=event_id,
@@ -148,6 +154,7 @@ def parse_trigger(path: Path) -> Trigger:
         pre_seconds=pre_seconds,
         post_seconds=post_seconds,
         event_type=event_type,
+        manual=manual,
     )
 
 
@@ -161,13 +168,23 @@ def group_triggers(
     Repeated triggers of the same type keep the existing merge window. Only
     LAUGHTER and CLAP are eligible for the shorter cross-type window; wake-name
     events remain independent from unrelated sounds.
+
+    A manual trigger never merges with anything. The person pressed the button
+    for one moment and expects that clip: merging would move the window and
+    retitle the arrival notice ("웃음과 박수가 함께 담긴 순간") because a clap
+    happened to land nearby.
     """
 
     groups: list[list[Trigger]] = []
     ordered = sorted(triggers, key=lambda trigger: trigger.occurred_at)
     for trigger in ordered:
+        if trigger.manual:
+            groups.append([trigger])
+            continue
         matching_group: list[Trigger] | None = None
         for group in reversed(groups):
+            if any(item.manual for item in group):
+                continue
             same_type_times = [
                 item.occurred_at
                 for item in group
