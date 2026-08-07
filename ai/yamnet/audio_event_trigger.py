@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -62,9 +63,30 @@ def write_audio_event_trigger(
     payload = build_audio_event_payload(**payload_arguments)
     destination = event_dir / f"{payload['eventId']}.trigger.json"
     temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    # 이름 바꾸기만으로는 부족하다. 내용이 디스크에 내려가기 전에 전원이 끊기면
+    # ext4 는 이름만 살아남은 0바이트 파일을 남기고, 그 파일 하나가 업로더의
+    # 트리거 스캔 전체를 막는다. 파일과 디렉터리를 모두 fsync 한다.
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        handle.flush()
+        os.fsync(handle.fileno())
     temporary.replace(destination)
+    fsync_directory(event_dir)
     return destination
+
+
+def fsync_directory(directory: Path) -> None:
+    """Flush a directory entry, skipping platforms that cannot open one."""
+
+    try:
+        handle = os.open(directory, os.O_RDONLY)
+    except OSError:
+        # 윈도우처럼 디렉터리를 열 수 없는 환경에서는 건너뛴다. 이 보호가
+        # 필요한 곳은 젯슨(ext4)이다.
+        return
+    try:
+        os.fsync(handle)
+    except OSError:
+        pass
+    finally:
+        os.close(handle)

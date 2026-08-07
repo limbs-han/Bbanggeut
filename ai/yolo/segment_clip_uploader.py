@@ -30,6 +30,9 @@ RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429})
 TERMINAL_HTTP_STATUSES = frozenset({400, 401, 403, 404, 409, 410, 422})
 MAX_ERROR_BODY_CHARACTERS = 2_048
 KEYFRAME_PROBE_TIMEOUT_SECONDS = 30
+# 트리거를 읽지 못했을 때 손상으로 판정하기까지 기다리는 시간이다. 쓰는 쪽이
+# 원자적으로 교체하므로 정상 파일이 여기 걸리지는 않지만, 여유를 둔다.
+UNREADABLE_TRIGGER_GRACE_SECONDS = 30.0
 MIXED_EVENT_TITLES = {
     frozenset({"LAUGHTER", "CLAP"}): "웃음과 박수가 함께 포착됐어요",
 }
@@ -721,8 +724,31 @@ def process_group(
     return True
 
 
+def block_unreadable_trigger(
+    event_dir: Path, path: Path, event_id: str, error: Exception
+) -> None:
+    """Retire a trigger that will never parse so it cannot stall the scan."""
+
+    write_json_atomic(
+        event_dir / f"{event_id}.upload-blocked.json",
+        {
+            "eventId": event_id,
+            "canonicalEventId": event_id,
+            "eventTypes": [],
+            "blockedAt": instant(datetime.now(timezone.utc)),
+            "reason": "unreadable-trigger",
+            "httpStatus": None,
+            "endpoint": None,
+            "responseBody": f"{type(error).__name__}: {error}",
+            "retryable": False,
+        },
+    )
+    print(f"Trigger unreadable, retiring {path.name}: {error}")
+
+
 def unhandled_triggers(event_dir: Path) -> list[Trigger]:
     triggers: list[Trigger] = []
+    now = time.time()
     for path in event_dir.glob("*.trigger.json"):
         event_id = path.name.removesuffix(".trigger.json")
         if (event_dir / f"{event_id}.uploaded.json").exists():
@@ -731,7 +757,18 @@ def unhandled_triggers(event_dir: Path) -> list[Trigger]:
             continue
         if (event_dir / f"{event_id}.upload-blocked.json").exists():
             continue
-        triggers.append(parse_trigger(path))
+        try:
+            triggers.append(parse_trigger(path))
+        except (OSError, ValueError, KeyError) as error:
+            # 트리거 하나가 깨져도 나머지 이벤트까지 막지 않는다. 방금 쓰인
+            # 파일은 아직 내용이 다 안 들어갔을 수 있으므로 유예 시간이 지난
+            # 뒤에만 손상으로 판정한다.
+            try:
+                written_at = path.stat().st_mtime
+            except OSError:
+                continue
+            if now - written_at >= UNREADABLE_TRIGGER_GRACE_SECONDS:
+                block_unreadable_trigger(event_dir, path, event_id, error)
     return triggers
 
 
