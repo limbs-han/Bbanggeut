@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 
 # Disk-backed Jetson AI stack:
-# - YOLO and YAMNet consume the validated shared RTSP path.
-# - YAMNet writes lightweight trigger JSON only.
+# - YOLO and the audio detector consume the validated shared RTSP path.
+# - AUDIO_EVENT_MODEL picks which detector holds event authority. EfficientAT
+#   MN10 is the default; YAMNet stays in the tree as the rollback path. Exactly
+#   one detector can write triggers, so events are never produced twice.
+# - The authoritative detector writes lightweight trigger JSON only.
 # - The uploader merges repeated event types within 30 seconds, and merges
 #   laughter with clapping within 5 seconds. It extracts the first detection
 #   -60 seconds through the last detection +60 seconds from rolling MPEG-TS.
@@ -74,6 +77,8 @@ fi
 : "${YAMNET_CLAP_MIN_ACTIVE_SECONDS:=0.4}"
 : "${YAMNET_CLAP_MAX_GAP_SECONDS:=0.75}"
 : "${YAMNET_CLAP_COOLDOWN:=12}"
+: "${AUDIO_EVENT_MODEL:=efficientat}"
+: "${AUDIO_EVENT_CLAP_ENABLED:=false}"
 : "${AUDIO_SHADOW_ENABLED:=false}"
 : "${AUDIO_SHADOW_MODEL_PATH:=${HOME}/ai_models/audio-benchmark/efficientat_mn10_as.pt}"
 : "${AUDIO_SHADOW_MODEL_SHA256:=0bd7dc2443af498c289a2e739f02ebb515d6aa3fd3ab9db539c86123ae368a4e}"
@@ -98,6 +103,45 @@ fi
 : "${WAKE_NAME_ASR_COMPUTE_TYPE:=int8}"
 : "${UPLOAD_RETRY_INITIAL_SECONDS:=5}"
 : "${UPLOAD_RETRY_MAX_SECONDS:=300}"
+
+# Resolve which detector owns event authority before anything starts. Deriving
+# the three start/authority flags from one variable keeps two detectors from
+# writing triggers for the same sound.
+AUDIO_EVENT_MODEL="${AUDIO_EVENT_MODEL,,}"
+case "$AUDIO_EVENT_MODEL" in
+    efficientat)
+        YAMNET_START=false
+        AUDIO_SHADOW_START=true
+        AUDIO_SHADOW_OPERATIONAL=true
+        ;;
+    yamnet)
+        YAMNET_START=true
+        AUDIO_SHADOW_OPERATIONAL=false
+        case "${AUDIO_SHADOW_ENABLED,,}" in
+            true|1|yes)
+                AUDIO_SHADOW_START=true
+                ;;
+            false|0|no)
+                AUDIO_SHADOW_START=false
+                ;;
+            *)
+                echo "AUDIO_SHADOW_ENABLED must be true or false" >&2
+                exit 2
+                ;;
+        esac
+        ;;
+    none)
+        YAMNET_START=false
+        AUDIO_SHADOW_START=false
+        AUDIO_SHADOW_OPERATIONAL=false
+        ;;
+    *)
+        echo \
+            "AUDIO_EVENT_MODEL must be one of: efficientat, yamnet, none" \
+            >&2
+        exit 2
+        ;;
+esac
 
 YAMNET_SCORE_AGGREGATION="${YAMNET_SCORE_AGGREGATION,,}"
 case "$YAMNET_SCORE_AGGREGATION" in
@@ -159,25 +203,28 @@ case "${WAKE_NAME_ENABLED,,}" in
         ;;
 esac
 
-case "${AUDIO_SHADOW_ENABLED,,}" in
-    true|1|yes)
-        for required in \
-            "$AUDIO_SHADOW_PYTHON" \
-            "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py" \
-            "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py" \
-            "$AUDIO_SHADOW_MODEL_PATH" \
-            "$AUDIO_SHADOW_SOURCE_REPO" \
-            "${AUDIO_SHADOW_SOURCE_REPO}/metadata/class_labels_indices.csv"; do
-            if [[ ! -e "$required" ]]; then
-                echo "Audio shadow requirement not found: $required" >&2
-                exit 1
-            fi
-        done
-        ;;
-    false|0|no)
+if [[ "$AUDIO_SHADOW_START" == true ]]; then
+    for required in \
+        "$AUDIO_SHADOW_PYTHON" \
+        "${MODEL_BENCHMARK_DIR}/audio_shadow_runner.py" \
+        "${MODEL_BENCHMARK_DIR}/audio_prediction_runner.py" \
+        "${YAMNET_DIR}/audio_event_trigger.py" \
+        "${YAMNET_DIR}/mqtt_event_publisher.py" \
+        "$AUDIO_SHADOW_MODEL_PATH" \
+        "$AUDIO_SHADOW_SOURCE_REPO" \
+        "${AUDIO_SHADOW_SOURCE_REPO}/metadata/class_labels_indices.csv"; do
+        if [[ ! -e "$required" ]]; then
+            echo "EfficientAT requirement not found: $required" >&2
+            exit 1
+        fi
+    done
+fi
+
+case "${AUDIO_EVENT_CLAP_ENABLED,,}" in
+    true|1|yes|false|0|no)
         ;;
     *)
-        echo "AUDIO_SHADOW_ENABLED must be true or false" >&2
+        echo "AUDIO_EVENT_CLAP_ENABLED must be true or false" >&2
         exit 2
         ;;
 esac
@@ -187,6 +234,16 @@ RUN_DIR="${EVENT_DIR}/logs/$(date '+%Y%m%d_%H%M%S')"
 mkdir -p "$RUN_DIR"
 YAMNET_DIAGNOSTICS_PATH="${RUN_DIR}/yamnet_diagnostics.jsonl"
 AUDIO_SHADOW_DIAGNOSTICS_PATH="${RUN_DIR}/efficientat_shadow.jsonl"
+# Readiness and the servo dashboard follow whichever detector is authoritative.
+# Both diagnostics streams carry the same selectedScore/selectedClass keys, so
+# the consumers need no branch of their own.
+if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+    AUDIO_DETECTOR_NAME="EfficientAT"
+    AUDIO_DETECTOR_DIAGNOSTICS_PATH="$AUDIO_SHADOW_DIAGNOSTICS_PATH"
+else
+    AUDIO_DETECTOR_NAME="YAMNet"
+    AUDIO_DETECTOR_DIAGNOSTICS_PATH="$YAMNET_DIAGNOSTICS_PATH"
+fi
 YOLO_SELECTION_FILE="${RUN_DIR}/yolo_runtime_selection.tsv"
 
 YOLO_SELECTOR_COMMAND=(
@@ -317,23 +374,40 @@ echo \
     "YOLO runtime: requested=${YOLO_RUNTIME} " \
     "selected=${YOLO_SELECTED_RUNTIME} model=${YOLO_SELECTED_MODEL}"
 echo \
-    "YAMNet detector: aggregation=${YAMNET_SCORE_AGGREGATION} " \
-    "threshold=${YAMNET_THRESHOLD} consecutive=${YAMNET_CONSECUTIVE} " \
-    "cooldown=${YAMNET_COOLDOWN}s gain=${YAMNET_GAIN}"
-echo \
-    "Clap detector: enabled=${YAMNET_CLAP_ENABLED} " \
-    "threshold=${YAMNET_CLAP_THRESHOLD} " \
-    "consecutive=${YAMNET_CLAP_CONSECUTIVE} " \
-    "onsets=${YAMNET_CLAP_REQUIRED_ONSETS} " \
-    "minimumActive=${YAMNET_CLAP_MIN_ACTIVE_SECONDS}s"
-echo \
-    "Audio shadow: enabled=${AUDIO_SHADOW_ENABLED} model=EfficientAT-MN10 " \
-    "context=${AUDIO_SHADOW_CONTEXT_SECONDS}s hop=${AUDIO_SHADOW_HOP_SECONDS}s " \
-    "laughter=${AUDIO_SHADOW_LAUGHTER_THRESHOLD}/" \
-    "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE} " \
-    "clap=${AUDIO_SHADOW_CLAP_THRESHOLD}/" \
-    "${AUDIO_SHADOW_CLAP_CONSECUTIVE} " \
-    "authority=none"
+    "Audio event model: ${AUDIO_EVENT_MODEL} " \
+    "(authority=${AUDIO_DETECTOR_NAME})"
+if [[ "$AUDIO_SHADOW_START" == true ]]; then
+    if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+        audio_shadow_authority="events"
+    else
+        audio_shadow_authority="none"
+    fi
+    echo \
+        "EfficientAT MN10: authority=${audio_shadow_authority} " \
+        "context=${AUDIO_SHADOW_CONTEXT_SECONDS}s " \
+        "hop=${AUDIO_SHADOW_HOP_SECONDS}s " \
+        "laughter=${AUDIO_SHADOW_LAUGHTER_THRESHOLD}/" \
+        "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE} " \
+        "clap=${AUDIO_SHADOW_CLAP_THRESHOLD}/" \
+        "${AUDIO_SHADOW_CLAP_CONSECUTIVE} " \
+        "clapEvents=${AUDIO_EVENT_CLAP_ENABLED}"
+else
+    echo "EfficientAT MN10: not started"
+fi
+if [[ "$YAMNET_START" == true ]]; then
+    echo \
+        "YAMNet detector: aggregation=${YAMNET_SCORE_AGGREGATION} " \
+        "threshold=${YAMNET_THRESHOLD} consecutive=${YAMNET_CONSECUTIVE} " \
+        "cooldown=${YAMNET_COOLDOWN}s gain=${YAMNET_GAIN}"
+    echo \
+        "Clap detector: enabled=${YAMNET_CLAP_ENABLED} " \
+        "threshold=${YAMNET_CLAP_THRESHOLD} " \
+        "consecutive=${YAMNET_CLAP_CONSECUTIVE} " \
+        "onsets=${YAMNET_CLAP_REQUIRED_ONSETS} " \
+        "minimumActive=${YAMNET_CLAP_MIN_ACTIVE_SECONDS}s"
+else
+    echo "YAMNet detector: disabled (rollback with AUDIO_EVENT_MODEL=yamnet)"
+fi
 echo \
     "Wake-name detector: enabled=${WAKE_NAME_ENABLED} " \
     "threshold=${WAKE_NAME_THRESHOLD} cooldown=${WAKE_NAME_COOLDOWN}s"
@@ -377,7 +451,7 @@ case "${YAMNET_CLAP_ENABLED,,}" in
         ;;
 esac
 
-write_yamnet_status() {
+write_detector_status() {
     local status="$1"
     local detail="$2"
     local observed_at
@@ -385,11 +459,14 @@ write_yamnet_status() {
     printf \
         '{"observedAt":"%s","status":"%s","detail":"%s"}\n' \
         "$observed_at" "$status" "$detail" \
-        >> "$YAMNET_DIAGNOSTICS_PATH"
+        >> "$AUDIO_DETECTOR_DIAGNOSTICS_PATH"
 }
 
-yamnet_has_inference() {
-    grep -q '"selectedScore"' "$YAMNET_DIAGNOSTICS_PATH" 2>/dev/null
+# Status records carry no selectedScore, so they can never be mistaken for a
+# completed inference when readiness is probed.
+detector_has_inference() {
+    grep -q '"selectedScore"' \
+        "$AUDIO_DETECTOR_DIAGNOSTICS_PATH" 2>/dev/null
 }
 
 start_yamnet() {
@@ -419,6 +496,21 @@ AUDIO_SHADOW_COMMAND=(
     --clap-consecutive "$AUDIO_SHADOW_CLAP_CONSECUTIVE"
     --cooldown-seconds "$AUDIO_SHADOW_COOLDOWN_SECONDS"
 )
+if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+    AUDIO_SHADOW_COMMAND+=(
+        --operational
+        --event-dir "$EVENT_DIR"
+        --clip-seconds "$EVENT_CLIP_SECONDS"
+        --device-id "$DEVICE_ID"
+        --mqtt-host "$LOCAL_MQTT_HOST"
+        --mqtt-port "$LOCAL_MQTT_PORT"
+    )
+    case "${AUDIO_EVENT_CLAP_ENABLED,,}" in
+        true|1|yes)
+            AUDIO_SHADOW_COMMAND+=(--enable-clap-events)
+            ;;
+    esac
+fi
 
 start_audio_shadow() {
     "${AUDIO_SHADOW_COMMAND[@]}" \
@@ -428,79 +520,126 @@ start_audio_shadow() {
     PIDS+=("$AUDIO_SHADOW_PID")
 }
 
-write_yamnet_status "STARTING" "Waiting for first inference"
-start_yamnet
+if [[ "$AUDIO_EVENT_MODEL" != none ]]; then
+    write_detector_status "STARTING" "Waiting for first inference"
+fi
+if [[ "$YAMNET_START" == true ]]; then
+    start_yamnet
+fi
+# The authoritative detector goes first and gets the readiness head start. A
+# non-authoritative shadow starts after YOLO so it does not compete for GPU
+# during model load.
+if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+    start_audio_shadow
+fi
 
 echo \
-    "Waiting up to ${YAMNET_READY_TIMEOUT_SECONDS}s for YAMNet first inference"
+    "Waiting up to ${YAMNET_READY_TIMEOUT_SECONDS}s for " \
+    "${AUDIO_DETECTOR_NAME} first inference"
 # Use a wall-clock deadline (date +%s) rather than bash's $SECONDS. $SECONDS
 # is relative to when *this shell* started, which is normally fine, but it is
 # an easy thing to get wrong (e.g. it does not survive `exec`, and it is easy
 # to accidentally read it from a different shell/subshell than the one that
 # set the baseline). A plain epoch-seconds comparison has no such surprises
 # and matches what an operator sees in `date`/journal timestamps.
-yamnet_wait_started="$(date +%s)"
-yamnet_ready_deadline=$((yamnet_wait_started + YAMNET_READY_TIMEOUT_SECONDS))
-yamnet_initial_ready=false
-while ! yamnet_has_inference; do
-    if ! child_is_running "$YAMNET_PID"; then
-        if wait "$YAMNET_PID"; then
-            yamnet_status=0
-        else
-            yamnet_status="$?"
-        fi
-        remove_managed_pid "$YAMNET_PID"
+detector_pid() {
+    if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+        printf '%s' "$AUDIO_SHADOW_PID"
+    else
+        printf '%s' "$YAMNET_PID"
+    fi
+}
+
+detector_log() {
+    if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+        printf '%s' "${RUN_DIR}/efficientat_shadow.log"
+    else
+        printf '%s' "${RUN_DIR}/yamnet.log"
+    fi
+}
+
+release_detector_pid() {
+    local pid
+    pid="$(detector_pid)"
+    remove_managed_pid "$pid"
+    if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+        AUDIO_SHADOW_PID=""
+        AUDIO_SHADOW_RESTART_AT=$((
+            $(date +%s) + AUDIO_SHADOW_RESTART_DELAY_SECONDS
+        ))
+    else
         YAMNET_PID=""
         YAMNET_RESTART_AT=$((
             $(date +%s) + YAMNET_RESTART_DELAY_SECONDS
         ))
+    fi
+}
+
+yamnet_wait_started="$(date +%s)"
+yamnet_ready_deadline=$((yamnet_wait_started + YAMNET_READY_TIMEOUT_SECONDS))
+yamnet_initial_ready=false
+if [[ "$AUDIO_EVENT_MODEL" == none ]]; then
+    echo "Audio events are disabled; skipping detector readiness"
+fi
+while [[ "$AUDIO_EVENT_MODEL" != none ]] && ! detector_has_inference; do
+    if ! child_is_running "$(detector_pid)"; then
+        if wait "$(detector_pid)"; then
+            yamnet_status=0
+        else
+            yamnet_status="$?"
+        fi
         echo \
-            "YAMNet exited before readiness (status=${yamnet_status})." \
-            "Continuing in degraded mode; YAMNet will restart independently." \
+            "${AUDIO_DETECTOR_NAME} exited before readiness" \
+            "(status=${yamnet_status})." \
+            "Continuing in degraded mode;" \
+            "${AUDIO_DETECTOR_NAME} will restart independently." \
             "Last log lines:" \
             >&2
-        tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
-        write_yamnet_status \
+        tail -n 20 "$(detector_log)" >&2 2>/dev/null || true
+        release_detector_pid
+        write_detector_status \
             "UNAVAILABLE" \
             "Exited before readiness; restart scheduled"
         break
     fi
     now="$(date +%s)"
     if (( now >= yamnet_ready_deadline )); then
-        if yamnet_has_inference; then
+        if detector_has_inference; then
             yamnet_initial_ready=true
             break
         fi
         echo \
-            "YAMNet readiness timed out after " \
+            "${AUDIO_DETECTOR_NAME} readiness timed out after " \
             "$((now - yamnet_wait_started))s " \
             "(limit ${YAMNET_READY_TIMEOUT_SECONDS}s). " \
-            "Continuing in degraded mode while YAMNet keeps running. " \
+            "Continuing in degraded mode while " \
+            "${AUDIO_DETECTOR_NAME} keeps running. " \
             "Last log lines:" \
             >&2
-        tail -n 20 "${RUN_DIR}/yamnet.log" >&2 2>/dev/null || true
-        write_yamnet_status \
+        tail -n 20 "$(detector_log)" >&2 2>/dev/null || true
+        write_detector_status \
             "UNAVAILABLE" \
             "Readiness timed out; detector still running"
         break
     fi
     sleep 0.25
 done
-if yamnet_has_inference; then
+if [[ "$AUDIO_EVENT_MODEL" != none ]] && detector_has_inference; then
     yamnet_initial_ready=true
 fi
 if [[ "$yamnet_initial_ready" == true ]]; then
     echo \
-        "YAMNet ready: first inference telemetry received after " \
-        "$(( $(date +%s) - yamnet_wait_started ))s"
-else
+        "${AUDIO_DETECTOR_NAME} ready: first inference telemetry received " \
+        "after $(( $(date +%s) - yamnet_wait_started ))s"
+elif [[ "$AUDIO_EVENT_MODEL" != none ]]; then
     echo \
-        "YAMNet is not ready; starting the remaining AI stack in degraded mode"
+        "${AUDIO_DETECTOR_NAME} is not ready; starting the remaining AI " \
+        "stack in degraded mode"
 fi
 
-# Give YAMNet a bounded head start to reduce TensorFlow/PyTorch startup
-# contention. Readiness is observational, not fatal: uploader, wake-name,
-# YOLO, and the dashboard still start if YAMNet is slow or temporarily down.
+# Give the audio detector a bounded head start to reduce TensorFlow/PyTorch
+# startup contention. Readiness is observational, not fatal: uploader,
+# wake-name, YOLO, and the dashboard still start if it is slow or down.
 UPLOADER_COMMAND=(
     "$YOLO_PYTHON" -u "${SCRIPT_DIR}/segment_clip_uploader.py"
     --event-dir "$EVENT_DIR"
@@ -571,7 +710,7 @@ YOLO_COMMAND=(
     --dashboard-port "$SERVO_DASHBOARD_PORT"
     --dashboard-log "${RUN_DIR}/servo_dashboard.jsonl"
     --dashboard-event-dir "$EVENT_DIR"
-    --dashboard-yamnet-diagnostics "$YAMNET_DIAGNOSTICS_PATH"
+    --dashboard-yamnet-diagnostics "$AUDIO_DETECTOR_DIAGNOSTICS_PATH"
     --dashboard-frame-width "$SERVO_DASHBOARD_FRAME_WIDTH"
     --dashboard-jpeg-quality "$SERVO_DASHBOARD_JPEG_QUALITY"
     --dashboard-frame-interval "$SERVO_DASHBOARD_FRAME_INTERVAL_SECONDS"
@@ -580,11 +719,10 @@ MQTT_HOST= "${YOLO_COMMAND[@]}" \
     > >(sed -u 's/^/[YOLO] /' | tee -a "${RUN_DIR}/yolo.log") 2>&1 &
 PIDS+=("$!")
 
-case "${AUDIO_SHADOW_ENABLED,,}" in
-    true|1|yes)
-        start_audio_shadow
-        ;;
-esac
+if [[ "$AUDIO_SHADOW_START" == true &&
+    "$AUDIO_SHADOW_OPERATIONAL" != true ]]; then
+    start_audio_shadow
+fi
 
 while true; do
     now="$(date +%s)"
@@ -602,13 +740,15 @@ while true; do
             "YAMNet exited (status=${yamnet_status}); restarting only YAMNet " \
             "in ${YAMNET_RESTART_DELAY_SECONDS}s" \
             >&2
-        write_yamnet_status \
+        write_detector_status \
             "UNAVAILABLE" \
             "Detector exited; restart scheduled"
     fi
-    if [[ -z "$YAMNET_PID" ]] && (( now >= YAMNET_RESTART_AT )); then
+    if [[ "$YAMNET_START" == true ]] &&
+        [[ -z "$YAMNET_PID" ]] &&
+        (( now >= YAMNET_RESTART_AT )); then
         echo "Restarting YAMNet detector" >&2
-        write_yamnet_status "RESTARTING" "Launching detector"
+        write_detector_status "RESTARTING" "Launching detector"
         start_yamnet
     fi
     if [[ -n "$AUDIO_SHADOW_PID" ]] &&
@@ -623,16 +763,32 @@ while true; do
         AUDIO_SHADOW_RESTART_AT=$((
             now + AUDIO_SHADOW_RESTART_DELAY_SECONDS
         ))
-        echo \
-            "EfficientAT shadow exited (status=${audio_shadow_status}); " \
-            "production YAMNet remains authoritative; restarting shadow in " \
-            "${AUDIO_SHADOW_RESTART_DELAY_SECONDS}s" \
-            >&2
+        if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+            echo \
+                "EfficientAT exited (status=${audio_shadow_status}); " \
+                "restarting only EfficientAT in " \
+                "${AUDIO_SHADOW_RESTART_DELAY_SECONDS}s" \
+                >&2
+            write_detector_status \
+                "UNAVAILABLE" \
+                "Detector exited; restart scheduled"
+        else
+            echo \
+                "EfficientAT shadow exited (status=${audio_shadow_status}); " \
+                "production YAMNet remains authoritative; restarting shadow " \
+                "in ${AUDIO_SHADOW_RESTART_DELAY_SECONDS}s" \
+                >&2
+        fi
     fi
-    if [[ "${AUDIO_SHADOW_ENABLED,,}" =~ ^(true|1|yes)$ ]] &&
+    if [[ "$AUDIO_SHADOW_START" == true ]] &&
         [[ -z "$AUDIO_SHADOW_PID" ]] &&
         (( now >= AUDIO_SHADOW_RESTART_AT )); then
-        echo "Restarting EfficientAT shadow recorder" >&2
+        if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then
+            echo "Restarting EfficientAT detector" >&2
+            write_detector_status "RESTARTING" "Launching detector"
+        else
+            echo "Restarting EfficientAT shadow recorder" >&2
+        fi
         start_audio_shadow
     fi
     for pid in "${PIDS[@]}"; do

@@ -22,6 +22,7 @@ class MqttEventPublisher:
         password: str | None = None,
         event_topic: str | None = None,
         connect_timeout: float = 5.0,
+        component: str = "yamnet",
     ) -> None:
         try:
             import paho.mqtt.client as mqtt
@@ -32,6 +33,11 @@ class MqttEventPublisher:
             ) from exc
 
         self._device_id = device_id
+        # The component distinguishes concurrent audio detectors on one device.
+        # Two clients sharing an MQTT client id would disconnect each other, and
+        # a retained status message published under the wrong component would
+        # mark the surviving detector offline.
+        self._component = component
         self._custom_event_topic = event_topic
         self._status_topic = f"homecam/v2/{device_id}/ai/status"
         self._connected = threading.Event()
@@ -39,7 +45,7 @@ class MqttEventPublisher:
 
         self._client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"{device_id}-yamnet",
+            client_id=f"{device_id}-{component}",
             protocol=mqtt.MQTTv311,
         )
         if username:
@@ -50,7 +56,7 @@ class MqttEventPublisher:
             payload=json.dumps(
                 {
                     "device_id": device_id,
-                    "component": "yamnet",
+                    "component": component,
                     "status": "offline",
                 }
             ),
@@ -104,7 +110,7 @@ class MqttEventPublisher:
             payload=json.dumps(
                 {
                     "device_id": self._device_id,
-                    "component": "yamnet",
+                    "component": self._component,
                     "status": "online",
                 }
             ),
@@ -206,7 +212,7 @@ class MqttEventPublisher:
             payload=json.dumps(
                 {
                     "device_id": self._device_id,
-                    "component": "yamnet",
+                    "component": self._component,
                     "status": "offline",
                 }
             ),

@@ -9,13 +9,13 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
             Path(__file__).resolve().parent / "run_edge_ai_recording.sh"
         ).read_text(encoding="utf-8")
 
-    def test_yamnet_gets_bounded_head_start_before_other_workers(self) -> None:
-        yamnet_launch = self.script.index("start_yamnet")
-        readiness_wait = self.script.index("while ! yamnet_has_inference")
+    def test_detector_gets_bounded_head_start_before_other_workers(self) -> None:
+        detector_launch = self.script.index("start_audio_shadow")
+        readiness_wait = self.script.index("! detector_has_inference")
         uploader_launch = self.script.index('"${UPLOADER_COMMAND[@]}"')
         yolo_launch = self.script.index('"${YOLO_COMMAND[@]}"')
 
-        self.assertLess(yamnet_launch, readiness_wait)
+        self.assertLess(detector_launch, readiness_wait)
         self.assertLess(readiness_wait, uploader_launch)
         self.assertLess(uploader_launch, yolo_launch)
 
@@ -26,6 +26,41 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
             "yamnet_ready_deadline=$((SECONDS +",
             self.script,
         )
+
+    def test_efficientat_holds_event_authority_by_default(self) -> None:
+        self.assertIn(': "${AUDIO_EVENT_MODEL:=efficientat}"', self.script)
+
+        model_case = self.script.index('case "$AUDIO_EVENT_MODEL" in')
+        efficientat_branch = self.script.index("efficientat)", model_case)
+        yamnet_branch = self.script.index("    yamnet)", model_case)
+        branch = self.script[efficientat_branch:yamnet_branch]
+
+        self.assertIn("YAMNET_START=false", branch)
+        self.assertIn("AUDIO_SHADOW_START=true", branch)
+        self.assertIn("AUDIO_SHADOW_OPERATIONAL=true", branch)
+
+    def test_only_the_authoritative_detector_writes_triggers(self) -> None:
+        # YAMNet is always launched with --event-dir, so it must not start
+        # while EfficientAT is operational or both would create events.
+        self.assertIn(
+            'if [[ "$YAMNET_START" == true ]]; then\n    start_yamnet',
+            self.script,
+        )
+        operational_arguments = self.script.index(
+            'if [[ "$AUDIO_SHADOW_OPERATIONAL" == true ]]; then'
+        )
+        block = self.script[operational_arguments:]
+        self.assertIn("--operational", block)
+        self.assertIn('--event-dir "$EVENT_DIR"', block)
+
+    def test_audio_events_can_be_disabled_entirely(self) -> None:
+        model_case = self.script.index('case "$AUDIO_EVENT_MODEL" in')
+        none_branch = self.script.index("    none)", model_case)
+        branch = self.script[none_branch:self.script.index("    *)", none_branch)]
+
+        self.assertIn("YAMNET_START=false", branch)
+        self.assertIn("AUDIO_SHADOW_START=false", branch)
+        self.assertIn("AUDIO_SHADOW_OPERATIONAL=false", branch)
 
     def test_readiness_timeout_continues_in_degraded_mode(self) -> None:
         timeout_start = self.script.index(
@@ -39,24 +74,33 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
         self.assertIn("break", timeout_block)
         self.assertNotIn("exit 1", timeout_block)
 
-    def test_yamnet_exit_restarts_only_yamnet(self) -> None:
+    def test_detector_exit_restarts_only_that_detector(self) -> None:
         supervisor_start = self.script.rindex("while true; do")
         supervisor = self.script[supervisor_start:]
 
         self.assertIn("YAMNET_RESTART_DELAY_SECONDS", self.script)
         self.assertIn("restarting only YAMNet", supervisor)
-        self.assertIn('write_yamnet_status "RESTARTING"', supervisor)
+        self.assertIn("restarting only EfficientAT", supervisor)
+        self.assertIn('write_detector_status "RESTARTING"', supervisor)
         self.assertIn("start_yamnet", supervisor)
+        self.assertIn("start_audio_shadow", supervisor)
         self.assertIn(
             'if [[ "$pid" == "$YAMNET_PID" || "$pid" == "$AUDIO_SHADOW_PID" ]]',
             supervisor,
         )
 
-    def test_audio_shadow_is_disabled_and_non_authoritative_by_default(self) -> None:
+    def test_shadow_companion_stays_non_authoritative(self) -> None:
+        # AUDIO_SHADOW_ENABLED only adds a shadow beside YAMNet; it must never
+        # be what grants event authority.
         self.assertIn(': "${AUDIO_SHADOW_ENABLED:=false}"', self.script)
-        self.assertIn("authority=none", self.script)
         self.assertIn("audio_shadow_runner.py", self.script)
-        self.assertNotIn("--event-dir \"$AUDIO_SHADOW", self.script)
+
+        model_case = self.script.index('case "$AUDIO_EVENT_MODEL" in')
+        yamnet_branch = self.script.index("    yamnet)", model_case)
+        branch = self.script[yamnet_branch:self.script.index("    none)", model_case)]
+
+        self.assertIn("AUDIO_SHADOW_OPERATIONAL=false", branch)
+        self.assertIn("AUDIO_SHADOW_ENABLED", branch)
 
     def test_audio_shadow_failure_does_not_stop_production_workers(self) -> None:
         supervisor_start = self.script.rindex("while true; do")
@@ -66,13 +110,29 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
         self.assertIn("Restarting EfficientAT shadow recorder", supervisor)
         self.assertIn("start_audio_shadow", supervisor)
 
-    def test_yamnet_status_records_do_not_satisfy_readiness(self) -> None:
+    def test_status_records_do_not_satisfy_readiness(self) -> None:
         self.assertIn(
-            """grep -q '"selectedScore"' "$YAMNET_DIAGNOSTICS_PATH" 2>/dev/null""",
+            """grep -q '"selectedScore"' \\\n        "$AUDIO_DETECTOR_DIAGNOSTICS_PATH" 2>/dev/null""",
             self.script,
         )
         self.assertIn(
-            'write_yamnet_status "STARTING" "Waiting for first inference"',
+            'write_detector_status "STARTING" "Waiting for first inference"',
+            self.script,
+        )
+
+    def test_readiness_and_dashboard_follow_the_authoritative_detector(
+        self,
+    ) -> None:
+        self.assertIn(
+            'AUDIO_DETECTOR_DIAGNOSTICS_PATH="$AUDIO_SHADOW_DIAGNOSTICS_PATH"',
+            self.script,
+        )
+        self.assertIn(
+            'AUDIO_DETECTOR_DIAGNOSTICS_PATH="$YAMNET_DIAGNOSTICS_PATH"',
+            self.script,
+        )
+        self.assertIn(
+            '--dashboard-yamnet-diagnostics "$AUDIO_DETECTOR_DIAGNOSTICS_PATH"',
             self.script,
         )
 
