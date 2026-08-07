@@ -1,0 +1,51 @@
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets and local environment
+.env
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+
+# Java / Spring
+backend/.gradle/
+backend/build/
+backend/target/
+*.class
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/.packages
+
+# Python / IoT / AI
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+models/*.engine
+models/*.onnx
+models/*.tflite
+
+# Media and runtime data
+*.mp4
+*.h264
+*.m3u8
+*.ts
+runtime/
+data/
+logs/
+
+# Test reports
+coverage/
+reports/
+test-results/
+

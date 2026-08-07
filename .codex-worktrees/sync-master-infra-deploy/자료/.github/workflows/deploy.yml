@@ -1,0 +1,84 @@
+name: Deploy demo infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to deploy
+        required: true
+        default: main
+      confirm_demo_only:
+        description: Confirm this deploy uses only non-sensitive demo data and loopback-bound infrastructure
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.DEMO_DEPLOY_ENABLED == 'true' && inputs.confirm_demo_only == true
+    runs-on: ubuntu-latest
+    environment: demo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Validate deployment configuration
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_HOST_KEY; do
+            [[ -n "${!name}" ]] || { echo "Missing secret: $name"; exit 1; }
+          done
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        shell: bash
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Package deployment files
+        run: tar -czf william-james-release.tgz infra api database
+
+      - name: Upload and apply
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/william-james' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp william-james-release.tgz "$DEPLOY_USER@$DEPLOY_HOST:/tmp/william-james-release.tgz"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$DEPLOY_PATH"
+          tar -xzf /tmp/william-james-release.tgz -C "$DEPLOY_PATH"
+          test -f "$DEPLOY_PATH/infra/.env" || { echo "Server-side infra/.env is required"; exit 1; }
+          grep -Eq '^BIND_ADDRESS=127\.0\.0\.1$' "$DEPLOY_PATH/infra/.env" || {
+            echo "Demo workflow requires BIND_ADDRESS=127.0.0.1. Production TLS, per-device MQTT ACL, and storage encryption are not configured here."
+            exit 1
+          }
+          cd "$DEPLOY_PATH"
+          docker compose --env-file infra/.env -f infra/docker-compose.yml config --quiet
+          docker compose --env-file infra/.env -f infra/docker-compose.yml up -d --remove-orphans
+          docker compose --env-file infra/.env -f infra/docker-compose.yml ps
+          rm -f /tmp/william-james-release.tgz
+          REMOTE

@@ -1,0 +1,93 @@
+spring:
+  application:
+    name: wj-server
+  profiles:
+    default: local
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/wj}
+    username: ${DB_USER:wj}
+    password: ${DB_PASSWORD:wj-dev-only}
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+server:
+  forward-headers-strategy: native
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+management:
+  health:
+    mail:
+      enabled: ${MAIL_HEALTH_ENABLED:false}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+app:
+  demo:
+    enabled: ${DEMO_MODE_ENABLED:false}
+    live-hls-url: ${DEMO_LIVE_HLS_URL:}
+  auth:
+    access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
+    refresh-token-ttl: ${REFRESH_TOKEN_TTL:14d}
+    jwt-secret: ${JWT_SIGNING_KEY:local-development-signing-key-change-me-2026}
+    login-max-failures: ${LOGIN_MAX_FAILURES:5}
+    login-failure-window: ${LOGIN_FAILURE_WINDOW:10m}
+    password-reset-url: ${PASSWORD_RESET_URL:bbanggeut://password-reset?token=}
+    password-reset-from: ${PASSWORD_RESET_FROM:no-reply@bbanggeut.local}
+  provisioning:
+    enabled: ${DEVICE_PROVISIONING_ENABLED:false}
+    admin-key: ${DEVICE_PROVISIONING_ADMIN_KEY:}
+  device-credential:
+    bootstrap-ttl: ${DEVICE_BOOTSTRAP_TTL:15m}
+    operating-ttl: ${DEVICE_CREDENTIAL_TTL:30d}
+  device-claim:
+    max-failures: ${DEVICE_CLAIM_MAX_FAILURES:5}
+    failure-window: ${DEVICE_CLAIM_FAILURE_WINDOW:10m}
+  invitation:
+    ttl: ${INVITATION_TTL:7d}
+  subscription:
+    premium-retention-days: ${SUBSCRIPTION_PREMIUM_RETENTION_DAYS:365}
+    grace: ${SUBSCRIPTION_GRACE:30d}
+  retention:
+    sweep-delay: ${RETENTION_SWEEP_DELAY:60000}
+  upload:
+    stale-after: ${UPLOAD_STALE_AFTER:30m}
+    sweep-delay-ms: ${UPLOAD_SWEEP_DELAY_MS:60000}
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL:ssl://localhost:8883}
+    client-id: ${MQTT_CLIENT_ID:wj-backend-local}
+    username: ${MQTT_USERNAME:}
+    password: ${MQTT_PASSWORD:}
+    environment: ${MQTT_ENV:local}
+    tls-ca-path: ${MQTT_TLS_CA_PATH:}
+  stream:
+    viewer-ttl: ${STREAM_VIEWER_TTL:45s}
+    idle-timeout: ${STREAM_IDLE_TIMEOUT:60s}
+    edge-lease: ${STREAM_EDGE_LEASE:120s}
+    heartbeat-interval: ${STREAM_HEARTBEAT_INTERVAL:15s}
+    media-base-url: ${MEDIA_BASE_URL:http://localhost:8888/live}
+    live-token-ttl: ${LIVE_TOKEN_TTL:30s}
+  storage:
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${S3_PUBLIC_ENDPOINT:${S3_ENDPOINT:http://localhost:9000}}
+    access-key: ${S3_ACCESS_KEY:minioadmin}
+    secret-key: ${S3_SECRET_KEY:minioadmin}
+    bucket: ${S3_BUCKET:wj-videos}
+    upload-url-ttl: ${S3_UPLOAD_URL_TTL:15m}
+    read-url-ttl: ${S3_READ_URL_TTL:5m}

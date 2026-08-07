@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>윌리엄 제임스 · 개발을 위한 최소한의 명세서 5종</title>
+<style>
+  :root {
+    --accent: #e8a020;
+    --accent-deep: #c9860f;
+    --accent-soft: #fdf3e0;
+    --ink: #1f2328;
+    --sub: #6b7280;
+    --line: #e5e7eb;
+    --card: #fafafa;
+    --high: #14532d; --high-bg: #dcfce7;
+    --mid: #92400e;  --mid-bg: #fef3c7;
+    --low: #6b7280;  --low-bg: #f3f4f6;
+    --pk: #b45309;   --fk: #1d4ed8;
+    --fe: #2563eb; --fe-bg: #dbeafe;
+    --be: #059669; --be-bg: #d1fae5;
+    --ai: #7c3aed; --ai-bg: #ede9fe;
+    --iot: #d97706; --iot-bg: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--ink); background: #fff;
+    font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+    line-height: 1.6; font-size: 15px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 80px; }
+  header.hero {
+    background: linear-gradient(180deg, #fffdf8 0%, #fdf3e0 100%);
+    border-bottom: 3px solid var(--accent);
+    margin: 0 -24px; padding: 44px 24px 24px;
+  }
+  .hero .eyebrow { color: var(--accent-deep); font-weight: 800; letter-spacing: .14em; font-size: 12px; }
+  .hero h1 { margin: 8px 0 6px; font-size: 30px; letter-spacing: -0.5px; }
+  .hero p { margin: 0; color: var(--sub); }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .stat {
+    background: #fff; border: 1px solid #f0dcae; border-radius: 12px;
+    padding: 10px 16px; min-width: 118px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .stat .v { font-size: 20px; font-weight: 800; }
+  .stat .k { font-size: 12px; color: var(--sub); }
+  .stat .v small { font-size: 12px; font-weight: 600; color: var(--sub); }
+
+  /* 직무 필터 바 */
+  .filterbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255,255,255,.94); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+    margin: 0 -24px; padding: 10px 24px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .filterbar .label { font-size: 12.5px; font-weight: 700; color: var(--sub); margin-right: 4px; }
+  .rolebtn {
+    border: 1.5px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 999px; padding: 6px 16px; font-size: 13.5px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+  }
+  .rolebtn:hover { border-color: var(--accent); }
+  .rolebtn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .rolebtn[data-select="fe"].active  { background: var(--fe);  border-color: var(--fe); }
+  .rolebtn[data-select="be"].active  { background: var(--be);  border-color: var(--be); }
+  .rolebtn[data-select="ai"].active  { background: var(--ai);  border-color: var(--ai); }
+  .rolebtn[data-select="iot"].active { background: var(--iot); border-color: var(--iot); }
+  .filterhint { font-size: 12px; color: var(--sub); margin-left: auto; }
+  .role-hidden { display: none !important; }
+
+  nav.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+  nav.toc a {
+    text-decoration: none; color: var(--ink); background: #fff;
+    border: 1px solid #f0dcae; border-radius: 999px; padding: 5px 14px; font-size: 13px; font-weight: 600;
+  }
+  nav.toc a:hover { background: var(--accent-soft); }
+
+  section { margin-top: 56px; scroll-margin-top: 70px; }
+  h2 { font-size: 24px; border-left: 6px solid var(--accent); padding-left: 12px; margin: 0 0 4px; }
+  h2 .num { color: var(--accent); margin-right: 6px; }
+  .h2sub { color: var(--sub); margin: 0 0 18px 18px; font-size: 14px; }
+  h3 { font-size: 17px; margin: 28px 0 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: #fff; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f8f9fa; font-size: 12.5px; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #fffbf2; }
+  td.center, th.center { text-align: center; }
+  .badge { display: inline-block; border-radius: 6px; padding: 1px 8px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+  .b-high { color: var(--high); background: var(--high-bg); }
+  .b-mid  { color: var(--mid);  background: var(--mid-bg); }
+  .b-low  { color: var(--low);  background: var(--low-bg); }
+  .b-basic { color: #1e40af; background: #dbeafe; }
+  .b-adv   { color: #6d28d9; background: #ede9fe; }
+  .b-pk { color: #fff; background: var(--pk); }
+  .b-fk { color: #fff; background: var(--fk); }
+  .b-get { color: #065f46; background: #d1fae5; }
+  .b-post { color: #1e40af; background: #dbeafe; }
+  .b-patch { color: #92400e; background: #fef3c7; }
+  .b-del { color: #991b1b; background: #fee2e2; }
+  .r { display: inline-block; border-radius: 5px; padding: 0 6px; font-size: 10.5px; font-weight: 800; letter-spacing: .02em; margin: 1px 2px 1px 0; }
+  .r-fe  { color: var(--fe);  background: var(--fe-bg); }
+  .r-be  { color: var(--be);  background: var(--be-bg); }
+  .r-ai  { color: var(--ai);  background: var(--ai-bg); }
+  .r-iot { color: var(--iot); background: var(--iot-bg); }
+  code, .mono { font-family: Consolas, "D2Coding", monospace; font-size: 12.5px; }
+  code { background: #f3f4f6; border-radius: 4px; padding: 1px 5px; }
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+    padding: 18px 20px; margin: 14px 0;
+  }
+  .card.accent { background: var(--accent-soft); border-color: #f3ddb0; }
+  .scenario { counter-reset: step; padding-left: 0; margin: 10px 0 0; }
+  .scenario li { list-style: none; margin: 8px 0; padding-left: 40px; position: relative; }
+  .scenario li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 2px; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .scenario li.finale::before { background: var(--ink); content: "★"; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; margin: 10px 0 16px; }
+  pre.codeblock {
+    background: #23272e; color: #e6edf3; border-radius: 10px; padding: 14px 16px;
+    overflow-x: auto; font-size: 12.5px; line-height: 1.55; margin: 8px 0 0;
+  }
+  .apicard { border: 1px solid var(--line); border-radius: 12px; margin: 22px 0; overflow: hidden; }
+  .apicard .apihead { background: #f8f9fa; padding: 12px 18px; border-bottom: 1px solid var(--line); font-weight: 700; }
+  .apicard .apibody { padding: 16px 18px; }
+  .apicard h4 { margin: 18px 0 6px; font-size: 14px; color: var(--accent-deep); }
+  .apicard h4:first-child { margin-top: 0; }
+  .erdgrid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  .erdtable { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+  .erdtable .tname { background: #2d333b; color: #fff; padding: 8px 12px; font-weight: 700; font-size: 14px; }
+  .erdtable .tname small { color: #adbac7; font-weight: 400; margin-left: 8px; }
+  .erdtable table { width: 100%; table-layout: fixed; }
+  .erdtable th, .erdtable td { padding: 7px 12px; font-size: 13px; word-break: break-word; }
+  .erdtable td.mono, .erdtable .mono { font-size: 12px; }
+  .erdtable th:nth-child(1), .erdtable td:nth-child(1) { width: 23%; }
+  .erdtable th:nth-child(2), .erdtable td:nth-child(2) { width: 47%; }
+  .erdtable th:nth-child(3), .erdtable td:nth-child(3) { width: 22%; }
+  .erdtable th:nth-child(4), .erdtable td:nth-child(4) { width: 8%; text-align: center; }
+  .erdtable .badge { white-space: nowrap; }
+  @media (max-width: 640px) {
+    .erdtable { overflow-x: auto; }
+    .erdtable table { table-layout: auto; min-width: 460px; }
+  }
+  .flowgroup { border-left: 3px solid var(--line); margin: 10px 0 10px 8px; padding: 4px 0 4px 16px; }
+  .flowgroup .gtitle { font-size: 13px; font-weight: 700; color: var(--sub); margin-bottom: 6px; }
+  .flowrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+  .node {
+    border: 1.5px solid var(--ink); border-radius: 10px; background: #fff;
+    padding: 7px 14px; font-size: 13.5px; font-weight: 600; white-space: nowrap;
+  }
+  .node.start { background: var(--ink); color: #fff; }
+  .node.state { border-style: dashed; border-color: var(--sub); color: var(--sub); font-weight: 400; }
+  .node.hl { border-color: var(--accent); background: var(--accent-soft); }
+  .arrow { color: var(--accent); font-weight: 700; font-size: 16px; }
+  .flowlabel { font-size: 12px; color: var(--sub); }
+  .links a { color: #1d4ed8; }
+  .note { font-size: 13px; color: var(--sub); }
+  footer { margin-top: 64px; border-top: 1px solid var(--line); padding-top: 20px; font-size: 13px; color: var(--sub); }
+  .rulebox { background: #2d333b; color: #fff; border-radius: 12px; padding: 18px 22px; margin-top: 40px; }
+  .rulebox b { color: var(--accent); }
+  img.preview { max-width: 100%; border: 1px solid var(--line); border-radius: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">WILLIAM JAMES · SPEC PACKAGE</div>
+  <h1>개발을 위한 최소한의 명세서 5종</h1>
+  <p>IoT 기기 관리 앱 · 꼭 완벽하게가 아니라, 팀원들이 흩어져서 서로 안 기다리고 동시에 출발할 수 있을 만큼만.</p>
+  <div class="stats">
+    <div class="stat"><div class="v">5<small> +1</small></div><div class="k">명세서 (＋온디바이스 계약)</div></div>
+    <div class="stat"><div class="v">26<small>건</small></div><div class="k">요구사항 · 상14 중4 하8</div></div>
+    <div class="stat"><div class="v">33<small>개</small></div><div class="k">REST API (＋대시보드 2 신규) + MQTT 3종</div></div>
+    <div class="stat"><div class="v">6<small> +3</small></div><div class="k">필수 테이블 (＋운영 3)</div></div>
+    <div class="stat"><div class="v">8<small>화면</small></div><div class="k">목업 · 상태 정의 포함</div></div>
+  </div>
+  <nav class="toc">
+    <a href="#req">1 요구사항 정의서</a>
+    <a href="#erd">2 ERD</a>
+    <a href="#api">3 API 명세서</a>
+    <a href="#mockup">4 목업 / 와이어프레임</a>
+    <a href="#flow">5 유저 플로우</a>
+    <a href="#device">+ 온디바이스 계약</a>
+  </nav>
+</header>
+
+<div class="filterbar" id="filterbar">
+  <span class="label">내 직무만 보기</span>
+  <button class="rolebtn active" data-select="all">전체</button>
+  <button class="rolebtn" data-select="fe">프론트</button>
+  <button class="rolebtn" data-select="be">백엔드</button>
+  <button class="rolebtn" data-select="ai">AI</button>
+  <button class="rolebtn" data-select="iot">IoT</button>
+  <span class="filterhint" id="filterhint">모든 직무의 항목을 표시 중</span>
+</div>
+
+<section data-role="all">
+  <div class="card accent" style="margin-top:28px">
+    <b>서비스 방향성 (팀 회의 확정)</b>
+    <ol style="margin:8px 0 0; padding-left:20px">
+      <li>앱의 성격은 <b>IoT 기기 관리 앱</b> — 공개 영상 피드·영상 플랫폼이 아니다.</li>
+      <li><b>일반 편집은 앱에서 로컬 처리·내보내기</b>하며 서버에는 편집 작업이나 편집본을 저장하지 않는다.</li>
+      <li>저장된 영상은 <b>같은 기기의 구성원(가족)만</b> 조회한다. (사용자↔기기 N:N <code>DeviceMembership</code>)</li>
+      <li>영상은 <b>보관 기간 후 자동 삭제</b>하며, 이 보관 정책을 보관 연장 등 <b>부가 서비스·BM의 근거</b>로 활용한다.</li>
+      <li>대시보드는 저장 영상을 <b>갤러리·캘린더·통계</b>로 제공한다.</li>
+    </ol>
+  </div>
+  <h3 style="margin-top:32px">이 문서와 저장소 산출물의 관계</h3>
+  <div class="tablewrap"><table>
+    <tr><th>명세서</th><th>이 페이지의 역할</th><th>원본 산출물</th></tr>
+    <tr><td><b>요구사항 정의서</b></td><td>시연 시나리오 기준 우선순위(상·중·하)와 직무 태그를 붙인 한 눈에 보는 표</td><td class="links"><a href="./01_요구사항_명세서.md">01_요구사항_명세서.md</a> (FR/NFR ID·인수 기준)</td></tr>
+    <tr><td><b>ERD</b></td><td>필수 테이블·PK·FK·관계를 표로 확정</td><td class="links"><a href="./03_ERD_데이터사전.md">03_ERD_데이터사전.md</a> · <a href="../database/schema.sql">schema.sql</a> · <a href="https://www.figma.com/board/MwP9nmFiDu8MQFTEN5PGER">FigJam ERD</a></td></tr>
+    <tr><td><b>API 명세서</b></td><td>전체 엔드포인트 목록 + 핵심 API의 5단 구성(URL·Request·예시·Response·예시)</td><td class="links"><a href="../api/openapi.yaml">openapi.yaml</a> · <a href="./api/index.html">API 문서 페이지</a> · <a href="../api/examples.http">examples.http</a> · <a href="../api/mqtt-contract.md">MQTT 계약</a></td></tr>
+    <tr><td><b>목업</b></td><td>8개 핵심 화면과 화면 상태 목록</td><td class="links"><a href="https://www.figma.com/design/kDAk0NTRltBHJsaIeyyXQd">Figma 와이어프레임</a> · <a href="./wireframes/index.html">클릭형 HTML</a></td></tr>
+    <tr><td><b>유저 플로우</b></td><td>목업 화면에 화살표를 얹은 화면 흐름 합의</td><td class="links"><a href="./14_화면_API_매핑.md">14_화면_API_매핑.md</a></td></tr>
+    <tr><td><b>+ 온디바이스 계약</b></td><td>FE·BE 계약에 가려지기 쉬운 AI·IoT 몫을 계약 포인트로 명시</td><td class="links"><a href="../api/mqtt-contract.md">mqtt-contract.md</a> · <a href="./05_하드웨어_구성_및_배선계획.md">05_하드웨어</a> · <a href="./04_시스템_아키텍처.md">04_아키텍처</a></td></tr>
+  </table></div>
+</section>
+
+<!-- ───────────────────────── 1. 요구사항 정의서 ───────────────────────── -->
+<section id="req" data-role="all">
+  <h2><span class="num">1</span>요구사항 정의서</h2>
+  <p class="h2sub">분업 단위이자 진척도 체크리스트 · <code>[대상]은 [목적]하기 위하여 [기능]할 수 있다</code></p>
+
+  <div class="card accent">
+    <b>기준점 — 발표 5분 시연 시나리오</b>
+    <div class="note" style="margin:4px 0 10px">우선순위는 기능을 위에서부터 쌓지 않고, 마지막 시연 장면에서 거꾸로 역산한다. 아래 장면에 나오는 기능이 <span class="badge b-high">상</span>이다.</div>
+    <ol class="scenario">
+      <li>앱의 <b>실시간 보기</b>를 잠깐 켜서, 기기가 거실을 잘 지켜보고 있는지 확인한다 <span class="note">(지금 잘 녹화되고 있나?)</span></li>
+      <li>거실에서 웃음이 터진다 → 기기가 웃음소리를 감지해 <b>앞뒤 1분을 자동 저장</b>한다</li>
+      <li>"헤이 제임스!" 호출 → <b>지나간 2분</b>이 저장된다</li>
+      <li>홈 대시보드에서 방금 저장된 영상을 확인하고 <b>재생</b>한다</li>
+      <li class="finale"><b>피날레</b> — 구간 편집으로 웃음이 터진 순간만 남기고 <b>다운로드해 소장</b>한다</li>
+    </ol>
+  </div>
+
+  <div class="legend">
+    <span><span class="badge b-high">상</span> 시연에 나온다 → 먼저 만든다 (안 되면 시연 자체가 안 됨)</span>
+    <span><span class="badge b-mid">중</span> 여유되면 · 완성도 (상 끝나고 손대는 기능)</span>
+    <span><span class="badge b-low">하</span> 진짜 나중에 · 있으면 좋음 (안 해도 데모엔 영향 없음)</span>
+  </div>
+
+  <div class="tablewrap"><table>
+    <thead><tr>
+      <th>번호</th><th>기능명</th><th style="min-width:330px">요구사항명 [대상]·[목적]·[기능]</th>
+      <th>담당</th><th class="center">MVP</th><th class="center">우선순위</th><th>화면</th><th>비고</th>
+    </tr></thead>
+    <tbody>
+    <tr data-role="fe be"><td>REQ-01</td><td>회원가입·로그인</td><td>[사용자]는 [서비스에 안전하게 접근]하기 위하여 [이메일 회원가입·로그인·로그아웃·토큰 재발급]을 할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>로그인</td><td><code>FR-B-001</code></td></tr>
+    <tr data-role="iot"><td>REQ-02</td><td>순환 버퍼 녹화</td><td>[기기]는 [이미 지나간 순간을 복원]하기 위하여 [최근 2분 이상 영상을 순환 버퍼로 유지]할 수 있다.</td><td><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-002</code></td></tr>
+    <tr data-role="ai iot"><td>REQ-03</td><td>웃음 감지 자동 저장</td><td>[기기]는 [놓친 웃음 순간을 보존]하기 위하여 [웃음 확정 시 T−60초~T+60초 영상을 생성]할 수 있다.</td><td><span class="r r-ai">AI</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-003</code> · YAMNet</td></tr>
+    <tr data-role="ai iot"><td>REQ-04</td><td>호출어·터치 저장</td><td>[사용자]는 [방금 지나간 장면을 저장]하기 위하여 ["헤이 제임스" 호출 또는 터치로 T−120초~T 영상을 생성]할 수 있다.</td><td><span class="r r-ai">AI</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-004</code> · 터치는 호출어와 독립 동작</td></tr>
+    <tr data-role="iot"><td>REQ-05</td><td>반복 웃음 병합</td><td>[기기]는 [중복 영상 생성을 방지]하기 위하여 [병합 구간 안의 반복 웃음을 하나의 이벤트로 묶을] 수 있다.</td><td><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>— (기기)</td><td><code>FR-B-005</code></td></tr>
+    <tr data-role="be iot"><td>REQ-06</td><td>서명 URL 업로드</td><td>[기기]는 [영상을 안전하게 보관]하기 위하여 [서명 URL로 비공개 저장소에 직접 업로드하고 완료를 통지]할 수 있다.</td><td><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (기기)</td><td><code>FR-B-006</code> · 멱등 처리</td></tr>
+    <tr data-role="fe be"><td>REQ-07</td><td>영상 목록·상세</td><td>[사용자]는 [보존된 추억을 찾기] 위하여 [권한 있는 영상의 목록과 상세를 조회]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 목록</td><td><code>FR-B-007</code> · 기간·유형 필터</td></tr>
+    <tr data-role="fe be"><td>REQ-08</td><td>영상 재생</td><td>[사용자]는 [추억을 확인]하기 위하여 [권한 검사 후 발급된 단기 URL로 영상을 재생]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 목록</td><td><code>play-url</code> API</td></tr>
+    <tr data-role="fe"><td>REQ-09</td><td>구간 편집</td><td>[사용자]는 [원하는 순간만 남기기] 위하여 [원본을 임시 다운로드하고 앱에서 구간을 선택해 로컬 결과물을 내보낼] 수 있다.</td><td><span class="r r-fe">FE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 편집</td><td><code>FR-B-008</code> · 서버 미저장</td></tr>
+    <tr data-role="fe be"><td>REQ-10</td><td>영상 관리</td><td>[사용자]는 [영상을 정리]하기 위하여 [이름 변경·즐겨찾기·삭제·정렬·필터]를 할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>영상 목록</td><td><code>FR-B-009</code></td></tr>
+    <tr data-role="fe be"><td>REQ-11</td><td>다운로드</td><td>[사용자]는 [추억을 소장]하기 위하여 [권한 검사 후 단기 URL로 영상을 다운로드]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>영상 목록</td><td><code>FR-B-010</code> · <b>시연 피날레</b></td></tr>
+    <tr data-role="fe be"><td>REQ-12</td><td>대시보드 (갤러리·캘린더·통계)</td><td>[사용자]는 [기기·추억 현황을 한눈에 파악]하기 위하여 [기기 상태와 저장 영상을 갤러리·캘린더·통계 관점으로 대시보드에서 확인]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>홈 대시보드</td><td><code>FR-B-011</code> · 갤러리·캘린더·통계</td></tr>
+    <tr data-role="fe be iot"><td>REQ-13</td><td>실시간 보기</td><td>[사용자]는 [지금 잘 녹화되고 있는지 확인]하기 위하여 [접근 권한이 있는 기기의 HLS 스트림을 요청 시에만 시작·종료]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>실시간 보기</td><td><code>FR-B-012</code> · 시연 도입 장면 · 화면을 띄운 시청자에게만 송출</td></tr>
+    <tr data-role="fe be iot"><td>REQ-14</td><td>기기 최초 등록</td><td>[사용자]는 [기기 소유자가 되기] 위하여 [기기 화면의 120초 1회용 등록 코드를 입력해 최초 OWNER로 등록]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>기기 등록</td><td><code>FR-B-013</code> · 코드 재사용 불가</td></tr>
+    <tr data-role="fe be"><td>REQ-15</td><td>구성원 초대</td><td>[OWNER]는 [가족·지인과 영상을 공유]하기 위하여 [만료되는 1회용 초대로 기기 MEMBER를 추가]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>구성원 관리</td><td><code>FR-B-014</code></td></tr>
+    <tr data-role="be"><td>REQ-16</td><td>역할 기반 인가</td><td>[서버]는 [민감한 영상을 보호]하기 위하여 [기기별 OWNER/MEMBER 역할로 모든 보호 기능을 인가]할 수 있다.</td><td><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (공통)</td><td><code>FR-B-015</code> · 사람↔기기 N:N</td></tr>
+    <tr data-role="fe be"><td>REQ-17</td><td>권한 회수</td><td>[OWNER]는 [접근을 통제]하기 위하여 [구성원 권한을 즉시 회수]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-mid">중</span></td><td>구성원 관리</td><td><code>FR-B-016</code></td></tr>
+    <tr data-role="be"><td>REQ-18</td><td>기기 단위 영상 격리</td><td>[서버]는 [다른 기기 영상 노출을 차단]하기 위하여 [모든 요청에서 영상이 속한 기기의 활성 멤버십을 검증]할 수 있다.</td><td><span class="r r-be">BE</span></td><td class="center"><span class="badge b-basic">기본</span></td><td class="center"><span class="badge b-high">상</span></td><td>— (공통)</td><td><code>FR-B-017</code> · 존재 은닉 404</td></tr>
+    <tr data-role="ai"><td>REQ-19</td><td>웃는 표정 감지</td><td>[기기]는 [소리 없는 웃음도 포착]하기 위하여 [YOLO·MediaPipe로 웃는 표정을 감지]할 수 있다.</td><td><span class="r r-ai">AI</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-001</code></td></tr>
+    <tr data-role="ai iot"><td>REQ-20</td><td>가변 길이 저장</td><td>[기기]는 [자연스러운 영상을 만들기] 위하여 [웃음 지속·무음·장면 전환으로 가변 길이 영상을 생성]할 수 있다.</td><td><span class="r r-ai">AI</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-002</code></td></tr>
+    <tr data-role="iot fe"><td>REQ-21</td><td>팬·틸트 카메라 제어</td><td>[사용자]는 [원하는 각도를 잡기] 위하여 [앱에서 2축 팬·틸트 카메라를 제어]할 수 있다.</td><td><span class="r r-iot">IoT</span><span class="r r-fe">FE</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-003</code> · 3D 프린팅 프레임</td></tr>
+    <tr data-role="ai be"><td>REQ-22</td><td>2차 콘텐츠 생성</td><td>[사용자]는 [추억을 새로운 형태로 즐기기] 위하여 [저장 영상으로 4컷 만화·텍스트 영상·애니메이션을 생성]할 수 있다.</td><td><span class="r r-ai">AI</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-004</code></td></tr>
+    <tr data-role="be"><td>REQ-23</td><td>저장 공간 최적화</td><td>[서버]는 [저장 비용을 관리]하기 위하여 [썸네일·프리뷰·트랜스코딩·보관 주기·자동 삭제를 운영]할 수 있다.</td><td><span class="r r-be">BE</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-005</code></td></tr>
+    <tr data-role="fe be"><td>REQ-24</td><td>직접 업로드</td><td>[사용자]는 [휴대폰 영상도 함께 관리]하기 위하여 [영상을 직접 업로드]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-006</code></td></tr>
+    <tr data-role="fe be"><td>REQ-25</td><td>공유 범위 설정</td><td>[사용자]는 [추억을 안전하게 공유]하기 위하여 [동의한 영상의 공유 범위와 기간을 설정]할 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-007</code> · 기본 비공개</td></tr>
+    <tr data-role="fe be"><td>REQ-26</td><td>푸시 알림</td><td>[사용자]는 [새 추억을 놓치지 않기] 위하여 [새 영상·초대·기기 이벤트 푸시 알림을 받을] 수 있다.</td><td><span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-adv">심화</span></td><td class="center"><span class="badge b-low">하</span></td><td>—</td><td><code>FR-A-008</code></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">인수 기준(측정 가능한 완료 조건)과 비기능 요구사항(NFR)은 <a href="./01_요구사항_명세서.md">01_요구사항_명세서.md</a>의 ID를 그대로 사용한다. ID는 구현·API·테스트·결함 관리에서 변경하지 않는다.</p>
+</section>
+
+<!-- ───────────────────────── 2. ERD ───────────────────────── -->
+<section id="erd" data-role="be iot">
+  <h2><span class="num">2</span>ERD</h2>
+  <p class="h2sub">API보다 먼저 확정하기 · 데이터를 어떻게 저장하지? · 필수 테이블만 확정하고 출발, 나머지는 그때 붙인다</p>
+
+  <div class="card">
+    <b>핵심 원칙 — 권한 경계는 기기(Device)</b>
+    <ul style="margin:8px 0 0">
+      <li>사용자와 기기는 <b>N:N</b>이다. 연결은 <code>device_memberships</code> 한 곳으로만 판단한다.</li>
+      <li>기기마다 활성 OWNER는 정확히 1명. 초대받은 사용자는 MEMBER.</li>
+      <li>영상·초대·감사 로그의 격리 키는 <code>device_id</code>. 멤버십 없는 리소스는 존재를 숨기고 <code>404</code>.</li>
+      <li>객체 저장소는 비공개. DB에는 객체 키만 저장하고 서버가 단기 서명 URL을 발급한다.</li>
+    </ul>
+  </div>
+
+  <h3>관계(FK — 테이블 잇는 선)</h3>
+  <div class="tablewrap"><table>
+    <tr><th>부모</th><th class="center">관계</th><th>자식</th><th>연결 컬럼</th><th>의미</th></tr>
+    <tr><td>users</td><td class="center">1 : N</td><td>device_memberships</td><td><code>user_id</code></td><td>한 사용자가 여러 기기에 참여</td></tr>
+    <tr><td>devices</td><td class="center">1 : N</td><td>device_memberships</td><td><code>device_id</code></td><td>한 기기를 여러 사용자가 공유 (합쳐서 사용자↔기기 N:N)</td></tr>
+    <tr><td>devices</td><td class="center">1 : N</td><td>videos</td><td><code>device_id</code></td><td>영상은 반드시 한 기기에 속함 (접근 경계)</td></tr>
+    <tr><td>devices</td><td class="center">1 : N</td><td>invite_links</td><td><code>device_id</code></td><td>기기 단위 초대 링크</td></tr>
+    <tr><td>invite_links</td><td class="center">1 : N</td><td>join_requests</td><td><code>invite_link_id</code></td><td>링크를 받은 사용자의 가입 요청</td></tr>
+    <tr><td>users</td><td class="center">1 : N</td><td>auth_sessions</td><td><code>user_id</code></td><td>Refresh Token 세션</td></tr>
+    <tr><td>devices</td><td class="center">1 : N</td><td>device_credentials</td><td><code>device_id</code></td><td>IoT 운영 인증 (사용자 JWT와 분리)</td></tr>
+    <tr><td>devices</td><td class="center">1 : N</td><td>access_logs</td><td><code>device_id</code></td><td>기기별 감사 범위</td></tr>
+  </table></div>
+
+  <h3>필수 테이블</h3>
+  <div class="erdgrid">
+    <div class="erdtable">
+      <div class="tname">users <small>사용자 계정</small></div>
+      <table>
+        <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
+        <tr><td>id <span class="badge b-pk">PK</span></td><td>사용자 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>email</td><td>이메일 (정규화, 유일)</td><td class="mono">varchar(320)</td><td class="center">N</td></tr>
+        <tr><td>password_hash</td><td>Argon2id/BCrypt 해시만 저장</td><td class="mono">varchar(255)</td><td class="center">N</td></tr>
+        <tr><td>display_name</td><td>표시 이름</td><td class="mono">varchar(60)</td><td class="center">N</td></tr>
+        <tr><td>status</td><td>ACTIVE·LOCKED·WITHDRAWN</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>token_version</td><td>JWT 강제 만료용 버전</td><td class="mono">integer</td><td class="center">N</td></tr>
+        <tr><td>created_at / updated_at</td><td>생성·수정 시각</td><td class="mono">timestamptz</td><td class="center">N</td></tr>
+        <tr><td>deleted_at</td><td>소프트 삭제 시각</td><td class="mono">timestamptz</td><td class="center">Y</td></tr>
+      </table>
+    </div>
+    <div class="erdtable">
+      <div class="tname">devices <small>IoT 기기</small></div>
+      <table>
+        <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
+        <tr><td>id <span class="badge b-pk">PK</span></td><td>기기 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>serial_number</td><td>제조 시 부여, 유일</td><td class="mono">varchar(80)</td><td class="center">N</td></tr>
+        <tr><td>name / model</td><td>앱 표시 이름·모델</td><td class="mono">varchar(80)</td><td class="center">N</td></tr>
+        <tr><td>status</td><td>UNCLAIMED·ONLINE·OFFLINE·REVOKED</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>retention_days</td><td>영상 기본 보관 일수 (1~3650)</td><td class="mono">integer</td><td class="center">N</td></tr>
+        <tr><td>registration_mode_expires_at</td><td>물리적 등록 모드 만료 시각</td><td class="mono">timestamptz</td><td class="center">Y</td></tr>
+        <tr><td>claimed_by <span class="badge b-fk">FK</span></td><td>최초 OWNER (users)</td><td class="mono">uuid</td><td class="center">Y</td></tr>
+        <tr><td>last_seen_at</td><td>heartbeat 기준 마지막 접속</td><td class="mono">timestamptz</td><td class="center">Y</td></tr>
+      </table>
+    </div>
+    <div class="erdtable">
+      <div class="tname">device_memberships <small>사용자↔기기 N:N + 역할</small></div>
+      <table>
+        <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
+        <tr><td>id <span class="badge b-pk">PK</span></td><td>멤버십 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>device_id <span class="badge b-fk">FK</span></td><td>기기 (devices)</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>user_id <span class="badge b-fk">FK</span></td><td>사용자 (users)</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>role</td><td>OWNER 또는 MEMBER (기기별 역할)</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>status</td><td>ACTIVE 또는 REVOKED</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>joined_at</td><td>가입·초대 수락 시각</td><td class="mono">timestamptz</td><td class="center">N</td></tr>
+        <tr><td>revoked_at / revoked_by</td><td>권한 회수 추적</td><td class="mono">timestamptz·uuid</td><td class="center">Y</td></tr>
+      </table>
+      <div style="padding:8px 12px" class="note"><code>UNIQUE(device_id, user_id)</code> · 기기당 활성 OWNER 1명은 부분 유일 인덱스로 보장</div>
+    </div>
+    <div class="erdtable">
+      <div class="tname">invite_links / join_requests <small>초대 링크·가입 승인</small></div>
+      <table>
+        <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
+        <tr><td>id <span class="badge b-pk">PK</span></td><td>링크·요청 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>device_id <span class="badge b-fk">FK</span></td><td>공유할 기기</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>created_by <span class="badge b-fk">FK</span></td><td>링크를 발급한 OWNER</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>token_hash</td><td>링크 토큰 SHA-256 (원문 저장 금지)</td><td class="mono">char(64)</td><td class="center">N</td></tr>
+        <tr><td>requested_by <span class="badge b-fk">FK</span></td><td>가입을 요청한 사용자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>status</td><td>PENDING·APPROVED·REJECTED</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>expires_at / revoked_at</td><td>링크 만료·회수 시각</td><td class="mono">timestamptz</td><td class="center">조건부</td></tr>
+      </table>
+    </div>
+    <div class="erdtable">
+      <div class="tname">videos <small>영상 메타데이터</small></div>
+      <table>
+        <tr><th>컬럼</th><th>설명</th><th>타입</th><th class="center">NULL</th></tr>
+        <tr><td>id <span class="badge b-pk">PK</span></td><td>영상 식별자</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>device_id <span class="badge b-fk">FK</span></td><td>접근 경계이자 생성 기기</td><td class="mono">uuid</td><td class="center">N</td></tr>
+        <tr><td>created_by <span class="badge b-fk">FK</span></td><td>업로드·작업 주체 (users)</td><td class="mono">uuid</td><td class="center">Y</td></tr>
+        <tr><td>source_type</td><td>IOT_CAPTURE·USER_UPLOAD (EDIT_OUTPUT은 레거시)</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>trigger_type</td><td>LAUGHTER·WAKE_WORD·TOUCH·MANUAL·USER_UPLOAD</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>source_event_id</td><td>IoT 이벤트 멱등 키</td><td class="mono">varchar(100)</td><td class="center">Y</td></tr>
+        <tr><td>storage_key</td><td>비공개 객체 키 (URL 저장 금지)</td><td class="mono">varchar(1024)</td><td class="center">N</td></tr>
+        <tr><td>size_bytes / checksum_sha256</td><td>최대 500 MiB · 무결성 검증</td><td class="mono">bigint·char(64)</td><td class="center">Y</td></tr>
+        <tr><td>duration_ms</td><td>영상 길이</td><td class="mono">bigint</td><td class="center">Y</td></tr>
+        <tr><td>captured_start_at / end_at</td><td>촬영 구간</td><td class="mono">timestamptz</td><td class="center">Y</td></tr>
+        <tr><td>status</td><td>업로드·처리·삭제 상태</td><td class="mono">enum</td><td class="center">N</td></tr>
+        <tr><td>retention_until</td><td>자동 삭제 기준</td><td class="mono">timestamptz</td><td class="center">Y</td></tr>
+      </table>
+      <div style="padding:8px 12px" class="note"><code>UNIQUE(device_id, source_event_id)</code> — IoT 재시도에도 중복 영상 금지</div>
+    </div>
+  </div>
+
+  <h3>운영·보안 테이블 (필수 기능을 받치는 부가 테이블)</h3>
+  <div class="tablewrap"><table>
+    <tr><th>테이블</th><th>역할</th><th>핵심 컬럼</th></tr>
+    <tr><td><code>auth_sessions</code></td><td>Refresh Token 세션 (원문이 아닌 SHA-256 해시 저장)</td><td class="mono">user_id FK · refresh_token_hash · expires_at · revoked_at</td></tr>
+    <tr><td><code>device_credentials</code></td><td>IoT 운영 인증 — 사용자 JWT와 혼용 금지, 기기당 활성 1개</td><td class="mono">device_id FK · key_id · credential_type · status</td></tr>
+    <tr><td><code>access_logs</code></td><td>기기별 접근 감사 로그 (조회는 해당 기기 OWNER만)</td><td class="mono">device_id FK · actor_user_id · action · outcome · created_at</td></tr>
+  </table></div>
+  <p class="note">실시간 보기 시청자 세션은 TTL 기반 운영 상태라서 영구 테이블로 두지 않는다(인메모리 또는 DB 중 구현 선택). 물리 스키마 전체는 <a href="../database/schema.sql">schema.sql</a>, 무결성 규칙·트랜잭션은 <a href="./03_ERD_데이터사전.md">03_ERD_데이터사전.md</a> 참조.</p>
+</section>
+
+<!-- ───────────────────────── 3. API 명세서 ───────────────────────── -->
+<section id="api" data-role="fe be iot">
+  <h2><span class="num">3</span>API 명세서 = 계약서</h2>
+  <p class="h2sub">프론트와 백엔드가 주고받을 데이터의 약속 · REST API 기준 · 자동 문서는 <a href="./api/index.html">API 문서 페이지</a>(OpenAPI 3.0.3)</p>
+
+  <h3>전체 엔드포인트</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>카테고리</th><th class="center">Method</th><th>URL</th><th>설명</th></tr></thead>
+    <tbody data-role="fe be">
+    <tr><td rowspan="4">계정/인증 <span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/auth/signup</td><td>회원 가입</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/auth/login</td><td>로그인</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/auth/refresh</td><td>토큰 재발급</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/auth/logout</td><td>현재 세션 로그아웃</td></tr>
+    </tbody>
+    <tbody data-role="fe be iot">
+    <tr><td rowspan="6">기기 <span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices</td><td>내가 접근할 수 있는 기기 목록 (기기별 내 역할 포함)</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/devices/claim</td><td>최초 기기 등록 → OWNER (물리적 등록 모드 연동)</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}</td><td>기기 상세 조회</td></tr>
+    <tr><td class="center"><span class="badge b-patch">PATCH</span></td><td class="mono">/api/devices/{deviceId}</td><td>기기 설정 수정 (OWNER)</td></tr>
+    <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/devices/{deviceId}</td><td>기기 등록 해제 (OWNER)</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/status</td><td>기기 상태 조회 (heartbeat 기반)</td></tr>
+    </tbody>
+    <tbody data-role="fe be">
+    <tr><td rowspan="6">구성원·초대 <span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/members</td><td>기기 구성원 목록</td></tr>
+    <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/devices/{deviceId}/members/{membershipId}</td><td>구성원 접근 권한 회수 (OWNER)</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/devices/{deviceId}/invite-link</td><td>초대 링크 생성·회전 (OWNER)</td></tr>
+    <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/devices/{deviceId}/invite-link</td><td>초대 링크 회수 (OWNER)</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/join-requests</td><td>초대 링크로 가입 요청</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/join-requests</td><td>대기 요청 조회 후 approve/reject</td></tr>
+    </tbody>
+    <tbody data-role="fe be">
+    <tr><td rowspan="6">영상 <span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/videos?deviceId=…</td><td>기기 영상 목록 (필터·키셋 페이지)</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/videos/{videoId}</td><td>영상 상세 조회</td></tr>
+    <tr><td class="center"><span class="badge b-patch">PATCH</span></td><td class="mono">/api/videos/{videoId}</td><td>제목·설명·즐겨찾기 수정</td></tr>
+    <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/videos/{videoId}</td><td>영상 삭제 요청</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/videos/{videoId}/play-url</td><td>단기 재생 URL 발급</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/videos/{videoId}/download-url</td><td>단기 다운로드 URL 발급</td></tr>
+    </tbody>
+    <tbody data-role="fe be">
+    <tr><td rowspan="2">대시보드 <span class="r r-fe">FE</span><span class="r r-be">BE</span> <span class="note">신규</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/videos?deviceId=…&amp;from=&amp;to=</td><td>캘린더 — 촬영 시각 기간 필터</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/stats?from=&amp;to=&amp;timeZone=</td><td>통계 — 감지 유형별·기간별·요일/시간대 집계</td></tr>
+    </tbody>
+    <tbody data-role="fe be">
+    <tr><td rowspan="2">대시보드 <span class="r r-fe">FE</span><span class="r r-be">BE</span> <span class="note">신규</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/videos/calendar?from=&to=</td><td>캘린더 — 일자별 영상 유무·개수 집계</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/stats?period=</td><td>통계 — 감지 유형별·기간별·요일/시간대 집계</td></tr>
+    </tbody>
+    <tbody data-role="fe be iot">
+    <tr><td rowspan="4">라이브 <span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/devices/{deviceId}/stream-sessions</td><td>온디맨드 실시간 보기 세션 시작</td></tr>
+    <tr><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/stream-sessions/{sessionId}</td><td>세션 상태 조회 (READY면 playUrl)</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/stream-sessions/{sessionId}/heartbeat</td><td>시청자 heartbeat (15초 주기)</td></tr>
+    <tr><td class="center"><span class="badge b-del">DELETE</span></td><td class="mono">/api/stream-sessions/{sessionId}</td><td>실시간 보기 정상 종료</td></tr>
+    </tbody>
+    <tbody data-role="be iot">
+    <tr><td rowspan="2">IoT 전용 <span class="r r-be">BE</span><span class="r r-iot">IoT</span></td><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/iot/videos/upload-url</td><td>단기 업로드 URL 발급 (기기 자격 증명, 멱등)</td></tr>
+    <tr><td class="center"><span class="badge b-post">POST</span></td><td class="mono">/api/iot/videos/complete</td><td>업로드 완료 통지 (서버가 크기·체크섬 검증)</td></tr>
+    </tbody>
+    <tbody data-role="fe be">
+    <tr><td>감사 <span class="r r-fe">FE</span><span class="r r-be">BE</span></td><td class="center"><span class="badge b-get">GET</span></td><td class="mono">/api/devices/{deviceId}/access-logs</td><td>기기 접근 감사 로그 (OWNER)</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">라이브 제어(MQTT <code>START_STREAM / EXTEND_STREAM / STOP_STREAM</code>)는 <a href="../api/mqtt-contract.md">mqtt-contract.md</a>에 별도 계약으로 고정한다. 아래는 시연 뼈대 API 3개의 5단 상세다. 나머지 전부는 <a href="./api/index.html">API 문서 페이지</a>에서 같은 형식으로 확인한다.</p>
+
+  <!-- 상세 1: 로그인 -->
+  <div class="apicard" data-role="fe be">
+    <div class="apihead">상세 ① 로그인 — 시연 시작의 전제 <span class="r r-fe">FE</span><span class="r r-be">BE</span></div>
+    <div class="apibody">
+      <h4>1. URL · Method</h4>
+      <div class="tablewrap"><table>
+        <tr><th style="width:130px">HTTP URL</th><td class="mono">/api/auth/login</td></tr>
+        <tr><th>HTTP Method</th><td class="mono">POST</td></tr>
+        <tr><th>상세 설명</th><td>이메일·비밀번호를 검증하고 access·refresh 토큰을 발급한다. 실패 시 <code>401</code>, 반복 실패에는 시도 제한을 적용한다.</td></tr>
+      </table></div>
+      <h4>2. Request — 프론트가 보낼 것</h4>
+      <div class="tablewrap"><table>
+        <tr><th>key</th><th>설명</th><th>value 타입</th><th>옵션</th><th class="center">Nullable</th><th>예시</th></tr>
+        <tr><td class="mono">email</td><td>로그인 이메일</td><td>String</td><td>이메일 형식, 최대 320자</td><td class="center">✕</td><td class="mono">owner@example.com</td></tr>
+        <tr><td class="mono">password</td><td>비밀번호</td><td>String</td><td>정책 최소 길이 이상</td><td class="center">✕</td><td class="mono">********</td></tr>
+      </table></div>
+      <h4>3. Request 예시</h4>
+      <pre class="codeblock">{
+  "email": "owner@example.com",
+  "password": "********"
+}</pre>
+      <h4>4. Response — 백엔드가 줄 것 (AuthTokenResponse)</h4>
+      <div class="tablewrap"><table>
+        <tr><th>key</th><th>설명</th><th>value 타입</th><th>옵션</th><th class="center">Nullable</th><th>예시</th></tr>
+        <tr><td class="mono">accessToken</td><td>보호 API 호출용 JWT</td><td>String</td><td>Bearer 헤더에 사용</td><td class="center">✕</td><td class="mono">eyJhbGciOi…</td></tr>
+        <tr><td class="mono">refreshToken</td><td>재발급용 토큰</td><td>String</td><td>32~2048자</td><td class="center">✕</td><td class="mono">d41d8cd98f…</td></tr>
+        <tr><td class="mono">tokenType</td><td>토큰 타입</td><td>String</td><td>enum: Bearer</td><td class="center">✕</td><td class="mono">Bearer</td></tr>
+        <tr><td class="mono">expiresIn</td><td>access 토큰 만료(초)</td><td>Integer(int64)</td><td>기본 900초</td><td class="center">✕</td><td class="mono">900</td></tr>
+        <tr><td class="mono">user</td><td>사용자 요약 (id·email·displayName)</td><td>Object</td><td>UserSummary</td><td class="center">✕</td><td>—</td></tr>
+      </table></div>
+      <h4>5. Response 예시 — 복사 → 붙여넣기</h4>
+      <pre class="codeblock">{
+  "accessToken": "eyJhbGciOiJIUzI1NiJ9.…",
+  "refreshToken": "3f9c1c1e5a2b4d…",
+  "tokenType": "Bearer",
+  "expiresIn": 900,
+  "user": {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "email": "owner@example.com",
+    "displayName": "테스트 소유자"
+  }
+}</pre>
+    </div>
+  </div>
+
+  <!-- 상세 2: 라이브 -->
+  <div class="apicard" data-role="fe be iot">
+    <div class="apihead">상세 ② 실시간 보기 세션 시작 — 시연 도입 · 지금 잘 녹화되고 있나 확인 <span class="r r-fe">FE</span><span class="r r-be">BE</span><span class="r r-iot">IoT</span></div>
+    <div class="apibody">
+      <h4>1. URL · Method</h4>
+      <div class="tablewrap"><table>
+        <tr><th style="width:130px">HTTP URL</th><td class="mono">/api/devices/{deviceId}/stream-sessions</td></tr>
+        <tr><th>HTTP Method</th><td class="mono">POST</td></tr>
+        <tr><th>상세 설명</th><td>화면을 띄운 사용자에게만 송출하는 온디맨드 시청 세션을 만든다. 평상시에는 스트림이 흐르지 않아 서버 부하가 없다. 활성 멤버십이 없으면 존재 은닉 <code>404</code>. 첫 시청자일 때만 서버가 MQTT로 기기 송출을 시작시키고, 여러 시청자는 기기당 송출 하나를 공유한다.</td></tr>
+      </table></div>
+      <h4>2. Request — 프론트가 보낼 것</h4>
+      <div class="tablewrap"><table>
+        <tr><th>key</th><th>설명</th><th>value 타입</th><th>옵션</th><th class="center">Nullable</th><th>예시</th></tr>
+        <tr><td colspan="6" class="note">본문 없음 — Path의 <code>deviceId</code>와 Authorization 헤더(JWT)만 사용</td></tr>
+      </table></div>
+      <h4>3. Request 예시</h4>
+      <pre class="codeblock">POST /api/devices/00000000-0000-0000-0000-000000000002/stream-sessions
+Authorization: Bearer {accessToken}</pre>
+      <h4>4. Response — 백엔드가 줄 것 (StreamSession)</h4>
+      <div class="tablewrap"><table>
+        <tr><th>key</th><th>설명</th><th>value 타입</th><th>옵션</th><th class="center">Nullable</th><th>예시</th></tr>
+        <tr><td class="mono">sessionId</td><td>시청자 한 명의 세션 ID</td><td>String(uuid)</td><td></td><td class="center">✕</td><td class="mono">…-0007</td></tr>
+        <tr><td class="mono">streamId</td><td>여러 시청자가 공유하는 송출 ID</td><td>String(uuid)</td><td></td><td class="center">✕</td><td class="mono">…-0009</td></tr>
+        <tr><td class="mono">status</td><td>세션 상태</td><td>String</td><td>PENDING·READY·FAILED·CLOSED·EXPIRED</td><td class="center">✕</td><td class="mono">PENDING</td></tr>
+        <tr><td class="mono">playUrl</td><td>READY일 때만 주는 단기 HLS URL</td><td>String(uri)</td><td>저장·재사용 금지</td><td class="center">◯</td><td class="mono">null</td></tr>
+        <tr><td class="mono">heartbeatIntervalSeconds</td><td>heartbeat 권장 주기</td><td>Integer</td><td>enum: 15</td><td class="center">✕</td><td class="mono">15</td></tr>
+        <tr><td class="mono">viewerExpiresAt</td><td>시청자 TTL (heartbeat로 연장)</td><td>LocalDateTime</td><td>생성 시 +45초</td><td class="center">✕</td><td class="mono">…T10:40:45Z</td></tr>
+        <tr><td class="mono">edgeHardExpiresAt</td><td>기기 강제 종료 시각</td><td>LocalDateTime</td><td>기본 120초 lease</td><td class="center">✕</td><td class="mono">…T10:42:00Z</td></tr>
+      </table></div>
+      <h4>5. Response 예시 — 복사 → 붙여넣기</h4>
+      <pre class="codeblock">{
+  "sessionId": "00000000-0000-0000-0000-000000000007",
+  "streamId": "00000000-0000-0000-0000-000000000009",
+  "deviceId": "00000000-0000-0000-0000-000000000002",
+  "status": "PENDING",
+  "playUrl": null,
+  "heartbeatIntervalSeconds": 15,
+  "viewerExpiresAt": "2026-07-25T10:40:45Z",
+  "edgeHardExpiresAt": "2026-07-25T10:42:00Z",
+  "failureCode": null,
+  "createdAt": "2026-07-25T10:40:00Z"
+}</pre>
+    </div>
+  </div>
+
+  <!-- 상세 3: 로컬 편집 준비 -->
+  <div class="apicard" data-role="fe be">
+    <div class="apihead">상세 ③ 로컬 영상 편집 준비 — 원본 다운로드 <span class="r r-fe">FE</span><span class="r r-be">BE</span></div>
+    <div class="apibody">
+      <h4>1. URL · Method</h4>
+      <div class="tablewrap"><table>
+        <tr><th style="width:130px">HTTP URL</th><td class="mono">/api/videos/{videoId}/download-url</td></tr>
+        <tr><th>HTTP Method</th><td class="mono">POST</td></tr>
+        <tr><th>상세 설명</th><td>서버는 원본 영상의 <code>device_id</code> 멤버십을 검사해 짧은 다운로드 URL만 발급한다. 앱은 원본을 임시 다운로드해 구간 선택·효과·인코딩·내보내기를 로컬에서 수행하며 편집 결과를 서버에 저장하지 않는다.</td></tr>
+      </table></div>
+      <h4>2. Request — 프론트가 보낼 것</h4>
+      <div class="tablewrap"><table>
+        <tr><td colspan="6" class="note">본문 없음 — Path의 <code>videoId</code>와 Authorization 헤더(JWT)만 사용</td></tr>
+      </table></div>
+      <h4>3. Request 예시</h4>
+      <pre class="codeblock">POST /api/videos/00000000-0000-0000-0000-000000000003/download-url
+Authorization: Bearer {accessToken}</pre>
+      <h4>4. Response — 백엔드가 줄 것 (SignedUrlResponse)</h4>
+      <div class="tablewrap"><table>
+        <tr><th>key</th><th>설명</th><th>value 타입</th><th>옵션</th><th class="center">Nullable</th><th>예시</th></tr>
+        <tr><td class="mono">url</td><td>원본 영상의 짧은 서명 URL</td><td>String(uri)</td><td>로그·DB 저장 금지</td><td class="center">✕</td><td class="mono">https://…</td></tr>
+        <tr><td class="mono">expiresAt</td><td>URL 만료 시각</td><td>LocalDateTime</td><td>ISO-8601</td><td class="center">✕</td><td class="mono">2026-07-25T10:40:00Z</td></tr>
+      </table></div>
+      <h4>5. Response 예시 — 복사 → 붙여넣기</h4>
+      <pre class="codeblock">{
+  "url": "https://storage.example/private/…",
+  "expiresAt": "2026-07-25T10:40:00Z"
+}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── 4. 목업 ───────────────────────── -->
+<section id="mockup" data-role="fe">
+  <h2><span class="num">4</span>목업 / 와이어프레임</h2>
+  <p class="h2sub">프론트의 출발점, 서비스의 밑그림 · 화면 상태까지 미리 · TOOL: Figma</p>
+
+  <p><img class="preview" src="./wireframes/app-wireframe-preview.png" alt="윌리엄 제임스 앱 와이어프레임 미리보기"></p>
+  <p class="links">편집 원본: <a href="https://www.figma.com/design/kDAk0NTRltBHJsaIeyyXQd">Figma 앱 와이어프레임</a> · 클릭해서 흐름 확인: <a href="./wireframes/index.html">로컬 클릭형 와이어프레임</a></p>
+
+  <h3>포함 화면 8종</h3>
+  <div class="tablewrap"><table>
+    <tr><th>화면</th><th>핵심 확인 사항</th><th>미리 정의한 화면 상태</th></tr>
+    <tr><td><b>로그인</b></td><td>이메일 로그인, 회원가입 진입</td><td>입력 오류 · 자격 증명 오류 · 시도 제한</td></tr>
+    <tr><td><b>홈 대시보드</b></td><td>내 기기 목록·선택, 기기별 역할·상태, 라이브 진입, 저장 영상 <b>갤러리·캘린더·통계</b> 뷰</td><td>로딩 · 기기 없음(빈 상태) · 기기 오프라인 · 빈 갤러리·빈 달</td></tr>
+    <tr><td><b>기기 등록</b></td><td>물리적 등록 모드 안내, 화면 1회용 코드, 최초 소유자 등록</td><td>등록 모드 꺼짐 · 코드 오류·재사용 · 이미 등록됨</td></tr>
+    <tr><td><b>영상 목록</b></td><td>감지 유형 필터, 썸네일, 촬영 시각, 길이</td><td>로딩 · 빈 목록 · 처리 중 · 권한 없음(404)</td></tr>
+    <tr><td><b>영상 편집</b></td><td>재생, 시작·종료·효과 선택, 단말 내보내기, 서버 미저장 안내</td><td>원본 다운로드 · 로컬 처리 · 저장공간 부족 · 내보내기 실패</td></tr>
+    <tr><td><b>실시간 보기</b></td><td>온디맨드 시작(수초 대기), HLS 재생, 15초 heartbeat, 정상 종료</td><td>PENDING · READY · CLOSED/EXPIRED(종료 화면) · FAILED(재시도)</td></tr>
+    <tr><td><b>기기 구성원 관리</b></td><td>선택 기기의 OWNER/MEMBER, 기기 초대, 권한 회수</td><td>MEMBER 제한 안내 · 초대 만료 · 회수 확인</td></tr>
+    <tr><td><b>설정</b></td><td>녹화 LED, 보관 기간, 접근 기록, 기기 등록 해제</td><td>OWNER 전용 항목 잠금 · 오프라인 작업 불가</td></tr>
+  </table></div>
+  <p class="note">모든 영상·설정 화면은 <b>현재 선택한 기기와 그 기기에서의 내 역할(OWNER/MEMBER)</b>을 항상 함께 표시한다 — 사람↔기기 N:N 구조의 화면 규칙.</p>
+</section>
+
+<!-- ───────────────────────── 5. 유저 플로우 ───────────────────────── -->
+<section id="flow" data-role="fe">
+  <h2><span class="num">5</span>유저 플로우</h2>
+  <p class="h2sub">사용자에 따른 화면의 흐름 · 목업에서 화살표만 추가</p>
+
+  <div class="flowgroup">
+    <div class="gtitle">공통 진입</div>
+    <div class="flowrow">
+      <span class="node start">앱 실행</span><span class="arrow">→</span>
+      <span class="node">로그인 / 회원가입</span><span class="arrow">→</span>
+      <span class="node hl">홈 대시보드</span>
+      <span class="flowlabel">(첫 사용이고 기기가 없으면 ↓ 기기 등록으로)</span>
+    </div>
+  </div>
+
+  <div class="flowgroup">
+    <div class="gtitle">A. 최초 소유자 (OWNER) — 기기 등록</div>
+    <div class="flowrow">
+      <span class="node hl">홈 대시보드</span><span class="arrow">→</span>
+      <span class="node">기기 등록</span><span class="arrow">→</span>
+      <span class="node state">기기에서 물리적 등록 모드 켜기</span><span class="arrow">→</span>
+      <span class="node state">기기 화면의 1회용 등록 코드 입력</span><span class="arrow">→</span>
+      <span class="node">OWNER 등록 완료</span><span class="arrow">→</span>
+      <span class="node hl">홈 대시보드</span>
+    </div>
+    <div class="flowrow"><span class="flowlabel">실패 분기: 등록 모드 꺼짐 · 코드 오류/재사용 · 이미 등록된 기기 → 안내 후 기기 등록 화면 유지</span></div>
+  </div>
+
+  <div class="flowgroup">
+    <div class="gtitle">B. 실시간 보기 — 지금 잘 녹화되고 있나 확인 (시연 도입)</div>
+    <div class="flowrow">
+      <span class="node hl">홈 대시보드</span><span class="arrow">→</span>
+      <span class="node">실시간 보기 진입</span><span class="arrow">→</span>
+      <span class="node state">PENDING (수초 대기)</span><span class="arrow">→</span>
+      <span class="node state">READY · HLS 재생 + 15초 heartbeat</span><span class="arrow">→</span>
+      <span class="node">정상 종료(DELETE)</span><span class="arrow">→</span>
+      <span class="node hl">홈 대시보드</span>
+    </div>
+    <div class="flowrow"><span class="flowlabel">분기: FAILED → 재시도 버튼 · heartbeat 끊김 45초 → EXPIRED 종료 화면 · 다른 시청자가 있으면 기기 송출은 유지</span></div>
+  </div>
+
+  <div class="flowgroup">
+    <div class="gtitle">C. 추억 확인 → 편집·다운로드 (시연 뼈대 → 피날레)</div>
+    <div class="flowrow">
+      <span class="node state">기기: 웃음/호출/터치 감지 → 자동 저장·업로드</span><span class="arrow">→</span>
+      <span class="node hl">홈 대시보드</span><span class="arrow">→</span>
+      <span class="node">영상 목록</span><span class="arrow">→</span>
+      <span class="node">영상 상세 · 재생</span>
+    </div>
+    <div class="flowrow">
+      <span class="flowlabel" style="margin-left:24px">└</span>
+      <span class="node">구간 편집 (시작·종료 선택)</span><span class="arrow">→</span>
+      <span class="node state">앱 로컬 편집·인코딩</span><span class="arrow">→</span>
+      <span class="node hl">단말 저장 · 공유 ★피날레</span>
+    </div>
+    <div class="flowrow"><span class="flowlabel">보조 분기: 이름 변경·즐겨찾기·삭제는 영상 목록/상세에서 바로. 권한 없는 영상은 존재를 숨기고 404 화면.</span></div>
+  </div>
+
+  <div class="flowgroup">
+    <div class="gtitle">D. 구성원 초대 (OWNER ↔ 초대받은 사용자)</div>
+    <div class="flowrow">
+      <span class="node">OWNER: 구성원 관리</span><span class="arrow">→</span>
+      <span class="node">초대 생성 (이메일, 1회용·만료)</span><span class="arrow">→</span>
+      <span class="node state">초대받은 사용자: 로그인 → 초대 수락</span><span class="arrow">→</span>
+      <span class="node">MEMBER로 해당 기기 영상 접근</span>
+    </div>
+    <div class="flowrow">
+      <span class="node">OWNER: 권한 회수</span><span class="arrow">→</span>
+      <span class="node state">대상자는 즉시 접근 차단 (다음 요청부터 404)</span>
+    </div>
+  </div>
+
+  <div class="flowgroup">
+    <div class="gtitle">E. 설정 (기기별)</div>
+    <div class="flowrow">
+      <span class="node hl">홈 대시보드</span><span class="arrow">→</span>
+      <span class="node">설정</span><span class="arrow">→</span>
+      <span class="node state">보관 기간·LED 확인·접근 기록(OWNER)·기기 등록 해제(OWNER)</span>
+    </div>
+  </div>
+
+  <p class="note">화면별 호출 API·성공/오류 상태의 전체 매핑은 <a href="./14_화면_API_매핑.md">14_화면_API_매핑.md</a>에 있다.</p>
+</section>
+
+<!-- ───────────────────────── + 온디바이스 계약 ───────────────────────── -->
+<section id="device" data-role="ai iot be">
+  <h2><span class="num">+</span>온디바이스 (AI·IoT) 계약 포인트</h2>
+  <p class="h2sub">명세서 5종은 성격상 FE↔BE 계약이 중심이라, 기기 안에서 벌어지는 일은 여기에 계약으로 명시한다</p>
+
+  <div class="tablewrap"><table>
+    <tr><th>계약</th><th>내용 (합의된 값)</th><th>담당</th><th>확정 필요</th></tr>
+    <tr>
+      <td><b>트리거 → 영상 구간</b></td>
+      <td>웃음(<code>LAUGHTER</code>) 확정 시 <code>T−60초 ~ T+60초</code> · 호출어/터치(<code>WAKE_WORD/TOUCH</code>)는 <code>T−120초 ~ T</code> · 병합 구간 안의 반복 웃음은 첫 감지 기준 1건</td>
+      <td><span class="r r-ai">AI</span><span class="r r-iot">IoT</span></td>
+      <td>YAMNet 웃음 확정 임계값 · 병합 구간 길이(설정값)</td>
+    </tr>
+    <tr>
+      <td><b>순환 버퍼</b></td>
+      <td>최근 2분 이상을 짧은 세그먼트로 로컬 보관, 보관 시간 초과분 자동 삭제. 30분 연속 녹화 중 임의 시각의 직전 120초 복원 가능해야 함</td>
+      <td><span class="r r-iot">IoT</span></td>
+      <td>세그먼트 길이(GOP 2초 기준과 정렬)</td>
+    </tr>
+    <tr>
+      <td><b>업로드 3단계</b></td>
+      <td><code>upload-url</code> 발급(멱등 키 = <code>source_event_id</code>) → 저장소에 직접 <code>PUT</code>(SHA-256 체크섬 포함) → <code>complete</code> 통지(서버가 HEAD로 검증). 실패 시 백오프 3회 재시도, 재부팅 후 미완료 재처리</td>
+      <td><span class="r r-iot">IoT</span><span class="r r-be">BE</span></td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><b>라이브 제어 (MQTT)</b></td>
+      <td>단일 토픽 <code>{env}/wj/v2/devices/{deviceId}/commands</code> · <code>START_STREAM / EXTEND_STREAM / STOP_STREAM</code> · <code>hardExpiresAt</code> 기본 120초 lease, 제어 경로 끊기면 기기가 자체 종료</td>
+      <td><span class="r r-iot">IoT</span><span class="r r-be">BE</span></td>
+      <td>QoS·멱등 처리 세부는 <a href="../api/mqtt-contract.md">mqtt-contract.md</a> 준수</td>
+    </tr>
+    <tr>
+      <td><b>미디어 파이프라인</b></td>
+      <td>Jetson 단일 H.264/AAC 인코더 출력을 순환 버퍼와 live publisher에 <code>tee</code> → 미디어 계층이 재인코딩 없이 HLS remux·fan-out(<code>-c copy</code>)</td>
+      <td><span class="r r-iot">IoT</span></td>
+      <td>실기기에서 GOP·세그먼트 경계 검증</td>
+    </tr>
+    <tr>
+      <td><b>AI 모델</b></td>
+      <td>웃음소리 = YAMNet(기본) · 사람 탐지 = YOLO(심화 전제) · 웃는 표정 = MediaPipe(심화). 컨설턴트 피드백에 따라 <b>실기기 구동 가능한 경량화 검증이 필수</b></td>
+      <td><span class="r r-ai">AI</span></td>
+      <td>호출어 엔진(YAMNet vs 별도 Keyword Spotting) 검증 후 확정</td>
+    </tr>
+    <tr>
+      <td><b>프라이버시 LED</b></td>
+      <td>녹화 중 상시 점등 · 라이브 송출 중 1Hz 점멸. 촬영 중 LED 소등 옵션은 허용하지 않음</td>
+      <td><span class="r r-iot">IoT</span></td>
+      <td>실기기 패턴 검증</td>
+    </tr>
+  </table></div>
+  <p class="note">하드웨어 구성·배선은 <a href="./05_하드웨어_구성_및_배선계획.md">05_하드웨어_구성_및_배선계획.md</a>, 전체 구성도는 <a href="./04_시스템_아키텍처.md">04_시스템_아키텍처.md</a>·<a href="https://www.figma.com/board/eQtOYa4DFb7SpEO0E4fPjf">FigJam</a> 참조.</p>
+</section>
+
+<div class="rulebox" data-role="all">
+  <b>바꾸는 건 자유, 대신 반드시 알린다.</b><br>
+  명세는 당연히 바뀐다. 규칙은 딱 하나 — <b>명세를 바꾼 사람이, 바꾼 즉시, 팀 채널에 공지한다.</b>
+  API가 바뀌면 OpenAPI·화면-API 매핑을, DB가 바뀌면 ERD·schema.sql을, 트리거·토픽이 바뀌면 MQTT 계약을 함께 고친 뒤 알린다.
+</div>
+
+<footer>
+  윌리엄 제임스 · 개발 기간 2026.07.20 ~ 07.31 · 이 문서는 기획 단계 산출물(<a href="./00_산출물_인덱스.md">산출물 인덱스</a>)을 "개발을 위한 최소한의 명세서 5종" 관점으로 재구성한 것이다.
+</footer>
+
+</div>
+
+<script>
+(function () {
+  var names = { all: '모든 직무', fe: '프론트', be: '백엔드', ai: 'AI', iot: 'IoT' };
+  var buttons = document.querySelectorAll('.rolebtn');
+  var hint = document.getElementById('filterhint');
+
+  function apply(role) {
+    document.querySelectorAll('[data-role]').forEach(function (el) {
+      var roles = el.getAttribute('data-role').split(/\s+/);
+      var show = role === 'all' || roles.indexOf('all') !== -1 || roles.indexOf(role) !== -1;
+      el.classList.toggle('role-hidden', !show);
+    });
+    buttons.forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-select') === role);
+    });
+    hint.textContent = role === 'all'
+      ? '모든 직무의 항목을 표시 중'
+      : names[role] + ' 관련 항목만 표시 중 — 다시 전체를 보려면 [전체]';
+  }
+
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () { apply(b.getAttribute('data-select')); });
+  });
+})();
+</script>
+</body>
+</html>
