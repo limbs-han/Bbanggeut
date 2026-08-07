@@ -204,9 +204,14 @@ bash ai/model_benchmark/audio_benchmark_services.sh restore
 
 ## EfficientAT 섀도 비교
 
-운영 서비스에서는 YAMNet만 trigger와 업로드 이벤트를 생성합니다. EfficientAT
-MN10은 `AUDIO_SHADOW_ENABLED=true`일 때 같은 RTSP 오디오를 읽고 점수와 가상
-이벤트만 `efficientat_shadow.jsonl`에 기록합니다. 기본값은 `false`입니다.
+2026-08-07부터 운영 판정기는 EfficientAT MN10입니다. `AUDIO_EVENT_MODEL`이
+권한을 가진 모델을 하나만 고르고, 기본값은 `efficientat`입니다.
+
+섀도 비교는 `AUDIO_EVENT_MODEL=yamnet`으로 YAMNet에 권한을 되돌린 뒤
+`AUDIO_SHADOW_ENABLED=true`를 켜는 구성에서만 의미가 있습니다. 이때 EfficientAT
+은 같은 RTSP 오디오를 읽고 점수와 가상 이벤트만 `efficientat_shadow.jsonl`에
+기록합니다. 아래 비교 도구는 이 `virtual-event` 레코드를 읽습니다. 운영 모드의
+EfficientAT은 `event` 레코드를 남기므로 비교 대상이 아닙니다.
 
 ```bash
 python3 ai/model_benchmark/audio_shadow_report.py \

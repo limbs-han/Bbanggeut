@@ -1,0 +1,7 @@
+FROM jenkins/inbound-agent@sha256:6274f49f86429c5382b3943e96df81b65fd81712677347ae2a50b235b6c4e286
+
+USER root
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+USER jenkins

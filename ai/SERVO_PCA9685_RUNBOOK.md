@@ -10,9 +10,9 @@
 | 객체 | COCO `person`, `cat`, `dog` |
 | AI | YOLOv8n + ByteTrack |
 | MQTT broker | Jetson의 `127.0.0.1:1883` |
-| PCA9685 | 기본 주소 `0x40`, 50Hz |
-| PAN | Channel 0, HOME 기준 `-40°~+40°` |
-| TILT | Channel 1, 수평 HOME `0°`, 아래 방향 최대 `+80°` |
+| PCA9685 | 저장소 기본 주소 `0x40`, 50Hz |
+| PAN | Channel 0, HOME 기준 `-90°~+90°`, PARK `0°` |
+| TILT | Channel 1, HOME 기준 `0°~+110°`, PARK `0°` |
 | AI 발행 주기 | 10Hz |
 | 목표 메시지 TTL | 500ms |
 | 대상 소실 | 5초 `HOLD` 후 `HOME` |
@@ -23,8 +23,12 @@ AI는 각도와 PWM을 직접 만들지 않는다. AI가 화면 기준 정규화
 
 ### 2026-07-29 Jetson 실물 검증 프로필
 
-아래 값은 현재 Jetson과 카메라 기구물에서 실제 검증한 초기 안전값이다.
-새 PCA9685나 SG90으로 교체하면 다시 보정한다.
+아래는 2026-07-29 당시의 현장 보정 이력이며 **현재 기본값이 아니다.** 위 §1
+표와 저장소 기본값이 지금의 기준이고, 이 표는 그때 실물에서 처음 확인한 안전
+범위를 남긴 기록이다. 주소가 `0x40`이 아니라 `0x60`인 것은 그 보드의 실제
+주소를 `i2cdetect`로 확인한 값이기 때문이며, 주소는 보드마다 다르므로 저장소
+기본값을 바꾸지 않고 배포 설정에서 지정한다. 새 PCA9685나 SG90으로 교체하면
+다시 보정한다.
 
 | 항목 | 검증값 |
 | --- | --- |
@@ -165,7 +169,8 @@ error_y > 0: 화면 아래쪽
 
 상태 처리 우선순위:
 
-1. `HOME` 또는 `RETURN_HOME`: 보정된 수평 HOME으로 속도 제한 복귀
+1. `HOME` 또는 `RETURN_HOME`: PARK 각도(두 축 모두 `0°`)로 속도 제한 복귀.
+   상태 이름은 `HOME`이지만 이동 지점은 PARK다
 2. `HOLD` 또는 `NO_TARGET_HOLD`: 현재 물리 위치 유지, 오차값 무시
 3. `TRACKING`: `command_x`, `command_y`, `error_x`, `error_y`로 점진 이동
 
@@ -198,7 +203,7 @@ YOLO 실행 로그에서 다음을 확인한다.
 Framing target MQTT: homecam/v2/.../control/framing/target
 ```
 
-드라이런 로그의 PAN은 `-80~+80`, TILT는 `-50~+80` 범위를 벗어나면 안 된다.
+드라이런 로그의 PAN은 `-90~+90`, TILT는 `0~+110` 범위를 벗어나면 안 된다.
 
 ## 8. 실물 보정
 
@@ -214,57 +219,224 @@ Framing target MQTT: homecam/v2/.../control/framing/target
    반대로 바꾼다.
 6. DOWN 명령에서 위쪽으로 움직이면 `SERVO_TILT_PULSE_DIRECTION` 부호를
    반대로 바꾼다.
-7. ±10° 시험을 통과한 뒤 PAN ±20°, ±40°, ±60°, ±80° 순서로 확대한다.
-8. TILT도 위·아래 ±20°, ±40°, ±60°, ±80° 순서로 확대한다.
+7. ±10° 시험을 통과한 뒤 PAN ±20°, ±40°, ±60°, ±90° 순서로 확대한다.
+8. TILT는 `0°` 시작에서 `+20°`, `+60°`, `+110°` 순서로 확대한다.
 9. 떨림·소음·기구물 충돌이 발생하면 즉시 외부 5V 전원을 끈다.
+
+확대는 `servo_test.py`로 각 단계의 양 끝 펄스를 직접 찍어 확인한다. 추적으로
+확인하면 움직임이 프레임 안의 사람에 따라 좌우돼 통제되지 않는다. TILT가 큰
+각도로 숙을 때는 USB·전원 케이블이 감기거나 당겨지지 않는지 함께 본다.
+
+2026-08-06 실물에서 PAN `±90°`, TILT `0~+110°`까지 통과했다. TILT는 짐벌
+구조상 `+110°`가 한계다.
+
+`SERVO_MINIMUM_PULSE_US`/`SERVO_MAXIMUM_PULSE_US`는 `495~2505`다. **서보가
+받아들이지 못할 펄스를 막는 하드웨어 backstop이지 가동 범위 제한이 아니다.**
+환산율 `11.1111us/°`에서 이 창이 허용하는 것은 PAN이 HOME 기준 약 `±90.5°`,
+TILT가 HOME 기준 `-10.4°~+170.5°`다. 기구물을 지키는 것은 축별
+`*_MIN_DEG`/`*_MAX_DEG`이므로 각도 한계를 넓힐 때 위 7~8번 절차를 건너뛰지
+않는다.
 
 기본 보정 환경변수:
 
 ```text
-SERVO_I2C_ADDRESS=0x40
+SERVO_I2C_ADDRESS=0x60
 SERVO_PAN_CHANNEL=0
 SERVO_TILT_CHANNEL=1
-SERVO_PAN_MIN_DEG=-80
-SERVO_PAN_MAX_DEG=80
-SERVO_TILT_MIN_DEG=-50
-SERVO_TILT_MAX_DEG=80
+SERVO_PAN_MIN_DEG=-90
+SERVO_PAN_MAX_DEG=90
+SERVO_TILT_MIN_DEG=0
+SERVO_TILT_MAX_DEG=110
 SERVO_PAN_PARK_DEG=0
-SERVO_TILT_PARK_DEG=-50
+SERVO_TILT_PARK_DEG=0
 SERVO_PAN_HOME_PULSE_US=1500
-SERVO_TILT_HOME_PULSE_US=1500
-SERVO_PAN_PULSE_DIRECTION=1
+SERVO_TILT_HOME_PULSE_US=611
+SERVO_PAN_PULSE_DIRECTION=-1
 SERVO_TILT_PULSE_DIRECTION=1
-SERVO_MINIMUM_PULSE_US=1000
-SERVO_MAXIMUM_PULSE_US=2000
+SERVO_PAN_PULSE_US_PER_DEGREE=11.1111
+SERVO_TILT_PULSE_US_PER_DEGREE=11.1111
+SERVO_MINIMUM_PULSE_US=495
+SERVO_MAXIMUM_PULSE_US=2505
+SERVO_PAN_RESPONSE_GAIN=22.5
+SERVO_TILT_RESPONSE_GAIN=22.5
+SERVO_PAN_MAX_SPEED=20
+SERVO_TILT_MAX_SPEED=20
+SERVO_CONTROL_HZ=20
+SERVO_STATUS_INTERVAL_SECONDS=0.5
+SERVO_MESSAGE_TIMEOUT_SECONDS=0.75
+SERVO_NOMINAL_MESSAGE_INTERVAL_SECONDS=0.1
+SERVO_STARTUP_POSITION=park
+SERVO_START_ARMED=true
 SERVO_STATE_FILE=/var/lib/william-james-servo/position.json
 SERVO_STATE_MAX_AGE_SECONDS=604800
 SERVO_STATE_SAVE_INTERVAL_SECONDS=0.25
-SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS=3
+SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS=7
 ```
 
-PAN은 `-80~+80`, TILT는 구조물 한계 때문에 `-50~+80`을 사용한다.
-객체가 5초 이상 감지되지 않으면 PAN은 `0°`, TILT는 `-50°` PARK 위치로
-속도 제한 복귀한다. `*_HOME_PULSE_US`는 논리 `0°`의 PWM 보정값이므로 PARK
-각도를 바꿀 때 수정하지 않는다.
+PAN은 `-90~+90`, TILT는 짐벌 구조 때문에 `0~+110`을 사용한다. TILT에 음수
+구간이 없는 것은 `0°`가 곧 짐벌의 기계적 스톱이고 거기서 앞으로만 숙일 수
+있기 때문이다.
+
+객체가 5초 이상 감지되지 않으면 두 축 모두 `0°` PARK 위치로 속도 제한
+복귀한다. 상태 토픽에서 이때의 `state`는 `HOME`이지만 **실제 이동 지점은
+PARK다.**
+
+`*_HOME_PULSE_US`는 논리 `0°`가 어느 물리 위치인가를 고정하는 값이다. PAN
+`1500us`는 카메라 정면, TILT `611us`는 짐벌 정지 위치이며, 2026-08-06에 혼을
+그 위치에 맞춰 물렸다. 환산율 `11.1111us/°`는 `495~2505us`가 물리 180°를
+덮는다는 뜻이므로 **논리 각도가 곧 물리 각도다.**
+
+`SERVO_PAN_PULSE_DIRECTION=-1`은 실물에서 확인한 값이다. 이 기구에서는 펄스를
+올리면 카메라가 왼쪽을 본다.
+
+`SERVO_NOMINAL_MESSAGE_INTERVAL_SECONDS`는 아직 실제 수신 간격을 잴 수 없는
+첫 목표 메시지에 가정하는 간격이다. 발행 측의 `--command-interval`과 같은
+값으로 둔다.
 카메라의 UP/DOWN 명령과 실제 움직임이 반대라면
 `SERVO_TILT_PULSE_DIRECTION`을 `1`과 `-1` 중 반대 값으로 변경한다.
 
 ### 부팅 시 급회전 방지
 
-컨트롤러는 동작 중 마지막 명령 각도를 `SERVO_STATE_FILE`에 원자적으로 저장한다.
-재시작 후 첫 PWM은 HOME `0°`가 아니라 저장된 PAN/TILT 각도를 그대로 출력하고,
-그 다음 제어 주기부터 속도 제한을 적용한다.
+기본값은 `SERVO_STARTUP_POSITION=park`다. 기동 시 저장 파일을 무시하고 PARK
+각도(두 축 모두 `0°`)를 초기 위치로 삼은 뒤, MQTT 수신을 시작하기 전에
+그 각도의 펄스를 즉시 출력한다. PCA9685는 Jetson 3.3V로 동작하므로 서보용
+외부 전원이 꺼져 있어도 펄스는 살아 있다. 따라서 **컨트롤러를 먼저 띄우고
+배터리 실드를 나중에 켜면**, 서보는 전원이 들어오는 순간 이미 자기 위치인
+PARK를 명령받아 움직이지 않는다.
 
-상태 파일이 없거나, 다른 기기에서 생성됐거나, 설정 범위를 벗어나거나,
-`SERVO_STATE_MAX_AGE_SECONDS`보다 오래됐으면 상태는 `STARTUP_WAITING`이 된다.
+TILT는 기구적으로 시작 위치가 상단 스톱이고 아래로만 움직일 수 있어, 무전원
+정지 위치가 PARK로 결정돼 있다. 저장 파일에 남는 값은 실제 각도가 아니라
+**마지막으로 명령한 각도**이므로, 서보가 무전원이던 구간에서는 실제 위치와
+갈라진다. PARK 상수가 저장값보다 항상 정확한 이유다.
+
+이 모든 전제는 **PARK 펄스가 실제 무전원 정지 위치와 일치할 때만** 성립한다.
+어긋나 있으면 전원을 켜는 순간 그 차이만큼 서보가 자기 최대 속도로 튄다.
+아래 절차로 한 번 맞춰 둔다.
+
+### PARK를 무전원 정지 위치에 맞추기 (혼 재체결)
+
+서보에는 위치 피드백이 없다. 컨트롤러는 지금 축이 몇 도인지 읽을 수 없고,
+전원이 들어오면 서보는 신호선에 실린 펄스를 향해 **자기 최대 속도로** 달려간다.
+소프트웨어 속도 제한은 명령 각도의 변화율만 제한할 뿐 이 구간에는 개입하지
+못한다. 따라서 튐을 없애는 방법은 기구적으로 PARK == 정지 위치를 만드는 것
+하나뿐이다.
+
+1. 배터리 실드를 끄고 서보 혼과 짐벌 링키지를 분리한다.
+2. 컨트롤러를 `SERVO_START_ARMED=false`로 띄워 PARK 펄스만 나가게 한다.
+3. 실드를 켠다. 혼에 부하가 없으므로 서보는 PARK 각도로 자유롭게 이동한다.
+4. **그 상태에서** 짐벌을 자연 정지 위치에 둔 채 혼을 다시 체결한다.
+5. 실드를 껐다 켜서 서보가 움직이지 않는지 확인한다.
+
+TILT는 정지 위치가 곧 기계적 스톱이므로, 스톱을 계속 밀지 않도록 스톱에서
+1~2° 안쪽을 PARK로 잡는다.
+
+PAN은 스톱이 없어 무전원 정지 위치가 "마지막으로 놓인 자리"다. 재현성이 없으니
+혼 체결만으로는 부족하고, **전원을 내리는 순서**를 지켜야 한다. 서비스가 PARK로
+복귀하기 전에 실드를 먼저 끄면 서보가 그 자리에 남고, 다음 기동 때 PARK까지의
+차이만큼 튄다.
+
+### 서보를 교체할 때
+
+SG90 출력축 스플라인은 이빨 하나가 약 18°다. 혼을 떼서 새 서보에 물리는 순간
+그 각도 관계가 사실상 무작위가 되므로, **영점은 반드시 다시 잡는다.** 서보
+개체차보다 이쪽이 크다.
+
+| 항목 | 교체 시 | 이유 |
+| --- | --- | --- |
+| 혼 재체결 (영점) | **반드시** | 스플라인 관계가 끊긴다 |
+| `*_HOME_PULSE_US` | 그대로 | 아래 원칙 참조 |
+| `*_PULSE_DIRECTION` | 그대로 | 기구 장착 방향이지 서보 특성이 아니다 |
+| `*_PULSE_US_PER_DEGREE` | **재확인** | 개체마다 실제 회전량이 다르다 |
+| `*_MIN_DEG`/`*_MAX_DEG` | **스윕 재확인** | 회전량이 다르면 스톱 닿는 지점도 달라진다 |
+
+원칙은 하나다. **설정을 기구에 맞추지 말고, 기구를 설정에 맞춘다.** 새 서보가
+기존 HOME 펄스를 잡고 있는 상태에서 혼을 물리면 설정값은 건드릴 필요가 없다.
+HOME 펄스를 바꾸기 시작하면 각도 한계와 펄스 가드까지 연쇄로 다시 계산해야
+한다.
+
+1. 배터리 실드를 끄고 `sudo systemctl stop wj-servo-controller` 로 컨트롤러를
+   멈춘 뒤 서보를 교체한다. 배선은 Jetson과 외부 5V를 모두 끈 상태에서 만진다.
+2. 혼은 짐벌 링키지에서 **분리한 채로** 둔다.
+3. TILT를 교체했다면 혼을 물리기 전에 HOME 펄스가 닿는지 먼저 확인한다.
+   `611us` 는 SG90 하한 `500us` 에 가까워서, 실제 가동 구간이 `600~2400us`
+   정도인 개체는 내부 스톱을 밀며 버저 소리를 내고 발열한다.
+
+   ```bash
+   sudo python3 ~/ai/device_agent/servo_test.py --bus 7 --address 0x60 --channel 1 --pulses 611 --hold-seconds 3 --keep-powered
+   ```
+
+   소리가 나면 TILT HOME 펄스를 올리고(예: `700`) 그만큼 `SERVO_TILT_MAX_DEG`
+   를 다시 계산한다. PAN의 `1500us` 는 정중앙이라 이 문제가 없다.
+4. 컨트롤러를 띄워 PARK 펄스만 나가게 한다. `SERVO_START_ARMED=false` 이므로
+   `STARTUP_WAITING` 으로 대기한다.
+
+   ```bash
+   sudo systemctl start wj-servo-controller
+   sudo journalctl -u wj-servo-controller -n 5 --no-pager
+   ```
+
+   `Servo startup hold: PWM live at pan=+0.00deg tilt=+0.00deg` 를 확인한다.
+5. 실드를 켠다. 혼에 부하가 없으므로 서보는 PARK 각도로 자유롭게 이동한다.
+6. **그 상태에서** PAN은 카메라가 정면을 보도록, TILT는 짐벌이 스톱에서 1~2°
+   나온 지점에 오도록 맞춰 혼을 다시 체결한다.
+7. 실드를 껐다 켠다. **움직이지 않으면 영점이 잡힌 것이다.** 여전히 움직이면
+   혼을 한 칸 옮겨 다시 잡는다.
+
+영점을 잡은 뒤에는 §8 앞부분의 7~8번 단계 확대를 다시 밟아 각도 한계를
+확인한다. 새 서보의 회전량이 다르면 같은 논리 각도에서 스톱에 닿는 지점이
+달라진다. 마지막 단계에서 **각도기로 실제 회전각을 재고**, 논리 각도와 크게
+다르면 `*_PULSE_US_PER_DEGREE` 를 그 실측값으로 다시 잡는다.
+
+### 손으로 서보 전원을 켤 때: SERVO_START_ARMED=false
+
+PARK 펄스를 미리 내보내도, 컨트롤러가 곧바로 추적을 시작하면 실드를 켜기까지의
+대기 구간에서 명령 각도가 다시 PARK를 떠난다. 서보는 아직 전원이 없어 따라오지
+못하므로, 실드를 켜는 순간 그 어긋난 각도로 튄다. 실제로 기동 90초 뒤 PAN이
+`0°`에서 하한 `-10°`까지 걸어간 것을 확인했다.
+
+실드를 손으로 켜는 운용에서는 `SERVO_START_ARMED=false`로 둔다. 컨트롤러는
+`STARTUP_WAITING` 상태로 PARK 펄스만 유지하고 목표 메시지를 무시한다. 실드를
+켠 뒤 `SIGUSR1`을 보내면 그 시점의 위치에서 추적을 시작한다.
+
+```bash
+sudo systemctl kill -s USR1 wj-servo-controller
+```
+
+부팅 시 실드가 이미 켜져 있는 상시 운용에서는 기본값 `true`가 맞다. 그때는
+전원과 신호가 함께 올라오므로 어긋날 구간이 없다.
+
+`SERVO_STARTUP_POSITION=persisted`로 바꾸면 이전 동작으로 돌아간다. 컨트롤러는
+동작 중 마지막 명령 각도를 `SERVO_STATE_FILE`에 원자적으로 저장하고, 재시작 후
+첫 PWM으로 저장된 PAN/TILT 각도를 그대로 출력한 뒤 다음 제어 주기부터 속도
+제한을 적용한다. 서보 전원을 한 번도 끊지 않는 운용에서만 사용한다.
+
+`persisted` 모드에서 상태 파일이 없거나, 다른 기기에서 생성됐거나, 설정 범위를
+벗어나거나, `SERVO_STATE_MAX_AGE_SECONDS`보다 오래됐으면 상태는
+`STARTUP_WAITING`이 된다.
 이때 PCA9685 채널은 비활성 상태를 유지하며 객체 추적 메시지가 들어와도 PWM을
 출력하지 않는다. 현재 물리 각도를 확인해 유효한 상태 파일을 만든 뒤 서비스를
 재시작해야 한다.
 
+이 상태에서는 `SIGUSR1`을 보내도 무장하지 않고 거부 로그만 남는다. 복원된
+시작 위치가 없으면 컨트롤러가 아는 각도는 가정된 PARK뿐이고, 실제 각도가
+다르면 무장하는 순간 그 차이만큼 튀기 때문이다. 유효한 상태 파일을 만들어
+재시작하거나 `SERVO_STARTUP_POSITION=park`로 되돌린다.
+
 정상적인 서비스 종료에서는 MQTT 수신을 먼저 중단하고
-`SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS` 동안 속도 제한을 지키며 HOME으로 이동한 뒤
-최종 `0°` 위치를 저장하고 PWM 채널을 끈다. 갑작스러운 전원 차단에서는 마지막
-주기 저장값을 다음 부팅 때 사용한다.
+`SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS` 동안 속도 제한을 지키며 PARK
+(두 축 모두 `0°`)로 이동한 뒤 그 위치를 저장하고 PWM 채널을 끈다.
+
+기본값 `7`초는 전체 범위를 담는다. TILT `0~+110`의 최악 복귀 거리가 110°이고
+`SERVO_TILT_MAX_SPEED=20`에서 5.5초, PAN은 90°에 4.5초다. 두 축이 함께
+움직이므로 최악은 5.5초다. systemd 쪽 `TimeoutStopSec`은 여기에 MQTT 해제와
+상태 저장, 채널 차단까지 더해 12초로 둔다.
+
+**속도나 각도 범위를 바꾸면 이 두 값을 다시 계산한다.** 복귀 시간은
+`범위 ÷ MAX_SPEED`이고, 부족하면 PARK에 닿기 전에 PWM이 꺼진다.
+
+따라서 전원을 내리는 순서는 **서비스 정지 → PARK 복귀 확인 → 배터리 실드
+OFF**다. PARK가 아닌 각도에서 실드를 먼저 끄면 다음 기동 때 서보가 PARK로
+급하게 되돌아간다.
 
 ## 9. 하드웨어 출력 활성화
 

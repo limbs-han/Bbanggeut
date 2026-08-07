@@ -61,7 +61,7 @@ def plan_zoom_segments(
                 float(features.get("reaction", 0.0)),
                 0.80 * float(features.get("loudnessRise", 0.0)),
                 float(matched.get("socialEvent", 0.0)),
-                float(matched.get("musicEvent", 0.0)),
+                float(matched.get("ambientEvent", 0.0)),
             ),
         )
 

@@ -38,8 +38,10 @@ class VideoEditorServiceTest(unittest.TestCase):
                 zoomEnabled=True,
             )
         )
-        self.assertEqual(58_000, recipe["cut"]["startMs"])
-        self.assertEqual(120_000, recipe["cut"]["endMs"])
+        # 프리셋 구간은 내용 점수가 가장 높은 곳을 전수 탐색으로 고른다.
+        # 5번 영상에서 실제 사건은 84초 이후이고, 그 앞은 아무 일도 없다.
+        self.assertEqual(84_000, recipe["cut"]["startMs"])
+        self.assertEqual(119_000, recipe["cut"]["endMs"])
         self.assertEqual("medium", recipe["durationPreset"])
         self.assertTrue(recipe["zoomEnabled"])
         self.assertEqual(1, len(recipe["zoomSegments"]))
@@ -140,7 +142,7 @@ class AnalysisFlowTest(unittest.TestCase):
         recipe = response["recipe"]
         self.assertEqual("new-video", recipe["videoId"])
         self.assertTrue(recipe["analyzed"])
-        self.assertEqual(58_000, recipe["cut"]["startMs"])
+        self.assertEqual(84_000, recipe["cut"]["startMs"])
         stored.assert_called_once()
 
     def test_status_is_none_without_job_or_cache(self) -> None:

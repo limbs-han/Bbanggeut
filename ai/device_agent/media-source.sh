@@ -16,6 +16,8 @@ set -Eeuo pipefail
 : "${AUDIO_DEVICE:=plughw:CARD=B100,DEV=0}"
 : "${VIDEO_BITRATE:=2500k}"
 : "${CAMERA_WAIT_SECONDS:=5}"
+: "${AUDIO_WAIT_SECONDS:=3}"
+: "${AUDIO_WAIT_ATTEMPTS:=20}"
 : "${YOLO_UDP_PORT:=23000}"
 : "${YAMNET_UDP_PORT:=23001}"
 : "${LIVE_UDP_PORT:=23002}"
@@ -38,10 +40,12 @@ for port in \
     seen_ports["$port"]=1
 done
 
-if ! [[ "$CAMERA_WAIT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "CAMERA_WAIT_SECONDS must be a positive integer" >&2
-    exit 2
-fi
+for name in CAMERA_WAIT_SECONDS AUDIO_WAIT_SECONDS AUDIO_WAIT_ATTEMPTS; do
+    if ! [[ "${!name}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "${name} must be a positive integer" >&2
+        exit 2
+    fi
+done
 
 waiting_for_camera=false
 while [[ ! -r "$CAMERA_DEVICE" ]]; do
@@ -53,6 +57,34 @@ while [[ ! -r "$CAMERA_DEVICE" ]]; do
 done
 if [[ "$waiting_for_camera" == true ]]; then
     echo "Camera device is available: ${CAMERA_DEVICE}"
+fi
+
+# 카메라 노드가 열린다고 마이크까지 준비된 것은 아니다. ffmpeg 는 두 장치를 한
+# 프로세스에서 열기 때문에 마이크 하나 때문에 영상까지 통째로 죽는다. 특히 직전
+# 인스턴스가 SIGKILL 로 끝난 직후에는 ALSA 가 장치를 아직 반납하지 않아 "Device
+# or resource busy" 가 난다. 여기서 기다리지 않으면 systemd 가 몇 초마다 같은
+# 실패를 반복한다.
+if command -v arecord >/dev/null 2>&1; then
+    audio_attempt=0
+    waiting_for_audio=false
+    while ! arecord -q -D "$AUDIO_DEVICE" -f S16_LE -r 48000 -c 1 -d 1 \
+        /dev/null >/dev/null 2>&1; do
+        audio_attempt=$(( audio_attempt + 1 ))
+        if (( audio_attempt >= AUDIO_WAIT_ATTEMPTS )); then
+            echo "Audio device did not become available: ${AUDIO_DEVICE}" >&2
+            exit 1
+        fi
+        if [[ "$waiting_for_audio" == false ]]; then
+            echo "Audio device is not available; waiting: ${AUDIO_DEVICE}" >&2
+            waiting_for_audio=true
+        fi
+        sleep "$AUDIO_WAIT_SECONDS"
+    done
+    if [[ "$waiting_for_audio" == true ]]; then
+        echo "Audio device is available: ${AUDIO_DEVICE}"
+    fi
+else
+    echo "arecord is unavailable; skipping the audio readiness check." >&2
 fi
 
 tee_outputs="[f=mpegts:onfail=ignore]udp://127.0.0.1:${YOLO_UDP_PORT}?pkt_size=1316"

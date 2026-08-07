@@ -2,8 +2,13 @@
 
 The controller keeps camera-space positions separate from raw servo pulses:
 
-* PAN defaults to -80 through +80 degrees; TILT defaults to -50 through +80
-  degrees to avoid driving the installed linkage into its mechanical stop.
+* PAN defaults to -90 through +90 degrees; TILT defaults to 0 through +110
+  degrees, which is where the installed gimbal reaches its mechanical stop.
+  The pulse guard spans the full SG90 range, so these angle limits — not the
+  guard — are what keeps the linkage off its stops.
+* Logical degrees track physical degrees: 495-2505us covers 180 degrees at
+  11.1111us per degree. Both axes PARK at logical 0, which the horn was
+  mounted to match, so applying servo power does not move the linkage.
 * Pulse direction and calibration remain deployment settings because linkage
   orientation and individual SG90 endpoints vary.
 * The last commanded position is restored before the first hardware pulse so
@@ -414,11 +419,6 @@ class Pca9685ServoOutput:
         self._bus.write_byte_data(self._address, self.PRE_SCALE, prescale)
         self._bus.write_byte_data(self._address, self.MODE1, wake_mode)
         time.sleep(0.005)
-        self._bus.write_byte_data(
-            self._address,
-            self.MODE1,
-            wake_mode | self.MODE1_RESTART,
-        )
         self._bus.write_byte_data(self._address, self.MODE2, self.MODE2_OUTDRV)
 
     def _write_pulse(self, channel: int, pulse_us: float) -> None:
@@ -669,7 +669,29 @@ class ServoController:
             self.output.write_positions(pan_deg, tilt_deg)
         return should_write
 
+    def arm(self) -> bool:
+        """Start following targets from the position currently held.
+
+        Used after the servo power rail is switched on, so the controller
+        never accumulates commands the servo cannot physically follow.
+
+        Refused while no startup position was restored. The held position is
+        then only an assumed PARK, and arming would track away from an angle
+        the linkage may not actually be sitting at.
+        """
+        with self._lock:
+            if self.output_armed or not self.startup_position_restored:
+                return False
+            self.output_armed = True
+            self.target_pan_deg = self.current_pan_deg
+            self.target_tilt_deg = self.current_tilt_deg
+            self.mode = "HOLD"
+            return True
+
     def request_home(self) -> None:
+        # The state is named HOME on the wire, but the axes move to park_deg.
+        # home_deg is only the pulse calibration reference and stays at
+        # logical 0 degrees; PARK is where the linkage rests safely.
         with self._lock:
             if not self.output_armed:
                 return
@@ -678,6 +700,7 @@ class ServoController:
             self.target_tilt_deg = self.tilt.park_deg
 
     def is_at_home(self) -> bool:
+        # Named for the HOME state; compares against PARK, as request_home does.
         with self._lock:
             return (
                 abs(self.current_pan_deg - self.pan.park_deg) < 0.001
@@ -831,22 +854,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pan-min-deg",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MIN_DEG", "-80")),
+        default=float(os.getenv("SERVO_PAN_MIN_DEG", "-90")),
     )
     parser.add_argument(
         "--pan-max-deg",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MAX_DEG", "80")),
+        default=float(os.getenv("SERVO_PAN_MAX_DEG", "90")),
     )
     parser.add_argument(
         "--tilt-min-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MIN_DEG", "-50")),
+        default=float(os.getenv("SERVO_TILT_MIN_DEG", "0")),
     )
     parser.add_argument(
         "--tilt-max-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MAX_DEG", "80")),
+        default=float(os.getenv("SERVO_TILT_MAX_DEG", "110")),
     )
     parser.add_argument(
         "--pan-park-deg",
@@ -856,7 +879,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tilt-park-deg",
         type=float,
-        default=float(os.getenv("SERVO_TILT_PARK_DEG", "-50")),
+        default=float(os.getenv("SERVO_TILT_PARK_DEG", "0")),
+    )
+    parser.add_argument(
+        "--startup-position",
+        choices=("park", "persisted"),
+        default=os.getenv("SERVO_STARTUP_POSITION", "park"),
+    )
+    parser.add_argument(
+        "--start-armed",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("SERVO_START_ARMED", True),
+        help=(
+            "Follow targets immediately. Disable when the servo power rail is "
+            "switched on by hand after the service starts; the controller then "
+            "holds the startup position until it receives SIGUSR1."
+        ),
     )
     parser.add_argument(
         "--pan-home-pulse-us",
@@ -866,33 +904,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tilt-home-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_TILT_HOME_PULSE_US", "1500")),
+        default=float(os.getenv("SERVO_TILT_HOME_PULSE_US", "611")),
     )
     parser.add_argument(
         "--pan-pulse-us-per-degree",
         type=float,
-        default=float(os.getenv("SERVO_PAN_PULSE_US_PER_DEGREE", "5.555556")),
+        default=float(os.getenv("SERVO_PAN_PULSE_US_PER_DEGREE", "11.1111")),
     )
     parser.add_argument(
         "--tilt-pulse-us-per-degree",
         type=float,
-        default=float(os.getenv("SERVO_TILT_PULSE_US_PER_DEGREE", "5.555556")),
+        default=float(os.getenv("SERVO_TILT_PULSE_US_PER_DEGREE", "11.1111")),
     )
+    # The SG90 datasheet range. It is a hardware backstop against pulses the
+    # servo cannot accept, not a travel limit: at the default scale it admits
+    # +-180 degrees. The per-axis *_MIN_DEG/*_MAX_DEG values are what keep the
+    # linkage off its mechanical stops.
     parser.add_argument(
         "--minimum-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_MINIMUM_PULSE_US", "1000")),
+        default=float(os.getenv("SERVO_MINIMUM_PULSE_US", "495")),
     )
     parser.add_argument(
         "--maximum-pulse-us",
         type=float,
-        default=float(os.getenv("SERVO_MAXIMUM_PULSE_US", "2000")),
+        default=float(os.getenv("SERVO_MAXIMUM_PULSE_US", "2505")),
     )
     parser.add_argument(
         "--pan-pulse-direction",
         type=int,
         choices=(-1, 1),
-        default=int(os.getenv("SERVO_PAN_PULSE_DIRECTION", "1")),
+        default=int(os.getenv("SERVO_PAN_PULSE_DIRECTION", "-1")),
     )
     parser.add_argument(
         "--tilt-pulse-direction",
@@ -903,27 +945,38 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pan-response-gain",
         type=float,
-        default=float(os.getenv("SERVO_PAN_RESPONSE_GAIN", "45")),
+        default=float(os.getenv("SERVO_PAN_RESPONSE_GAIN", "22.5")),
     )
     parser.add_argument(
         "--tilt-response-gain",
         type=float,
-        default=float(os.getenv("SERVO_TILT_RESPONSE_GAIN", "45")),
+        default=float(os.getenv("SERVO_TILT_RESPONSE_GAIN", "22.5")),
     )
     parser.add_argument(
         "--pan-max-speed",
         type=float,
-        default=float(os.getenv("SERVO_PAN_MAX_SPEED", "40")),
+        default=float(os.getenv("SERVO_PAN_MAX_SPEED", "20")),
     )
     parser.add_argument(
         "--tilt-max-speed",
         type=float,
-        default=float(os.getenv("SERVO_TILT_MAX_SPEED", "40")),
+        default=float(os.getenv("SERVO_TILT_MAX_SPEED", "20")),
     )
     parser.add_argument(
         "--message-timeout",
         type=float,
         default=float(os.getenv("SERVO_MESSAGE_TIMEOUT_SECONDS", "0.75")),
+    )
+    parser.add_argument(
+        "--nominal-message-interval",
+        type=float,
+        default=float(
+            os.getenv("SERVO_NOMINAL_MESSAGE_INTERVAL_SECONDS", "0.1")
+        ),
+        help=(
+            "Gap assumed for the first framing target, before a real interval "
+            "can be measured. Match the publisher's command interval."
+        ),
     )
     parser.add_argument(
         "--control-hz",
@@ -959,7 +1012,7 @@ def parse_args() -> argparse.Namespace:
         "--shutdown-home-timeout",
         type=float,
         default=float(
-            os.getenv("SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS", "3")
+            os.getenv("SERVO_SHUTDOWN_HOME_TIMEOUT_SECONDS", "7")
         ),
     )
     args = parser.parse_args()
@@ -974,6 +1027,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--control-hz and --status-interval must be positive")
     if args.message_timeout <= 0:
         parser.error("--message-timeout must be positive")
+    if args.nominal_message_interval <= 0:
+        parser.error("--nominal-message-interval must be positive")
     if (
         args.state_max_age <= 0
         or args.state_save_interval <= 0
@@ -996,7 +1051,14 @@ def run(args: argparse.Namespace) -> None:
 
     pan, tilt = build_axis_configs(args)
     restored_position: tuple[float, float] | None = None
-    if args.enable_hardware:
+    if args.enable_hardware and args.startup_position == "park":
+        restored_position = (pan.park_deg, tilt.park_deg)
+        print(
+            "Servo startup safety: parked start "
+            f"pan={pan.park_deg:+.2f}deg tilt={tilt.park_deg:+.2f}deg "
+            "(saved position ignored)"
+        )
+    elif args.enable_hardware:
         try:
             restored_position = load_saved_position(
                 args.state_file,
@@ -1038,9 +1100,27 @@ def run(args: argparse.Namespace) -> None:
         output=output,
         expected_device_id=args.device_id,
         message_timeout_seconds=args.message_timeout,
+        nominal_message_interval_seconds=args.nominal_message_interval,
         initial_position=restored_position,
-        output_armed=not args.enable_hardware or restored_position is not None,
+        output_armed=(
+            not args.enable_hardware
+            or (restored_position is not None and args.start_armed)
+        ),
     )
+    if args.enable_hardware and restored_position is not None:
+        startup_pan_deg, startup_tilt_deg = controller.position_snapshot()
+        output.write_positions(startup_pan_deg, startup_tilt_deg)
+        print(
+            "Servo startup hold: PWM live at "
+            f"pan={startup_pan_deg:+.2f}deg tilt={startup_tilt_deg:+.2f}deg "
+            "before servo power is applied"
+        )
+        if not args.start_armed:
+            print(
+                "Servo startup hold: targets ignored until armed. Switch the "
+                "servo power on, then run: sudo systemctl kill -s USR1 "
+                "wj-servo-controller"
+            )
     target_topic = args.topic or (
         f"homecam/v2/{args.device_id}/control/framing/target"
     )
@@ -1121,8 +1201,27 @@ def run(args: argparse.Namespace) -> None:
         del signum, frame
         stop.set()
 
+    def request_arm(signum: int, frame: Any) -> None:
+        del signum, frame
+        pan_deg, tilt_deg = controller.position_snapshot()
+        if controller.arm():
+            print(
+                "Servo armed: following targets from "
+                f"pan={pan_deg:+.2f}deg tilt={tilt_deg:+.2f}deg"
+            )
+        elif controller.output_armed:
+            print("Servo armed already; SIGUSR1 ignored")
+        else:
+            print(
+                "Servo arm refused: no startup position was restored, so the "
+                "controller does not know where the linkage is. Check the "
+                f"physical angles, write a valid state file at {args.state_file} "
+                "and restart, or restart with SERVO_STARTUP_POSITION=park."
+            )
+
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGUSR1, request_arm)
 
     print(
         "Servo hardware: "

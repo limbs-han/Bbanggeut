@@ -5,15 +5,18 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
 from segment_clip_uploader import (
+    UNREADABLE_TRIGGER_GRACE_SECONDS,
     SegmentCoverageError,
     Trigger,
     canonical_trigger,
@@ -75,6 +78,44 @@ class SegmentClipUploaderTests(unittest.TestCase):
             parsed = parse_trigger(path)
 
             self.assertEqual(parsed.event_type, "CLAP")
+
+    def test_unreadable_trigger_does_not_hide_healthy_triggers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            event_dir = Path(temporary_directory)
+            (event_dir / "empty-1.trigger.json").write_text("", encoding="utf-8")
+            (event_dir / "good-1.trigger.json").write_text(
+                json.dumps(
+                    {
+                        "eventId": "good-1",
+                        "type": "LAUGHTER",
+                        "occurredAt": "2026-07-30T00:00:00.000Z",
+                        "preSeconds": 60,
+                        "postSeconds": 60,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stale = time.time() - UNREADABLE_TRIGGER_GRACE_SECONDS - 1
+            os.utime(event_dir / "empty-1.trigger.json", (stale, stale))
+
+            triggers = unhandled_triggers(event_dir)
+
+            self.assertEqual([item.event_id for item in triggers], ["good-1"])
+            marker = json.loads(
+                (event_dir / "empty-1.upload-blocked.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(marker["reason"], "unreadable-trigger")
+
+    def test_unreadable_trigger_is_retried_inside_the_grace_period(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            event_dir = Path(temporary_directory)
+            (event_dir / "empty-1.trigger.json").write_text("", encoding="utf-8")
+
+            self.assertEqual(unhandled_triggers(event_dir), [])
+
+            self.assertFalse((event_dir / "empty-1.upload-blocked.json").exists())
 
     def test_rejects_unknown_audio_event_type(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

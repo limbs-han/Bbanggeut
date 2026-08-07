@@ -1,0 +1,416 @@
+<title>BRIO 100 Pan/Tilt Mount — Drawing Set</title>
+<style>
+  :root{
+    --paper:#f5f4ef; --ink:#232b31; --ink-soft:#5b6670;
+    --blue:#2f5d8a; --blue-soft:#7ba0c4; --warn:#c0562f;
+    --grid:#dedcd3; --rule:#c9c7bd; --card:#fbfaf6; --shadow:rgba(35,43,49,.10);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#12171b; --ink:#e6e9ec; --ink-soft:#9aa5ad;
+      --blue:#6ea6d6; --blue-soft:#3f5d75; --warn:#e08a5c;
+      --grid:#242d34; --rule:#2c363d; --card:#171e23; --shadow:rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f5f4ef; --ink:#232b31; --ink-soft:#5b6670; --blue:#2f5d8a;
+    --blue-soft:#7ba0c4; --warn:#c0562f; --grid:#dedcd3; --rule:#c9c7bd;
+    --card:#fbfaf6; --shadow:rgba(35,43,49,.10);
+  }
+  :root[data-theme="dark"]{
+    --paper:#12171b; --ink:#e6e9ec; --ink-soft:#9aa5ad; --blue:#6ea6d6;
+    --blue-soft:#3f5d75; --warn:#e08a5c; --grid:#242d34; --rule:#2c363d;
+    --card:#171e23; --shadow:rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.55;
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+      linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:26px 26px; background-position:-1px -1px;
+  }
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .wrap{max-width:1060px;margin:0 auto;padding:28px 20px 80px}
+
+  /* Title block */
+  header.tb{
+    border:1.5px solid var(--ink); background:var(--card);
+    display:grid; grid-template-columns:1fr auto; box-shadow:0 2px 0 var(--shadow);
+  }
+  .tb .main{padding:20px 22px;border-right:1.5px solid var(--ink)}
+  .tb .eyebrow{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--blue);margin:0 0 6px}
+  .tb h1{margin:0;font-size:26px;line-height:1.15;letter-spacing:-.01em;text-wrap:balance}
+  .tb .sub{margin:8px 0 0;color:var(--ink-soft);font-size:14px;max-width:52ch}
+  .tb .meta{display:grid;grid-template-columns:auto;align-content:start;
+    font-family:ui-monospace,monospace;font-size:11.5px}
+  .tb .meta div{padding:8px 14px;border-bottom:1px solid var(--rule);
+    display:flex;justify-content:space-between;gap:18px;min-width:190px}
+  .tb .meta div:last-child{border-bottom:0}
+  .tb .meta span:first-child{color:var(--ink-soft)}
+
+  section{margin-top:38px}
+  .sh{display:flex;align-items:baseline;gap:12px;border-bottom:1.5px solid var(--ink);
+    padding-bottom:6px;margin-bottom:18px}
+  .sh .n{font-family:ui-monospace,monospace;color:var(--blue);font-size:13px;font-weight:700}
+  .sh h2{margin:0;font-size:18px;letter-spacing:-.01em}
+  .sh .r{margin-left:auto;font-family:ui-monospace,monospace;font-size:11px;color:var(--ink-soft)}
+
+  .plate{border:1.5px solid var(--ink);background:var(--card);border-radius:2px;
+    padding:14px;box-shadow:0 2px 0 var(--shadow)}
+  .plate figcaption{font-family:ui-monospace,monospace;font-size:11px;color:var(--ink-soft);
+    margin-top:8px;display:flex;justify-content:space-between;border-top:1px dashed var(--rule);
+    padding-top:8px}
+  svg{display:block;width:100%;height:auto}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+
+  /* SVG semantics via classes */
+  .part{fill:var(--card);stroke:var(--ink);stroke-width:1.6}
+  .part2{fill:none;stroke:var(--ink);stroke-width:1.6}
+  .hidden{fill:none;stroke:var(--ink-soft);stroke-width:1;stroke-dasharray:5 3}
+  .center{stroke:var(--blue);stroke-width:.9;stroke-dasharray:9 3 2 3}
+  .dim{stroke:var(--blue);stroke-width:.9}
+  .dimtxt{fill:var(--blue);font-family:ui-monospace,monospace;font-size:11px}
+  .lbl{fill:var(--ink);font-family:ui-monospace,monospace;font-size:11px}
+  .warnt{fill:var(--warn);font-family:ui-monospace,monospace;font-size:11px;font-weight:700}
+  .cam{fill:var(--blue-soft);opacity:.35;stroke:var(--blue);stroke-width:1.2}
+  .axis{fill:var(--warn)}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--card);
+    border:1.5px solid var(--ink)}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule)}
+  th{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink-soft);background:var(--paper)}
+  tbody tr:last-child td{border-bottom:0}
+  td.mono,th.mono{font-family:ui-monospace,monospace}
+  .tag{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;
+    padding:1px 7px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+  .tag.v{color:var(--warn)} .tag.ok{color:var(--blue)}
+  .note{border-left:3px solid var(--warn);background:var(--card);padding:12px 16px;
+    margin-top:16px;font-size:13.5px}
+  .note b{color:var(--warn)}
+  ul.tight{margin:10px 0 0;padding-left:20px} ul.tight li{margin:5px 0;font-size:14px}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;font-family:ui-monospace,monospace;
+    font-size:11px;color:var(--ink-soft);margin-top:6px}
+  .legend i{display:inline-block;width:26px;height:0;vertical-align:middle;margin-right:6px}
+</style>
+
+<div class="wrap">
+
+<header class="tb">
+  <div class="main">
+    <p class="eyebrow">Drawing Set · 2-Axis Camera Gimbal</p>
+    <h1>BRIO 100 Pan / Tilt Mount<br>for Jetson Orin Nano</h1>
+    <p class="sub">3D-printable 2축 팬·틸트 카메라 마운트. 형태 레퍼런스 Thingiverse thing:1062468 (Pi-Cam). 아래 치수는 설계 의도를 나타내는 도식 도면 — 정확한 형상은 <span class="mono">pan_tilt.scad</span>가 생성.</p>
+  </div>
+  <div class="meta">
+    <div><span>UNIT</span><span>mm</span></div>
+    <div><span>CAM</span><span>Logitech BRIO 100</span></div>
+    <div><span>SERVO</span><span>MG90S ×2</span></div>
+    <div><span>REV</span><span>v2 / 클립그립</span></div>
+    <div><span>SCALE</span><span>NTS</span></div>
+  </div>
+</header>
+
+<div class="legend">
+  <span><i class="dim" style="border-top:2px solid var(--blue)"></i>치수/축선</span>
+  <span><i style="border-top:2px solid var(--ink)"></i>외형</span>
+  <span><i class="hidden" style="border-top:2px dashed var(--ink-soft)"></i>숨은선</span>
+  <span><i style="border-top:2px solid var(--warn)"></i>회전축</span>
+  <span style="color:var(--warn)">※ VERIFY = 실측 후 파라미터 수정 필요</span>
+</div>
+
+<!-- ===================== ASSEMBLY ===================== -->
+<section>
+  <div class="sh"><span class="n">A</span><h2>조립 단면 &amp; 운동학 (Assembly · side elevation)</h2>
+    <span class="r">DWG A-01</span></div>
+  <figure class="plate">
+    <svg viewBox="0 0 900 470" role="img" aria-label="Assembly side elevation showing pan and tilt axes">
+      <!-- ground / base -->
+      <rect class="part" x="300" y="392" width="300" height="26"/>
+      <rect class="part" x="360" y="300" width="180" height="96"/>
+      <text class="lbl" x="450" y="352" text-anchor="middle">BASE (팬 서보 수납)</text>
+      <!-- pan servo shaft -->
+      <line class="center" x1="450" y1="470" x2="450" y2="30"/>
+      <text class="warnt" x="458" y="46">PAN 축 (Z, 좌우 yaw)</text>
+      <!-- pan platform -->
+      <rect class="part" x="330" y="270" width="240" height="18"/>
+      <rect class="part" x="330" y="180" width="20" height="100"/>
+      <rect class="part" x="550" y="180" width="20" height="100"/>
+      <text class="lbl" x="450" y="284" text-anchor="middle" font-size="10">PAN PLATFORM</text>
+      <!-- tilt servo on left wall -->
+      <rect class="part2" x="352" y="196" width="30" height="40"/>
+      <text class="lbl" x="367" y="250" text-anchor="middle" font-size="9">TILT SERVO</text>
+      <!-- tilt axis -->
+      <line class="center" x1="300" y1="216" x2="640" y2="216" stroke="var(--warn)"/>
+      <circle class="axis" cx="450" cy="216" r="4.5"/>
+      <text class="warnt" x="600" y="210">TILT 축 (X, 상하 pitch)</text>
+      <!-- cradle = blade + clipped-on camera -->
+      <g>
+        <rect class="part" x="440" y="150" width="20" height="120" rx="2"/>
+        <text class="lbl" x="500" y="150" text-anchor="middle" font-size="10">BLADE (클립이 뭄)</text>
+        <!-- BRIO clipped over the blade top, lens facing left -->
+        <rect class="cam" x="384" y="150" width="76" height="30" rx="3"/>
+        <path d="M384 150 h84 v-6 h-84 z" fill="var(--warn)" opacity=".45"/>
+        <path d="M460 156 q 22 6 16 40" fill="none" stroke="var(--warn)" stroke-width="1.6"/>
+        <text class="lbl" x="426" y="142" text-anchor="middle">BRIO 100 (클립 그대로)</text>
+        <!-- CoG marker near blade top -->
+        <circle cx="450" cy="216" r="9" fill="none" stroke="var(--warn)" stroke-width="1"/>
+        <path d="M450 207 v18 M441 216 h18" stroke="var(--warn)" stroke-width="1"/>
+        <text class="warnt" x="462" y="238" font-size="10">≈ 무게중심(CoG)</text>
+        <!-- lens -->
+        <circle cx="384" cy="165" r="9" fill="none" stroke="var(--ink)" stroke-width="1.4"/>
+        <text class="lbl" x="352" y="169" text-anchor="end" font-size="10">LENS →</text>
+      </g>
+      <!-- cable path -->
+      <path d="M470 254 q 30 40 -10 70 q -40 30 -10 70" fill="none" stroke="var(--warn)"
+            stroke-width="1.6" stroke-dasharray="2 3"/>
+      <text class="warnt" x="524" y="360" font-size="10">케이블: 후면-하단 →</text>
+      <text class="warnt" x="524" y="374" font-size="10">팬축 근처 통과 (꼬임 방지)</text>
+      <!-- overall height dim -->
+      <line class="dim" x1="700" y1="150" x2="700" y2="418"/>
+      <path d="M696 150 l4 8 l4 -8 M696 418 l4 -8 l4 8" fill="none" class="dim"/>
+      <text class="dimtxt" x="710" y="290">≈ 168 (조립 높이, 참고)</text>
+    </svg>
+    <figcaption><span>A-01 · 팬(Z)·틸트(X) 2축 · 틸트축을 CoG에 정렬</span><span>side elevation</span></figcaption>
+  </figure>
+
+  <div class="note">
+    <b>설계 규칙 —</b> 틸트축을 카메라 무게중심 근처에 두면 정지 유지 토크 ≈ 0.
+    MG90S(≈2.2 kg·cm) 대비 BRIO 75 g × 팔길이 3 cm ≈ 0.22 kg·cm → <b>안전율 ≈ 10배</b>.
+    팬축 위 무게중심 정렬로 편심 진동 억제.
+  </div>
+</section>
+
+<!-- ===================== BASE ===================== -->
+<section>
+  <div class="sh"><span class="n">B</span><h2>PART 1 — BASE (top view + section)</h2>
+    <span class="r">DWG B-01 · 팬 서보 수납 / Jetson·삼각대 고정</span></div>
+  <div class="grid2">
+    <figure class="plate">
+      <svg viewBox="0 0 420 380" role="img" aria-label="Base top view">
+        <!-- flange -->
+        <rect class="part" x="40" y="40" width="340" height="300" rx="4"/>
+        <!-- tower -->
+        <rect class="part2" x="90" y="90" width="240" height="200"/>
+        <!-- servo pocket -->
+        <rect class="hidden" x="150" y="150" width="120" height="66"/>
+        <text class="lbl" x="210" y="186" text-anchor="middle" font-size="10">SERVO POCKET</text>
+        <!-- shaft / pan center -->
+        <line class="center" x1="210" y1="30" x2="210" y2="350"/>
+        <line class="center" x1="30" y1="190" x2="390" y2="190"/>
+        <circle class="axis" cx="210" cy="190" r="4"/>
+        <!-- mount holes -->
+        <g fill="none" stroke="var(--ink)" stroke-width="1.4">
+          <circle cx="120" cy="100" r="6"/><circle cx="300" cy="100" r="6"/>
+          <circle cx="120" cy="280" r="6"/><circle cx="300" cy="280" r="6"/>
+        </g>
+        <!-- cable slot -->
+        <rect class="part2" x="188" y="330" width="44" height="20" fill="var(--paper)"/>
+        <text class="lbl" x="210" y="368" text-anchor="middle" font-size="10">CABLE SLOT</text>
+        <!-- dims -->
+        <line class="dim" x1="120" y1="70" x2="300" y2="70"/>
+        <path d="M120 66 l8 4 l-8 4 M300 66 l-8 4 l8 4" class="dim" fill="none"/>
+        <text class="dimtxt" x="210" y="62" text-anchor="middle">grid_dx 30 · <tspan class="warnt">jetson_dx VERIFY</tspan></text>
+        <line class="dim" x1="330" y1="100" x2="330" y2="280"/>
+        <path d="M326 100 l4 8 l4 -8 M326 280 l4 -8 l4 8" class="dim" fill="none"/>
+        <text class="dimtxt" x="336" y="196">bolt pitch Y</text>
+        <line class="dim" x1="40" y1="356" x2="380" y2="356"/>
+        <text class="dimtxt" x="210" y="352" text-anchor="middle">flange ≈ 60</text>
+      </svg>
+      <figcaption><span>B-01 · TOP</span><span>M2.5(Jetson) / M3(삼각대)</span></figcaption>
+    </figure>
+    <figure class="plate">
+      <svg viewBox="0 0 420 380" role="img" aria-label="Base section">
+        <rect class="part" x="60" y="300" width="300" height="40"/>
+        <rect class="part2" x="120" y="120" width="180" height="180" fill="var(--paper)"/>
+        <!-- servo inserted -->
+        <rect class="hidden" x="175" y="140" width="70" height="150"/>
+        <rect class="part2" x="150" y="128" width="120" height="14"/>
+        <text class="lbl" x="210" y="122" text-anchor="middle" font-size="9">SERVO EAR → 상판 나사</text>
+        <line class="center" x1="210" y1="40" x2="210" y2="360"/>
+        <circle cx="210" cy="90" r="8" class="part2"/>
+        <text class="warnt" x="222" y="86" font-size="10">SHAFT ↑ (→ 팬 플랫폼)</text>
+        <!-- height dim -->
+        <line class="dim" x1="340" y1="128" x2="340" y2="340"/>
+        <path d="M336 128 l4 8 l4 -8 M336 340 l4 -8 l4 8" class="dim" fill="none"/>
+        <text class="dimtxt" x="346" y="238">≈ 20 (=이어높이 15.8+α)</text>
+        <line class="dim" x1="60" y1="356" x2="360" y2="356"/>
+        <text class="dimtxt" x="210" y="372" text-anchor="middle">tower 44 × 44</text>
+      </svg>
+      <figcaption><span>B-01 · SECTION</span><span>서보 위에서 삽입 · 이어를 상판에 M2 체결</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ===================== PAN PLATFORM ===================== -->
+<section>
+  <div class="sh"><span class="n">C</span><h2>PART 2 — PAN PLATFORM (front view)</h2>
+    <span class="r">DWG C-01 · 틸트 서보 + 아이들러 축 U-브래킷</span></div>
+  <figure class="plate">
+    <svg viewBox="0 0 780 340" role="img" aria-label="Pan platform front view">
+      <!-- floor -->
+      <ellipse class="part" cx="390" cy="300" rx="220" ry="18"/>
+      <!-- left wall (servo) -->
+      <rect class="part" x="180" y="120" width="26" height="170"/>
+      <rect class="part2" x="150" y="150" width="60" height="70" fill="var(--paper)"/>
+      <text class="lbl" x="180" y="245" text-anchor="middle" font-size="9">TILT SERVO</text>
+      <!-- right wall (idler) -->
+      <rect class="part" x="574" y="120" width="26" height="170"/>
+      <circle cx="587" cy="175" r="10" class="part2" fill="var(--paper)"/>
+      <text class="lbl" x="587" y="235" text-anchor="middle" font-size="9">IDLER 축 Ø6</text>
+      <!-- tilt axis -->
+      <line class="center" x1="120" y1="175" x2="660" y2="175" stroke="var(--warn)"/>
+      <circle class="axis" cx="206" cy="175" r="4.5"/>
+      <circle class="axis" cx="574" cy="175" r="4.5"/>
+      <text class="warnt" x="390" y="166" text-anchor="middle">TILT 축 (X)</text>
+      <!-- horn interface bottom -->
+      <circle cx="390" cy="300" r="12" class="part2" fill="var(--paper)"/>
+      <circle cx="382" cy="300" r="2.4" class="axis"/><circle cx="398" cy="300" r="2.4" class="axis"/>
+      <text class="warnt" x="390" y="332" text-anchor="middle" font-size="10">↓ 팬 서보 혼 인터페이스 (M2 ×2)</text>
+      <!-- inner span dim -->
+      <line class="dim" x1="206" y1="95" x2="574" y2="95"/>
+      <path d="M206 91 l8 4 l-8 4 M574 91 l-8 4 l8 4" class="dim" fill="none"/>
+      <text class="dimtxt" x="390" y="88" text-anchor="middle">inner span = cam_w 73 + 여유 ≈ 88</text>
+      <!-- wall height -->
+      <line class="dim" x1="640" y1="120" x2="640" y2="290"/>
+      <path d="M636 120 l4 8 l4 -8 M636 290 l4 -8 l4 8" class="dim" fill="none"/>
+      <text class="dimtxt" x="648" y="210">wall_h 30</text>
+    </svg>
+    <figcaption><span>C-01 · FRONT</span><span>한쪽 서보 구동 + 반대쪽 아이들러 축 → 처짐/유격 감소</span></figcaption>
+  </figure>
+</section>
+
+<!-- ===================== CRADLE ===================== -->
+<section>
+  <div class="sh"><span class="n">D</span><h2>PART 3 — CRADLE = 클립 그립 블레이드 (front &amp; side)</h2>
+    <span class="r">DWG D-01 · BRIO 클립이 무는 "모니터 엣지"</span></div>
+  <div class="note" style="margin-top:0;margin-bottom:16px">
+    <b>중요 —</b> BRIO 100 클립은 <b>일체형·분리 불가, 삼각대 나사산 없음</b>. 그래서 카메라를 감싸지 않고,
+    얇은 <b>블레이드(가짜 모니터 윗변)</b> 를 만들어 <b>카메라 자체 클립이 그것을 물게</b> 한다.
+  </div>
+  <div class="grid2">
+    <figure class="plate">
+      <svg viewBox="0 0 420 320" role="img" aria-label="Cradle blade front view">
+        <!-- blade -->
+        <rect class="part" x="70" y="70" width="280" height="200" rx="3"/>
+        <!-- top shelf -->
+        <rect class="part2" x="70" y="70" width="280" height="14" fill="var(--paper)"/>
+        <text class="lbl" x="210" y="60" text-anchor="middle" font-size="10">↑ 클립이 무는 윗변 + 선반(ledge)</text>
+        <!-- side hubs -->
+        <circle cx="70" cy="120" r="16" class="part2" fill="var(--paper)"/>
+        <circle cx="350" cy="120" r="16" class="part2" fill="var(--paper)"/>
+        <circle cx="63" cy="120" r="2.4" class="axis"/><circle cx="77" cy="120" r="2.4" class="axis"/>
+        <line class="center" x1="30" y1="120" x2="390" y2="120" stroke="var(--warn)"/>
+        <circle class="axis" cx="210" cy="120" r="4"/>
+        <text class="lbl" x="70" y="150" text-anchor="middle" font-size="8">HORN</text>
+        <text class="lbl" x="350" y="150" text-anchor="middle" font-size="8">AXLE Ø6</text>
+        <text class="warnt" x="210" y="112" text-anchor="middle" font-size="10">TILT 축 (윗변 근처=CoG)</text>
+        <!-- cable groove + ties -->
+        <rect class="hidden" x="196" y="150" width="28" height="110"/>
+        <circle cx="188" cy="240" r="4" class="part2"/><circle cx="232" cy="240" r="4" class="part2"/>
+        <text class="lbl" x="210" y="230" text-anchor="middle" font-size="8">케이블 채널 + 타이홀</text>
+        <!-- width dim -->
+        <line class="dim" x1="70" y1="292" x2="350" y2="292"/>
+        <path d="M70 288 l8 4 l-8 4 M350 288 l-8 4 l8 4" class="dim" fill="none"/>
+        <text class="dimtxt" x="210" y="310" text-anchor="middle">panel_w 78 (≥ cam_w 72.9)</text>
+      </svg>
+      <figcaption><span>D-01 · FRONT</span><span>블레이드 정면 · 틸트 허브 좌우</span></figcaption>
+    </figure>
+    <figure class="plate">
+      <svg viewBox="0 0 420 320" role="img" aria-label="Blade side with clip and camera">
+        <!-- blade (thin) -->
+        <rect class="part" x="196" y="60" width="24" height="210"/>
+        <!-- top edge + front shelf -->
+        <rect class="part2" x="150" y="60" width="70" height="10" fill="var(--paper)"/>
+        <!-- BRIO camera body clipped over the top, lens facing left(front) -->
+        <g>
+          <rect class="cam" x="120" y="30" width="90" height="34" rx="4"/>
+          <circle cx="132" cy="47" r="9" class="part2"/>
+          <text class="lbl" x="96" y="34" text-anchor="middle" font-size="9">← BRIO</text>
+          <text class="lbl" x="96" y="46" text-anchor="middle" font-size="9">   LENS</text>
+        </g>
+        <!-- clip front lip over top edge -->
+        <path d="M150 60 h70 v-6 h-70 z" class="part2" fill="var(--warn)" opacity=".5"/>
+        <text class="warnt" x="250" y="52" font-size="9">클립 앞 립</text>
+        <!-- clip rear leg bracing the back -->
+        <path d="M220 66 q 34 6 26 60" fill="none" stroke="var(--warn)" stroke-width="2"/>
+        <text class="warnt" x="256" y="120" font-size="9">클립 뒷다리 지지</text>
+        <!-- tilt axis -->
+        <line class="center" x1="140" y1="86" x2="330" y2="86" stroke="var(--warn)"/>
+        <circle class="axis" cx="208" cy="86" r="4.5"/>
+        <!-- cable channel back -->
+        <rect class="part2" x="220" y="150" width="8" height="90" fill="var(--paper)"/>
+        <path d="M224 240 q 0 26 -20 34" fill="none" stroke="var(--warn)" stroke-width="1.6" stroke-dasharray="2 3"/>
+        <text class="warnt" x="270" y="210" font-size="10">CABLE →</text>
+        <!-- blade thickness dim -->
+        <line class="dim" x1="196" y1="285" x2="220" y2="285"/>
+        <path d="M196 281 l6 4 l-6 4 M220 281 l-6 4 l6 4" class="dim" fill="none"/>
+        <text class="dimtxt" x="208" y="304" text-anchor="middle"><tspan class="warnt">panel_t VERIFY</tspan> 9 (테스트핏)</text>
+        <line class="dim" x1="350" y1="70" x2="350" y2="270"/>
+        <text class="dimtxt" x="356" y="175">panel_h 46</text>
+      </svg>
+      <figcaption><span>D-01 · SIDE</span><span>카메라 클립이 블레이드를 문다 (모니터에 끼우듯)</span></figcaption>
+    </figure>
+  </div>
+  <div class="note"><b>케이블 규칙 —</b> BRIO 100은 케이블 고정형(USB-A). 회전 시 축을 가로지르면
+    꼬임·단선 → 블레이드 뒷면 채널로 빼서 <b>팬축 근처를 통과</b>시키고 서비스 루프 + 케이블타이로 스트레인 릴리프.
+    (레퍼런스 Pi-Cam도 "flat cable 부적합, round cable 권장"으로 동일 이슈 지적.)</div>
+</section>
+
+<!-- ===================== SPEC / BOM ===================== -->
+<section>
+  <div class="sh"><span class="n">E</span><h2>치수·부품·검증 (Spec / BOM)</h2><span class="r">TABLE E</span></div>
+
+  <table>
+    <thead><tr><th>항목</th><th class="mono">값 (mm / g)</th><th>파라미터</th><th>상태</th></tr></thead>
+    <tbody>
+      <tr><td>BRIO 100 외형</td><td class="mono">72.9 × 31.9 × 66.6 · 75g</td><td class="mono">cam_w</td><td><span class="tag ok">스펙</span></td></tr>
+      <tr><td>BRIO 클립 그립 블레이드</td><td class="mono">두께 9 · 높이 46</td><td class="mono">panel_t/h</td><td><span class="tag v">테스트핏</span></td></tr>
+      <tr><td>MG90S/SG90 서보</td><td class="mono">22.8×12.2×22.5 · 이어 32 · 홀 28</td><td class="mono">sv_*</td><td><span class="tag ok">표준</span></td></tr>
+      <tr><td>Jetson Orin Nano DevKit</td><td class="mono">103 × 90.5 × 35 · M2.5</td><td class="mono">jetson_dx/dy</td><td><span class="tag v">홀 피치 실측</span></td></tr>
+      <tr><td>프린트 클리어런스</td><td class="mono">0.4</td><td class="mono">clr</td><td><span class="tag ok">프린터 튜닝</span></td></tr>
+      <tr><td>벽 두께 / 인필</td><td class="mono">3.0 / ≥30% (마운트 40~50%)</td><td class="mono">wall</td><td><span class="tag ok">권장</span></td></tr>
+      <tr><td>케이블 채널</td><td class="mono">9 × 6.5</td><td class="mono">cable_w/h</td><td><span class="tag ok">round cable</span></td></tr>
+    </tbody>
+  </table>
+
+  <div style="height:18px"></div>
+
+  <table>
+    <thead><tr><th>BOM — Jetson에 붙일 것</th><th>사양 · 수량</th><th>비고</th></tr></thead>
+    <tbody>
+      <tr><td>마이크로 서보</td><td class="mono">MG90S ×2</td><td>팬1+틸트1, 메탈기어 권장</td></tr>
+      <tr><td>PWM 드라이버</td><td class="mono">PCA9685 (I²C) ×1</td><td>GPIO 직접구동 대신 필수</td></tr>
+      <tr><td>서보 전원</td><td class="mono">5V ≥2A 별도</td><td><span style="color:var(--warn)">Jetson 5V핀에서 뽑지 말 것</span></td></tr>
+      <tr><td>축 · 베어링</td><td class="mono">Ø6 볼트/핀 ×1</td><td>틸트 아이들러</td></tr>
+      <tr><td>나사</td><td class="mono">M2 셀프탭 · M2.5 · M3</td><td>혼/이어 · Jetson · 베이스</td></tr>
+    </tbody>
+  </table>
+
+  <table style="margin-top:18px">
+    <thead><tr><th>배선</th><th>Jetson 40-pin</th><th>PCA9685</th></tr></thead>
+    <tbody>
+      <tr><td>로직 전원</td><td class="mono">Pin 1 (3.3V)</td><td class="mono">VCC</td></tr>
+      <tr><td>I²C 데이터</td><td class="mono">Pin 3 (SDA)</td><td class="mono">SDA</td></tr>
+      <tr><td>I²C 클럭</td><td class="mono">Pin 5 (SCL)</td><td class="mono">SCL</td></tr>
+      <tr><td>그라운드(공통)</td><td class="mono">Pin 6 (GND)</td><td class="mono">GND + V+ GND</td></tr>
+      <tr><td>서보 출력</td><td class="mono">—</td><td class="mono">ch0 팬 / ch1 틸트</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>제어 —</b> <span class="mono">i2cdetect -y -r 1</span>로 <span class="mono">0x40</span> 확인 →
+    Python <span class="mono">adafruit-circuitpython-servokit</span>. 부팅 시 중앙 90° 소프트스타트,
+    코드에서 팬 20~160° · 틸트 60~120° 소프트 리밋으로 케이블 최대 비틀림 제한.
+  </div>
+</section>
+
+<p class="mono" style="text-align:center;color:var(--ink-soft);font-size:11px;margin-top:40px">
+  치수는 설계 의도용 도식 · 정확 형상은 pan_tilt.scad 생성 · v1 draft
+</p>
+
+</div>

@@ -1,8 +1,14 @@
 # YAMNet–EfficientAT 섀도 검증
 
+> 2026-08-07에 운영 판정기를 EfficientAT MN10으로 교체했다. 이 문서는
+> `AUDIO_EVENT_MODEL=yamnet` + `AUDIO_SHADOW_ENABLED=true` 구성, 즉 YAMNet이
+> 운영이고 EfficientAT이 섀도인 상태를 전제로 한다. 현재 운영 구성은
+> [`33_오디오_이벤트_요구사항과_튜닝_결정.md`](./33_오디오_이벤트_요구사항과_튜닝_결정.md)
+> 12절에 있다.
+
 ## 1. 목적
 
-현재 운영 이벤트 판정기는 YAMNet이다.
+섀도 검증 기간의 운영 이벤트 판정기는 YAMNet이다.
 
 EfficientAT MN10은 같은 RTSP 오디오를 읽는 비교 전용 섀도 판정기다.
 

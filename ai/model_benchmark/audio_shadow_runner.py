@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Run EfficientAT beside YAMNet without creating any operational event.
+"""Run EfficientAT on the shared RTSP audio in shadow or operational mode.
 
-The process reads the same RTSP audio as the production YAMNet detector and
-writes prediction and virtual-event JSONL records only.  It deliberately has
-no trigger directory, MQTT, API, or upload arguments.
+Shadow mode is the default and writes prediction and virtual-event JSONL
+records only: no trigger file, no MQTT, no upload.  Operational mode adds the
+trigger JSON the segment uploader already consumes plus MQTT publication, so
+EfficientAT can hold event authority in place of YAMNet.
+
+Side effects are opt-in and fail closed.  `--operational` is required before
+`--event-dir` or `--mqtt-host` are accepted at all, so a shadow invocation
+cannot create an event even if an operational flag is passed by mistake.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from audio_prediction_runner import (  # noqa: E402
     event_class_indices,
     sha256_file,
 )
+from audio_event_trigger import write_audio_event_trigger  # noqa: E402
 from ffmpeg_audio_stream import (  # noqa: E402
     ReconnectingFfmpegAudio,
     build_audio_command,
@@ -159,6 +165,7 @@ class GateResult:
     positive_windows: int
     triggered: bool
     cooldown_remaining_seconds: float
+    dominance: float = 0.0
 
 
 class VirtualEventGate:
@@ -169,6 +176,7 @@ class VirtualEventGate:
         threshold: float,
         required_windows: int,
         cooldown_seconds: float,
+        dominance_ratio: float = 0.0,
     ) -> None:
         if not 0.0 <= threshold <= 1.0:
             raise ValueError("threshold must be between zero and one")
@@ -176,14 +184,37 @@ class VirtualEventGate:
             raise ValueError("required windows must be positive")
         if cooldown_seconds < 0:
             raise ValueError("cooldown cannot be negative")
+        if not 0.0 <= dominance_ratio <= 1.0:
+            raise ValueError("dominance ratio must be between zero and one")
         self.threshold = threshold
         self.required_windows = required_windows
         self.cooldown_seconds = cooldown_seconds
+        # Ratio of this event's score to the loudest class in the window. A
+        # threshold alone cannot reject a window that speech dominates while
+        # the laughter score sits just above the line: on 2026-08-06 the
+        # median dominance of misfiring speech windows was 0.057, meaning
+        # events went out on evidence worth 6% of the top sound. Zero keeps
+        # the previous behaviour, which is the shipped default until a sweep
+        # picks an operating point from the recorded values.
+        self.dominance_ratio = dominance_ratio
         self.positive_windows = 0
         self.last_event_at: float | None = None
 
-    def observe(self, score: float, now: float) -> GateResult:
+    def observe(
+        self,
+        score: float,
+        now: float,
+        top_score: float | None = None,
+    ) -> GateResult:
+        # A window with no energy has no meaningful ratio; call it zero rather
+        # than dividing by it.
+        if top_score is None or top_score <= 0.0:
+            dominance = 0.0
+        else:
+            dominance = min(1.0, max(0.0, score / top_score))
         positive = score >= self.threshold
+        if positive and self.dominance_ratio > 0.0:
+            positive = dominance >= self.dominance_ratio
         if positive:
             self.positive_windows += 1
         else:
@@ -208,6 +239,7 @@ class VirtualEventGate:
             positive_windows=observed_windows,
             triggered=triggered,
             cooldown_remaining_seconds=cooldown_remaining,
+            dominance=dominance,
         )
 
 
@@ -252,16 +284,61 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--laughter-threshold",
         type=float,
-        default=0.01691491,
+        # From the 2026-08-06 census of 112,724 diagnostic windows, not from
+        # eyeballed samples. Every earlier value between 0.0169 and 0.08 was
+        # fitted to a handful of observations and could not stop the tail of
+        # the speech distribution: at 0.08, 98.7% of the 471 firings were
+        # speech. 0.15 passes 0.7% of speech windows and about 90% of laughter
+        # windows. The launcher passes this explicitly; the default only covers
+        # manual runs, which can now hold event authority.
+        default=0.15,
     )
     parser.add_argument("--laughter-consecutive", type=int, default=1)
+    parser.add_argument(
+        "--laughter-dominance-ratio",
+        type=float,
+        # Zero disables the ratio test and keeps the previous behaviour. It
+        # ships disabled because no sweep has picked an operating point yet;
+        # every window records its ratio so one can be chosen from data.
+        default=0.0,
+    )
     parser.add_argument(
         "--clap-threshold",
         type=float,
         default=0.08725224,
     )
-    parser.add_argument("--clap-consecutive", type=int, default=1)
+    # Clapping cannot drop to 1 the way laughter can. A single window separates
+    # sustained applause from a door slam only by loudness, and those score
+    # alike; requiring the sound to persist is what actually tells them apart.
+    parser.add_argument("--clap-consecutive", type=int, default=2)
     parser.add_argument("--cooldown-seconds", type=float, default=12.0)
+    parser.add_argument(
+        "--operational",
+        action="store_true",
+        help=(
+            "Grant event authority: write trigger files and publish MQTT. "
+            "Without this flag the process cannot create any event."
+        ),
+    )
+    parser.add_argument(
+        "--event-dir",
+        type=Path,
+        help="Trigger directory read by the segment uploader.",
+    )
+    parser.add_argument("--clip-seconds", type=float, default=60.0)
+    parser.add_argument("--device-id")
+    parser.add_argument("--mqtt-host")
+    parser.add_argument("--mqtt-port", type=int, default=1883)
+    parser.add_argument("--mqtt-username")
+    parser.add_argument("--mqtt-password")
+    parser.add_argument(
+        "--enable-clap-events",
+        action="store_true",
+        help=(
+            "Emit operational CLAP events. Shadow virtual events always "
+            "include clap regardless of this flag."
+        ),
+    )
     parser.add_argument("--block-seconds", type=float, default=0.5)
     parser.add_argument("--ffmpeg-path", default="/usr/bin/ffmpeg")
     parser.add_argument("--stream-read-timeout-seconds", type=float, default=5.0)
@@ -287,10 +364,29 @@ def validate_args(args: argparse.Namespace) -> None:
         )
     if args.max_windows is not None and args.max_windows <= 0:
         raise SystemExit("--max-windows must be positive")
+    if args.operational:
+        if args.event_dir is None and args.mqtt_host is None:
+            raise SystemExit(
+                "--operational requires --event-dir and/or --mqtt-host"
+            )
+        if args.clip_seconds <= 0:
+            raise SystemExit("--clip-seconds must be positive")
+        if not 1 <= args.mqtt_port <= 65_535:
+            raise SystemExit("--mqtt-port must be between 1 and 65535")
+        if args.mqtt_host and not (args.device_id or "").strip():
+            raise SystemExit("--device-id is required with --mqtt-host")
+    else:
+        # Fail closed: a shadow run must not carry operational plumbing even
+        # by accident, so reject the arguments rather than ignoring them.
+        for name in ("event_dir", "mqtt_host"):
+            if getattr(args, name) is not None:
+                flag = name.replace("_", "-")
+                raise SystemExit(f"--{flag} requires --operational")
     VirtualEventGate(
         args.laughter_threshold,
         args.laughter_consecutive,
         args.cooldown_seconds,
+        args.laughter_dominance_ratio,
     )
     VirtualEventGate(
         args.clap_threshold,
@@ -303,6 +399,13 @@ def run(args: argparse.Namespace) -> int:
     import numpy as np
 
     validate_args(args)
+    operational = bool(args.operational)
+    event_dir = (
+        args.event_dir.expanduser().resolve()
+        if operational and args.event_dir is not None
+        else None
+    )
+    mqtt_enabled = operational and bool(args.mqtt_host)
     model_path = args.model.expanduser().resolve()
     source_repo = args.source_repo.expanduser().resolve()
     class_map = (
@@ -346,11 +449,11 @@ def run(args: argparse.Namespace) -> int:
             "schemaVersion": SCHEMA_VERSION,
             "recordType": "startup",
             "observedAt": isoformat(utc_now()),
-            "mode": "shadow-only",
-            "operationalAuthority": False,
+            "mode": "operational" if operational else "shadow-only",
+            "operationalAuthority": operational,
             "sideEffects": {
-                "trigger": False,
-                "mqtt": False,
+                "trigger": event_dir is not None,
+                "mqtt": mqtt_enabled,
                 "upload": False,
                 "api": False,
             },
@@ -370,10 +473,16 @@ def run(args: argparse.Namespace) -> int:
                 "device": args.device,
                 "requestedPrecision": args.precision,
                 "cooldownSeconds": args.cooldown_seconds,
+                "eventDir": str(event_dir) if event_dir is not None else None,
+                "clipSeconds": args.clip_seconds if operational else None,
+                "clapEventsEnabled": (
+                    bool(args.enable_clap_events) if operational else None
+                ),
                 "events": {
                     "laughter": {
                         "threshold": args.laughter_threshold,
                         "requiredConsecutiveWindows": args.laughter_consecutive,
+                        "dominanceRatio": args.laughter_dominance_ratio,
                     },
                     "clap": {
                         "threshold": args.clap_threshold,
@@ -384,7 +493,8 @@ def run(args: argparse.Namespace) -> int:
         }
     )
 
-    print("Loading EfficientAT shadow model", flush=True)
+    mode_label = "operational" if operational else "shadow"
+    print(f"Loading EfficientAT {mode_label} model", flush=True)
     predictor = EfficientAtPredictor(
         model_path,
         source_repo,
@@ -405,12 +515,30 @@ def run(args: argparse.Namespace) -> int:
         args.laughter_threshold,
         args.laughter_consecutive,
         args.cooldown_seconds,
+        args.laughter_dominance_ratio,
     )
     clap_gate = VirtualEventGate(
         args.clap_threshold,
         args.clap_consecutive,
         args.cooldown_seconds,
     )
+    event_settings = {
+        "laughter": (args.laughter_threshold, args.laughter_consecutive),
+        "clap": (args.clap_threshold, args.clap_consecutive),
+    }
+
+    publisher = None
+    if mqtt_enabled:
+        from mqtt_event_publisher import MqttEventPublisher
+
+        publisher = MqttEventPublisher(
+            host=args.mqtt_host,
+            port=args.mqtt_port,
+            device_id=args.device_id,
+            username=args.mqtt_username,
+            password=args.mqtt_password,
+            component="efficientat",
+        )
 
     def stream_log(message: str) -> None:
         print(message, flush=True)
@@ -447,11 +575,15 @@ def run(args: argparse.Namespace) -> int:
     )
     stream.start()
     print(
-        "EfficientAT shadow ready: "
+        f"EfficientAT {mode_label} ready: "
         f"context={args.context_seconds:.3f}s hop={args.hop_seconds:.3f}s "
         f"laughter={args.laughter_threshold:.8f}/"
         f"{args.laughter_consecutive} "
-        f"clap={args.clap_threshold:.8f}/{args.clap_consecutive}",
+        f"dominance={args.laughter_dominance_ratio:.3f} "
+        f"clap={args.clap_threshold:.8f}/{args.clap_consecutive} "
+        f"trigger={'on' if event_dir is not None else 'off'} "
+        f"mqtt={'on' if mqtt_enabled else 'off'} "
+        f"clapEvents={'on' if operational and args.enable_clap_events else 'off'}",
         flush=True,
     )
 
@@ -485,9 +617,12 @@ def run(args: argparse.Namespace) -> int:
                 predictor.class_names,
             )
             now = time.monotonic()
-            laughter = laughter_gate.observe(laughter_score, now)
-            clap = clap_gate.observe(clap_score, now)
+            # The loudest class has to be known before the gates run: it is
+            # the denominator of the dominance ratio.
             top_index = int(np.argmax(scores))
+            top_score = float(scores[top_index])
+            laughter = laughter_gate.observe(laughter_score, now, top_score)
+            clap = clap_gate.observe(clap_score, now, top_score)
             window_started_at = detected_at - timedelta(
                 seconds=args.context_seconds
             )
@@ -507,7 +642,21 @@ def run(args: argparse.Namespace) -> int:
                 "inferenceMs": round(float(inference_ms), 3),
                 "rms": round(rms, 6),
                 "topClass": predictor.class_names[top_index],
-                "topScore": round(float(scores[top_index]), 6),
+                "topScore": round(top_score, 6),
+                # Recorded on every window even while the gate is disabled, so
+                # a later sweep can pick a dominance operating point from real
+                # data instead of guessing one.
+                "laughterDominance": round(laughter.dominance, 6),
+                "clapDominance": round(clap.dominance, 6),
+                # The servo dashboard and the stack's readiness probe both read
+                # the YAMNet diagnostics shape. Mirroring the laughter decision
+                # under those key names lets EfficientAT drive them unchanged.
+                "selectedScore": round(laughter_score, 8),
+                "selectedClass": laughter_class,
+                "selectedAggregation": "window",
+                "threshold": args.laughter_threshold,
+                "positiveStreak": laughter.positive_windows,
+                "wouldTrigger": laughter.triggered,
                 "events": {
                     "laughter": {
                         "score": round(laughter_score, 8),
@@ -543,32 +692,104 @@ def run(args: argparse.Namespace) -> int:
             ):
                 if not gate.triggered:
                     continue
+                if (
+                    operational
+                    and event_type == "clap"
+                    and not args.enable_clap_events
+                ):
+                    continue
                 virtual_event_count[event_type] += 1
+                threshold, consecutive = event_settings[event_type]
+                if not operational:
+                    writer.write(
+                        {
+                            "schemaVersion": SCHEMA_VERSION,
+                            "recordType": "virtual-event",
+                            "observedAt": isoformat(detected_at),
+                            "detectedAt": isoformat(detected_at),
+                            "virtualEventId": f"shadow-{uuid.uuid4()}",
+                            "eventType": event_type.upper(),
+                            "confidence": round(score, 8),
+                            "className": class_name,
+                            "windowIndex": window_index,
+                            "windowStartedAt": isoformat(window_started_at),
+                            "windowEndedAt": isoformat(detected_at),
+                            "operationalAuthority": False,
+                        }
+                    )
+                    print(
+                        "Virtual event only: "
+                        f"type={event_type.upper()} score={score:.6f} "
+                        f"class={class_name}",
+                        flush=True,
+                    )
+                    continue
+
+                event_id = str(uuid.uuid4())
+                # A model returning a value a hair outside [0, 1] must not kill
+                # the detector, so clamp before the trigger schema validates it.
+                confidence = min(1.0, max(0.0, float(score)))
+                if event_dir is not None:
+                    write_audio_event_trigger(
+                        event_dir,
+                        event_id=event_id,
+                        event_type=event_type.upper(),
+                        occurred_at=detected_at,
+                        confidence=confidence,
+                        class_name=class_name,
+                        clip_seconds=args.clip_seconds,
+                        metadata={
+                            "model": MODEL_KIND,
+                            "threshold": threshold,
+                            "contextSeconds": args.context_seconds,
+                            "hopSeconds": args.hop_seconds,
+                        },
+                    )
+                if publisher is not None:
+                    try:
+                        publisher.publish_event(
+                            event_type=event_type,
+                            event_id=event_id,
+                            score=confidence,
+                            class_name=class_name,
+                            threshold=threshold,
+                            consecutive=consecutive,
+                            monotonic_ns=time.monotonic_ns(),
+                            model_name=args.model_name,
+                        )
+                    except Exception as exc:
+                        # A broker hiccup must not discard the trigger that was
+                        # already written; the uploader is the durable path.
+                        print(
+                            f"MQTT event publish failed: {exc}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
                 writer.write(
                     {
                         "schemaVersion": SCHEMA_VERSION,
-                        "recordType": "virtual-event",
+                        "recordType": "event",
                         "observedAt": isoformat(detected_at),
                         "detectedAt": isoformat(detected_at),
-                        "virtualEventId": f"shadow-{uuid.uuid4()}",
+                        "eventId": event_id,
                         "eventType": event_type.upper(),
-                        "confidence": round(score, 8),
+                        "confidence": round(confidence, 8),
                         "className": class_name,
                         "windowIndex": window_index,
                         "windowStartedAt": isoformat(window_started_at),
                         "windowEndedAt": isoformat(detected_at),
-                        "operationalAuthority": False,
+                        "operationalAuthority": True,
                     }
                 )
                 print(
-                    "Virtual event only: "
-                    f"type={event_type.upper()} score={score:.6f} "
-                    f"class={class_name}",
+                    "Event: "
+                    f"type={event_type.upper()} score={confidence:.6f} "
+                    f"class={class_name} id={event_id}",
                     flush=True,
                 )
             window_index += 1
             print(
-                "Shadow prediction: "
+                f"EfficientAT {mode_label} prediction: "
                 f"window={window_index} laughter={laughter_score:.6f} "
                 f"clap={clap_score:.6f} inference={inference_ms:.1f}ms",
                 flush=True,
@@ -578,18 +799,25 @@ def run(args: argparse.Namespace) -> int:
     finally:
         stop.set()
         stream.close()
+        if publisher is not None:
+            try:
+                publisher.close()
+            except Exception as exc:
+                print(f"MQTT close failed: {exc}", file=sys.stderr, flush=True)
         mean_latency = (
             sum(inference_values) / len(inference_values)
             if inference_values
             else None
         )
+        count_key = "eventCount" if operational else "virtualEventCount"
         writer.write(
             {
                 "schemaVersion": SCHEMA_VERSION,
                 "recordType": "shutdown",
                 "observedAt": isoformat(utc_now()),
+                "mode": "operational" if operational else "shadow-only",
                 "predictionCount": window_index,
-                "virtualEventCount": virtual_event_count,
+                count_key: virtual_event_count,
                 "latencyMeanMs": (
                     round(mean_latency, 3)
                     if mean_latency is not None
