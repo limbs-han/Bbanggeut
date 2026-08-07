@@ -35,6 +35,10 @@ install -m 0644 "$SCRIPT_DIR/requirements.txt" "$INSTALL_DIR/requirements.txt"
 install -m 0755 "$SCRIPT_DIR/media-tunnel.sh" "$INSTALL_DIR/media-tunnel.sh"
 install -m 0755 "$SCRIPT_DIR/media-source.sh" "$INSTALL_DIR/media-source.sh"
 install -m 0755 "$SCRIPT_DIR/check-jetson.sh" "$INSTALL_DIR/check-jetson.sh"
+install -m 0755 "$SCRIPT_DIR/test-speaker-output.sh" \
+    "$INSTALL_DIR/test-speaker-output.sh"
+install -m 0755 "$SCRIPT_DIR/play_talkback_gstreamer.py" \
+    "$INSTALL_DIR/play_talkback_gstreamer.py"
 install -m 0755 "$SCRIPT_DIR/configure-jetson-rtsps.sh" \
     "$INSTALL_DIR/configure-jetson-rtsps.sh"
 install -m 0755 "$SCRIPT_DIR/verify-mediamtx-rtsps.sh" \

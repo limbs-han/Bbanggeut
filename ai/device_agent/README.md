@@ -33,6 +33,58 @@ app mutes its own WHEP playback while transmitting.
 `TALKBACK_ENABLED` is off by default. Without it `START_TALKBACK` is rejected
 with `SPEAKER_UNAVAILABLE` rather than accepted by a device with no speaker.
 
+### Testing the Jetson speaker output
+
+After wiring the USB audio adapter, PAM8403, and passive speaker, list the ALSA
+playback devices and run a three-second tone before enabling talkback. FFmpeg's
+`sine` source is one-eighth of full scale by default, so the script compensates
+it by 8x and then applies `SPEAKER_TEST_LEVEL`. The default level is `0.25`,
+approximately -12 dBFS; `1.0` produces an approximately 0 dBFS full-scale
+signal. Keep earphones out of your ears and the PAM8403 knob near minimum for
+the first run:
+
+```bash
+sudo apt-get install -y alsa-utils
+cd /opt/william-james/device-agent
+bash ./test-speaker-output.sh --list
+bash ./test-speaker-output.sh plughw:CARD=Device,DEV=0 3
+```
+
+For ALSA names containing `CARD=...`, the script also unmutes the card's
+`Speaker` mixer and raises it to 100%. This prevents a restored USB mixer value
+such as 29% from making a 100% generated signal sound quiet.
+
+To adjust the digital test level, set a value between 0 and 1. For example,
+`SPEAKER_TEST_LEVEL=0.5 bash ./test-speaker-output.sh` runs at one half of the
+full-scale peak.
+
+Replace `Device` with the card identifier reported by `aplay -L`. The script
+uses `TALKBACK_OUTPUT_DEVICE` when no device argument is supplied, so the final
+configuration can be verified directly:
+
+```bash
+set -a
+source /etc/william-james/device-agent.env
+set +a
+bash ./test-speaker-output.sh
+```
+
+The tone is duplicated to both stereo channels. A single speaker on
+`LOUT+`/`LOUT-` or `ROUT+`/`ROUT-` therefore receives the same test signal.
+Start with the PAM8403 hardware knob near minimum. Never connect either output
+minus terminal to power or signal ground because the module uses bridge-tied
+speaker outputs.
+
+Jetson Ubuntu 22.04 ships FFmpeg 4.4, whose TLS protocol options are not
+consumed by its RTSP demuxer after a successful RTSPS connection. If journal
+logs repeat `Option tls_verify not found`, keep the RTSPS URL and use the
+GStreamer `TALKBACK_COMMAND` from `device-agent.jetson.env.example`. GStreamer's
+`rtspsrc` validates the server certificate through the system TLS database and
+decodes the Opus track to the configured ALSA device. The wrapper separates the
+credentials from the RTSP URL into `rtspsrc`'s `user-id` and `user-pw`
+properties because GStreamer does not reliably use URL userinfo for RTSP Basic
+authentication.
+
 ### Standing in for the device with a laptop
 
 The talkback player is the only speaker-dependent part, so a laptop can take the
