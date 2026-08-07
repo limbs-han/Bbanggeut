@@ -131,7 +131,11 @@ def build_timeline(
             + 0.09 * spectral_flux
             + 0.10 * semantic_novelty
         )
-        music_event = (
+        # 배경음 사건 — 음악·TV·갑작스러운 소음처럼 사람 목소리가 아닌 소리가
+        # 커지거나 바뀌는 구간. 음악 점수는 항의 하나일 뿐이고 나머지 0.55는
+        # 음량 상승·스펙트럼 변화·의미 변화가 채운다. 실제로 이 가설이 이기는
+        # 지점 대부분에는 음악이 없다.
+        ambient_event = (
             0.45 * music
             + 0.18 * loudness_rise
             + 0.12 * spectral_flux
@@ -150,7 +154,7 @@ def build_timeline(
             + 0.15 * face_prominence
             + 0.10 * face_change
         )
-        audio_event = max(social_event, music_event, 0.65 * dialogue_event)
+        audio_event = max(social_event, ambient_event, 0.65 * dialogue_event)
         event_score = max(
             audio_event,
             0.25 * visual_event,
@@ -171,7 +175,7 @@ def build_timeline(
                 "eventScore": round(event_score, 6),
                 "continuityScore": round(continuity_score, 6),
                 "socialEvent": round(social_event, 6),
-                "musicEvent": round(music_event, 6),
+                "ambientEvent": round(ambient_event, 6),
                 "dialogueEvent": round(dialogue_event, 6),
                 "visualEvent": round(visual_event, 6),
                 "features": {
@@ -253,7 +257,7 @@ def _snap_boundary(
     )[0]
 
 
-def _music_motion_block(
+def _ambient_motion_block(
     timeline: list[dict[str, Any]],
     seed_index: int,
     *,
@@ -335,7 +339,7 @@ def select_adaptive_highlight(
     seed = timeline[seed_index]
     event_type = max(
         ("social", float(seed["socialEvent"])),
-        ("music", float(seed["musicEvent"])),
+        ("ambient", float(seed["ambientEvent"])),
         ("dialogue", 0.65 * float(seed["dialogueEvent"])),
         ("visual", 0.25 * float(seed.get("visualEvent", 0.0))),
         key=lambda item: item[1],
@@ -370,13 +374,13 @@ def select_adaptive_highlight(
     end_ms = int(timeline[right]["endMs"])
     flow_expansion: str | None = None
 
-    if event_type == "music":
-        music_story = _music_motion_block(timeline, seed_index)
-        if music_story is not None:
-            start_ms, end_ms = music_story
-            flow_expansion = "music-motion-episode"
+    if event_type == "ambient":
+        ambient_story = _ambient_motion_block(timeline, seed_index)
+        if ambient_story is not None:
+            start_ms, end_ms = ambient_story
+            flow_expansion = "ambient-motion-episode"
 
-    event_minimum_ms = 10_000 if event_type == "music" else 15_000
+    event_minimum_ms = 10_000 if event_type == "ambient" else 15_000
     minimum_duration_ms = max(config.minimum_duration_ms, event_minimum_ms)
     if end_ms - start_ms < minimum_duration_ms:
         missing = minimum_duration_ms - (end_ms - start_ms)

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .cut_selector import select_cut
-from .models import ScoreSegment, SelectorConfig
-
 DurationPresetName = Literal["auto", "short", "medium", "long"]
+
+# 내용 점수가 최고의 이 비율 이상인 구간만 경계 비교 대상에 올린다.
+CONTENT_TOLERANCE = 0.99
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,52 +63,70 @@ def apply_duration_preset(
     if preset_name not in PRESETS:
         raise ValueError(f"unknown duration preset: {preset_name}")
     preset = PRESETS[preset_name]
-    duration_ms = int(selection["durationMs"])
-    if preset.minimum_ms <= duration_ms <= preset.maximum_ms:
+    if not timeline:
         return {**selection, "durationPreset": preset_name}
 
     boundaries = _boundary_scores(yamnet_analysis, video_analysis)
-    segments = []
-    for row in timeline:
-        start_ms = int(row["startMs"])
-        end_ms = int(row["endMs"])
-        edit_score = min(
-            1.0,
-            0.85 * float(row["eventScore"])
-            + 0.15 * float(row["continuityScore"]),
+    bins = [
+        (
+            int(row["startMs"]),
+            int(row["endMs"]),
+            min(
+                1.0,
+                0.85 * float(row["eventScore"])
+                + 0.15 * float(row["continuityScore"]),
+            ),
         )
-        segments.append(
-            ScoreSegment(
-                start_ms=start_ms,
-                end_ms=end_ms,
-                edit_score=edit_score,
-                start_boundary_score=boundaries.get(start_ms, 0.35),
-                end_boundary_score=boundaries.get(end_ms, 0.35),
-            )
-        )
-    result = select_cut(
-        duration_ms=int(yamnet_analysis["durationMs"]),
-        anchor_start_ms=int(selection["seedStartMs"]),
-        anchor_end_ms=int(selection["seedEndMs"]),
-        segments=segments,
-        config=SelectorConfig(
-            min_duration_ms=preset.minimum_ms,
-            max_duration_ms=preset.maximum_ms,
-            context_before_ms=preset.context_before_ms,
-            context_after_ms=preset.context_after_ms,
-            content_weight=0.68,
-            start_boundary_weight=0.14,
-            end_boundary_weight=0.14,
-            context_weight=0.04,
-            extra_second_penalty=0.0005,
+        for row in timeline
+    ]
+    prefix = [0.0]
+    for _, _, score in bins:
+        prefix.append(prefix[-1] + score)
+
+    count = len(bins)
+    minimum_bins = max(1, preset.minimum_ms // (bins[0][1] - bins[0][0]))
+    maximum_bins = max(minimum_bins, preset.maximum_ms // (bins[0][1] - bins[0][0]))
+
+    # 프리셋 범위에 드는 모든 구간을 전수 나열해 내용 점수로 비교한다.
+    # seed 포함이나 앞뒤 문맥을 강제하지 않는다 — 강제하면 좋은 구간을 놓친다.
+    candidates = []
+    for left in range(count):
+        upper = min(count, left + maximum_bins)
+        for right in range(left + minimum_bins, upper + 1):
+            content = (prefix[right] - prefix[left]) / (right - left)
+            start_ms = bins[left][0]
+            end_ms = bins[right - 1][1]
+            candidates.append((content, start_ms, end_ms))
+    if not candidates:
+        return {**selection, "durationPreset": preset_name}
+
+    # 경계 품질은 점수에 섞지 않는다. 섞으면 경계 차이(최대 0.65)가 내용 차이
+    # (보통 0.02)를 압도해서 영상 맨 끝에 붙는 구간만 이긴다. 내용으로 먼저
+    # 거른 뒤 그 안에서만 끊기 좋은 자리를 고른다.
+    best_content = max(item[0] for item in candidates)
+    pool = [
+        item
+        for item in candidates
+        if item[0] >= best_content * CONTENT_TOLERANCE
+    ]
+    content, start_ms, end_ms = max(
+        pool,
+        key=lambda item: (
+            round(
+                boundaries.get(item[1], 0.35) + boundaries.get(item[2], 0.35), 9
+            ),
+            round(item[0], 9),
+            -(item[2] - item[1]),
+            -item[1],
         ),
     )
     return {
         **selection,
-        "startMs": result.start_ms,
-        "endMs": result.end_ms,
-        "durationMs": result.duration_ms,
+        "startMs": start_ms,
+        "endMs": end_ms,
+        "durationMs": end_ms - start_ms,
         "durationPreset": preset_name,
-        "presetSelectionReason": result.reason,
-        "presetCandidateCount": result.candidate_count,
+        "presetSelectionReason": "highest_content_then_safest_boundary",
+        "presetCandidateCount": len(candidates),
+        "presetContentScore": round(content, 6),
     }
