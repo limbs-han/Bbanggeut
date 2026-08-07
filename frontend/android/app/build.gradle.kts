@@ -38,6 +38,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications가 java.time을 쓴다. 이 스위치가 없으면
+        // 앱을 켜 둔 동안 띄우는 포그라운드 알림이 빌드부터 실패한다.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -80,6 +83,9 @@ flutter {
 }
 
 dependencies {
+    // isCoreLibraryDesugaringEnabled의 짝. flutter_local_notifications용.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
     // ML Kit GenAI 온디바이스 음성 인식 — 자막의 whisper 대안 경로(MlKitTranscriber.kt).
     // **실험 중이다.** alpha 버전이고, 판정이 끝나면 이 줄과 함께 한쪽을 지운다.
     // implementation인 이유: MlKitTranscriber가 main 소스셋에 있어 release도 컴파일된다.
