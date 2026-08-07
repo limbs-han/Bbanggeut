@@ -241,7 +241,7 @@ class CutSelectorTests(unittest.TestCase):
                     "eventScore": 0.8 if active else 0.01,
                     "continuityScore": 0.7 if active else 0.01,
                     "socialEvent": 0.8 if active else 0.01,
-                    "musicEvent": 0.0,
+                    "ambientEvent": 0.0,
                     "dialogueEvent": 0.0,
                 }
             )
@@ -267,7 +267,7 @@ class CutSelectorTests(unittest.TestCase):
                     "eventScore": event,
                     "continuityScore": 0.8 if music else 0.01,
                     "socialEvent": 0.0,
-                    "musicEvent": event,
+                    "ambientEvent": event,
                     "dialogueEvent": 0.0,
                     "visualEvent": 0.5 if moving else 0.0,
                     "features": {
@@ -284,7 +284,7 @@ class CutSelectorTests(unittest.TestCase):
 
         self.assertLessEqual(selection["startMs"], 60_000)
         self.assertEqual(120_000, selection["endMs"])
-        self.assertEqual("music-motion-episode", selection["flowExpansion"])
+        self.assertEqual("ambient-motion-episode", selection["flowExpansion"])
 
     def test_timeline_scores_late_music_event(self) -> None:
         timeline = build_timeline(
@@ -452,7 +452,7 @@ class CutSelectorTests(unittest.TestCase):
                 "startMs": second * 1000,
                 "endMs": (second + 1) * 1000,
                 "socialEvent": 0.8 if 19 <= second <= 21 else 0.1,
-                "musicEvent": 0.0,
+                "ambientEvent": 0.0,
                 "features": {
                     "laughter": 0.8 if 19 <= second <= 21 else 0.0,
                     "reaction": 0.0,
