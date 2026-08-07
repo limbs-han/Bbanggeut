@@ -271,7 +271,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=0.08725224,
     )
-    parser.add_argument("--clap-consecutive", type=int, default=1)
+    # Clapping cannot drop to 1 the way laughter can. A single window separates
+    # sustained applause from a door slam only by loudness, and those score
+    # alike; requiring the sound to persist is what actually tells them apart.
+    parser.add_argument("--clap-consecutive", type=int, default=2)
     parser.add_argument("--cooldown-seconds", type=float, default=12.0)
     parser.add_argument(
         "--operational",

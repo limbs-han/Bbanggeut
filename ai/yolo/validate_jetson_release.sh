@@ -93,7 +93,18 @@ grep -Fq ': "${AUDIO_EVENT_MODEL:=efficientat}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${AUDIO_EVENT_CLAP_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq ': "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=0.03}"' \
+grep -Fq ': "${AUDIO_SENSITIVITY:=default}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.0169' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.03' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.08' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq \
+    ': "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=$AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_CLAP_CONSECUTIVE:=2}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"

@@ -39,6 +39,47 @@ class EdgeAiRecordingStartupTests(unittest.TestCase):
         self.assertIn("AUDIO_SHADOW_START=true", branch)
         self.assertIn("AUDIO_SHADOW_OPERATIONAL=true", branch)
 
+    def test_sensitivity_maps_to_the_three_measured_thresholds(self) -> None:
+        self.assertIn(': "${AUDIO_SENSITIVITY:=default}"', self.script)
+
+        sensitivity_case = self.script.index('case "$AUDIO_SENSITIVITY" in')
+        block = self.script[sensitivity_case:]
+        block = block[: block.index("esac")]
+
+        for step, threshold in (
+            ("sensitive", "0.0169"),
+            ("default", "0.03"),
+            ("insensitive", "0.08"),
+        ):
+            branch = block.index(f"{step})")
+            self.assertIn(
+                f"AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD={threshold}",
+                block[branch : branch + 120],
+            )
+
+    def test_sensitivity_only_supplies_a_default_threshold(self) -> None:
+        # An explicit threshold has to win, otherwise a field experiment
+        # cannot pin a value without inventing a new sensitivity step.
+        self.assertIn(
+            ': "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:='
+            '$AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD}"',
+            self.script,
+        )
+
+    def test_unknown_sensitivity_stops_the_stack(self) -> None:
+        sensitivity_case = self.script.index('case "$AUDIO_SENSITIVITY" in')
+        block = self.script[sensitivity_case:]
+        block = block[: block.index("esac")]
+
+        self.assertIn("AUDIO_SENSITIVITY must be one of", block)
+        self.assertIn("exit 2", block)
+
+    def test_clap_requires_two_consecutive_windows(self) -> None:
+        # One window separates applause from a door slam only by loudness.
+        # Laughter can use 1; clapping cannot.
+        self.assertIn(': "${AUDIO_SHADOW_CLAP_CONSECUTIVE:=2}"', self.script)
+        self.assertIn(': "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"', self.script)
+
     def test_only_the_authoritative_detector_writes_triggers(self) -> None:
         # YAMNet is always launched with --event-dir, so it must not start
         # while EfficientAT is operational or both would create events.

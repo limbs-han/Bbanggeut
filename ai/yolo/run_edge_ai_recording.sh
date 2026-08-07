@@ -98,18 +98,53 @@ fi
 # Observed score distribution while running:
 #   silence 0.0003 / indoor close conversation 0.072 (topClass=Speech 0.90)
 #   laughter during clapping 0.030 / clear laughter 0.229~0.293
-# 0.03 sits below the observed conversation score, so conversational false
-# positives can reappear. If they do, ~0.08 is the next candidate: it clears
-# 0.072 while staying under the 0.229 laughter floor. Do not go back to the
-# dev-set argmax; it fired on ordinary speech.
-: "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=0.03}"
+# Sensitivity picks the laughter threshold. The three steps are placed against
+# the observed distribution above, not spread evenly:
+#   sensitive    0.0169  dev-set argmax. Below conversation (0.072), so it does
+#                        fire on ordinary talking. That is the deliberate cost
+#                        of this step, not a defect.
+#   default      0.03    detection first. Still under conversation, but well
+#                        above room tone.
+#   insensitive  0.08    the only step that clears conversation (0.072) while
+#                        staying under the laughter floor (0.229). A value
+#                        between 0.03 and 0.072 would drop laughter-while-
+#                        clapping (0.030) without stopping a single false
+#                        positive, which is the worst of both.
+# Do not spread these evenly. The gap that matters sits at 0.072.
+: "${AUDIO_SENSITIVITY:=default}"
+AUDIO_SENSITIVITY="${AUDIO_SENSITIVITY,,}"
+case "$AUDIO_SENSITIVITY" in
+    sensitive)
+        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.0169
+        ;;
+    default)
+        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.03
+        ;;
+    insensitive)
+        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.08
+        ;;
+    *)
+        echo \
+            "AUDIO_SENSITIVITY must be one of: sensitive, default, insensitive" \
+            >&2
+        exit 2
+        ;;
+esac
+# An explicit threshold still wins, so a field experiment does not need a new
+# sensitivity step. Setting it pins the value and the sensitivity knob stops
+# doing anything, which is why the env example ships the knob and not this.
+: "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=$AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD}"
 # Consecutive windows is a weak filter here. A 10s window hopping 2.5s shares
 # 7.5s with its neighbour, so one short sound lands in several windows and
 # usually clears the threshold in all of them. Requiring 2 mostly costs 2.5s of
 # latency and drops short laughs.
 : "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"
 : "${AUDIO_SHADOW_CLAP_THRESHOLD:=0.08725224}"
-: "${AUDIO_SHADOW_CLAP_CONSECUTIVE:=1}"
+# Clapping cannot use 1 the way laughter does. A single window tells sustained
+# clapping apart from a door slam or a dropped object only by loudness, and
+# those score alike. Two windows require the sound to persist, which is the
+# thing that actually distinguishes applause. Laughter has no such twin.
+: "${AUDIO_SHADOW_CLAP_CONSECUTIVE:=2}"
 : "${AUDIO_SHADOW_COOLDOWN_SECONDS:=12}"
 : "${AUDIO_SHADOW_RESTART_DELAY_SECONDS:=10}"
 : "${WAKE_NAME_ENABLED:=false}"
@@ -402,6 +437,7 @@ if [[ "$AUDIO_SHADOW_START" == true ]]; then
     fi
     echo \
         "EfficientAT MN10: authority=${audio_shadow_authority} " \
+        "sensitivity=${AUDIO_SENSITIVITY} " \
         "context=${AUDIO_SHADOW_CONTEXT_SECONDS}s " \
         "hop=${AUDIO_SHADOW_HOP_SECONDS}s " \
         "laughter=${AUDIO_SHADOW_LAUGHTER_THRESHOLD}/" \

@@ -124,6 +124,11 @@ def run_with_fakes(root: Path, extra_argv: list[str]) -> list[dict]:
             "0.5",
             "--clap-threshold",
             "0.5",
+            # These tests drive a single window to check the event plumbing,
+            # not the clap gate. The shipped default is 2, which by design
+            # cannot fire on one window.
+            "--clap-consecutive",
+            "1",
             "--cooldown-seconds",
             "0",
             "--max-windows",
@@ -235,6 +240,23 @@ class AudioShadowRunnerTests(unittest.TestCase):
         self.assertIsNone(args.event_dir)
         self.assertIsNone(args.mqtt_host)
         self.assertFalse(hasattr(args, "api_base_url"))
+
+    def test_clap_defaults_to_two_consecutive_windows(self) -> None:
+        # A door slam and sustained applause score alike in one window; only
+        # persistence separates them. Laughter has no such twin, so it stays
+        # at 1. Dropping clap to 1 would trade the distinction for nothing.
+        args = parse_args(self._base_argv())
+
+        self.assertEqual(args.clap_consecutive, 2)
+        self.assertEqual(args.laughter_consecutive, 1)
+
+    def test_laughter_default_is_the_field_corrected_threshold(self) -> None:
+        # The dev-set argmax 0.01691491 fired on ordinary conversation. This
+        # runner can now hold event authority, so its default must not be the
+        # value that over-fires.
+        args = parse_args(self._base_argv())
+
+        self.assertEqual(args.laughter_threshold, 0.03)
 
     def test_side_effect_arguments_require_operational(self) -> None:
         for extra in (
