@@ -30,6 +30,54 @@ class AudioEventTriggerTests(unittest.TestCase):
         self.assertEqual(payload["type"], "CLAP")
         self.assertEqual(payload["metadata"]["positiveWindows"], 3)
 
+    def test_asymmetric_window_records_each_side_separately(self) -> None:
+        # The dashboard button records forward from the press, so the two
+        # sides are not equal. The uploader has always read them separately.
+        payload = build_audio_event_payload(
+            event_id="event-manual",
+            event_type="LAUGHTER",
+            occurred_at=datetime(2026, 8, 7, tzinfo=timezone.utc),
+            confidence=1.0,
+            class_name="Manual",
+            pre_seconds=1.0,
+            post_seconds=120.0,
+        )
+
+        self.assertEqual(payload["preSeconds"], 1.0)
+        self.assertEqual(payload["postSeconds"], 120.0)
+
+    def test_clip_seconds_still_produces_a_centred_window(self) -> None:
+        payload = build_audio_event_payload(
+            event_id="event-detector",
+            event_type="LAUGHTER",
+            occurred_at=datetime(2026, 8, 7, tzinfo=timezone.utc),
+            confidence=0.5,
+            class_name="Laughter",
+            clip_seconds=60,
+        )
+
+        self.assertEqual(payload["preSeconds"], 60)
+        self.assertEqual(payload["postSeconds"], 60)
+
+    def test_window_arguments_cannot_be_mixed_or_half_given(self) -> None:
+        base = {
+            "event_id": "event-bad",
+            "event_type": "LAUGHTER",
+            "occurred_at": datetime(2026, 8, 7, tzinfo=timezone.utc),
+            "confidence": 1.0,
+            "class_name": "Manual",
+        }
+        for extra in (
+            {"clip_seconds": 60, "post_seconds": 120.0},
+            {"post_seconds": 120.0},
+            {"pre_seconds": 1.0},
+            {},
+            {"pre_seconds": 0.0, "post_seconds": 120.0},
+        ):
+            with self.subTest(extra=sorted(extra)):
+                with self.assertRaises(ValueError):
+                    build_audio_event_payload(**base, **extra)
+
     def test_writes_trigger_atomically_without_leaving_temp_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             event_dir = Path(temporary_directory)

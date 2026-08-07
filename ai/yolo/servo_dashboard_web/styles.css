@@ -422,3 +422,28 @@ footer {
   footer { display: block; line-height: 1.8; }
   footer span { display: block; }
 }
+
+.manual-clip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.manual-clip-actions { display: flex; gap: 8px; }
+
+.manual-button { flex: 1; padding: 10px 12px; font-size: 14px; }
+
+.manual-button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  border-color: var(--line);
+}
+
+.manual-primary { border-color: var(--cyan); color: var(--cyan); }
+
+/* Recording is the one state where a wrong reading costs the user a clip, so
+   it gets the alarm colour rather than the accent colour. */
+.manual-button.recording { color: var(--red); border-color: var(--red); }
+
+.manual-status { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }

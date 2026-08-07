@@ -46,6 +46,7 @@ def trigger(
     name: str,
     second: int,
     event_type: str = "LAUGHTER",
+    manual: bool = False,
 ) -> Trigger:
     return Trigger(
         path=Path(f"{name}.trigger.json"),
@@ -54,6 +55,7 @@ def trigger(
         pre_seconds=60,
         post_seconds=60,
         event_type=event_type,
+        manual=manual,
     )
 
 
@@ -199,6 +201,53 @@ class SegmentClipUploaderTests(unittest.TestCase):
             [[item.event_id for item in group] for group in groups],
             [["laugh"], ["clap"]],
         )
+
+    def test_manual_clip_never_merges_with_a_nearby_clap(self) -> None:
+        # The person pressed the button for one moment and expects that clip.
+        # Merging would move the window and retitle the arrival notice to
+        # "웃음과 박수가 함께 담긴 순간" because a clap landed nearby.
+        groups = group_triggers(
+            [
+                trigger("manual", 0, "LAUGHTER", manual=True),
+                trigger("clap", 2, "CLAP"),
+            ],
+            30,
+            5,
+        )
+
+        self.assertEqual(
+            [[item.event_id for item in group] for group in groups],
+            [["manual"], ["clap"]],
+        )
+        self.assertEqual(event_title(groups[0]), "웃음이 담긴 순간")
+
+    def test_manual_clips_do_not_merge_with_each_other(self) -> None:
+        # Two presses are two intentions, even seconds apart.
+        groups = group_triggers(
+            [
+                trigger("manual-first", 0, "LAUGHTER", manual=True),
+                trigger("manual-second", 3, "LAUGHTER", manual=True),
+            ],
+            30,
+            5,
+        )
+
+        self.assertEqual(
+            [[item.event_id for item in group] for group in groups],
+            [["manual-first"], ["manual-second"]],
+        )
+
+    def test_detected_laughter_still_merges_normally(self) -> None:
+        groups = group_triggers(
+            [
+                trigger("laugh-first", 0, "LAUGHTER"),
+                trigger("laugh-second", 4, "LAUGHTER"),
+            ],
+            30,
+            5,
+        )
+
+        self.assertEqual(len(groups), 1)
 
     def test_wake_word_does_not_cross_merge_with_laughter(self) -> None:
         groups = group_triggers(
