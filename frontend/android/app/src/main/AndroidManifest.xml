@@ -63,6 +63,13 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+        <!-- 백그라운드에서 OS가 띄우는 FCM 알림을 앱이 포그라운드에서 직접
+             띄우는 알림과 같은 채널에 모은다(PushNotificationService의
+             _pushChannel과 같은 id). 채널이 갈리면 소리·중요도가 앱 상태에
+             따라 달라지고, 시스템 알림 설정에도 항목이 두 개 보인다. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="bbanggeut_push" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

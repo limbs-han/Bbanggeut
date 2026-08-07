@@ -18,9 +18,34 @@ Flutter 앱은 Firebase Cloud Messaging 토큰을 발급받아 다음 기존 API
 - 로그아웃 또는 회원 탈퇴: `DELETE /api/notifications/push-tokens/{installationId}`
 
 `installationId`는 앱 설치별 임의 값이며 Secure Storage에 저장한다.
-포그라운드에서는 OS 알림과 중복되지 않도록 Firebase의 전경 alert/sound를
-끄고 앱 내부의 크림·핑크 알림 카드 하나만 표시한다. 백그라운드와 종료
-상태에서는 서버가 보낸 notification payload를 OS가 표시한다.
+백그라운드와 종료 상태에서는 서버가 보낸 notification payload를 OS가 표시한다.
+
+### 앱을 켜 둔 동안에도 휴대폰 알림으로 뜬다
+
+FCM은 앱이 포그라운드일 때 안드로이드 알림 표시줄에 아무것도 띄우지 않고
+`onMessage`만 부른다. 앱 안에 크림·핑크 배너를 띄우는 것으로 대신하고 있었는데,
+앱을 켜 둔 사용자에게는 "휴대폰 알림이 안 온다"로 보였다.
+
+지금은 포그라운드 메시지를 받으면 `PushNotificationService`가
+`flutter_local_notifications`로 **직접 시스템 알림을 띄운다**. 앱 내부 배너는
+없앴다 — 같은 알림이 두 곳에 보이면 어느 쪽을 눌러야 하는지 알 수 없다.
+
+- 채널: `bbanggeut_push` / '빵긋 알림' / `Importance.high`.
+  high여야 화면 위로 잠깐 떠오르는(heads-up) 알림이 된다.
+- 같은 채널 id를 `AndroidManifest.xml`의
+  `com.google.firebase.messaging.default_notification_channel_id`에도 적었다.
+  백그라운드 알림까지 한 채널로 모아야 소리·중요도가 앱 상태에 따라 달라지지
+  않고, 시스템 알림 설정에도 항목이 하나만 보인다.
+- iOS는 `setForegroundNotificationPresentationOptions(alert: true)` 하나로 OS가
+  포그라운드에서도 띄워 준다. 그래서 iOS에서는 로컬 알림을 띄우지 않는다 —
+  띄우면 같은 알림이 두 번 보인다.
+- `flutter_local_notifications`가 `java.time`을 써서 `android/app/build.gradle.kts`
+  에 core library desugaring을 켰다.
+
+**누르면 어디로 가는가는 그대로다.** 포그라운드에서 우리가 띄운 알림을 누르면
+FCM이 아니라 로컬 알림 플러그인이 콜백을 주므로, 그때 필요한 값(`type`,
+`resourceId`, `deviceId`)을 알림 payload에 JSON으로 실어 두었다가 되받아
+`openedMessages`로 흘려보낸다. 아래 목적지 표를 그대로 탄다.
 
 ### 알림을 누르면 어디로 가는가
 
