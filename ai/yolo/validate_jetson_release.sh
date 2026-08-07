@@ -95,11 +95,15 @@ grep -Fq ': "${AUDIO_EVENT_CLAP_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${AUDIO_SENSITIVITY:=default}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.0169' \
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.12' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.03' \
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.15' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.08' \
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.30' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_LAUGHTER_DOMINANCE:=0.0}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq -- '--laughter-dominance-ratio "$AUDIO_SHADOW_LAUGHTER_DOMINANCE"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq \
     ': "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=$AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD}"' \

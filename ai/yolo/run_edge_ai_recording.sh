@@ -88,40 +88,43 @@ fi
 : "${AUDIO_SHADOW_PRECISION:=fp16}"
 : "${AUDIO_SHADOW_CONTEXT_SECONDS:=10}"
 : "${AUDIO_SHADOW_HOP_SECONDS:=2.5}"
-# Laughter threshold history (all 2026-08-05, observed on the device):
-#   0.01691491  first value; argmax of a small dev set. Eight significant
-#               digits is an overfitting signal, not precision.
-#   0.0338      doubled.
-#   0.021       moved back between the two.
-#   0.15        raised hard after indoor conversation was seen scoring 0.072.
-#   0.03        current. 0.15 missed too much real laughter.
-# Observed score distribution while running:
-#   silence 0.0003 / indoor close conversation 0.072 (topClass=Speech 0.90)
-#   laughter during clapping 0.030 / clear laughter 0.229~0.293
-# Sensitivity picks the laughter threshold. The three steps are placed against
-# the observed distribution above, not spread evenly:
-#   sensitive    0.0169  dev-set argmax. Below conversation (0.072), so it does
-#                        fire on ordinary talking. That is the deliberate cost
-#                        of this step, not a defect.
-#   default      0.03    detection first. Still under conversation, but well
-#                        above room tone.
-#   insensitive  0.08    the only step that clears conversation (0.072) while
-#                        staying under the laughter floor (0.229). A value
-#                        between 0.03 and 0.072 would drop laughter-while-
-#                        clapping (0.030) without stopping a single false
-#                        positive, which is the worst of both.
-# Do not spread these evenly. The gap that matters sits at 0.072.
+# Every laughter threshold up to 0.08 was fitted to a handful of eyeballed
+# samples and moved between 0.0169 and 0.15 without settling. A census of the
+# 2026-08-06 diagnostics settled it. 112,724 windows:
+#
+#   speech-dominated  79,624 windows  median 0.0009  p90 0.0126
+#                                     p99    0.1166  max 0.4463
+#   laughter-dominated    81 windows  median 0.3380  p90 0.5870  max 0.7739
+#
+# Share of windows above each threshold (speech / laughter):
+#   0.08  1.74% (1,385) / 100%   <- 471 firings here, 98.7% of them speech
+#   0.12  0.97% (  772) /  96%
+#   0.15  0.70% (  550) /  90%
+#   0.20  0.32% (  255) /  83%
+#   0.30  0.07% (   56) /  63%
+#   0.40  0.01% (    8) /  33%
+#
+# The steps are taken from that table, not spread evenly:
+#   sensitive    0.12  catches 96% of laughter windows and pays 0.97% speech.
+#   default      0.15  the measured operating point; misses least while
+#                      keeping speech leakage under 1%.
+#   insensitive  0.30  the documented escalation when false positives annoy.
+#
+# 0.40 and 0.50 are quieter still but drop to 33% window-level detection.
+# Caveat: only 81 laughter windows, so the laughter column is noisy. Laughter
+# spans several windows at a 2.5s hop, so event-level detection runs higher
+# than these window-level figures.
 : "${AUDIO_SENSITIVITY:=default}"
 AUDIO_SENSITIVITY="${AUDIO_SENSITIVITY,,}"
 case "$AUDIO_SENSITIVITY" in
     sensitive)
-        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.0169
+        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.12
         ;;
     default)
-        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.03
+        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.15
         ;;
     insensitive)
-        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.08
+        AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.30
         ;;
     *)
         echo \
@@ -139,6 +142,12 @@ esac
 # usually clears the threshold in all of them. Requiring 2 mostly costs 2.5s of
 # latency and drops short laughs.
 : "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"
+# A threshold cannot reject a window that speech dominates while the laughter
+# score sits just above the line. Misfiring speech windows had a median
+# dominance of 0.057: events went out on evidence worth 6% of the loudest
+# sound. Ships at 0 (test disabled) because no sweep has picked a value yet;
+# every window records its ratio so one can be chosen from data.
+: "${AUDIO_SHADOW_LAUGHTER_DOMINANCE:=0.0}"
 : "${AUDIO_SHADOW_CLAP_THRESHOLD:=0.08725224}"
 # Clapping cannot use 1 the way laughter does. A single window tells sustained
 # clapping apart from a door slam or a dropped object only by loudness, and
@@ -442,6 +451,7 @@ if [[ "$AUDIO_SHADOW_START" == true ]]; then
         "hop=${AUDIO_SHADOW_HOP_SECONDS}s " \
         "laughter=${AUDIO_SHADOW_LAUGHTER_THRESHOLD}/" \
         "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE} " \
+        "dominance=${AUDIO_SHADOW_LAUGHTER_DOMINANCE} " \
         "clap=${AUDIO_SHADOW_CLAP_THRESHOLD}/" \
         "${AUDIO_SHADOW_CLAP_CONSECUTIVE} " \
         "clapEvents=${AUDIO_EVENT_CLAP_ENABLED}"
@@ -546,6 +556,7 @@ AUDIO_SHADOW_COMMAND=(
     --hop-seconds "$AUDIO_SHADOW_HOP_SECONDS"
     --laughter-threshold "$AUDIO_SHADOW_LAUGHTER_THRESHOLD"
     --laughter-consecutive "$AUDIO_SHADOW_LAUGHTER_CONSECUTIVE"
+    --laughter-dominance-ratio "$AUDIO_SHADOW_LAUGHTER_DOMINANCE"
     --clap-threshold "$AUDIO_SHADOW_CLAP_THRESHOLD"
     --clap-consecutive "$AUDIO_SHADOW_CLAP_CONSECUTIVE"
     --cooldown-seconds "$AUDIO_SHADOW_COOLDOWN_SECONDS"
