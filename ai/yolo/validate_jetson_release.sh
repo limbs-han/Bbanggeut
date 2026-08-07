@@ -89,7 +89,28 @@ grep -Fq ': "${AUDIO_SHADOW_CONTEXT_SECONDS:=10}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${AUDIO_SHADOW_HOP_SECONDS:=2.5}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq 'authority=none' \
+grep -Fq ': "${AUDIO_EVENT_MODEL:=efficientat}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_EVENT_CLAP_ENABLED:=false}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SENSITIVITY:=default}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.0169' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.03' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD=0.08' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq \
+    ': "${AUDIO_SHADOW_LAUGHTER_THRESHOLD:=$AUDIO_SENSITIVITY_LAUGHTER_THRESHOLD}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_CLAP_CONSECUTIVE:=2}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq ': "${AUDIO_SHADOW_LAUGHTER_CONSECUTIVE:=1}"' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq -- '--operational' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq -- '--event-dir "$EVENT_DIR"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq ': "${WAKE_NAME_ENABLED:=false}"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
@@ -105,9 +126,10 @@ grep -Fq -- '--score-aggregation "$YAMNET_SCORE_AGGREGATION"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq -- '--diagnostics-jsonl "$YAMNET_DIAGNOSTICS_PATH"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq -- '--dashboard-yamnet-diagnostics "$YAMNET_DIAGNOSTICS_PATH"' \
+grep -Fq -- \
+    '--dashboard-yamnet-diagnostics "$AUDIO_DETECTOR_DIAGNOSTICS_PATH"' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
-grep -Fq 'YAMNet ready: first inference telemetry received' \
+grep -Fq 'ready: first inference telemetry received' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq 'Escalating AI child shutdown to SIGTERM' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
@@ -116,6 +138,8 @@ grep -Fq 'Escalating AI child shutdown to SIGKILL' \
 grep -Fq 'Continuing in degraded mode' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 grep -Fq 'restarting only YAMNet' \
+    "${SCRIPT_DIR}/run_edge_ai_recording.sh"
+grep -Fq 'restarting only EfficientAT' \
     "${SCRIPT_DIR}/run_edge_ai_recording.sh"
 
 echo "[2/5] Python syntax"

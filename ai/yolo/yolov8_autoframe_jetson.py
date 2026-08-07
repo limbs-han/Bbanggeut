@@ -204,10 +204,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--subject-y-ratio",
         type=float,
-        default=0.35,
+        default=0.10,
         help=(
             "Vertical tracking point inside the selected subject box: "
-            "0 is top, 0.5 is center, 1 is bottom (default: 0.35)."
+            "0 is top, 0.5 is center, 1 is bottom (default: 0.10)."
         ),
     )
     parser.add_argument(
