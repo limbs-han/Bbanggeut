@@ -69,7 +69,10 @@ class StreamManager:
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                # stderr 는 버리지 않는다. 버리면 송출이 실패했을 때 저널에
+                # 남는 것이 return_code 숫자 하나뿐이라 원인을 알 방법이 없다.
+                # 상속시키면 ffmpeg 의 오류가 그대로 유닛 저널에 들어간다.
+                stderr=None,
             )
             self._stream_id = stream_id
             self._hard_expires_at = hard_expires_at

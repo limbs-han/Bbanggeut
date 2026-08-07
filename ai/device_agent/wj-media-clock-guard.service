@@ -1,0 +1,18 @@
+[Unit]
+Description=William James media chain clock-jump guard
+# 미디어 체인이 올라온 직후에 기준 시각을 잡아야 그 뒤의 점프를 놓치지 않는다.
+After=wj-media-source.service wj-mediamtx-local.service
+Wants=wj-media-source.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+EnvironmentFile=-/etc/william-james/device-agent.env
+ExecStart=/opt/william-james/device-agent/media-clock-guard.sh
+# 동기화를 기다리는 동안 살아 있어야 한다. 스크립트의 자체 대기 상한보다 길게 잡는다.
+TimeoutStartSec=1200
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

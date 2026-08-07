@@ -60,12 +60,15 @@ install -m 0755 "$SCRIPT_DIR/check-local-media.sh" \
     "$INSTALL_DIR/check-local-media.sh"
 install -m 0755 "$SCRIPT_DIR/integration-soak-test.sh" \
     "$INSTALL_DIR/integration-soak-test.sh"
+install -m 0755 "$SCRIPT_DIR/media-clock-guard.sh" \
+    "$INSTALL_DIR/media-clock-guard.sh"
 install -m 0644 "$SCRIPT_DIR/mediamtx-local.yml" \
     "$CONFIG_DIR/mediamtx-local.yml"
 
 for unit in \
     wj-mediamtx-local.service \
     wj-local-recording.service \
+    wj-media-clock-guard.service \
     wj-event-prune.service \
     wj-event-prune.timer \
     wj-recording-prune.service \
@@ -104,11 +107,18 @@ completed segment is visible:
   sudo systemctl stop wj-edge-ai-mvp
   sudo systemctl start wj-edge-ai-recording
 
+This board has no RTC battery, so every boot starts on a restored-but-wrong
+clock and jumps forward once NTP lands. That jump breaks the absolute
+timestamps media-source.sh emits. wj-media-clock-guard rebuilds the chain
+after the jump; enable it together with the units it guards:
+  sudo systemctl enable --now wj-media-clock-guard
+
 Enable at boot only after the trial is stable:
   sudo systemctl disable wj-edge-ai-mvp
   sudo systemctl enable wj-mediamtx-local \
     wj-local-recording wj-event-prune.timer \
-    wj-recording-prune.timer wj-edge-ai-recording
+    wj-recording-prune.timer wj-edge-ai-recording \
+    wj-media-clock-guard
 
 Rollback without touching the validated UDP consumers:
   sudo systemctl disable --now wj-edge-ai-recording
