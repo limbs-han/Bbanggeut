@@ -48,6 +48,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.onLookSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
+    required this.onAiZoomAdd,
     required this.onZoomRemove,
     required this.onZoomSelected,
     required this.onToolSelected,
@@ -154,6 +155,9 @@ class EditorWorkspace extends StatelessWidget {
   final ValueChanged<String>? onDeleteCaption;
 
   final VoidCallback onZoomAdd;
+
+  /// AI가 고른 줌을 다시 깐다. 지웠던 자동 줌을 되돌리는 통로다.
+  final VoidCallback onAiZoomAdd;
   final ValueChanged<EditorZoomSegment> onZoomRemove;
   final ValueChanged<EditorZoomSegment> onZoomSelected;
 
@@ -366,6 +370,7 @@ class EditorWorkspace extends StatelessWidget {
                             onAiCaption: onAiCaption,
                             onFaceStickerSelected: onFaceStickerSelected,
                             onZoomAdd: onZoomAdd,
+                            onAiZoomAdd: onAiZoomAdd,
                             onZoomRemove: onZoomRemove,
                             onZoomSelected: onZoomSelected,
                           ),
@@ -4108,6 +4113,7 @@ class SelectedToolPanel extends StatelessWidget {
     required this.onLookSelected,
     required this.onAiCaption,
     required this.onZoomAdd,
+    required this.onAiZoomAdd,
     required this.onZoomRemove,
     required this.onZoomSelected,
     this.thumbnails = const [],
@@ -4138,6 +4144,7 @@ class SelectedToolPanel extends StatelessWidget {
   final String? previewFrame;
   final VoidCallback onAiCaption;
   final VoidCallback onZoomAdd;
+  final VoidCallback onAiZoomAdd;
   final ValueChanged<EditorZoomSegment> onZoomRemove;
   final ValueChanged<EditorZoomSegment> onZoomSelected;
 
@@ -4182,6 +4189,7 @@ class SelectedToolPanel extends StatelessWidget {
             controller: controller,
             thumbnails: thumbnails,
             onAdd: onZoomAdd,
+            onAiAdd: onAiZoomAdd,
             onRemove: onZoomRemove,
             onSelected: onZoomSelected,
             onEditCommitted: onEditCommitted,
@@ -4330,6 +4338,7 @@ class _SimpleZoomPanel extends StatelessWidget {
     required this.controller,
     required this.thumbnails,
     required this.onAdd,
+    required this.onAiAdd,
     required this.onRemove,
     required this.onSelected,
     required this.onEditCommitted,
@@ -4339,6 +4348,9 @@ class _SimpleZoomPanel extends StatelessWidget {
   final EditorProjectController controller;
   final List<String> thumbnails;
   final VoidCallback onAdd;
+
+  /// AI가 고른 줌을 다시 깐다. 지우고 나서 되돌릴 길이 없던 것을 연다.
+  final VoidCallback onAiAdd;
   final ValueChanged<EditorZoomSegment> onRemove;
   final ValueChanged<EditorZoomSegment> onSelected;
   final VoidCallback onEditCommitted;
@@ -4378,6 +4390,20 @@ class _SimpleZoomPanel extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.delete_outline_rounded, size: 18),
               ),
+            // AI 줌은 지우고 나면 되돌릴 길이 없었다 — 컷 프리셋을 다시
+            // 누르는 것이 유일한 길이었는데 그러면 구간까지 갈아엎힌다.
+            OutlinedButton(
+              key: const Key('editor-add-ai-zoom'),
+              onPressed: onAiAdd,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(64, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                textStyle: const TextStyle(fontSize: 10),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('AI 줌'),
+            ),
+            const SizedBox(width: 5),
             FilledButton(
               key: const Key('editor-add-zoom'),
               onPressed: onAdd,

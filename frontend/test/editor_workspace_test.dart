@@ -44,6 +44,7 @@ void main() {
     Map<String, EditRecommendation> presetRecommendations = const {},
     ValueChanged<String>? onRecommendationSelected,
     VideoAnalysis analysis = VideoAnalysis.none,
+    VoidCallback? onAiZoomAdd,
   }) => MaterialApp(
     home: Scaffold(
       body: EditorWorkspace(
@@ -84,12 +85,33 @@ void main() {
         onLookSelected: onLookSelected ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
+        onAiZoomAdd: onAiZoomAdd ?? () {},
         onZoomRemove: (_) {},
         onZoomSelected: (_) {},
         onToolSelected: controller.selectTool,
       ),
     ),
   );
+
+  testWidgets('줌 탭에는 AI 줌을 다시 부르는 단추가 있다', (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.zoom);
+    var called = 0;
+
+    await tester.pumpWidget(workspace(controller, onAiZoomAdd: () => called++));
+    await tester.pumpAndSettle();
+
+    // 줌이 하나도 없는 상태에서도 눌린다 — 지우고 나서 되돌리는 자리다.
+    expect(find.byKey(const Key('editor-add-ai-zoom')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('editor-add-ai-zoom')));
+    await tester.pump();
+
+    expect(called, 1);
+    // 직접 만드는 단추도 그대로 있다.
+    expect(find.byKey(const Key('editor-add-zoom')), findsOneWidget);
+  });
 
   testWidgets('AI 분석 진행률은 띠가 아니라 AI 컷 옆 숫자로 붙는다', (tester) async {
     tester.view.physicalSize = const Size(390, 844);

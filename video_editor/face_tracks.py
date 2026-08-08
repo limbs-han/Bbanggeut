@@ -62,6 +62,7 @@ def build_face_tracks(expression: dict[str, Any]) -> list[dict[str, Any]]:
                     "focusX": row.get("focusX", 0.5),
                     "focusY": row.get("focusY", 0.5),
                     "faceHeight": row.get("faceHeight", 0.0),
+                    "faceWidth": row.get("faceWidth", 0.0),
                 }
             ]
         ms = (int(row["startMs"]) + int(row["endMs"])) // 2
@@ -100,7 +101,10 @@ def build_face_tracks(expression: dict[str, Any]) -> list[dict[str, Any]]:
                     "h": round(height, 4),
                     # 얼굴 **폭**. 줌이 "이 이상 키우면 얼굴이 화면 밖으로
                     # 나간다"를 계산할 때 쓴다. 옛 앱은 이 키를 그냥 무시한다.
-                    "w": round(float(face.get("faceWidth", height * 0.75)), 4),
+                    #
+                    # 폭을 안 남긴 옛 분석(expression-v2)에서는 높이로 어림한다
+                    # — 0을 그대로 쓰면 얼굴이 점이 되어 상한이 무한정 열린다.
+                    "w": round(float(face.get("faceWidth") or height * 0.75), 4),
                 }
             )
     # 오래 자리를 비웠다 같은 자리에서 다시 잡힌 궤적은 같은 사람이다.
