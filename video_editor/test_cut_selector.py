@@ -667,6 +667,70 @@ class CutSelectorTests(unittest.TestCase):
             self.assertGreaterEqual(round(screen, 9), 0.0)
             self.assertLessEqual(round(screen, 9), 1.0)
 
+    def test_video_faces_keep_filling_while_the_person_walks(self) -> None:
+        """움직이는 사람도 계속 메워진다 — 걸음을 '다른 사람'으로 버리지 않는다.
+
+        실제로 그랬다: 500ms에 화면의 8%를 걸어간 순간이 걸러져 궤적이
+        끊겼고, 줌은 마지막 자리에 얼어붙은 채 사람만 화면 밖으로 걸어
+        나갔다. 옆 사람(0.4 넘게 떨어진)은 여전히 안 들어와야 한다.
+        """
+        expression = {
+            "expressionWindows": [
+                {
+                    "startMs": ms,
+                    "endMs": ms + 250,
+                    "faceCount": 1,
+                    "reactionScore": 0.5,
+                    "focusX": 0.55,
+                    "focusY": 0.18,
+                    "faceWidth": 0.12,
+                    "faceHeight": 0.16,
+                    "faces": [
+                        {
+                            "focusX": 0.55,
+                            "focusY": 0.18,
+                            "faceWidth": 0.12,
+                            "faceHeight": 0.16,
+                        }
+                    ],
+                }
+                # 표정 분석은 앞 1초만 잡았다(고개를 돌리면 놓친다).
+                for ms in range(2000, 3000, 250)
+            ]
+        }
+        # 영상 분석은 계속 잡았다 — 그 사람은 왼쪽 아래로 걸어가고,
+        # 중간중간 다른 사람(오른쪽 끝)이 가장 큰 얼굴로 잡힌다.
+        walk = {3250: (0.51, 0.19), 3750: (0.47, 0.24), 6250: (0.41, 0.28)}
+        other = {4250: (0.93, 0.08), 5250: (0.81, 0.07), 6750: (0.97, 0.40)}
+        windows = []
+        for ms in range(2250, 7000, 500):
+            spot = walk.get(ms) or other.get(ms)
+            windows.append(
+                {
+                    "startMs": ms - 250,
+                    "endMs": ms + 250,
+                    "faceCount": 2 if spot else 0,
+                    "largestFaceArea": 0.0128 if spot else 0.0,
+                    "faceCenterX": spot[0] if spot else 0.5,
+                    "faceCenterY": spot[1] if spot else 0.5,
+                }
+            )
+
+        tracks = build_face_tracks(expression, {"videoWindows": windows})
+
+        self.assertEqual(1, len(tracks))
+        filled = [
+            q for q in tracks[0]["samples"] if q.get("src") == "video"
+        ]
+        got = {int(q["ms"]) for q in filled}
+        # 걸어가는 세 표본이 전부 붙는다.
+        self.assertEqual({3250, 3750, 6250}, got)
+        # 옆 사람은 하나도 안 붙는다.
+        for ms in other:
+            self.assertNotIn(ms, got)
+        # 궤적이 걸음을 따라 왼쪽으로 이어진다.
+        self.assertLess(tracks[0]["samples"][-1]["x"], 0.45)
+
     def test_zoom_without_face_tracks_keeps_a_still_focus(self) -> None:
         """궤적을 못 찾으면 예전처럼 초점이 고정이다."""
         timeline = [
