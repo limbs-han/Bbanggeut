@@ -75,6 +75,32 @@ def _face_metrics(detections: list[Any], width: int, height: int) -> dict[str, f
         "faceCenterY": _clip(center_y),
         "faceCenterScore": center_score,
         "faceProminence": size_score * (0.65 + 0.35 * center_score),
+        # 검출된 얼굴 **전부**의 자리·크기.
+        #
+        # **왜 전부 남기나**: 위의 `faceCenterX/Y`는 그 창에서 가장 큰 얼굴
+        # 하나다. 여러 명이 비슷한 크기로 잡히면 창마다 "가장 큰 얼굴"이
+        # 사람 사이를 오간다 — 실제로 한 영상에서 4~5.5초 동안 뒤쪽 사람이
+        # 가장 큰 얼굴로 잡혀, 자동 줌의 얼굴 궤적이 그 자리에서 끊겼다.
+        # 전부 남기면 궤적이 "누구인지"를 보고 고를 수 있다.
+        "faces": [
+            {
+                "x": _clip(
+                    (item.bounding_box.origin_x + item.bounding_box.width / 2.0)
+                    / max(1, width)
+                ),
+                "y": _clip(
+                    (item.bounding_box.origin_y + item.bounding_box.height / 2.0)
+                    / max(1, height)
+                ),
+                "w": _clip(item.bounding_box.width / max(1, width)),
+                "h": _clip(item.bounding_box.height / max(1, height)),
+            }
+            for item in sorted(
+                detections,
+                key=lambda item: item.bounding_box.width * item.bounding_box.height,
+                reverse=True,
+            )
+        ],
     }
 
 
@@ -211,7 +237,9 @@ def analyze_video(
     if duration_ms <= 0:
         duration_ms = int(rows[-1]["endMs"])
     return {
-        "analysisVersion": "video-v1",
+        # v2부터 창마다 검출된 얼굴을 **전부** 남긴다(`faces`). 옛 분석은
+        # 가장 큰 얼굴 하나뿐이라 궤적이 사람을 구분하지 못한다.
+        "analysisVersion": "video-v2",
         "sourcePath": video_path.name,
         "durationMs": duration_ms,
         "sampleIntervalMs": sample_interval_ms,

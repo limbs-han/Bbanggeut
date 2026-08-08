@@ -19,7 +19,11 @@ STT 없이 오디오 이벤트, 음향 변화, 영상 정보, 얼굴 표정을 �
 
 - `yamnet_analysis.py`: speech, laughter, reaction, music 등 오디오 이벤트 분류
 - `audio_features.py`: dBFS, 상대 음량, 음량 상승, spectral flux
-- `video_features.py`: 움직임, 장면 전환, 영상 품질, 얼굴 위치와 크기
+- `video_features.py`: 움직임, 장면 전환, 영상 품질, 얼굴 위치와 크기 —
+  v2부터 창마다 검출된 얼굴을 **전부**(`faces`) 남긴다. 가장 큰 얼굴 하나만
+  남기면 여러 명이 비슷한 크기일 때 그 자리가 사람 사이를 오가고, 자동 줌의
+  얼굴 궤적이 거기서 끊긴다. **옛 분석(video-v1)은 이 목록이 없으므로 그
+  영상은 재분석해야 자동 줌 추적이 제 성능을 낸다.**
 - `expression_analysis.py`: MediaPipe Face Landmarker 표정 반응
 - `adaptive_selector.py`: 멀티모달 사건 점수와 연속 구간 선택
 - `duration_presets.py`: short, medium, long 길이 프리셋 적용
