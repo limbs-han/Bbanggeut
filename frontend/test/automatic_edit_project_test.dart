@@ -164,6 +164,99 @@ void main() {
     expect(zoomFrom({...base, 'maxScale': 2.8}).scale, closeTo(2.25, 1e-9));
   });
 
+  test('지운 AI 줌은 컷을 건드리지 않고 다시 불러올 수 있다', () {
+    const recommendation = EditRecommendation(
+      cutStartMs: 58000,
+      cutEndMs: 120000,
+      durationPreset: 'medium',
+      zoomSegments: [
+        {
+          'startMs': 100000,
+          'endMs': 102000,
+          'scale': 1.5,
+          'focusX': 0.3,
+          'focusY': 0.5,
+          'targetFaceHeight': 0.30,
+        },
+        {
+          'startMs': 110000,
+          'endMs': 112000,
+          'scale': 1.5,
+          'focusX': 0.6,
+          'focusY': 0.5,
+          'targetFaceHeight': 0.30,
+        },
+      ],
+    );
+    final controller = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/source.mp4',
+        sourceDurationMs: 120000,
+        sourceSize: const EditorSourceSize(width: 1280, height: 720),
+      ),
+    )..applyRecommendation(recommendation);
+
+    // 사용자가 직접 만든 줌 하나를 섞어 둔다 — 되돌리기가 이걸 지우면 안 된다.
+    controller.setPlayhead(2000);
+    expect(controller.addZoomAtPlayhead(), isTrue);
+    final manual = controller.project.zoomSegments
+        .firstWhere((zoom) => !zoom.automatic)
+        .id;
+
+    for (final zoom in controller.project.zoomSegments
+        .where((zoom) => zoom.automatic)
+        .toList()) {
+      controller.removeZoom(zoom);
+    }
+    final clip = controller.project.clips.single;
+    expect(controller.project.zoomSegments.map((z) => z.id), [manual]);
+
+    expect(controller.restoreAutomaticZooms(recommendation), isTrue);
+
+    final zooms = controller.project.zoomSegments;
+    expect(zooms.where((zoom) => zoom.automatic), hasLength(2));
+    // 손으로 만든 줌은 그대로 남는다.
+    expect(zooms.where((zoom) => zoom.id == manual), hasLength(1));
+    // 컷은 손대지 않는다 — 되돌린 것은 줌뿐이다.
+    expect(controller.project.clips.single.sourceStartMs, clip.sourceStartMs);
+    expect(controller.project.clips.single.sourceEndMs, clip.sourceEndMs);
+    // 되돌린 줌도 배율 규칙을 그대로 따른다(1.5 × 0.45/0.30).
+    expect(
+      zooms.firstWhere((zoom) => zoom.automatic).scale,
+      closeTo(2.25, 1e-9),
+    );
+  });
+
+  test('클립 구간 밖의 AI 줌은 되돌리지 않는다', () {
+    const recommendation = EditRecommendation(
+      cutStartMs: 0,
+      cutEndMs: 10000,
+      durationPreset: 'short',
+      zoomSegments: [
+        {
+          'startMs': 100000,
+          'endMs': 102000,
+          'scale': 1.5,
+          'focusX': 0.3,
+          'focusY': 0.5,
+          'targetFaceHeight': 0.30,
+        },
+      ],
+    );
+    final controller = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/source.mp4',
+        sourceDurationMs: 120000,
+        sourceSize: const EditorSourceSize(width: 1280, height: 720),
+      ),
+    );
+    // 컷은 0~10초인데 줌은 100초대다 — 이미 잘려 나간 장면이다.
+    controller.trimSelectedClip(sourceStartMs: 0, sourceEndMs: 10000);
+
+    expect(controller.restoreAutomaticZooms(recommendation), isFalse);
+    expect(controller.project.zoomSegments, isEmpty);
+  });
+
   test('따라갈 궤적이 없는 줌은 초점이 고정이고 키프레임도 없다', () {
     final zoom = EditorZoomSegment(
       id: 'zoom-1',

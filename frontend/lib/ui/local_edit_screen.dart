@@ -595,6 +595,48 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
     _analysisPollBusy = false;
   }
 
+  /// AI가 고른 줌만 다시 깐다. 컷은 건드리지 않는다 — 줌을 지웠다가
+  /// 되돌리려고 프리셋을 다시 누르면 구간까지 갈아엎히던 것을 막는다.
+  Future<void> _restoreAutomaticZooms() async {
+    if (_recommendationLoading) return;
+    final controller = _projectController;
+    if (controller == null) return;
+    // 지금 컷을 만든 그 추천을 먼저 찾는다. 없으면 받아 온다.
+    final preset = controller.project.recommendationMarker?.preset ?? 'medium';
+    var recommendation = _presetRecommendations[preset];
+    if (recommendation == null) {
+      setState(() => _recommendationLoading = true);
+      try {
+        recommendation = await _recommendations.recommend(
+          videoId: widget.video.id,
+          capturedAt: widget.video.capturedStartAt,
+          durationPreset: preset,
+        );
+        _presetRecommendations[preset] = recommendation;
+      } catch (_) {
+        recommendation = null;
+      } finally {
+        if (mounted) setState(() => _recommendationLoading = false);
+      }
+    }
+    if (!mounted || !identical(_projectController, controller)) return;
+    if (recommendation == null) {
+      showAppSnack(context, 'AI 줌을 받지 못했어요. 잠시 뒤 다시 눌러 주세요.');
+      return;
+    }
+    if (!controller.restoreAutomaticZooms(recommendation)) {
+      showAppSnack(context, '이 구간에는 AI가 고른 줌이 없어요. "줌 추가"로 직접 만들 수 있어요.');
+      setState(() {});
+      return;
+    }
+    _editState.markExternalEditApplied();
+    final count = controller.project.zoomSegments
+        .where((zoom) => zoom.automatic)
+        .length;
+    showAppSnack(context, 'AI 줌 $count개를 다시 넣었어요');
+    setState(() {});
+  }
+
   Future<void> _selectRecommendationPreset(String preset) async {
     if (_recommendationLoading) return;
     var recommendation = _presetRecommendations[preset];
@@ -2191,6 +2233,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
         _editState.markExternalEditApplied();
         setState(() {});
       },
+      onAiZoomAdd: () => unawaited(_restoreAutomaticZooms()),
       onZoomRemove: (zoom) {
         projectController.removeZoom(zoom);
         _editState.markExternalEditApplied();
