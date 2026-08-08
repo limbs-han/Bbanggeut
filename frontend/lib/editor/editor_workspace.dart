@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app_theme.dart';
+import '../core/models.dart';
 import 'editor_ar_effects.dart';
 import 'edit_recommendation_client.dart';
 import 'editor_project.dart';
@@ -38,6 +39,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.presetRecommendations,
     required this.recommendationLoading,
     required this.onRecommendationSelected,
+    this.analysis = VideoAnalysis.none,
     required this.onText,
     required this.onVolumeChanged,
     required this.onMutedChanged,
@@ -108,6 +110,9 @@ class EditorWorkspace extends StatelessWidget {
   final Map<String, EditRecommendation> presetRecommendations;
   final bool recommendationLoading;
   final ValueChanged<String> onRecommendationSelected;
+
+  /// 서버 AI 분석 상태. 진행 중이면 AI 컷 옆에 퍼센트가 붙는다.
+  final VideoAnalysis analysis;
   final VoidCallback onText;
   final ValueChanged<double> onVolumeChanged;
 
@@ -330,6 +335,7 @@ class EditorWorkspace extends StatelessWidget {
                           presetRecommendations: presetRecommendations,
                           recommendationLoading: recommendationLoading,
                           onRecommendationSelected: onRecommendationSelected,
+                          analysis: analysis,
                         ),
                       if (!compact)
                         AnimatedSize(
@@ -3437,6 +3443,7 @@ class EditorTimelineSection extends StatelessWidget {
     required this.presetRecommendations,
     required this.recommendationLoading,
     required this.onRecommendationSelected,
+    this.analysis = VideoAnalysis.none,
   });
 
   /// 클립 고르는 줄(여백 포함)의 높이. 클립이 둘 이상일 때만 붙는다.
@@ -3471,6 +3478,7 @@ class EditorTimelineSection extends StatelessWidget {
   final Map<String, EditRecommendation> presetRecommendations;
   final bool recommendationLoading;
   final ValueChanged<String> onRecommendationSelected;
+  final VideoAnalysis analysis;
 
   @override
   Widget build(BuildContext context) {
@@ -3492,6 +3500,7 @@ class EditorTimelineSection extends StatelessWidget {
                   loading: recommendationLoading,
                   onPresetSelected: onRecommendationSelected,
                   onSeek: onSeek,
+                  analysis: analysis,
                 ),
               ),
             ),
@@ -3599,6 +3608,7 @@ class _CutPrecisionToolbar extends StatelessWidget {
     required this.loading,
     required this.onPresetSelected,
     required this.onSeek,
+    this.analysis = VideoAnalysis.none,
   });
 
   final EditorProject project;
@@ -3606,6 +3616,22 @@ class _CutPrecisionToolbar extends StatelessWidget {
   final bool loading;
   final ValueChanged<String> onPresetSelected;
   final ValueChanged<int> onSeek;
+
+  /// 서버 AI 분석 상태. 도는 동안에는 'AI 컷' 옆에 퍼센트만 붙고, 실패하면
+  /// 그 자리에 실패를 적는다 — 프리셋 칩이 왜 흐린지가 그 자리에서 보인다.
+  final VideoAnalysis analysis;
+
+  /// 'AI 컷' 옆에 붙일 한 조각. 분석이 돌지도 실패하지도 않았으면 null —
+  /// 아무것도 붙지 않는다.
+  ///
+  /// **퍼센트를 모르는 동안에는 숫자를 지어내지 않는다.** 서버가 진행률을
+  /// 주기 전에는 '분석 중'이라고만 적는다.
+  String? get _analysisLabel {
+    if (analysis.isFailed) return '분석 실패';
+    if (!analysis.isRunning) return null;
+    final percent = analysis.percent;
+    return percent == null ? '분석 중' : '$percent%';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3627,6 +3653,20 @@ class _CutPrecisionToolbar extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
+            if (_analysisLabel case final label?) ...[
+              const SizedBox(width: 4),
+              Text(
+                label,
+                key: const Key('editor-analysis-progress'),
+                style: TextStyle(
+                  color: analysis.isFailed
+                      ? AppColors.coralSoft
+                      : AppColors.yellowSoft,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
             const SizedBox(width: 5),
             for (final entry in const [
               ('short', '짧게'),

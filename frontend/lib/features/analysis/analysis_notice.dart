@@ -17,11 +17,41 @@ import '../../app/app_theme.dart';
 import '../../core/api_client.dart';
 import '../../core/models.dart';
 
-/// 분석 상태를 따라가며 [AnalysisNotice]를 그린다. 끝나면 스스로 사라진다.
+/// 분석 상태를 따라가며 [builder]로 그린다. 끝나면 더 묻지 않는다.
 ///
 /// 폴링은 화면이 열려 있는 동안만 돈다 — 닫히면 [dispose]가 멈춘다. 끝난 뒤에는
 /// 더 묻지 않는다(분석은 한 번 끝나면 되돌아가지 않는다).
-class AnalysisNoticeBar extends StatefulWidget {
+///
+/// **그리는 모양은 화면마다 다르다.** 만화 화면은 띠([AnalysisNotice])로,
+/// 편집 화면은 AI 컷 옆 숫자 하나로 보여 준다 — 편집 화면은 위에 띠가 깔리면
+/// 가뜩이나 좁은 세로를 한 번 더 빼앗겼다. 따라가는 방법은 하나로 두고
+/// 보여 주는 방법만 갈라 놓는다.
+class AnalysisWatcher extends StatefulWidget {
+  const AnalysisWatcher({
+    super.key,
+    required this.api,
+    required this.videoId,
+    required this.builder,
+    this.onDone,
+    this.interval = const Duration(seconds: 3),
+  });
+
+  final ApiClient api;
+  final String videoId;
+
+  final Widget Function(BuildContext context, VideoAnalysis analysis) builder;
+
+  /// 분석이 방금 끝났다. 화면이 추천을 다시 받을 기회다.
+  final VoidCallback? onDone;
+
+  final Duration interval;
+
+  @override
+  State<AnalysisWatcher> createState() => _AnalysisWatcherState();
+}
+
+/// 분석 상태를 따라가며 [AnalysisNotice] 띠를 그린다. 끝나면 스스로 사라진다.
+class AnalysisNoticeBar extends StatelessWidget {
   const AnalysisNoticeBar({
     super.key,
     required this.api,
@@ -32,17 +62,20 @@ class AnalysisNoticeBar extends StatefulWidget {
 
   final ApiClient api;
   final String videoId;
-
-  /// 분석이 방금 끝났다. 화면이 추천을 다시 받을 기회다.
   final VoidCallback? onDone;
-
   final Duration interval;
 
   @override
-  State<AnalysisNoticeBar> createState() => _AnalysisNoticeBarState();
+  Widget build(BuildContext context) => AnalysisWatcher(
+    api: api,
+    videoId: videoId,
+    onDone: onDone,
+    interval: interval,
+    builder: (context, analysis) => AnalysisNotice(analysis: analysis),
+  );
 }
 
-class _AnalysisNoticeBarState extends State<AnalysisNoticeBar> {
+class _AnalysisWatcherState extends State<AnalysisWatcher> {
   VideoAnalysis _analysis = VideoAnalysis.none;
   Timer? _timer;
 
@@ -94,7 +127,7 @@ class _AnalysisNoticeBarState extends State<AnalysisNoticeBar> {
   }
 
   @override
-  Widget build(BuildContext context) => AnalysisNotice(analysis: _analysis);
+  Widget build(BuildContext context) => widget.builder(context, _analysis);
 }
 
 /// 상태 하나를 띠 하나로. 진행 중도 실패도 아니면 아무것도 그리지 않는다.
