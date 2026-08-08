@@ -20,15 +20,28 @@ FACE_TRACK_MIN_SAMPLES = 4
 # 영상 분석(BlazeFace) 얼굴로 궤적의 빈 자리를 메울 때 쓰는 거리 게이트.
 # 그 표본에는 "누구인지"가 없다 — 창마다 **가장 큰 얼굴 하나**뿐이라, 가까이
 # 있는 궤적에만 붙여야 다른 사람이 섞이지 않는다.
-_FILL_DISTANCE_ALONE = 0.10
-# 한 창에 얼굴이 여럿이면 "가장 큰 얼굴"이 누구인지 더 흔들린다. 더 좁게 본다.
-_FILL_DISTANCE_CROWD = 0.06
+#
+# **너무 좁으면 정작 필요한 표본을 버린다.** 처음에 0.06/0.10으로 잡았더니
+# 사람이 500ms에 화면의 8%를 걸어간 순간이 "다른 사람"으로 걸러졌다. 가만히
+# 있을 때만 붙고 움직이면 잘리니, 정확히 추적이 필요한 구간에서 궤적이
+# 끊겼다(실측: 표본 9개 중 우리 사람 3개를 전부 놓쳤다).
+_FILL_DISTANCE_ALONE = 0.12
+# 한 창에 얼굴이 여럿이면 "가장 큰 얼굴"이 누구인지 더 흔들린다. 조금 좁게 본다.
+_FILL_DISTANCE_CROWD = 0.09
+# 오래 비어 있었으면 그만큼 멀어질 수 있다. 궤적 잇기(FACE_LINK_DISTANCE)가
+# 쓰는 것과 같은 셈법이다. 기준 간격은 영상 분석 창 간격(500ms).
+_FILL_SAMPLE_MS = 500
+# 아무리 오래 비었어도 이 거리를 넘으면 같은 사람으로 보지 않는다. 실측에서
+# 옆 사람까지는 0.4 넘게 떨어져 있어, 이 상한이면 걸러야 할 것은 그대로
+# 걸러진다.
+_FILL_DISTANCE_MAX = 0.30
 # 이 표본에서 이보다 멀리 떨어진 궤적에는 붙이지 않는다 — 그만큼 비어 있으면
 # 같은 사람이라고 볼 근거가 없다.
 _FILL_REACH_MS = 3000
-# 표정 분석이 이미 잡아 둔 자리 근처는 건드리지 않는다. 그쪽이 사람별로
-# 갈라져 있어 더 정확하다.
-_FILL_KEEP_MS = 250
+# 시간이 거의 같은 표본만 건너뛴다. 표정 분석 표본 **바로 뒤**의 영상 표본은
+# 중복이 아니라 그 사이의 움직임이다 — 250ms로 잡았을 때 그것까지 버려서,
+# 사람이 움직이기 시작한 순간이 통째로 사라졌다.
+_FILL_KEEP_MS = 120
 # 얼굴 상자의 가로세로 비. 영상 분석은 넓이만 남기므로 높이를 되짚을 때 쓴다.
 _FACE_ASPECT = 0.75
 
@@ -83,7 +96,7 @@ def _fill_from_video(
         x = float(row.get("faceCenterX", 0.5))
         y = float(row.get("faceCenterY", 0.5))
         height = min(1.0, math.sqrt(area / _FACE_ASPECT))
-        gate = _FILL_DISTANCE_ALONE if count == 1 else _FILL_DISTANCE_CROWD
+        base = _FILL_DISTANCE_ALONE if count == 1 else _FILL_DISTANCE_CROWD
         best = None
         best_distance = None
         for track in tracks:
@@ -91,11 +104,16 @@ def _fill_from_video(
             near = min(samples, key=lambda item: abs(int(item["ms"]) - ms))
             gap = abs(int(near["ms"]) - ms)
             if gap <= _FILL_KEEP_MS or gap > _FILL_REACH_MS:
-                # 이미 표정 분석이 잡아 둔 자리이거나, 너무 멀어 근거가 없다.
+                # 같은 순간이 이미 있거나, 너무 멀어 근거가 없다.
                 continue
             here = sample_at(samples, ms)
             if here is None:
                 continue
+            # 오래 비어 있었으면 그만큼 멀어질 수 있다.
+            gate = min(
+                _FILL_DISTANCE_MAX,
+                base * min(3.0, max(1.0, gap / _FILL_SAMPLE_MS)),
+            )
             distance = math.hypot(x - here["x"], y - here["y"])
             if distance <= gate and (
                 best_distance is None or distance < best_distance
