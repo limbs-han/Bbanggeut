@@ -11,6 +11,47 @@ flutter run --dart-define=API_BASE_URL=https://i15e201.p.ssafy.io
 
 `API_BASE_URL`을 생략하면 위 운영 HTTPS 주소를 기본값으로 사용합니다. 로컬 Android 에뮬레이터에서 백엔드를 실행할 때는 `http://10.0.2.2:8080`처럼 호스트 주소를 지정하세요.
 
+## 릴리즈 APK 만들고 폰에 넣기
+
+**APK는 저장소에 넣지 않습니다.** 120MB짜리 바이너리가 git 이력에 영구히 남고
+클론할 때마다 따라옵니다. 필요할 때 아래로 직접 만드세요 — 90초쯤 걸립니다.
+
+```bash
+cd frontend && flutter build apk --release
+```
+
+결과: `frontend/build/app/outputs/flutter-apk/app-release.apk`
+
+```bash
+adb install -r build/app/outputs/flutter-apk/app-release.apk
+```
+
+`-r`은 덮어쓰기라 **로그인 상태와 편집 초안이 유지됩니다.**
+
+### 서명과 버전
+
+릴리즈도 디버그 키로 서명합니다(`app/build.gradle.kts`) — 키스토어 없이 바로
+빌드됩니다. 대신 **다른 PC에서 만든 APK는 서명이 달라 덮어쓸 수 없습니다.**
+그때는 지우고 새로 깔아야 하며 앱 데이터가 사라집니다.
+
+버전은 pubspec이 아니라 **git에서 만듭니다.**
+
+| 항목 | 값 | 예 |
+|---|---|---|
+| `versionCode` | 커밋 개수(`git rev-list --count HEAD`) | `1047` |
+| `versionName` | `1.0.0+<커밋수>.<짧은 해시>` | `1.0.0+1047.a602041` |
+
+작업 트리가 더러우면 `.dirty`가 붙습니다. 설치 후 확인:
+
+```bash
+adb shell dumpsys package com.williamjames.william_james_app | grep versionName
+```
+
+**다운그레이드는 막힙니다.** `master`는 병합 커밋이 쌓여 `develop`이나 기능
+브랜치보다 `versionCode`가 큽니다. master 빌드가 깔린 폰에 기능 브랜치 빌드를
+넣으려면 `INSTALL_FAILED_VERSION_DOWNGRADE`가 나므로, 그 브랜치를 최신 master에
+올리거나 앱을 지우고 설치해야 합니다(데이터 사라짐).
+
 ### 실행 인자 (`--dart-define`)
 
 | 이름 | 형태 | 생략하면 |
