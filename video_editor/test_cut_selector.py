@@ -22,7 +22,7 @@ from video_editor.yamnet_analysis import (
 from video_editor.video_features import normalize_video_windows
 from video_editor.duration_presets import apply_duration_preset
 from video_editor.face_tracks import build_face_tracks
-from video_editor.zoom_planner import plan_zoom_segments
+from video_editor.zoom_planner import _max_safe_scale, plan_zoom_segments
 from video_editor.render_video import build_zoompan_filter
 from video_editor.expression_analysis import _face_reaction
 
@@ -635,19 +635,37 @@ class CutSelectorTests(unittest.TestCase):
         centered = plan(0.50)
         edge = plan(0.14)
 
-        # 한가운데 선 얼굴은 상한까지 열려 있다.
-        self.assertEqual(2.80, centered["maxScale"])
-        # 왼쪽 끝에 선 얼굴은 훨씬 낮은 값에서 막힌다. 초점 0.14에서 왼쪽
-        # 여백 0.02를 남기려면 얼굴 왼쪽 변(0.08)까지 0.06을 0.12로 늘리는
-        # 2.0배가 한계다.
-        self.assertLess(edge["maxScale"], centered["maxScale"])
-        self.assertAlmostEqual(2.0, edge["maxScale"], places=6)
-        # 그 상한으로 확대해도 얼굴 상자는 화면 안에 남는다.
-        left_edge = 0.14 - 0.12 / 2
-        focus = edge["focusX"]
-        self.assertGreaterEqual(
-            focus + (left_edge - focus) * edge["maxScale"], 0.0
-        )
+        # 창을 밀어 넣으므로 얼굴이 어디에 서 있든 상한이 같다 — 배율을
+        # 정하는 것은 자리가 아니라 **얼굴 상자 크기**다. 작은 얼굴(0.15)은
+        # 2.8배 천장까지 열린다.
+        self.assertEqual(centered["maxScale"], edge["maxScale"])
+        self.assertEqual(2.80, edge["maxScale"])
+        # 초점이 창 중심이라는 표시를 함께 보낸다.
+        self.assertEqual("window", edge["focusModel"])
+
+    def test_safe_scale_is_decided_by_face_size_not_position(self) -> None:
+        """큰 얼굴은 상한이 낮고, 그 상한에서 얼굴이 창에 꼭 들어간다."""
+
+        def cap(x: float, height: float) -> float:
+            samples = [
+                {"ms": ms, "x": x, "y": 0.5, "h": height, "w": height * 0.8}
+                for ms in range(0, 2001, 250)
+            ]
+            return _max_safe_scale(samples, [], 0, 2000, x, 0.5)
+
+        # 세로 0.45 + 양쪽 여백 0.02 = 0.49가 창(1/s)에 들어가는 한계.
+        self.assertAlmostEqual(1.0 / 0.49, cap(0.5, 0.45), places=4)
+        # 가장자리에 서 있어도 같은 값이다 — 자리가 배율을 깎지 않는다.
+        self.assertAlmostEqual(cap(0.5, 0.45), cap(0.20, 0.45), places=6)
+        # 그 상한에서 얼굴 상자가 화면을 벗어나지 않는다. 폭 0.36짜리 얼굴이
+        # 실제로 설 수 있는 가장 왼쪽(0.20)에서 재 본다.
+        scale = cap(0.20, 0.45)
+        half = 0.5 / scale
+        center = min(max(0.20, half), 1 - half)
+        for point in (0.20 - 0.45 * 0.8 / 2, 0.20 + 0.45 * 0.8 / 2):
+            screen = 0.5 + (point - center) * scale
+            self.assertGreaterEqual(round(screen, 9), 0.0)
+            self.assertLessEqual(round(screen, 9), 1.0)
 
     def test_zoom_without_face_tracks_keeps_a_still_focus(self) -> None:
         """궤적을 못 찾으면 예전처럼 초점이 고정이다."""
