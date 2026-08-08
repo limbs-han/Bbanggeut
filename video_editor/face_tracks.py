@@ -93,48 +93,94 @@ def _fill_from_video(
         if count <= 0 or area <= 0.0:
             continue
         ms = (int(row["startMs"]) + int(row["endMs"])) // 2
-        x = float(row.get("faceCenterX", 0.5))
-        y = float(row.get("faceCenterY", 0.5))
-        height = min(1.0, math.sqrt(area / _FACE_ASPECT))
-        base = _FILL_DISTANCE_ALONE if count == 1 else _FILL_DISTANCE_CROWD
-        best = None
-        best_distance = None
-        for track in tracks:
-            samples = track["samples"]
-            near = min(samples, key=lambda item: abs(int(item["ms"]) - ms))
-            gap = abs(int(near["ms"]) - ms)
-            if gap <= _FILL_KEEP_MS or gap > _FILL_REACH_MS:
-                # 같은 순간이 이미 있거나, 너무 멀어 근거가 없다.
-                continue
-            here = sample_at(samples, ms)
-            if here is None:
-                continue
-            # 오래 비어 있었으면 그만큼 멀어질 수 있다.
-            gate = min(
-                _FILL_DISTANCE_MAX,
-                base * min(3.0, max(1.0, gap / _FILL_SAMPLE_MS)),
+        # v2 분석은 창마다 얼굴을 전부 남긴다 — 그러면 "가장 큰 얼굴"이 사람
+        # 사이를 오가도 각자 제 궤적에 붙는다. 옛(v1) 분석은 하나뿐이라
+        # 그 하나로 버틴다.
+        spots = [
+            (float(f.get("x", 0.5)), float(f.get("y", 0.5)),
+             float(f.get("h", 0.0)) or math.sqrt(area / _FACE_ASPECT),
+             float(f.get("w", 0.0)))
+            for f in (row.get("faces") or [])
+        ] or [
+            (
+                float(row.get("faceCenterX", 0.5)),
+                float(row.get("faceCenterY", 0.5)),
+                min(1.0, math.sqrt(area / _FACE_ASPECT)),
+                0.0,
             )
-            distance = math.hypot(x - here["x"], y - here["y"])
-            if distance <= gate and (
-                best_distance is None or distance < best_distance
-            ):
-                best = track
-                best_distance = distance
-        if best is None:
-            continue
-        best["samples"].append(
-            {
-                "ms": ms,
-                "x": round(x, 4),
-                "y": round(y, 4),
-                "h": round(height, 4),
-                "w": round(height * _FACE_ASPECT, 4),
-                # 어디서 온 표본인지 남긴다 — 표정 점수는 이 자리에 없다.
-                "src": "video",
-            }
-        )
+        ]
+        claimed: set[int] = set()
+        for x, y, height, box_width in spots:
+            if height <= 0.0:
+                continue
+            _attach(tracks, claimed, ms, x, y, height, box_width, count)
     for track in tracks:
         track["samples"].sort(key=lambda item: int(item["ms"]))
+
+
+def _attach(
+    tracks: list[dict[str, Any]],
+    claimed: set[int],
+    ms: int,
+    x: float,
+    y: float,
+    height: float,
+    box_width: float,
+    count: int,
+) -> None:
+    """얼굴 하나를 가장 가까운 궤적에 붙인다. 붙일 곳이 없으면 버린다.
+
+    [claimed]는 같은 창에서 이미 임자가 정해진 궤적이다 — 한 창의 두 얼굴이
+    같은 사람에게 붙으면 궤적이 두 사람 사이를 오간다.
+    """
+    # 얼굴 상자를 아는 표본(v2)은 "가장 큰 얼굴이 누구인지" 흔들릴 일이
+    # 없으므로 사람이 여럿이라고 좁게 볼 이유가 없다. 상자가 없는 옛(v1)
+    # 표본만 좁게 본다.
+    known_box = box_width > 0.0
+    base = (
+        _FILL_DISTANCE_ALONE
+        if known_box or count == 1
+        else _FILL_DISTANCE_CROWD
+    )
+    best = None
+    best_distance = None
+    for track in tracks:
+        if id(track) in claimed:
+            continue
+        samples = track["samples"]
+        near = min(samples, key=lambda item: abs(int(item["ms"]) - ms))
+        gap = abs(int(near["ms"]) - ms)
+        if gap <= _FILL_KEEP_MS or gap > _FILL_REACH_MS:
+            # 같은 순간이 이미 있거나, 너무 멀어 근거가 없다.
+            continue
+        here = sample_at(samples, ms)
+        if here is None:
+            continue
+        # 오래 비어 있었으면 그만큼 멀어질 수 있다.
+        gate = min(
+            _FILL_DISTANCE_MAX,
+            base * min(3.0, max(1.0, gap / _FILL_SAMPLE_MS)),
+        )
+        distance = math.hypot(x - here["x"], y - here["y"])
+        if distance <= gate and (
+            best_distance is None or distance < best_distance
+        ):
+            best = track
+            best_distance = distance
+    if best is None:
+        return
+    claimed.add(id(best))
+    best["samples"].append(
+        {
+            "ms": ms,
+            "x": round(x, 4),
+            "y": round(y, 4),
+            "h": round(height, 4),
+            "w": round((box_width or height * _FACE_ASPECT), 4),
+            # 어디서 온 표본인지 남긴다 — 표정 점수는 이 자리에 없다.
+            "src": "video",
+        }
+    )
 
 
 def build_face_tracks(

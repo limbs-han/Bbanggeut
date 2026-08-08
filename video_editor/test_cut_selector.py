@@ -731,6 +731,77 @@ class CutSelectorTests(unittest.TestCase):
         # 궤적이 걸음을 따라 왼쪽으로 이어진다.
         self.assertLess(tracks[0]["samples"][-1]["x"], 0.45)
 
+    def test_video_v2_faces_go_to_their_own_track(self) -> None:
+        """창마다 얼굴을 전부 주면 '가장 큰 얼굴'이 바뀌어도 각자 제 궤적에 붙는다.
+
+        v1은 창마다 가장 큰 얼굴 하나만 남겨서, 뒤쪽 사람이 잠깐 더 크게
+        잡히면 앞사람 궤적이 그 자리에서 끊겼다.
+        """
+        # 표정 분석은 두 사람을 앞 1초만 잡았다.
+        expression = {
+            "expressionWindows": [
+                {
+                    "startMs": ms,
+                    "endMs": ms + 250,
+                    "faceCount": 2,
+                    "reactionScore": 0.5,
+                    "focusX": 0.30,
+                    "focusY": 0.40,
+                    "faceWidth": 0.12,
+                    "faceHeight": 0.16,
+                    "faces": [
+                        {
+                            "focusX": 0.30,
+                            "focusY": 0.40,
+                            "faceWidth": 0.12,
+                            "faceHeight": 0.16,
+                        },
+                        {
+                            "focusX": 0.80,
+                            "focusY": 0.30,
+                            "faceWidth": 0.12,
+                            "faceHeight": 0.16,
+                        },
+                    ],
+                }
+                for ms in range(2000, 3000, 250)
+            ]
+        }
+        # 영상 분석은 계속 잡았고, 왼쪽 사람이 걸어간다. 크기 순서는 창마다
+        # 뒤바뀐다(뒤쪽 사람이 더 크게 잡히는 창이 섞여 있다).
+        windows = []
+        for index, ms in enumerate(range(3250, 6000, 500)):
+            walker = (0.30 - 0.02 * index, 0.40 + 0.01 * index)
+            stayer = (0.80, 0.30)
+            pair = [walker, stayer] if index % 2 == 0 else [stayer, walker]
+            windows.append(
+                {
+                    "startMs": ms - 250,
+                    "endMs": ms + 250,
+                    "faceCount": 2,
+                    "largestFaceArea": 0.0128,
+                    "faceCenterX": pair[0][0],
+                    "faceCenterY": pair[0][1],
+                    "faces": [
+                        {"x": p[0], "y": p[1], "w": 0.12, "h": 0.16} for p in pair
+                    ],
+                }
+            )
+
+        tracks = build_face_tracks(expression, {"videoWindows": windows})
+
+        self.assertEqual(2, len(tracks))
+        walking = min(tracks, key=lambda t: t["samples"][-1]["x"])
+        staying = max(tracks, key=lambda t: t["samples"][-1]["x"])
+        # 걸어간 사람은 끝까지 따라 붙는다.
+        self.assertLess(walking["samples"][-1]["x"], 0.24)
+        # 자리를 지킨 사람은 그 자리에 남는다 — 두 사람이 섞이지 않았다.
+        self.assertAlmostEqual(0.80, staying["samples"][-1]["x"], places=2)
+        # 한 창의 두 얼굴이 같은 궤적에 몰리지 않는다.
+        for track in tracks:
+            stamps = [int(q["ms"]) for q in track["samples"]]
+            self.assertEqual(len(stamps), len(set(stamps)))
+
     def test_zoom_without_face_tracks_keeps_a_still_focus(self) -> None:
         """궤적을 못 찾으면 예전처럼 초점이 고정이다."""
         timeline = [
