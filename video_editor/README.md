@@ -71,6 +71,46 @@ fixture에 없는 영상은 앱이 원본을 올려 분석시킨다:
 (`POST /api/videos/{id}/edits`)하고 서명된 URL로 직접 올린다 — editor-api는
 이 경로에 끼지 않는다.
 
+### `POST /v1/edit-recommendations` 응답 — 레시피 스키마
+
+`04-API명세서.md`는 `/v1/*`에 API 번호를 붙이지 않고 **이 표를 기준으로
+가리킨다.** 필드를 더하거나 뜻을 바꾸면 여기부터 고칠 것.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `recipeVersion` | String | 레시피 형식. 표정 분석 + 줌이 있으면 `v10` |
+| `analysisVersions` | Object | 이 레시피를 만든 분석들의 버전(`yamnet`·`audio`·`video`·`expression`). **`video-v2`부터 창마다 얼굴을 전부 남긴다** |
+| `cut` | Object | `{startMs, endMs, durationMs}` — 앱이 클립 하나로 만든다 |
+| `durationPreset` | String | `auto`·`short`·`medium`·`long` |
+| `zoomEnabled` | bool | 요청의 `zoomEnabled` 그대로. 꺼져 있으면 `zoomSegments`는 빈 배열 |
+| `zoomSegments` | List | 자동 줌 구간. 아래 표 |
+| `faceTracks` | List | 사람별 얼굴 궤적 `{id, samples[]}`. 표본은 `{ms, x, y, h, w}`(원본 ms, 0~1 정규화). 얼굴 추적 스티커와 자동 줌이 같은 목록을 쓴다 |
+| `faceTrack` | List | 하위 호환. `faceTracks[0].samples`와 같다 — 옛 앱은 이것만 읽는다 |
+| `scoreTimeline` | List | 1초 빈별 사건 점수와 특징. "왜 이 구간인가"의 근거 |
+| `arLayers` | List | 예약 필드(현재 빈 배열) |
+
+**`zoomSegments[]`**
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `startMs`·`endMs` | int | 원본 기준 구간 |
+| `scale` | float | **서버가 계산한 배율**(얼굴 높이를 화면의 28~33%로). 앱이 그대로 쓰지 않는다 |
+| `targetFaceHeight` | float | 그 배율이 노린 얼굴 높이(0.28~0.333). 앱이 이 값으로 되짚어 45% 기준으로 다시 잡는다 |
+| `maxScale` | float | **안전 상한.** 얼굴 상자가 창(1/배율)에 들어가는 한계. 앱은 이 값을 넘지 않는다 |
+| `focusModel` | String | `window`면 초점이 **잘라낼 창의 중심**이다. 이 필드가 없는 옛 레시피·초안은 초점을 화면에 고정하던 옛 기하로 그린다 |
+| `focusX`·`focusY` | float | 기준 초점(0~1). 창 모델에서는 창 중심이고, 0.12~0.88로 자른다 |
+| `focusTrack` | List | 초점 키프레임 `{ms, dx, dy}`. **정지 초점에서 얼마나 옮길지**(절대 좌표 아님)라, 앱에서 초점을 끌면 경로 전체가 같이 옮겨진다. 비어 있으면 초점 고정 |
+| `faceTrackId` | String? | 따라가는 사람(`faceTracks[].id`). 추적이 없으면 null |
+| `rampMs` | int | 항상 0 — 램프 없이 하드 컷이다(v4에서 폐기) |
+| `expressionScore`·`soundScore`·`combinedScore` | float | 이 구간이 뽑힌 근거 점수 |
+| `expression` | String | `smile` 또는 `surprise` |
+| `reason` | String | 선정 사유 문자열 |
+
+**앱이 최종 배율을 정하는 식** — `min(2.8, max(1.2, scale × 0.45 / targetFaceHeight))`를
+구한 뒤 `maxScale`로 자른다(`EditorProjectController.autoZoomFaceHeight`).
+화면 좌표는 `0.5 + (원본좌표 − 창중심) × 배율`이고 창 중심은
+`clamp(focusX + dx, 0.5/배율, 1 − 0.5/배율)`이다.
+
 분석 완료와 편집 영상 새 댓글은 백엔드 `/api/editor/events`로 승격돼
 알림센터·FCM 푸시로 이어진다(editor-api가 같은 서명 키로 iss=wj-editor
 서비스 토큰을 만들어 호출; 시크릿 없는 로컬에서는 꺼짐).

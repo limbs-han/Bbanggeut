@@ -1075,6 +1075,15 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 
 자동 컷·줌·자막·만화를 만드는 **editor-api는 백엔드와 다른 서비스**다(FastAPI, 별도 배포). 경계와 호출 방향은 `ADR-001-editor-api-경계.md`에 정의돼 있고, 앱이 직접 부르는 `/v1/edit-recommendations`·`/v1/edit-analyses/{videoId}`·`/v1/edit-projects`·`/v1/comic/*`·`/v1/transcripts/{videoId}`·`/v1/videos/{videoId}/thumbnail` **17개 경로는 여기(API-NN)에 번호를 붙이지 않는다** — 번호 체계는 백엔드 REST의 것이다. 스키마는 `video_editor/service.py`와 `README.md`가 기준이다.
 
+그중 **`POST /v1/edit-recommendations`의 응답(레시피)은 앱 편집기 전체가 읽는
+계약**이라 필드 표를 `video_editor/README.md`에 두고 관리한다 — 컷·자동 줌·얼굴
+궤적·점수 타임라인이 한 덩어리로 내려온다. 2026-08-08~09에 자동 줌 쪽 필드가
+늘었다: `maxScale`(얼굴이 잘리지 않는 배율 상한), `focusModel`(초점을 창 중심으로
+읽을지), `focusTrack`(초점 키프레임 `{ms, dx, dy}`), `faceTrackId`(따라가는 사람),
+그리고 `faceTracks[].samples[]`에 얼굴 폭 `w`. 분석 버전도 `video-v2`로 올라
+창마다 얼굴을 전부 남긴다. **표시가 없는 옛 레시피·초안은 옛 기하로 그린다** —
+저장해 둔 프레이밍이 말없이 바뀌지 않게 한 설계다.
+
 #### 비밀번호 API 동작 규칙 (API-55~57)
 
 | 항목 | 변경(API-55) | 재설정(API-56·57) |
