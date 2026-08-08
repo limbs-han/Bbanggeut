@@ -890,6 +890,24 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-83 | `GET /api/videos/{videoId}/comments` | 댓글 목록(작성자 이름은 users 조인) |
 | API-84 | `POST /api/videos/{videoId}/comments` | 댓글 작성(작성자=토큰 sub, 금고 구성원 알림) |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + `byDevice` 분해. Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계(기기 양도 후 과거 금고 통계 비오염). 앱 웃음 리포트의 "가족 전체" 토글이 사용 |
+| API-90 | `GET /api/vaults/{vaultId}/comics` | 금고 만화 목록(최신순). `{videoId, title, customTitle, madeAt, likeCount, likedByMe, commentCount, canDelete}` |
+| API-91 | `PATCH /api/videos/{videoId}/comic` | 만화 제목 변경(`title` 200자). 빈 제목이면 원본 영상 제목으로 복귀(`customTitle=false`) |
+| API-92 | `DELETE /api/videos/{videoId}/comic` | 만화 삭제(그림·구성·피드 행 함께, 원본 영상은 유지). 금고 OWNER만. 204 |
+| API-93 | `PUT /api/videos/{videoId}/comic/like` | 만화 좋아요 → `{likeCount, likedByMe}`. 멱등 |
+| API-94 | `DELETE /api/videos/{videoId}/comic/like` | 만화 좋아요 취소(API-93과 동일 응답) |
+| API-95 | `GET /api/videos/{videoId}/comic/comments` | 만화 댓글 목록 `{id, authorId, authorName, body, createdAt}` |
+| API-96 | `POST /api/videos/{videoId}/comic/comments` | 만화 댓글 작성(`body` 500자, 공백 불가). 201 |
+| API-97 | `PATCH /api/videos/{videoId}/comic/comments/{commentId}` | 만화 댓글 수정 — 쓴 사람만(OWNER 불가) |
+| API-98 | `DELETE /api/videos/{videoId}/comic/comments/{commentId}` | 만화 댓글 삭제 — 쓴 사람 또는 금고 OWNER. 204 |
+| API-99 | `GET /api/videos/{videoId}/analysis` | 분석 진행 상태 `{status(NONE/RUNNING/DONE/FAILED), stage, progress, error, startedAt, finishedAt}`. 서버 보관(워커 재배포·타 기기에서도 보임). 앱 컷 탭 진행률 표시가 사용 |
+| API-100 | `POST /api/editor/events` | 편집 워커 → 백엔드 내부 통보(`type, videoId, userId, commentId, body, stage, progress`). API-99 상태·알림 갱신. 204 |
+| API-101 | `POST /api/stream-sessions/{sessionId}/talkback` | 양방향 오디오 열기 `{sessionId, streamId, deviceId, whipUrl, heartbeatIntervalSeconds, expiresAt}` |
+| API-102 | `DELETE /api/stream-sessions/{sessionId}/talkback` | 양방향 오디오 닫기 |
+| API-103 | `GET /api/families/{familyId}/laugh-memories/random` | 웃음 뽑기 `{hasMemory, memory, message}` |
+| API-104 | `GET /api/laugh-memories/{memoryId}` | 뽑은 추억 상세 `{video, expiresAt, reactionCounts, myReaction, familyReactions}` |
+| API-105 | `PUT /api/laugh-memories/{memoryId}/reaction` | 추억 반응 저장(`reactionType`) → API-104와 동일 응답 |
+
+**editor-api `/v1/*`는 이 번호 체계 밖이다.** 자동 컷·줌·자막·만화를 만드는 editor-api는 별도 서비스(FastAPI)이고 경계는 `ADR-001-editor-api-경계.md`가 정의한다. 앱이 직접 부르는 17개 경로(`/v1/edit-recommendations`, `/v1/edit-analyses/{videoId}`, `/v1/edit-projects`, `/v1/comic/*`, `/v1/transcripts/{videoId}`, `/v1/videos/{videoId}/thumbnail`)에는 API-NN을 붙이지 않으며 스키마 기준은 `video_editor/service.py`다.
 
 **알림 생성 및 FCM 연동**: 알림 생성 API는 없다. 서버가 두 시점에 자동 생성한다 — ① 업로드 완료(API-26)로 READY 확정 + triggerType=LAUGHTER → LAUGHTER_VIDEO_READY를 그 기기 활성 구성원 전원에게, ② 초대 발송(API-14) → INVITATION_RECEIVED를 초대받은 1명에게. UNIQUE (user_id, dedupe_key) + ON CONFLICT DO NOTHING으로 재시도해도 사용자당 1건만 남는다. 클라이언트는 알림함 화면(`ui/content_notifications_screen.dart`)에서 목록(API-58), 개별 읽음(API-60), 전체 읽음(API-61)을 사용하며, FCM(`core/push_notification_service.dart`)으로 푸시 토큰을 등록(API-69)/해제(API-70)하고 푸시 수신 시 해당 화면으로 이동한다. 알림 설정(API-78·79)의 동작 — `newMemoryAlerts`를 끈 사용자는 LAUGHTER_VIDEO_READY 푸시 대상에서 빠지지만 인앱 알림함에는 계속 쌓이고, 설정 행이 없으면 모두 켜진 것으로 본다. `anniversaryAlerts`(매일 09:00 KST, dedupe `anniversary:{scheduleId}:{year}`)·`weeklyReport`(매주 월 09:00 KST, 지난주 금고 기기 LAUGHTER 합계, dedupe `weekly-report:{userId}:{ISO주차}`)는 스케줄러가 발송하며, 끈 사용자는 대상 조회에서 제외되어 인앱 알림도 만들지 않는다.
 

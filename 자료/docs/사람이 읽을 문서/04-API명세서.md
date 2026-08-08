@@ -1,6 +1,9 @@
 # API 명세서
 
-> 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 cb65eff
+> 기준: to-be 기획(MVP 2026-07-27 확정) · 코드 현황 참조 커밋 a602041 (2026-08-08)
+>
+> 프로토콜 사실은 그 커밋의 컨트롤러·DTO와 기계로 대조해 맞췄다 — 백엔드 REST
+> 86개가 모두 이 문서에 있다. 다음에 고칠 때도 같은 대조를 먼저 돌릴 것.
 
 본 문서는 **목표(to-be) 기준**의 API 명세서다. `03-기능명세서.md`에서 정의한 **MVP 7단계**를 뼈대로, 각 단계에서 사용하는 REST API·MQTT 토픽·미디어 경로를 실제 요청/응답 스키마와 함께 배치한다.
 
@@ -1051,6 +1054,26 @@ MVP 7단계·가족 공유 밖이지만 API 자체는 존재하는 항목이다.
 | API-88 | `PUT /api/vaults/{vaultId}/places` | 장소 배치 저장 — 구성원 누구나. 목록을 통째로 갈아 끼운다(앱이 한 화면에서 장소 추가와 기기 이동을 함께 한다) |
 | API-89 | `PUT /api/vaults/{vaultId}/device-order` | 내 기기 순서 저장 — 부른 사람에게만 적용된다 |
 | API-80 | `GET /api/vaults/{vaultId}/event-stats` | 금고(가족) 단위 이벤트 통계 — API-46 계약 + 기기별 분해(`byDevice`). Binding 기간(bound_at~ended_at)과 겹치는 이벤트만 집계해 기기 양도 후에도 과거 금고 통계가 오염되지 않음. **앱 웃음 리포트의 "가족 전체" 토글이 사용** |
+| API-90 | `GET /api/vaults/{vaultId}/comics` | 금고의 만화 목록(최신순) — 추억 탭의 만화 피드. `{videoId, title, customTitle, madeAt, likeCount, likedByMe, commentCount, canDelete}` |
+| API-91 | `PATCH /api/videos/{videoId}/comic` | 만화 제목 바꾸기(`title`, 200자). **빈 제목을 보내면 원본 영상 제목으로 되돌아간다**(`customTitle=false`) |
+| API-92 | `DELETE /api/videos/{videoId}/comic` | 만화 지우기 — 그림·구성과 피드 행(좋아요·댓글)이 함께 사라지고 **원본 영상은 남는다**. 금고 OWNER만. `204` |
+| API-93 | `PUT /api/videos/{videoId}/comic/like` | 만화 좋아요 — `{likeCount, likedByMe}`. 멱등(이미 눌렀으면 그대로) |
+| API-94 | `DELETE /api/videos/{videoId}/comic/like` | 만화 좋아요 취소 — API-93과 같은 응답 |
+| API-95 | `GET /api/videos/{videoId}/comic/comments` | 만화 댓글 목록 — `{id, authorId, authorName, body, createdAt}`. 표시 이름은 서버가 `users`에서 조인 |
+| API-96 | `POST /api/videos/{videoId}/comic/comments` | 만화 댓글 작성(`body`, 500자, 공백 불가). `201`. 작성자는 토큰의 사용자 UUID |
+| API-97 | `PATCH /api/videos/{videoId}/comic/comments/{commentId}` | 만화 댓글 수정 — **쓴 사람만**(영상 댓글 API-85와 같은 원칙, OWNER에게도 열지 않는다) |
+| API-98 | `DELETE /api/videos/{videoId}/comic/comments/{commentId}` | 만화 댓글 삭제 — 쓴 사람 또는 금고 OWNER. `204` |
+| API-99 | `GET /api/videos/{videoId}/analysis` | 영상 분석 진행 상태 — `{status(NONE/RUNNING/DONE/FAILED), stage, progress(0~1), error, startedAt, finishedAt}`. **상태를 서버가 들고 있어야 하는 이유**: 편집 워커 메모리에만 두면 워커를 재배포할 때 진행 중이던 분석이 사라져 보이고, 다른 가족 폰은 애초에 알 수 없다. 앱은 이 값으로 컷 탭의 진행률(`AI 컷 42%`)을 그린다 |
+| API-100 | `POST /api/editor/events` | 편집 워커 → 백엔드 내부 통보(`type`, `videoId`, `userId`, `commentId`, `body`, `stage`, `progress`). 분석 진행·완료를 API-99 상태와 알림에 반영한다. `204` |
+| API-101 | `POST /api/stream-sessions/{sessionId}/talkback` | 양방향 오디오 열기 — `{sessionId, streamId, deviceId, whipUrl, heartbeatIntervalSeconds, expiresAt}`. 앱이 `whipUrl`로 WHIP 발행한다(설계: `27_양방향_오디오_talkback_설계.md`) |
+| API-102 | `DELETE /api/stream-sessions/{sessionId}/talkback` | 양방향 오디오 닫기 |
+| API-103 | `GET /api/families/{familyId}/laugh-memories/random` | 웃음 뽑기 — `{hasMemory, memory, message}`. 뽑을 추억이 없으면 `hasMemory=false`와 안내 문구만 |
+| API-104 | `GET /api/laugh-memories/{memoryId}` | 뽑은 추억 상세 — `{video, expiresAt, reactionCounts, myReaction, familyReactions}` |
+| API-105 | `PUT /api/laugh-memories/{memoryId}/reaction` | 추억에 반응 남기기(`reactionType`) — API-104와 같은 응답으로 갱신된 집계를 돌려준다 |
+
+#### 편집 서비스(editor-api)의 `/v1/*`는 이 문서 밖이다
+
+자동 컷·줌·자막·만화를 만드는 **editor-api는 백엔드와 다른 서비스**다(FastAPI, 별도 배포). 경계와 호출 방향은 `ADR-001-editor-api-경계.md`에 정의돼 있고, 앱이 직접 부르는 `/v1/edit-recommendations`·`/v1/edit-analyses/{videoId}`·`/v1/edit-projects`·`/v1/comic/*`·`/v1/transcripts/{videoId}`·`/v1/videos/{videoId}/thumbnail` **17개 경로는 여기(API-NN)에 번호를 붙이지 않는다** — 번호 체계는 백엔드 REST의 것이다. 스키마는 `video_editor/service.py`와 `README.md`가 기준이다.
 
 #### 비밀번호 API 동작 규칙 (API-55~57)
 
@@ -1127,7 +1150,10 @@ MVP 7단계의 API 중 미구현은 **API-62(리포트 서버 집계)** 하나�
 - 리포트 제안은 처음에 max(API-50) 다음 번호인 API-51을 받았으나, 이후 금고 구독·접근 기록(API-51~54)이 같은 번호를 가져가 중복이 생겼다. 리포트 제안은 미구현 초안이고 금고는 구현·병합된 API이므로, 리포트 제안을 **API-62**로 옮겨 정리했다. 비밀번호(API-55~57)·알림(API-58~61)에 이어 금고 가족 공유(API-63~68)·푸시 토큰(API-69, 70)을 새로 문서화해 max는 **API-70**이 되었다.
 - **4컷 만화·자동 자막 제안도 같은 이유로 옮겼다.** 만화 구성·그림과 서버 전사는 처음에 옛 max(API-51) 다음인 **API-52·53·54**를 받았으나, 그 번호 역시 금고 구독(API-51~53)·금고 접근 기록(API-54)과 겹쳤다. 리포트 제안과 같은 원칙(구현·병합된 API가 번호를 지킨다)으로 세 개를 max(API-70) 다음인 **API-71(만화 구성)·API-72(만화 그림)·API-73(자막 전사)**로 옮겼다. 이로써 max는 **API-73**이 되었다.
 - **그러고 나서 API-73은 구현 전에 회수됐다.** ML Kit 온디바이스 인식이 자막을 폰에서 끝내 버려 서버 전사가 필요 없어졌다(6절 API-73). **번호는 다시 쓰지 않는다** — API-06을 결번으로 비워 둔 것과 같은 처리이며, 그래서 번호 폭(01~73)은 줄지 않고 비어 있는 자리만 하나 늘었다. 다음에 새 API를 붙일 때는 **API-74**부터 쓴다.
-- **API-74~80은 그 규칙대로 붙였다.** 캘린더 일정 CRUD(API-74~77, 8절), 알림 설정(API-78·79, 부록 A), 금고 단위 통계(API-80, 부록 A)가 2026-08-04에 구현·문서화됐다. 이로써 max는 **API-80**이다.
+- **API-74~80은 그 규칙대로 붙였다.** 캘린더 일정 CRUD(API-74~77, 8절), 알림 설정(API-78·79, 부록 A), 금고 단위 통계(API-80, 부록 A)가 2026-08-04에 구현·문서화됐다.
+- **API-81~89는 부록 A에만 들어가고 이 대장은 갱신되지 않았다.** 편집 완성본(API-81·82), 영상 댓글(API-83~86), 금고 장소·기기 순서(API-87~89)가 그것이다. 대장이 뒤처지면 다음 사람이 번호를 겹쳐 쓰게 되므로 여기서 함께 기록한다.
+- **API-90~105는 2026-08-08에 코드와 대조해 채웠다.** 8/5 이후 구현됐는데 문서에 없던 것들이다 — 만화 소셜(API-90~98: 목록·제목·삭제·좋아요·댓글), 분석 진행 상태(API-99)와 편집 워커 통보(API-100), 양방향 오디오(API-101·102), 웃음 뽑기(API-103~105). 전부 부록 A에 표로 넣었다. 이로써 max는 **API-105**이고, 결번은 여전히 **API-06·API-73** 둘뿐이다.
+- **editor-api의 `/v1/*` 17개는 이 번호 체계 밖이다**(부록 A의 별도 절 참고). 백엔드 REST가 아니라 다른 서비스의 API라 API-NN을 붙이지 않는다.
 
 ---
 
