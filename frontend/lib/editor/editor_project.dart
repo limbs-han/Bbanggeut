@@ -214,6 +214,33 @@ class EditorClip {
   );
 }
 
+/// 사람을 따라가는 줌의 초점 키프레임. [dx]·[dy]는 정지 초점
+/// ([EditorZoomSegment.focus])에서 **얼마나 옮길지**다 — 절대 좌표가 아니라
+/// 이동량이라, 초점을 손으로 끌면 따라가는 경로 전체가 같이 옮겨진다.
+class EditorZoomFocusSample {
+  const EditorZoomFocusSample({
+    required this.sourceMs,
+    required this.dx,
+    required this.dy,
+  });
+
+  final int sourceMs;
+  final double dx;
+  final double dy;
+
+  Map<String, Object> toMap() => {'ms': sourceMs, 'dx': dx, 'dy': dy};
+
+  @override
+  bool operator ==(Object other) =>
+      other is EditorZoomFocusSample &&
+      other.sourceMs == sourceMs &&
+      other.dx == dx &&
+      other.dy == dy;
+
+  @override
+  int get hashCode => Object.hash(sourceMs, dx, dy);
+}
+
 class EditorZoomSegment {
   const EditorZoomSegment({
     required this.id,
@@ -223,12 +250,17 @@ class EditorZoomSegment {
     required this.focus,
     this.automatic = false,
     this.clipId,
+    this.focusTrack = const [],
+    this.faceTrackId,
   });
 
   final String id;
   final int sourceStartMs;
   final int sourceEndMs;
   final double scale;
+
+  /// 이 줌의 기준 초점. 사람을 따라가는 줌에서는 **시작 자세**이고, 실제로
+  /// 보여 줄 자리는 [focusAt]이 정한다.
   final NormalizedPoint focus;
   final bool automatic;
 
@@ -237,10 +269,53 @@ class EditorZoomSegment {
   /// 클립을 지우면 함께 사라진다. null이면 옛 데이터(원본 전체에 적용).
   final String? clipId;
 
+  /// 얼굴을 따라가는 초점 경로(원본 ms 기준, 시간 순). 비었으면 초점이
+  /// 고정이다 — 옛 레시피·손으로 만든 줌이 그렇다.
+  final List<EditorZoomFocusSample> focusTrack;
+
+  /// 따라가는 사람. 서버가 준 [EditorProject.faceTracks]의 id다. 화면에
+  /// "누구를 따라가는 중"인지 보여 주는 데 쓴다.
+  final String? faceTrackId;
+
+  /// 이 줌이 사람을 따라가는가.
+  bool get tracksFace => focusTrack.isNotEmpty;
+
   int get durationMs => math.max(0, sourceEndMs - sourceStartMs);
 
   /// 이 줌이 [clip]에서 작동하는가.
   bool worksIn(EditorClip clip) => clipId == null || clipId == clip.id;
+
+  /// 이 원본 시각에 화면을 어디에 맞출지. 따라가지 않는 줌은 늘 [focus]다.
+  ///
+  /// 키프레임 사이는 선형 보간하고, 경로 바깥 시각은 가장 가까운 키프레임을
+  /// 그대로 쓴다 — 미리보기와 내보내기가 같은 이 계산을 쓴다.
+  NormalizedPoint focusAt(int sourceMs) {
+    if (focusTrack.isEmpty) return focus;
+    final sample = _focusSampleAt(sourceMs);
+    return NormalizedPoint(
+      (focus.x + sample.dx).clamp(0.0, 1.0),
+      (focus.y + sample.dy).clamp(0.0, 1.0),
+    );
+  }
+
+  EditorZoomFocusSample _focusSampleAt(int sourceMs) {
+    if (sourceMs <= focusTrack.first.sourceMs) return focusTrack.first;
+    if (sourceMs >= focusTrack.last.sourceMs) return focusTrack.last;
+    for (var index = 1; index < focusTrack.length; index++) {
+      final next = focusTrack[index];
+      if (sourceMs > next.sourceMs) continue;
+      final prev = focusTrack[index - 1];
+      final span = next.sourceMs - prev.sourceMs;
+      if (span <= 0) return next;
+      final t = (sourceMs - prev.sourceMs) / span;
+      return EditorZoomFocusSample(
+        sourceMs: sourceMs,
+        dx: prev.dx + (next.dx - prev.dx) * t,
+        dy: prev.dy + (next.dy - prev.dy) * t,
+      );
+    }
+    return focusTrack.last;
+  }
 
   EditorZoomSegment copyWith({
     int? sourceStartMs,
@@ -248,6 +323,7 @@ class EditorZoomSegment {
     double? scale,
     NormalizedPoint? focus,
     String? clipId,
+    List<EditorZoomFocusSample>? focusTrack,
   }) => EditorZoomSegment(
     id: id,
     sourceStartMs: sourceStartMs ?? this.sourceStartMs,
@@ -256,6 +332,8 @@ class EditorZoomSegment {
     focus: focus ?? this.focus,
     automatic: automatic,
     clipId: clipId ?? this.clipId,
+    focusTrack: focusTrack ?? this.focusTrack,
+    faceTrackId: faceTrackId,
   );
 
   @override
@@ -267,7 +345,21 @@ class EditorZoomSegment {
       other.scale == scale &&
       other.focus == focus &&
       other.automatic == automatic &&
-      other.clipId == clipId;
+      other.clipId == clipId &&
+      other.faceTrackId == faceTrackId &&
+      _sameFocusTrack(other.focusTrack, focusTrack);
+
+  static bool _sameFocusTrack(
+    List<EditorZoomFocusSample> a,
+    List<EditorZoomFocusSample> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var index = 0; index < a.length; index++) {
+      if (a[index] != b[index]) return false;
+    }
+    return true;
+  }
 
   @override
   int get hashCode => Object.hash(
@@ -278,6 +370,8 @@ class EditorZoomSegment {
     focus,
     automatic,
     clipId,
+    faceTrackId,
+    Object.hashAll(focusTrack),
   );
 }
 
@@ -1215,6 +1309,7 @@ class EditorProject {
     EditorFaceSample face,
     EditorFaceSample? anchorSample,
     EditorZoomSegment? zoom,
+    int sourceMs,
   ) {
     var x = face.x + layer.position.x - 0.5;
     var y = face.y + layer.position.y - 0.5;
@@ -1227,8 +1322,11 @@ class EditorProject {
       );
     }
     if (zoom != null) {
-      x = zoom.focus.x + (x - zoom.focus.x) * zoom.scale;
-      y = zoom.focus.y + (y - zoom.focus.y) * zoom.scale;
+      // 사람을 따라가는 줌은 초점이 매 순간 움직인다. 스티커도 **그 순간의**
+      // 초점으로 접어야 화면 밖으로 밀려나지 않는다.
+      final focus = zoom.focusAt(sourceMs);
+      x = focus.x + (x - focus.x) * zoom.scale;
+      y = focus.y + (y - focus.y) * zoom.scale;
       scale *= zoom.scale;
     }
     return (
@@ -1256,6 +1354,7 @@ class EditorProject {
       face,
       anchorSample,
       zoomAtTimeline(timelineMs),
+      sourceMs,
     );
   }
 
@@ -1290,6 +1389,14 @@ class EditorProject {
             if (t >= clip.sourceStartMs && t <= clip.sourceEndMs) times.add(t);
           }
         }
+        // 사람을 따라가는 줌은 초점이 계속 움직인다. 그 키프레임마다 스티커
+        // 자리도 다시 굽는다 — 두 궤적이 다른 격자를 쓰면 어긋난다.
+        for (final sample in zoom.focusTrack) {
+          if (sample.sourceMs >= clip.sourceStartMs &&
+              sample.sourceMs <= clip.sourceEndMs) {
+            times.add(sample.sourceMs);
+          }
+        }
       }
       final sorted = times.toList()..sort();
       for (final sourceMs in sorted) {
@@ -1307,6 +1414,7 @@ class EditorProject {
           _sampleOn(track, sourceMs)!,
           anchorSample,
           zoom,
+          sourceMs,
         );
         samples.add({
           'ms': timelineStartMs + sourceMs - clip.sourceStartMs,
@@ -1414,6 +1522,10 @@ class EditorProject {
           'focusY': zoom.focus.y,
           'automatic': zoom.automatic,
           'clipId': zoom.clipId,
+          'faceTrackId': zoom.faceTrackId,
+          'focusTrack': [
+            for (final sample in zoom.focusTrack) sample.toMap(),
+          ],
         },
     ],
     'textLayers': [for (final layer in textLayers) layer.toMap()],
@@ -1430,6 +1542,25 @@ class EditorProject {
       },
   };
 
+  /// 이 줌이 [startMs]~[endMs] 안에서 초점을 다시 잡는 원본 시각들.
+  ///
+  /// 키프레임 그대로에 잘린 양 끝을 더한다 — 구간이 클립 경계에서 잘리면
+  /// 그 순간의 초점도 정확히 있어야 화면이 튀지 않는다.
+  static List<int> _zoomFocusTimes(
+    EditorZoomSegment zoom,
+    int startMs,
+    int endMs,
+  ) {
+    final times = <int>{
+      startMs,
+      endMs,
+      for (final sample in zoom.focusTrack)
+        if (sample.sourceMs > startMs && sample.sourceMs < endMs)
+          sample.sourceMs,
+    };
+    return times.toList()..sort();
+  }
+
   Map<String, Object?> toPlatformMap({
     required String outputPath,
     List<Map<String, Object>> captions = const [],
@@ -1444,12 +1575,29 @@ class EditorProject {
         final overlapStart = math.max(clip.sourceStartMs, zoom.sourceStartMs);
         final overlapEnd = math.min(clip.sourceEndMs, zoom.sourceEndMs);
         if (overlapEnd > overlapStart) {
+          final clipStartMs = clip.sourceStartMs;
           zoomMaps.add({
-            'startMs': timelineStartMs + overlapStart - clip.sourceStartMs,
-            'endMs': timelineStartMs + overlapEnd - clip.sourceStartMs,
+            'startMs': timelineStartMs + overlapStart - clipStartMs,
+            'endMs': timelineStartMs + overlapEnd - clipStartMs,
             'scale': zoom.scale,
             'focusX': zoom.focus.x,
             'focusY': zoom.focus.y,
+            // 사람을 따라가는 줌은 초점 키프레임을 **타임라인 시각**으로
+            // 구워 넘긴다. 네이티브(EditorProjectExporter.kt)가 보간해
+            // 미리보기와 같은 자리를 잡는다.
+            if (zoom.tracksFace)
+              'focusTrack': [
+                for (final sourceMs in _zoomFocusTimes(
+                  zoom,
+                  overlapStart,
+                  overlapEnd,
+                ))
+                  {
+                    'ms': timelineStartMs + sourceMs - clipStartMs,
+                    'x': zoom.focusAt(sourceMs).x,
+                    'y': zoom.focusAt(sourceMs).y,
+                  },
+              ],
           });
         }
       }

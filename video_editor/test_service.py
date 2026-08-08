@@ -15,9 +15,9 @@ from video_editor.analysis_jobs import (
     AnalysisJobManager,
     AnalysisQueueFull,
 )
+from video_editor.face_tracks import build_face_tracks
 from video_editor.service import (
     RecommendationRequest,
-    _face_tracks,
     _fixture_stem,
     build_fixture_recommendation,
 )
@@ -65,7 +65,7 @@ class VideoEditorServiceTest(unittest.TestCase):
             *(window(ms, [(0.8, 0.7)]) for ms in range(1500, 4000, 250)),
             *(window(ms, [(0.21, 0.3), (0.8, 0.7)]) for ms in range(4000, 5500, 250)),
         ]
-        tracks = _face_tracks({"expressionWindows": windows})
+        tracks = build_face_tracks({"expressionWindows": windows})
 
         self.assertEqual(2, len(tracks))
         # 가장 오래 잡힌 사람(오른쪽)이 첫 궤적이다.

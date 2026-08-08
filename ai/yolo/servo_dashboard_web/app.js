@@ -282,6 +282,72 @@ function drawChart(events) {
   });
 }
 
+// The button only asks the device to remember a moment; the clip is cut from
+// the rolling recording afterwards. Everything here is therefore optimistic
+// display, and the next /api/state poll is what confirms the real state.
+let manualRecording = false;
+let manualBusy = false;
+
+function manualDuration(seconds) {
+  const whole = Math.max(0, Math.round(seconds));
+  return `${String(Math.floor(whole / 60)).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+function updateManualClip(manual) {
+  const panel = byId("manual-clip");
+  if (!manual) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  manualRecording = Boolean(manual.recording);
+  const toggle = byId("manual-toggle");
+  toggle.classList.toggle("recording", manualRecording);
+  text("manual-toggle", manualRecording ? "녹화 종료" : "녹화 시작");
+  byId("manual-quick").disabled = manualRecording || manualBusy;
+  toggle.disabled = manualBusy;
+  if (manualRecording) {
+    const elapsed = number(manual.elapsedSeconds);
+    const maximum = number(manual.maximumSeconds, 600);
+    text(
+      "manual-status",
+      `담는 중 ${manualDuration(elapsed)} · ${manualDuration(maximum)}에서 자동 종료`,
+    );
+  }
+}
+
+async function manualPost(path, pendingLabel, doneLabel) {
+  if (manualBusy) return;
+  manualBusy = true;
+  byId("manual-toggle").disabled = true;
+  byId("manual-quick").disabled = true;
+  text("manual-status", pendingLabel);
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "X-Requested-With": "servo-dashboard" },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.status === "failed") {
+      text("manual-status", `담기 실패 — ${payload.detail || `HTTP ${response.status}`}`);
+      return;
+    }
+    if (payload.status === "captured") {
+      text(
+        "manual-status",
+        `${manualDuration(number(payload.postSeconds))} 담았습니다. 1분쯤 뒤 앱에 도착합니다.`,
+      );
+    } else {
+      text("manual-status", doneLabel);
+    }
+  } catch (error) {
+    text("manual-status", `담기 실패 — ${error}`);
+  } finally {
+    manualBusy = false;
+  }
+}
+
 async function refresh() {
   try {
     const response = await fetch("/api/state", { cache: "no-store" });
@@ -297,11 +363,24 @@ async function refresh() {
     updateLaughter(payload.laughter);
     renderEvents(payload.events || []);
     drawChart(payload.events || []);
+    updateManualClip(payload.manualClip);
     if (payload.frame_sequence > 0) byId("video-empty").hidden = true;
   } catch {
     if (Date.now() - lastSuccessAt > 2500) setConnection(false, "연결 끊김");
   }
 }
+
+byId("manual-toggle").addEventListener("click", () => {
+  if (manualRecording) {
+    manualPost("/api/manual-clip/stop", "담기 마무리 중…", "담고 있지 않습니다.");
+  } else {
+    manualPost("/api/manual-clip/start", "담기 시작 중…", "담는 중입니다.");
+  }
+});
+
+byId("manual-quick").addEventListener("click", () => {
+  manualPost("/api/manual-clip/quick", "2분 담는 중…", "담았습니다.");
+});
 
 byId("pause-log").addEventListener("click", () => {
   logPaused = !logPaused;

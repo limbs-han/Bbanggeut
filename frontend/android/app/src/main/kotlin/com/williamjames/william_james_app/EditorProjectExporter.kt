@@ -581,12 +581,18 @@ class EditorProjectExporter(
         rawSegments: List<Map<String, Any?>>,
         private val timelineOffsetMs: Long = 0L,
     ) : MatrixTransformation {
+        private data class FocusSample(val ms: Long, val x: Float, val y: Float)
+
         private data class Segment(
             val startMs: Long,
             val endMs: Long,
             val scale: Float,
             val focusX: Float,
             val focusY: Float,
+            /// 사람을 따라가는 줌의 초점 키프레임(타임라인 ms). 비었으면 초점이
+            /// 고정이다. 미리보기(EditorZoomSegment.focusAt)와 같은 값이라
+            /// 화면에서 본 그대로 구워진다.
+            val focusTrack: List<FocusSample>,
         )
 
         private val segments = rawSegments.mapNotNull { raw ->
@@ -599,15 +605,48 @@ class EditorProjectExporter(
                 scale = ((raw["scale"] as? Number)?.toFloat() ?: 1f).coerceIn(1f, 2.8f),
                 focusX = ((raw["focusX"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
                 focusY = ((raw["focusY"] as? Number)?.toFloat() ?: .5f).coerceIn(0f, 1f),
+                focusTrack = focusTrack(raw),
             )
+        }
+
+        private fun focusTrack(raw: Map<String, Any?>): List<FocusSample> {
+            val rawTrack = raw["focusTrack"] as? List<*> ?: return emptyList()
+            return rawTrack.mapNotNull { entry ->
+                val map = entry as? Map<*, *> ?: return@mapNotNull null
+                val ms = (map["ms"] as? Number)?.toLong() ?: return@mapNotNull null
+                val x = (map["x"] as? Number)?.toFloat() ?: return@mapNotNull null
+                val y = (map["y"] as? Number)?.toFloat() ?: return@mapNotNull null
+                FocusSample(ms, x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+            }.sortedBy { it.ms }
+        }
+
+        /// 이 순간의 초점. 키프레임 사이는 선형 보간하고, 바깥은 끝 값을 쓴다 —
+        /// 앱의 EditorZoomSegment.focusAt과 같은 규칙이다.
+        private fun focusAt(segment: Segment, timeMs: Long): Pair<Float, Float> {
+            val track = segment.focusTrack
+            if (track.isEmpty()) return segment.focusX to segment.focusY
+            if (timeMs <= track.first().ms) return track.first().x to track.first().y
+            if (timeMs >= track.last().ms) return track.last().x to track.last().y
+            for (index in 1 until track.size) {
+                val next = track[index]
+                if (timeMs > next.ms) continue
+                val previous = track[index - 1]
+                val span = next.ms - previous.ms
+                if (span <= 0L) return next.x to next.y
+                val ratio = (timeMs - previous.ms).toFloat() / span.toFloat()
+                return (previous.x + (next.x - previous.x) * ratio) to
+                    (previous.y + (next.y - previous.y) * ratio)
+            }
+            return track.last().x to track.last().y
         }
 
         override fun getMatrix(presentationTimeUs: Long): Matrix {
             val timeMs = timelineOffsetMs + presentationTimeUs / 1000L
             val segment = segments.lastOrNull { timeMs >= it.startMs && timeMs < it.endMs }
                 ?: return Matrix()
-            val pivotX = segment.focusX * 2f - 1f
-            val pivotY = 1f - segment.focusY * 2f
+            val (focusX, focusY) = focusAt(segment, timeMs)
+            val pivotX = focusX * 2f - 1f
+            val pivotY = 1f - focusY * 2f
             return Matrix().apply {
                 postScale(segment.scale, segment.scale, pivotX, pivotY)
             }
