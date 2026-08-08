@@ -134,48 +134,33 @@ def _max_safe_scale(
 ) -> float:
     """얼굴 상자가 화면 안에 남는 가장 큰 배율.
 
-    확대는 초점을 축으로 한다 — 원본의 점 p는 화면의 `f + (p-f)*s`로 간다.
-    그러니 얼굴 상자의 네 변이 화면(0~1) 안에 있으려면 배율이 변마다 정해지는
-    한계 밑이어야 한다. 구간 내내 성립해야 하므로 가장 빡빡한 순간을 따른다.
+    확대는 **창을 잘라내는 것**이다 — 초점을 중심으로 1/s 크기의 창을 잡고,
+    창이 프레임을 벗어나면 안쪽으로 밀어 넣는다(clamp). 그러니 배율의 한계는
+    "얼굴이 초점에서 얼마나 벗어났는가"가 아니라 **얼굴 상자가 창에
+    들어가는가**로 정해진다. 가장자리에 선 얼굴도 창을 밀어 넣으면 담기므로,
+    초점을 화면에 고정하던 옛 방식보다 훨씬 크게 볼 수 있다.
+
+    가로·세로를 따로 재고, 구간 내내 성립해야 하므로 가장 큰 얼굴을 따른다.
 
     **왜 서버가 정하나**: 얼마나 크게 볼지는 취향이라 앱이 정하지만, "이 이상은
-    얼굴이 잘린다"는 것은 얼굴 상자와 초점만으로 정해지는 기하학이다. 그 값을
-    아는 쪽은 얼굴 상자를 들고 있는 여기다.
+    얼굴이 잘린다"는 것은 얼굴 상자만으로 정해지는 기하학이다. 그 값을 아는
+    쪽은 얼굴 상자를 들고 있는 여기다.
     """
     times = (
         [int(point["ms"]) for point in focus_track]
         if focus_track
         else list(range(start_ms, end_ms + 1, _FOCUS_SAMPLE_MS))
     )
-    offsets = {int(point["ms"]): point for point in focus_track}
     limit = 2.80
     for ms in times:
         sample = sample_at(samples, ms)
         if sample is None:
             continue
-        moved = offsets.get(ms)
-        fx = focus_x + float(moved["dx"]) if moved else focus_x
-        fy = focus_y + float(moved["dy"]) if moved else focus_y
-        half_w = float(sample.get("w", 0.0)) / 2.0
-        half_h = float(sample.get("h", 0.0)) / 2.0
-        edges = (
-            (sample["x"] - half_w, fx),
-            (sample["x"] + half_w, fx),
-            (sample["y"] - half_h, fy),
-            (sample["y"] + half_h, fy),
-        )
-        for point, focus in edges:
-            if point < focus:
-                room = focus - _FRAME_SAFE_MARGIN
-                gap = focus - point
-            elif point > focus:
-                room = 1.0 - _FRAME_SAFE_MARGIN - focus
-                gap = point - focus
-            else:
-                continue
-            if gap <= 0:
-                continue
-            limit = min(limit, max(0.0, room) / gap)
+        for span in (float(sample.get("w", 0.0)), float(sample.get("h", 0.0))):
+            # 얼굴 + 양쪽 여백이 창(1/s) 안에 들어가야 한다.
+            needed = span + 2.0 * _FRAME_SAFE_MARGIN
+            if needed > 0.0:
+                limit = min(limit, 1.0 / needed)
     return round(max(_MIN_SAFE_SCALE, min(2.80, limit)), 6)
 
 
@@ -357,6 +342,11 @@ def plan_zoom_segments(
                 "endMs": end_ms,
                 "scale": round(scale, 6),
                 "maxScale": max_scale,
+                # 초점은 **잘라낼 창의 중심**이다. 창이 프레임을 벗어나면
+                # 안쪽으로 밀어 넣는다 — 가장자리에 선 얼굴도 배율을 깎지 않고
+                # 담을 수 있다. 이 표시가 없는 옛 레시피·초안은 초점을 화면에
+                # 고정하던 옛 방식으로 그린다(앱이 그렇게 갈라 본다).
+                "focusModel": "window",
                 "focusX": focus_x,
                 "focusY": focus_y,
                 "faceTrackId": followed["id"] if focus_track else None,

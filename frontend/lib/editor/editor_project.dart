@@ -241,6 +241,23 @@ class EditorZoomFocusSample {
   int get hashCode => Object.hash(sourceMs, dx, dy);
 }
 
+/// 줌이 초점([EditorZoomSegment.focus])을 어떤 뜻으로 쓰는가.
+///
+/// 이 갈림이 있는 이유는 **옛 초안 때문**이다. 저장해 둔 줌의 초점 숫자는
+/// 그대로인데 해석을 바꾸면, 사용자가 손으로 잡아 둔 프레이밍이 말없이
+/// 달라진다. 그래서 새 줌만 [window]로 만들고 옛 것은 [anchor]로 남긴다.
+enum EditorZoomFocusModel {
+  /// 초점이 **화면에 고정될 점**이다. 원본의 점 p는 `f + (p-f)·s`로 간다.
+  /// 초점에 있는 얼굴은 화면에서도 같은 자리에 남으므로, 가장자리에 선
+  /// 얼굴은 확대할수록 상자가 바깥으로 퍼져 잘린다.
+  anchor,
+
+  /// 초점이 **잘라낼 창의 중심**이다. 1/s 크기의 창을 초점에 맞추고, 창이
+  /// 프레임을 벗어나면 안쪽으로 밀어 넣는다. 가장자리 얼굴도 배율을 깎지
+  /// 않고 담긴다 — 서버 렌더러(render_video.py의 zoompan)와 같은 기하다.
+  window,
+}
+
 class EditorZoomSegment {
   const EditorZoomSegment({
     required this.id,
@@ -252,6 +269,7 @@ class EditorZoomSegment {
     this.clipId,
     this.focusTrack = const [],
     this.faceTrackId,
+    this.focusModel = EditorZoomFocusModel.anchor,
   });
 
   final String id;
@@ -277,6 +295,9 @@ class EditorZoomSegment {
   /// "누구를 따라가는 중"인지 보여 주는 데 쓴다.
   final String? faceTrackId;
 
+  /// 초점을 어떤 뜻으로 읽을지. 옛 초안은 [EditorZoomFocusModel.anchor]다.
+  final EditorZoomFocusModel focusModel;
+
   /// 이 줌이 사람을 따라가는가.
   bool get tracksFace => focusTrack.isNotEmpty;
 
@@ -284,6 +305,57 @@ class EditorZoomSegment {
 
   /// 이 줌이 [clip]에서 작동하는가.
   bool worksIn(EditorClip clip) => clipId == null || clipId == clip.id;
+
+  /// 이 원본 시각에 잘라낼 창의 중심. 창이 프레임을 벗어나지 않게 안으로
+  /// 밀어 넣은 값이다. 옛(anchor) 줌에는 창 개념이 없어 초점을 그대로 준다.
+  NormalizedPoint windowCenterAt(int sourceMs) {
+    final point = focusAt(sourceMs);
+    if (focusModel != EditorZoomFocusModel.window || scale <= 1) return point;
+    final half = 0.5 / scale;
+    return NormalizedPoint(
+      point.x.clamp(half, 1 - half),
+      point.y.clamp(half, 1 - half),
+    );
+  }
+
+  /// 확대의 기준점(0~1). 미리보기의 `Transform.scale` 정렬과 네이티브 행렬이
+  /// 이 값을 쓴다.
+  ///
+  /// 창 모델에서는 창 중심 c를 그대로 넘길 수 없다 — 두 방식의 기하가 다르다.
+  /// 창 중심이 c가 되는 기준점은 `(c·s − 0.5)/(s − 1)`다. 이 환산 덕분에
+  /// 미리보기·내보내기 코드는 모델을 몰라도 된다.
+  NormalizedPoint pivotAt(int sourceMs) {
+    if (focusModel != EditorZoomFocusModel.window) return focusAt(sourceMs);
+    // s가 1에 가까우면 확대가 없어 기준점이 의미가 없다(0으로 나눈다).
+    if (scale <= 1.0001) return NormalizedPoint.center;
+    final center = windowCenterAt(sourceMs);
+    return NormalizedPoint(
+      ((center.x * scale - 0.5) / (scale - 1)).clamp(0.0, 1.0),
+      ((center.y * scale - 0.5) / (scale - 1)).clamp(0.0, 1.0),
+    );
+  }
+
+  /// 원본의 점이 이 순간 화면의 어디로 가는가.
+  ///
+  /// **0~1로 자르지 않는다** — 0 밖의 값이 곧 "화면에서 잘려 나갔다"는 뜻이고,
+  /// 그 판단을 여기서 삼켜 버리면 배율 상한이 맞는지 확인할 길이 없다.
+  /// 화면에 그릴 때 자르는 것은 부르는 쪽 몫이다.
+  ///
+  /// 얼굴 추적 스티커가 영상과 같이 움직이려면 이 계산을 공유해야 한다.
+  ({double x, double y}) projectPoint(double x, double y, int sourceMs) {
+    if (focusModel == EditorZoomFocusModel.window) {
+      final center = windowCenterAt(sourceMs);
+      return (
+        x: 0.5 + (x - center.x) * scale,
+        y: 0.5 + (y - center.y) * scale,
+      );
+    }
+    final anchor = focusAt(sourceMs);
+    return (
+      x: anchor.x + (x - anchor.x) * scale,
+      y: anchor.y + (y - anchor.y) * scale,
+    );
+  }
 
   /// 이 원본 시각에 화면을 어디에 맞출지. 따라가지 않는 줌은 늘 [focus]다.
   ///
@@ -334,6 +406,7 @@ class EditorZoomSegment {
     clipId: clipId ?? this.clipId,
     focusTrack: focusTrack ?? this.focusTrack,
     faceTrackId: faceTrackId,
+    focusModel: focusModel,
   );
 
   @override
@@ -347,6 +420,7 @@ class EditorZoomSegment {
       other.automatic == automatic &&
       other.clipId == clipId &&
       other.faceTrackId == faceTrackId &&
+      other.focusModel == focusModel &&
       _sameFocusTrack(other.focusTrack, focusTrack);
 
   static bool _sameFocusTrack(
@@ -371,6 +445,7 @@ class EditorZoomSegment {
     automatic,
     clipId,
     faceTrackId,
+    focusModel,
     Object.hashAll(focusTrack),
   );
 }
@@ -1323,10 +1398,11 @@ class EditorProject {
     }
     if (zoom != null) {
       // 사람을 따라가는 줌은 초점이 매 순간 움직인다. 스티커도 **그 순간의**
-      // 초점으로 접어야 화면 밖으로 밀려나지 않는다.
-      final focus = zoom.focusAt(sourceMs);
-      x = focus.x + (x - focus.x) * zoom.scale;
-      y = focus.y + (y - focus.y) * zoom.scale;
+      // 기하로 접어야 화면 밖으로 밀려나지 않는다 — 창 모델이든 옛 방식이든
+      // 영상에 적용되는 그 계산을 그대로 쓴다.
+      final placed = zoom.projectPoint(x, y, sourceMs);
+      x = placed.x;
+      y = placed.y;
       scale *= zoom.scale;
     }
     return (
@@ -1523,6 +1599,7 @@ class EditorProject {
           'automatic': zoom.automatic,
           'clipId': zoom.clipId,
           'faceTrackId': zoom.faceTrackId,
+          'focusModel': zoom.focusModel.name,
           'focusTrack': [
             for (final sample in zoom.focusTrack) sample.toMap(),
           ],
@@ -1576,15 +1653,17 @@ class EditorProject {
         final overlapEnd = math.min(clip.sourceEndMs, zoom.sourceEndMs);
         if (overlapEnd > overlapStart) {
           final clipStartMs = clip.sourceStartMs;
+          // 네이티브에는 **확대 기준점**을 넘긴다 — 창 모델의 환산을 여기서
+          // 끝내므로 EditorProjectExporter.kt는 기하 모델을 몰라도 된다.
+          final pivot = zoom.pivotAt(overlapStart);
           zoomMaps.add({
             'startMs': timelineStartMs + overlapStart - clipStartMs,
             'endMs': timelineStartMs + overlapEnd - clipStartMs,
             'scale': zoom.scale,
-            'focusX': zoom.focus.x,
-            'focusY': zoom.focus.y,
-            // 사람을 따라가는 줌은 초점 키프레임을 **타임라인 시각**으로
-            // 구워 넘긴다. 네이티브(EditorProjectExporter.kt)가 보간해
-            // 미리보기와 같은 자리를 잡는다.
+            'focusX': pivot.x,
+            'focusY': pivot.y,
+            // 사람을 따라가는 줌은 기준점 키프레임을 **타임라인 시각**으로
+            // 구워 넘긴다. 네이티브가 보간해 미리보기와 같은 자리를 잡는다.
             if (zoom.tracksFace)
               'focusTrack': [
                 for (final sourceMs in _zoomFocusTimes(
@@ -1594,8 +1673,8 @@ class EditorProject {
                 ))
                   {
                     'ms': timelineStartMs + sourceMs - clipStartMs,
-                    'x': zoom.focusAt(sourceMs).x,
-                    'y': zoom.focusAt(sourceMs).y,
+                    'x': zoom.pivotAt(sourceMs).x,
+                    'y': zoom.pivotAt(sourceMs).y,
                   },
               ],
           });

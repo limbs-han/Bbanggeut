@@ -17,6 +17,21 @@ FACE_LINK_GAP_MS = 1500
 # 이보다 짧게 잡힌 궤적은 오검출로 보고 버린다(250ms 창 4개 = 1초).
 FACE_TRACK_MIN_SAMPLES = 4
 
+# 영상 분석(BlazeFace) 얼굴로 궤적의 빈 자리를 메울 때 쓰는 거리 게이트.
+# 그 표본에는 "누구인지"가 없다 — 창마다 **가장 큰 얼굴 하나**뿐이라, 가까이
+# 있는 궤적에만 붙여야 다른 사람이 섞이지 않는다.
+_FILL_DISTANCE_ALONE = 0.10
+# 한 창에 얼굴이 여럿이면 "가장 큰 얼굴"이 누구인지 더 흔들린다. 더 좁게 본다.
+_FILL_DISTANCE_CROWD = 0.06
+# 이 표본에서 이보다 멀리 떨어진 궤적에는 붙이지 않는다 — 그만큼 비어 있으면
+# 같은 사람이라고 볼 근거가 없다.
+_FILL_REACH_MS = 3000
+# 표정 분석이 이미 잡아 둔 자리 근처는 건드리지 않는다. 그쪽이 사람별로
+# 갈라져 있어 더 정확하다.
+_FILL_KEEP_MS = 250
+# 얼굴 상자의 가로세로 비. 영상 분석은 넓이만 남기므로 높이를 되짚을 때 쓴다.
+_FACE_ASPECT = 0.75
+
 
 def flat_face_track(expression: dict[str, Any]) -> list[dict[str, float]]:
     """옛 앱이 쓰는 한 줄짜리 얼굴 궤적.
@@ -43,7 +58,70 @@ def flat_face_track(expression: dict[str, Any]) -> list[dict[str, float]]:
     return track
 
 
-def build_face_tracks(expression: dict[str, Any]) -> list[dict[str, Any]]:
+def _fill_from_video(
+    tracks: list[dict[str, Any]], video: dict[str, Any]
+) -> None:
+    """영상 분석이 잡은 얼굴로 궤적의 빈 자리를 메운다.
+
+    **왜 필요한가**: 표정 분석(FaceLandmarker)은 랜드마크 478개를 맞춰야 해서
+    고개를 기울이거나 작은 얼굴을 자주 놓친다 — 어떤 영상에서는 창의 8%만
+    잡는다. 같은 영상에서 영상 분석(BlazeFace)은 57%를 잡는다. 표정 점수는
+    전자가 맞지만, "지금 얼굴이 어디 있나"는 후자가 훨씬 촘촘하다. 그 자리를
+    빌려 오면 재분석 없이도 줌이 사람을 따라갈 수 있다.
+
+    영상 분석은 창마다 **가장 큰 얼굴 하나**만 남기므로 누구인지가 없다.
+    그래서 이미 있는 궤적에 **가까이 붙을 때만** 채우고, 새 궤적은 열지
+    않는다 — 여러 명이 나올 때 엉뚱한 사람을 따라가는 것보다 안 따라가는
+    쪽이 낫다.
+    """
+    for row in video.get("videoWindows", []):
+        count = int(row.get("faceCount", 0) or 0)
+        area = float(row.get("largestFaceArea", 0.0) or 0.0)
+        if count <= 0 or area <= 0.0:
+            continue
+        ms = (int(row["startMs"]) + int(row["endMs"])) // 2
+        x = float(row.get("faceCenterX", 0.5))
+        y = float(row.get("faceCenterY", 0.5))
+        height = min(1.0, math.sqrt(area / _FACE_ASPECT))
+        gate = _FILL_DISTANCE_ALONE if count == 1 else _FILL_DISTANCE_CROWD
+        best = None
+        best_distance = None
+        for track in tracks:
+            samples = track["samples"]
+            near = min(samples, key=lambda item: abs(int(item["ms"]) - ms))
+            gap = abs(int(near["ms"]) - ms)
+            if gap <= _FILL_KEEP_MS or gap > _FILL_REACH_MS:
+                # 이미 표정 분석이 잡아 둔 자리이거나, 너무 멀어 근거가 없다.
+                continue
+            here = sample_at(samples, ms)
+            if here is None:
+                continue
+            distance = math.hypot(x - here["x"], y - here["y"])
+            if distance <= gate and (
+                best_distance is None or distance < best_distance
+            ):
+                best = track
+                best_distance = distance
+        if best is None:
+            continue
+        best["samples"].append(
+            {
+                "ms": ms,
+                "x": round(x, 4),
+                "y": round(y, 4),
+                "h": round(height, 4),
+                "w": round(height * _FACE_ASPECT, 4),
+                # 어디서 온 표본인지 남긴다 — 표정 점수는 이 자리에 없다.
+                "src": "video",
+            }
+        )
+    for track in tracks:
+        track["samples"].sort(key=lambda item: int(item["ms"]))
+
+
+def build_face_tracks(
+    expression: dict[str, Any], video: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """사람별 얼굴 궤적. 앱의 얼굴 추적 스티커가 '누구'를 고를 수 있게 한다.
 
     v3 분석은 창마다 검출된 얼굴 전부(`faces`)를 남긴다. 창을 시간 순으로
@@ -126,9 +204,13 @@ def build_face_tracks(expression: dict[str, Any]) -> list[dict[str, Any]]:
             merged.append(track)
         else:
             target["samples"].extend(track["samples"])
+    # 빈 자리 메우기는 **오검출을 걸러낸 뒤**에 한다. 표본이 하나뿐인 헛
+    # 검출에 영상 분석 얼굴이 붙어 궤적처럼 살아나면 안 된다.
     solid = [
         track for track in merged if len(track["samples"]) >= FACE_TRACK_MIN_SAMPLES
     ]
+    if video:
+        _fill_from_video(solid, video)
     solid.sort(key=lambda item: len(item["samples"]), reverse=True)
     return [
         {"id": f"face-{index + 1}", "samples": track["samples"]}

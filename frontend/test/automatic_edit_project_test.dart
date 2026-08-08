@@ -257,6 +257,76 @@ void main() {
     expect(controller.project.zoomSegments, isEmpty);
   });
 
+  group('줌 기하', () {
+    EditorZoomSegment zoom({
+      required double scale,
+      required NormalizedPoint focus,
+      EditorZoomFocusModel model = EditorZoomFocusModel.window,
+    }) => EditorZoomSegment(
+      id: 'z',
+      sourceStartMs: 0,
+      sourceEndMs: 2000,
+      scale: scale,
+      focus: focus,
+      focusModel: model,
+    );
+
+    test('창 모델은 초점을 창 중심으로 쓰고 프레임 안으로 밀어 넣는다', () {
+      // 2배 확대면 창은 0.5 크기다 — 중심이 0.25보다 왼쪽으로 갈 수 없다.
+      final edge = zoom(scale: 2, focus: NormalizedPoint(0.05, 0.5));
+      expect(edge.windowCenterAt(0).x, closeTo(0.25, 1e-9));
+      // 가운데 초점은 그대로다.
+      final middle = zoom(scale: 2, focus: NormalizedPoint.center);
+      expect(middle.windowCenterAt(0).x, closeTo(0.5, 1e-9));
+    });
+
+    test('창 중심에 있는 점은 화면 가운데로 간다', () {
+      final segment = zoom(scale: 2, focus: NormalizedPoint(0.3, 0.6));
+      final centre = segment.projectPoint(0.3, 0.6, 0);
+      expect(centre.x, closeTo(0.5, 1e-9));
+      expect(centre.y, closeTo(0.5, 1e-9));
+    });
+
+    test('가장자리 얼굴도 창 모델에서는 화면 안에 들어온다', () {
+      // 얼굴 중심 0.14, 폭 0.12 -> 왼쪽 변 0.08. 2.5배로 키운다.
+      final segment = zoom(scale: 2.5, focus: NormalizedPoint(0.14, 0.5));
+      final left = segment.projectPoint(0.08, 0.5, 0).x;
+      final right = segment.projectPoint(0.20, 0.5, 0).x;
+      expect(left, greaterThanOrEqualTo(0.0));
+      expect(right, lessThanOrEqualTo(1.0));
+
+      // 옛(anchor) 방식에서는 같은 배율에 왼쪽 변이 화면을 벗어난다.
+      final old = zoom(
+        scale: 2.5,
+        focus: NormalizedPoint(0.14, 0.5),
+        model: EditorZoomFocusModel.anchor,
+      );
+      expect(old.projectPoint(0.08, 0.5, 0).x, lessThan(0));
+    });
+
+    test('기준점 환산은 미리보기 확대와 창 중심을 일치시킨다', () {
+      for (final focusX in const [0.05, 0.2, 0.5, 0.8, 0.97]) {
+        const scale = 2.0;
+        final segment = zoom(scale: scale, focus: NormalizedPoint(focusX, 0.5));
+        final pivot = segment.pivotAt(0);
+        // Transform.scale(alignment: pivot)이 보여 주는 창의 중심.
+        final shown = pivot.x + (0.5 - pivot.x) / scale;
+        expect(shown, closeTo(segment.windowCenterAt(0).x, 1e-9));
+        expect(pivot.x, inInclusiveRange(0.0, 1.0));
+      }
+    });
+
+    test('옛 줌은 기준점이 초점 그대로다 — 저장해 둔 프레이밍이 안 바뀐다', () {
+      final old = zoom(
+        scale: 2,
+        focus: NormalizedPoint(0.14, 0.71),
+        model: EditorZoomFocusModel.anchor,
+      );
+      expect(old.pivotAt(0), NormalizedPoint(0.14, 0.71));
+      expect(old.windowCenterAt(0), NormalizedPoint(0.14, 0.71));
+    });
+  });
+
   test('따라갈 궤적이 없는 줌은 초점이 고정이고 키프레임도 없다', () {
     final zoom = EditorZoomSegment(
       id: 'zoom-1',
