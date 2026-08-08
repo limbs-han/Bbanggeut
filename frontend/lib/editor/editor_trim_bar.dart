@@ -116,6 +116,9 @@ class TrimRangeBar extends StatefulWidget {
 class _TrimRangeBarState extends State<TrimRangeBar> {
   static const _frameRate = 30;
 
+  /// 재생 봉을 잡는 손가락 폭. 봉은 3px 선이라 그 위만 노리면 잡히지 않는다.
+  static const _playheadTouchWidth = 36.0;
+
   /// 드래그 중에만 채워진다. 부모에게 알리지 않고도 손잡이가 손가락을 따라
   /// 움직이게 하는 값이다.
   int? _liveStartMs;
@@ -380,6 +383,32 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
               width: _Playhead.width,
               child: const IgnorePointer(child: _Playhead()),
             ),
+            // 재생 봉을 잡아 끄는 층. **창 옮기기 층보다 위**에 깔아야 한다 —
+            // 아래에 두면 노란 창 안에 있는 재생 봉을 끌 때 창 옮기기가
+            // 가로 끌기를 먹어, 봉은 손가락을 따라오지 못하고 손을 떼면
+            // 제자리로 돌아온 것처럼 보인다.
+            //
+            // 탭은 그대로 아래 스크럽 층으로 내려간다(translucent + 가로
+            // 끌기만 받는다). 손잡이는 이 층보다 뒤에 깔려 있어, 봉이 구간
+            // 끝에 붙어 있으면 손잡이가 먼저 잡힌다.
+            if (widget.interactive)
+              Positioned(
+                key: const Key('editor-playhead-drag'),
+                left: (playheadX - _playheadTouchWidth / 2).clamp(
+                  0.0,
+                  math.max(0.0, width - _playheadTouchWidth),
+                ),
+                top: 0,
+                bottom: 0,
+                width: _playheadTouchWidth,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragStart: (_) => _startPlayheadDrag(),
+                  onHorizontalDragUpdate: (details) =>
+                      _scrubBy(details.delta.dx, msPerPx),
+                  child: const SizedBox.expand(),
+                ),
+              ),
             if (widget.interactive) ...[
               if (visible(_endMs))
                 _handleTouchZone(
@@ -593,6 +622,10 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
 
   void _startTimelineGesture() {
     _pinchStartScale = _timelineScale;
+    _startPlayheadDrag();
+  }
+
+  void _startPlayheadDrag() {
     _scrubAnchorMs = widget.playheadSourceMs;
     _scrubTravelPx = 0;
   }
@@ -604,10 +637,16 @@ class _TrimRangeBarState extends State<TrimRangeBar> {
       });
       return;
     }
-    _scrubTravelPx += details.focalPointDelta.dx;
-    // 손가락이 간 방향으로 재생 위치도 간다. 예전에는 "필름을 끌어온다"는
-    // 셈으로 부호를 뒤집었는데, 띠가 화면에 고정돼 있으니 눌러 옮기는 것과
-    // 끌어 옮기는 것이 반대로 움직여 어느 쪽도 믿을 수 없었다.
+    _scrubBy(details.focalPointDelta.dx, msPerPx);
+  }
+
+  /// 손가락이 간 만큼 재생 위치를 옮긴다.
+  ///
+  /// 손가락이 간 방향으로 재생 위치도 간다. 예전에는 "필름을 끌어온다"는
+  /// 셈으로 부호를 뒤집었는데, 띠가 화면에 고정돼 있으니 눌러 옮기는 것과
+  /// 끌어 옮기는 것이 반대로 움직여 어느 쪽도 믿을 수 없었다.
+  void _scrubBy(double deltaPx, double msPerPx) {
+    _scrubTravelPx += deltaPx;
     final sourceMs = _frameAligned(
       (_scrubAnchorMs + _scrubTravelPx * msPerPx).round(),
     ).clamp(_startMs, _endMs);

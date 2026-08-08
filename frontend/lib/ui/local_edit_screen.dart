@@ -3087,12 +3087,12 @@ class _BoundedVideoViewport extends StatelessWidget {
                 ? canvasWidth / sourceAspectRatio
                 : canvasHeight)
           : canvasHeight;
-      final focus = zoom == null
-          ? null
-          : (zoomSourceMs == null ? zoom!.focus : zoom!.focusAt(zoomSourceMs!));
-      final alignment = focus == null
+      // 확대 기준점은 줌이 정한다 — 창 모델은 창 중심을 기준점으로 환산해
+      // 주므로, 여기서는 모델을 몰라도 된다.
+      final pivot = zoom?.pivotAt(zoomSourceMs ?? zoom!.sourceStartMs);
+      final alignment = pivot == null
           ? Alignment.center
-          : Alignment(focus.x * 2 - 1, focus.y * 2 - 1);
+          : Alignment(pivot.x * 2 - 1, pivot.y * 2 - 1);
 
       // 창 = 기본 맞춤 크기 × 확대, 캔버스 중심 + 이동만큼 옮긴 자리.
       // EditorCanvas.copyWith가 이동을 캔버스 안으로 이미 잘라 둔다.
@@ -3589,9 +3589,12 @@ class _CanvasGestureLayerState extends State<_CanvasGestureLayer> {
       // 그림이 널뛰다가 손을 떼는 순간 엉뚱한 곳으로 "돌아간" 것처럼
       // 보인다. 초점은 한 손가락 드래그가 맡는다.
       final pinching = details.pointerCount > 1;
-      // 배율 s로 키운 그림을 dx만큼 옮기려면 초점은 dx/(s-1)만큼
-      // 반대로 가야 한다. s가 1에 가까우면 옮길 것도 없다.
-      final divisor = math.max(0.15, scale - 1);
+      // 손가락 dx만큼 그림을 옮기려면 초점이 얼마나 가야 하는가. 창 모델은
+      // 초점이 창 중심이라 dx/s, 옛(anchor) 방식은 초점이 화면에 고정돼
+      // dx/(s-1)다. s가 1에 가까우면 옮길 것도 없다.
+      final divisor = zoom.focusModel == EditorZoomFocusModel.window
+          ? math.max(1.0, scale)
+          : math.max(0.15, scale - 1);
       final next = zoom.copyWith(
         scale: scale,
         focus: pinching

@@ -278,6 +278,9 @@ class EditorProjectController extends ChangeNotifier {
           clipId: map['clipId'] as String?,
           focusTrack: _zoomFocusTrackFrom(map['focusTrack']),
           faceTrackId: map['faceTrackId'] as String?,
+          // 표시가 없는 옛 초안은 옛 기하로 그린다 — 사용자가 잡아 둔
+          // 프레이밍이 말없이 달라지지 않게.
+          focusModel: _zoomFocusModelFrom(map['focusModel']),
         ),
       );
     }
@@ -588,6 +591,7 @@ class EditorProjectController extends ChangeNotifier {
           // 그 사람이 화면 밖으로 나가 버리던 것을 막는다.
           focusTrack: _zoomFocusTrackFrom(value['focusTrack']),
           faceTrackId: value['faceTrackId'] as String?,
+          focusModel: _zoomFocusModelFrom(value['focusModel']),
         );
       })
       .toList(growable: false);
@@ -706,6 +710,8 @@ class EditorProjectController extends ChangeNotifier {
       scale: 1.35,
       focus: NormalizedPoint.center,
       clipId: clip.id,
+      // 새로 만드는 줌은 창 모델이다 — 가장자리로 끌어도 잘리지 않는다.
+      focusModel: EditorZoomFocusModel.window,
     );
     _commit(
       _project.copyWith(
@@ -1536,6 +1542,12 @@ class EditorProjectController extends ChangeNotifier {
     }
     return tracks;
   }
+
+  /// 서버·초안의 줌 `focusModel`. 값이 없으면 옛 기하([EditorZoomFocusModel
+  /// .anchor])다 — 이 필드가 생기기 전에 저장된 줌이라는 뜻이다.
+  static EditorZoomFocusModel _zoomFocusModelFrom(Object? raw) =>
+      EditorZoomFocusModel.values.asNameMap()[raw] ??
+      EditorZoomFocusModel.anchor;
 
   /// 서버·초안의 줌 `focusTrack`([{ms, dx, dy}]). 사람을 따라가는 줌이
   /// 초점을 기준 자리에서 얼마나 옮길지를 시간 순으로 담고 있다.
