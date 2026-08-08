@@ -1867,17 +1867,14 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
             : !_editorReady
             ? SafeArea(child: _failed())
             // 분석이 도는 동안 AI 컷 칩은 흐리게 잠기지만, 왜 잠겼는지는 화면에
-            // 없었다. 띠는 진행 중·실패일 때만 자리를 차지한다(끝나면
-            // SizedBox.shrink). 끝나면 프리셋 추천을 다시 받는다.
-            : Column(
-                children: [
-                  AnalysisNoticeBar(
-                    api: widget.controller.api,
-                    videoId: widget.video.id,
-                    onDone: _loadPresetRecommendations,
-                  ),
-                  Expanded(child: _editorShell()),
-                ],
+            // 없었다. 진행률은 그 칩 **바로 옆에** 숫자로 붙인다 — 화면 위를
+            // 띠로 덮으면 편집에 쓸 세로가 그만큼 줄어든다. 끝나면 프리셋
+            // 추천을 다시 받는다.
+            : AnalysisWatcher(
+                api: widget.controller.api,
+                videoId: widget.video.id,
+                onDone: _loadPresetRecommendations,
+                builder: (context, analysis) => _editorShell(analysis),
               ),
       ),
     ),
@@ -2071,7 +2068,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
   ///
   /// 키보드 자리를 어떻게 빼는지, 왜 Scaffold에 맡기지 않는지는
   /// [EditorKeyboardShell] 설명에 있다.
-  Widget _editorShell() {
+  Widget _editorShell(VideoAnalysis analysis) {
     final editing = _editingTextLayerId != null;
     return EditorKeyboardShell(
       bottomBar: editing
@@ -2081,11 +2078,14 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
               onDone: _finishTextEditing,
             )
           : null,
-      child: _workspace(textEditing: editing),
+      child: _workspace(textEditing: editing, analysis: analysis),
     );
   }
 
-  Widget _workspace({bool textEditing = false}) {
+  Widget _workspace({
+    bool textEditing = false,
+    VideoAnalysis analysis = VideoAnalysis.none,
+  }) {
     final preview = _preview!;
     final projectController = _projectController!;
     return EditorWorkspace(
@@ -2114,6 +2114,7 @@ class _LocalEditScreenState extends State<LocalEditScreen> {
       exportStatus: _status,
       presetRecommendations: Map.unmodifiable(_presetRecommendations),
       recommendationLoading: _recommendationLoading,
+      analysis: analysis,
       onRecommendationSelected: _selectRecommendationPreset,
       onExportCancel: _cancelExport,
       onBack: () => Navigator.maybePop(context),
@@ -2877,6 +2878,11 @@ class _PreviewSurface extends StatelessWidget {
                 sourceAspectRatio: width / height,
                 canvas: liveCanvas ?? canvas,
                 zoom: liveZoom ?? zoom,
+                // 사람을 따라가는 줌은 초점이 매 순간 움직인다. 지금 재생
+                // 위치의 원본 시각으로 그 자리를 물어본다.
+                zoomSourceMs: project.sourcePositionForTimeline(
+                  project.playheadMs,
+                ),
                 // 비율 탭에서는 영상 창 테두리를 그려 "검은 띠가 어디까지
                 // 인지"를 눈으로 보며 조절하게 한다.
                 showWindowGuide: project.selectedTool == EditorTool.ratio,
@@ -3003,12 +3009,17 @@ class _BoundedVideoViewport extends StatelessWidget {
     required this.canvas,
     required this.zoom,
     required this.child,
+    this.zoomSourceMs,
     this.showWindowGuide = false,
   });
 
   final double sourceAspectRatio;
   final EditorCanvas canvas;
   final EditorZoomSegment? zoom;
+
+  /// 지금 그리는 프레임의 원본 시각. 사람을 따라가는 줌의 초점을 이 시각으로
+  /// 찾는다. null이면 기준 초점 그대로다.
+  final int? zoomSourceMs;
   final Widget child;
 
   /// 영상 창 테두리를 그린다. 비율 탭에서 검은 띠를 조절할 때만 켠다.
@@ -3033,9 +3044,12 @@ class _BoundedVideoViewport extends StatelessWidget {
                 ? canvasWidth / sourceAspectRatio
                 : canvasHeight)
           : canvasHeight;
-      final alignment = zoom == null
+      final focus = zoom == null
+          ? null
+          : (zoomSourceMs == null ? zoom!.focus : zoom!.focusAt(zoomSourceMs!));
+      final alignment = focus == null
           ? Alignment.center
-          : Alignment(zoom!.focus.x * 2 - 1, zoom!.focus.y * 2 - 1);
+          : Alignment(focus.x * 2 - 1, focus.y * 2 - 1);
 
       // 창 = 기본 맞춤 크기 × 확대, 캔버스 중심 + 이동만큼 옮긴 자리.
       // EditorCanvas.copyWith가 이동을 캔버스 안으로 이미 잘라 둔다.

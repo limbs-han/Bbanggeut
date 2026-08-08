@@ -66,6 +66,117 @@ void main() {
     expect(zoom['endMs'], 49125);
   });
 
+  test('자동 줌은 사람이 움직이면 초점을 따라 옮긴다', () {
+    final controller = EditorProjectController(
+      EditorProject.fromSource(
+        sourceVideoPath: '/tmp/source.mp4',
+        sourceDurationMs: 120000,
+        sourceSize: const EditorSourceSize(width: 1280, height: 720),
+      ),
+    );
+    controller.applyRecommendation(
+      const EditRecommendation(
+        cutStartMs: 58000,
+        cutEndMs: 120000,
+        durationPreset: 'medium',
+        zoomSegments: [
+          {
+            'startMs': 100000,
+            'endMs': 102000,
+            'scale': 1.8,
+            'focusX': 0.30,
+            'focusY': 0.50,
+            'faceTrackId': 'face-1',
+            // 잡은 사람이 오른쪽으로 걸어간다.
+            'focusTrack': [
+              {'ms': 100000, 'dx': 0.0, 'dy': 0.0},
+              {'ms': 101000, 'dx': 0.10, 'dy': 0.02},
+              {'ms': 102000, 'dx': 0.20, 'dy': 0.04},
+            ],
+          },
+        ],
+      ),
+    );
+
+    final project = controller.project;
+    final zoom = project.zoomSegments.single;
+    expect(zoom.tracksFace, isTrue);
+    expect(zoom.faceTrackId, 'face-1');
+    // 구간 시작은 기준 초점 그대로, 뒤로 갈수록 사람을 따라 옮겨진다.
+    expect(zoom.focusAt(100000).x, closeTo(0.30, 1e-9));
+    expect(zoom.focusAt(101500).x, closeTo(0.45, 1e-9));
+    expect(zoom.focusAt(102000).y, closeTo(0.54, 1e-9));
+    // 구간 밖은 양 끝 값을 그대로 쓴다 — 초점이 튀지 않는다.
+    expect(zoom.focusAt(99000).x, closeTo(0.30, 1e-9));
+    expect(zoom.focusAt(109000).x, closeTo(0.50, 1e-9));
+
+    // 초점을 손으로 끌면 따라가는 경로 전체가 같이 옮겨진다.
+    final nudged = zoom.copyWith(focus: NormalizedPoint(0.40, 0.50));
+    expect(nudged.focusAt(102000).x, closeTo(0.60, 1e-9));
+
+    // 내보내기에는 타임라인 시각의 절대 초점 키프레임으로 구워 넘긴다.
+    final platform = project.toPlatformMap(outputPath: '/tmp/out.mp4');
+    final exported = (platform['zoomSegments'] as List).single as Map;
+    final track = (exported['focusTrack'] as List).cast<Map>();
+    expect(track.first['ms'], exported['startMs']);
+    expect(track.last['ms'], exported['endMs']);
+    expect(track.first['x'], closeTo(0.30, 1e-9));
+    expect(track.last['x'], closeTo(0.50, 1e-9));
+  });
+
+  test('자동 줌은 얼굴을 화면의 45%까지 키우되 안전 상한을 넘지 않는다', () {
+    EditorZoomSegment zoomFrom(Map<String, Object> raw) {
+      final controller = EditorProjectController(
+        EditorProject.fromSource(
+          sourceVideoPath: '/tmp/source.mp4',
+          sourceDurationMs: 120000,
+          sourceSize: const EditorSourceSize(width: 1280, height: 720),
+        ),
+      );
+      controller.applyRecommendation(
+        EditRecommendation(
+          cutStartMs: 0,
+          cutEndMs: 120000,
+          durationPreset: 'medium',
+          zoomSegments: [raw],
+        ),
+      );
+      return controller.project.zoomSegments.single;
+    }
+
+    const base = {
+      'startMs': 10000,
+      'endMs': 13000,
+      'scale': 1.5,
+      'focusX': 0.5,
+      'focusY': 0.5,
+      // 서버는 얼굴을 화면의 0.30으로 맞춘 배율을 준다.
+      'targetFaceHeight': 0.30,
+    };
+
+    // 화면의 45%를 노리므로 서버 배율의 0.45/0.30배가 된다.
+    expect(zoomFrom(base).scale, closeTo(2.25, 1e-9));
+
+    // 가장자리에 선 얼굴은 서버가 계산한 상한이 먼저 막는다.
+    expect(zoomFrom({...base, 'maxScale': 1.8}).scale, closeTo(1.8, 1e-9));
+
+    // 상한이 여유로우면 그대로 키운다.
+    expect(zoomFrom({...base, 'maxScale': 2.8}).scale, closeTo(2.25, 1e-9));
+  });
+
+  test('따라갈 궤적이 없는 줌은 초점이 고정이고 키프레임도 없다', () {
+    final zoom = EditorZoomSegment(
+      id: 'zoom-1',
+      sourceStartMs: 1000,
+      sourceEndMs: 3000,
+      scale: 1.5,
+      focus: NormalizedPoint(0.4, 0.6),
+    );
+
+    expect(zoom.tracksFace, isFalse);
+    expect(zoom.focusAt(2000), NormalizedPoint(0.4, 0.6));
+  });
+
   test('프리셋은 고른 클립의 구간만 바꾸고 다른 클립은 그대로 둔다', () {
     final controller = EditorProjectController(
       EditorProject.fromSource(
