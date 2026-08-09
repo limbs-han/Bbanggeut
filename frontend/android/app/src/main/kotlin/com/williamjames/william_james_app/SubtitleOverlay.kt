@@ -45,50 +45,67 @@ object SubtitleOverlay {
     private data class Cue(val startUs: Long, val endUs: Long, val text: String)
 
     private class TimedText(
-        private val cues: List<Cue>,
-        private val color: Int,
+        cues: List<Cue>,
+        color: Int,
     ) : TextOverlay() {
         // 손 자막과 같은 자리.
         private val settings = StaticOverlaySettings.Builder()
             .setBackgroundFrameAnchor(0f, -0.72f)
             .build()
 
-        override fun getText(presentationTimeUs: Long): SpannableString {
-            val hit = cues.firstOrNull {
-                presentationTimeUs >= it.startUs && presentationTimeUs < it.endUs
-            }
-            val span = SpannableString(hit?.text ?: "")
-            if (span.isNotEmpty()) {
+        /// 자막이 없는 시각의 글. 빈 문자열이 **아니라** 공백 한 칸이다 —
+        /// media3 TextOverlay.getBitmap은 글 너비 그대로 비트맵을 만들어서,
+        /// 빈 문자열(너비 0)은 createBitmap이 "width and height must be > 0"
+        /// 으로 던지고 내보내기 전체가 죽는다. 공백은 너비가 있으면서 그릴
+        /// 픽셀이 없고, 아래 hiddenSettings가 알파 0으로 한 번 더 감춘다.
+        private val hidden = SpannableString(" ")
+
+        private val hiddenSettings = StaticOverlaySettings.Builder()
+            .setAlphaScale(0f)
+            .build()
+
+        /// 줄마다 미리 만들어 같은 인스턴스를 돌려준다. TextOverlay는 getText
+        /// 결과가 직전과 같을 때만 글자 비트맵을 다시 안 만드는데, 스팬의
+        /// equals가 참조 비교라 프레임마다 새 SpannableString을 만들면 매
+        /// 프레임 재기·그리기·GL 업로드를 되풀이한다.
+        private val styledCues = cues.map { cue ->
+            cue to SpannableString(cue.text).apply {
                 // 손 자막과 같은 스타일 (색·배경·크기 54·굵게).
-                span.setSpan(
+                setSpan(
                     ForegroundColorSpan(color),
                     0,
-                    span.length,
+                    length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
-                span.setSpan(
+                setSpan(
                     BackgroundColorSpan(0x99000000.toInt()),
                     0,
-                    span.length,
+                    length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
-                span.setSpan(
+                setSpan(
                     AbsoluteSizeSpan(54),
                     0,
-                    span.length,
+                    length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
-                span.setSpan(
+                setSpan(
                     StyleSpan(Typeface.BOLD),
                     0,
-                    span.length,
+                    length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
             }
-            return span
         }
 
+        private fun activeAt(timeUs: Long): SpannableString? = styledCues
+            .firstOrNull { timeUs >= it.first.startUs && timeUs < it.first.endUs }
+            ?.second
+
+        override fun getText(presentationTimeUs: Long): SpannableString =
+            activeAt(presentationTimeUs) ?: hidden
+
         override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
-            settings
+            if (activeAt(presentationTimeUs) == null) hiddenSettings else settings
     }
 }
