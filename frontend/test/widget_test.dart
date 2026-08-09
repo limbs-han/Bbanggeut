@@ -478,6 +478,12 @@ class _FakeApiClient extends ApiClient {
   Future<SignedUrl> createDownloadUrl(String id) async =>
       throw StateError('테스트에서는 영상을 내려받지 않아요.');
 
+  // 상세 화면이 "올라오는 중" 영상의 상태를 서버에 다시 묻는다. 실제
+  // HTTP로 새어 나가면 pumpAndSettle이 끝나지 않는다.
+  @override
+  Future<VideoMemory> getVideo(String id) async =>
+      throw StateError('테스트에서는 영상 상태를 묻지 않아요.');
+
   @override
   Future<VideoPage> listVideos(
     String deviceId, {
