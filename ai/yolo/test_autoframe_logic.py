@@ -539,6 +539,29 @@ class HeadsControllerTests(unittest.TestCase):
 
         self.assertEqual(set(controller.remembered_heads), {1})
 
+    def test_a_reidentified_person_is_not_counted_twice(self) -> None:
+        controller = self.controller()
+        box = (150, 60, 300, 460)
+
+        seen = self.update_ids(controller, ((7, box),), now=0.0)
+        # Same person, same place, new track id from the tracker.
+        reid = self.update_ids(controller, ((8, box),), now=0.1)
+
+        self.assertEqual(set(controller.remembered_heads), {8})
+        self.assertAlmostEqual(reid.center_y, seen.center_y, places=6)
+        self.assertAlmostEqual(reid.group_box[3], seen.group_box[3], places=6)
+
+    def test_a_person_who_really_left_still_coasts(self) -> None:
+        controller = self.controller()
+        stays = (1, (150, 60, 300, 460))
+        leaves = (2, (380, 300, 500, 470))
+
+        self.update_ids(controller, (stays, leaves), now=0.0)
+        self.update_ids(controller, (stays,), now=0.1)
+
+        # No overlap with the remaining head, so the memory is kept.
+        self.assertEqual(set(controller.remembered_heads), {1, 2})
+
     def test_invalid_head_settings_are_rejected(self) -> None:
         with self.assertRaises(ValueError):
             self.controller(head_anchor_ratio=0.0)

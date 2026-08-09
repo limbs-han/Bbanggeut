@@ -259,10 +259,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--head-settle-ratio",
         type=float,
-        default=float(os.getenv("YOLO_HEAD_SETTLE_RATIO", "0.3")),
+        default=float(os.getenv("YOLO_HEAD_SETTLE_RATIO", "1.0")),
         help=(
             "Fraction of the dead-zone a started move closes to before it "
-            "stops. Lower settles deeper and moves less often (default: 0.3)."
+            "stops. Below 1 the camera travels further per correction, which "
+            "measurably worsens overshoot once loop latency is significant, "
+            "so it stays at 1 unless latency is known to be small."
         ),
     )
     parser.add_argument(
@@ -711,7 +713,7 @@ class AutoFrameController:
         head_anchor_ratio: float = 0.33,
         head_clearance: float = 0.06,
         head_clearance_stop: float = 0.10,
-        head_settle_ratio: float = 0.3,
+        head_settle_ratio: float = 1.0,
         head_memory_seconds: float = 0.8,
     ) -> None:
         if not 0.0 <= subject_y_ratio <= 1.0:
@@ -866,13 +868,42 @@ class AutoFrameController:
         than on what the detector happened to catch this frame.
         """
 
+        live_boxes: list[Box] = []
         for item in decision.objects:
-            self.remembered_heads[item.track_id] = (self.head_box(item), now)
-        live = {item.track_id for item in decision.objects}
-        for track_id, (_, seen_at) in tuple(self.remembered_heads.items()):
-            if track_id not in live and now - seen_at > self.head_memory_seconds:
+            box = self.head_box(item)
+            self.remembered_heads[item.track_id] = (box, now)
+            live_boxes.append(box)
+
+        live_ids = {item.track_id for item in decision.objects}
+        coasting: list[Box] = []
+        for track_id, (box, seen_at) in tuple(self.remembered_heads.items()):
+            if track_id in live_ids:
+                continue
+            if now - seen_at > self.head_memory_seconds:
                 del self.remembered_heads[track_id]
-        return tuple(box for box, _ in self.remembered_heads.values())
+                continue
+            # The tracker hands the same person a new id often enough that a
+            # remembered head is usually their own stale copy rather than
+            # someone who left. Keeping both would put the aim between a
+            # person and their ghost, so an overlap is treated as a re-id.
+            if any(self._same_head(box, live) for live in live_boxes):
+                del self.remembered_heads[track_id]
+                continue
+            coasting.append(box)
+        return tuple(live_boxes) + tuple(coasting)
+
+    @staticmethod
+    def _same_head(remembered: Box, live: Box) -> bool:
+        width = min(remembered[2], live[2]) - max(remembered[0], live[0])
+        height = min(remembered[3], live[3]) - max(remembered[1], live[1])
+        if width <= 0.0 or height <= 0.0:
+            return False
+        overlap = width * height
+        smaller = min(
+            (remembered[2] - remembered[0]) * (remembered[3] - remembered[1]),
+            (live[2] - live[0]) * (live[3] - live[1]),
+        )
+        return smaller > 0.0 and overlap / smaller >= 0.3
 
     def head_median(self, boxes: tuple[Box, ...]) -> Point:
         """The middle of where the heads are.
