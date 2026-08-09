@@ -56,6 +56,10 @@ android {
             flutter.versionName
         }
 
+        // 내보내기 파이프라인(media3 오버레이) 계측 테스트용
+        // (EditorOverlayExportTest.kt).
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
         ndk {
             abiFilters += listOf(
                 "armeabi-v7a",
@@ -68,6 +72,26 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+        }
+        // 기존 설치본을 지우지 않고 나란히 설치하는 테스트용 릴리즈.
+        //
+        // flavor가 아니라 buildType인 이유: flavor를 하나라도 만들면
+        // `flutter build apk`가 --flavor 없이는 실패해 CI(Jenkinsfile)까지
+        // 바뀌어야 한다. buildType은 기존 debug/release 경로를 전혀 건드리지
+        // 않고, `gradlew :app:assemblePreview`로만 나온다.
+        create("preview") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            signingConfig = signingConfigs.getByName("debug")
+            // 코드 축소는 끈다. Flutter 플러그인의 R8 설정이 커스텀
+            // buildType에는 반쪽만 적용돼 빌드가 깨진다 — 테스트 앱이라
+            // 크기·난독화를 챙길 이유도 없다.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            // 플러그인 AAR들은 debug/release 변형만 내놓는다. preview가 없을
+            // 때 release 쪽을 쓰게 한다.
+            matchingFallbacks += "release"
         }
     }
 }
@@ -100,4 +124,8 @@ dependencies {
     implementation("androidx.media3:media3-common:1.9.2")
     implementation("androidx.media3:media3-effect:1.9.2")
     implementation("androidx.media3:media3-transformer:1.9.2")
+
+    // 내보내기 파이프라인 계측 테스트(EditorOverlayExportTest.kt) 전용.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

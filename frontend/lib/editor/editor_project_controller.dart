@@ -131,12 +131,22 @@ class EditorProjectController extends ChangeNotifier {
   }
 
   /// 클립 배열이 바뀔 때, 클립에 묶인 자막의 절대 시각을 클립을 따라
-  /// 다시 계산한다. 클립 안에서의 상대 위치는 그대로 유지되고, 묶인 클립이
-  /// 사라졌으면 자막도 함께 사라진다.
+  /// 다시 계산한다. 묶인 클립이 사라졌으면 자막도 함께 사라진다.
+  ///
+  /// 자막은 **원본의 장면**에 붙어 있다. 클립의 원본 구간이 옮겨 가면
+  /// (트림·AI 컷) 자막도 그 장면을 따라가고, 새 구간과 겹치지 않는 자막은
+  /// 잘려 나간 장면의 대사이므로 함께 사라진다. 예전에는 클립 안 상대
+  /// 위치만 유지한 채 새 길이 안으로 clamp해서, 구간을 고르면 그 뒤의
+  /// 자막 전부가 클립 끝에 몰렸다.
+  ///
+  /// [from]은 따라가기의 기준 상태다. 손잡이를 끄는 동안에는 제스처 시작
+  /// 시점을 기준으로 삼아야 한다 — 매 프레임 직전 상태를 기준으로 다시
+  /// 자르면 좁혔다 넓힐 때 자막이 이미 사라지고 없다.
   List<EditorTextLayer> _textLayersFollowing(
-    List<EditorClip> oldClips,
+    EditorProject from,
     List<EditorClip> newClips,
   ) {
+    final oldClips = from.clips;
     int? startOf(List<EditorClip> clips, String id) {
       var cursor = 0;
       for (final clip in clips) {
@@ -154,7 +164,7 @@ class EditorProjectController extends ChangeNotifier {
     }
 
     final layers = <EditorTextLayer>[];
-    for (final layer in _project.textLayers) {
+    for (final layer in from.textLayers) {
       final clipId = layer.clipId;
       if (clipId == null) {
         layers.add(layer);
@@ -164,11 +174,19 @@ class EditorProjectController extends ChangeNotifier {
       final newClip = clipOf(newClips, clipId);
       if (newStart == null || newClip == null) continue;
       final oldStart = startOf(oldClips, clipId) ?? newStart;
+      final oldClip = clipOf(oldClips, clipId) ?? newClip;
       final span = newClip.durationMs;
-      final int relStart = (layer.startMs - oldStart)
+      // 원본 구간이 옮겨 간 만큼 자막의 클립 안 위치도 되민다 — 같은 장면
+      // 위에 남는다.
+      final shift = newClip.sourceStartMs - oldClip.sourceStartMs;
+      final shiftedStart = layer.startMs - oldStart - shift;
+      final shiftedEnd = layer.endMs - oldStart - shift;
+      // 새 구간과 겹치지 않는다 = 잘려 나간 장면의 대사다.
+      if (shiftedEnd <= 0 || shiftedStart >= span) continue;
+      final int relStart = shiftedStart
           .clamp(0, math.max(0, span - 100))
           .toInt();
-      final int relEnd = (layer.endMs - oldStart)
+      final int relEnd = shiftedEnd
           .clamp(math.min(relStart + 100, span), span)
           .toInt();
       layers.add(
@@ -181,9 +199,10 @@ class EditorProjectController extends ChangeNotifier {
   /// 클립 배열이 바뀔 때, 클립에 묶인 스티커의 절대 시각을 클립을 따라
   /// 다시 계산한다. 자막([_textLayersFollowing])과 같은 규칙이다.
   List<EditorStickerLayer> _stickerLayersFollowing(
-    List<EditorClip> oldClips,
+    EditorProject from,
     List<EditorClip> newClips,
   ) {
+    final oldClips = from.clips;
     int? startOf(List<EditorClip> clips, String id) {
       var cursor = 0;
       for (final clip in clips) {
@@ -201,7 +220,7 @@ class EditorProjectController extends ChangeNotifier {
     }
 
     final layers = <EditorStickerLayer>[];
-    for (final layer in _project.stickerLayers) {
+    for (final layer in from.stickerLayers) {
       final clipId = layer.clipId;
       if (clipId == null) {
         layers.add(layer);
@@ -211,11 +230,16 @@ class EditorProjectController extends ChangeNotifier {
       final newClip = clipOf(newClips, clipId);
       if (newStart == null || newClip == null) continue;
       final oldStart = startOf(oldClips, clipId) ?? newStart;
+      final oldClip = clipOf(oldClips, clipId) ?? newClip;
       final span = newClip.durationMs;
-      final int relStart = (layer.startMs - oldStart)
+      final shift = newClip.sourceStartMs - oldClip.sourceStartMs;
+      final shiftedStart = layer.startMs - oldStart - shift;
+      final shiftedEnd = layer.endMs - oldStart - shift;
+      if (shiftedEnd <= 0 || shiftedStart >= span) continue;
+      final int relStart = shiftedStart
           .clamp(0, math.max(0, span - 100))
           .toInt();
-      final int relEnd = (layer.endMs - oldStart)
+      final int relEnd = shiftedEnd
           .clamp(math.min(relStart + 100, span), span)
           .toInt();
       layers.add(
@@ -529,8 +553,8 @@ class EditorProjectController extends ChangeNotifier {
       _project.copyWith(
         clips: clips,
         zoomSegments: zooms,
-        textLayers: _textLayersFollowing(_project.clips, clips),
-        stickerLayers: _stickerLayersFollowing(_project.clips, clips),
+        textLayers: _textLayersFollowing(_project, clips),
+        stickerLayers: _stickerLayersFollowing(_project, clips),
         faceTrack: faceTrack,
         faceTracks: faceTracks,
         recommendationMarker: EditorRecommendationMarker(
@@ -656,8 +680,8 @@ class EditorProjectController extends ChangeNotifier {
     _commit(
       _project.copyWith(
         clips: next,
-        textLayers: _textLayersFollowing(_project.clips, next),
-        stickerLayers: _stickerLayersFollowing(_project.clips, next),
+        textLayers: _textLayersFollowing(_project, next),
+        stickerLayers: _stickerLayersFollowing(_project, next),
         selectedClipId: clip.id,
       ),
     );
@@ -876,8 +900,8 @@ class EditorProjectController extends ChangeNotifier {
       _project.copyWith(
         clips: next,
         // 클립에 묶인 자막은 클립을 따라 함께 움직인다.
-        textLayers: _textLayersFollowing(_project.clips, next),
-        stickerLayers: _stickerLayersFollowing(_project.clips, next),
+        textLayers: _textLayersFollowing(_project, next),
+        stickerLayers: _stickerLayersFollowing(_project, next),
         selectedClipId: moved.id,
         playheadMs: 0,
       ),
@@ -1026,8 +1050,8 @@ class EditorProjectController extends ChangeNotifier {
         _project.copyWith(
           clips: remaining,
           zoomSegments: _zoomsWithoutClip(selected.id),
-          textLayers: _textLayersFollowing(_project.clips, remaining),
-          stickerLayers: _stickerLayersFollowing(_project.clips, remaining),
+          textLayers: _textLayersFollowing(_project, remaining),
+          stickerLayers: _stickerLayersFollowing(_project, remaining),
           selectedClipId: remaining.first.id,
           playheadMs: 0,
         ),
@@ -1042,8 +1066,8 @@ class EditorProjectController extends ChangeNotifier {
         clips: next,
         // 클립을 지우면 거기 묶인 줌·자막도 함께 사라진다.
         zoomSegments: _zoomsWithoutClip(selected.id),
-        textLayers: _textLayersFollowing(_project.clips, next),
-        stickerLayers: _stickerLayersFollowing(_project.clips, next),
+        textLayers: _textLayersFollowing(_project, next),
+        stickerLayers: _stickerLayersFollowing(_project, next),
         selectedClipId: next[nextIndex].id,
         playheadMs: math.min(_project.playheadMs, _durationOf(next)),
       ),
@@ -1060,8 +1084,8 @@ class EditorProjectController extends ChangeNotifier {
     _commit(
       _project.copyWith(
         clips: next,
-        textLayers: _textLayersFollowing(_project.clips, next),
-        stickerLayers: _stickerLayersFollowing(_project.clips, next),
+        textLayers: _textLayersFollowing(_project, next),
+        stickerLayers: _stickerLayersFollowing(_project, next),
         selectedClipId: copy.id,
       ),
     );
@@ -1097,11 +1121,14 @@ class EditorProjectController extends ChangeNotifier {
     final index = _project.clips.indexWhere((clip) => clip.id == selected.id);
     final next = [..._project.clips]
       ..[index] = selected.copyWith(sourceStartMs: start, sourceEndMs: end);
+    // 손잡이를 끄는 동안에는 제스처 시작 상태를 기준으로 따라간다. 직전
+    // 프레임 기준으로 자르면, 좁혔다 넓혔을 때 지워진 자막이 돌아오지 못한다.
+    final base = _gestureOrigin ?? _project;
     final updated = _project.copyWith(
       clips: next,
       // 뒤 클립들에 묶인 자막이 길이 변화를 따라간다.
-      textLayers: _textLayersFollowing(_project.clips, next),
-      stickerLayers: _stickerLayersFollowing(_project.clips, next),
+      textLayers: _textLayersFollowing(base, next),
+      stickerLayers: _stickerLayersFollowing(base, next),
       playheadMs: math.min(_project.playheadMs, _durationOf(next)),
     );
     if (commit) {
