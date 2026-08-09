@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>우리 집 웃음을 모아주는 카메라 — 초등학교 고학년용 발표자료</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --ink:#15243b; --sub:#5a6b85; --line:#d9e1ee;
+    --bg:#f2f5fa; --card:#ffffff;
+    --blue:#2563eb; --blue-soft:#e8effd;
+    --green:#15803d; --green-soft:#e6f5ec;
+    --amber:#b45309; --amber-soft:#fdf3e3;
+    --red:#be123c; --red-soft:#fdeaef;
+  }
+  html,body{height:100%}
+  body{
+    background:#0f1626; color:var(--ink);
+    font-family:"Malgun Gothic","맑은 고딕",system-ui,-apple-system,"Segoe UI",sans-serif;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  #stage{position:relative}
+  .slide{
+    width:1280px; height:720px; background:var(--bg);
+    padding:56px 68px; display:none; flex-direction:column;
+    position:relative; overflow:hidden;
+  }
+  .slide.on{display:flex}
+  h1{font-size:62px; line-height:1.2; letter-spacing:-1px}
+  h2{font-size:46px; line-height:1.25; letter-spacing:-.5px; margin-bottom:8px}
+  .kicker{font-size:20px; color:var(--blue); font-weight:700; margin-bottom:14px; letter-spacing:.5px}
+  .lead{font-size:27px; line-height:1.55; color:var(--sub); margin-top:16px}
+  .big{font-size:34px; line-height:1.5}
+  .body{flex:1; display:flex; align-items:center; margin-top:26px}
+  .col{display:flex; gap:26px; width:100%}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:26px 28px; flex:1;
+  }
+  .card h3{font-size:27px; margin-bottom:10px}
+  .card p{font-size:20px; line-height:1.6; color:var(--sub)}
+  .num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:44px; height:44px; border-radius:50%; background:var(--blue);
+    color:#fff; font-size:23px; font-weight:800; margin-bottom:14px;
+  }
+  .stat{font-size:66px; font-weight:800; line-height:1; letter-spacing:-2px}
+  .stat small{font-size:26px; font-weight:700; color:var(--sub); letter-spacing:0}
+  table{width:100%; border-collapse:collapse; font-size:23px}
+  th,td{padding:14px 16px; text-align:left; border-bottom:1px solid var(--line)}
+  th{font-size:19px; color:var(--sub); font-weight:700}
+  td.n{text-align:right; font-variant-numeric:tabular-nums; font-weight:700}
+  tr.hi td{background:var(--blue-soft)}
+  .tag{display:inline-block; padding:5px 13px; border-radius:999px; font-size:17px; font-weight:700}
+  .t-b{background:var(--blue-soft); color:var(--blue)}
+  .t-g{background:var(--green-soft); color:var(--green)}
+  .t-a{background:var(--amber-soft); color:var(--amber)}
+  .t-r{background:var(--red-soft); color:var(--red)}
+  .pagenum{position:absolute; right:34px; bottom:26px; font-size:17px; color:#9aa8bf}
+  .cover{justify-content:center; background:linear-gradient(150deg,#eaf0fb,#f7f9fd)}
+  .cover img{
+    position:absolute; right:-40px; bottom:-30px; width:520px; border-radius:22px;
+    box-shadow:0 24px 60px rgba(20,35,60,.28);
+  }
+  .cover .who{margin-top:34px; font-size:23px; color:var(--sub)}
+  ul{margin-left:24px}
+  li{font-size:25px; line-height:1.75}
+  .quote{
+    border-left:6px solid var(--blue); padding-left:22px;
+    font-size:38px; line-height:1.45; font-weight:700;
+  }
+  /* 발표자 노트 */
+  #notes{
+    position:fixed; left:0; right:0; bottom:0; max-height:44vh; overflow:auto;
+    background:#111a2c; color:#dbe4f2; padding:22px 30px; display:none;
+    font-size:16px; line-height:1.75; border-top:3px solid var(--blue);
+  }
+  #notes.on{display:block}
+  #notes h4{font-size:18px; color:#7ea6ff; margin-bottom:10px}
+  #notes b{color:#fff}
+  #notes .q{color:#ffd48a}
+  #hint{
+    position:fixed; left:14px; bottom:12px; font-size:13px; color:#5f7091;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 1 -->
+<section class="slide cover on" data-note="
+<h4>표지 — 여는 말</h4>
+안녕하세요. 저는 <b>스마트 홈캠</b>을 만든 이재준입니다.<br>
+오늘 여러분에게 제가 만든 <b>스스로 보고 듣는 카메라</b> 이야기를 해드릴게요.<br><br>
+<b>여는 질문:</b> <span class='q'>‘여러분 집에 카메라 있는 사람?’ ‘그 카메라는 스스로 움직이나요?’</span><br>
+→ 대부분 ‘고정되어 있다’고 답할 겁니다. 거기서 시작하면 좋습니다.<br><br>
+<b>말투 주의:</b> ‘AI’라는 말은 아이들도 다 압니다. 하지만 ‘모델’, ‘알고리즘’ 같은 말은 쓰지 마세요.
+">
+  <div class="kicker">2026 스마트 홈캠 프로젝트</div>
+  <h1>우리 집 웃음을<br>모아주는 카메라</h1>
+  <div class="who">스스로 보고, 듣고, 기억하는 카메라를 만들었습니다</div>
+  <img src="Hardware_Assembled.jpg" alt="완성한 홈캠 하드웨어">
+  <div class="pagenum">1 / 14</div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-note="
+<h4>이게 뭐예요?</h4>
+세 가지만 기억하게 하세요. <b>본다 · 듣는다 · 보낸다.</b><br><br>
+‘가족이 웃는 순간은 짧아요. 웃고 나면 이미 지나가 있죠. 그 순간을 놓치지 않고
+자동으로 저장해주는 카메라를 만들고 싶었어요.’<br><br>
+<b>왜 이걸 만들었는지</b>를 먼저 말하면 뒤 내용이 훨씬 잘 들어옵니다.
+기술 설명보다 <b>목적</b>이 먼저입니다.<br><br>
+<span class='q'>예상 질문: ‘그럼 계속 녹화하는 거예요?’ → 계속 보고 듣지만, <b>저장하는 건 웃은 순간뿐</b>이라고 답하세요.</span>
+">
+  <div class="kicker">무엇을 만들었나</div>
+  <h2>이게 뭐예요?</h2>
+  <div class="lead">가족이 웃는 순간은 짧아서 금방 지나가 버립니다.<br>그 순간을 <b>자동으로</b> 저장해주는 카메라를 만들었습니다.</div>
+  <div class="body"><div class="col">
+    <div class="card"><div class="num">1</div><h3>본다 👀</h3><p>카메라가 사람을 찾아서 <b>스스로 따라 움직입니다.</b></p></div>
+    <div class="card"><div class="num">2</div><h3>듣는다 👂</h3><p>소리를 계속 듣다가 <b>웃음소리를 알아챕니다.</b></p></div>
+    <div class="card"><div class="num">3</div><h3>보낸다 📱</h3><p>웃은 순간만 잘라서 <b>휴대폰으로 보내줍니다.</b></p></div>
+  </div></div>
+  <div class="pagenum">2 / 14</div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-note="
+<h4>주제 1 — 카메라가 따라다녀요</h4>
+<b>몸으로 비유하세요.</b> 카메라 = 눈, 모터 2개 = 목.<br>
+목을 좌우로 도리도리 = 팬 / 위아래로 끄덕끄덕 = 틸트.<br>
+발표하면서 <b>직접 고개를 돌려 보이면</b> 아이들이 바로 이해합니다.<br><br>
+<b>실제로 쓴 부품:</b> 서보모터 2개, PCA9685라는 부품이 모터에게 명령을 전달합니다.
+이름은 말하지 않아도 되지만 물어보면 답할 수 있게 알아두세요.<br><br>
+<b>공부 포인트:</b> 서보모터는 ‘몇 도로 가라’고 각도를 지정하면 그 각도로 가서 멈추는 모터입니다.
+일반 모터(계속 도는 것)와 다릅니다.
+">
+  <div class="kicker">주제 1</div>
+  <h2>카메라가 사람을 따라다녀요 🎥</h2>
+  <div class="body"><div class="col">
+    <div class="card">
+      <h3>눈 = 카메라</h3>
+      <p style="font-size:23px">화면 속에서 <b>사람이 어디 있는지</b> 찾습니다.</p>
+    </div>
+    <div class="card">
+      <h3>목 = 모터 2개</h3>
+      <p style="font-size:23px"><b>도리도리</b> — 좌우로 돌리는 모터<br><b>끄덕끄덕</b> — 위아래로 움직이는 모터</p>
+    </div>
+  </div></div>
+  <div class="lead" style="margin-top:0">사람이 왼쪽으로 가면 카메라도 왼쪽으로 돕니다. 사람이 일어서면 카메라도 위를 봅니다.</div>
+  <div class="pagenum">3 / 14</div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-note="
+<h4>어떻게 따라가요? — 3단계</h4>
+이 슬라이드가 주제 1의 핵심입니다. <b>3단계를 천천히</b> 짚으세요.<br><br>
+<b>① 찾기</b> — AI가 화면에서 사람을 네모로 표시합니다.<br>
+<b>② 재기</b> — 그 네모가 화면 <b>가운데</b>에서 얼마나 벗어났는지 잽니다.<br>
+<b>③ 시키기</b> — 벗어난 만큼 모터에게 ‘그만큼 돌아’ 하고 말합니다.<br><br>
+그리고 <b>이걸 1초에 여러 번 반복</b>합니다. 그래서 부드럽게 따라오는 것처럼 보입니다.<br><br>
+<span class='q'>좋은 질문 유도: ‘한 번에 확 돌면 어떻게 될까요?’ → 화면이 덜덜 떨립니다.
+그래서 조금씩 여러 번 나눠 움직이게 했다고 말해주면 좋습니다.</span>
+">
+  <div class="kicker">주제 1</div>
+  <h2>어떻게 따라가요?</h2>
+  <div class="body"><div class="col">
+    <div class="card"><div class="num">1</div><h3>찾기</h3><p>화면 속에서 사람을 찾아 <b>네모</b>로 표시해요.</p></div>
+    <div class="card"><div class="num">2</div><h3>재기</h3><p>그 네모가 화면 <b>가운데</b>에서 얼마나 벗어났는지 재요.</p></div>
+    <div class="card"><div class="num">3</div><h3>시키기</h3><p>벗어난 만큼 모터에게 <b>“그만큼 돌아”</b> 하고 말해요.</p></div>
+  </div></div>
+  <div class="quote" style="font-size:30px">이걸 <b>1초에 여러 번</b> 반복해요. 그래서 부드럽게 따라오는 것처럼 보여요.</div>
+  <div class="pagenum">4 / 14</div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-note="
+<h4>주제 2 — 웃으면 저장돼요</h4>
+‘카메라는 계속 보고 듣고 있지만, <b>저장은 웃은 순간만</b> 합니다.’<br><br>
+중요한 점: <b>웃기 전 몇 초도 같이 저장</b>합니다. 웃음이 감지된 다음부터 녹화하면
+이미 웃음이 끝나 있기 때문입니다. 그래서 항상 조금씩 미리 녹화해두고,
+웃음이 감지되면 <b>그 앞부분까지 거슬러 올라가서</b> 잘라냅니다.<br><br>
+이 ‘거슬러 올라가서 자른다’는 부분이 아이들이 신기해하는 지점입니다. 꼭 넣으세요.<br><br>
+<span class='q'>예상 질문: ‘가짜로 웃으면요?’ → 소리만 듣기 때문에 구분 못 합니다. 솔직하게 답하세요.</span>
+">
+  <div class="kicker">주제 2</div>
+  <h2>웃으면 그 순간이 저장돼요 😄</h2>
+  <div class="lead">마이크가 계속 소리를 듣고 있다가, <b>웃음소리</b>를 알아채면 그 순간을 영상으로 남깁니다.</div>
+  <div class="body"><div class="col">
+    <div class="card" style="background:var(--blue-soft); border-color:#c9dbfb">
+      <h3>여기가 신기한 부분 ✨</h3>
+      <p style="font-size:22px">웃음을 알아챈 <b>다음부터</b> 녹화하면 이미 늦어요. 웃음이 끝나 있거든요.<br><br>
+      그래서 항상 <b>조금씩 미리 녹화</b>해 두었다가, 웃음이 들리면 <b>과거로 거슬러 올라가서</b> 잘라냅니다.</p>
+    </div>
+    <div class="card">
+      <h3>그다음은?</h3>
+      <p style="font-size:22px">잘라낸 영상을 인터넷으로 <b>서버</b>에 보내고,<br>서버가 <b>휴대폰</b>에 알림을 보냅니다.<br><br>부모님이 회사에 계셔도 우리가 웃은 걸 볼 수 있어요.</p>
+    </div>
+  </div></div>
+  <div class="pagenum">5 / 14</div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-note="
+<h4>소리가 어떻게 웃음이 돼요?</h4>
+<b>핵심: AI는 ‘웃음이다/아니다’로 답하지 않습니다. <span class='q'>점수</span>로 답합니다.</b><br>
+이 개념을 여기서 확실히 심어야 슬라이드 11·12가 이해됩니다. 가장 중요한 슬라이드입니다.<br><br>
+비유: ‘얼마나 웃음 같아?’라고 물으면 AI가 <b>0점에서 1점 사이</b>로 답합니다.<br>
+0에 가까우면 ‘전혀 웃음 아님’, 1에 가까우면 ‘완전 웃음’.<br><br>
+<b>실제 값:</b> 말소리는 보통 0.0009 (거의 0점), 웃음은 보통 0.34.<br>
+고학년이면 이 숫자를 그대로 보여줘도 됩니다.<br><br>
+소리를 숫자로 바꾸는 부분은 ‘소리의 높낮이와 세기를 표로 만든다’ 정도로만 말하세요.
+더 들어가면 어렵습니다.
+">
+  <div class="kicker">주제 2</div>
+  <h2>소리가 어떻게 “웃음”이 돼요?</h2>
+  <div class="lead">AI는 “웃음이다 / 아니다”로 답하지 않아요. <b>점수</b>로 답합니다.</div>
+  <div class="body" style="flex-direction:column; align-items:stretch; gap:22px">
+    <svg viewBox="0 0 1140 130" style="width:100%">
+      <g font-family="Malgun Gothic" font-size="19">
+        <rect x="0" y="26" width="220" height="78" rx="14" fill="#fff" stroke="#d9e1ee"/>
+        <text x="110" y="60" text-anchor="middle" font-size="30">🔊</text>
+        <text x="110" y="90" text-anchor="middle" fill="#5a6b85">소리가 들어와요</text>
+        <path d="M232 65 L272 65" stroke="#2563eb" stroke-width="3" marker-end="url(#a)"/>
+        <rect x="284" y="26" width="220" height="78" rx="14" fill="#fff" stroke="#d9e1ee"/>
+        <text x="394" y="60" text-anchor="middle" font-size="30">🔢</text>
+        <text x="394" y="90" text-anchor="middle" fill="#5a6b85">숫자로 바꿔요</text>
+        <path d="M516 65 L556 65" stroke="#2563eb" stroke-width="3" marker-end="url(#a)"/>
+        <rect x="568" y="26" width="220" height="78" rx="14" fill="#e8effd" stroke="#c9dbfb"/>
+        <text x="678" y="60" text-anchor="middle" font-size="30">🤖</text>
+        <text x="678" y="90" text-anchor="middle" fill="#2563eb" font-weight="700">AI가 점수를 매겨요</text>
+        <path d="M800 65 L840 65" stroke="#2563eb" stroke-width="3" marker-end="url(#a)"/>
+        <rect x="852" y="26" width="220" height="78" rx="14" fill="#e6f5ec" stroke="#b9e2c8"/>
+        <text x="962" y="60" text-anchor="middle" font-size="30">🎬</text>
+        <text x="962" y="90" text-anchor="middle" fill="#15803d" font-weight="700">기준을 넘으면 저장</text>
+      </g>
+      <defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+        <path d="M0 0 L9 4.5 L0 9 z" fill="#2563eb"/></marker></defs>
+    </svg>
+    <div class="col">
+      <div class="card"><h3>💬 그냥 말할 때</h3><div class="stat" style="color:var(--sub)">0.0009<small> 점</small></div><p style="margin-top:8px">거의 0점 — “웃음 아니에요”</p></div>
+      <div class="card" style="background:var(--green-soft); border-color:#b9e2c8"><h3>😄 웃을 때</h3><div class="stat" style="color:var(--green)">0.34<small> 점</small></div><p style="margin-top:8px">훨씬 높아요 — “웃음 같아요!”</p></div>
+    </div>
+  </div>
+  <div class="pagenum">6 / 14</div>
+</section>
+
+<!-- 7 -->
+<section class="slide" style="justify-content:center; background:linear-gradient(150deg,#eef3fc,#f7f9fd)" data-note="
+<h4>전환 슬라이드 — 여기서 발표의 성격이 바뀝니다</h4>
+여기까지는 ‘무엇을 만들었나’였고, 지금부터는 <b>‘어떻게 잘 만들었나’</b>입니다.<br><br>
+<b>이 전환을 분명히 말하세요.</b> ‘사실 만드는 것보다 더 어려운 게 있었어요.’<br>
+잠깐 멈추고 아이들을 보세요. 여기서 집중이 한 번 더 올라갑니다.<br><br>
+<b>왜 중요한가:</b> 뒤 세 장이 이 발표에서 제일 자랑할 부분입니다.
+‘만들었다’는 누구나 말할 수 있지만 ‘제대로 만들었는지 확인했다’는 아무나 못 합니다.
+선생님과 학부모에게도 이 부분이 전달됩니다.
+">
+  <div class="kicker">2부</div>
+  <h1 style="font-size:54px">만드는 것보다<br>어려운 게 있었어요</h1>
+  <div class="lead big" style="margin-top:28px">바로 <b>“잘 만들었는지 확인하는 것”</b>이에요.</div>
+  <div class="pagenum">7 / 14</div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-note="
+<h4>주제 4 — AI한테 시험을 봤어요</h4>
+<b>중요: 시험은 두 종류였습니다. 섞이지 않게 하세요.</b><br><br>
+<b>눈 시험</b> — 사진을 보고 사람을 찾는 AI 3개를 비교. 사진 395장.<br>
+<b>귀 시험</b> — 소리를 듣고 웃음을 찾는 AI 3개를 비교.<br><br>
+이 슬라이드에서는 <b>눈 시험</b>을 예로 씁니다. 다음 슬라이드(공평하게)도 눈 시험 이야기이고,
+슬라이드 10만 <b>귀 시험</b> 이야기입니다. 넘어갈 때 ‘이번엔 귀 시험이에요’라고 꼭 말해주세요.<br><br>
+<b>정답 상자 581개</b> = 사람이 미리 ‘여기 사람 있음’이라고 손으로 표시해둔 것.
+‘시험지에 정답을 미리 만들어 둔 것’이라고 설명하면 됩니다.<br>
+<b>빈 장면 52장</b> = 사람이 아무도 없는 사진. 없는데 있다고 하면 틀린 겁니다.
+">
+  <div class="kicker">주제 4</div>
+  <h2>AI한테 시험을 봤어요 🏃</h2>
+  <div class="lead">후보 AI가 여러 개 있었어요. 어떤 걸 쓸지 정하려면 <b>시험을 봐야</b> 했습니다.</div>
+  <div class="body"><div class="col">
+    <div class="card">
+      <span class="tag t-b">눈 시험 👀</span>
+      <h3 style="margin-top:12px">사진 보고 사람 찾기</h3>
+      <table style="margin-top:10px">
+        <tr><td>시험 문제</td><td class="n">사진 395장</td></tr>
+        <tr><td>미리 만든 정답</td><td class="n">581개</td></tr>
+        <tr><td>사람 없는 사진</td><td class="n">52장</td></tr>
+        <tr class="hi"><td>몇 번 봤나</td><td class="n">AI마다 3번씩</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <span class="tag t-g">귀 시험 👂</span>
+      <h3 style="margin-top:12px">소리 듣고 웃음 찾기</h3>
+      <p style="font-size:21px; margin-top:10px">웃음소리와 박수소리를 얼마나 잘 알아듣는지,<br>그리고 <b>아닌 걸 웃음이라고 잘못 말하지는 않는지</b> 시험했어요.</p>
+      <p style="font-size:21px; margin-top:14px; color:var(--blue)"><b>이 시험 결과는 다음다음 장에서!</b></p>
+    </div>
+  </div></div>
+  <div class="pagenum">8 / 14</div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-note="
+<h4>주제 4 — 공평한 시험이란</h4>
+<b>이 슬라이드가 발표에서 가장 ‘똑똑해 보이는’ 부분입니다. 시간을 들이세요.</b><br><br>
+설명 순서:<br>
+1. 컴퓨터는 오래 돌리면 <b>뜨거워지고</b>, 뜨거워지면 <b>느려집니다.</b> (사람이 오래 뛰면 지치는 것과 같다)<br>
+2. 그러면 <b>맨 처음 시험 본 AI가 유리</b>합니다. 아직 안 뜨거우니까요.<br>
+3. 그래서 순서를 <b>돌려가며</b> 3번 봤습니다. 각 AI가 1번·2번·3번 순서를 한 번씩 맡게요.<br><br>
+<span class='q'>가장 좋은 질문 유도: ‘운동회 이어달리기에서 우리 반만 계속 1번 주자로 뛰면 공평할까요?’</span><br><br>
+<b>공부 포인트:</b> 이걸 실험에서 ‘순서 효과를 통제한다’고 합니다. 용어는 쓰지 말고 개념만 전달하세요.
+아이가 ‘왜 3번이나 해요?’라고 물으면 ‘한 번은 운이 좋을 수도 있으니까’라고 답하세요.
+">
+  <div class="kicker">주제 4</div>
+  <h2>공평한 시험이 뭘까요?</h2>
+  <div class="lead">컴퓨터는 오래 켜두면 <b>뜨거워지고, 뜨거워지면 느려져요.</b> 사람이 오래 뛰면 지치는 것처럼요.</div>
+  <div class="body" style="flex-direction:column; align-items:stretch; gap:20px">
+    <div class="card" style="background:var(--red-soft); border-color:#f6cdd8; padding:20px 26px">
+      <p style="font-size:24px; color:var(--red)"><b>그러면?</b> 맨 처음 시험 본 AI가 유리해요. 아직 안 뜨거우니까요. 이건 <b>불공평</b>합니다.</p>
+    </div>
+    <div class="card" style="padding:20px 26px">
+      <h3 style="margin-bottom:14px">그래서 순서를 바꿔가며 3번 봤어요</h3>
+      <table>
+        <tr><th>　</th><th>첫 번째</th><th>두 번째</th><th>세 번째</th></tr>
+        <tr><td>1회차</td><td>A</td><td>B</td><td>C</td></tr>
+        <tr><td>2회차</td><td>B</td><td>C</td><td>A</td></tr>
+        <tr><td>3회차</td><td>C</td><td>A</td><td>B</td></tr>
+      </table>
+      <p style="font-size:22px; margin-top:14px; color:var(--blue)"><b>모두가 1번·2번·3번 순서를 한 번씩 맡았어요.</b> 이제 누가 이겨도 “순서 덕분”이라고 할 수 없어요.</p>
+    </div>
+  </div>
+  <div class="pagenum">9 / 14</div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-note="
+<h4>주제 5 — 1등을 안 뽑았어요 (귀 시험 결과)</h4>
+<b>먼저 말하세요: ‘이번엔 귀 시험 이야기예요.’</b><br><br>
+세 후보를 A·B·C로 부르면 편합니다. (실제 이름: YAMNet, EfficientAT, PANNs — 물어보면 답하세요)<br><br>
+<b>점수 1등은 B였습니다.</b> 웃음 0.855, 박수 0.966. 100점 만점으로 치면 85점·96점쯤이라고 말해도 됩니다.<br>
+<b>그런데 C도 좋았습니다.</b> 미리 정해둔 통과 기준은 오히려 C만 통과했어요.<br>
+<b>그럼 왜 C를 안 썼나?</b><br>
+　· 전기를 제일 많이 먹었습니다 (14.8W)<br>
+　· <b>1시간에 12.86번 헛웃음</b>을 감지했습니다. 아무도 안 웃었는데 웃었다고 한 거예요.<br><br>
+결론: <b>점수만 보면 안 되고, 전기와 실수까지 같이 봐야 한다.</b><br><br>
+<span class='q'>이 슬라이드의 메시지: ‘공부 제일 잘하는 애가 항상 뽑히는 건 아니다.’
+고학년이면 이 말이 확실히 통합니다. 발표의 하이라이트로 쓰세요.</span>
+">
+  <div class="kicker">주제 5 · 귀 시험 결과</div>
+  <h2>그런데 <span style="color:var(--red)">1등을 안 뽑았어요</span> 🥇</h2>
+  <div class="body" style="flex-direction:column; align-items:stretch; gap:18px">
+    <table>
+      <tr><th>후보</th><th>웃음 점수</th><th>박수 점수</th><th>전기를 먹는 양</th><th>1시간에 헛웃음</th></tr>
+      <tr class="hi"><td><b>B</b> <span class="tag t-b">점수 1등</span></td><td class="n">0.855</td><td class="n">0.966</td><td class="n">보통</td><td class="n">적음</td></tr>
+      <tr><td><b>C</b> <span class="tag t-a">규칙은 통과</span></td><td class="n">조금 낮음</td><td class="n">조금 낮음</td><td class="n" style="color:var(--red)">14.8W (제일 많음)</td><td class="n" style="color:var(--red)">12.86번</td></tr>
+      <tr><td><b>A</b></td><td class="n">낮음</td><td class="n">낮음</td><td class="n">적음</td><td class="n">보통</td></tr>
+    </table>
+    <div class="col">
+      <div class="card" style="background:var(--red-soft); border-color:#f6cdd8">
+        <h3 style="color:var(--red)">C를 안 쓴 이유</h3>
+        <p style="font-size:21px">시험 규칙만 보면 C가 통과했어요. 그런데 <b>전기를 제일 많이 먹고</b>, 아무도 안 웃었는데 <b>1시간에 13번쯤 “웃었다”</b>고 했어요.</p>
+      </div>
+      <div class="card" style="background:var(--green-soft); border-color:#b9e2c8">
+        <h3 style="color:var(--green)">그래서 배운 것</h3>
+        <p style="font-size:21px">점수가 1등이라고 무조건 뽑으면 안 돼요.<br><b>점수 + 전기 + 실수</b>를 같이 봐야 진짜 좋은 걸 고를 수 있어요.</p>
+      </div>
+    </div>
+  </div>
+  <div class="pagenum">10 / 14</div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-note="
+<h4>주제 6 — 기준선 문제 (개념)</h4>
+슬라이드 6에서 ‘AI는 점수로 답한다’를 했으니, 여기서 <b>‘그럼 몇 점부터 웃음이야?’</b>로 연결됩니다.<br><br>
+<b>양쪽 실패를 모두 보여주는 게 핵심입니다.</b><br>
+　· 기준을 <b>낮게</b> 잡으면 → 그냥 말한 것도 웃음이라고 저장 (귀찮은 알림 폭탄)<br>
+　· 기준을 <b>높게</b> 잡으면 → 진짜 웃었는데 놓침 (아까운 순간을 잃음)<br><br>
+<span class='q'>질문 유도: ‘여러분이라면 몇 점으로 정하겠어요?’ — 손 들게 해보세요.
+아이들이 아무 숫자나 말할 겁니다. 그때 ‘저도 처음엔 그렇게 느낌으로 정했어요.
+그런데 그게 문제였어요’ 하고 다음 장으로 넘어가면 흐름이 아주 좋습니다.</span><br><br>
+<b>솔직하게 말할 부분:</b> 실제로 처음에는 몇 번 들어보고 대충 정했습니다. 그게 틀렸다는 걸 나중에 알았습니다.
+">
+  <div class="kicker">주제 6</div>
+  <h2>“얼마나 웃어야 웃음일까요?” 📏</h2>
+  <div class="lead">AI는 점수를 줍니다. 그럼 <b>몇 점부터 웃음</b>이라고 해야 할까요?</div>
+  <div class="body"><div class="col">
+    <div class="card" style="background:var(--amber-soft); border-color:#f2ddb8">
+      <h3 style="color:var(--amber)">기준을 낮게 잡으면 😵</h3>
+      <p style="font-size:22px">그냥 <b>말만 해도</b> “웃었다”고 저장해요.<br><br>휴대폰에 알림이 하루 종일 울립니다.</p>
+    </div>
+    <div class="card" style="background:var(--amber-soft); border-color:#f2ddb8">
+      <h3 style="color:var(--amber)">기준을 높게 잡으면 😢</h3>
+      <p style="font-size:22px">진짜 웃었는데 <b>못 알아채요.</b><br><br>소중한 순간을 놓쳐 버립니다.</p>
+    </div>
+  </div></div>
+  <div class="quote" style="font-size:30px">저는 처음에 <b>느낌으로</b> 정했어요. 그런데 그게 문제였습니다.</div>
+  <div class="pagenum">11 / 14</div>
+</section>
+
+<!-- 12 -->
+<section class="slide" data-note="
+<h4>주제 6 — 11만 번 재서 정했어요 (하이라이트)</h4>
+<b>여기가 이 발표의 클라이맥스입니다.</b><br><br>
+‘느낌으로 정하지 말고, 실제로 재보자’ 해서 <b>112,724번</b>을 다 살펴봤습니다.<br>
+숫자를 크게 읽어주세요. ‘십일만 이천칠백이십사 번’<br><br>
+<b>결과:</b><br>
+　· 사람들이 <b>그냥 말할 때</b> 79,624번 → 점수는 보통 <b>0.0009</b> (거의 0)<br>
+　· 사람들이 <b>웃을 때</b> 81번 → 점수는 보통 <b>0.3380</b><br>
+　→ 둘은 확실히 다른 자리에 모여 있었습니다.<br><br>
+<b>그래서 기준선을 0.15로 정했습니다.</b> 표를 보면 왜 그런지 보입니다.<br>
+0.12로 하면 웃음은 96% 잡지만 말소리를 더 많이 잘못 걸러요.<br>
+0.30으로 하면 실수는 거의 없지만 <b>웃음의 37%를 놓칩니다.</b><br>
+→ ‘놓치는 것보다는 조금 더 잡는 게 낫다’고 판단해 0.15를 골랐습니다.<br><br>
+<b>정직하게 덧붙일 점:</b> 웃음 표본은 81개뿐이라 적습니다. 물어보면 인정하세요.
+‘더 모아서 다시 정할 계획’이라고 답하면 됩니다.
+">
+  <div class="kicker">주제 6 · 하이라이트</div>
+  <h2>그래서 <span style="color:var(--blue)">112,724번</span>을 재봤어요</h2>
+  <div class="body" style="flex-direction:column; align-items:stretch; gap:18px">
+    <div class="col">
+      <div class="card"><h3>💬 그냥 말할 때</h3><p style="font-size:20px">79,624번 살펴봤더니</p><div class="stat" style="color:var(--sub); margin-top:6px">0.0009</div></div>
+      <div class="card" style="background:var(--green-soft); border-color:#b9e2c8"><h3>😄 웃을 때</h3><p style="font-size:20px">81번 살펴봤더니</p><div class="stat" style="color:var(--green); margin-top:6px">0.3380</div></div>
+      <div class="card" style="background:var(--blue-soft); border-color:#c9dbfb"><h3>그래서 기준선은</h3><p style="font-size:20px">놓치는 것보다 조금 더 잡기로</p><div class="stat" style="color:var(--blue); margin-top:6px">0.15</div></div>
+    </div>
+    <table>
+      <tr><th>기준선</th><th>말소리를 잘못 잡는 비율</th><th>진짜 웃음을 잡는 비율</th><th>　</th></tr>
+      <tr><td class="n">0.12</td><td class="n">0.97%</td><td class="n">96%</td><td>알림이 조금 많아요</td></tr>
+      <tr class="hi"><td class="n"><b>0.15</b></td><td class="n"><b>0.70%</b></td><td class="n"><b>90%</b></td><td><b>← 이걸로 정했어요</b></td></tr>
+      <tr><td class="n">0.30</td><td class="n">0.07%</td><td class="n">63%</td><td>웃음을 너무 많이 놓쳐요</td></tr>
+    </table>
+  </div>
+  <div class="pagenum">12 / 14</div>
+</section>
+
+<!-- 13 -->
+<section class="slide" data-note="
+<h4>정리 — 3가지</h4>
+아이들이 기억할 건 <b>딱 3개</b>입니다. 천천히 하나씩 짚으세요.<br><br>
+1. <b>컴퓨터는 저절로 똑똑해지지 않는다.</b> 사람이 기준을 정해줘야 한다.<br>
+2. <b>비교하려면 조건을 같게 해야 한다.</b> (순서를 돌려가며 시험 본 이야기)<br>
+3. <b>1등이 항상 정답은 아니다.</b> 점수 말고도 봐야 할 게 있다.<br><br>
+마무리 한마디로 <b>‘저는 만드는 것보다 확인하는 데 시간을 더 썼어요’</b>를 추천합니다.
+이 문장이 이 발표 전체를 요약합니다.<br><br>
+<span class='q'>여유가 있으면: ‘여러분도 뭔가 만들면, 잘 됐는지 꼭 확인해보세요’로 닫으면 좋습니다.</span>
+">
+  <div class="kicker">정리</div>
+  <h2>제가 배운 것 3가지</h2>
+  <div class="body"><div class="col">
+    <div class="card"><div class="num">1</div><h3>컴퓨터는 저절로 똑똑해지지 않아요</h3><p style="font-size:21px">“몇 점부터 웃음인지”는 <b>사람이 정해줘야</b> 합니다.</p></div>
+    <div class="card"><div class="num">2</div><h3>비교하려면 조건을 같게</h3><p style="font-size:21px">순서를 바꿔가며 시험 봐야 <b>공평</b>합니다.</p></div>
+    <div class="card"><div class="num">3</div><h3>1등이 항상 정답은 아니에요</h3><p style="font-size:21px">점수 말고 <b>전기와 실수</b>도 함께 봐야 합니다.</p></div>
+  </div></div>
+  <div class="quote">저는 <b>만드는 것보다 확인하는 데</b> 더 많은 시간을 썼어요.</div>
+  <div class="pagenum">13 / 14</div>
+</section>
+
+<!-- 14 -->
+<section class="slide cover" style="background:linear-gradient(150deg,#eaf0fb,#f7f9fd)" data-note="
+<h4>질문 시간 — 미리 준비해 둘 답</h4>
+<b>Q. 얼마나 걸렸어요?</b> → 약 2주 조금 넘게요.<br>
+<b>Q. 혼자 만들었어요?</b> → 카메라와 AI 부분은 제가, 앱과 서버는 팀 친구들이 만들었어요.<br>
+<b>Q. 어려웠던 건요?</b> → 껐다 켜면 화면이 안 나오는 문제가 있었는데, 원인이 놀랍게도 <b>시계</b>였어요.
+(시간 남으면 이 이야기를 풀어도 좋습니다)<br>
+<b>Q. 가짜로 웃으면 속아요?</b> → 네, 소리만 들으니까 구분 못 합니다.<br>
+<b>Q. 강아지가 짖어도 저장돼요?</b> → 웃음이 아니면 저장 안 되지만, 가끔 실수합니다. 그래서 기준선을 잘 정하는 게 중요했어요.<br>
+<b>Q. 나도 만들 수 있어요?</b> → 네. 작은 모터 하나부터 시작하면 됩니다.<br><br>
+<b>모르는 질문이 나오면</b> ‘그건 저도 잘 몰라요, 찾아볼게요’라고 답하세요. 그게 제일 좋은 답입니다.
+">
+  <h1 style="font-size:58px">질문 있나요? 🙋</h1>
+  <div class="lead big" style="margin-top:24px">궁금한 걸 물어봐 주세요!</div>
+  <div class="pagenum">14 / 14</div>
+</section>
+
+</div>
+
+<div id="notes"></div>
+<div id="hint">← → 넘기기　·　N 발표자 노트</div>
+
+<script>
+  var slides = document.querySelectorAll('.slide');
+  var notes  = document.getElementById('notes');
+  var stage  = document.getElementById('stage');
+  var i = 0, showNotes = false;
+
+  function fit(){
+    var pad = showNotes ? window.innerHeight*0.44 : 0;
+    var s = Math.min(window.innerWidth/1280, (window.innerHeight-pad)/720);
+    stage.style.transform = 'scale('+s+')';
+    stage.style.width  = 1280*s+'px';
+    stage.style.height = 720*s+'px';
+    stage.style.transformOrigin = 'top left';
+    stage.style.position = 'absolute';
+    stage.style.left = (window.innerWidth-1280*s)/2+'px';
+    stage.style.top  = Math.max(0,(window.innerHeight-pad-720*s)/2)+'px';
+  }
+  function show(n){
+    i = Math.max(0, Math.min(slides.length-1, n));
+    slides.forEach(function(el,k){ el.classList.toggle('on', k===i); });
+    notes.innerHTML = slides[i].getAttribute('data-note') || '<h4>노트 없음</h4>';
+    fit();
+  }
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown') { show(i+1); e.preventDefault(); }
+    else if(e.key==='ArrowLeft'||e.key==='PageUp') { show(i-1); e.preventDefault(); }
+    else if(e.key==='Home') show(0);
+    else if(e.key==='End') show(slides.length-1);
+    else if(e.key==='n'||e.key==='N'){
+      showNotes = !showNotes; notes.classList.toggle('on', showNotes); fit();
+    }
+  });
+  document.addEventListener('click', function(e){ if(e.target.closest('#notes')) return; show(i+1); });
+  window.addEventListener('resize', fit);
+  show(0);
+</script>
+</body>
+</html>

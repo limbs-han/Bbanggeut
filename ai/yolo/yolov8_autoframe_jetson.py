@@ -12,6 +12,7 @@ from collections import deque
 import json
 import math
 import os
+import statistics
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -80,6 +81,9 @@ class CameraCommand:
     error_y: float
     group_box: tuple[float, float, float, float] | None
     limited_group: bool
+    # False once the head cluster no longer fits: revealing one head would
+    # drop another, so the axis holds instead of oscillating between them.
+    heads_fit: bool = True
 
     def as_payload(self, frame_index: int) -> dict[str, Any]:
         payload = asdict(self)
@@ -211,12 +215,65 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--head-ratio",
+        type=float,
+        default=float(os.getenv("YOLO_HEAD_RATIO", "0.28")),
+        help=(
+            "Top fraction of each subject box treated as head and shoulders "
+            "for safe-frame edge checks (default: 0.28)."
+        ),
+    )
+    parser.add_argument(
         "--tracking-mode",
-        choices=("center", "safe-frame"),
+        choices=("center", "safe-frame", "heads"),
         default=os.getenv("YOLO_TRACKING_MODE", "center"),
         help=(
-            "Track a center point or move only when the selected box "
-            "nears an edge."
+            "center tracks a point, safe-frame moves only near an edge, "
+            "heads keeps every head in frame and then holds their median."
+        ),
+    )
+    parser.add_argument(
+        "--head-anchor-ratio",
+        type=float,
+        default=float(os.getenv("YOLO_HEAD_ANCHOR_RATIO", "0.33")),
+        help=(
+            "Where the head median should sit vertically once every head "
+            "has clearance, as a frame ratio (default: 0.33)."
+        ),
+    )
+    parser.add_argument(
+        "--head-clearance",
+        type=float,
+        default=float(os.getenv("YOLO_HEAD_CLEARANCE", "0.06")),
+        help="Margin every head must keep from a frame edge (default: 0.06).",
+    )
+    parser.add_argument(
+        "--head-memory-seconds",
+        type=float,
+        default=float(os.getenv("YOLO_HEAD_MEMORY_SECONDS", "0.8")),
+        help=(
+            "How long a head that stops being detected still counts toward "
+            "the framing, so a blink does not move the aim (default: 0.8)."
+        ),
+    )
+    parser.add_argument(
+        "--head-settle-ratio",
+        type=float,
+        default=float(os.getenv("YOLO_HEAD_SETTLE_RATIO", "1.0")),
+        help=(
+            "Fraction of the dead-zone a started move closes to before it "
+            "stops. Below 1 the camera travels further per correction, which "
+            "measurably worsens overshoot once loop latency is significant, "
+            "so it stays at 1 unless latency is known to be small."
+        ),
+    )
+    parser.add_argument(
+        "--head-clearance-stop",
+        type=float,
+        default=float(os.getenv("YOLO_HEAD_CLEARANCE_STOP", "0.10")),
+        help=(
+            "Margin a correcting axis restores before it stops, which keeps "
+            "it from retriggering at once (default: 0.10)."
         ),
     )
     parser.add_argument(
@@ -379,6 +436,19 @@ def parse_args() -> argparse.Namespace:
         parser.error("--deadzone-height must be between 0 and 1")
     if not 0.0 <= args.subject_y_ratio <= 1.0:
         parser.error("--subject-y-ratio must be between 0 and 1")
+    if not 0.0 < args.head_ratio <= 1.0:
+        parser.error("--head-ratio must be greater than 0 and at most 1")
+    if not 0.0 < args.head_anchor_ratio < 1.0:
+        parser.error("--head-anchor-ratio must be between 0 and 1")
+    if not 0.0 <= args.head_clearance < args.head_clearance_stop < 0.45:
+        parser.error(
+            "--head-clearance must be at least 0 and less than "
+            "--head-clearance-stop, which must be less than 0.45"
+        )
+    if not 0.0 < args.head_settle_ratio <= 1.0:
+        parser.error("--head-settle-ratio must be greater than 0 and at most 1")
+    if args.head_memory_seconds < 0.0:
+        parser.error("--head-memory-seconds cannot be negative")
     if not 0.0 <= args.safe_frame_start_margin < 0.45:
         parser.error(
             "--safe-frame-start-margin must be at least 0 and less than 0.45"
@@ -639,11 +709,31 @@ class AutoFrameController:
         safe_frame_stop_margin: float = 0.12,
         safe_frame_edge_guard: float = 0.04,
         target_loss_follow_seconds: float = 0.5,
+        head_ratio: float = 0.28,
+        head_anchor_ratio: float = 0.33,
+        head_clearance: float = 0.06,
+        head_clearance_stop: float = 0.10,
+        head_settle_ratio: float = 1.0,
+        head_memory_seconds: float = 0.8,
     ) -> None:
         if not 0.0 <= subject_y_ratio <= 1.0:
             raise ValueError("subject_y_ratio must be between 0 and 1")
-        if tracking_mode not in {"center", "safe-frame"}:
-            raise ValueError("tracking_mode must be center or safe-frame")
+        if not 0.0 < head_ratio <= 1.0:
+            raise ValueError("head_ratio must be greater than 0 and at most 1")
+        if tracking_mode not in {"center", "safe-frame", "heads"}:
+            raise ValueError("tracking_mode must be center, safe-frame or heads")
+        if not 0.0 < head_anchor_ratio < 1.0:
+            raise ValueError("head_anchor_ratio must be between 0 and 1")
+        if not 0.0 <= head_clearance < head_clearance_stop < 0.45:
+            raise ValueError(
+                "head clearances must satisfy 0 <= clearance < stop < 0.45"
+            )
+        if not 0.0 < head_settle_ratio <= 1.0:
+            raise ValueError(
+                "head_settle_ratio must be greater than 0 and at most 1"
+            )
+        if head_memory_seconds < 0.0:
+            raise ValueError("head_memory_seconds cannot be negative")
         if not 0.0 <= safe_frame_start_margin < safe_frame_stop_margin < 0.45:
             raise ValueError(
                 "safe-frame margins must satisfy 0 <= start < stop < 0.45"
@@ -674,6 +764,17 @@ class AutoFrameController:
         self.safe_frame_stop_margin = safe_frame_stop_margin
         self.safe_frame_edge_guard = safe_frame_edge_guard
         self.target_loss_follow_seconds = target_loss_follow_seconds
+        self.head_ratio = head_ratio
+        self.head_anchor_ratio = head_anchor_ratio
+        self.head_clearance = head_clearance
+        self.head_clearance_stop = head_clearance_stop
+        self.head_settle_ratio = head_settle_ratio
+        self.head_memory_seconds = head_memory_seconds
+        self.remembered_heads: dict[int, tuple[Box, float]] = {}
+        self.smoothed_head_median: Point | None = None
+        self.head_median_x_active = False
+        self.head_median_y_active = False
+        self.heads_fit = True
         self.smoothed_target: Point | None = None
         self.smoothed_group_box: Box | None = None
         self.smoothed_tracking_points_box: Box | None = None
@@ -729,6 +830,157 @@ class AutoFrameController:
         if lower_outside:
             return -1, clamp(lower_error / normalizer, -1.0, 1.0), True
         return 1, clamp(upper_error / normalizer, -1.0, 1.0), True
+
+    def head_box(self, item: TrackedObject) -> Box:
+        """Keep only the top slice of a detection, where the head sits.
+
+        The detector has no face class, so this is a proportion of the whole
+        body box rather than a measurement. It matters because safe-frame
+        judges the framing box against both frame edges: a full body box on a
+        nearby subject touches top and bottom at once, which reads as "cannot
+        be framed either way" and stops all vertical motion. The head slice
+        never reaches the bottom edge, so the axis keeps a usable direction.
+        """
+
+        x1, y1, x2, y2 = item.box
+        return (x1, y1, x2, y1 + (y2 - y1) * self.head_ratio)
+
+    def framing_box(self, decision: FramingDecision) -> Box:
+        boxes = tuple(self.head_box(item) for item in decision.objects)
+        return (
+            min(box[0] for box in boxes),
+            min(box[1] for box in boxes),
+            max(box[2] for box in boxes),
+            max(box[3] for box in boxes),
+        )
+
+    def remember_heads(
+        self,
+        decision: FramingDecision,
+        now: float,
+    ) -> tuple[Box, ...]:
+        """Head boxes including ones that blinked out a moment ago.
+
+        A detection that drops for a frame or two would otherwise remove a
+        head from the median and move the aim somewhere else entirely, which
+        reads as the camera lurching for no reason. Holding the last known
+        position briefly keeps the aim on what the people are doing rather
+        than on what the detector happened to catch this frame.
+        """
+
+        live_boxes: list[Box] = []
+        for item in decision.objects:
+            box = self.head_box(item)
+            self.remembered_heads[item.track_id] = (box, now)
+            live_boxes.append(box)
+
+        live_ids = {item.track_id for item in decision.objects}
+        coasting: list[Box] = []
+        for track_id, (box, seen_at) in tuple(self.remembered_heads.items()):
+            if track_id in live_ids:
+                continue
+            if now - seen_at > self.head_memory_seconds:
+                del self.remembered_heads[track_id]
+                continue
+            # The tracker hands the same person a new id often enough that a
+            # remembered head is usually their own stale copy rather than
+            # someone who left. Keeping both would put the aim between a
+            # person and their ghost, so an overlap is treated as a re-id.
+            if any(self._same_head(box, live) for live in live_boxes):
+                del self.remembered_heads[track_id]
+                continue
+            coasting.append(box)
+        return tuple(live_boxes) + tuple(coasting)
+
+    @staticmethod
+    def _same_head(remembered: Box, live: Box) -> bool:
+        width = min(remembered[2], live[2]) - max(remembered[0], live[0])
+        height = min(remembered[3], live[3]) - max(remembered[1], live[1])
+        if width <= 0.0 or height <= 0.0:
+            return False
+        overlap = width * height
+        smaller = min(
+            (remembered[2] - remembered[0]) * (remembered[3] - remembered[1]),
+            (live[2] - live[0]) * (live[3] - live[1]),
+        )
+        return smaller > 0.0 and overlap / smaller >= 0.3
+
+    def head_median(self, boxes: tuple[Box, ...]) -> Point:
+        """The middle of where the heads are.
+
+        A median rather than a mean: with three or more subjects one person
+        leaning out should not drag the whole framing with them.
+        """
+
+        return (
+            statistics.median((box[0] + box[2]) / 2.0 for box in boxes),
+            statistics.median((box[1] + box[3]) / 2.0 for box in boxes),
+        )
+
+    @staticmethod
+    def union_of(boxes: tuple[Box, ...]) -> Box:
+        return (
+            min(box[0] for box in boxes),
+            min(box[1] for box in boxes),
+            max(box[2] for box in boxes),
+            max(box[3] for box in boxes),
+        )
+
+    def _head_axis(
+        self,
+        low: float,
+        high: float,
+        median: float,
+        target: float,
+        deadzone: float,
+        frame_size: int,
+        clearance_active: bool,
+        median_active: bool,
+    ) -> tuple[int, float, bool, bool, bool]:
+        """Keep every head inside the frame first, then settle on the median.
+
+        Returns direction, normalized error, whether the axis is correcting
+        clearance, whether it is closing on the median, and whether the heads
+        can fit at all.
+        """
+
+        clearance = (
+            self.head_clearance_stop if clearance_active else self.head_clearance
+        )
+        lower_gap = low - frame_size * clearance
+        upper_gap = high - frame_size * (1.0 - clearance)
+        normalizer = max(frame_size / 2.0, 1.0)
+
+        if lower_gap < 0.0 and upper_gap > 0.0:
+            return 0, 0.0, False, False, False
+        if lower_gap < 0.0:
+            return -1, clamp(lower_gap / normalizer, -1.0, 1.0), True, False, True
+        if upper_gap > 0.0:
+            return 1, clamp(upper_gap / normalizer, -1.0, 1.0), True, False, True
+
+        # Every head has clearance. Hold the framing until the median drifts
+        # out of its box, so ordinary movement does not chase the camera.
+        #
+        # Starting and stopping on the same threshold would park the camera
+        # exactly on it, where detection noise alone retriggers the move. A
+        # move therefore continues until the median is well inside the box.
+        offset = median - target
+        threshold = deadzone / 2.0
+        if median_active:
+            threshold *= self.head_settle_ratio
+        if abs(offset) <= threshold:
+            return 0, 0.0, False, False, True
+        direction = 1 if offset > 0.0 else -1
+
+        # Clearance is a constraint and the median is only the objective. A
+        # pull that would eat into the clearance just restored is what turns a
+        # correction into a limit cycle, so it is refused instead.
+        stop = self.head_clearance_stop
+        if direction == 1 and low - frame_size * stop <= 0.0:
+            return 0, 0.0, False, False, True
+        if direction == -1 and high - frame_size * (1.0 - stop) >= 0.0:
+            return 0, 0.0, False, False, True
+        return direction, clamp(offset / normalizer, -1.0, 1.0), False, True, True
 
     def tracking_points(self, decision: FramingDecision) -> tuple[Point, ...]:
         return tuple(
@@ -827,6 +1079,8 @@ class AutoFrameController:
             self.smoothed_target = None
             self.smoothed_group_box = None
             self.smoothed_tracking_points_box = None
+            self.smoothed_head_median = None
+            self.remembered_heads.clear()
             self.last_error_x = 0.0
             self.last_error_y = 0.0
             return CameraCommand(
@@ -864,14 +1118,25 @@ class AutoFrameController:
         self.smoothed_target = (smooth_x, smooth_y)
         self.last_target_seen_at = now
 
+        # Safe-frame and heads judge edges against the head slice; center mode
+        # still frames the whole body.
+        if self.tracking_mode == "heads":
+            live_heads = self.remember_heads(decision, now)
+            raw_framing_box = self.union_of(live_heads)
+        elif self.tracking_mode == "safe-frame":
+            live_heads = ()
+            raw_framing_box = self.framing_box(decision)
+        else:
+            live_heads = ()
+            raw_framing_box = decision.group_box
         if self.smoothed_group_box is None:
-            self.smoothed_group_box = decision.group_box
+            self.smoothed_group_box = raw_framing_box
         else:
             self.smoothed_group_box = tuple(
                 self.ema_alpha * raw_value
                 + (1.0 - self.ema_alpha) * smooth_value
                 for raw_value, smooth_value in zip(
-                    decision.group_box,
+                    raw_framing_box,
                     self.smoothed_group_box,
                 )
             )
@@ -889,7 +1154,71 @@ class AutoFrameController:
                 )
             )
 
-        if self.tracking_mode == "safe-frame":
+        if self.tracking_mode == "heads":
+            raw_median = self.head_median(live_heads)
+            if self.smoothed_head_median is None:
+                self.smoothed_head_median = raw_median
+            else:
+                self.smoothed_head_median = (
+                    self.ema_alpha * raw_median[0]
+                    + (1.0 - self.ema_alpha) * self.smoothed_head_median[0],
+                    self.ema_alpha * raw_median[1]
+                    + (1.0 - self.ema_alpha) * self.smoothed_head_median[1],
+                )
+            cluster_left, cluster_top, cluster_right, cluster_bottom = (
+                self.smoothed_group_box
+            )
+            median_x, median_y = self.smoothed_head_median
+            (
+                x_direction,
+                normalized_error_x,
+                self.safe_frame_x_active,
+                self.head_median_x_active,
+                x_fits,
+            ) = self._head_axis(
+                cluster_left,
+                cluster_right,
+                median_x,
+                frame_width / 2.0,
+                frame_width * self.deadzone_width,
+                frame_width,
+                self.safe_frame_x_active,
+                self.head_median_x_active,
+            )
+            (
+                y_direction,
+                normalized_error_y,
+                self.safe_frame_y_active,
+                self.head_median_y_active,
+                y_fits,
+            ) = self._head_axis(
+                cluster_top,
+                cluster_bottom,
+                median_y,
+                frame_height * self.head_anchor_ratio,
+                frame_height * self.deadzone_height,
+                frame_height,
+                self.safe_frame_y_active,
+                self.head_median_y_active,
+            )
+            self.heads_fit = x_fits and y_fits
+            horizontal = {-1: "LEFT", 0: "", 1: "RIGHT"}[x_direction]
+            vertical = {-1: "UP", 0: "", 1: "DOWN"}[y_direction]
+            self.loss_command_x = self._edge_exit_command(
+                cluster_left,
+                cluster_right,
+                frame_width,
+                "LEFT",
+                "RIGHT",
+            )
+            self.loss_command_y = self._edge_exit_command(
+                cluster_top,
+                cluster_bottom,
+                frame_height,
+                "UP",
+                "DOWN",
+            )
+        elif self.tracking_mode == "safe-frame":
             smooth_left, smooth_top, smooth_right, smooth_bottom = (
                 self.smoothed_group_box
             )
@@ -956,7 +1285,13 @@ class AutoFrameController:
         self.last_error_x = round(normalized_error_x, 6)
         self.last_error_y = round(normalized_error_y, 6)
 
-        x1, y1, x2, y2 = decision.group_box
+        # In heads mode the reported box and centre describe what is actually
+        # being framed: the head cluster and its median.
+        if self.tracking_mode == "heads":
+            x1, y1, x2, y2 = self.smoothed_group_box
+            smooth_x, smooth_y = self.smoothed_head_median
+        else:
+            x1, y1, x2, y2 = decision.group_box
         return CameraCommand(
             state="TRACKING",
             direction=direction,
@@ -965,6 +1300,7 @@ class AutoFrameController:
             target_ids=tuple(item.track_id for item in decision.objects),
             target_count=len(decision.objects),
             total_stable_objects=decision.total_stable_objects,
+            heads_fit=self.heads_fit,
             center_x=round(smooth_x / max(frame_width, 1), 6),
             center_y=round(smooth_y / max(frame_height, 1), 6),
             error_x=self.last_error_x,
@@ -1172,7 +1508,22 @@ def draw_overlay(
         1,
     )
 
-    if controller.tracking_mode == "safe-frame":
+    if controller.tracking_mode == "heads":
+        for margin, colour in (
+            (controller.head_clearance, (0, 165, 255)),
+            (controller.head_clearance_stop, (0, 215, 255)),
+        ):
+            cv2.rectangle(
+                frame,
+                (int(width * margin), int(height * margin)),
+                (
+                    int(width * (1.0 - margin)),
+                    int(height * (1.0 - margin)),
+                ),
+                colour,
+                1,
+            )
+    elif controller.tracking_mode == "safe-frame":
         start_margin = controller.safe_frame_start_margin
         stop_margin = controller.safe_frame_stop_margin
         edge_guard = controller.safe_frame_edge_guard
@@ -1237,7 +1588,69 @@ def draw_overlay(
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 215, 255), 3)
         raw_center = (int(decision.raw_center[0]), int(decision.raw_center[1]))
         cv2.drawMarker(frame, raw_center, (0, 215, 255), cv2.MARKER_CROSS, 20, 2)
-        if controller.tracking_mode == "safe-frame":
+        if controller.tracking_mode == "heads":
+            for item in decision.objects:
+                hx1, hy1, hx2, hy2 = (
+                    int(value) for value in controller.head_box(item)
+                )
+                cv2.rectangle(frame, (hx1, hy1), (hx2, hy2), (255, 128, 0), 2)
+            cluster = controller.smoothed_group_box or controller.framing_box(
+                decision
+            )
+            cx1, cy1, cx2, cy2 = (int(value) for value in cluster)
+            cluster_colour = (255, 255, 255) if command.heads_fit else (0, 0, 255)
+            cv2.rectangle(frame, (cx1, cy1), (cx2, cy2), cluster_colour, 2)
+            cv2.putText(
+                frame,
+                "HEADS" if command.heads_fit else "HEADS DO NOT FIT",
+                (cx1, max(18, cy1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                cluster_colour,
+                2,
+                cv2.LINE_AA,
+            )
+            if controller.smoothed_head_median is not None:
+                median_x = int(controller.smoothed_head_median[0])
+                median_y = int(controller.smoothed_head_median[1])
+                cv2.drawMarker(
+                    frame,
+                    (median_x, median_y),
+                    (255, 0, 255),
+                    cv2.MARKER_CROSS,
+                    22,
+                    2,
+                )
+            anchor_y = int(height * controller.head_anchor_ratio)
+            half_width = int(width * controller.deadzone_width / 2.0)
+            half_height = int(height * controller.deadzone_height / 2.0)
+            cv2.rectangle(
+                frame,
+                (center[0] - half_width, anchor_y - half_height),
+                (center[0] + half_width, anchor_y + half_height),
+                (255, 255, 0),
+                2,
+            )
+        elif controller.tracking_mode == "safe-frame":
+            for item in decision.objects:
+                hx1, hy1, hx2, hy2 = (
+                    int(value) for value in controller.head_box(item)
+                )
+                cv2.rectangle(frame, (hx1, hy1), (hx2, hy2), (255, 128, 0), 2)
+            fx1, fy1, fx2, fy2 = (
+                int(value) for value in controller.framing_box(decision)
+            )
+            cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), (255, 255, 255), 2)
+            cv2.putText(
+                frame,
+                f"HEAD FRAME {controller.head_ratio:.0%}",
+                (fx1, max(18, fy1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
             for track_x_value, track_y_value in controller.tracking_points(
                 decision
             ):
@@ -1410,6 +1823,12 @@ def run(args: argparse.Namespace) -> None:
         safe_frame_stop_margin=args.safe_frame_stop_margin,
         safe_frame_edge_guard=args.safe_frame_edge_guard,
         target_loss_follow_seconds=args.target_loss_follow_seconds,
+        head_ratio=args.head_ratio,
+        head_anchor_ratio=args.head_anchor_ratio,
+        head_clearance=args.head_clearance,
+        head_clearance_stop=args.head_clearance_stop,
+        head_settle_ratio=args.head_settle_ratio,
+        head_memory_seconds=args.head_memory_seconds,
     )
 
     frame_count = 0
@@ -1533,7 +1952,7 @@ def run(args: argparse.Namespace) -> None:
                 width,
                 height,
                 args.edge_margin,
-                include_all=args.tracking_mode == "safe-frame",
+                include_all=args.tracking_mode in {"safe-frame", "heads"},
             )
             wall_now = time.monotonic()
             timeline_now = (

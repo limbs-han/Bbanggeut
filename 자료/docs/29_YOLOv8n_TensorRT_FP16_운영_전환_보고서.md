@@ -145,7 +145,7 @@ YOLO_TENSORRT_PROBE_DEVICE=0
 - 초기 PyTorch 정량 원본: [`benchmark-results.json`](../../ai/model_benchmark/reports/20260731_yolo_pt_comparison/benchmark-results.json)
 - TensorRT FP16 정확도·실시간성 비교: [`20260802_yolo_tensorrt_fp16_accuracy/README.md`](../../ai/model_benchmark/reports/20260802_yolo_tensorrt_fp16_accuracy/README.md)
 - TensorRT FP16 정량 원본: [`benchmark-results.json`](../../ai/model_benchmark/reports/20260802_yolo_tensorrt_fp16_accuracy/benchmark-results.json)
-- TensorRT FP16 정적 대시보드: [`dashboard.html`](../../ai/model_benchmark/reports/20260802_yolo_tensorrt_fp16_accuracy/dashboard.html)
+- TensorRT FP16 정적 대시보드: [`dashboard_yolo.html`](../../ai/model_benchmark/reports/20260802_yolo_tensorrt_fp16_accuracy/dashboard_yolo.html)
 - TensorRT 비교 ID: `yolo-trt-fp16-395-comparison-20260802T055004Z`
 - Jetson TensorRT 원본: `/home/ssafy/ai_benchmark_results/yolo-trt-fp16-395-comparison-20260802T055004Z`
 - TensorRT 비교 기록 커밋: `cbadbe35dd44eba1318dd6ae77307b464851462c`
