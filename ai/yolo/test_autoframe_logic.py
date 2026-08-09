@@ -196,16 +196,66 @@ class SafeFrameControllerTests(unittest.TestCase):
         self.assertEqual(command.command_x, "HOLD")
         self.assertEqual(command.command_y, "HOLD")
 
-    def test_box_edge_guard_prevents_lower_body_from_disappearing(self) -> None:
-        command = self.update_box((20, 20, 80, 100))
+    def full_body_controller(self) -> AutoFrameController:
+        """A controller that judges whole bodies, as safe-frame once did."""
+
+        return AutoFrameController(
+            ema_alpha=1.0,
+            deadzone_width=0.12,
+            deadzone_height=0.12,
+            subject_y_ratio=0.35,
+            home_after_seconds=5.0,
+            tracking_mode="safe-frame",
+            safe_frame_start_margin=0.08,
+            safe_frame_stop_margin=0.12,
+            safe_frame_edge_guard=0.04,
+            target_loss_follow_seconds=0.5,
+            head_ratio=1.0,
+        )
+
+    def update_box_with(
+        self,
+        controller: AutoFrameController,
+        box: tuple[float, float, float, float],
+    ) -> CameraCommand:
+        decision = choose_best_group(
+            (tracked(1, box),),
+            100,
+            100,
+            edge_margin=0.10,
+        )
+        return controller.update(decision, 100, 100, now=0.0)
+
+    def test_full_body_framing_protects_the_lower_body(self) -> None:
+        command = self.update_box_with(
+            self.full_body_controller(),
+            (20, 20, 80, 100),
+        )
 
         self.assertEqual(command.direction, "DOWN")
         self.assertEqual(command.center_y, 0.48)
 
-    def test_uses_original_35_percent_tracking_point(self) -> None:
-        command = self.update_box((10, 0, 90, 100))
+    def test_head_framing_lets_the_lower_body_leave_the_frame(self) -> None:
+        command = self.update_box((20, 20, 80, 100))
 
         self.assertEqual(command.direction, "HOLD")
+
+    def test_full_body_framing_freezes_on_a_frame_filling_person(self) -> None:
+        # Both edges overflow at once, which reads as "no usable direction".
+        # This is the stall the head slice exists to avoid.
+        command = self.update_box_with(
+            self.full_body_controller(),
+            (10, 0, 90, 100),
+        )
+
+        self.assertEqual(command.direction, "HOLD")
+        self.assertEqual(command.error_y, 0.0)
+
+    def test_head_framing_tilts_up_for_a_frame_filling_person(self) -> None:
+        command = self.update_box((10, 0, 90, 100))
+
+        self.assertEqual(command.command_y, "UP")
+        self.assertLess(command.error_y, 0.0)
         self.assertEqual(command.center_x, 0.5)
         self.assertEqual(command.center_y, 0.35)
 

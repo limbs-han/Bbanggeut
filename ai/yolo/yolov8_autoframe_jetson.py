@@ -211,6 +211,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--head-ratio",
+        type=float,
+        default=float(os.getenv("YOLO_HEAD_RATIO", "0.28")),
+        help=(
+            "Top fraction of each subject box treated as head and shoulders "
+            "for safe-frame edge checks (default: 0.28)."
+        ),
+    )
+    parser.add_argument(
         "--tracking-mode",
         choices=("center", "safe-frame"),
         default=os.getenv("YOLO_TRACKING_MODE", "center"),
@@ -379,6 +388,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--deadzone-height must be between 0 and 1")
     if not 0.0 <= args.subject_y_ratio <= 1.0:
         parser.error("--subject-y-ratio must be between 0 and 1")
+    if not 0.0 < args.head_ratio <= 1.0:
+        parser.error("--head-ratio must be greater than 0 and at most 1")
     if not 0.0 <= args.safe_frame_start_margin < 0.45:
         parser.error(
             "--safe-frame-start-margin must be at least 0 and less than 0.45"
@@ -639,9 +650,12 @@ class AutoFrameController:
         safe_frame_stop_margin: float = 0.12,
         safe_frame_edge_guard: float = 0.04,
         target_loss_follow_seconds: float = 0.5,
+        head_ratio: float = 0.28,
     ) -> None:
         if not 0.0 <= subject_y_ratio <= 1.0:
             raise ValueError("subject_y_ratio must be between 0 and 1")
+        if not 0.0 < head_ratio <= 1.0:
+            raise ValueError("head_ratio must be greater than 0 and at most 1")
         if tracking_mode not in {"center", "safe-frame"}:
             raise ValueError("tracking_mode must be center or safe-frame")
         if not 0.0 <= safe_frame_start_margin < safe_frame_stop_margin < 0.45:
@@ -674,6 +688,7 @@ class AutoFrameController:
         self.safe_frame_stop_margin = safe_frame_stop_margin
         self.safe_frame_edge_guard = safe_frame_edge_guard
         self.target_loss_follow_seconds = target_loss_follow_seconds
+        self.head_ratio = head_ratio
         self.smoothed_target: Point | None = None
         self.smoothed_group_box: Box | None = None
         self.smoothed_tracking_points_box: Box | None = None
@@ -729,6 +744,29 @@ class AutoFrameController:
         if lower_outside:
             return -1, clamp(lower_error / normalizer, -1.0, 1.0), True
         return 1, clamp(upper_error / normalizer, -1.0, 1.0), True
+
+    def head_box(self, item: TrackedObject) -> Box:
+        """Keep only the top slice of a detection, where the head sits.
+
+        The detector has no face class, so this is a proportion of the whole
+        body box rather than a measurement. It matters because safe-frame
+        judges the framing box against both frame edges: a full body box on a
+        nearby subject touches top and bottom at once, which reads as "cannot
+        be framed either way" and stops all vertical motion. The head slice
+        never reaches the bottom edge, so the axis keeps a usable direction.
+        """
+
+        x1, y1, x2, y2 = item.box
+        return (x1, y1, x2, y1 + (y2 - y1) * self.head_ratio)
+
+    def framing_box(self, decision: FramingDecision) -> Box:
+        boxes = tuple(self.head_box(item) for item in decision.objects)
+        return (
+            min(box[0] for box in boxes),
+            min(box[1] for box in boxes),
+            max(box[2] for box in boxes),
+            max(box[3] for box in boxes),
+        )
 
     def tracking_points(self, decision: FramingDecision) -> tuple[Point, ...]:
         return tuple(
@@ -864,14 +902,21 @@ class AutoFrameController:
         self.smoothed_target = (smooth_x, smooth_y)
         self.last_target_seen_at = now
 
+        # Safe-frame judges edges against the head slice; center mode still
+        # frames the whole body.
+        raw_framing_box = (
+            self.framing_box(decision)
+            if self.tracking_mode == "safe-frame"
+            else decision.group_box
+        )
         if self.smoothed_group_box is None:
-            self.smoothed_group_box = decision.group_box
+            self.smoothed_group_box = raw_framing_box
         else:
             self.smoothed_group_box = tuple(
                 self.ema_alpha * raw_value
                 + (1.0 - self.ema_alpha) * smooth_value
                 for raw_value, smooth_value in zip(
-                    decision.group_box,
+                    raw_framing_box,
                     self.smoothed_group_box,
                 )
             )
@@ -1238,6 +1283,25 @@ def draw_overlay(
         raw_center = (int(decision.raw_center[0]), int(decision.raw_center[1]))
         cv2.drawMarker(frame, raw_center, (0, 215, 255), cv2.MARKER_CROSS, 20, 2)
         if controller.tracking_mode == "safe-frame":
+            for item in decision.objects:
+                hx1, hy1, hx2, hy2 = (
+                    int(value) for value in controller.head_box(item)
+                )
+                cv2.rectangle(frame, (hx1, hy1), (hx2, hy2), (255, 128, 0), 2)
+            fx1, fy1, fx2, fy2 = (
+                int(value) for value in controller.framing_box(decision)
+            )
+            cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), (255, 255, 255), 2)
+            cv2.putText(
+                frame,
+                f"HEAD FRAME {controller.head_ratio:.0%}",
+                (fx1, max(18, fy1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
             for track_x_value, track_y_value in controller.tracking_points(
                 decision
             ):
@@ -1410,6 +1474,7 @@ def run(args: argparse.Namespace) -> None:
         safe_frame_stop_margin=args.safe_frame_stop_margin,
         safe_frame_edge_guard=args.safe_frame_edge_guard,
         target_loss_follow_seconds=args.target_loss_follow_seconds,
+        head_ratio=args.head_ratio,
     )
 
     frame_count = 0
