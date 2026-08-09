@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- preview buildType 전용: 나란히 설치된 테스트 앱을 홈 화면에서 구분한다. -->
+<resources>
+    <string name="app_name">빵긋 미리보기</string>
+</resources>
