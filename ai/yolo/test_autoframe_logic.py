@@ -491,6 +491,54 @@ class HeadsControllerTests(unittest.TestCase):
         # One person dropping low moves the mean but not the median.
         self.assertAlmostEqual(centred.center_y, outlier.center_y, places=3)
 
+    def update_ids(
+        self,
+        controller: AutoFrameController,
+        items: tuple[tuple[int, tuple[float, float, float, float]], ...],
+        now: float,
+    ) -> CameraCommand:
+        objects = tuple(tracked(track_id, box) for track_id, box in items)
+        decision = make_decision(objects, len(objects)) if objects else None
+        return controller.update(decision, self.WIDTH, self.HEIGHT, now=now)
+
+    def test_a_head_that_blinks_out_still_counts(self) -> None:
+        controller = self.controller()
+        both = ((1, (150, 60, 300, 460)), (2, (380, 300, 500, 470)))
+
+        seen = self.update_ids(controller, both, now=0.0)
+        blinked = self.update_ids(controller, (both[0],), now=0.1)
+
+        # Losing the low head would drag the median far up and command a move.
+        self.assertEqual(blinked.command_y, seen.command_y)
+        self.assertAlmostEqual(blinked.center_y, seen.center_y, places=6)
+
+    def test_a_head_gone_longer_than_the_memory_is_dropped(self) -> None:
+        controller = self.controller()
+        both = ((1, (150, 60, 300, 460)), (2, (380, 300, 500, 470)))
+
+        seen = self.update_ids(controller, both, now=0.0)
+        expired = self.update_ids(controller, (both[0],), now=5.0)
+
+        self.assertNotAlmostEqual(expired.center_y, seen.center_y, places=3)
+        self.assertEqual(set(controller.remembered_heads), {1})
+
+    def test_memory_is_forgotten_once_every_target_is_lost(self) -> None:
+        controller = self.controller()
+        self.update_ids(controller, ((1, (150, 60, 300, 460)),), now=0.0)
+        controller.update(None, self.WIDTH, self.HEIGHT, now=100.0)
+
+        self.assertEqual(controller.remembered_heads, {})
+        self.assertIsNone(controller.smoothed_head_median)
+
+    def test_zero_memory_keeps_only_what_is_detected_now(self) -> None:
+        controller = self.controller(head_memory_seconds=0.0)
+        both = ((1, (150, 60, 300, 460)), (2, (380, 300, 500, 470)))
+
+        self.update_ids(controller, both, now=0.0)
+        self.update_ids(controller, (both[0],), now=0.1)
+
+        self.assertEqual(set(controller.remembered_heads), {1})
+
     def test_invalid_head_settings_are_rejected(self) -> None:
         with self.assertRaises(ValueError):
             self.controller(head_anchor_ratio=0.0)
