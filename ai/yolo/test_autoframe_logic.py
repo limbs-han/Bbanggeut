@@ -10,6 +10,7 @@ from yolov8_autoframe_jetson import (
     StableGroupSelector,
     TrackedObject,
     choose_best_group,
+    make_decision,
 )
 
 
@@ -359,6 +360,142 @@ class SafeFrameControllerTests(unittest.TestCase):
 
         self.assertEqual(missing.state, "NO_TARGET_HOLD")
         self.assertEqual(missing.direction, "HOLD")
+
+
+class HeadsControllerTests(unittest.TestCase):
+    """Keep every head in frame, then hold on the median of the heads."""
+
+    WIDTH = 640
+    HEIGHT = 480
+
+    def controller(self, **overrides: float) -> AutoFrameController:
+        settings: dict[str, float | str] = {
+            "ema_alpha": 1.0,
+            "deadzone_width": 0.12,
+            "deadzone_height": 0.12,
+            "subject_y_ratio": 0.05,
+            "home_after_seconds": 5.0,
+            "tracking_mode": "heads",
+            "head_ratio": 0.28,
+            "head_anchor_ratio": 0.33,
+            "head_clearance": 0.06,
+            "head_clearance_stop": 0.10,
+        }
+        settings.update(overrides)
+        return AutoFrameController(**settings)  # type: ignore[arg-type]
+
+    def update(
+        self,
+        controller: AutoFrameController,
+        boxes: tuple[tuple[float, float, float, float], ...],
+    ) -> CameraCommand:
+        objects = tuple(
+            tracked(index + 1, box) for index, box in enumerate(boxes)
+        )
+        decision = make_decision(objects, len(objects))
+        return controller.update(decision, self.WIDTH, self.HEIGHT, now=0.0)
+
+    def test_head_touching_the_top_edge_commands_up(self) -> None:
+        command = self.update(
+            self.controller(),
+            ((150, 0, 300, 400), (380, 150, 500, 430)),
+        )
+
+        self.assertEqual(command.command_y, "UP")
+        self.assertLess(command.error_y, 0.0)
+        self.assertTrue(command.heads_fit)
+
+    def test_every_head_clear_of_the_edges_holds(self) -> None:
+        command = self.update(
+            self.controller(),
+            ((150, 120, 300, 430), (380, 130, 500, 440)),
+        )
+
+        self.assertEqual(command.command_x, "HOLD")
+        self.assertEqual(command.command_y, "HOLD")
+        self.assertEqual(command.error_y, 0.0)
+
+    def test_reported_box_and_centre_describe_the_heads(self) -> None:
+        controller = self.controller()
+        command = self.update(
+            controller,
+            ((150, 120, 300, 430), (380, 130, 500, 440)),
+        )
+
+        # Head slices span 120-206.8 and 130-216.8; medians average to 168.4.
+        self.assertAlmostEqual(command.group_box[1], 120 / self.HEIGHT, places=3)
+        self.assertAlmostEqual(command.group_box[3], 216.8 / self.HEIGHT, places=3)
+        self.assertAlmostEqual(command.center_y, 168.4 / self.HEIGHT, places=3)
+
+    def test_median_drift_inside_the_deadzone_does_not_move(self) -> None:
+        # Median sits just above the 0.33 anchor, well inside the 0.12 box.
+        command = self.update(
+            self.controller(),
+            ((150, 120, 300, 300), (380, 130, 500, 310)),
+        )
+
+        self.assertEqual(command.command_y, "HOLD")
+
+    def test_median_far_below_the_anchor_tilts_down(self) -> None:
+        command = self.update(
+            self.controller(),
+            ((150, 250, 300, 430), (380, 260, 500, 440)),
+        )
+
+        self.assertEqual(command.command_y, "DOWN")
+        self.assertGreater(command.error_y, 0.0)
+
+    def test_median_pull_never_eats_the_clearance_it_just_restored(self) -> None:
+        # The top head sits exactly on the stop margin while the median is far
+        # below the anchor. Chasing the median here is what caused a limit
+        # cycle, so the axis must refuse to move.
+        top = self.HEIGHT * 0.10
+        command = self.update(
+            self.controller(),
+            ((150, top, 300, 430), (380, 300, 500, 460)),
+        )
+
+        self.assertEqual(command.command_y, "HOLD")
+        self.assertTrue(command.heads_fit)
+
+    def test_heads_taller_than_the_frame_hold_and_report_the_failure(self) -> None:
+        command = self.update(
+            self.controller(),
+            ((150, 0, 300, 150), (380, 455, 500, 605)),
+        )
+
+        self.assertEqual(command.command_y, "HOLD")
+        self.assertEqual(command.error_y, 0.0)
+        self.assertFalse(command.heads_fit)
+
+    def test_head_beyond_the_left_edge_commands_left(self) -> None:
+        command = self.update(
+            self.controller(),
+            ((0, 150, 120, 430), (300, 160, 420, 440)),
+        )
+
+        self.assertEqual(command.command_x, "LEFT")
+        self.assertLess(command.error_x, 0.0)
+
+    def test_median_ignores_a_single_outlier_among_three(self) -> None:
+        controller = self.controller()
+        centred = self.update(
+            controller,
+            ((100, 150, 200, 430), (300, 155, 400, 435), (500, 160, 600, 440)),
+        )
+        outlier = self.update(
+            self.controller(),
+            ((100, 150, 200, 430), (300, 155, 400, 435), (500, 300, 600, 470)),
+        )
+
+        # One person dropping low moves the mean but not the median.
+        self.assertAlmostEqual(centred.center_y, outlier.center_y, places=3)
+
+    def test_invalid_head_settings_are_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            self.controller(head_anchor_ratio=0.0)
+        with self.assertRaises(ValueError):
+            self.controller(head_clearance=0.10, head_clearance_stop=0.06)
 
 
 if __name__ == "__main__":
