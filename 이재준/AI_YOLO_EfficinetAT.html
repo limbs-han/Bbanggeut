@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>보고 듣는 홈캠 — AI·IoT 파트 기술 발표 (대학생용)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --ink:#111a2b; --sub:#55637a; --dim:#8592a8; --line:#dde4ee;
+    --bg:#f4f6fa; --card:#fff;
+    --blue:#1d4ed8; --blue-s:#e7edfd;
+    --green:#15803d; --green-s:#e6f5ec;
+    --amber:#b45309; --amber-s:#fdf4e5;
+    --red:#be123c; --red-s:#fdeaef;
+    --purple:#6d28d9; --purple-s:#f0e9fd;
+  }
+  body{background:#0d1420;color:var(--ink);
+    font-family:"Malgun Gothic","맑은 고딕",system-ui,-apple-system,"Segoe UI",sans-serif;
+    overflow:hidden}
+  #stage{position:absolute}
+  .slide{width:1280px;height:720px;background:var(--bg);padding:44px 56px;
+    display:none;flex-direction:column;position:relative;overflow:hidden}
+  .slide.on{display:flex}
+  h1{font-size:54px;line-height:1.18;letter-spacing:-1.5px}
+  h2{font-size:38px;line-height:1.25;letter-spacing:-.8px}
+  .kicker{font-size:16px;color:var(--blue);font-weight:800;letter-spacing:1.2px;margin-bottom:10px}
+  .lead{font-size:20px;line-height:1.6;color:var(--sub);margin-top:12px}
+  .body{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px;margin-top:20px}
+  .row{display:flex;gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;flex:1}
+  .card h3{font-size:20px;margin-bottom:8px}
+  .card p{font-size:16px;line-height:1.6;color:var(--sub)}
+  table{width:100%;border-collapse:collapse;font-size:17px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line)}
+  th{font-size:14px;color:var(--sub);font-weight:800;background:#eef2f8;letter-spacing:.3px}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  tr.hi td{background:var(--blue-s);font-weight:700}
+  tr.bad td{background:var(--red-s)}
+  .t{border-bottom:2px dotted var(--purple);color:var(--purple);font-weight:700;cursor:help}
+  .t::after{content:"*";font-size:.8em;vertical-align:super}
+  .tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:13px;font-weight:800}
+  .g-b{background:var(--blue-s);color:var(--blue)} .g-g{background:var(--green-s);color:var(--green)}
+  .g-a{background:var(--amber-s);color:var(--amber)} .g-r{background:var(--red-s);color:var(--red)}
+  .g-p{background:var(--purple-s);color:var(--purple)}
+  .src{position:absolute;left:56px;bottom:20px;font-size:12px;color:var(--dim);
+    font-family:Consolas,monospace;max-width:900px}
+  .pg{position:absolute;right:34px;bottom:20px;font-size:14px;color:var(--dim)}
+  .stat{font-size:44px;font-weight:800;line-height:1;letter-spacing:-1.5px}
+  .stat small{font-size:17px;font-weight:700;color:var(--sub);letter-spacing:0}
+  .glo{display:grid;grid-template-columns:190px 1fr;gap:11px 18px;font-size:16.5px;align-items:start}
+  .glo dt{font-weight:800;color:var(--purple);text-align:right;line-height:1.45}
+  .glo dd{line-height:1.55;color:var(--ink)}
+  .glo .ex{display:block;color:var(--sub);font-size:15px;margin-top:2px}
+  .warn{background:var(--red-s);border:1px solid #f4ccd7;border-left:5px solid var(--red);
+    border-radius:10px;padding:13px 17px;font-size:16.5px;line-height:1.55}
+  .warn b{color:var(--red)}
+  .note{background:var(--amber-s);border-left:5px solid var(--amber);border-radius:10px;
+    padding:12px 16px;font-size:16px;line-height:1.55}
+  .cover{justify-content:center;background:linear-gradient(145deg,#e9eefb,#f7f9fd)}
+  .cover img{position:absolute;right:-30px;bottom:-20px;width:430px;border-radius:18px;
+    box-shadow:0 20px 50px rgba(15,30,55,.26)}
+  .arrow{display:flex;align-items:center;gap:11px;font-size:17px;flex-wrap:wrap}
+  .arrow span.b{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-weight:700}
+  .arrow span.a{color:var(--blue);font-weight:800}
+  ul{margin-left:20px} li{font-size:17.5px;line-height:1.7}
+  #notes{position:fixed;left:0;right:0;bottom:0;max-height:44vh;overflow:auto;
+    background:#0f1727;color:#dce5f3;padding:18px 26px;display:none;font-size:15px;line-height:1.7;
+    border-top:3px solid var(--blue)}
+  #notes.on{display:block}
+  #notes h4{font-size:16px;color:#82a8ff;margin-bottom:8px}
+  #notes b{color:#fff} #notes .q{color:#ffd48a}
+  #hint{position:fixed;left:12px;bottom:10px;font-size:12px;color:#54627a}
+  /* 내용이 많은 슬라이드용 압축 */
+  .slide.compact{padding:34px 52px 46px}
+  .slide.compact h2{font-size:34px}
+  .slide.compact .body{gap:11px;margin-top:14px}
+  .slide.compact .lead{font-size:18px;margin-top:8px}
+  .slide.compact .card{padding:14px 16px}
+  .slide.compact .card h3{font-size:18px;margin-bottom:6px}
+  .slide.compact th,.slide.compact td{padding:8px 11px}
+  .slide.compact .note,.slide.compact .warn{padding:10px 14px}
+  .slide.compact .stat{font-size:38px}
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 1 -->
+<section class="slide cover on" data-note="
+<h4>표지</h4>
+발표 범위를 처음부터 좁히세요. 서비스 전체가 아니라 <b>보는 기능과 듣는 기능</b>입니다.<br><br>
+<b>이 발표의 성격:</b> ‘무엇을 만들었다’가 아니라 <b>‘왜 그 선택을 했는지 수치로 보인다’</b>입니다.
+청중이 대학생이므로 근거 없는 문장은 바로 질문이 들어옵니다.
+슬라이드마다 왼쪽 아래에 출처를 넣어 뒀으니 질문이 오면 그걸 가리키세요.<br><br>
+<b>용어에 * 표시</b>가 붙은 것은 3~5쪽 용어 슬라이드에 예시와 함께 정리돼 있습니다.
+발표 초반에 ‘어려운 용어는 앞에서 먼저 정리하고 가겠다’고 예고하세요.
+">
+  <div class="kicker">JETSON ORIN NANO · EDGE AI</div>
+  <h1>보고 듣는 홈캠</h1>
+  <div class="lead" style="font-size:23px">객체 탐지·추적과 음향 이벤트 탐지를<br>엣지 디바이스에서 구현한 과정과 근거</div>
+  <div style="margin-top:26px;font-size:16px;color:var(--dim)">AI·IoT 파트 · 이재준</div>
+  <img src="Hardware_Assembled.jpg" alt="완성 하드웨어">
+  <div class="pg">1 / 19</div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-note="
+<h4>발표 범위</h4>
+서비스는 <b>본다 · 듣는다 · 보낸다</b> 세 부분입니다. 오늘은 앞의 둘만 다룹니다.<br>
+‘보낸다’(서버·앱)는 팀의 다른 파트라고 분명히 밝히세요. 범위를 좁히는 게 신뢰를 줍니다.<br><br>
+<b>두 파트의 공통 구조를 미리 말해두면 좋습니다:</b><br>
+① 후보를 여러 개 놓고 → ② 같은 조건에서 재고 → ③ 수치로 하나를 고르고 → ④ 고른 뒤에도 검증한다.<br>
+이 네 단계가 발표 전체의 뼈대입니다.
+">
+  <div class="kicker">발표 범위</div>
+  <h2>서비스의 세 부분 중 앞의 둘</h2>
+  <div class="body">
+    <div class="row">
+      <div class="card" style="background:var(--blue-s);border-color:#c8d8fa">
+        <span class="tag g-b">오늘 다룸</span><h3 style="margin-top:9px">👀 본다</h3>
+        <p><b>YOLOv8n*</b>으로 사람·고양이·강아지를 탐지하고 <b>ByteTrack*</b>으로 추적, 서보로 카메라를 돌린다.</p>
+      </div>
+      <div class="card" style="background:var(--blue-s);border-color:#c8d8fa">
+        <span class="tag g-b">오늘 다룸</span><h3 style="margin-top:9px">👂 듣는다</h3>
+        <p><b>EfficientAT MN10</b>으로 웃음·박수를 탐지하고 임계값으로 이벤트를 판정한다.</p>
+      </div>
+      <div class="card" style="opacity:.5">
+        <span class="tag g-p">팀 다른 파트</span><h3 style="margin-top:9px">📱 보낸다</h3>
+        <p>서버 업로드, 알림, 앱 표시.</p>
+      </div>
+    </div>
+    <div class="note"><b>두 파트가 같은 방법론을 씁니다.</b> ① 후보를 여러 개 두고 → ② 같은 조건에서 반복 측정하고 → ③ 사전에 정한 기준으로 고르고 → ④ 고른 뒤에도 운영에서 다시 검증한다.</div>
+  </div>
+  <div class="pg">2 / 19</div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-note="
+<h4>용어 1 — 모델과 실행 환경</h4>
+여기서 <b>가장 중요한 구분</b>은 ‘모델’과 ‘런타임’입니다. 뒤 슬라이드(경량화)에서 이 구분이 핵심 논점이 됩니다.<br><br>
+<b>비유:</b> 모델 = 악보, 런타임 = 연주자. 악보를 바꾸지 않고 연주자만 바꾼 겁니다.
+재학습이 아니라는 점을 반드시 못박으세요.<br><br>
+<b>FP16 보충:</b> 32비트 부동소수를 16비트로 줄입니다. 메모리와 연산량이 줄지만 표현 가능한 정밀도가 떨어집니다.
+그래서 ‘변환이 됐다’로 끝내지 않고 정확도를 다시 쟀다는 흐름으로 이어집니다.<br><br>
+<span class='q'>예상 질문: ‘INT8은 왜 안 했나요?’ → 별도 보정(calibration) 데이터셋 절차가 필요해서 이번 범위에서 제외했습니다.</span>
+">
+  <div class="kicker">용어 정리 1 / 3</div>
+  <h2>모델과 실행 환경</h2>
+  <div class="body">
+    <dl class="glo">
+      <dt>YOLO 모델</dt><dd>이미지를 <b>한 번만 보고</b> 무엇이 어디 있는지를 동시에 출력하는 객체 탐지 신경망 (You Only Look Once).
+        <span class="ex">예 — 사진을 격자로 나눠 각 칸이 “여기 사람, 상자는 이만큼, 확신은 0.9”를 한 번에 답한다. 뒤에 v8n·11n·26n은 세대와 크기 차이(n = nano, 가장 작은 것).</span></dd>
+      <dt>ByteTrack</dt><dd>프레임마다 새로 나온 박스에 <b>같은 대상이라는 ID</b>를 붙여 이어주는 추적 알고리즘.
+        <span class="ex">예 — 1번 프레임의 사람이 2번 프레임에서도 계속 “1번”. 확신이 낮은 박스도 바로 버리지 않고 한 번 더 매칭에 써서, 잠깐 가려져도 ID를 유지한다.</span></dd>
+      <dt>PyTorch</dt><dd>신경망을 만들고 실행하는 <b>범용</b> 프레임워크.
+        <span class="ex">예 — 연구·학습에 유연하지만, 특정 GPU 배포에 맞춰 최적화된 실행 계획을 쓰지는 않는다.</span></dd>
+      <dt>TensorRT FP16</dt><dd>NVIDIA GPU 전용 <b>추론 최적화 SDK</b>. FP16은 숫자를 32비트 대신 <b>16비트</b>로 쓰는 것.
+        <span class="ex">예 — 소수점 자릿수를 줄여 계산을 가볍게 한다. 대신 정밀도가 떨어질 수 있어 변환 후 정확도를 다시 측정해야 한다.</span></dd>
+      <dt>런타임 전환</dt><dd>모델의 <b>가중치는 그대로</b> 두고 실행 엔진만 바꾸는 것. 재학습이 아니다.
+        <span class="ex">예 — 같은 악보(모델)를 다른 연주자(런타임)가 연주하는 것. 곡이 바뀐 게 아니다.</span></dd>
+    </dl>
+  </div>
+  <div class="pg">3 / 19</div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-note="
+<h4>용어 2 — 측정 지표 (가장 많이 질문받는 슬라이드)</h4>
+<b>Wall P95를 왜 보는지</b>가 핵심입니다. 평균은 가끔 튀는 프레임을 숨깁니다.
+홈캠은 실시간 추적이라 <b>느린 쪽 꼬리</b>가 서비스 품질을 결정합니다.<br><br>
+<b>mAP50-95</b>: IoU 임계를 0.50부터 0.95까지 0.05씩 올려가며 AP를 재고 평균낸 값.
+IoU는 예측 상자와 정답 상자가 겹치는 정도입니다. 기준을 올릴수록 상자를 더 정확히 그려야 합니다.<br><br>
+<b>P와 R의 트레이드오프</b>를 꼭 설명하세요. 임계값을 낮추면 R이 오르고 P가 내립니다.
+그래서 둘을 합친 F1을 봅니다. F1은 산술평균이 아니라 <b>조화평균</b>입니다.
+한쪽이 아주 낮으면 F1도 같이 낮아집니다.<br><br>
+<span class='q'>예상 질문: ‘왜 정확도(accuracy)를 안 쓰나요?’ → 배경(사람 없음)이 훨씬 많은 불균형 문제라 accuracy는 의미가 약합니다.</span>
+">
+  <div class="kicker">용어 정리 2 / 3</div>
+  <h2>측정 지표</h2>
+  <div class="body">
+    <dl class="glo">
+      <dt>FPS</dt><dd>초당 처리한 프레임 수.
+        <span class="ex">예 — 27 FPS면 1초에 27장을 처리한다. 카메라가 30 FPS로 들어오는데 처리가 20 FPS면 밀린다.</span></dd>
+      <dt>Wall P95</dt><dd>한 프레임을 처리하는 데 걸린 <b>실제 시간</b>(대기 포함)을 모두 줄 세웠을 때 <b>95번째 백분위</b>.
+        <span class="ex">예 — “100프레임 중 95개는 39.3ms 안에 끝났다”. 평균이 아니라 <b>느린 쪽 꼬리</b>를 보는 값이다. 평균만 보면 가끔 튀는 프레임이 숨는다.</span></dd>
+      <dt>mAP50-95</dt><dd>예측 상자와 정답 상자의 겹침 기준(IoU)을 <b>0.50에서 0.95까지</b> 올려가며 잰 평균 정밀도의 평균.
+        <span class="ex">예 — 대충 겹쳐도 인정하는 기준부터 아주 정확히 겹쳐야 하는 기준까지 두루 평가한 종합 점수.</span></dd>
+      <dt>Precision /<br>Recall / F1</dt><dd><b>P</b> = 있다고 답한 것 중 진짜 비율. <b>R</b> = 진짜 중 찾아낸 비율. <b>F1</b> = 둘의 조화평균.
+        <span class="ex">예 — 사람 100명 중 96명을 찾으면 R=0.96. 찾았다고 한 99건 중 96건이 진짜면 P≈0.97. 한쪽만 높으면 F1은 오르지 않는다.</span></dd>
+      <dt>FP / FN</dt><dd><b>FP</b>(오탐) = 없는데 있다고 함. <b>FN</b>(미탐) = 있는데 놓침.
+        <span class="ex">예 — 빈 의자를 사람이라 하면 FP. 구석에 앉은 사람을 못 보면 FN. 홈캠에서는 FN이 더 치명적이다(추적 대상을 잃는다).</span></dd>
+    </dl>
+  </div>
+  <div class="pg">4 / 19</div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-note="
+<h4>용어 3 — 배포 검증과 하드웨어</h4>
+이 세 용어는 <b>“만들었다”와 “배포했다”의 차이</b>를 설명하는 데 씁니다.<br><br>
+<b>SHA-256</b>: 파일 내용을 256비트로 요약한 지문. 1바이트만 달라도 값이 완전히 달라집니다.
+그래서 “내가 검증한 그 파일이 지금 돌고 있는 파일과 같은가”를 확인할 수 있습니다.<br><br>
+<b>실추론 probe</b>: 파일이 있고 지문이 맞아도 GPU에서 실제로 안 돌 수 있습니다.
+TensorRT 엔진은 빌드한 버전·GPU 환경에 종속되기 때문입니다. 그래서 진짜로 한 번 추론해봅니다.<br><br>
+<b>펄스</b>: 서보 제어의 핵심입니다. <b>주기</b>(20ms마다)와 <b>폭</b>(1500us 등)은 다른 개념입니다.
+주기는 고정, 폭이 각도를 결정합니다. 이 구분을 놓치면 슬라이드 13에서 헷갈립니다.
+">
+  <div class="kicker">용어 정리 3 / 3</div>
+  <h2>배포 검증과 하드웨어</h2>
+  <div class="body">
+    <dl class="glo">
+      <dt>SHA-256</dt><dd>파일 내용을 <b>256비트 지문</b>으로 요약하는 해시 함수. 1바이트만 달라도 값이 완전히 달라진다.
+        <span class="ex">예 — 젯슨에서 돌고 있는 엔진 파일이 “내가 검증한 바로 그 파일”인지 확인하는 용도. 파일 이름은 같아도 내용이 다를 수 있다.</span></dd>
+      <dt>실추론 probe</dt><dd>서비스를 시작하기 전에 모델로 <b>실제 추론을 한 번 돌려보는</b> 검사.
+        <span class="ex">예 — 파일이 있고 지문도 맞지만 GPU에서 안 돌 수 있다. TensorRT 엔진은 빌드한 버전·GPU 환경에 종속되기 때문. 그래서 진짜 한 번 돌려본다.</span></dd>
+      <dt>펄스</dt><dd>서보에 보내는 전기 신호. <b>주기</b>(얼마나 자주)와 <b>폭</b>(얼마나 긴가)은 다른 값이다. <b>폭이 각도를 정한다.</b>
+        <span class="ex">예 — 20ms마다 한 번씩 신호를 보내되(50Hz), 그 신호의 폭이 1500us면 중앙, 더 길거나 짧으면 좌우로 돈다.</span></dd>
+    </dl>
+    <div class="note" style="margin-top:6px">이 세 가지는 <b>“동작한다”와 “배포해도 된다”의 차이</b>를 만드는 장치입니다. 슬라이드 10에서 다시 나옵니다.</div>
+  </div>
+  <div class="pg">5 / 19</div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-note="
+<h4>1-1. 클래스 필터</h4>
+COCO 사전학습 모델은 80개 클래스를 압니다. 우리는 3개만 필요합니다.<br><br>
+<b>중요한 구현 포인트:</b> 후처리에서 걸러낸 게 아니라 <b>추론 호출에 classes 인자로 넘겼습니다.</b>
+차이가 있습니다 — 후처리 필터링은 80개를 다 계산한 뒤 버리는 것이고,
+추론 단계 지정은 불필요한 후보를 애초에 줄입니다.<br><br>
+<span class='q'>예상 질문: ‘왜 하필 사람·고양이·강아지인가요?’ → 가정용 홈캠이라 가족과 반려동물이 대상입니다.</span><br>
+<span class='q'>예상 질문: ‘3종을 다 같은 정확도로 잡나요?’ → <b>모릅니다.</b> 정확도 벤치마크는 person만 측정했습니다.
+이건 다음 슬라이드에서 먼저 밝히고 들어갑니다. 절대 얼버무리지 마세요.</span>
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>여러 객체 중 3종만 인식하게 한 방법</h2>
+  <div class="body">
+    <div class="row">
+      <div class="card">
+        <h3>COCO 사전학습 모델은 80개 클래스를 안다</h3>
+        <p>홈캠에 필요한 건 그중 3개뿐이다. 나머지는 계산도, 추적도 필요 없다.</p>
+        <table style="margin-top:12px">
+          <tr><th>클래스 ID</th><th>이름</th><th>용도</th></tr>
+          <tr><td class="n">0</td><td><b>person</b></td><td>추적 주 대상</td></tr>
+          <tr><td class="n">15</td><td><b>cat</b></td><td>반려동물</td></tr>
+          <tr><td class="n">16</td><td><b>dog</b></td><td>반려동물</td></tr>
+        </table>
+      </div>
+      <div class="card" style="background:var(--green-s);border-color:#bae3c9">
+        <h3 style="color:var(--green)">후처리 필터가 아니다</h3>
+        <p>탐지 결과를 다 받아놓고 버린 게 아니라, <b>추론 호출에 <code>classes</code> 인자로 직접 넘겼다.</b><br><br>
+        후처리 방식은 80개 클래스를 모두 계산한 뒤 버리는 것이고, 추론 단계 지정은 불필요한 후보를 애초에 줄인다.<br><br>
+        추적기 <b>ByteTrack*</b>도 이 3종에 대해서만 ID를 유지한다.</p>
+      </div>
+    </div>
+    <div class="warn"><b>먼저 밝힙니다 —</b> 뒤에 나올 정확도 수치(mAP*, F1*)는 <b><code>person</code> 클래스 하나</b>로만 측정했습니다. 고양이·강아지의 정확도는 측정하지 않았습니다. 운영 필터가 3종이라는 것과 벤치마크가 1종이라는 것은 <b>다른 이야기</b>입니다.</div>
+  </div>
+  <div class="src">ai/yolo/yolov8_autoframe_jetson.py:32 (TARGET_CLASSES), :1515 (classes 인자), :1434</div>
+  <div class="pg">6 / 19</div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-note="
+<h4>1-2. 선정 기준 (결과보다 기준을 먼저)</h4>
+<b>순서가 중요합니다. 기준을 먼저 정하고 측정했습니다.</b> 결과를 보고 기준을 맞춘 게 아닙니다.
+이 순서를 명시하면 신뢰도가 크게 올라갑니다.<br><br>
+<b>실행 순서 회전</b>을 강조하세요. 오래 돌리면 발열로 스로틀링이 걸립니다.
+항상 같은 순서로 재면 첫 번째 모델이 유리합니다. 그래서 각 모델이 1·2·3번째를 한 번씩 맡게 회전했습니다.<br><br>
+데이터셋에 <b>빈 장면 52장</b>을 넣은 이유도 말하세요. 사람이 없는데 있다고 하는 오탐(FP*)을 잡기 위해서입니다.
+양성만 있는 데이터셋으로는 FP를 측정할 수 없습니다.<br><br>
+<span class='q'>예상 질문: ‘395장은 너무 적지 않나요?’ → 적습니다. 직접 라벨링한 데이터라 규모의 한계가 있고,
+그래서 단일 수치로 결론내지 않고 여러 지표를 함께 봤다고 답하세요.</span>
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>YOLOv8n을 고른 과정 ① 기준을 먼저 정했다</h2>
+  <div class="body">
+    <div class="row">
+      <div class="card">
+        <h3>평가 조건</h3>
+        <table style="margin-top:8px">
+          <tr><td>장치 / 전력</td><td class="n">Jetson Orin Nano · 25W</td></tr>
+          <tr><td>후보</td><td class="n">YOLOv8n · YOLO11n · YOLO26n</td></tr>
+          <tr><td>입력</td><td class="n">640×640, batch 1</td></tr>
+          <tr><td>평가 이미지</td><td class="n">395장</td></tr>
+          <tr><td>정답 상자 / 빈 장면</td><td class="n">581개 / 52장</td></tr>
+          <tr><td>반복</td><td class="n">모델당 3회 (총 9회)</td></tr>
+          <tr class="hi"><td>실행 순서</td><td class="n">회전 (1·2·3번째를 한 번씩)</td></tr>
+        </table>
+      </div>
+      <div class="card" style="background:var(--blue-s);border-color:#c8d8fa">
+        <h3 style="color:var(--blue)">사전에 정한 통과 기준</h3>
+        <ul style="margin-top:8px">
+          <li>평균 <b>FPS*</b> ≥ 20</li>
+          <li><b>Wall P95*</b> ≤ 50ms</li>
+          <li>운영 <b>Recall*</b> ≥ 90%</li>
+          <li>최고 <b>mAP50-95*</b>와 격차 ≤ 2.0%p</li>
+        </ul>
+        <p style="margin-top:12px"><b>결과를 보고 기준을 맞춘 게 아니라, 기준을 먼저 정하고 측정했습니다.</b></p>
+      </div>
+    </div>
+    <div class="note"><b>왜 순서를 회전했나</b> — 연속 실행하면 발열로 성능이 떨어집니다. 항상 같은 순서로 재면 먼저 측정한 모델이 유리해집니다. 순서 효과를 없애기 위한 설계입니다.</div>
+  </div>
+  <div class="src">자료/docs/29_YOLOv8n_TensorRT_FP16_운영_전환_보고서.md §3</div>
+  <div class="pg">7 / 19</div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-note="
+<h4>1-2. 결과 — 여기가 논증의 핵심</h4>
+<b>단순히 1등을 고른 게 아니라는 점</b>이 이 슬라이드의 메시지입니다.<br><br>
+· <b>mAP 1등은 YOLO11n</b>(81.9%)입니다. YOLOv8n보다 0.6%p 높습니다.<br>
+· <b>FPS 1등은 YOLO26n</b>(29.203)입니다.<br>
+· 그런데 고른 건 <b>YOLOv8n</b>입니다.<br><br>
+이유: 실제 서비스 confidence 0.25에서 <b>운영 F1이 가장 높고 FP+FN 합이 가장 적었습니다.</b>
+YOLOv8n 38건(18+20) vs YOLO11n 53건 vs YOLO26n 73건.<br><br>
+<b>YOLO26n 탈락은 기준 위반이 명확합니다.</b> mAP 격차 2.2%p로 사전 기준 2.0%p 초과.
+게다가 두 사람이 교차하는 조건에서 F1이 69.23%였습니다. 홈캠은 그룹 중심으로 카메라를 돌리므로
+교차·가림에서의 미탐이 서비스에 직접 영향을 줍니다.<br><br>
+<span class='q'>가장 날카로운 질문: ‘0.6%p 차이가 유의미한가요?’ → 유의성 검정은 하지 않았습니다.
+대신 세 회차에서 재현됐고, 운영 지표(F1·FP·FN)에서 일관되게 YOLOv8n이 앞섰다고 답하세요. 솔직하게.</span>
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>YOLOv8n을 고른 과정 ② <span style="color:var(--red)">1등을 그대로 고르지 않았다</span></h2>
+  <div class="body">
+    <table>
+      <tr><th>모델</th><th>평균 FPS*</th><th>추론 평균</th><th>Wall P95*</th><th>mAP50-95*</th><th>운영 P / R / F1*</th><th>FP / FN*</th></tr>
+      <tr class="hi"><td><b>YOLOv8n</b> <span class="tag g-b">선택</span></td><td class="n">27.095</td><td class="n">14.530ms</td><td class="n">39.303ms</td><td class="n">81.3%</td><td class="n">96.89 / 96.56 / <b>96.72%</b></td><td class="n"><b>18 / 20</b></td></tr>
+      <tr><td>YOLO11n <span class="tag g-a">mAP 1등</span></td><td class="n">26.563</td><td class="n">15.155ms</td><td class="n">40.008ms</td><td class="n"><b>81.9%</b></td><td class="n">94.90 / 96.04 / 95.47%</td><td class="n">30 / 23</td></tr>
+      <tr class="bad"><td>YOLO26n <span class="tag g-a">FPS 1등</span></td><td class="n"><b>29.203</b></td><td class="n">15.012ms</td><td class="n"><b>36.555ms</b></td><td class="n">79.7%</td><td class="n">95.04 / 92.25 / 93.62%</td><td class="n">28 / 45</td></tr>
+    </table>
+    <div class="row">
+      <div class="card"><h3>YOLO11n을 안 고른 이유</h3><p>mAP는 0.6%p 높지만, 실제 운영 confidence 0.25에서 <b>F1이 낮고 오탐 12건·미탐 3건이 더 많다.</b></p></div>
+      <div class="card" style="background:var(--red-s);border-color:#f4ccd7"><h3 style="color:var(--red)">YOLO26n 탈락 (기준 위반)</h3><p>최고 mAP와 격차 <b>2.2%p</b> → 사전 기준 2.0%p 초과. <b>두 사람 교차 조건 F1 69.23%</b>, 미탐 45건.</p></div>
+      <div class="card" style="background:var(--green-s);border-color:#bae3c9"><h3 style="color:var(--green)">선택 논리</h3><p>속도 1등도 mAP 1등도 아닌, <b>기준을 모두 통과하면서 운영 오류 합(FP+FN)이 가장 적은</b> 후보. 38 vs 53 vs 73건.</p></div>
+    </div>
+  </div>
+  <div class="src">자료/docs/29_*.md §4 — 세 회차에서 동일하게 재현됨</div>
+  <div class="pg">8 / 19</div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-note="
+<h4>1-3. 경량화 = 런타임 전환</h4>
+<b>이 슬라이드의 유일한 메시지: 모델을 바꾼 게 아니라 실행 방식을 바꿨다.</b><br><br>
+많은 사람이 ‘경량화’를 pruning·quantization·distillation 같은 모델 자체 변경으로 이해합니다.
+우리가 한 건 그게 아니라 <b>같은 가중치를 배포 환경에 맞는 엔진으로 컴파일</b>한 것입니다.<br><br>
+<b>FP16을 고르고 INT8을 안 한 이유</b>를 준비하세요. INT8은 별도 보정 데이터셋으로
+활성값 분포를 재는 절차가 필요합니다. 이번 범위에서 제외했습니다.<br><br>
+<b>다음 슬라이드의 “속도 향상률 없음”과 이어집니다.</b> 여기서 미리 예고해두면 자연스럽습니다.
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>젯슨에 올리기 위한 경량화</h2>
+  <div class="lead"><b>모델을 바꾼 것이 아니라 <span style="color:var(--blue)">실행 엔진을 바꿨습니다.</span></b> 재학습이 아닙니다.</div>
+  <div class="body">
+    <div class="arrow" style="justify-content:center;margin-bottom:6px">
+      <span class="b">YOLOv8n 가중치<br><small style="color:var(--dim)">그대로 유지</small></span>
+      <span class="a">→ 컴파일 →</span>
+      <span class="b" style="background:var(--blue-s);border-color:#c8d8fa">TensorRT FP16* 엔진<br><small style="color:var(--dim)">640×640, batch 1</small></span>
+      <span class="a">→</span>
+      <span class="b">Jetson Orin Nano</span>
+    </div>
+    <div class="row">
+      <div class="card"><h3>왜 FP16인가</h3><p>홈캠은 단발 분석이 아니라 프레임을 <b>지속 처리</b>하므로 지연과 처리량이 중요하다. FP16은 <b>INT8과 달리 별도 보정 데이터 절차 없이</b> 적용할 수 있다.</p></div>
+      <div class="card"><h3>정밀도가 낮아지는데?</h3><p>그래서 <b>변환 성공만 확인하지 않았다.</b> 수동 라벨 395장으로 정확도를 다시 측정해 기준 통과를 확인한 뒤 전환했다.</p></div>
+      <div class="card" style="background:var(--amber-s);border-color:#f2ddb8"><h3 style="color:var(--amber)">엔진은 이식할 수 없다</h3><p>TensorRT 엔진은 <b>빌드한 버전과 GPU 환경에 종속</b>된다. 일반 모델 파일처럼 배포하지 않고, 대상 젯슨에서 역직렬화와 실제 추론을 검증한 뒤 반영했다.</p></div>
+    </div>
+  </div>
+  <div class="src">자료/docs/29_*.md §2</div>
+  <div class="pg">9 / 19</div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-note="
+<h4>1-3 보강 — 안전한 전환과 “측정하지 않은 것”</h4>
+<b>이 슬라이드가 이 발표에서 가장 방어적으로 강한 부분입니다.</b><br><br>
+보통은 “TensorRT로 바꿨더니 N배 빨라졌습니다”라고 말합니다. 우리는 그렇게 말하지 않습니다.
+PyTorch 측정은 9개 영상 8,100프레임, TensorRT 측정은 라벨 395장으로 <b>데이터셋도 도구도 다릅니다.</b>
+조건이 다른 두 수치를 나눠서 향상률을 만들면 잘못된 주장이 됩니다.<br><br>
+<b>이걸 먼저 말하면</b> 청중이 “그럼 얼마나 빨라졌냐”고 물어도 이미 답한 상태가 됩니다.
+그리고 정확히 무엇을 하면 그 수치를 얻을 수 있는지(같은 395장, 같은 runner, .pt와 .engine만 교체)까지 말할 수 있습니다.<br><br>
+<b>fallback을 막은 설계</b>도 강조하세요. 엔진이 없거나 손상됐을 때 조용히 PyTorch로 돌아가면
+운영자는 전환 실패를 모릅니다. 그래서 엄격 모드에서는 <b>서비스 시작을 실패시킵니다.</b>
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>배포는 “동작한다”로 끝나지 않는다</h2>
+  <div class="body">
+    <div class="row">
+      <div class="card">
+        <h3>시작 시 3단 검증</h3>
+        <table style="margin-top:8px">
+          <tr><td>① 엔진 파일 존재</td><td class="n">경로 확인</td></tr>
+          <tr><td>② <b>SHA-256*</b> 일치</td><td class="n">cea7f5dd…a652a1f1</td></tr>
+          <tr><td>③ <b>실추론 probe*</b></td><td class="n">GPU 0에서 실제 추론</td></tr>
+        </table>
+        <p style="margin-top:11px">엄격 <code>tensorrt</code> 모드에서는 검증 실패를 <b>PyTorch* fallback으로 숨기지 않고 서비스 시작을 실패시킨다.</b> 조용한 성능 저하가 가장 나쁜 실패이기 때문.</p>
+      </div>
+      <div class="card" style="background:var(--amber-s);border-color:#f2ddb8">
+        <h3 style="color:var(--amber)">측정하지 않은 것을 밝힙니다</h3>
+        <p><b>“TensorRT로 바꿔서 몇 % 빨라졌다”는 말하지 않습니다.</b><br><br>
+        PyTorch 측정 = 9개 영상 8,100프레임<br>
+        TensorRT 측정 = 라벨 이미지 395장<br><br>
+        <b>데이터셋과 실행 도구가 다르므로</b> 두 값을 나눠 향상률을 만들 수 없습니다.<br><br>
+        필요하다면 같은 395장·같은 runner에서 <code>.pt</code>와 <code>.engine</code>만 바꿔 재측정해야 합니다.</p>
+      </div>
+    </div>
+    <div class="note"><b>운영 종단 검증 (2026-08-03)</b> — 실제 3명 추적, Live View 동시 실행 상태에서 20.6 FPS, 서비스 재시작 0회. 이 값은 비교용 27.095 FPS와 <b>측정 조건이 다르므로 합치지 않고</b>, “부하 상태에서도 최소 기준 20 FPS를 지켰다”는 종단 검증값으로만 씁니다.</div>
+  </div>
+  <div class="src">자료/docs/29_*.md §5–7</div>
+  <div class="pg">10 / 19</div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-note="
+<h4>1-4. 추적 파라미터</h4>
+각 값이 <b>어떤 실패를 막기 위한 것인지</b>로 설명하세요. 숫자만 나열하면 지루합니다.<br><br>
+· <b>min-track-frames 3</b> — 한 프레임 반짝 뜬 오탐이 카메라를 움직이지 못하게<br>
+· <b>switch-frames 5</b> — 두 그룹 사이에서 카메라가 왔다갔다 진동하는 걸 방지<br>
+· <b>deadzone 0.12</b> — 중앙 근처 미세 오차로 계속 명령이 나가지 않게<br>
+· <b>ema-alpha 0.25</b> — 목표점을 지수이동평균으로 평활화. 값이 낮을수록 부드럽지만 반응이 늦다<br>
+· <b>subject-y-ratio 0.05</b> — 박스 정중앙(0.5)이 아니라 <b>위쪽 5%</b>. 사람 몸 중앙을 따라가면 화면에 머리가 잘린다. 머리 위치를 따라가야 사람이 화면에 제대로 담긴다<br>
+· <b>home-after 5초</b> — 대상을 잃어도 바로 안 돌아간다. 잠깐 가려진 것일 수 있으므로<br><br>
+<span class='q'>예상 질문: ‘EMA 대신 칼만 필터는요?’ → 검토했지만 적용하지 않았습니다. ByteTrack 내부에 이미 칼만 기반 예측이 있고,
+프레이밍 단계에서는 단순 평활화로 충분했습니다.</span>
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>탐지에서 카메라 명령까지</h2>
+  <div class="body">
+    <div class="arrow" style="margin-bottom:4px">
+      <span class="b">YOLOv8n* 탐지</span><span class="a">→</span>
+      <span class="b">ByteTrack* ID 부여</span><span class="a">→</span>
+      <span class="b">안정 대상 선별</span><span class="a">→</span>
+      <span class="b">그룹 선택</span><span class="a">→</span>
+      <span class="b">평활화·불감대</span><span class="a">→</span>
+      <span class="b" style="background:var(--blue-s);border-color:#c8d8fa">10Hz 명령 발행</span>
+    </div>
+    <table>
+      <tr><th>파라미터</th><th>기본값</th><th>무엇을 막기 위한 값인가</th></tr>
+      <tr><td><code>min-track-frames</code></td><td class="n">3 프레임</td><td>한 프레임 반짝 뜬 오탐(FP*)이 카메라를 움직이지 못하게</td></tr>
+      <tr><td><code>switch-frames</code></td><td class="n">5 프레임</td><td>두 그룹 사이에서 카메라가 왔다갔다 진동하는 것을 방지</td></tr>
+      <tr><td><code>deadzone</code></td><td class="n">0.12</td><td>중앙 근처 미세 오차로 명령이 계속 나가는 것을 방지</td></tr>
+      <tr><td><code>ema-alpha</code></td><td class="n">0.25</td><td>목표점 급변을 평활화 (낮을수록 부드럽고 느림)</td></tr>
+      <tr class="hi"><td><code>subject-y-ratio</code></td><td class="n">0.05</td><td>박스 중앙(0.5)이 아닌 <b>위쪽 5%</b> = 머리 위치를 추적 → 화면에서 머리가 잘리지 않게</td></tr>
+      <tr><td><code>home-after-seconds</code></td><td class="n">5.0초</td><td>대상 소실 후 즉시 복귀 방지 (잠깐 가려진 경우 대비)</td></tr>
+    </table>
+  </div>
+  <div class="src">ai/yolo/yolov8_autoframe_jetson.py:174–262 (argparse 기본값)</div>
+  <div class="pg">11 / 19</div>
+</section>
+
+<!-- 12 -->
+<section class="slide" data-note="
+<h4>1-4. 1명 vs 다수 — 알고리즘 설명</h4>
+<b>핵심: 사람 수에 따라 코드가 분기하지 않습니다.</b> 같은 알고리즘이 1명일 때 자연스럽게 1명을 고를 뿐입니다.
+이 점을 말하면 설계가 깔끔해 보입니다.<br><br>
+<b>choose_best_group()의 동작:</b><br>
+① 전원의 합집합 상자가 <b>안전 영역</b>(가장자리 10% 제외)에 들어가면 → 전원 선택, 끝.<br>
+② 안 들어가면 → 후보 창을 여러 개 만들어 각 창에 들어가는 조합을 계산.<br>
+③ 점수 = (들어간 인원 수, 화면 중앙에서 가까운 정도). <b>인원이 최우선, 동점이면 카메라가 덜 움직이는 쪽.</b><br>
+④ 전원을 못 담으면 <code>limited_group=true</code>로 표시해 로그에 남긴다.<br><br>
+<b>왜 인원 우선인가:</b> 홈캠의 목적이 ‘가족의 순간을 담는 것’이라 최대한 많이 담는 게 맞습니다.<br><br>
+<span class='q'>예상 질문: ‘두 그룹이 정반대에 있으면요?’ → 더 많은 쪽을 고르고, 같으면 카메라가 덜 움직이는 쪽입니다.
+그리고 switch-frames 5 때문에 바로 갈아타지 않습니다.</span>
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>1명일 때와 여러 명일 때</h2>
+  <div class="lead">사람 수로 코드가 분기하지 않습니다. <b>같은 알고리즘이 1명일 때 자연스럽게 1명을 고를 뿐입니다.</b></div>
+  <div class="body">
+    <div class="row">
+      <div class="card" style="background:var(--green-s);border-color:#bae3c9">
+        <h3 style="color:var(--green)">① 전원이 한 화면에 들어가면</h3>
+        <p>모든 대상의 <b>합집합 상자</b>를 만들고 그 <b>중심</b>을 추적점으로 삼는다.<br><br>
+        1명이면 합집합 = 그 사람의 상자이므로 결과적으로 그 사람을 추적한다.<br><br>
+        <b>안전 영역</b> = 화면 가장자리 10%를 뺀 영역.</p>
+      </div>
+      <div class="card" style="background:var(--amber-s);border-color:#f2ddb8">
+        <h3 style="color:var(--amber)">② 전원이 안 들어가면</h3>
+        <p>후보 창을 여러 개 만들어 각 창에 들어가는 조합을 모두 계산하고 점수를 매긴다.<br><br>
+        <b>1순위 — 담긴 인원 수 (많을수록 좋음)</b><br>
+        <b>2순위 — 화면 중앙에서 가까울수록 좋음</b> (카메라를 덜 움직임)<br><br>
+        전원을 못 담으면 <code>limited_group=true</code>로 기록한다.</p>
+      </div>
+    </div>
+    <div class="note"><b>왜 인원 수가 최우선인가</b> — 홈캠의 목적이 가족의 순간을 담는 것이므로 최대한 많이 담는 쪽이 맞습니다. 동점일 때만 카메라 이동량을 봅니다. 그리고 <code>switch-frames 5</code> 때문에 새 그룹이 5프레임 이상 유지돼야 실제로 갈아탑니다.</div>
+  </div>
+  <div class="src">ai/yolo/yolov8_autoframe_jetson.py:484–545 (choose_best_group), :469–481 (make_decision)</div>
+  <div class="pg">12 / 19</div>
+</section>
+
+<!-- 13 -->
+<section class="slide compact" data-note="
+<h4>1-5. 서보 주기 — 3단 구조가 핵심</h4>
+<b>이 슬라이드에서 가장 많이 혼동되는 것: “몇 초에 몇 번”이 층마다 다릅니다.</b><br><br>
+· <b>AI는 10Hz</b>로 명령을 보냅니다 (0.1초마다). 이건 소프트웨어 메시지입니다.<br>
+· <b>제어기는 20Hz</b>로 돕니다 (0.05초마다). 명령이 없는 사이에도 자기 루프를 돌며 목표를 향해 조금씩 움직입니다.
+그래서 10Hz 명령으로도 움직임이 끊겨 보이지 않습니다.<br>
+· <b>서보는 50Hz 펄스</b>를 받습니다 (20ms마다). 이건 하드웨어 PWM이고, SG90이 요구하는 규격입니다.<br><br>
+<b>즉 명령 1회당 제어 루프 약 2회, PWM 펄스 약 5회가 나갑니다.</b><br><br>
+<b>안전 장치 3개</b>도 말하세요: TTL 500ms(오래된 명령 폐기), 750ms 무신호 시 HOLD,
+그리고 역순 메시지·다른 device_id·범위 밖 오차는 폐기.<br><br>
+<b>펄스 폭과 각도:</b> 11.1111us가 1도입니다. 1500us가 pan 중앙.
+TILT HOME이 611us인 건 실측 보정 결과입니다(슬라이드 18에서 다룸).
+">
+  <div class="kicker">1부 · 본다</div>
+  <h2>서보는 명령을 몇 번 받고 몇 번 수행하는가</h2>
+  <div class="lead"><b>층마다 주기가 다릅니다.</b> 소프트웨어 명령 주기와 하드웨어 <b>펄스*</b> 주기는 별개입니다.</div>
+  <div class="body">
+    <div class="row">
+      <div class="card"><span class="tag g-b">소프트웨어</span><h3 style="margin-top:8px">AI 명령 발행</h3><div class="stat" style="color:var(--blue);margin:8px 0">10<small> Hz</small></div><p>0.1초마다 정규화 오차와 두 축 명령을 MQTT로 발행. <code>command-interval=0.10</code></p></div>
+      <div class="card"><span class="tag g-b">소프트웨어</span><h3 style="margin-top:8px">제어 루프</h3><div class="stat" style="color:var(--blue);margin:8px 0">20<small> Hz</small></div><p>0.05초마다 자체 루프. 명령이 없는 사이에도 목표를 향해 <b>속도 제한 내에서</b> 조금씩 이동. <code>SERVO_CONTROL_HZ=20</code></p></div>
+      <div class="card" style="background:var(--purple-s);border-color:#ddcdf8"><span class="tag g-p">하드웨어</span><h3 style="margin-top:8px">PWM 펄스*</h3><div class="stat" style="color:var(--purple);margin:8px 0">50<small> Hz = 20ms</small></div><p>PCA9685가 20ms마다 펄스를 출력. <b>펄스 폭이 각도를 결정</b>. <code>SERVO_PWM_FREQUENCY=50</code></p></div>
+    </div>
+    <div class="row">
+      <div class="card"><h3>펄스 폭 ↔ 각도</h3><table style="margin-top:6px">
+        <tr><td>1도당</td><td class="n">11.1111 us</td></tr>
+        <tr><td>PAN HOME</td><td class="n">1500 us</td></tr>
+        <tr><td>펄스 범위</td><td class="n">495 ~ 2505 us</td></tr>
+        <tr><td>가동 범위</td><td class="n">PAN −90~+90° · TILT 0~+110°</td></tr>
+      </table></div>
+      <div class="card" style="background:var(--red-s);border-color:#f4ccd7"><h3 style="color:var(--red)">안전 장치</h3><p>· 명령 <b>TTL 500ms</b> — 지난 메시지는 폐기<br>· <b>750ms 무신호 시 HOLD</b> — 스스로 정지<br>· 역순 메시지, 다른 <code>device_id</code>, 범위 밖 오차는 폐기<br>· 전원 인가 시 <b>PARK 자세</b>로 시작 (튐 방지)</p></div>
+    </div>
+  </div>
+  <div class="src">ai/yolo/servo_controller.py:837,902–984 · ai/SERVO_PCA9685_RUNBOOK.md §1</div>
+  <div class="pg">13 / 19</div>
+</section>
+
+<!-- 14 -->
+<section class="slide" data-note="
+<h4>2-1. 오디오 비교 설계</h4>
+<b>가장 날카로운 반박이 여기서 나옵니다: “입력 조건이 다른데 공정한 비교냐?”</b><br>
+반드시 먼저 답하고 넘어가세요.<br><br>
+<b>답:</b> 이건 백본만 비교하는 마이크로벤치마크가 아니라 <b>서비스 수준 비교</b>입니다.
+각 모델은 전제하는 시간 문맥이 다릅니다(YAMNet 0.975초, EfficientAT 10초, PANNs 2초).
+억지로 같은 길이를 넣으면 각 모델이 설계상 가정한 조건을 깨뜨려 오히려 불공정해집니다.
+우리가 알고 싶은 건 ‘이 모델을 우리 서비스에 넣으면 어떤가’이므로 권장 조건으로 재는 게 맞습니다.<br><br>
+<b>재현성 조치</b>도 강조하세요: 모델 SHA-256* 고정, 실행 순서 회전,
+평가 중 상시 녹화·업로드·서보 제어 <b>전부 정지</b>(자원 간섭 제거).<br><br>
+<b>validation/test 분리</b>: 60개로 임계값을 고르고, test 2,064개에서는 <b>재조정하지 않았습니다.</b>
+이게 없으면 test 성능이 낙관적으로 편향됩니다.
+">
+  <div class="kicker">2부 · 듣는다</div>
+  <h2>오디오 모델 비교 설계</h2>
+  <div class="body">
+    <table>
+      <tr><th>모델</th><th>런타임</th><th>정밀도</th><th>입력 창</th><th>hop</th><th>연속 양성 창</th><th>파일 크기</th></tr>
+      <tr><td>YAMNet</td><td>TFLite</td><td>float32</td><td class="n">0.975초</td><td class="n">0.4875초</td><td class="n">2</td><td class="n">4.1 MB</td></tr>
+      <tr class="hi"><td><b>EfficientAT MN10</b></td><td>PyTorch* CUDA</td><td>FP16</td><td class="n">10초</td><td class="n">2.5초</td><td class="n">1</td><td class="n">19.7 MB</td></tr>
+      <tr><td>PANNs CNN10</td><td>PyTorch* CUDA</td><td>FP32</td><td class="n">2초</td><td class="n">1초</td><td class="n">2</td><td class="n">25.2 MB</td></tr>
+    </table>
+    <div class="row">
+      <div class="card" style="background:var(--amber-s);border-color:#f2ddb8">
+        <h3 style="color:var(--amber)">“입력 길이가 다른데 공정한가?”</h3>
+        <p>이건 백본만 비교하는 마이크로벤치마크가 <b>아니라 서비스 수준 비교</b>입니다. 각 모델이 전제하는 시간 문맥이 다르므로 억지로 같은 길이를 넣으면 오히려 설계 가정을 깨뜨립니다.<br><br>
+        알고 싶은 것은 <b>“이 모델을 우리 서비스에 넣으면 어떤가”</b>이므로 각자의 권장 조건으로 측정했습니다.</p>
+      </div>
+      <div class="card">
+        <h3>재현성 조치</h3>
+        <p>· 모델 <b>SHA-256*</b> 고정 (3종 모두 기록)<br>
+        · 모델별 3회, <b>실행 순서 회전</b><br>
+        · 평가 중 상시 녹화·업로드·Device Agent·서보 제어 <b>전부 정지</b> (자원 간섭 제거)<br>
+        · <b>validation 60개로 임계값 선택 → test 2,064개에서 재조정 없음</b><br>
+        · 데이터 중복 0건 확인</p>
+      </div>
+    </div>
+  </div>
+  <div class="src">자료/docs/32_웃음_박수_탐지_모델_비교_결과.md §3.1–3.4</div>
+  <div class="pg">14 / 19</div>
+</section>
+
+<!-- 15 -->
+<section class="slide" data-note="
+<h4>2-2. 결과 — 데이터셋에 따라 순위가 뒤집힌다</h4>
+<b>이 슬라이드가 발표에서 가장 정직하고 가장 강한 부분입니다.</b><br><br>
+전체 test에서는 EfficientAT이 두 이벤트 모두 F1 1등입니다.<br>
+그런데 <b>직접 수집한 사무실 음성만 보면 PANNs가 1등</b>입니다(Macro F1 0.947 vs 0.904).<br><br>
+그리고 사전 게이트를 엄격히 적용하면 <b>EfficientAT은 탈락</b>합니다 —
+직접 수집 박수 Recall 0.80으로 기준 0.85 미달.<br><br>
+<b>그럼 왜 EfficientAT인가?</b> PANNs는 웃음 거짓 이벤트 12.86건/시간, GPU 76.0%, 최대 14.8W로
+YOLO와 동시 실행해야 하는 엣지 환경에서 부담이 가장 큽니다.
+EfficientAT은 종합 정확도가 가장 높고 자원 사용량이 더 낮습니다.<br><br>
+<b>그래서 ‘승자’라고 말하지 않았습니다.</b> ‘섀도 모드로 먼저 검증할 공학적 후보’로 정했습니다.
+섀도 모드 = 이벤트를 실제로 업로드하지 않고 점수만 기록하는 모드.<br><br>
+<span class='q'>예상 질문: ‘표본이 몇 개인가요?’ → 직접 수집은 이벤트별 20개입니다. 한 건 차이가 Recall 0.05를 바꿉니다. 이 한계를 먼저 밝히세요.</span>
+">
+  <div class="kicker">2부 · 듣는다</div>
+  <h2>결과 — <span style="color:var(--red)">데이터셋에 따라 순위가 뒤집힌다</span></h2>
+  <div class="body">
+    <div class="row">
+      <div style="flex:1.35">
+        <div style="font-size:14px;color:var(--sub);font-weight:800;margin-bottom:5px">전체 test 2,064개</div>
+        <table style="font-size:15.5px">
+          <tr><th>모델</th><th>이벤트</th><th>P*</th><th>R*</th><th>F1*</th><th>거짓/시간</th></tr>
+          <tr><td>YAMNet</td><td>웃음</td><td class="n">0.495</td><td class="n">0.833</td><td class="n">0.621</td><td class="n">6.52</td></tr>
+          <tr><td>YAMNet</td><td>박수</td><td class="n">1.000</td><td class="n">0.717</td><td class="n">0.835</td><td class="n">0.00</td></tr>
+          <tr class="hi"><td><b>EfficientAT</b></td><td>웃음</td><td class="n">0.789</td><td class="n">0.933</td><td class="n">0.855</td><td class="n">4.17</td></tr>
+          <tr class="hi"><td><b>EfficientAT</b></td><td>박수</td><td class="n">1.000</td><td class="n">0.933</td><td class="n">0.966</td><td class="n">0.00</td></tr>
+          <tr><td>PANNs</td><td>웃음</td><td class="n">0.525</td><td class="n">0.867</td><td class="n">0.654</td><td class="n">9.13</td></tr>
+          <tr><td>PANNs</td><td>박수</td><td class="n">0.947</td><td class="n">0.900</td><td class="n">0.923</td><td class="n">0.26</td></tr>
+        </table>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:14px;color:var(--sub);font-weight:800;margin-bottom:5px">직접 수집 사무실 음성만</div>
+        <table style="font-size:15.5px">
+          <tr><th>모델</th><th>웃음 R*</th><th>박수 R*</th><th>Macro F1*</th></tr>
+          <tr><td>YAMNet</td><td class="n">0.80</td><td class="n">0.85</td><td class="n">0.904</td></tr>
+          <tr><td>EfficientAT</td><td class="n">0.85</td><td class="n" style="color:var(--red)"><b>0.80</b></td><td class="n">0.904</td></tr>
+          <tr class="bad"><td><b>PANNs</b></td><td class="n">0.85</td><td class="n"><b>0.95</b></td><td class="n"><b>0.947</b></td></tr>
+        </table>
+        <div class="warn" style="margin-top:10px;font-size:15px"><b>사전 게이트를 엄격히 적용하면 EfficientAT은 탈락합니다.</b> 직접 수집 박수 Recall 0.80 &lt; 기준 0.85. 통과한 건 PANNs뿐입니다.</div>
+      </div>
+    </div>
+    <div class="note"><b>그럼에도 EfficientAT을 고른 이유</b> — PANNs는 웃음 거짓 이벤트 <b>12.86건/시간</b>, GPU 평균 <b>76.0%</b>, 최대 <b>14.8W</b>로 YOLO와 동시 실행해야 하는 엣지에서 부담이 가장 큽니다. 그래서 “승자”가 아니라 <b>“섀도 모드로 먼저 검증할 공학적 후보”</b>로 정했습니다. 섀도 = 이벤트를 업로드하지 않고 점수만 기록.</div>
+  </div>
+  <div class="src">자료/docs/32_*.md §4.1–4.3 · 직접 수집은 이벤트별 양성 20개 (1건 차이 = Recall 0.05)</div>
+  <div class="pg">15 / 19</div>
+</section>
+
+<!-- 16 -->
+<section class="slide compact" data-note="
+<h4>2-3 / 2-4. 112,724창 — 임계값을 관찰에서 분포로</h4>
+<b>“112,724번을 쟀다”가 정확히 무슨 뜻인지</b>부터 답하세요. 소리를 11만 번 들은 게 아닙니다.<br><br>
+EfficientAT은 <b>10초 창을 2.5초씩 밀며</b> 점수를 냅니다. 진단 로그에 남은 그 창이 112,724개입니다.
+2.5초 × 112,724 ≈ <b>78시간 분량</b>의 오디오입니다.<br><br>
+<b>“지배”의 정의:</b> 그 창에서 <b>가장 높은 점수를 받은 소리 종류</b>입니다.
+말소리가 지배한 창 79,624개, 웃음이 지배한 창 81개. 합이 112,724가 안 되는 건
+나머지 창은 제3의 소리(음악, 소음 등)가 지배했기 때문입니다.<br><br>
+<b>왜 재보정이 필요했나:</b> 그 전 임계값은 눈으로 본 점수 몇 개에 맞춘 값이었습니다.
+0.08에서 나간 발화 471건 중 <b>98.7%가 말소리</b>였습니다. 표본 몇 개로는 대화 분포의 꼬리를 막을 수 없습니다.<br><br>
+<b>우세 비율(dominance):</b> 임계값만으로 못 막는 구간이 있습니다.
+말소리가 창을 지배하는데 웃음 점수만 살짝 넘는 경우입니다.
+오발화 창의 우세 비율 중앙값이 <b>0.057</b>이었습니다. 1등 소리의 6%짜리 근거로 이벤트가 나가고 있었던 겁니다.<br><br>
+<span class='q'>중요 — 한계를 먼저 밝히세요: 웃음 지배 창이 81개뿐이라 웃음 쪽 비율은 표본이 작습니다.
+그리고 창이 겹치므로 <b>사건 단위 검출률은 창 단위 수치보다 높습니다.</b></span>
+">
+  <div class="kicker">2부 · 듣는다</div>
+  <h2>이벤트 기준을 정한 방법 — <span style="color:var(--blue)">112,724창 전수 분석</span></h2>
+  <div class="lead">“11만 번 쟀다”는 <b>10초 창을 2.5초씩 밀며 채점한 창의 개수</b>입니다. 약 <b>78시간</b> 분량입니다.</div>
+  <div class="body">
+    <div class="row">
+      <div style="flex:1.1">
+        <table style="font-size:16px">
+          <tr><th>그 창을 지배한 소리</th><th>창 수</th><th>중앙값</th><th>상위 10%</th><th>최대</th></tr>
+          <tr><td>말소리</td><td class="n">79,624</td><td class="n">0.0009</td><td class="n">0.0126</td><td class="n">0.4463</td></tr>
+          <tr class="hi"><td>웃음</td><td class="n">81</td><td class="n">0.3380</td><td class="n">0.5870</td><td class="n">0.7739</td></tr>
+        </table>
+        <p style="font-size:15px;color:var(--sub);margin-top:7px">※ “지배” = 그 창에서 가장 높은 점수를 받은 소리. 합이 112,724가 안 되는 것은 나머지 창을 제3의 소리가 지배했기 때문.</p>
+        <div class="warn" style="margin-top:11px;font-size:15.5px"><b>왜 재보정했나</b> — 이전 임계값은 눈으로 본 점수 몇 개에 맞춘 값이었습니다. <code>0.08</code>에서 나간 발화 <b>471건 중 98.7%가 말소리</b>였습니다. 표본 몇 개로는 대화 분포의 꼬리를 막을 수 없습니다.</div>
+      </div>
+      <div style="flex:1">
+        <table style="font-size:16px">
+          <tr><th>감도 단계</th><th>임계값</th><th>말소리 오검</th><th>웃음 검출</th></tr>
+          <tr><td>sensitive</td><td class="n">0.12</td><td class="n">0.97%</td><td class="n">96%</td></tr>
+          <tr class="hi"><td><b>default</b></td><td class="n"><b>0.15</b></td><td class="n"><b>0.70%</b></td><td class="n"><b>90%</b></td></tr>
+          <tr><td>insensitive</td><td class="n">0.30</td><td class="n">0.07%</td><td class="n">63%</td></tr>
+        </table>
+        <div class="card" style="margin-top:11px;padding:14px 17px">
+          <h3 style="font-size:18px">임계값으로 못 막는 구간</h3>
+          <p style="font-size:15.5px">말소리가 창을 <b>지배</b>하는데 웃음 점수만 살짝 넘는 경우가 남습니다. 오발화 창의 <b>우세 비율 중앙값은 0.057</b>이었습니다 — 1등 소리의 6%짜리 근거로 이벤트가 나가고 있었습니다.<br><br>
+          그래서 <code>DOMINANCE</code> 하한을 넣되 <b>기본값은 0.0(미적용)</b>으로 뒀습니다. 어느 값이 맞는지 <b>실측 근거가 아직 없기 때문</b>입니다. 대신 창마다 값을 기록해 다음 재보정 때 사후 스윕으로 정합니다.</p>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="font-size:15.5px"><b>한계 2가지를 먼저 밝힙니다</b> — ① 웃음 지배 창이 <b>81개뿐</b>이라 웃음 쪽 비율은 표본이 작습니다. ② 창이 2.5초씩 겹치므로 웃음 하나가 여러 창에 걸칩니다. 따라서 <b>사건 단위 검출률은 위 창 단위 수치보다 높습니다.</b></div>
+  </div>
+  <div class="src">자료/docs/33_오디오_이벤트_요구사항과_튜닝_결정.md §14 · ai/yolo/run_edge_ai_recording.sh:108–151</div>
+  <div class="pg">16 / 19</div>
+</section>
+
+<!-- 17 -->
+<section class="slide" style="justify-content:center;background:linear-gradient(145deg,#fdeef2,#fbf7f8)" data-note="
+<h4>불일치 슬라이드로 넘어가는 전환</h4>
+<b>여기서 잠깐 멈추세요.</b><br><br>
+발표를 이렇게 마무리하면 “잘 만들었다”로 끝납니다. 하지만 저장소를 실제로 뒤져보면
+문서와 코드가 어긋난 지점이 있습니다. 그걸 숨기지 않고 먼저 꺼냅니다.<br><br>
+<b>왜 이게 강한가:</b> 청중이 발견하기 전에 발표자가 먼저 말하면 신뢰가 올라갑니다.
+반대로 감췄다가 질문으로 나오면 발표 전체가 의심받습니다.<br><br>
+한 문장으로: <b>‘제가 직접 찾은 것이고, 아직 정리하지 못한 것도 있습니다.’</b>
+">
+  <div class="kicker">투명성</div>
+  <h1 style="font-size:46px">발표를 마치기 전에<br>밝혀야 할 것이 있습니다</h1>
+  <div class="lead" style="font-size:22px;margin-top:22px">저장소를 다시 확인하면서 찾은 <b>문서와 코드의 불일치 4가지</b>입니다.<br>숨기지 않고 먼저 말씀드립니다.</div>
+  <div class="pg">17 / 19</div>
+</section>
+
+<!-- 18 -->
+<section class="slide" data-note="
+<h4>불일치 4가지 — 각각의 정확한 설명</h4>
+<b>① 웃음 임계값이 두 개</b><br>
+벤치마크가 validation에서 고른 값은 0.016915입니다. 운영값은 0.15입니다. <b>둘은 모순이 아닙니다.</b>
+전자는 벤치마크 데이터셋에서 고른 값이고, 후자는 실제 운영 로그 112,724창으로 재보정한 값입니다.
+서로 다른 대상을 잰 다른 값입니다. 다만 문서만 보면 혼동됩니다.<br><br>
+<b>② 박수 이벤트가 운영에서 꺼져 있음</b><br>
+AUDIO_EVENT_CLAP_ENABLED=false. 백엔드 CLAP 계약이 배포되기 전까지 대기 중입니다.
+<b>탐지는 되지만 이벤트로 나가지 않습니다.</b> 박수 F1 0.966을 자랑하면서 이걸 안 밝히면 문제가 됩니다.<br><br>
+<b>③ confidence 값이 다름</b><br>
+코드 argparse 기본값은 0.35, 벤치마크 보고서의 운영점은 0.25입니다.<br><br>
+<b>④ TILT HOME 펄스가 다름</b><br>
+런북의 2026-07-29 검증 프로필은 1500us, 코드 현재 기본값은 611us입니다.
+611us는 8월 6일 실측 보정 결과입니다. 런북의 옛 프로필이 남아 있는 것입니다.<br><br>
+<b>③④에 대한 정직한 답:</b> 이 저장소는 <b>젯슨 실기의 env 파일이 저장소 기본값을 덮는 구조</b>입니다.
+따라서 실제 운영값은 젯슨에 있고 저장소에는 없습니다. 저는 <b>저장소 기준 값만</b> 말할 수 있습니다.
+이렇게 답하는 게 가장 정확합니다.
+">
+  <div class="kicker">투명성</div>
+  <h2>문서와 코드의 불일치 4가지</h2>
+  <div class="body">
+    <div class="row">
+      <div class="card" style="background:var(--red-s);border-color:#f4ccd7">
+        <span class="tag g-r">① 웃음 임계값</span>
+        <h3 style="margin-top:9px;font-size:19px">0.016915 vs 0.15</h3>
+        <p style="font-size:15.5px">벤치마크가 validation에서 고른 값은 <code>0.016915</code>, 운영값은 <code>0.15</code>.<br><br>
+        <b>모순이 아닙니다.</b> 전자는 벤치마크 데이터셋 기준, 후자는 운영 로그 112,724창 <b>재보정</b> 결과. 서로 다른 대상을 잰 값입니다.</p>
+      </div>
+      <div class="card" style="background:var(--red-s);border-color:#f4ccd7">
+        <span class="tag g-r">② 박수 이벤트</span>
+        <h3 style="margin-top:9px;font-size:19px">운영에서 꺼져 있음</h3>
+        <p style="font-size:15.5px"><code>AUDIO_EVENT_CLAP_ENABLED=false</code><br><br>
+        백엔드 CLAP 계약 배포 전까지 대기 중. <b>탐지는 되지만 이벤트로 나가지 않습니다.</b><br><br>
+        박수 F1 0.966은 <b>벤치마크 성능</b>이지 현재 운영 기능이 아닙니다.</p>
+      </div>
+      <div class="card" style="background:var(--amber-s);border-color:#f2ddb8">
+        <span class="tag g-a">③ confidence</span>
+        <h3 style="margin-top:9px;font-size:19px">0.35 vs 0.25</h3>
+        <p style="font-size:15.5px">코드 argparse 기본값 <code>0.35</code><br>벤치마크 보고서 운영점 <code>0.25</code><br><br>
+        어느 쪽이 실제 운영값인지 <b>저장소만으로는 단정할 수 없습니다.</b></p>
+      </div>
+      <div class="card" style="background:var(--amber-s);border-color:#f2ddb8">
+        <span class="tag g-a">④ TILT HOME 펄스*</span>
+        <h3 style="margin-top:9px;font-size:19px">1500us vs 611us</h3>
+        <p style="font-size:15.5px">런북 2026-07-29 프로필 <code>1500us</code><br>코드 현재 기본값 <code>611us</code><br><br>
+        <code>611us</code>는 <b>8월 6일 실측 보정 결과</b>이고, 런북에 옛 프로필이 남아 있는 것입니다.</p>
+      </div>
+    </div>
+    <div class="warn"><b>③④에 대한 정직한 답변 —</b> 이 저장소는 <b>젯슨 실기의 env 파일이 저장소 기본값을 덮는 구조</b>입니다. 실제 운영값은 젯슨에 있고 저장소에는 없습니다. 따라서 오늘 제가 말씀드린 수치는 모두 <b>“저장소 기준 값”</b>이며, 실제 운영값 확정은 젯슨에서 직접 확인해야 합니다.</div>
+  </div>
+  <div class="src">ai/device_agent/device-agent.jetson.env.example:98–110 · ai/yolo/servo_controller.py:907 · yolov8_autoframe_jetson.py:156</div>
+  <div class="pg">18 / 19</div>
+</section>
+
+<!-- 19 -->
+<section class="slide" data-note="
+<h4>정리 및 질문</h4>
+세 문장으로 닫으세요.<br><br>
+1. <b>측정 없이 결정하지 않았다</b> — 순서 회전, 3회 반복, SHA-256 고정, 112,724창 전수 분석.<br>
+2. <b>1등을 그대로 채택하지 않았다</b> — 비전은 mAP 1등 대신 운영 오류가 적은 쪽, 오디오는 F1 1등을 섀도부터.<br>
+3. <b>모르는 것은 모른다고 남겼다</b> — 속도 향상률 미측정, dominance 기본값 0.0, 불일치 4가지 공개.<br><br>
+<b>예상 질문 준비:</b><br>
+<span class='q'>· ‘395장/2,064개는 통계적으로 충분한가?’ → 충분하지 않습니다. 그래서 단일 지표로 결론내지 않고 여러 지표를 함께 봤습니다.</span><br>
+<span class='q'>· ‘유의성 검정은?’ → 하지 않았습니다. 세 회차 재현성과 운영 지표 일관성으로 판단했습니다.</span><br>
+<span class='q'>· ‘실제 서비스에 EfficientAT이 적용됐나?’ → 네, 오디오 이벤트 권한을 넘겼습니다. 다만 박수 이벤트는 아직 꺼져 있습니다.</span><br>
+<span class='q'>· ‘왜 클라우드가 아니라 엣지인가?’ → 영상·음성을 외부로 보내지 않아 프라이버시 이점이 있고, 네트워크가 끊겨도 동작합니다.</span>
+">
+  <div class="kicker">정리</div>
+  <h2>이 프로젝트에서 지킨 세 가지</h2>
+  <div class="body">
+    <div class="row">
+      <div class="card"><h3>① 측정 없이 결정하지 않았다</h3><p>실행 순서 회전, 모델당 3회 반복, 모델 <b>SHA-256*</b> 고정, 진단 로그 <b>112,724창 전수 분석</b>.</p></div>
+      <div class="card"><h3>② 1등을 그대로 채택하지 않았다</h3><p>비전은 <b>mAP* 1등 대신 운영 오류가 가장 적은</b> 후보를. 오디오는 <b>F1* 1등을 섀도 모드부터</b> 검증.</p></div>
+      <div class="card"><h3>③ 모르는 것은 모른다고 남겼다</h3><p>속도 향상률 미측정, <code>dominance</code> 기본값 0.0 유지, 문서·코드 불일치 4가지 공개.</p></div>
+    </div>
+    <div style="text-align:center;margin-top:14px">
+      <div style="font-size:34px;font-weight:800;letter-spacing:-1px">질문 받겠습니다</div>
+      <div style="font-size:16px;color:var(--sub);margin-top:9px">모든 수치의 출처는 각 슬라이드 왼쪽 아래에 표기했습니다</div>
+    </div>
+  </div>
+  <div class="pg">19 / 19</div>
+</section>
+
+</div>
+<div id="notes"></div>
+<div id="hint">← → 넘기기　·　N 발표자 노트</div>
+<script>
+  var slides=document.querySelectorAll('.slide'),notes=document.getElementById('notes'),
+      stage=document.getElementById('stage'),i=0,sn=false;
+  function fit(){
+    var pad=sn?window.innerHeight*0.44:0;
+    var s=Math.min(window.innerWidth/1280,(window.innerHeight-pad)/720);
+    stage.style.transform='scale('+s+')';stage.style.transformOrigin='top left';
+    stage.style.left=(window.innerWidth-1280*s)/2+'px';
+    stage.style.top=Math.max(0,(window.innerHeight-pad-720*s)/2)+'px';
+  }
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach(function(el,k){el.classList.toggle('on',k===i)});
+    notes.innerHTML=slides[i].getAttribute('data-note')||'<h4>노트 없음</h4>';fit();
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){show(i+1);e.preventDefault();}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){show(i-1);e.preventDefault();}
+    else if(e.key==='Home')show(0); else if(e.key==='End')show(slides.length-1);
+    else if(e.key==='n'||e.key==='N'){sn=!sn;notes.classList.toggle('on',sn);fit();}
+  });
+  document.addEventListener('click',function(e){if(e.target.closest('#notes'))return;show(i+1);});
+  window.addEventListener('resize',fit);show(0);
+</script>
+</body>
+</html>

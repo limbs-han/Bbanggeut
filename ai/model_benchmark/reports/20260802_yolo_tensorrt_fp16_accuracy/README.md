@@ -99,7 +99,7 @@ FPS와 Wall P95는 세 번 측정한 값의 평균이다. `±` 값은 세 번의
 ## 10. 재현 자료
 
 - 정량 원본: [`benchmark-results.json`](./benchmark-results.json)
-- 정적 대시보드: [`dashboard.html`](./dashboard.html)
+- 정적 대시보드: [`dashboard_yolo.html`](./dashboard_yolo.html)
 - Jetson 원본 결과: `/home/ssafy/ai_benchmark_results/yolo-trt-fp16-395-comparison-20260802T055004Z`
 
-정적 대시보드는 `dashboard.html?model=yolov8n`, `dashboard.html?model=yolo11n`, `dashboard.html?model=yolo26n` 쿼리로 모델별 화면을 재현한다.
+정적 대시보드는 `dashboard_yolo.html?model=yolov8n`, `dashboard_yolo.html?model=yolo11n`, `dashboard_yolo.html?model=yolo26n` 쿼리로 모델별 화면을 재현한다.
