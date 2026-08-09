@@ -7,6 +7,7 @@ import 'package:william_james_app/editor/editor_tokens.dart';
 import 'package:william_james_app/editor/editor_trim_bar.dart';
 import 'package:william_james_app/editor/editor_workspace.dart';
 import 'package:william_james_app/editor/edit_recommendation_client.dart';
+import 'package:william_james_app/core/models.dart';
 
 void main() {
   EditorProjectController newController() => EditorProjectController(
@@ -42,6 +43,8 @@ void main() {
     bool rangePreviewing = false,
     Map<String, EditRecommendation> presetRecommendations = const {},
     ValueChanged<String>? onRecommendationSelected,
+    VideoAnalysis analysis = VideoAnalysis.none,
+    VoidCallback? onAiZoomAdd,
   }) => MaterialApp(
     home: Scaffold(
       body: EditorWorkspace(
@@ -69,6 +72,7 @@ void main() {
         presetRecommendations: presetRecommendations,
         recommendationLoading: false,
         onRecommendationSelected: onRecommendationSelected ?? (_) {},
+        analysis: analysis,
         onText: onText ?? () {},
         directCaptionAddMode: directCaptionAddMode,
         onDirectCaptionAddMode: onDirectCaptionAddMode,
@@ -81,12 +85,73 @@ void main() {
         onLookSelected: onLookSelected ?? (_) {},
         onAiCaption: onAiCaption ?? () {},
         onZoomAdd: () {},
+        onAiZoomAdd: onAiZoomAdd ?? () {},
         onZoomRemove: (_) {},
         onZoomSelected: (_) {},
         onToolSelected: controller.selectTool,
       ),
     ),
   );
+
+  testWidgets('줌 탭에는 AI 줌을 다시 부르는 단추가 있다', (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController()..selectTool(EditorTool.zoom);
+    var called = 0;
+
+    await tester.pumpWidget(workspace(controller, onAiZoomAdd: () => called++));
+    await tester.pumpAndSettle();
+
+    // 줌이 하나도 없는 상태에서도 눌린다 — 지우고 나서 되돌리는 자리다.
+    expect(find.byKey(const Key('editor-add-ai-zoom')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('editor-add-ai-zoom')));
+    await tester.pump();
+
+    expect(called, 1);
+    // 직접 만드는 단추도 그대로 있다.
+    expect(find.byKey(const Key('editor-add-zoom')), findsOneWidget);
+  });
+
+  testWidgets('AI 분석 진행률은 띠가 아니라 AI 컷 옆 숫자로 붙는다', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final controller = newController();
+
+    await tester.pumpWidget(
+      workspace(
+        controller,
+        analysis: const VideoAnalysis(
+          status: 'RUNNING',
+          stage: 'expression',
+          progress: 0.42,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('editor-analysis-progress')), findsOneWidget);
+    expect(find.text('42%'), findsOneWidget);
+    // 예전 노란 띠의 문구는 편집 화면에서 사라졌다 — 세로를 뺏지 않는다.
+    expect(find.textContaining('AI가 영상을 살펴보는 중'), findsNothing);
+  });
+
+  testWidgets('분석이 끝났으면 AI 컷 옆에 아무것도 붙지 않는다', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      workspace(
+        newController(),
+        analysis: const VideoAnalysis(status: 'DONE', progress: 1),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('editor-analysis-progress')), findsNothing);
+  });
 
   /// 구간 막대와 화면을 잇는 배선. 실제 편집 화면이 하는 것과 같다 — 끄는
   /// 동안에는 이력을 쌓지 않고, 손을 뗄 때 한 칸만 쌓는다.

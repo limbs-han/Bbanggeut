@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from typing import Any
 
 from video_editor.adaptive_selector import (
     AdaptiveConfig,
@@ -20,7 +21,8 @@ from video_editor.yamnet_analysis import (
 )
 from video_editor.video_features import normalize_video_windows
 from video_editor.duration_presets import apply_duration_preset
-from video_editor.zoom_planner import plan_zoom_segments
+from video_editor.face_tracks import build_face_tracks
+from video_editor.zoom_planner import _max_safe_scale, plan_zoom_segments
 from video_editor.render_video import build_zoompan_filter
 from video_editor.expression_analysis import _face_reaction
 
@@ -498,6 +500,347 @@ class CutSelectorTests(unittest.TestCase):
         self.assertIn("between(on", filter_text)
         self.assertNotIn("in_time", filter_text)
         self.assertNotIn("min(min", filter_text)
+
+    def test_zoom_follows_the_face_it_locked_on(self) -> None:
+        """확대해 둔 채로 사람이 움직이면 초점도 그 사람을 따라간다."""
+        timeline = [
+            {
+                "startMs": second * 1000,
+                "endMs": (second + 1) * 1000,
+                "socialEvent": 0.8 if 19 <= second <= 21 else 0.1,
+                "ambientEvent": 0.0,
+                "features": {
+                    "laughter": 0.8 if 19 <= second <= 21 else 0.0,
+                    "reaction": 0.0,
+                    "loudnessRise": 0.5 if 19 <= second <= 21 else 0.0,
+                },
+            }
+            for second in range(40)
+        ]
+        # 웃는 사람은 웃음이 터진 20초 언저리에 왼쪽(0.30)에서 오른쪽으로
+        # 걸어간다. 반대편(0.85)에는 자리를 지키는 다른 사람이 있다.
+        def walker_x(sample: int) -> float:
+            return round(0.30 + 0.01 * min(24, max(0, sample - 72)), 4)
+
+        expression = {
+            "expressionWindows": [
+                {
+                    "startMs": sample * 250,
+                    "endMs": (sample + 1) * 250,
+                    "faceCount": 2,
+                    "reactionScore": 0.9 if 79 <= sample <= 81 else 0.1,
+                    "focusX": walker_x(sample),
+                    "focusY": 0.4,
+                    "faceWidth": 0.15,
+                    "faceHeight": 0.15,
+                    "dominantExpression": "smile",
+                    "faces": [
+                        {
+                            "focusX": walker_x(sample),
+                            "focusY": 0.4,
+                            "faceHeight": 0.15,
+                        },
+                        {"focusX": 0.85, "focusY": 0.6, "faceHeight": 0.15},
+                    ],
+                }
+                for sample in range(160)
+            ]
+        }
+        cut = {"startMs": 0, "endMs": 40_000, "durationMs": 40_000}
+        face_tracks = build_face_tracks(expression)
+
+        zooms = plan_zoom_segments(
+            timeline, expression, cut, enabled=True, face_tracks=face_tracks
+        )
+
+        self.assertEqual(1, len(zooms))
+        zoom = zooms[0]
+        walker = next(
+            track
+            for track in face_tracks
+            if abs(track["samples"][0]["x"] - 0.30) < 0.02
+        )
+        # 걸어가는 사람의 궤적을 잡았다 — 자리를 지키는 옆 사람이 아니다.
+        self.assertEqual(walker["id"], zoom["faceTrackId"])
+        track = zoom["focusTrack"]
+        self.assertGreaterEqual(len(track), 2)
+        self.assertEqual(zoom["startMs"], track[0]["ms"])
+        self.assertEqual(zoom["endMs"], track[-1]["ms"])
+        # 초점은 사람이 간 방향(오른쪽)으로, 간 만큼을 죽은 구간만큼 뒤에서
+        # 따라간다 — 앞질러 가지는 않는다.
+        moved = track[-1]["dx"] - track[0]["dx"]
+        walked = walker_x(zoom["endMs"] // 250) - walker_x(zoom["startMs"] // 250)
+        self.assertGreater(moved, walked / 2)
+        self.assertLessEqual(moved, walked)
+        # 위아래로는 움직이지 않았으니 초점도 가만히 있는다.
+        self.assertLess(max(abs(point["dy"]) for point in track), 0.01)
+        # 정지 초점은 그대로다 — 옛 앱은 이 값만 읽는다.
+        self.assertAlmostEqual(walker_x(80), zoom["focusX"], places=2)
+
+        # 렌더러는 키프레임마다 초점이 바뀌는 표현식을 만든다.
+        filter_text = build_zoompan_filter(1280, 720, 30.0, 0, zooms)
+        self.assertIn("gte(on", filter_text)
+
+    def test_zoom_caps_scale_so_the_face_stays_in_frame(self) -> None:
+        """가장자리에 선 얼굴은 상한이 낮다 — 조금만 키워도 잘리기 때문이다."""
+        timeline = [
+            {
+                "startMs": second * 1000,
+                "endMs": (second + 1) * 1000,
+                "socialEvent": 0.8 if 19 <= second <= 21 else 0.1,
+                "ambientEvent": 0.0,
+                "features": {
+                    "laughter": 0.8 if 19 <= second <= 21 else 0.0,
+                    "reaction": 0.0,
+                    "loudnessRise": 0.5 if 19 <= second <= 21 else 0.0,
+                },
+            }
+            for second in range(40)
+        ]
+
+        def plan(face_x: float) -> dict[str, Any]:
+            expression = {
+                "expressionWindows": [
+                    {
+                        "startMs": sample * 250,
+                        "endMs": (sample + 1) * 250,
+                        "faceCount": 1,
+                        "reactionScore": 0.9 if 79 <= sample <= 81 else 0.1,
+                        "focusX": face_x,
+                        "focusY": 0.5,
+                        "faceWidth": 0.12,
+                        "faceHeight": 0.15,
+                        "dominantExpression": "smile",
+                        "faces": [
+                            {
+                                "focusX": face_x,
+                                "focusY": 0.5,
+                                "faceWidth": 0.12,
+                                "faceHeight": 0.15,
+                            }
+                        ],
+                    }
+                    for sample in range(160)
+                ]
+            }
+            zooms = plan_zoom_segments(
+                timeline,
+                expression,
+                {"startMs": 0, "endMs": 40_000, "durationMs": 40_000},
+                enabled=True,
+                face_tracks=build_face_tracks(expression),
+            )
+            return zooms[0]
+
+        centered = plan(0.50)
+        edge = plan(0.14)
+
+        # 창을 밀어 넣으므로 얼굴이 어디에 서 있든 상한이 같다 — 배율을
+        # 정하는 것은 자리가 아니라 **얼굴 상자 크기**다. 작은 얼굴(0.15)은
+        # 2.8배 천장까지 열린다.
+        self.assertEqual(centered["maxScale"], edge["maxScale"])
+        self.assertEqual(2.80, edge["maxScale"])
+        # 초점이 창 중심이라는 표시를 함께 보낸다.
+        self.assertEqual("window", edge["focusModel"])
+
+    def test_safe_scale_is_decided_by_face_size_not_position(self) -> None:
+        """큰 얼굴은 상한이 낮고, 그 상한에서 얼굴이 창에 꼭 들어간다."""
+
+        def cap(x: float, height: float) -> float:
+            samples = [
+                {"ms": ms, "x": x, "y": 0.5, "h": height, "w": height * 0.8}
+                for ms in range(0, 2001, 250)
+            ]
+            return _max_safe_scale(samples, [], 0, 2000, x, 0.5)
+
+        # 세로 0.45 + 양쪽 여백 0.02 = 0.49가 창(1/s)에 들어가는 한계.
+        self.assertAlmostEqual(1.0 / 0.49, cap(0.5, 0.45), places=4)
+        # 가장자리에 서 있어도 같은 값이다 — 자리가 배율을 깎지 않는다.
+        self.assertAlmostEqual(cap(0.5, 0.45), cap(0.20, 0.45), places=6)
+        # 그 상한에서 얼굴 상자가 화면을 벗어나지 않는다. 폭 0.36짜리 얼굴이
+        # 실제로 설 수 있는 가장 왼쪽(0.20)에서 재 본다.
+        scale = cap(0.20, 0.45)
+        half = 0.5 / scale
+        center = min(max(0.20, half), 1 - half)
+        for point in (0.20 - 0.45 * 0.8 / 2, 0.20 + 0.45 * 0.8 / 2):
+            screen = 0.5 + (point - center) * scale
+            self.assertGreaterEqual(round(screen, 9), 0.0)
+            self.assertLessEqual(round(screen, 9), 1.0)
+
+    def test_video_faces_keep_filling_while_the_person_walks(self) -> None:
+        """움직이는 사람도 계속 메워진다 — 걸음을 '다른 사람'으로 버리지 않는다.
+
+        실제로 그랬다: 500ms에 화면의 8%를 걸어간 순간이 걸러져 궤적이
+        끊겼고, 줌은 마지막 자리에 얼어붙은 채 사람만 화면 밖으로 걸어
+        나갔다. 옆 사람(0.4 넘게 떨어진)은 여전히 안 들어와야 한다.
+        """
+        expression = {
+            "expressionWindows": [
+                {
+                    "startMs": ms,
+                    "endMs": ms + 250,
+                    "faceCount": 1,
+                    "reactionScore": 0.5,
+                    "focusX": 0.55,
+                    "focusY": 0.18,
+                    "faceWidth": 0.12,
+                    "faceHeight": 0.16,
+                    "faces": [
+                        {
+                            "focusX": 0.55,
+                            "focusY": 0.18,
+                            "faceWidth": 0.12,
+                            "faceHeight": 0.16,
+                        }
+                    ],
+                }
+                # 표정 분석은 앞 1초만 잡았다(고개를 돌리면 놓친다).
+                for ms in range(2000, 3000, 250)
+            ]
+        }
+        # 영상 분석은 계속 잡았다 — 그 사람은 왼쪽 아래로 걸어가고,
+        # 중간중간 다른 사람(오른쪽 끝)이 가장 큰 얼굴로 잡힌다.
+        walk = {3250: (0.51, 0.19), 3750: (0.47, 0.24), 6250: (0.41, 0.28)}
+        other = {4250: (0.93, 0.08), 5250: (0.81, 0.07), 6750: (0.97, 0.40)}
+        windows = []
+        for ms in range(2250, 7000, 500):
+            spot = walk.get(ms) or other.get(ms)
+            windows.append(
+                {
+                    "startMs": ms - 250,
+                    "endMs": ms + 250,
+                    "faceCount": 2 if spot else 0,
+                    "largestFaceArea": 0.0128 if spot else 0.0,
+                    "faceCenterX": spot[0] if spot else 0.5,
+                    "faceCenterY": spot[1] if spot else 0.5,
+                }
+            )
+
+        tracks = build_face_tracks(expression, {"videoWindows": windows})
+
+        self.assertEqual(1, len(tracks))
+        filled = [
+            q for q in tracks[0]["samples"] if q.get("src") == "video"
+        ]
+        got = {int(q["ms"]) for q in filled}
+        # 걸어가는 세 표본이 전부 붙는다.
+        self.assertEqual({3250, 3750, 6250}, got)
+        # 옆 사람은 하나도 안 붙는다.
+        for ms in other:
+            self.assertNotIn(ms, got)
+        # 궤적이 걸음을 따라 왼쪽으로 이어진다.
+        self.assertLess(tracks[0]["samples"][-1]["x"], 0.45)
+
+    def test_video_v2_faces_go_to_their_own_track(self) -> None:
+        """창마다 얼굴을 전부 주면 '가장 큰 얼굴'이 바뀌어도 각자 제 궤적에 붙는다.
+
+        v1은 창마다 가장 큰 얼굴 하나만 남겨서, 뒤쪽 사람이 잠깐 더 크게
+        잡히면 앞사람 궤적이 그 자리에서 끊겼다.
+        """
+        # 표정 분석은 두 사람을 앞 1초만 잡았다.
+        expression = {
+            "expressionWindows": [
+                {
+                    "startMs": ms,
+                    "endMs": ms + 250,
+                    "faceCount": 2,
+                    "reactionScore": 0.5,
+                    "focusX": 0.30,
+                    "focusY": 0.40,
+                    "faceWidth": 0.12,
+                    "faceHeight": 0.16,
+                    "faces": [
+                        {
+                            "focusX": 0.30,
+                            "focusY": 0.40,
+                            "faceWidth": 0.12,
+                            "faceHeight": 0.16,
+                        },
+                        {
+                            "focusX": 0.80,
+                            "focusY": 0.30,
+                            "faceWidth": 0.12,
+                            "faceHeight": 0.16,
+                        },
+                    ],
+                }
+                for ms in range(2000, 3000, 250)
+            ]
+        }
+        # 영상 분석은 계속 잡았고, 왼쪽 사람이 걸어간다. 크기 순서는 창마다
+        # 뒤바뀐다(뒤쪽 사람이 더 크게 잡히는 창이 섞여 있다).
+        windows = []
+        for index, ms in enumerate(range(3250, 6000, 500)):
+            walker = (0.30 - 0.02 * index, 0.40 + 0.01 * index)
+            stayer = (0.80, 0.30)
+            pair = [walker, stayer] if index % 2 == 0 else [stayer, walker]
+            windows.append(
+                {
+                    "startMs": ms - 250,
+                    "endMs": ms + 250,
+                    "faceCount": 2,
+                    "largestFaceArea": 0.0128,
+                    "faceCenterX": pair[0][0],
+                    "faceCenterY": pair[0][1],
+                    "faces": [
+                        {"x": p[0], "y": p[1], "w": 0.12, "h": 0.16} for p in pair
+                    ],
+                }
+            )
+
+        tracks = build_face_tracks(expression, {"videoWindows": windows})
+
+        self.assertEqual(2, len(tracks))
+        walking = min(tracks, key=lambda t: t["samples"][-1]["x"])
+        staying = max(tracks, key=lambda t: t["samples"][-1]["x"])
+        # 걸어간 사람은 끝까지 따라 붙는다.
+        self.assertLess(walking["samples"][-1]["x"], 0.24)
+        # 자리를 지킨 사람은 그 자리에 남는다 — 두 사람이 섞이지 않았다.
+        self.assertAlmostEqual(0.80, staying["samples"][-1]["x"], places=2)
+        # 한 창의 두 얼굴이 같은 궤적에 몰리지 않는다.
+        for track in tracks:
+            stamps = [int(q["ms"]) for q in track["samples"]]
+            self.assertEqual(len(stamps), len(set(stamps)))
+
+    def test_zoom_without_face_tracks_keeps_a_still_focus(self) -> None:
+        """궤적을 못 찾으면 예전처럼 초점이 고정이다."""
+        timeline = [
+            {
+                "startMs": second * 1000,
+                "endMs": (second + 1) * 1000,
+                "socialEvent": 0.8 if 19 <= second <= 21 else 0.1,
+                "ambientEvent": 0.0,
+                "features": {
+                    "laughter": 0.8 if 19 <= second <= 21 else 0.0,
+                    "reaction": 0.0,
+                    "loudnessRise": 0.5 if 19 <= second <= 21 else 0.0,
+                },
+            }
+            for second in range(40)
+        ]
+        expression = {
+            "expressionWindows": [
+                {
+                    "startMs": sample * 250,
+                    "endMs": (sample + 1) * 250,
+                    "faceCount": 1,
+                    "reactionScore": 0.9 if 79 <= sample <= 81 else 0.1,
+                    "focusX": 0.3,
+                    "focusY": 0.4,
+                    "faceWidth": 0.15,
+                    "faceHeight": 0.15,
+                    "dominantExpression": "smile",
+                }
+                for sample in range(160)
+            ]
+        }
+        cut = {"startMs": 0, "endMs": 40_000, "durationMs": 40_000}
+
+        zooms = plan_zoom_segments(timeline, expression, cut, enabled=True)
+
+        self.assertEqual([], zooms[0]["focusTrack"])
+        self.assertIsNone(zooms[0]["faceTrackId"])
+        self.assertNotIn("gte(on", build_zoompan_filter(1280, 720, 30.0, 0, zooms))
 
     def test_surprise_blendshapes_are_calibrated_against_smiles(self) -> None:
         categories = [

@@ -10,6 +10,7 @@ from typing import Any
 
 from .adaptive_selector import build_timeline, select_adaptive_highlight
 from .duration_presets import apply_duration_preset
+from .face_tracks import build_face_tracks
 from .zoom_planner import plan_zoom_segments
 
 
@@ -33,8 +34,21 @@ def build_adaptive_recipe(
         video_analysis,
         duration_preset,
     )
+    # 사람별 얼굴 궤적. 자동 줌이 "누구를 따라갈지" 고르는 데 쓰고, 레시피에도
+    # 실어 보낸다 — 앱의 얼굴 추적 스티커가 같은 목록에서 사람을 고른다.
+    # 영상 분석(BlazeFace)이 잡은 얼굴로 궤적의 빈 자리를 메운다 — 표정
+    # 분석만으로는 고개 기울인 얼굴을 자주 놓쳐 줌이 사람을 놓친다.
+    face_tracks = (
+        build_face_tracks(expression_analysis, video_analysis)
+        if expression_analysis
+        else []
+    )
     zoom_segments = plan_zoom_segments(
-        timeline, expression_analysis, cut, enabled=zoom_enabled
+        timeline,
+        expression_analysis,
+        cut,
+        enabled=zoom_enabled,
+        face_tracks=face_tracks,
     )
     return {
         "recipeVersion": (
@@ -62,6 +76,7 @@ def build_adaptive_recipe(
         "durationPreset": duration_preset,
         "zoomEnabled": zoom_enabled,
         "zoomSegments": zoom_segments,
+        "faceTracks": face_tracks,
         "arLayers": [],
         "scoreTimeline": timeline,
     }

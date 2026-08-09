@@ -19,7 +19,11 @@ STT 없이 오디오 이벤트, 음향 변화, 영상 정보, 얼굴 표정을 �
 
 - `yamnet_analysis.py`: speech, laughter, reaction, music 등 오디오 이벤트 분류
 - `audio_features.py`: dBFS, 상대 음량, 음량 상승, spectral flux
-- `video_features.py`: 움직임, 장면 전환, 영상 품질, 얼굴 위치와 크기
+- `video_features.py`: 움직임, 장면 전환, 영상 품질, 얼굴 위치와 크기 —
+  v2부터 창마다 검출된 얼굴을 **전부**(`faces`) 남긴다. 가장 큰 얼굴 하나만
+  남기면 여러 명이 비슷한 크기일 때 그 자리가 사람 사이를 오가고, 자동 줌의
+  얼굴 궤적이 거기서 끊긴다. **옛 분석(video-v1)은 이 목록이 없으므로 그
+  영상은 재분석해야 자동 줌 추적이 제 성능을 낸다.**
 - `expression_analysis.py`: MediaPipe Face Landmarker 표정 반응
 - `adaptive_selector.py`: 멀티모달 사건 점수와 연속 구간 선택
 - `duration_presets.py`: short, medium, long 길이 프리셋 적용
@@ -66,6 +70,46 @@ fixture에 없는 영상은 앱이 원본을 올려 분석시킨다:
 완성본 MP4는 **앱(Media3)만** 만든다. 앱이 백엔드에 업로드 자리를 예약
 (`POST /api/videos/{id}/edits`)하고 서명된 URL로 직접 올린다 — editor-api는
 이 경로에 끼지 않는다.
+
+### `POST /v1/edit-recommendations` 응답 — 레시피 스키마
+
+`04-API명세서.md`는 `/v1/*`에 API 번호를 붙이지 않고 **이 표를 기준으로
+가리킨다.** 필드를 더하거나 뜻을 바꾸면 여기부터 고칠 것.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `recipeVersion` | String | 레시피 형식. 표정 분석 + 줌이 있으면 `v10` |
+| `analysisVersions` | Object | 이 레시피를 만든 분석들의 버전(`yamnet`·`audio`·`video`·`expression`). **`video-v2`부터 창마다 얼굴을 전부 남긴다** |
+| `cut` | Object | `{startMs, endMs, durationMs}` — 앱이 클립 하나로 만든다 |
+| `durationPreset` | String | `auto`·`short`·`medium`·`long` |
+| `zoomEnabled` | bool | 요청의 `zoomEnabled` 그대로. 꺼져 있으면 `zoomSegments`는 빈 배열 |
+| `zoomSegments` | List | 자동 줌 구간. 아래 표 |
+| `faceTracks` | List | 사람별 얼굴 궤적 `{id, samples[]}`. 표본은 `{ms, x, y, h, w}`(원본 ms, 0~1 정규화). 얼굴 추적 스티커와 자동 줌이 같은 목록을 쓴다 |
+| `faceTrack` | List | 하위 호환. `faceTracks[0].samples`와 같다 — 옛 앱은 이것만 읽는다 |
+| `scoreTimeline` | List | 1초 빈별 사건 점수와 특징. "왜 이 구간인가"의 근거 |
+| `arLayers` | List | 예약 필드(현재 빈 배열) |
+
+**`zoomSegments[]`**
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `startMs`·`endMs` | int | 원본 기준 구간 |
+| `scale` | float | **서버가 계산한 배율**(얼굴 높이를 화면의 28~33%로). 앱이 그대로 쓰지 않는다 |
+| `targetFaceHeight` | float | 그 배율이 노린 얼굴 높이(0.28~0.333). 앱이 이 값으로 되짚어 45% 기준으로 다시 잡는다 |
+| `maxScale` | float | **안전 상한.** 얼굴 상자가 창(1/배율)에 들어가는 한계. 앱은 이 값을 넘지 않는다 |
+| `focusModel` | String | `window`면 초점이 **잘라낼 창의 중심**이다. 이 필드가 없는 옛 레시피·초안은 초점을 화면에 고정하던 옛 기하로 그린다 |
+| `focusX`·`focusY` | float | 기준 초점(0~1). 창 모델에서는 창 중심이고, 0.12~0.88로 자른다 |
+| `focusTrack` | List | 초점 키프레임 `{ms, dx, dy}`. **정지 초점에서 얼마나 옮길지**(절대 좌표 아님)라, 앱에서 초점을 끌면 경로 전체가 같이 옮겨진다. 비어 있으면 초점 고정 |
+| `faceTrackId` | String? | 따라가는 사람(`faceTracks[].id`). 추적이 없으면 null |
+| `rampMs` | int | 항상 0 — 램프 없이 하드 컷이다(v4에서 폐기) |
+| `expressionScore`·`soundScore`·`combinedScore` | float | 이 구간이 뽑힌 근거 점수 |
+| `expression` | String | `smile` 또는 `surprise` |
+| `reason` | String | 선정 사유 문자열 |
+
+**앱이 최종 배율을 정하는 식** — `min(2.8, max(1.2, scale × 0.45 / targetFaceHeight))`를
+구한 뒤 `maxScale`로 자른다(`EditorProjectController.autoZoomFaceHeight`).
+화면 좌표는 `0.5 + (원본좌표 − 창중심) × 배율`이고 창 중심은
+`clamp(focusX + dx, 0.5/배율, 1 − 0.5/배율)`이다.
 
 분석 완료와 편집 영상 새 댓글은 백엔드 `/api/editor/events`로 승격돼
 알림센터·FCM 푸시로 이어진다(editor-api가 같은 서명 키로 iss=wj-editor
@@ -134,6 +178,20 @@ python -m video_editor.adaptive_cli \
 STT 문맥을 사용하지 않으므로 프리셋은 이야기의 의미적 완결성이 아니라 사건 점수와 음향·장면 경계를 기준으로 선택한다.
 
 줌은 MediaPipe blendshape 표정 점수 65%와 같은 시점의 웃음·반응음·음량 상승·음악 점수 35%를 결합한다. 얼굴 목표 높이는 화면의 28~33.3%, 배율은 1.20~2.80배, 길이는 1.2~4초다. 줌 전환 램프는 사용하지 않는다.
+
+초점은 **잘라낼 창의 중심**이다(`focusModel: "window"`). 창(1/배율)이 프레임을
+벗어나면 안쪽으로 밀어 넣으므로, 가장자리에 선 얼굴도 배율을 깎지 않고 담긴다.
+그래서 `maxScale`(안전 상한)은 얼굴이 **어디 있는지**가 아니라 얼굴 상자가 창에
+들어가는지로만 정해진다 — 얼굴 세로+여백 0.04가 1/배율 안에 들어가는 한계다.
+표시가 없는 옛 레시피·초안은 초점을 화면에 고정하던 옛 기하로 그린다(앱이 그렇게
+갈라 본다). `render_video.py`의 zoompan은 처음부터 창 중심이라 이 모델과 같다.
+
+확대한 채로 그 사람이 움직이면 초점도 따라간다. 잡은 얼굴이 어느 사람인지는
+`face_tracks.py`의 사람별 궤적(스티커가 쓰는 그 목록)에서 찾아, 줌마다
+`faceTrackId`와 `focusTrack`(`{ms, dx, dy}` — 정지 초점 `focusX/focusY`에서
+옮길 양)을 함께 싣는다. 궤적은 이웃 250ms 표본을 평균 낸 뒤 0.012(정규화
+좌표)만큼 뒤에서 따라간다 — 그 안에서 떠는 검출은 무시하고 실제 이동만
+쫓는다. 따라갈 궤적을 못 찾으면 `focusTrack`이 비고 초점은 예전처럼 고정이다.
 
 렌더링(레시피 눈으로 확인하는 오프라인 도구 — 서비스 경로가 아니다):
 

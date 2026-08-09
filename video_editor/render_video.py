@@ -17,6 +17,27 @@ def _ffmpeg_number(value: float) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
+def _focus_expression(
+    focus: float,
+    key: str,
+    segment: dict[str, Any],
+    cut_start_ms: int,
+    fps: float,
+) -> str:
+    """이 줌의 초점(0~1) 표현식. 얼굴을 따라가면 프레임에 따라 값이 바뀐다."""
+    track = segment.get("focusTrack") or []
+    if not track:
+        return _ffmpeg_number(focus)
+    expression = _ffmpeg_number(focus + float(track[0].get(key, 0.0)))
+    for point in track[1:]:
+        frame = _ffmpeg_number((int(point["ms"]) - cut_start_ms) / 1000.0 * fps)
+        value = _ffmpeg_number(
+            max(0.0, min(1.0, focus + float(point.get(key, 0.0))))
+        )
+        expression = f"if(gte(on,{frame}),{value},{expression})"
+    return expression
+
+
 def build_zoompan_filter(
     width: int,
     height: int,
@@ -47,8 +68,11 @@ def build_zoompan_filter(
             )
         condition = f"between(on,{start_text},{end_text})"
         zoom_expression = f"if({condition},{local_zoom},{zoom_expression})"
-        focus_x_text = _ffmpeg_number(focus_x)
-        focus_y_text = _ffmpeg_number(focus_y)
+        # 사람을 따라가는 줌은 초점이 시간에 따라 움직인다. 키프레임마다
+        # 값이 바뀌는 계단식 표현식으로 굽는다 — 앱(Media3)은 표본 사이를
+        # 보간하지만, 이 CLI는 레시피를 눈으로 확인하는 용도라 계단이면 된다.
+        focus_x_text = _focus_expression(focus_x, "dx", segment, cut_start_ms, fps)
+        focus_y_text = _focus_expression(focus_y, "dy", segment, cut_start_ms, fps)
         local_x = (
             f"max(0,min(iw-iw/zoom,{focus_x_text}*iw-iw/zoom/2))"
         )

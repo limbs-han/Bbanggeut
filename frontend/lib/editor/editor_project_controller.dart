@@ -12,6 +12,13 @@ class EditorProjectController extends ChangeNotifier {
 
   static const minimumClipDurationMs = 100;
 
+  /// 자동 줌이 노리는 얼굴 크기 — 화면 높이의 몇 할을 얼굴이 차지할지.
+  ///
+  /// **이 값 하나가 자동 줌의 세기다.** 서버는 0.28~0.33을 노리는데 작은
+  /// 휴대폰 화면에서는 확대한 티가 안 나서, 화면의 45%까지 끌어올린다.
+  /// 다만 가장자리에 선 얼굴은 서버가 주는 `maxScale`이 먼저 막는다.
+  static const autoZoomFaceHeight = 0.45;
+
   /// 자막 한 줄이 화면에 머무는 최소 시간. 이보다 짧으면 읽을 수 없다.
   ///
   /// 전사가 주는 시각은 낱말이 처음 인식된 시점으로 역산한 근사치라 0.1초
@@ -269,6 +276,11 @@ class EditorProjectController extends ChangeNotifier {
           ),
           automatic: map['automatic'] == true,
           clipId: map['clipId'] as String?,
+          focusTrack: _zoomFocusTrackFrom(map['focusTrack']),
+          faceTrackId: map['faceTrackId'] as String?,
+          // 표시가 없는 옛 초안은 옛 기하로 그린다 — 사용자가 잡아 둔
+          // 프레이밍이 말없이 달라지지 않게.
+          focusModel: _zoomFocusModelFrom(map['focusModel']),
         ),
       );
     }
@@ -432,33 +444,7 @@ class EditorProjectController extends ChangeNotifier {
     final total = _project.sourceDurationMs;
     if (total < minimumClipDurationMs || _project.clips.isEmpty) return;
     final targetClip = _project.selectedClip ?? _project.clips.first;
-    final autoZooms = (recommendation?.zoomSegments ?? const []).indexed
-        .map((entry) {
-          final value = entry.$2;
-          var scale = (value['scale'] as num).toDouble();
-          // 서버(zoom_planner)는 얼굴 높이를 화면의 0.28~0.33으로 맞춘다.
-          // 우리는 반응 얼굴이 화면의 1/3~1/2은 차야 한다고 본다 — 서버가
-          // 함께 보내는 targetFaceHeight로 실제 얼굴 크기를 되짚어 목표
-          // 0.40(1/3과 1/2 사이) 기준으로 배율을 다시 잡는다.
-          final targetFaceHeight =
-              (value['targetFaceHeight'] as num?)?.toDouble() ?? 0;
-          if (targetFaceHeight > 0) {
-            scale = (scale * 0.40 / targetFaceHeight).clamp(1.2, 2.8);
-          }
-          return EditorZoomSegment(
-            id: 'auto-zoom-${entry.$1}',
-            sourceStartMs: (value['startMs'] as num).round(),
-            sourceEndMs: (value['endMs'] as num).round(),
-            scale: scale,
-            focus: NormalizedPoint(
-              (value['focusX'] as num).toDouble(),
-              (value['focusY'] as num).toDouble(),
-            ),
-            automatic: true,
-            clipId: targetClip.id,
-          );
-        })
-        .toList(growable: false);
+    final autoZooms = _automaticZoomsFor(recommendation, targetClip);
 
     final int start;
     final int end;
@@ -562,6 +548,86 @@ class EditorProjectController extends ChangeNotifier {
     );
   }
 
+  /// 서버 추천의 자동 줌을 [clip]에 붙는 줌 구간으로 옮긴다.
+  ///
+  /// 배율은 서버 값을 그대로 쓰지 않는다 — 서버(zoom_planner)는 얼굴 높이를
+  /// 화면의 0.28~0.33으로 맞추는데, 작은 휴대폰 화면에서 1/3짜리 얼굴은
+  /// 확대한 티가 안 난다. 함께 오는 targetFaceHeight로 실제 얼굴 크기를
+  /// 되짚어 [autoZoomFaceHeight] 기준으로 다시 잡는다.
+  List<EditorZoomSegment> _automaticZoomsFor(
+    EditRecommendation? recommendation,
+    EditorClip clip,
+  ) => (recommendation?.zoomSegments ?? const []).indexed
+      .map((entry) {
+        final value = entry.$2;
+        var scale = (value['scale'] as num).toDouble();
+        final targetFaceHeight =
+            (value['targetFaceHeight'] as num?)?.toDouble() ?? 0;
+        if (targetFaceHeight > 0) {
+          scale = (scale * autoZoomFaceHeight / targetFaceHeight).clamp(
+            1.2,
+            2.8,
+          );
+        }
+        // 다만 화면 가장자리에 선 사람은 조금만 키워도 얼굴이 잘려 나간다.
+        // 서버가 얼굴 상자로 계산해 준 기하학적 상한을 넘지 않는다 —
+        // 크게 보이는 것보다 얼굴이 온전한 쪽이 먼저다.
+        final maxScale = (value['maxScale'] as num?)?.toDouble();
+        if (maxScale != null && maxScale > 0) {
+          scale = math.min(scale, math.max(1.2, maxScale));
+        }
+        return EditorZoomSegment(
+          id: 'auto-zoom-${entry.$1}',
+          sourceStartMs: (value['startMs'] as num).round(),
+          sourceEndMs: (value['endMs'] as num).round(),
+          scale: scale,
+          focus: NormalizedPoint(
+            (value['focusX'] as num).toDouble(),
+            (value['focusY'] as num).toDouble(),
+          ),
+          automatic: true,
+          clipId: clip.id,
+          // 서버가 잡은 얼굴이 움직이면 초점도 따라간다. 확대해 둔 채로
+          // 그 사람이 화면 밖으로 나가 버리던 것을 막는다.
+          focusTrack: _zoomFocusTrackFrom(value['focusTrack']),
+          faceTrackId: value['faceTrackId'] as String?,
+          focusModel: _zoomFocusModelFrom(value['focusModel']),
+        );
+      })
+      .toList(growable: false);
+
+  /// AI가 고른 줌을 지금 클립에 다시 깐다. **컷도 자막도 건드리지 않는다** —
+  /// 줌만 지웠다가 되돌리고 싶을 때 쓴다.
+  ///
+  /// 손으로 만든 줌은 그대로 두고 자동 줌만 갈아 끼운다. 클립 구간에 걸치지
+  /// 않는 줌은 버린다 — 컷을 옮겼으면 그 장면은 이미 화면에서 잘려 나갔고,
+  /// 보이지도 않는 줌을 목록에 쌓아 둘 이유가 없다.
+  ///
+  /// 되돌릴 줌이 하나도 없으면 아무것도 바꾸지 않고 false.
+  bool restoreAutomaticZooms(EditRecommendation recommendation) {
+    if (_project.clips.isEmpty) return false;
+    final clip = _project.selectedClip ?? _project.clips.first;
+    final restored = [
+      for (final zoom in _automaticZoomsFor(recommendation, clip))
+        if (zoom.sourceStartMs < clip.sourceEndMs &&
+            zoom.sourceEndMs > clip.sourceStartMs)
+          zoom,
+    ];
+    if (restored.isEmpty) return false;
+    _commit(
+      _project.copyWith(
+        zoomSegments: [
+          ...restored,
+          for (final zoom in _project.zoomSegments)
+            if (!zoom.automatic) zoom,
+        ],
+        selectedZoomId: restored.first.id,
+        selectedClipId: clip.id,
+      ),
+    );
+    return true;
+  }
+
   /// 재생 위치에서 3초짜리 클립을 하나 더 얹는다. 고른 클립 뒤에 들어가고,
   /// 구간은 손잡이·창 끌기로 바로 다듬는다.
   bool addClipAtPlayhead() {
@@ -644,6 +710,8 @@ class EditorProjectController extends ChangeNotifier {
       scale: 1.35,
       focus: NormalizedPoint.center,
       clipId: clip.id,
+      // 새로 만드는 줌은 창 모델이다 — 가장자리로 끌어도 잘리지 않는다.
+      focusModel: EditorZoomFocusModel.window,
     );
     _commit(
       _project.copyWith(
@@ -1473,6 +1541,32 @@ class EditorProjectController extends ChangeNotifier {
       tracks.add(EditorFaceTrack(id: id, samples: samples));
     }
     return tracks;
+  }
+
+  /// 서버·초안의 줌 `focusModel`. 값이 없으면 옛 기하([EditorZoomFocusModel
+  /// .anchor])다 — 이 필드가 생기기 전에 저장된 줌이라는 뜻이다.
+  static EditorZoomFocusModel _zoomFocusModelFrom(Object? raw) =>
+      EditorZoomFocusModel.values.asNameMap()[raw] ??
+      EditorZoomFocusModel.anchor;
+
+  /// 서버·초안의 줌 `focusTrack`([{ms, dx, dy}]). 사람을 따라가는 줌이
+  /// 초점을 기준 자리에서 얼마나 옮길지를 시간 순으로 담고 있다.
+  static List<EditorZoomFocusSample> _zoomFocusTrackFrom(Object? raw) {
+    final samples = <EditorZoomFocusSample>[];
+    for (final entry in raw as List? ?? const []) {
+      final map = Map<String, dynamic>.from(entry as Map);
+      final ms = (map['ms'] as num?)?.round();
+      if (ms == null) continue;
+      samples.add(
+        EditorZoomFocusSample(
+          sourceMs: ms,
+          dx: (map['dx'] as num?)?.toDouble() ?? 0,
+          dy: (map['dy'] as num?)?.toDouble() ?? 0,
+        ),
+      );
+    }
+    samples.sort((a, b) => a.sourceMs.compareTo(b.sourceMs));
+    return samples;
   }
 
   /// 지금 만지고 있는 클립. 고른 클립이 우선, 없으면 재생 위치의 클립이다.
