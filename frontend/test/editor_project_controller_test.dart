@@ -339,6 +339,74 @@ void main() {
     expect(layer.endMs, 2000);
   });
 
+  // "AI 자막이 컷 끝에 몰려 생긴다"의 정체. 전사는 편집 진입 즉시 돌기
+  // 시작해 끝나는 대로 자막을 얹는다 — 그 **뒤에** 컷 구간을 고르면
+  // (트림·AI 컷 모두) 자막이 원본 장면을 따라가지 않고 새 길이 안으로
+  // clamp돼, 구간 뒤의 자막 전부가 클립 끝(span-100)에 몰렸다.
+  test('자막을 먼저 얹고 컷 구간을 나중에 골라도 자막이 장면을 따라간다', () {
+    final subject = controller();
+    subject.applyTranscriptCaptions([
+      (startMs: 500, endMs: 1500, text: '컷 앞'),
+      (startMs: 4000, endMs: 5000, text: '컷 안'),
+      (startMs: 8000, endMs: 9000, text: '컷 뒤'),
+    ]);
+    expect(subject.project.textLayers, hasLength(3));
+
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 3000, sourceEndMs: 7000),
+      isTrue,
+    );
+
+    // 컷 앞·뒤 대사는 잘려 나간 장면과 함께 사라지고, 컷 안 대사만
+    // 같은 장면 위에 남는다 — 컷을 먼저 하고 자막을 나중에 얹은 결과와
+    // 완전히 같아야 한다.
+    final layer = subject.project.textLayers.single;
+    expect(layer.text, '컷 안');
+    expect(layer.startMs, 1000);
+    expect(layer.endMs, 2000);
+  });
+
+  test('구간에 걸친 자막은 겹치는 부분만 남는다', () {
+    final subject = controller();
+    subject.applyTranscriptCaptions([
+      (startMs: 2000, endMs: 4000, text: '경계 대사'),
+    ]);
+
+    expect(
+      subject.trimSelectedClip(sourceStartMs: 3000, sourceEndMs: 7000),
+      isTrue,
+    );
+
+    final layer = subject.project.textLayers.single;
+    expect(layer.startMs, 0);
+    expect(layer.endMs, 1000);
+  });
+
+  test('손잡이를 좁혔다 넓히는 동안 자막이 사라지거나 끝에 몰리지 않는다', () {
+    final subject = controller();
+    subject.applyTranscriptCaptions([
+      (startMs: 1000, endMs: 2000, text: '앞'),
+      (startMs: 8000, endMs: 9000, text: '뒤'),
+    ]);
+
+    subject.beginGesture();
+    subject.trimSelectedClip(sourceStartMs: 0, sourceEndMs: 5000, commit: false);
+    expect(subject.project.textLayers, hasLength(1));
+
+    // 같은 제스처 안에서 다시 넓히면 잘렸던 자막이 제자리로 돌아온다.
+    subject.trimSelectedClip(
+      sourceStartMs: 0,
+      sourceEndMs: 10000,
+      commit: false,
+    );
+    subject.endGesture();
+
+    final layers = subject.project.textLayers;
+    expect(layers, hasLength(2));
+    expect(layers.last.startMs, 8000);
+    expect(layers.last.endMs, 9000);
+  });
+
   test('자동 자막은 기존 기본 스타일로 만들고 사용자가 다시 바꿀 수 있다', () {
     final subject = controller();
     subject.applyTranscriptCaptions([
