@@ -50,6 +50,9 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   bool _hasPlayed = false;
   Timer? _idlePrefetchTimer;
 
+  /// 올라오는 중인 영상의 상태를 다시 묻는 시계. 페이지를 떠나면 멈춘다.
+  Timer? _statusPollTimer;
+
   /// 저장해 둔 편집 초안이 있는가. 버튼 문구와 '초안 삭제'를 가른다.
   bool _hasDraft = false;
   bool _discardingDraft = false;
@@ -115,11 +118,21 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
 
   Future<void> _loadPlayer() async {
     if (_video.status != 'READY') {
-      setState(() {
-        _loading = false;
-        _error = '영상 처리가 완료된 후 재생할 수 있습니다.';
-      });
-      return;
+      // 목록이 준 status는 그 시점의 스냅샷이다. 업로드가 막 끝난 영상은
+      // 서버가 이미 READY인데 스냅샷만 UPLOADING이라, 서버에 다시 묻지
+      // 않으면 이 화면이 "준비 안 됨"에 영영 갇힌다 — 편집은 상태를 안 보고
+      // 들어가서(서버 검사는 통과) 멀쩡히 열리니 더 고장처럼 보였다.
+      if (!await _refreshStatus()) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error = '영상이 아직 서버에 올라오는 중이에요.\n준비되면 여기서 바로 재생할 수 있어요.';
+        });
+        // 진짜로 올라오는 중이다. 준비되는 순간 재생을 연다.
+        _pollStatusUntilReady();
+        return;
+      }
+      if (!mounted) return;
     }
     try {
       // 이미 받아 둔 원본이 있으면 그걸로 튼다. 재생 URL 왕복도, 스트리밍
@@ -159,6 +172,42 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
     }
   }
 
+  /// 서버의 지금 상태를 다시 묻는다. READY가 되었으면 true.
+  ///
+  /// 못 물어봤으면(네트워크 등) 손에 있는 스냅샷으로 판단한다 — 여기서
+  /// 오류를 띄우면 "올라오는 중" 안내가 오류 문구로 바뀌어 더 헷갈린다.
+  Future<bool> _refreshStatus() async {
+    try {
+      final refreshed = await widget.controller.api.getVideo(_video.id);
+      if (mounted) setState(() => _video = refreshed);
+      return refreshed.status == 'READY';
+    } catch (_) {
+      return _video.status == 'READY';
+    }
+  }
+
+  /// 올라오는 중인 영상을 몇 초마다 다시 물어, 준비되는 순간 재생을 연다.
+  ///
+  /// 상태 조회는 JSON 한 줄이라 폴링 부담이 없고, 페이지를 떠나면
+  /// dispose가 함께 멈춘다.
+  void _pollStatusUntilReady() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (!await _refreshStatus()) return;
+      timer.cancel();
+      if (!mounted || _player != null) return;
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      await _loadPlayer();
+    });
+  }
+
   /// 재생이 쉬는 틈에 원본 미리받기를 시작한다.
   void _prefetchWhenPlaybackRests() {
     final player = _player;
@@ -186,6 +235,7 @@ class _ContentVideoDetailScreenState extends State<ContentVideoDetailScreen> {
   @override
   void dispose() {
     _idlePrefetchTimer?.cancel();
+    _statusPollTimer?.cancel();
     _player?.dispose();
     super.dispose();
   }
